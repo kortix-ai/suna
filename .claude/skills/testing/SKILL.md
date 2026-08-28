@@ -8,7 +8,7 @@ description: Use for every Kortix test task, behavior change, bug fix, refactor,
 Use one repository-level command: `pnpm test`.
 
 Read `tests/README.md` before changing the runner or adding a product flow. Read
-`packages/sdk/AGENTS.md` and `packages/sdk/PROGRESS.md` before editing the SDK.
+the **sdk** skill before editing the SDK.
 
 ## Select the correct test
 

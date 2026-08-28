@@ -124,6 +124,19 @@ export function foldKey(value: string): string {
 export function connectedCatalogKeys(connectors: readonly AdminConnector[]): ReadonlySet<string> {
   const keys = new Set<string>();
   for (const connector of connectors) {
+    // A connector ROW is not a working connection. `needs_auth` means the
+    // OAuth handshake never completed — no `connected_account_id`, so every
+    // tool call is refused by the gateway. Showing it as connected is the
+    // worst possible lie: the user sees a checkmark, the agent gets `needs_auth`
+    // on every call, and nothing in the product explains the contradiction.
+    // Prod 2026-08-28: all 6 GitHub connections had a null connected account
+    // and zero GitHub tool calls had ever executed, while the catalogue showed
+    // GitHub as connected.
+    //
+    // `error` stays connected-looking on purpose: the credential exists and the
+    // card's own error affordance is what surfaces the problem. Only the
+    // never-authorized case is a false checkmark.
+    if (connector.status === 'needs_auth') continue;
     keys.add(`provider:${connector.provider}`);
     keys.add(foldKey(connector.slug));
     if (connector.name?.trim()) keys.add(foldKey(connector.name));

@@ -3,8 +3,6 @@ import * as realTiers from '../../billing/services/tiers';
 
 const config: Record<string, unknown> = {
   KORTIX_MANAGED_PROVIDER_ENABLED: true,
-  ASTER_API_KEY: 'aster-test-key',
-  ASTER_API_URL: 'https://api.asterlab.ai/v1',
   OPENROUTER_API_KEY: 'openrouter-test-key',
   OPENROUTER_API_URL: 'https://openrouter.ai/api/v1',
 };
@@ -186,44 +184,6 @@ describe('livePricing + stripBedrockInferenceProfilePrefix — the actual $0 bug
     expect(livePricing('amazon-bedrock', stripped)).toEqual(
       livePricing('amazon-bedrock', 'amazon.nova-micro-v1:0'),
     );
-  });
-});
-
-describe('managed AsterLab descriptor', () => {
-  test('routes GLM 5.2 to AsterLab with the AWS-managed deployment credential', () => {
-    expect(
-      managedCandidates({
-        id: 'glm-5.2',
-        name: 'GLM 5.2',
-        upstreamModelId: 'glm-5.2',
-        transport: 'aster',
-        pricingRef: 'z-ai/glm-5.2',
-        pricing: {
-          inputPerMillion: 1,
-          cachedInputPerMillion: 0.2,
-          cacheWritePerMillion: 1,
-          outputPerMillion: 4,
-        },
-        tier: 'balanced',
-        vision: false,
-        limit: { context: 1_000_000, output: 131_072 },
-      }),
-    ).toEqual([
-      expect.objectContaining({
-        provider: 'aster',
-        kind: 'openai-compat',
-        baseUrl: 'https://api.asterlab.ai/v1',
-        apiKey: 'aster-test-key',
-        resolvedModel: 'glm-5.2',
-        billingMode: 'credits',
-        pricing: {
-          inputPerMillion: 1,
-          cachedInputPerMillion: 0.2,
-          cacheWritePerMillion: 1,
-          outputPerMillion: 4,
-        },
-      }),
-    ]);
   });
 });
 

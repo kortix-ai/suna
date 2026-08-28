@@ -205,7 +205,6 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  routedPerProjectWarmImageName: () => "kpp2-test",
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
@@ -223,12 +222,6 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: "kortix-ppwarm-test",
-    tip: "a".repeat(40),
-    built: false,
-    provider: "daytona",
-  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
@@ -1355,7 +1348,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       slug: 'daily',
       name: 'Daily',
       cron: '* * * * * *',
-      model: 'glm-5.2',
+      model: 'glm-5.3-flash',
       prompt: 'Run at {{ fired_at }}',
     }));
 
@@ -1370,11 +1363,11 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.3-flash');
   });
 
   test('manual fire without overrides resolves the project model and selected agent before provisioning', async () => {
-    modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
+    modelDefaults.projects[PROJECT_ID] = 'glm-5.3-flash';
     projectRow.metadata = {
       default_agent: 'asana-refresher',
       experimental: { llm_gateway: true },
@@ -1398,7 +1391,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.metadata).toMatchObject({
-      opencode_model: 'kortix/glm-5.2',
+      opencode_model: 'kortix/glm-5.3-flash',
       opencode_model_source: 'project',
     });
   });

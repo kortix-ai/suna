@@ -119,16 +119,33 @@ export async function ensureProjectChannelBinding(
   channelId: string,
 ): Promise<void> {
   if (!projectId || !teamId || !channelId) return;
+  // CLAIM-IF-UNOWNED, never steal. This runs on EVERY Slack event, before
+  // `isOwnBotEvent` and before `classifyEvent` — so it fires even for events this
+  // project goes on to ignore. As a conflict-UPDATE it re-assigned `projectId`
+  // on every message, and since `chat_channel_bindings` is UNIQUE on
+  // (platform, workspace_id, channel_id) — one project per channel, workspace-wide
+  // — the previous owner became permanently unreachable in its own channel: no
+  // hourglass, no reply, no session, no row anywhere to explain it.
+  //
+  // Any project whose Slack app merely observes a channel (both manifests
+  // subscribe `message.channels`) was enough to take it. Prod 2026-08-28,
+  // workspace T07FUFNT3RV: `kortix-incident-reporter` (installed 2026-08-17)
+  // held `C0AASKRLRBR`, where `Kortix Company` had run 71 sessions through
+  // 2026-08-14 and then went silent for 14 days.
+  //
+  // Re-assignment is a DELIBERATE act and has its own paths, untouched by this:
+  // the channel picker (`interactivity.ts` pick_project) and `/kortix use` /
+  // switch_project (`interactivity.ts` handleSwitchProject). `/kortix unbind`
+  // (`commands.ts`) deletes the row so the next event can re-claim it.
   await db
     .insert(chatChannelBindings)
     .values({ platform: 'slack', workspaceId: teamId, channelId, projectId, pickerTs: null })
-    .onConflictDoUpdate({
+    .onConflictDoNothing({
       target: [
         chatChannelBindings.platform,
         chatChannelBindings.workspaceId,
         chatChannelBindings.channelId,
       ],
-      set: { projectId, pickerTs: null },
     });
 }
 

@@ -4,9 +4,9 @@
  * The Sandbox tab — sandbox template CRUD (list, create, edit, delete,
  * rebuild). **No build log.** Split off `sandbox-view.tsx`'s `SandboxView`,
  * which used to render this content AND the snapshot build log together on
- * one 858-line page (Task 20's brief). The build log, status banner, error
- * categories, and the `isProjectAcceleratorBuild` filter move to
- * `snapshots-tab.tsx` instead — see that file's header comment.
+ * one 858-line page (Task 20's brief). The build log, status banner and error
+ * categories move to `snapshots-tab.tsx` instead — see that file's header
+ * comment.
  * `settings-panel.tsx:1127` used to mount the unsplit `SandboxView` on
  * `case 'sandbox'` alone, with `snapshots` stuck on a placeholder
  * (`settings-panel.tsx:997-1003` explains why: mounting `SandboxView` on
@@ -95,9 +95,9 @@
  * and `useTranslations` needs a `NextIntlClientProvider` ancestor that
  * `renderToStaticMarkup` doesn't provide. That is exactly why nothing in
  * `sandbox-view.tsx` that called it was ever covered by
- * `sandbox-view.test.tsx` — only the translation-free `BuildRow` and
- * `isProjectAcceleratorBuild` were testable. Copy here is written directly as
- * literals — matching the house pattern and making `SandboxTabView` testable.
+ * `sandbox-view.test.tsx` — only the translation-free `BuildRow` was
+ * testable. Copy here is written directly as literals — matching the house
+ * pattern and making `SandboxTabView` testable.
  *
  * **`listProjectSnapshots` — shared endpoint, split rendering.** Both this
  * tab and `snapshots-tab.tsx` call the identical

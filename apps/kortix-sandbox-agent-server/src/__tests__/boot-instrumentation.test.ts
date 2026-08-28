@@ -70,8 +70,25 @@ describe('boot instrumentation', () => {
     expect(PROXY).toContain("'workspace_not_ready'")
     // set false only on the early-spawn path, true once deps + skills are in
     expect(MAIN).toContain('if (earlyOpencodeConfigDir) bootState.workspaceReady = false')
-    const deps = MAIN.indexOf("bootMark('config-deps')")
-    expect(MAIN.indexOf('bootState.workspaceReady = true', deps)).toBeGreaterThan(deps)
+    // The gate must open where the workspace is COMPLETE — after the deps and
+    // the injected skills — and never inside the early-spawn block. An earlier
+    // revision opened it right after start(), which made the whole fix inert
+    // (verified on dev: the log showed the gate opening at ~130 ms, before the
+    // checkout landed at ~300 ms). Anchor on the LAST reconfigure, not on a
+    // bare indexOf that a later duplicate can satisfy.
+    const earlySpawn = MAIN.indexOf('const earlyOpencodeStartPromise')
+    const earlySpawnEnd = MAIN.indexOf('const compiledOpencodeConfigDir', earlySpawn)
+    expect(MAIN.slice(earlySpawn, earlySpawnEnd)).not.toContain('markWorkspaceReady')
+
+    const deps = MAIN.indexOf('await ensureOpencodeConfigDeps(opencodeConfigDir)')
+    const skills = MAIN.indexOf('await ensureInjectedManagedSkills(opencodeConfigDir)', deps)
+    const reconfigure = MAIN.indexOf('opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)', skills)
+    const open = MAIN.indexOf('opencode.markWorkspaceReady()', reconfigure)
+    const reload = MAIN.indexOf('opencode.reloadForWorkspace()', open)
+    expect(deps).toBeGreaterThan(-1)
+    expect(skills).toBeGreaterThan(deps)
+    expect(open).toBeGreaterThan(reconfigure)
+    expect(reload).toBeGreaterThan(open)
   })
 
   test('an instance that answered before the workspace was ready forces a restart, not a dispose', () => {

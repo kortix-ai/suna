@@ -8,7 +8,7 @@ import { classifySnapshotError, describeSnapshotError } from '../../snapshots/er
 import { withTimeout } from '../../shared/with-timeout';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { isPlatformAdmin } from '../../shared/platform-roles';
-import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, getFileSha } from '../github';

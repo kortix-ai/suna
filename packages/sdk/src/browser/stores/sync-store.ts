@@ -1733,7 +1733,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// server's own page order, which is not an id order, so `incoming[0].id`
 			// is no longer the smallest id in the page. (That this comparison is an
 			// id comparison at all is a separate open question — see B-note in
-			// PROGRESS.md — deliberately left as-is here.)
+			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
 			if (provisional && provisional.size > 0 && incoming.length > 0) {

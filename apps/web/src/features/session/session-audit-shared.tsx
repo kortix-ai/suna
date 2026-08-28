@@ -24,11 +24,6 @@ import {
   resolveApproval,
 } from '@kortix/sdk';
 import {
-  sessionStreamScope,
-  useSessionAuditSignal,
-  useSessionStreamPresence,
-} from '@kortix/sdk/react';
-import {
   type QueryClient,
   useInfiniteQuery,
   useMutation,
@@ -36,7 +31,6 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
 
 /**
  * Per-session pending-approval summary for the sidebar "needs input" badge.
@@ -125,53 +119,9 @@ export function useSessionAudit(
   options?: UseSessionAuditOptions,
 ) {
   const enabled = !!projectId && !!sessionId && (options?.enabled ?? true);
-  const queryClient = useQueryClient();
-
-  // The CONTROL channel is the notify path now. The session stream's
-  // `kortix.control.audit` frame reports a connector-gated approval appearing or
-  // being resolved, so:
-  //   - while the stream is connected the 15s poll stands DOWN
-  //     (`streamConnected`), exactly like the `/turn` and `/prompts` polls, and
-  //   - a real watermark change (`useSessionAuditSignal`) invalidates this
-  //     query, so the endpoint is READ once per change instead of on a timer.
-  // The endpoint stays the read: the frame carries only the watermark, the rows
-  // are still fetched here. With no stream (a client that cannot reach it) the
-  // poll resumes — presence is `false`, so nothing is lost.
-  const scope = enabled && projectId && sessionId ? sessionStreamScope(projectId, sessionId) : '';
-  const streamConnected = useSessionStreamPresence(scope);
-  const auditTick = useSessionAuditSignal(projectId ?? '', sessionId ?? '');
-  const poll = !!options?.poll;
-  // The tick this observer has already accounted for. The FIRST non-zero tick is
-  // the stream SEEDING the current watermark, which the mount fetch
-  // (`refetchOnMount`) already reads — invalidating on it too fired a second,
-  // redundant `GET .../audit` on every open. So the seed is ABSORBED (recorded,
-  // not acted on) and only a LATER change — a gated action appearing or being
-  // resolved while the session is open — invalidates and re-reads the rows.
-  const actedTickRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!poll || !enabled) return;
-    // `0` is "no watermark seeded yet" — the stream has not delivered a
-    // `kortix.control.audit` frame. The mount fetch owns the current state, so
-    // wait; recording 0 here would make the seed (0 → 1) look like a change.
-    if (auditTick === 0) return;
-    if (actedTickRef.current === null) {
-      // The SEED — the first watermark, which the mount fetch already read.
-      actedTickRef.current = auditTick;
-      return;
-    }
-    if (auditTick === actedTickRef.current) return;
-    // A real change AFTER the seed: a gated action appeared or was resolved.
-    actedTickRef.current = auditTick;
-    void queryClient.invalidateQueries({ queryKey: sessionAuditKey(projectId, sessionId) });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auditTick, poll, enabled, projectId, sessionId]);
-
   return useQuery<SessionAudit>({
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
-    // KEPT (never deleted) so a reader always has a queryFn: folding the poll
-    // moved the NOTIFY onto the stream, not the READ — the invalidate above and
-    // a with-no-stream poll both drive this same fetch.
     queryFn: () =>
       getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 100, {
         showErrors: !options?.silent,
@@ -179,11 +129,8 @@ export function useSessionAudit(
       }),
     enabled,
     staleTime: 10_000,
-    refetchOnMount: poll ? true : false,
-    // The timer runs ONLY when the stream is not delivering. Connected, the
-    // control-channel invalidate above is the whole liveness path.
-    refetchInterval:
-      poll && !streamConnected ? (query) => sessionAuditPollMs(query.state.data) : false,
+    refetchOnMount: options?.poll ? true : false,
+    refetchInterval: options?.poll ? (query) => sessionAuditPollMs(query.state.data) : false,
   });
 }
 

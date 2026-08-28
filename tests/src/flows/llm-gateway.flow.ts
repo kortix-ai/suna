@@ -50,7 +50,7 @@ flow(
   async (ctx) => {
     const body = {
       principal: { accountId: '00000000-0000-4000-a000-000000000000' },
-      input: { requestedModel: 'glm-5.2' },
+      input: { requestedModel: 'glm-5.3-flash' },
     };
     await ctx.step('no internal token → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/resolve-route', body);
@@ -305,12 +305,12 @@ flow(
     const params = { projectId: project.id };
     const policy = {
       defaultModel: 'codex/gpt-5.6-sol',
-      visionModel: 'glm-5.2',
-      defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+      visionModel: 'glm-5.3-flash',
+      defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
       rules: [
         {
           model: 'openai/gpt-5.5',
-          fallbackModels: ['glm-5.2'],
+          fallbackModels: ['glm-5.3-flash'],
           fallbackOn: 'transient',
         },
       ],
@@ -367,7 +367,7 @@ flow(
         .body()
         .has('$.project', savedProject)
         .has('$.effective.defaultModel', 'codex/gpt-5.6-sol')
-        .has('$.effective.defaultFallback.models', ['glm-5.2']);
+        .has('$.effective.defaultFallback.models', ['glm-5.3-flash']);
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
@@ -388,10 +388,10 @@ flow(
         .body()
         .has('$.route.policyId', 'project:default')
         .has('$.route.primaryModel', 'codex/gpt-5.6-sol')
-        .has('$.route.fallbackModels', ['glm-5.2'])
+        .has('$.route.fallbackModels', ['glm-5.3-flash'])
         .has('$.route.fallbackOn', 'any-error')
         .has('$.models[0].model', 'codex/gpt-5.6-sol')
-        .has('$.models[1].model', 'glm-5.2')
+        .has('$.models[1].model', 'glm-5.3-flash')
         .exists('$.models[0].available')
         .exists('$.models[1].available');
 
@@ -407,7 +407,7 @@ flow(
         .body()
         .has('$.route.policyId', 'project:exact:openai/gpt-5.5')
         .has('$.route.primaryModel', 'openai/gpt-5.5')
-        .has('$.route.fallbackModels', ['glm-5.2'])
+        .has('$.route.fallbackModels', ['glm-5.3-flash'])
         .has('$.route.fallbackOn', 'transient');
     });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -45,21 +45,6 @@ export const WORKING_POLL_ACTIVE_MS = 5_000;
 
 export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
-}
-
-/**
- * The `/turn` query's interval, given who else is answering.
- *
- * The owner always polls. A connected stream proves transport presence, not
- * delivery of `kortix.control.turn` frames. Polling remains the recovery path
- * when a connected stream is silent or incomplete.
- */
-export function workingRefetchInterval(input: {
-  pollOwner: boolean;
-  projection: WorkingProjection;
-}): number | false {
-  if (!input.pollOwner) return false;
-  return workingPollMs(input.projection);
 }
 
 /**
@@ -326,13 +311,8 @@ export function useSessionWorking(
     // session at three times its declared cadence — measured as 6 `/turn`
     // reads inside one 25 s open. Non-owners read the same entry the owner
     // refreshes, so nobody sees a staler answer; only the scheduling moved.
-    // A connected stream does not disable this poll. Transport presence does
-    // not prove that control frames are arriving.
     refetchInterval: (query) =>
-      workingRefetchInterval({
-        pollOwner,
-        projection: project(query.state.data, Date.now()),
-      }),
+      pollOwner ? workingPollMs(project(query.state.data, Date.now())) : false,
     // Coming back to a tab is the moment a turn that started (or ended) while
     // it was hidden has to be on screen.
     refetchOnWindowFocus: true,
@@ -342,27 +322,29 @@ export function useSessionWorking(
     retry: 1,
   });
 
-  // NO status-frame invalidation of `/turn` and `/prompts` any more.
-  //
-  // A status frame used to invalidate both queries so a turn that ended stopped
-  // reading as open before the next poll tick. That refetch is now pure
-  // duplication, and it was the last thing making the composer re-poll `/turn`
-  // and `/prompts` while the session STREAM was connected — the interval
-  // already stands down on `streamConnected` (`workingRefetchInterval`), but an
-  // `invalidateQueries` bypasses that gate and fired a full round trip per
-  // observer on every turn boundary (measured: 3×`/turn` + 3×`/prompts` per
-  // boundary on the local stack). It is redundant on BOTH sides now:
-  //   - Busy clears with no refetch: the runtime's own idle frame is folded
-  //     straight into `projectWorking`'s `stream` input, so the answer flips the
-  //     instant the frame lands — a `/turn` read was never on that path.
-  //   - The cache stays current with no refetch: the API's reconciler pushes
-  //     `kortix.control.turn` and `kortix.control.queue` — the SAME server
-  //     projections — onto the stream on change, and `use-session-stream.ts`
-  //     writes them into these exact cache entries.
-  // A surface with NO stream keeps its poll (`workingRefetchInterval` resumes
-  // the moment presence flips), and that poll is what carries a turn boundary
-  // there — no status frames reach a tab whose stream is down, so this effect
-  // did nothing for it anyway.
+  // A status frame is the earliest news there is that a turn started or ended.
+  // NOTHING invalidated this query before — no SSE frame, no mutation — so a
+  // turn that ended stayed "open" in the cache until the next interval tick.
+  // That window was up to WORKING_POLL_ACTIVE_MS of the composer holding Stop
+  // after the last token, and of `rewind()` throwing "Cannot rewind a busy
+  // session" on the Edit the user clicked the moment the reply landed.
+  // The prompt list is invalidated with it: a reading of the inbox is the one
+  // input with a life shorter than its own poll interval, and the turn ending
+  // is exactly when a `waiting` row becomes a running one.
+  const queryClient = useQueryClient();
+  // Keyed on the PHASE, not on the observation instant. The instant changes on
+  // every frame, and the runtime emits many per turn — see `streamTurnPhase`
+  // for the measured `busy`/`retry` oscillation this stops re-fetching on.
+  const streamPhase = streamTurnPhase(stream?.status);
+  useEffect(() => {
+    if (!canRead || streamPhase === 'none') return;
+    void queryClient.invalidateQueries({
+      queryKey: qk.project.sessionTurn(projectId, sessionId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: qk.project.sessionPrompts(projectId, sessionId),
+    });
+  }, [canRead, projectId, sessionId, streamPhase, queryClient]);
 
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.

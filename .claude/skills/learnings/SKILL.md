@@ -21,6 +21,133 @@ linked, not inlined.
 
 ## Register
 
+### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
+
+**When:** a package imports source files from another package without installing
+that package's runtime dependencies. Do not use a static type import for an
+optional dependency. Define the required structural type locally, and keep the
+runtime import behind the existing lazy boundary.
+*Near-miss:* staging promotion PR #7027 failed because the sandbox agent typecheck
+resolved the worker's `import('ws')` type without installing worker dependencies.
+*Enforcer:* the Sandbox Agent CI job runs `bun run typecheck` before its build.
+
+### `deploy-preview.yml` runs from the DEFAULT BRANCH, so everything it references must be on main (2026-08-28)
+
+**When:** adding anything the preview deploy touches — a file under `tests/`, a
+Cloudflare worker under `infra/cloudflare/workers/`, a script it shells out to —
+while developing on a feature branch. The workflow is `pull_request_target`, and
+its deploy and teardown jobs check out
+`${{ github.event.repository.default_branch }}`, NOT the pull request head. The
+PR's own code is only ever built into the images; the ORCHESTRATION is main's.
+
+Hit twice in one afternoon. First the branch-environment machinery
+(`previewSandboxIdentity`, sandbox reuse, the Caddy reload) lived only on the
+feature branch, so the label flow could not have used it. Then the `pi-router`
+worker did, and the deploy failed with
+`infra/cloudflare/workers/pi-router/wrangler.toml does not exist` — the file was
+right there in the branch being deployed, and irrelevant.
+
+**The rule: if the preview WORKFLOW reads it, it ships to main first** — as its
+own PR, ahead of the feature that needs it. A feature branch may only contribute
+images.
+
+**Diagnostic:** a preview step that cannot find a file which plainly exists on
+your branch is this, every time. `git ls-tree -r --name-only origin/main -- <path>`
+settles it in one command.
+*Near-miss:* PR #7019. The guard failed loudly with the exact path rather than
+proceeding, which is why it cost one run and not an afternoon.
+*Enforcer:* none for the general case. Each referenced path needs its own
+existence check in the step that uses it, the way the worker step now has one.
+
+### `compose up -d` does not restart a container because a bind-mounted FILE changed (2026-08-28)
+
+**When:** a redeploy rewrites a config file that a container reads through a
+bind mount — a Caddyfile, an nginx conf, a prometheus.yml. Compose recreates a
+container for a new image, env var, port or volume DEFINITION; new bytes inside
+an already-mounted file are not part of that comparison. If the process does not
+watch its config either (Caddy does not), the container keeps serving what it
+loaded when it first booted, for as long as the box lives.
+
+A per-PR preview never showed this because it is deleted and recreated on every
+push. It appeared the first time a REUSED environment's config actually changed:
+moving the branch environment to `pi.kortix.com` rewrote the Caddyfile's pinned
+`X-Forwarded-Host`, the file said the new host both on disk and inside the
+container, and the running Caddy still pinned the old one — so every Server
+Action died with React #441 again (see the entry below).
+
+**The rule: after writing a mounted config, reload the process that reads it**
+(`compose exec -T <svc> caddy reload --config …`), or recreate that service
+explicitly. Never infer from "compose up succeeded" that a mounted config took
+effect.
+
+**Diagnostic:** compare the file with the process's LIVE configuration, not with
+the file inside the container — those two agree even when the bug is present.
+For Caddy, `curl localhost:2019/config/` from inside the container; the same
+shape of check applies to any config-reloading daemon.
+*Near-miss:* the pi branch environment, 2026-08-28. Caught within minutes by
+driving the real sign-in page; nothing deployed was affected.
+*Enforcer:* `tests/unit/sandbox-preview.test.ts` asserts the bootstrap issues
+the reload. Nothing detects a NEW mounted config file that lacks one.
+
+### An environment that shares ONE origin between frontend and API must enumerate every path the API serves outside the common prefix (2026-08-27)
+
+**When:** editing the preview edge (`buildPreviewCaddyfile`), or mounting a
+route in `apps/api/src/index.ts` anywhere other than under `/v1`.
+Deployed environments give the API a host of its own, so every path it serves
+reaches it and prefix questions never arise. A preview shares one origin with
+the frontend and splits by prefix, and the `@api` matcher listed only `/v1*`.
+So `/health`, `/health/live`, `/health/ready`, `/metrics`, `/scim/v2/*`,
+`/internal/*` and `/.well-known/oauth-authorization-server` went to
+`frontend:3000`, which answered `307 -> /auth?redirect=…`. 13 flows failed on
+it (SYS-1/8/9, SCIM-1..5, GW-1/8/10/12, SEC-J), each reading as an auth or
+availability bug rather than a routing one.
+
+**The rule: a new non-`/v1` mount is TWO edits** — the route and the preview
+matcher — and the matcher carries a comment saying so. More generally, an
+environment whose topology differs from dev (one origin instead of two hosts)
+does not inherit dev's routing for free; enumerate what the difference hides.
+
+**Diagnostic:** a `307` to `/auth` on a path that needs no auth is the frontend
+answering, not the API. `curl -o /dev/null -w '%{http_code} %{redirect_url}'`
+tells them apart in one call — the API returns the endpoint's own status
+(`200`/`401`), never a redirect to a login page.
+*Near-miss:* PR #7012, found while verifying preview↔dev parity. Preview only;
+no deployed environment is affected, because none of them share an origin.
+*Enforcer:* `tests/unit/preview-stack.test.ts` asserts each of the six paths is
+present in the `@api` line. Nothing yet fails when a NEW non-`/v1` mount is
+added to the API without updating the matcher — that check is the TODO.
+
+### A reverse proxy in front of Next.js owns `x-forwarded-host`, or every Server Action dies (2026-08-27)
+
+**When:** putting any proxy/ingress in front of a Next.js app — a preview edge,
+a sandbox ingress, a tunnel. Next's Server Action CSRF guard compares
+`x-forwarded-host` against `origin` and aborts when they differ:
+`Invalid Server Actions request`, HTTP 500, surfaced in the browser only as
+**minified React error #441**. It kills EVERY Server Action, not just the one
+in front of you — on the preview stack that meant nobody could sign in at all,
+because the whole auth flow is Server Actions.
+
+The mismatch is easy to create and invisible from the client: the sandbox
+ingress set `x-forwarded-host` to the INTERNAL host (`*.aec.local`) while the
+browser's `origin` was the public `*.sbx.platinum.dev`. Nothing in the app is
+wrong, and no application log says so — the error text lives in the **Next
+server's** own stdout, reachable only from the container
+(`docker logs <frontend>`), never from the response, which carries an opaque
+`digest`.
+
+**Rules.** (1) A proxy that terminates the public hostname must pin
+`X-Forwarded-Host` (and `X-Forwarded-Proto`) to the PUBLIC host on the Next
+upstream — the API/Supabase/static handles neither need it nor should get it.
+(2) A minified React error with no stack is a SERVER error: read the server's
+own log before reading any client code. (3) `digest` is a hash, not a message —
+grep the container for it.
+
+*Incident:* every `preview`-labelled PR was impossible to sign into; the whole
+environment read as "the app is broken". Fixed by pinning the host in
+`buildPreviewCaddyfile`.
+*Enforcer:* `tests/unit/preview-stack.test.ts` — "pins the PUBLIC host on the
+Next upstream for Server Actions".
+
 ### An experiment flag that deploy-dev pins to an explicit `false` can never double as a kill switch (2026-08-27)
 
 **When:** reusing an existing feature/experiment flag to gate a new default-on
@@ -3536,3 +3663,53 @@ exception, each line with the rotation that removes it.
 
 *Incident:* no outage. The audit found the drift; no deployed environment was
 changed.
+
+## A down box has TWO proxy responses; the SDK must treat BOTH as wakeable
+
+Found 2026-08-27 on dev: clicking a session in the sidebar showed "Couldn't
+load this conversation." with a Retry that never recovered. Root cause: when a
+session's sandbox is down, the sandbox proxy answers a data read
+(`/p/<box>/8000/kortix/opencode/messages/<sid>`) in one of two ways depending on
+the box's status, and only one was handled:
+
+- status `stopped` → **503 JSON** `sandbox not ready (status: stopped)` — the SDK
+  classified this as `SandboxNotReadyError` (a waking state), kept the loader up,
+  retried, and the box woke via the `/start` the app fires on open. Recovered.
+- status `not-running` → **404 HTML** `This sandbox URL is not active. /
+  not-running` — NOT matched by `SANDBOX_NOT_READY_PATTERNS`
+  (`packages/sdk/src/core/http/opencode-errors.ts`), whose closest pattern was
+  `sandbox is not running` (the literal word "is"). So `readSessionMessagePage`
+  (`session-sync-registry.ts`) threw a HARD error →
+  `transcriptFreshness='error'` → the dead-end "Couldn't load" with no wake, no
+  retry.
+
+The `own-the-surface` reads cutover (#6987) routed the transcript read through
+this classifier, which is what exposed it — before, the same box-down 404 went
+down a different read path.
+
+**Rules.**
+1. A sandbox that is stopped/parked/idle is a WAKEABLE state, never a terminal
+   transcript failure. If a proxy can return more than one status/shape for
+   "box is down" (503 JSON vs 404 HTML state page here), the classifier must
+   accept EVERY one of them — enumerate them from the live wire, not from the
+   one you happened to see.
+2. Capture the real response BODY before writing the pattern. The fix strings
+   (`sandbox url is not active`, `not-running`) came from a captured dev 404,
+   not a guess — and they are specific enough to never match a genuine
+   `{"message":"Not found"}` 404 (asserted by a test).
+3. A control-plane status (`/start` said `ready`) can be stale against the data
+   proxy's live view (`not-running`). Do not trust one as proof of the other;
+   the read that actually failed is the truth.
+4. Follow-up recorded, not yet done: the proxy should return the SAME 503 for
+   `not-running` as it does for `stopped`, so there is one down-box response
+   instead of two. Classifier breadth is the belt; proxy consistency is the
+   suspenders.
+
+*Automation:* `packages/sdk/src/browser/session-sync/session-sync-registry.test.ts`
+pins that the `not-running` 404 throws `SandboxNotReadyError` while a genuine
+404 stays a hard error; `opencode-errors.test.ts` guards the pattern set.
+
+*Incident:* PR #6999 (`7060b2b2cc`), merged + dev-deployed 2026-08-27. TDD
+fix, no code change beyond two regex patterns. No data loss — messages sent at a
+dead composer were always durable inbox rows; only the transcript READ
+dead-ended.

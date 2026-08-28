@@ -276,6 +276,38 @@ describe('box down — the stream still serves', () => {
     expect(attachCalls).toHaveLength(0);
   });
 
+  test('a provisioning box (environment rebuilding) STILL attaches — the live stream is not gated on a background build', async () => {
+    // Regression (dev, 2026-08-27): a project ENVIRONMENT rebuild left a RUNNING
+    // session's row at `provisioning` while its box was Ready and serving the
+    // turn ("Sandbox build running…", Platinum Ready). Gating the attach on
+    // `status === 'active'` refused the live stream, the client fell back to
+    // POLLING `/kortix/opencode/messages`, and reasoning never collapsed / turns
+    // never ended / `/log` spun — the whole "client is broken" report. A build
+    // happening elsewhere is irrelevant to whether THIS reachable box can stream.
+    sandboxRow = { externalId: 'box-1', status: 'provisioning' };
+    daemonAttach = async () => ({
+      ok: true,
+      epoch: 'ep-prov',
+      body: daemonStream(
+        [
+          'event: kortix.hello\ndata: {"type":"kortix.hello","epoch":"ep-prov","head_seq":1,"first_seq":1,"since":null,"at":1}\n\n',
+          'event: session.status\nid: 1\ndata: {"seq":1,"type":"session.status","at":2,"payload":{"sessionID":"ses_x","status":{"type":"busy"}},"session":"ses_x"}\n\n',
+        ],
+        500,
+      ),
+    });
+    const response = await openStream();
+    const frames = await readFrames(response, 4);
+    // The runtime channel ATTACHES and says UP — never a degrade-to-poll `down`.
+    expect(
+      frames.find((frame) => frame.event === 'kortix.runtime.status')?.data,
+    ).toMatchObject({ state: 'up' });
+    // The daemon WAS attached (a stopped box would be 0), and its frame flows
+    // through verbatim, tagged as a runtime frame the reducer applies.
+    expect(attachCalls.length).toBeGreaterThan(0);
+    expect(frames.find((frame) => frame.event === 'session.status')?.data.channel).toBe('runtime');
+  });
+
   test('an unreachable daemon reports the reason and does not fail the response', async () => {
     daemonAttach = async () => ({ ok: false, reason: 'daemon_503', status: 503 });
     const response = await openStream();

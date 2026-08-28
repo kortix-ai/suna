@@ -786,7 +786,7 @@ async function commandMatrix(): Promise<void> {
     [
       'gateway',
       'test',
-      'glm-5.2',
+      'glm-5.3-flash',
       '--prompt',
       'Reply with exactly connector-gateway-agent-e2e',
     ],

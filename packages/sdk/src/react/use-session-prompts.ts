@@ -20,7 +20,6 @@ import { countLiveInboxPrompts } from '../core/session/working';
 import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
-import { sessionStreamScope, useSessionStreamPresence } from './use-session-stream-presence';
 import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
 
 /**
@@ -67,27 +66,6 @@ export function sessionPromptsPollMs(
 ): number {
   const live = Math.max(count, believedPending);
   return live > 0 ? (pollMs ?? SESSION_PROMPTS_POLL_MS) : SESSION_PROMPTS_IDLE_POLL_MS;
-}
-
-/**
- * The inbox query's interval, given who else is answering.
- *
- * `kortix.control.queue` frames on the session stream carry THE SAME list
- * (`listInboxPrompts` + `serializePrompt`, the exact functions behind
- * `GET .../prompts`), pushed on change — so while a stream is connected for
- * this session the poll hands its cadence over. Mutations keep their own
- * `invalidate` on settle, so this tab's own writes still read back
- * immediately either way.
- */
-export function promptsRefetchInterval(input: {
-  pollOwner: boolean;
-  streamConnected: boolean;
-  count: number;
-  believedPending: number;
-  pollMs?: number;
-}): number | false {
-  if (!input.pollOwner || input.streamConnected) return false;
-  return sessionPromptsPollMs(input.count, input.pollMs, input.believedPending);
 }
 
 /**
@@ -309,9 +287,6 @@ export function useSessionPrompts(
   );
 
   const pollOwner = usePollOwner(`prompts:${projectId ?? ''}/${sessionId ?? ''}`, enabled);
-  const streamConnected = useSessionStreamPresence(
-    enabled && projectId && sessionId ? sessionStreamScope(projectId, sessionId) : '',
-  );
 
   const query = useQuery({
     queryKey: key,
@@ -326,18 +301,11 @@ export function useSessionPrompts(
     // cadence is owned by one observer per session because `refetchInterval` is
     // scheduled per observer, and two components mount this hook on a session
     // route: two timers on one key polled the inbox at twice its cadence. Every
-    // observer still reads the entry the owner refreshes. While the session
-    // STREAM is connected even the owner stands down — `kortix.control.queue`
-    // writes this same entry from the same server list. See
-    // `promptsRefetchInterval`.
+    // observer still reads the entry the owner refreshes.
     refetchInterval: (q) =>
-      promptsRefetchInterval({
-        pollOwner,
-        streamConnected,
-        count: q.state.data?.length ?? 0,
-        believedPending,
-        ...(options?.pollMs !== undefined ? { pollMs: options.pollMs } : {}),
-      }),
+      pollOwner
+        ? sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs, believedPending)
+        : false,
     // Per-query, because the host disables focus refetching globally. Coming
     // back to a tab is the moment a prompt the server handed back while it was
     // hidden has to be on screen.
@@ -396,16 +364,7 @@ export function useSessionPrompts(
         removeOptimisticPrompt(prev ?? [], input.clientMessageId),
       );
     },
-    // Read-back is a POLL in disguise while the session STREAM is connected:
-    // `onMutate` already painted the optimistic row, `onSuccess` already swapped
-    // it for the server's row id, and `kortix.control.queue` pushes the
-    // authoritative list on change — so invalidating here just fires a redundant
-    // `GET .../prompts` after every send (measured: the one remaining prompts
-    // read on an open+send). With no stream, the invalidate stands (the poll is
-    // the only thing that would confirm the durable row).
-    onSettled: () => {
-      if (!streamConnected) return invalidate();
-    },
+    onSettled: invalidate,
   });
   // No-op hook-level `onError`s: every caller shows its own specific toast,
   // and without one TanStack falls back to the app-global default `onError`

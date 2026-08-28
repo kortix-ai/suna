@@ -12,7 +12,7 @@ const KORTIX_PREFIX = 'kortix/';
 
 /**
  * The GATEWAY WIRE form of a model ref: a managed model is stored/served bare
- * (`glm-5.2`), so strip the opencode-only `kortix/` namespace before it reaches
+ * (`glm-5.3-flash`), so strip the opencode-only `kortix/` namespace before it reaches
  * the gateway (route resolution and managed-model lookup both expect the
  * bare id). BYOK (`provider/model`) and codex (`codex/<id>`) refs pass through.
  * This is what `account_model_preferences` stores and what servability checks.

@@ -61,7 +61,7 @@ describe('gateway routing editor helpers', () => {
         rules: [
           {
             model: 'anthropic/claude-opus',
-            fallbackModels: ['anthropic/claude-sonnet', 'glm-5.2'],
+            fallbackModels: ['anthropic/claude-sonnet', 'glm-5.3-flash'],
             fallbackOn: 'transient',
           },
         ],
@@ -72,7 +72,7 @@ describe('gateway routing editor helpers', () => {
   test('keeps custom and disabled fallback modes distinct', () => {
     expect(fallbackModeForPolicy(null)).toBe('inherit');
     expect(fallbackModeForPolicy({ models: [], fallbackOn: 'transient' })).toBe('disabled');
-    expect(fallbackModeForPolicy({ models: ['glm-5.2'], fallbackOn: 'any-error' })).toBe('custom');
+    expect(fallbackModeForPolicy({ models: ['glm-5.3-flash'], fallbackOn: 'any-error' })).toBe('custom');
     expect(
       validateRoutingDraft(
         {
@@ -115,9 +115,9 @@ describe('gateway routing editor helpers', () => {
       collectPreviewTargets(
         {
           visionModel: 'anthropic/claude-sonnet-4.6',
-          defaultFallback: { models: ['glm-5.2', 'auto'], fallbackOn: 'transient' },
+          defaultFallback: { models: ['glm-5.3-flash', 'auto'], fallbackOn: 'transient' },
           rules: [
-            { model: 'codex/gpt-5.6-sol', fallbackModels: ['glm-5.2'], fallbackOn: 'transient' },
+            { model: 'codex/gpt-5.6-sol', fallbackModels: ['glm-5.3-flash'], fallbackOn: 'transient' },
           ],
         },
         'anthropic/claude-opus-4.8',
@@ -125,7 +125,7 @@ describe('gateway routing editor helpers', () => {
     ).toEqual([
       'anthropic/claude-opus-4.8',
       'anthropic/claude-sonnet-4.6',
-      'glm-5.2',
+      'glm-5.3-flash',
       'codex/gpt-5.6-sol',
     ]);
   });
@@ -137,13 +137,13 @@ describe('gateway routing editor helpers', () => {
     expect(
       collectPreviewTargets(
         {
-          visionModel: 'glm-5.2',
-          defaultFallback: { models: ['glm-5.2'], fallbackOn: 'transient' },
+          visionModel: 'glm-5.3-flash',
+          defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'transient' },
           rules: [],
         },
-        'glm-5.2',
+        'glm-5.3-flash',
       ),
-    ).toEqual(['glm-5.2']);
+    ).toEqual(['glm-5.3-flash']);
   });
 
   test('the header selector reads and writes the project default scope', () => {
@@ -170,7 +170,7 @@ describe('gateway routing editor helpers', () => {
     const policy = {
       defaultModel: 'codex/gpt-5.6-sol',
       visionModel: null,
-      defaultFallback: { models: ['glm-5.2'], fallbackOn: 'transient' as const },
+      defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'transient' as const },
       rules: [],
     };
     expect(editablePolicySignature({ ...policy, defaultModel: 'anthropic/claude-opus-4.8' })).toBe(
@@ -247,7 +247,7 @@ describe('gateway routing editor helpers', () => {
     expect(
       hasAdvancedRoutingConfig({
         visionModel: null,
-        modelGenerationConfig: { 'glm-5.2': {} },
+        modelGenerationConfig: { 'glm-5.3-flash': {} },
       }),
     ).toBe(false);
     expect(
@@ -256,7 +256,7 @@ describe('gateway routing editor helpers', () => {
     expect(
       hasAdvancedRoutingConfig({
         visionModel: null,
-        modelGenerationConfig: { 'glm-5.2': { temperature: 0.5 } },
+        modelGenerationConfig: { 'glm-5.3-flash': { temperature: 0.5 } },
       }),
     ).toBe(true);
   });

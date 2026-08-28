@@ -524,7 +524,7 @@ describe('getSessionCost', () => {
     });
     const messages = [
       {
-        ...assistantInfo({ modelID: 'glm-5.2' }),
+        ...assistantInfo({ modelID: 'glm-5.3-flash' }),
         parts: [
           stepFinishPart({
             tokens: {

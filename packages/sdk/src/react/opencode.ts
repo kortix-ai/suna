@@ -36,6 +36,7 @@
 // `useOpenCodeProviders`/`useOpenCodeLocal` resolve it via this context.
 export { KortixProjectProvider, useKortixRouteProjectId } from './route-project';
 export * from './use-opencode-sessions';
+export * from './use-opencode-events';
 export * from './use-opencode-local';
 export * from './use-model-defaults';
 export * from './use-model-enablement';
@@ -71,6 +72,7 @@ export {
   type VcsFileDiff,
 } from './use-opencode-sessions/vcs';
 export { useOpenCodeRuntimeReady as useRuntimeReady } from './use-opencode-sessions/keys';
+export { useOpenCodeEventStream as useRuntimeEventStream } from './use-opencode-events';
 export { useOpenCodeLocal as useRuntimeLocal } from './use-opencode-local';
 export { useOpenCodePtyList as useRuntimePtyList } from './use-opencode-pty';
 export { useOpenCodeConfig as useRuntimeConfig } from './use-opencode-config';
@@ -194,11 +196,6 @@ export {
   type SessionTurnObservation,
   type UseSessionWorkingOptions,
 } from './use-session-working';
-export {
-  useSessionAuditSignal,
-  useSessionStreamPresence,
-  sessionStreamScope,
-} from './use-session-stream-presence';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
 export { useRuntimeBootStalled, RUNTIME_BOOT_STALL_MS } from './use-runtime-boot-stalled';
 export {
@@ -206,6 +203,17 @@ export {
   type UseWakeEscalationInput,
   type WakeEscalationView,
 } from './use-wake-escalation';
+export {
+  useQuestionSelfHeal,
+  hasRunningQuestionTool,
+  type UseQuestionSelfHealOptions,
+} from './use-question-self-heal';
+export {
+  usePermissionSelfHeal,
+  findPermissionBlockedCandidate,
+  hasActiveNonQuestionTool,
+  type UsePermissionSelfHealOptions,
+} from './use-permission-self-heal';
 export {
   startStashKey,
   writeStartStash,

@@ -24,11 +24,9 @@ mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
 }));
 
-// The vcs hook reads the daemon `/kortix/opencode/vcs-diff` passthrough
-// (readDaemonOpencode), NOT the raw opencode `client.vcs.diff()`.
-let daemonRead: (path: string, query?: Record<string, string>) => Promise<unknown> = async () => [];
-mock.module('../../core/runtime/daemon-read', () => ({
-  readDaemonOpencode: (path: string, query?: Record<string, string>) => daemonRead(path, query),
+let clientImpl: Record<string, unknown> = {};
+mock.module('../../core/runtime/client', () => ({
+  getClient: () => clientImpl,
 }));
 
 const { useOpenCodeVcsDiff } = await import('./vcs');
@@ -43,32 +41,34 @@ type QueryConfig = {
 beforeEach(() => {
   runtimeReady = true;
   runtimeState = { sandboxId: 'sbx_1' };
-  daemonRead = async () => [];
+  clientImpl = {};
 });
 
-/** Records the daemon (path, query) call and answers with `body` (raw array). */
+/** Records what `client.vcs.diff()` was called with and answers with `body`. */
 function vcsClient(body: unknown | (() => unknown)) {
   const calls: unknown[] = [];
   return {
     calls,
-    install() {
-      daemonRead = async (path, query) => {
-        calls.push({ path, query });
-        return typeof body === 'function' ? (body as () => unknown)() : body;
-      };
+    impl: {
+      vcs: {
+        diff: async (args: unknown) => {
+          calls.push(args);
+          return typeof body === 'function' ? (body as () => unknown)() : { data: body };
+        },
+      },
     },
   };
 }
 
 describe('useOpenCodeVcsDiff', () => {
   test('defaults to branch mode — the version-vs-base set, not just the working tree', async () => {
-    const { calls, install } = vcsClient([]);
-    install();
+    const { calls, impl } = vcsClient([]);
+    clientImpl = impl;
     const config = useOpenCodeVcsDiff() as unknown as QueryConfig;
 
     await config.queryFn();
 
-    expect(calls).toEqual([{ path: 'vcs-diff', query: { mode: 'branch' } }]);
+    expect(calls).toEqual([{ mode: 'branch' }]);
   });
 
   test('asks /vcs/diff for the requested mode and returns the file array', async () => {
@@ -81,13 +81,13 @@ describe('useOpenCodeVcsDiff', () => {
         status: 'modified' as const,
       },
     ];
-    const { calls, install } = vcsClient(diffs);
-    install();
+    const { calls, impl } = vcsClient(diffs);
+    clientImpl = impl;
     const config = useOpenCodeVcsDiff('git') as unknown as QueryConfig;
 
     const result = await config.queryFn();
 
-    expect(calls).toEqual([{ path: 'vcs-diff', query: { mode: 'git' } }]);
+    expect(calls).toEqual([{ mode: 'git' }]);
     expect(result).toEqual(diffs);
   });
 
@@ -111,15 +111,13 @@ describe('useOpenCodeVcsDiff', () => {
   });
 
   test('a non-array body becomes an empty array, never undefined', async () => {
-    vcsClient(null).install();
+    clientImpl = vcsClient(null).impl;
     const config = useOpenCodeVcsDiff('branch') as unknown as QueryConfig;
     expect(await config.queryFn()).toEqual([]);
   });
 
   test('an SDK error is thrown, so the panel renders its error state instead of "no changes"', async () => {
-    daemonRead = async () => {
-      throw new Error('not a git repository');
-    };
+    clientImpl = vcsClient(() => ({ error: { data: { message: 'not a git repository' } } })).impl;
     const config = useOpenCodeVcsDiff('branch') as unknown as QueryConfig;
 
     expect(config.queryFn()).rejects.toThrow('not a git repository');

@@ -7,18 +7,32 @@ export interface MenuNavStateOptions {
    * only flips when the answer actually changes.
    *
    * This is what the Enter-to-submit guard in `composer-editor.tsx` reads.
-   * It answers "does a selectable row exist right now", never "is a trigger
-   * match merely active". A `@`/`/` match with zero rows (e.g.
-   * `@nonexistentfile`, or `/xyzzy`) must leave this `false` the whole time
-   * it is open, so Enter falls through to submit exactly like the live
-   * `session-chat-input.tsx:932`/`:958`/`:990` guards
-   * (`mentionItems.length > 0`, `filteredCommands.length > 0`) — not stay
-   * `true` from open to close and block Enter from doing anything at all.
+   * It answers "should Enter go to this menu rather than send the message",
+   * which is TWO cases, not one:
+   *
+   *  1. A selectable row exists right now.
+   *  2. The menu is open but its rows for the CURRENT query have not been
+   *     reported yet.
+   *
+   * Case 2 is not a nicety. Rows arrive from React — `MentionMenuHost`'s
+   * effect, after a debounced `useFileSearch` resolves — while the submit
+   * guard is a DIRECT editor prop, which ProseMirror checks before any
+   * plugin's `handleKeyDown`. So between "`@` opened / the query changed"
+   * and "rows reported for that query", `hasRows` still describes the
+   * PREVIOUS query. Reporting that gap as `false` sent the message while the
+   * file the user had just picked out of the list was on screen: typing `@`,
+   * finding a file, and pressing Enter submitted the draft instead of
+   * inserting the mention.
+   *
+   * A match whose rows ARE known and empty (`@nonexistentfile`, `/xyzzy`)
+   * still reports `false` for its whole life, so Enter falls through to
+   * submit exactly like the live `session-chat-input.tsx:932`/`:958`/`:990`
+   * guards (`mentionItems.length > 0`, `filteredCommands.length > 0`).
    */
-  onHasRowsChange?: (hasRows: boolean) => void;
+  onOwnsEnterChange?: (ownsEnter: boolean) => void;
   /**
    * Fires on the false<->true boundary of "is a trigger match active at
-   * all" -- the OPPOSITE half of what `onHasRowsChange` answers. `open()`
+   * all" -- the OPPOSITE half of what `onOwnsEnterChange` answers. `open()`
    * and `close()` are already 1:1 with a real `@tiptap/suggestion`
    * `onStart`/`onExit` pair (the plugin never calls either one twice in a
    * row without the other between), so this needs no extra dedupe of its
@@ -28,7 +42,7 @@ export interface MenuNavStateOptions {
    * Task 9's seam for cache revalidation: a menu with zero rows (e.g.
    * `@nonexistentfile`) still just OPENED -- the user might still type a
    * query that matches something newly created -- so this must fire on
-   * `open()` regardless of what `onHasRowsChange` says, which is exactly why
+   * `open()` regardless of what `onOwnsEnterChange` says, which is exactly why
    * it is a second callback and not folded into the first.
    */
   onOpenChange?: (isOpen: boolean) => void;
@@ -55,6 +69,13 @@ export class MenuNavState<TRow> {
   private lastQuery: string | null = null;
   private hasRows = false;
   /**
+   * The query `hasRows` was last computed for, or `null` for "not computed
+   * since this menu opened". When it differs from `lastQuery` the row list on
+   * hand belongs to an older query, so whether this menu has anything to
+   * offer is UNKNOWN — see `onOwnsEnterChange`, case 2.
+   */
+  private rowsKnownFor: string | null = null;
+  /**
    * Fix round 2 — latent re-arm race: `setRows` is the only place `hasRows`
    * can flip back to `true`, and nothing previously stopped it from doing
    * that AFTER `close()`. Reaching it needs a `setRows` call to land in the
@@ -69,11 +90,11 @@ export class MenuNavState<TRow> {
    * `open()` (starts it) and `close()` (ends it).
    */
   private isOpen = false;
-  private readonly onHasRowsChange?: (hasRows: boolean) => void;
+  private readonly onOwnsEnterChange?: (ownsEnter: boolean) => void;
   private readonly onOpenChange?: (isOpen: boolean) => void;
 
   constructor(options: MenuNavStateOptions = {}) {
-    this.onHasRowsChange = options.onHasRowsChange;
+    this.onOwnsEnterChange = options.onOwnsEnterChange;
     this.onOpenChange = options.onOpenChange;
   }
 
@@ -84,7 +105,11 @@ export class MenuNavState<TRow> {
     this.rows = [];
     this.selectedIndex = 0;
     this.lastQuery = query;
-    this.setHasRows(false);
+    // Unknown, not empty: the menu has just opened and nothing has reported
+    // rows for `query` yet. `emitOwnsEnter` reads this as "Enter is mine".
+    this.rowsKnownFor = null;
+    this.hasRows = false;
+    this.emitOwnsEnter();
   }
 
   /**
@@ -105,6 +130,11 @@ export class MenuNavState<TRow> {
     if (query === this.lastQuery) return;
     this.lastQuery = query;
     this.selectedIndex = 0;
+    // `hasRows` is deliberately left alone — the rows are still on screen
+    // until the new ones arrive. But they describe the OLD query now, so
+    // `rowsKnownFor` no longer matches and Enter belongs to the menu until
+    // `setRows` says otherwise.
+    this.emitOwnsEnter();
   }
 
   /**
@@ -112,7 +142,7 @@ export class MenuNavState<TRow> {
    * keystroke for the `/` menu, or asynchronously whenever `useFileSearch`
    * resolves for the `@` menu. Clamps the index (handles the list shrinking
    * under a stationary query) and is the single source of truth for
-   * `onHasRowsChange` — see that option's own doc comment for why this must
+   * `onOwnsEnterChange` — see that option's own doc comment for why this must
    * be driven from here, not from `open`/`close`.
    *
    * A no-op while closed (fix round 2, Open 2) — a stray call arriving after
@@ -124,7 +154,9 @@ export class MenuNavState<TRow> {
     if (!this.isOpen) return;
     this.rows = rows;
     this.selectedIndex = clampSelection(this.selectedIndex, rows.length);
-    this.setHasRows(rows.length > 0);
+    this.rowsKnownFor = this.lastQuery;
+    this.hasRows = rows.length > 0;
+    this.emitOwnsEnter();
   }
 
   /**
@@ -141,7 +173,9 @@ export class MenuNavState<TRow> {
     this.rows = [];
     this.selectedIndex = 0;
     this.lastQuery = null;
-    this.setHasRows(false);
+    this.rowsKnownFor = null;
+    this.hasRows = false;
+    this.emitOwnsEnter();
   }
 
   /** Wraps at both ends via `moveSelection`; a no-op with zero rows. */
@@ -187,9 +221,28 @@ export class MenuNavState<TRow> {
     return this.rows[clampSelection(this.selectedIndex, this.rows.length)];
   }
 
-  private setHasRows(next: boolean): void {
-    if (this.hasRows === next) return;
-    this.hasRows = next;
-    this.onHasRowsChange?.(next);
+  /**
+   * Does Enter belong to this menu right now?
+   *
+   * True while a row exists, and ALSO while the menu is open with its rows
+   * for the current query still unreported — see `onOwnsEnterChange`. False
+   * whenever the menu is closed, or open with a known-empty row list.
+   *
+   * Kept as a boundary emitter (`lastOwnsEnter`) rather than a plain call so
+   * a caller's ref only flips when the answer actually changes, exactly as
+   * `setHasRows` did.
+   */
+  ownsEnter(): boolean {
+    if (!this.isOpen) return false;
+    return this.hasRows || this.rowsKnownFor !== this.lastQuery;
+  }
+
+  private lastOwnsEnter = false;
+
+  private emitOwnsEnter(): void {
+    const next = this.ownsEnter();
+    if (next === this.lastOwnsEnter) return;
+    this.lastOwnsEnter = next;
+    this.onOwnsEnterChange?.(next);
   }
 }

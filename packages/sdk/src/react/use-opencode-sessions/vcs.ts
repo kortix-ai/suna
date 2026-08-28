@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import type { VcsFileDiff } from '@opencode-ai/sdk/v2/client';
 
 import { getClient } from '../../core/runtime/client';
-import { readDaemonOpencode } from '../../core/runtime/daemon-read';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap } from './shared';
@@ -48,9 +47,9 @@ export function useOpenCodeVcsDiff(
   return useQuery<VcsFileDiff[]>({
     queryKey: opencodeKeys.vcsDiff(mode, serverId),
     queryFn: async () => {
-      // The `/kortix/opencode/vcs-diff` daemon passthrough, never the raw
-      // OpenCode `/vcs/diff` proxy — the web client speaks only `/kortix/*`.
-      const data = await readDaemonOpencode<VcsFileDiff[]>('vcs-diff', { mode: String(mode) });
+      const client = getClient();
+      const result = await client.vcs.diff({ mode });
+      const data = unwrap(result);
       return Array.isArray(data) ? data : [];
     },
     enabled: runtimeReady && options?.enabled !== false,

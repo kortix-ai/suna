@@ -191,8 +191,7 @@ export function managedModels(): Record<string, GatewayModel> {
   // that resolves — hardcoding `temperature: true` here is exactly the bug
   // class the sandbox fallback catalog documents: gpt-5.6-luna REJECTS a
   // client-sent temperature, so advertising support makes OpenCode send one
-  // and 400 every turn. Unresolvable refs (glm-5.2) keep the permissive
-  // defaults.
+  // and 400 every turn. Unresolvable refs keep the permissive defaults.
   for (const m of SERVED_MANAGED_MODELS) {
     const cost = m.pricing
       ? {

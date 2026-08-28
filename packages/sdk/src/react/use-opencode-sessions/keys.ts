@@ -163,18 +163,3 @@ export function useOpenCodeRuntimeReady() {
   const hasUrl = !!(runtimeUrl || getActiveOpenCodeUrl());
   return connectedHealthy && hasUrl;
 }
-
-/**
- * Ready to read the OpenCode ROSTER (agents/commands/sessions) from the proxy.
- * The same runtime gate PLUS the session's open-bundle having been applied —
- * so the seeded caches are already in place and the roster hooks read them
- * instead of racing the bundle and each firing its own proxied `/agent`,
- * `/command`, `/session` read. The bundle-applied flag flips true whether or
- * not a bundle landed (a cold box with none still releases the fetch), so this
- * never wedges — it only sequences the seed ahead of the read.
- */
-export function useOpenCodeRosterReady(): boolean {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  const bundleApplied = useCurrentRuntime((s) => s.bundleApplied);
-  return runtimeReady && bundleApplied;
-}

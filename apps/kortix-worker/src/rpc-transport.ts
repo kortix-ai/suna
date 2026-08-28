@@ -19,7 +19,18 @@ import { Agent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent } from 'node:https';
 // `ws` loads lazily: only the ws transport needs it, and keeping the top
 // level free of it lets other packages import these sources for tests.
-type WsInstance = import('ws').default;
+interface WsInstance {
+  on(event: 'open', listener: () => void): void;
+  on(event: 'error', listener: (error: unknown) => void): void;
+  on(event: 'message', listener: (data: unknown) => void): void;
+  on(event: 'close', listener: () => void): void;
+  send(data: string): void;
+  close(): void;
+}
+
+interface WsConstructor {
+  new (url: string, options: { headers: Record<string, string> }): WsInstance;
+}
 
 export interface RpcTransport {
   call(op: string, args: Record<string, unknown>, cwd: string): Promise<any>;
@@ -94,26 +105,27 @@ export class WebSocketTransport implements RpcTransport {
   private connect(): Promise<void> {
     if (this.ready) return this.ready;
     this.ready = (async () => {
-      const { default: WebSocket } = await import('ws');
+      const wsModuleName: string = 'ws';
+      const { default: WebSocket } = (await import(wsModuleName)) as { default: WsConstructor };
       await new Promise<void>((resolve, reject) => {
-      const url = this.baseUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/rpc-ws';
-      const ws = new WebSocket(url, { headers: this.headers });
-      this.ws = ws;
-      ws.on('open', () => resolve());
-      ws.on('error', (e) => reject(e));
-      ws.on('message', (data) => {
-        let msg: any;
-        try { msg = JSON.parse(String(data)); } catch { return; }
-        const p = this.pending.get(msg.id);
-        if (!p) return;
-        this.pending.delete(msg.id);
-        p.resolve(msg.body);
-      });
-      ws.on('close', () => {
-        for (const [, p] of this.pending) p.reject(new Error('rpc socket closed'));
-        this.pending.clear();
-        this.ready = undefined;
-      });
+        const url = this.baseUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/rpc-ws';
+        const ws = new WebSocket(url, { headers: this.headers });
+        this.ws = ws;
+        ws.on('open', () => resolve());
+        ws.on('error', (e) => reject(e));
+        ws.on('message', (data) => {
+          let msg: any;
+          try { msg = JSON.parse(String(data)); } catch { return; }
+          const p = this.pending.get(msg.id);
+          if (!p) return;
+          this.pending.delete(msg.id);
+          p.resolve(msg.body);
+        });
+        ws.on('close', () => {
+          for (const [, p] of this.pending) p.reject(new Error('rpc socket closed'));
+          this.pending.clear();
+          this.ready = undefined;
+        });
       });
     })();
     return this.ready;

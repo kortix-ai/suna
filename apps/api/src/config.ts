@@ -259,14 +259,10 @@ const envSchema = z.object({
   TAVILY_API_KEY: optStr,
   SERPER_API_URL: optUrl('https://google.serper.dev'),
   SERPER_API_KEY: optStr,
-  APIFY_API_URL: optUrl('https://api.apify.com'),
-  APIFY_TOKEN: optStr,
 
   // ── Proxy Providers (optional) ───────────────────────────────────────────
   FIRECRAWL_API_URL: optUrl('https://api.firecrawl.dev'),
   FIRECRAWL_API_KEY: optStr,
-  REPLICATE_API_URL: optUrl('https://api.replicate.com'),
-  REPLICATE_API_TOKEN: optStr,
   CONTEXT7_API_URL: optUrl('https://context7.com'),
   CONTEXT7_API_KEY: optStr,
 
@@ -383,11 +379,6 @@ const envSchema = z.object({
   // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
   // — consolidated onto this one var.
   OPENROUTER_API_KEY: optStr,
-  // AsterLab OpenAI-compatible endpoint for the managed GLM 5.2 route.
-  // Cloud deployments load ASTER_API_KEY from the environment's AWS Secrets
-  // Manager bundle. Self-host deployments leave it unset.
-  ASTER_API_URL: optUrl('https://api.asterlab.ai/v1'),
-  ASTER_API_KEY: optStr,
   // Whether a session's sandbox gets the `kortix-connectors` OpenCode MCP
   // server (KORTIX_CONNECTORS_MCP_ENABLED in the guest). It exposes the
   // connector meta-tools plus `secret_call`, the only way to use an
@@ -410,8 +401,8 @@ const envSchema = z.object({
   // sandbox model call here. Off by default.
   LLM_GATEWAY_ENABLED: optBoolFalse,
   // CLOUD-ONLY. Whether KORTIX's own managed model lineup exists on this
-  // deployment. The lineup routes through Kortix's shared Bedrock, AsterLab,
-  // and OpenRouter credentials. Kortix bills each route as platform credits.
+  // deployment. The lineup routes through Kortix's shared Bedrock and
+  // OpenRouter credentials. Kortix bills each route as platform credits.
   // This flag is independent of
   // LLM_GATEWAY_ENABLED above: a self-host still runs the gateway for its own
   // BYOK routing (every sandbox model call goes through `/v1/llm`), it just
@@ -476,8 +467,6 @@ const envSchema = z.object({
   // service-specific credential for bedrock.amazonaws.com.
   AWS_BEDROCK_REGION: optStr,
   AWS_BEDROCK_API_KEY: optStr,
-  ANTHROPIC_API_URL: optUrl('https://api.anthropic.com/v1'),
-  ANTHROPIC_API_KEY: optStr,
   OPENAI_API_URL: optUrl('https://api.openai.com/v1'),
   OPENAI_API_KEY: optStr,
   // xAI / Gemini / Groq route their TEXT models through OpenRouter (see
@@ -524,15 +513,6 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Optional per-project accelerator. When enabled, Kortix bakes the project's
-  // default-branch repository into a derivative of the shared platform image.
-  // A disabled or failed accelerator never blocks a session. Sessions boot from
-  // the shared image and clone the repository into /workspace instead.
-  //
-  // This switch controls only automatic session-miss and managed-git-push
-  // bakes. Provider transitions still prepare their target image explicitly.
-  // Default OFF keeps the session path on one shared image per provider.
-  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
   // the shared pi-worker snapshot per environment, claimed at session create
   // (a claim skips provider create + box boot, ~4s of the cold path measured
@@ -543,19 +523,15 @@ const envSchema = z.object({
   // auto-stop backstop a parked box is created with, so an orphaned box
   // reclaims itself even if every API instance dies.
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
-  // One kill switch for additive cold-boot accelerators. It keeps the standard
-  // runtime image and every tool. It enables native OpenCode binary prefetch,
-  // Platinum rootfs materialization, and stopped per-project images with the
-  // exact repository tip baked into /workspace. It never keeps a sandbox or
-  // OpenCode process running. An explicit false also disables the legacy
-  // session per-project image path. An unset value preserves the legacy
-  // KORTIX_WARM_SNAPSHOT_ENABLED rollout while leaving new accelerators off.
+  // Additive cold-boot accelerators that keep the standard runtime image and
+  // every tool: Platinum rootfs materialization and the native OpenCode binary
+  // prefetch. It never keeps a sandbox or an OpenCode process running.
   //
-  // NOT gated here any more (default boot since 2026-08-27, see
-  // docs/specs/2026-08-27-fast-clone-path.md): the fresh-session Git fast path
-  // has its own switch, KORTIX_FAST_GIT_BOOT_ENABLED below. deploy-dev.yml
-  // injects an explicit `false` here on every push, so this flag can never
-  // double as that path's kill switch.
+  // NOT gated here: the fresh-session Git fast path has its own switch,
+  // KORTIX_FAST_GIT_BOOT_ENABLED below (deploy-dev injects an explicit `false`
+  // for THIS flag on every push, so it can never double as that path's kill
+  // switch: deploy-dev.yml injects an explicit `false` for THIS flag on every
+  // push). The per-project warm-image system it also used to gate is gone.
   KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
@@ -571,13 +547,6 @@ const envSchema = z.object({
     .enum(['off', 'shadow', 'prefer', 'required'])
     .optional()
     .default('off'),
-  // Per-provider allowlist for legacy WARM project images of CUSTOM
-  // (non-default-slug) templates. The FAST experiment never uses this
-  // allowlist; it creates project images only for the shared default template.
-  // Defaults to 'platinum'. Comma-separated, with the same syntax and parser as
-  // ALLOWED_SANDBOX_PROVIDERS. A provider that is not globally enabled is a
-  // no-op because the lists are intersected below.
-  KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: optStrDefault('platinum'),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -794,10 +763,10 @@ export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
 /**
  * Parse comma-separated provider list (e.g. "daytona,platinum"). `fallback` is
  * returned both when `raw` is empty and when every entry in it is unrecognised
- * — kept as a parameter (rather than hardcoding `['daytona']`) so callers whose
- * empty/all-invalid answer should mean "nothing enabled" (e.g.
- * KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS) don't silently inherit
- * ALLOWED_SANDBOX_PROVIDERS' "default to daytona" safety belt.
+ * — kept as a parameter (rather than hardcoding `['daytona']`) so a caller
+ * whose empty/all-invalid answer should mean "nothing enabled" does not
+ * silently inherit ALLOWED_SANDBOX_PROVIDERS' "default to daytona" safety
+ * belt.
  */
 export function parseAllowedProviders(
   raw: string,
@@ -1030,12 +999,6 @@ const env = validateEnv();
 // ─── Parse Providers ────────────────────────────────────────────────────────
 
 const allowedProviders = parseAllowedProviders(env.ALLOWED_SANDBOX_PROVIDERS);
-// Intersected with `allowedProviders`: a provider listed here that isn't itself
-// enabled globally must never become "enabled for custom-template warming only".
-const customTemplateWarmProviders = parseAllowedProviders(
-  env.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS,
-  ['platinum'],
-).filter((p) => allowedProviders.includes(p));
 
 // ─── Config Object (typed, validated) ───────────────────────────────────────
 
@@ -1091,14 +1054,10 @@ export const config = {
   TAVILY_API_KEY: env.TAVILY_API_KEY,
   SERPER_API_URL: env.SERPER_API_URL,
   SERPER_API_KEY: env.SERPER_API_KEY,
-  APIFY_API_URL: env.APIFY_API_URL,
-  APIFY_TOKEN: env.APIFY_TOKEN,
 
   // ─── Proxy Providers ──────────────────────────────────────────────────────
   FIRECRAWL_API_URL: env.FIRECRAWL_API_URL,
   FIRECRAWL_API_KEY: env.FIRECRAWL_API_KEY,
-  REPLICATE_API_URL: env.REPLICATE_API_URL,
-  REPLICATE_API_TOKEN: env.REPLICATE_API_TOKEN,
   CONTEXT7_API_URL: env.CONTEXT7_API_URL,
   CONTEXT7_API_KEY: env.CONTEXT7_API_KEY,
 
@@ -1143,8 +1102,6 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
-  ASTER_API_URL: env.ASTER_API_URL,
-  ASTER_API_KEY: env.ASTER_API_KEY,
   CONNECTORS_MCP_ENABLED: env.CONNECTORS_MCP_ENABLED,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // Unset → follow billing (cloud keeps its revenue lineup even if the env
@@ -1163,8 +1120,6 @@ export const config = {
   LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   AWS_BEDROCK_REGION: env.AWS_BEDROCK_REGION,
   AWS_BEDROCK_API_KEY: env.AWS_BEDROCK_API_KEY,
-  ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
-  ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
   OPENAI_API_KEY: env.OPENAI_API_KEY,
   XAI_API_URL: env.XAI_API_URL,
@@ -1189,11 +1144,9 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
-  KORTIX_FAST_COLD_BOOT_CONFIGURED: env.KORTIX_FAST_COLD_BOOT_ENABLED !== undefined,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
 
@@ -1214,7 +1167,6 @@ export const config = {
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
-  KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: customTemplateWarmProviders,
 
   /**
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.
@@ -1375,15 +1327,6 @@ export const config = {
   isE2BEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('e2b') && !!this.E2B_API_KEY;
   },
-
-  /**
-   * True iff `provider` is allowlisted for the legacy WARM custom-template
-   * project-image path. `perProjectWarmEligible` also requires the legacy flag.
-   * The list is already intersected with ALLOWED_SANDBOX_PROVIDERS.
-   */
-  isCustomTemplateWarmEligible(provider: SandboxProviderName): boolean {
-    return this.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS.includes(provider);
-  },
 };
 
 // ─── Billing Markup Constants ────────────────────────────────────────────────
@@ -1432,45 +1375,10 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     perResultCost: 0,
     markupMultiplier: 1.5,
   },
-  // Apify LinkedIn people-search actor (harvestapi short mode): $0.10 per search
-  // page of up to 25 results. Page-priced (not per-result), so a flat per-call
-  // cost; with markup the user is charged ~$0.15 per people_search call.
-  proxy_apify: {
-    baseCost: 0.1,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
   proxy_firecrawl: {
     baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
-  },
-  proxy_replicate: {
-    baseCost: 0.005,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_replicate_nano_banana: {
-    baseCost: 0.01,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  proxy_replicate_gpt_image: {
-    baseCost: 0.05,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  // Moondream2 vision captioning (image_search enrichment) — cheap per-call model.
-  proxy_replicate_moondream: {
-    baseCost: 0.002,
-    perResultCost: 0,
-    markupMultiplier: 1.5,
-  },
-  // Polling a created prediction's status — billed at zero (the create call already paid).
-  proxy_replicate_poll: {
-    baseCost: 0,
-    perResultCost: 0,
-    markupMultiplier: 1,
   },
   proxy_context7: {
     baseCost: 0.001,

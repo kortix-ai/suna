@@ -44,6 +44,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from './kortix-event-bus'
 import { runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
@@ -348,11 +349,7 @@ async function main() {
           opencode.reconfigure(cfg, earlyOpencodeConfigDir, projectEnv)
           await opencode.start()
           opencodeStartedEarly = opencode.getPid() !== null
-          // The checkout, its config-dir deps and the injected skills are all in
-    // place now: OpenCode may build its Instance.
-    bootState.workspaceReady = true
-    opencode.markWorkspaceReady()
-    if (opencodeStartedEarly) {
+          if (opencodeStartedEarly) {
             bootMark('opencode-spawned')
             logger.info('[boot] opencode spawned before checkout (config-dir hint)', {
               opencodeConfigDir: earlyOpencodeConfigDir,
@@ -459,6 +456,13 @@ async function main() {
     // Reconfigure now so any later restart uses the checked-out config. The
     // already-running compiled-config process stays untouched.
     opencode.reconfigure(cfg, opencodeConfigDir, projectEnv)
+    // The checkout, its config-dir dependencies and the injected skills are ALL
+    // on disk now — this is the first moment a directory-scoped request may
+    // reach OpenCode. Opening the gate earlier is the bug this exists to stop
+    // (an Instance built against a partial workspace caches failed tool
+    // imports for the life of the process).
+    bootState.workspaceReady = true
+    opencode.markWorkspaceReady()
     if (opencodeStartedEarly) {
       // The process is up on the right dir; the workspace arrived after it.
       // Dispose in place so instances re-read config + re-detect the git root.
@@ -857,13 +861,34 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  // Auto-resume ROOT turns killed by a TRANSIENT provider/stream error — a
+  // stalled model host mid-stream ("Upstream idle timeout exceeded"), a reset,
+  // a 5xx after opencode's own retries. Instead of surfacing a dead red turn,
+  // the turn is re-prompted to continue. Budget-limited (3 per 15min per
+  // session) with growing backoff; permanent errors, subagent sessions, staged
+  // reverts and exhausted budget fall through and surface exactly as before.
+  // See turn-auto-resume.ts. This wiring was LOST in the ACP-runtime refactor
+  // churn (the module survived, its call site did not — #4152 first added it),
+  // so every transient provider error had been surfacing raw.
+  const autoResumer = createTurnAutoResumer({
+    opencode,
+    cfg,
+    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
+  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
-    kortixEventBus().publishDaemon(
-      'kortix.turn',
-      { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
-      opencodeSessionId,
-    )
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
+    void (async () => {
+      // A successful resume means the turn is being re-prompted to continue, so
+      // it must NOT surface as the turn's final outcome — neither on the event
+      // bus nor in the API ledger. maybeResume returns false when the error is
+      // not resumable → relay it exactly as before this feature.
+      if (await autoResumer.maybeResume(opencodeSessionId, error)) return
+      kortixEventBus().publishDaemon(
+        'kortix.turn',
+        { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
+        opencodeSessionId,
+      )
+      await relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error)
+    })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }

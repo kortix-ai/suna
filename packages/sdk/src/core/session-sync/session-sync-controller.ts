@@ -163,21 +163,20 @@ export interface SessionSyncControllerOptions {
   setStatus?: (status: SessionStatus) => void;
   onTelemetry?: (event: SessionSyncTelemetryEvent) => void;
   scheduler?: SessionSyncScheduler;
-  /**
-   * @deprecated Ignored. The 10s quiet-based liveness poll it configured is
-   * DELETED: the session stream's runtime channel is dense-sequenced, so a
-   * lost transcript frame is a detectable seq gap (repaired by an immediate
-   * bounded tail read), not a silent hole a poll has to hunt for. Retained
-   * because 0.13.x published it on this options type; removed in the next
-   * major.
-   */
   livenessIntervalMs?: number;
   /**
-   * @deprecated Ignored. The 30s busy-verification read it configured is
-   * DELETED for the same reason as `livenessIntervalMs`: the degraded-stream
-   * hole it bounded (prod, 2026-08-26 — frames lost while a trickle kept
-   * arriving) is now caught exactly, by seq, the moment the next frame
-   * arrives. Retained because 0.13.x published it; removed in the next major.
+   * Max age of the last tail read while the session is busy, whatever the
+   * stream delivers. Default 30s.
+   *
+   * The quiet-based poll trusts `noteActivity`: any transcript frame renews it.
+   * A DEGRADED stream — events lost at the source or the edge, connection
+   * alive, a trickle still arriving — therefore postponed the tail read
+   * indefinitely while the transcript diverged arbitrarily far from the
+   * runtime (prod, 2026-08-26: content minutes behind mid-run, repaired only
+   * by reload). Frames arriving proves the wire is up; it proves nothing about
+   * the frames that never arrived. This is the bound on how long that
+   * difference can go unchecked: one tail page per interval, and against a
+   * healthy stream the hydrate is a no-op.
    */
   verifyIntervalMs?: number;
 }
@@ -214,15 +213,8 @@ export function createHttpSessionSyncPageLoader(
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
     const token = await options.getToken?.();
-    // The Kortix daemon's trimmed transcript, NOT OpenCode's raw
-    // `/session/:id/message`. The raw read shipped every base64 attachment byte
-    // inline — 8-25 MB and 30-48 s per page on a real session (measured,
-    // Essentia 2026-08-24) — and the client fetched it twice on every open. The
-    // daemon endpoint strips attachment bytes to references, truncates giant
-    // tool outputs, pages the same way (`limit` + `before`), and returns ids
-    // VERBATIM so the reducer and any mirror key on the same identities.
     const response = await fetchImpl(
-      `${baseUrl}/kortix/opencode/messages/${encodeURIComponent(options.sessionId)}?${query}`,
+      `${baseUrl}/session/${encodeURIComponent(options.sessionId)}/message?${query}`,
       {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         ...(signal ? { signal } : {}),
@@ -237,18 +229,9 @@ export function createHttpSessionSyncPageLoader(
       }
       throw new Error(`Session synchronization failed: ${response.status}`);
     }
-    // The daemon wraps the page: `{ messages, has_more, first_message_id, … }`.
-    // Older pages are walked with `before = <oldest id in this page>`, so the
-    // next cursor is the first (oldest) message id whenever more remain.
-    const body = (await response.json()) as {
-      messages?: SessionSyncMessage[];
-      has_more?: boolean;
-      first_message_id?: string | null;
-    };
     return {
-      messages: body.messages ?? [],
-      nextCursor:
-        body.has_more && body.first_message_id ? body.first_message_id : undefined,
+      messages: (await response.json()) as SessionSyncMessage[],
+      nextCursor: response.headers.get('x-next-cursor') || undefined,
     };
   };
 }
@@ -335,6 +318,10 @@ const defaultScheduler: SessionSyncScheduler = {
 export class SessionSyncController {
   private readonly options: SessionSyncControllerOptions;
   private readonly scheduler: SessionSyncScheduler;
+  private readonly livenessIntervalMs: number;
+  private readonly verifyIntervalMs: number;
+  /** When the last tail read was ISSUED — see `verifyIntervalMs`. */
+  private lastTailReadAt: number;
   /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
   private retryAttempt = 0;
   private tailRetryTimer: unknown;
@@ -348,9 +335,8 @@ export class SessionSyncController {
   private olderHistoryStarted = false;
   private tailRequest: Promise<void> | undefined;
   private olderRequest: Promise<void> | undefined;
-  /** The caller's working signal — see `setBusy`. Its only job left is the
-   *  turn-end read on the busy→idle edge. */
-  private busy = false;
+  private livenessTimer: unknown;
+  private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
   /**
@@ -364,6 +350,10 @@ export class SessionSyncController {
   constructor(options: SessionSyncControllerOptions) {
     this.options = options;
     this.scheduler = options.scheduler ?? defaultScheduler;
+    this.livenessIntervalMs = options.livenessIntervalMs ?? 10_000;
+    this.verifyIntervalMs = options.verifyIntervalMs ?? 30_000;
+    this.lastActivityAt = this.scheduler.now();
+    this.lastTailReadAt = this.scheduler.now();
   }
 
   getSnapshot = (): SessionSyncSnapshot => this.snapshot;
@@ -417,52 +407,52 @@ export class SessionSyncController {
   };
 
   noteActivity(): void {
-    // Freshness display only. This used to also renew the liveness poll's
-    // quiet timer; that poll is deleted — see `setBusy`.
+    this.lastActivityAt = this.scheduler.now();
     if (this.snapshot.freshness !== 'fresh') {
       this.update({ freshness: 'fresh' });
     }
   }
 
   /**
-   * Record the caller's working signal.
+   * Switch the liveness poll on or off.
    *
    * NOT an opinion about whether the session is working — that answer belongs
-   * to `projectWorking` alone.
-   *
-   * The 10s quiet-based liveness poll and the 30s busy-verification read that
-   * this switch used to arm are DELETED: the session stream's runtime channel
-   * is dense-sequenced, so a transcript frame lost between the daemon and
-   * this tab is a DETECTABLE gap (`connectSessionStream`'s `onRuntimeGap` /
-   * `kortix.resync`), repaired by one immediate bounded tail read — instead
-   * of a poll that read the tail on a timer hoping to catch a loss it could
-   * not see. What remains here is the busy→idle edge below.
+   * to `projectWorking` alone. This only says whether anyone still needs the
+   * transcript refreshed behind the SSE stream: a caller passes the working
+   * state it already has, and the last consumer leaving passes `false`.
    */
   setBusy(isBusy: boolean): void {
     if (!isBusy) {
       // The turn is over — and that is exactly when the transcript is most
       // likely to be short. A stream that dropped its last frames leaves the
       // browser holding a truncated answer while the runtime holds the whole
-      // one. Reported from a live self-host (2026-08-24): an 8m13s turn
-      // finished in the runtime's own terminal while the tab still showed a
-      // spinner under a half-written answer.
+      // one, and stopping the poll here used to make that state PERMANENT:
+      // nothing read the tail again until the session was reopened. Reported
+      // from a live self-host (2026-08-24): an 8m13s turn finished in the
+      // runtime's own terminal while the tab still showed a spinner under a
+      // half-written answer.
       //
       // One bounded read, only for a session that was actually busy, so an
       // idle session churns nothing.
-      const wasBusy = this.busy;
-      this.busy = false;
+      const wasBusy = this.livenessTimer !== undefined;
+      this.stopLivenessTimer();
       if (wasBusy && !this.destroyed) void this.reconcile('turn-end');
       return;
     }
-    this.busy = true;
+    if (this.livenessTimer !== undefined) return;
+    this.lastActivityAt = this.scheduler.now();
+    this.livenessTimer = this.scheduler.setInterval(
+      () => void this.checkLiveness(),
+      this.livenessIntervalMs,
+    );
   }
 
   destroy(): void {
-    // `destroyed` FIRST: `setBusy(false)` fires a turn-end read, and a
-    // controller being torn down must not start a request it can never
-    // hydrate.
+    // `destroyed` FIRST: `stopLivenessTimer` is also reached through
+    // `setBusy(false)`, which now fires a turn-end read, and a controller being
+    // torn down must not start a request it can never hydrate.
     this.destroyed = true;
-    this.busy = false;
+    this.stopLivenessTimer();
     if (this.tailRetryTimer !== undefined) {
       this.cancelTimer(this.tailRetryTimer);
       this.tailRetryTimer = undefined;
@@ -474,6 +464,10 @@ export class SessionSyncController {
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
+    // Stamped at ISSUE: any tail read — initial, poll, gap, visible — is a
+    // verification, so the busy-verification cadence counts from the last
+    // attempt rather than piling on top of reads other reasons already ran.
+    this.lastTailReadAt = this.scheduler.now();
     try {
       // ONE PAGE. Render it. This is what OpenCode's own client does, and the
       // reason we now do it too is measured:
@@ -695,9 +689,59 @@ export class SessionSyncController {
     }
   }
 
+  private async checkLiveness(): Promise<void> {
+    if (this.destroyed) return;
+    const nowMs = this.scheduler.now();
+    const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
+    // `noteActivity` proves frames are ARRIVING, not that none were lost. A
+    // degraded stream that still delivers a trickle renewed the quiet timer
+    // forever while the transcript diverged — so a busy session re-reads the
+    // tail at `verifyIntervalMs` no matter how live the stream looks.
+    const verifyDue = nowMs - this.lastTailReadAt >= this.verifyIntervalMs;
+    if (!quiet && !verifyDue) return;
+    // Reconcile the TAIL, and nothing else. This is the repair for a dropped
+    // SSE stream: the transcript catches up on messages the stream never
+    // delivered.
+    //
+    // A status half used to follow it, reading the runtime over REST and
+    // writing the answer into the same slot SSE frames land in. It is gone:
+    // `GET .../turn` is the status authority now, and `setBusy` — the switch
+    // that decides whether this poll runs at all — is already driven FROM that
+    // projection, so a fourth stamped input here could only confirm or latch,
+    // never correct.
+    //
+    // The wait stays bounded: a read proxied to the sandbox can park
+    // indefinitely (a wedged opencode never answers and never errors), and the
+    // poll must keep its cadence rather than stall on one request.
+    await this.raceDeadline(this.reconcile('poll'), this.livenessIntervalMs);
+    this.lastActivityAt = this.scheduler.now();
+  }
+
+  /** Resolve when `work` settles, or when `timeoutMs` elapses — whichever first. */
+  private raceDeadline(work: Promise<unknown>, timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let handle: unknown;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        this.cancelTimer(handle);
+        resolve();
+      };
+      handle = this.startTimer(finish, timeoutMs);
+      void work.then(finish, finish);
+    });
+  }
+
   private setCursor(cursor: string | undefined): void {
     this.nextCursor = cursor;
     this.update({ hasOlder: Boolean(cursor) });
+  }
+
+  private stopLivenessTimer(): void {
+    if (this.livenessTimer === undefined) return;
+    this.scheduler.clearInterval(this.livenessTimer);
+    this.livenessTimer = undefined;
   }
 
   private startTimer(handler: () => void, delayMs: number): unknown {

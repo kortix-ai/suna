@@ -68,7 +68,7 @@ describe('connector and connection terminology cutover', () => {
     const result = await runCli(['agents', '--help']);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('model <agent> <model-id>');
-    expect(result.stdout).toContain('glm-5.2');
+    expect(result.stdout).toContain('glm-5.3-flash');
     expect(result.stdout).not.toContain('<provider/model>');
   });
 });

@@ -12,7 +12,7 @@
 
 /** The catalog metadata the default-set rule needs. `id` is the gateway WIRE id. */
 export interface EnablementCandidate {
-  /** Wire id — bare (`glm-5.2`) for managed, `provider/model` for BYOK. */
+  /** Wire id — bare (`glm-5.3-flash`) for managed, `provider/model` for BYOK. */
   id: string;
   /** models.dev release date (`YYYY-MM-DD`). */
   released?: string | null;

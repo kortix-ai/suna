@@ -62,11 +62,11 @@ function writeConfig(apiBase: string): string {
 /** Mirrors GET /projects/:id/model-picker (apps/api/src/projects/routes/r4.ts:3046). */
 function picker(overrides: Record<string, boolean>) {
   const models: Record<string, unknown> = {
-    'glm-5.2': { name: 'GLM 5.2', provider: 'zai' },
+    'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'zai' },
     'anthropic/claude-opus-4-8': { name: 'Claude Opus 4.8', provider: 'anthropic' },
     'openai/gpt-5.5': { name: 'GPT-5.5', provider: 'openai' },
   };
-  const defaultEnabled = new Set(['glm-5.2', 'anthropic/claude-opus-4-8']);
+  const defaultEnabled = new Set(['glm-5.3-flash', 'anthropic/claude-opus-4-8']);
   return {
     models: Object.fromEntries(
       Object.entries(models).map(([id, m]) => [
@@ -75,14 +75,14 @@ function picker(overrides: Record<string, boolean>) {
       ]),
     ),
     modelOverrides: overrides,
-    defaultModel: 'glm-5.2',
+    defaultModel: 'glm-5.3-flash',
     usingDefaults: Object.keys(overrides).length === 0,
   };
 }
 
 function startServer(seed: Record<string, boolean> = {}): string {
   let overrides = { ...seed };
-  let projectDefault: string | null = 'glm-5.2';
+  let projectDefault: string | null = 'glm-5.3-flash';
   let accountDefault: string | null = null;
   server = Bun.serve({
     port: 0,
@@ -96,7 +96,7 @@ function startServer(seed: Record<string, boolean> = {}): string {
       }
       if (p === `/v1/projects/${PROJECT}/model-enablement` && req.method === 'PUT') {
         const next = (body as { modelOverrides: Record<string, boolean> }).modelOverrides;
-        if (next['glm-5.2'] === false) {
+        if (next['glm-5.3-flash'] === false) {
           return Response.json(
             {
               error: 'Cannot disable the project default model — change the default first.',
@@ -215,13 +215,13 @@ describe('kortix models', () => {
     expect(r.stdout).toMatch(/anthropic\/claude-opus-4-8\s+on\s+default/);
     expect(r.stdout).toMatch(/openai\/gpt-5\.5\s+on\s+override/);
     // The default carries the ● marker and is named in the footer.
-    expect(r.stdout).toContain('● glm-5.2');
-    expect(r.stdout).toContain('project default (glm-5.2)');
+    expect(r.stdout).toContain('● glm-5.3-flash');
+    expect(r.stdout).toContain('project default (glm-5.3-flash)');
 
     const j = await runCli(['models', 'ls', '--project', PROJECT, '--json'], config);
     expect(j.code).toBe(0);
     const payload = JSON.parse(j.stdout) as { defaultModel: string; modelOverrides: unknown };
-    expect(payload.defaultModel).toBe('glm-5.2');
+    expect(payload.defaultModel).toBe('glm-5.3-flash');
     expect(payload.modelOverrides).toEqual({ 'openai/gpt-5.5': true });
   });
 
@@ -254,7 +254,7 @@ describe('kortix models', () => {
     });
 
     calls = [];
-    const conflict = await runCli(['models', 'disable', 'glm-5.2', '--project', PROJECT], config);
+    const conflict = await runCli(['models', 'disable', 'glm-5.3-flash', '--project', PROJECT], config);
     expect(conflict.code).toBe(1);
     expect(conflict.stderr).toContain('Cannot disable the project default model');
   });
@@ -293,14 +293,14 @@ describe('kortix models', () => {
     const config = writeConfig(startServer({}));
     const r = await runCli(['models', 'default', '--project', PROJECT], config);
     expect(r.code).toBe(0);
-    expect(r.stdout).toMatch(/project\s+glm-5\.2/);
+    expect(r.stdout).toMatch(/project\s+glm-5\.3-flash/);
     expect(r.stdout).toMatch(/account\s+unset/);
     expect(r.stdout).toMatch(/platform\s+openai\/gpt-5\.5/);
-    expect(r.stdout).toContain('resolves to glm-5.2 (project)');
+    expect(r.stdout).toContain('resolves to glm-5.3-flash (project)');
     expect(r.stdout).toContain('1 per-agent pin');
 
     const j = await runCli(['models', 'default', '--project', PROJECT, '--json'], config);
-    expect(JSON.parse(j.stdout).projectDefault).toBe('glm-5.2');
+    expect(JSON.parse(j.stdout).projectDefault).toBe('glm-5.3-flash');
   });
 
   test('default <id> PUTs scope=project; --account switches scope', async () => {
@@ -315,11 +315,11 @@ describe('kortix models', () => {
     expect(p.stdout).toContain('project default → openai/gpt-5.5');
 
     const a = await runCli(
-      ['models', 'default', 'glm-5.2', '--account', '--project', PROJECT],
+      ['models', 'default', 'glm-5.3-flash', '--account', '--project', PROJECT],
       config,
     );
     expect(a.code).toBe(0);
-    expect(calls.at(-1)).toMatchObject({ body: { scope: 'account', model: 'glm-5.2' } });
+    expect(calls.at(-1)).toMatchObject({ body: { scope: 'account', model: 'glm-5.3-flash' } });
   });
 
   test('default --clear DELETEs with the right scope', async () => {

@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../../core/http/opencode-errors';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
-import { configureKortix } from '../../core/http/config';
 import {
   loadSessionRuntimeStatus,
   ACTIVE_SESSION_PREFETCH_SOURCE,
@@ -43,29 +42,17 @@ beforeEach(() => {
  * malformed row reached the renderer, which is the shape behind
  * "TypeError: t is not iterable", and message order was whatever the wire said.
  */
-describe('readSessionMessagePage — daemon transcript normalization', () => {
-  const RUNTIME_URL = 'https://runtime.test/p/box/8000';
-  let restoreFetch: typeof globalThis.fetch;
-  beforeEach(() => {
-    restoreFetch = globalThis.fetch;
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'kortix_pat_test' });
-  });
-  afterEach(() => {
-    globalThis.fetch = restoreFetch;
-  });
-
+describe('readSessionMessagePage — OpenCode v1 normalization', () => {
   function entry(id: string, created: number, parts: unknown[] = []) {
     return { info: { id, sessionID: 'session-1', role: 'user', time: { created } }, parts };
   }
 
-  // Mock the daemon `/kortix/opencode/messages` page the read now goes to, and
-  // return the runtime url the test passes as the first arg. The normalization
-  // rules (drop id-less rows/parts, order by time+id) are unchanged from the
-  // old client path — they now run over the daemon body's `messages`.
-  function clientReturning(data: unknown[]): string {
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ messages: data }), { status: 200 })) as unknown as typeof fetch;
-    return RUNTIME_URL;
+  function clientReturning(data: unknown[]) {
+    return {
+      session: {
+        messages: async () => ({ data, response: { headers: { get: () => null } } }),
+      },
+    } as never;
   }
 
   test('drops a row with no message id instead of handing it to the renderer', async () => {
@@ -129,40 +116,43 @@ describe('readSessionMessagePage — daemon transcript normalization', () => {
 });
 
 describe('readSessionMessagePage', () => {
-  let restoreFetch: typeof globalThis.fetch;
-  beforeEach(() => {
-    restoreFetch = globalThis.fetch;
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'kortix_pat_test' });
-  });
-  afterEach(() => {
-    globalThis.fetch = restoreFetch;
-  });
+  test('preserves MessageWithParts and reads the legacy older-page cursor', async () => {
+    const requests: unknown[] = [];
+    const client = {
+      session: {
+        messages: async (request: unknown) => {
+          requests.push(request);
+          return {
+            data: [
+              {
+                info: {
+                  id: 'message-1',
+                  sessionID: 'session-1',
+                  role: 'user',
+                } as Message,
+                parts: [],
+              },
+            ],
+            response: new Response(null, {
+              headers: { 'X-Next-Cursor': 'message-older' },
+            }),
+          };
+        },
+      },
+    };
 
-  test('reads the daemon transcript page and its older-page cursor', async () => {
-    const urls: string[] = [];
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      urls.push(String(input));
-      return new Response(
-        JSON.stringify({
-          messages: [
-            { info: { id: 'message-1', sessionID: 'session-1', role: 'user' }, parts: [] },
-          ],
-          has_more: true,
-          first_message_id: 'message-older',
-        }),
-        { status: 200 },
-      );
-    }) as typeof fetch;
-
-    const result = await readSessionMessagePage('https://runtime.test/p/box/8000', 'session-1', {
+    const result = await readSessionMessagePage(client, 'session-1', {
       limit: 10,
       before: 'message-newer',
     });
 
-    // The daemon transcript endpoint, NOT the raw `/session/:id/message` proxy.
-    expect(urls[0]).toBe(
-      'https://runtime.test/p/box/8000/kortix/opencode/messages/session-1?limit=10&before=message-newer',
-    );
+    expect(requests).toEqual([
+      {
+        sessionID: 'session-1',
+        limit: 10,
+        before: 'message-newer',
+      },
+    ]);
     expect(result.messages[0]?.info.id).toBe('message-1');
     expect(result.nextCursor).toBe('message-older');
   });
@@ -191,58 +181,51 @@ describe('prefetchSessionSyncOnce', () => {
   });
 
   test('deduplicates one runtime source and revalidates after the runtime changes', async () => {
-    const restoreFetch = globalThis.fetch;
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'kortix_pat_test' });
-    const urls: string[] = [];
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      urls.push(String(input));
-      return new Response(JSON.stringify({ messages: [] }), { status: 200 });
-    }) as typeof fetch;
-    try {
-      // The transcript read now goes to the SESSION runtime url (bound when the
-      // current sandbox matches the controller scope), not a passed client.
-      setCurrentRuntime('https://runtime-a.test/p/box/8000', 'runtime-a');
-      await prefetchSessionSyncOnce('session-1', 'runtime-a', undefined);
-      await prefetchSessionSyncOnce('session-1', 'runtime-a', undefined);
-      setCurrentRuntime('https://runtime-b.test/p/box/8000', 'runtime-b');
-      await prefetchSessionSyncOnce('session-1', 'runtime-b', undefined);
-      // One read per distinct runtime source: the second runtime-a call dedups.
-      expect(urls.length).toBe(2);
-      expect(urls[0]).toContain('runtime-a.test');
-      expect(urls[1]).toContain('runtime-b.test');
-    } finally {
-      globalThis.fetch = restoreFetch;
-    }
+    const requests: string[] = [];
+    const client = (runtime: string) => ({
+      session: {
+        messages: async () => {
+          requests.push(runtime);
+          return { data: [] };
+        },
+      },
+    });
+
+    await prefetchSessionSyncOnce('session-1', 'runtime-a', client('runtime-a'));
+    await prefetchSessionSyncOnce('session-1', 'runtime-a', client('runtime-a'));
+    await prefetchSessionSyncOnce('session-1', 'runtime-b', client('runtime-b'));
+
+    expect(requests).toEqual(['runtime-a', 'runtime-b']);
   });
 
   test('clears active-runtime markers without clearing explicit runtime markers', async () => {
-    const restoreFetch = globalThis.fetch;
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'kortix_pat_test' });
     let activeRequests = 0;
     let backgroundRequests = 0;
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      if (String(input).includes('active.test')) activeRequests += 1;
-      if (String(input).includes('background.test')) backgroundRequests += 1;
-      return new Response(JSON.stringify({ messages: [] }), { status: 200 });
-    }) as typeof fetch;
-    try {
-      // The active-runtime source binds to whatever the current runtime is.
-      setCurrentRuntime('https://active.test/p/box/8000', 'active-box');
-      await prefetchSessionSyncOnce('active-session', ACTIVE_SESSION_PREFETCH_SOURCE, undefined);
-      setCurrentRuntime('https://background.test/p/box/8000', 'runtime-a');
-      await prefetchSessionSyncOnce('background-session', 'runtime-a', undefined);
-      clearActiveSessionPrefetches();
-      // The active marker was cleared -> it revalidates; the explicit one holds.
-      setCurrentRuntime('https://active.test/p/box/8000', 'active-box');
-      await prefetchSessionSyncOnce('active-session', ACTIVE_SESSION_PREFETCH_SOURCE, undefined);
-      setCurrentRuntime('https://background.test/p/box/8000', 'runtime-a');
-      await prefetchSessionSyncOnce('background-session', 'runtime-a', undefined);
+    const activeClient = {
+      session: {
+        messages: async () => {
+          activeRequests += 1;
+          return { data: [] };
+        },
+      },
+    };
+    const backgroundClient = {
+      session: {
+        messages: async () => {
+          backgroundRequests += 1;
+          return { data: [] };
+        },
+      },
+    };
 
-      expect(activeRequests).toBe(2);
-      expect(backgroundRequests).toBe(1);
-    } finally {
-      globalThis.fetch = restoreFetch;
-    }
+    await prefetchSessionSyncOnce('active-session', ACTIVE_SESSION_PREFETCH_SOURCE, activeClient);
+    await prefetchSessionSyncOnce('background-session', 'runtime-a', backgroundClient);
+    clearActiveSessionPrefetches();
+    await prefetchSessionSyncOnce('active-session', ACTIVE_SESSION_PREFETCH_SOURCE, activeClient);
+    await prefetchSessionSyncOnce('background-session', 'runtime-a', backgroundClient);
+
+    expect(activeRequests).toBe(2);
+    expect(backgroundRequests).toBe(1);
   });
 });
 
@@ -424,63 +407,73 @@ describe('loadSessionRuntimeStatus refuses to launder failures into idle', () =>
  * no error. `readSessionMessagePage` must CLASSIFY the result instead.
  */
 describe('readSessionMessagePage — error classification', () => {
-  const RUNTIME_URL = 'https://runtime.test/p/box/8000';
-  let restoreFetch: typeof globalThis.fetch;
-  beforeEach(() => {
-    restoreFetch = globalThis.fetch;
-    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'kortix_pat_test' });
-  });
-  afterEach(() => {
-    globalThis.fetch = restoreFetch;
-  });
-
-  function daemonRespond(body: BodyInit | null, status: number): void {
-    globalThis.fetch = (async () => new Response(body, { status })) as unknown as typeof fetch;
+  function failingClient(payload: {
+    data?: unknown;
+    error?: unknown;
+    status?: number;
+  }) {
+    return {
+      session: {
+        messages: async () => ({
+          data: payload.data,
+          error: payload.error,
+          response: payload.status
+            ? new Response(null, { status: payload.status })
+            : undefined,
+        }),
+      },
+    } as never;
   }
 
   test('a 503 throws a retryable SandboxNotReadyError, never an empty page', async () => {
-    daemonRespond('sandbox not ready (status: starting)', 503);
-    const promise = readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 });
+    const client = failingClient({
+      error: { data: { message: 'sandbox not ready (status: starting)' } },
+      status: 503,
+    });
+    const promise = readSessionMessagePage(client, 'session-1', { limit: 50 });
     await expect(promise).rejects.toBeInstanceOf(SandboxNotReadyError);
     await expect(promise).rejects.toThrow(/sandbox not ready/i);
   });
 
   test('a not-ready body classifies as SandboxNotReadyError even without a 503 status', async () => {
-    daemonRespond('opencode session is not ready', 500);
+    const client = failingClient({ error: { message: 'opencode session is not ready' } });
     await expect(
-      readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 }),
+      readSessionMessagePage(client, 'session-1', { limit: 50 }),
     ).rejects.toBeInstanceOf(SandboxNotReadyError);
   });
 
   test('a 500 throws a real error, not a not-ready error', async () => {
-    daemonRespond('internal error', 500);
-    const promise = readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 });
+    const client = failingClient({ error: { message: 'internal error' }, status: 500 });
+    const promise = readSessionMessagePage(client, 'session-1', { limit: 50 });
     await expect(promise).rejects.toThrow('internal error');
     await expect(promise).rejects.not.toBeInstanceOf(SandboxNotReadyError);
   });
 
   test('a 2xx payload is still normalized and returned', async () => {
-    daemonRespond(
-      JSON.stringify({ messages: [{ info: { id: 'm1', time: { created: 1 } }, parts: [] }] }),
-      200,
-    );
-    const result = await readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 });
+    const client = {
+      session: {
+        messages: async () => ({
+          data: [{ info: { id: 'm1', time: { created: 1 } }, parts: [] }],
+          response: new Response(null, { status: 200 }),
+        }),
+      },
+    } as never;
+    const result = await readSessionMessagePage(client, 'session-1', { limit: 50 });
     expect(result.messages.map((m) => m.info.id)).toEqual(['m1']);
   });
 
-  test('threads the AbortSignal into the transcript fetch', async () => {
+  test('threads the AbortSignal into client.session.messages', async () => {
     let seen: AbortSignal | undefined;
-    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-      seen = init?.signal ?? undefined;
-      return new Response(JSON.stringify({ messages: [] }), { status: 200 });
-    }) as typeof fetch;
+    const client = {
+      session: {
+        messages: async (_request: unknown, options?: { signal?: AbortSignal }) => {
+          seen = options?.signal;
+          return { data: [], response: new Response(null, { status: 200 }) };
+        },
+      },
+    } as never;
     const controller = new AbortController();
-    await readSessionMessagePage(RUNTIME_URL, 'session-1', { limit: 50 }, controller.signal);
-    // authenticatedFetch COMPOSES the caller's signal with its own timeout, so
-    // the fetch sees a derived signal, not the identical object — assert that
-    // aborting the caller's controller propagates to it.
-    expect(seen).toBeDefined();
-    controller.abort();
-    expect(seen?.aborted).toBe(true);
+    await readSessionMessagePage(client, 'session-1', { limit: 50 }, controller.signal);
+    expect(seen).toBe(controller.signal);
   });
 });

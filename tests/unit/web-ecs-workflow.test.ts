@@ -161,11 +161,16 @@ describe('web ECS migration', () => {
     expect(buildJobs.match(/platforms: linux\/amd64/g)).toHaveLength(3);
     expect(workflow).toContain("github.event.action == 'labeled'");
     expect(workflow).toContain("github.event.action == 'synchronize'");
-    expect(workflow).toContain('labels/preview');
+    // The label used to be STRIPPED on every push; a labelled preview now stays
+    // online until the label is removed or the pull request closes, so nothing
+    // in this workflow may delete it any more.
+    expect(workflow).not.toContain('labels/preview');
+    expect(workflow).toContain('PREVIEW_BRANCH_ENV');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');
-    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(3);
+    // deploy, teardown, teardown-branch, reconcile.
+    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(4);
     expect(workflow).toContain('pnpm test -- --target-full');
     expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
     expect(workflow).toContain('Test report:');
@@ -178,6 +183,57 @@ describe('web ECS migration', () => {
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
     expect(workflow).toContain('**Preview:**');
+  });
+
+  /**
+   * A preview environment lives until its BRANCH is deleted.
+   *
+   * It used to die when the pull request closed, which is the wrong event:
+   * closing one is routine — superseded, reopened later, split in two — and it
+   * took the environment's Postgres volume with it. The branch is what the
+   * environment is named after and redeployed against, so the branch is what it
+   * belongs to. Two switches turn it off: removing the `preview` label, and
+   * deleting the branch. Nothing else may.
+   */
+  it('keeps a preview environment alive until its branch is deleted', () => {
+    const workflow = read('.github/workflows/deploy-preview.yml');
+    const jobs = (name: string) => {
+      const body = workflow.slice(workflow.indexOf(`\n  ${name}:\n`) + name.length + 5);
+      const next = body.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+      return next === -1 ? body : body.slice(0, next);
+    };
+
+    // `closed` reaches neither the trigger nor any job condition.
+    expect(workflow).toContain('types: [labeled, unlabeled, synchronize]');
+    expect(workflow).not.toContain("github.event.action == 'closed'");
+
+    // Removing the label is still the explicit off switch.
+    expect(jobs('teardown')).toContain(
+      "github.event.action == 'unlabeled' && github.event.label.name == 'preview'",
+    );
+
+    // Deleting the branch is the other one, and the only event that retires a
+    // branch environment — whose sandbox has no provider expiry behind it.
+    expect(workflow).toContain('\n  delete:\n');
+    const branchTeardown = jobs('teardown-branch');
+    // Tag deletions arrive on the same event and name no branch.
+    expect(branchTeardown).toContain(
+      "github.event_name == 'delete' && github.event.ref_type == 'branch'",
+    );
+    expect(branchTeardown).toContain('bun tests/bin/sandbox-preview.ts teardown');
+    // The branch alone identifies the sandbox; a delete event has no number.
+    expect(branchTeardown).toContain('PREVIEW_BRANCH_ENV: ${{ github.event.ref }}');
+    expect(branchTeardown).not.toContain('\n      PREVIEW_PR_NUMBER:');
+    // Default-branch code, never a pull request head — the same rule the
+    // pull_request_target jobs follow.
+    expect(branchTeardown).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(branchTeardown).toContain('persist-credentials: false');
+    // No pull request exists to patch, so the job asks for no write scope and
+    // calls no GitHub API.
+    expect(branchTeardown).toContain('permissions:\n      contents: read\n');
+    expect(branchTeardown).not.toContain('pull-requests: write');
+    expect(branchTeardown).not.toContain('deployments: write');
+    expect(branchTeardown).not.toContain('gh api');
   });
 
   it('disables Vercel auto-deploys everywhere except staging', () => {

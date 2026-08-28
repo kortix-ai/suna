@@ -179,9 +179,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/billing/account-state': 'Viewed billing status',
   'GET /v1/billing/account-state/minimal': 'Viewed billing summary',
   // One aggregated GET replacing the session-open boot chorus (round-7 perf).
-  // The auto-labeller reads "snapshot" as a bare noun, so name it. The wire
-  // path was renamed open-bundle -> snapshot in the own-the-surface cutover.
-  'GET /v1/projects/:projectId/sessions/:sessionId/snapshot': 'Opened session (bundled reads)',
+  // The auto-labeller reads "open-bundle" as a bare noun, so name it.
+  'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle': 'Opened session (bundled reads)',
   'GET /v1/usage/cost-by-project': 'Viewed project cost rollup',
   'GET /v1/usage/cost-summary': 'Viewed cost summary',
   'POST /internal/gateway/billing': 'Processed gateway billing',

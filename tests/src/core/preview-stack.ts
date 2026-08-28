@@ -7,6 +7,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'KORTIX_GITHUB_APP_SLUG',
   'MANAGED_GIT_GITHUB_INSTALL_ID',
   'MANAGED_GIT_GITHUB_OWNER',
+  'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
 ] as const;
 
@@ -68,11 +69,16 @@ export function validatePreviewRuntimeSecrets(
   }
 }
 
-export function buildPreviewCaddyfile(): string {
+export function buildPreviewCaddyfile(publicHost: string): string {
   return `:8080 {
   encode zstd gzip
 
-  @api path /v1*
+  # A deployed environment gives the API a host of its own, so EVERY path it
+  # serves reaches it. A preview shares ONE origin with the frontend and splits
+  # by prefix, so each API route mounted outside \`/v1\` has to be listed here or
+  # it falls through to the frontend, which answers 307 -> /auth. Keep in sync
+  # with the non-\`/v1\` mounts in \`apps/api/src/index.ts\`.
+  @api path /v1* /health /health/* /metrics /scim/v2/* /internal/* /.well-known/oauth-authorization-server
   handle @api {
     reverse_proxy kortix-api:8008
   }
@@ -96,7 +102,17 @@ export function buildPreviewCaddyfile(): string {
   }
 
   handle {
-    reverse_proxy frontend:3000
+    reverse_proxy frontend:3000 {
+      # Next.js Server Actions reject a request whose \`x-forwarded-host\` does
+      # not match its \`origin\` (CSRF guard). The sandbox ingress sets
+      # \`x-forwarded-host\` to the INTERNAL host (\`*.aec.local\`) while the
+      # browser's origin is the PUBLIC one, so every Server Action — the whole
+      # auth flow included — died with \`Invalid Server Actions request\` (500,
+      # surfaced in the browser as minified React error #441). Pin the public
+      # host so the guard compares like with like.
+      header_up X-Forwarded-Host ${publicHost}
+      header_up X-Forwarded-Proto https
+    }
   }
 }
 `;
@@ -162,16 +178,31 @@ export function applyPreviewEnvironment(
   if (!postgresPassword || !anonKey || !serviceRoleKey || !internalServiceKey) {
     throw new Error('self-host environment is missing generated preview credentials');
   }
-  const managedGitValues = [
+  // Managed git has two supported shapes, and the API prefers the PAT when both
+  // are present (see managedGithubToken in projects/git-backends/github.ts):
+  //
+  //   1. a GitHub App — short-lived, repo-scoped, auto-rotating installation
+  //      tokens, but it only works if the App is installed on the owner org AND
+  //      carries `administration: write`, or it cannot create a repo at all;
+  //   2. a single org PAT — no install/permission dance, at the cost of a
+  //      long-lived org-wide token.
+  //
+  // Accept either. Requiring the App shape made a preview whose App lacks the
+  // permission unfixable without a code change, which is what blocked every
+  // preview from creating ANY project.
+  const owner = rawSecrets.MANAGED_GIT_GITHUB_OWNER?.trim();
+  const managedGitApp = [
     rawSecrets.KORTIX_GITHUB_APP_ID,
     rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY,
     rawSecrets.KORTIX_GITHUB_APP_SLUG,
     rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID,
-    rawSecrets.MANAGED_GIT_GITHUB_OWNER,
-  ];
-  const managedGitEnabled = managedGitValues.every((value) => Boolean(value?.trim()));
+  ].every((value) => Boolean(value?.trim()));
+  const managedGitPat = Boolean(rawSecrets.MANAGED_GIT_GITHUB_TOKEN?.trim());
+  const managedGitEnabled = Boolean(owner) && (managedGitApp || managedGitPat);
   if (!managedGitEnabled) {
-    throw new Error('preview target-full requires the complete managed GitHub App configuration');
+    throw new Error(
+      'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
+    );
   }
 
   Object.assign(runtime, {
@@ -196,6 +227,12 @@ export function applyPreviewEnvironment(
     KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
+    // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same
+    // posture as dev, so the subscribe -> entitlement -> managed-models path is
+    // exercised here rather than bypassed. An account that has not subscribed
+    // is free-tier and therefore NOT entitled to managed models, which is what
+    // makes an agent fall back to the faux provider: subscribe with a Stripe
+    // test card (or connect a BYOK key) to get real model answers.
     KORTIX_BILLING_INTERNAL_ENABLED: 'true',
     KORTIX_PUBLIC_BILLING_ENABLED: 'true',
     KORTIX_WORKERS_ENABLED: 'false',
@@ -214,6 +251,7 @@ export function applyPreviewEnvironment(
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
+    MANAGED_GIT_GITHUB_TOKEN: rawSecrets.MANAGED_GIT_GITHUB_TOKEN ?? '',
     KORTIX_GITHUB_APP_ID: rawSecrets.KORTIX_GITHUB_APP_ID ?? '',
     KORTIX_GITHUB_APP_PRIVATE_KEY:
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',

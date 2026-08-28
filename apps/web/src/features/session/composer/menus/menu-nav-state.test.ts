@@ -10,22 +10,27 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
   // zero rows, silently turning Enter into a paragraph split instead of a
   // submit. `open()` alone (no `setRows` call at all, the same as a query
   // that never returns anything) must produce zero `true` notifications.
-  test('opening with a query that never yields a row never reports hasRows(true)', () => {
+  test('a query that never yields a row always ENDS up releasing Enter', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('nonexistentfile');
     nav.setRows([]); // e.g. the file search resolved to nothing
     nav.setQuery('nonexistentfile2');
     nav.setRows([]);
 
-    expect(calls).toEqual([]);
+    // Each step claims Enter while the answer for that query is outstanding,
+    // then hands it back the moment the answer is "nothing". What matters is
+    // that it never STAYS claimed: the last word is always `false`, so Enter
+    // on a query matching nothing submits, as it always did.
+    expect(calls).toEqual([true, false, true, false]);
+    expect(nav.ownsEnter()).toBe(false);
     expect(nav.getSelectedRow()).toBeUndefined();
   });
 
   test('rows arriving flips hasRows(true) exactly once, not once per setRows call', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('foo');
     nav.setRows(['a', 'b']);
@@ -36,7 +41,7 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
 
   test('rows going from some to none flips hasRows back to false', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('foo');
     nav.setRows(['a']);
@@ -52,7 +57,7 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
   // longer exists.
   test('close() forces hasRows(false) even when the last known rows were non-empty', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('foo');
     nav.setRows(['a', 'b']);
@@ -63,12 +68,12 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
 
   test('close() when rows were already empty does not re-fire false', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('foo');
     nav.close();
 
-    expect(calls).toEqual([]);
+    expect(calls).toEqual([true, false]); // never a second false
   });
 
   // Fix round 2, Open 2 — the latent re-arm race: a `setRows` call arriving
@@ -76,22 +81,23 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
   // an outside-click/exit transaction lands) must not silently flip
   // `hasRows` back to `true` with no menu open. Deterministic, unlike the
   // real race — this drives the exact sequence by hand.
-  test('a setRows(non-empty) call arriving AFTER close() does not re-arm hasRows', () => {
+  test('a setRows(non-empty) call arriving AFTER close() does not re-claim Enter', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('foo');
     nav.close();
     nav.setRows(['a', 'b']); // arrives too late — the menu is already closed
 
-    expect(calls).toEqual([]); // no stray `true`
+    // open/close is [true, false]; the point is that NOTHING follows it.
+    expect(calls).toEqual([true, false]);
     expect(nav.getRows()).toEqual([]);
     expect(nav.getSelectedRow()).toBeUndefined();
   });
 
   test('setRows before the first open() is also a no-op', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.setRows(['a']);
 
@@ -101,7 +107,7 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
 
   test('open() after a stray post-close setRows still starts clean', () => {
     const calls: boolean[] = [];
-    const nav = new MenuNavState<string>({ onHasRowsChange: (v) => calls.push(v) });
+    const nav = new MenuNavState<string>({ onOwnsEnterChange: (v) => calls.push(v) });
 
     nav.open('foo');
     nav.close();
@@ -109,10 +115,13 @@ describe('MenuNavState — hasRows tracks ROWS, never a bare "match is active" f
 
     nav.open('bar');
     expect(nav.getRows()).toEqual([]);
-    expect(calls).toEqual([]);
+    // open() now claims Enter immediately: the menu is up and its rows are
+    // unknown, which is the window the submit guard used to lose. The stray
+    // post-close setRows still contributed nothing.
+    expect(calls).toEqual([true, false, true]);
 
     nav.setRows(['fresh']);
-    expect(calls).toEqual([true]);
+    expect(calls).toEqual([true, false, true]); // already true — no churn
     expect(nav.getSelectedRow()).toBe('fresh');
   });
 });
@@ -311,7 +320,7 @@ describe('MenuNavState — setSelectedIndex() (pointer-driven selection)', () =>
 
 /**
  * Task 9's seam: `useMenuRevalidation` needs to know when a `@`/`/` menu
- * OPENS, independent of whether it ever has any rows — `onHasRowsChange`
+ * OPENS, independent of whether it ever has any rows — `onOwnsEnterChange`
  * above deliberately answers a different question (`@nonexistentfile` never
  * reports `hasRows(true)`, but it DID open, and revalidating agents/commands
  * on that open is still correct: the user might keep typing into a query
@@ -364,12 +373,12 @@ describe('MenuNavState — onOpenChange fires on open()/close(), independent of 
     expect(calls).toEqual([true, false, true, false]);
   });
 
-  test('onHasRowsChange and onOpenChange are independent callbacks', () => {
+  test('onOwnsEnterChange and onOpenChange are independent callbacks', () => {
     const opens: boolean[] = [];
     const hasRows: boolean[] = [];
     const nav = new MenuNavState<string>({
       onOpenChange: (v) => opens.push(v),
-      onHasRowsChange: (v) => hasRows.push(v),
+      onOwnsEnterChange: (v) => hasRows.push(v),
     });
 
     nav.open('a');
