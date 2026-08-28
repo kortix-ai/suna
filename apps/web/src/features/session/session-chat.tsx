@@ -3221,6 +3221,14 @@ export function SessionChat({
     [turns],
   );
   const showFirstPromptPreview = !!firstPromptPreview && !transcriptShowsFirstPrompt;
+  // The optimistic first-prompt turn draws its OWN waiting row whenever it
+  // renders with no turns yet (`OptimisticTurn busy={turns.length === 0}`). The
+  // standalone busy row under the turns (`isBusy && turns.length === 0`) must
+  // NOT also draw one, or a fresh first prompt shows "Thinking" twice until the
+  // first turn materialises — the 2× Thinking a reader sees on open. ONE
+  // predicate, read by both the optimistic render gate and the standalone
+  // guard, so the two can never disagree about who owns the waiting row.
+  const optimisticFirstPromptShown = showFirstPromptPreview && queuedMessages.length === 0;
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
     if (transcriptShowsFirstPrompt) clearFirstPromptPreview(projectSessionId);
@@ -5115,9 +5123,7 @@ export function SessionChat({
                         "Thinking" line blinked out — during the 300ms the two surfaces
                         were crossfading into each other. The waiting row is suppressed
                         only when a turn is already drawing its own. */}
-                    {showFirstPromptPreview &&
-                      firstPromptPreview &&
-                      queuedMessages.length === 0 && (
+                    {optimisticFirstPromptShown && firstPromptPreview && (
                         <OptimisticTurn
                           text={buildOptimisticPromptTextWithUploads(
                             firstPromptPreview.text,
@@ -5342,7 +5348,9 @@ export function SessionChat({
                   {/* Busy with no turn to attach it to yet — the same waiting row
                         the optimistic turn and every live turn use, so it never
                         changes shape as the first turn materialises. */}
-                  {isBusy && turns.length === 0 && <SessionBusyIndicator sessionId={sessionId} />}
+                  {isBusy && turns.length === 0 && !optimisticFirstPromptShown && (
+                    <SessionBusyIndicator sessionId={sessionId} />
+                  )}
                 </div>
                 {/* Spacer — the transcript's anchor space. It is sized from
                       the scroll container so the newest turn
