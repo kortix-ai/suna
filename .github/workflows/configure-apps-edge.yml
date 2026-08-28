@@ -39,6 +39,27 @@ jobs:
             fi
           done
 
+      - name: Inspect API firewall rules
+        run: |
+          set -euo pipefail
+          phase="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/rulesets/phases/http_request_firewall_custom/entrypoint"
+          current="$({
+            curl --fail-with-body --silent --show-error \
+              --header "X-Auth-Email: $CLOUDFLARE_EMAIL" \
+              --header "X-Auth-Key: $CLOUDFLARE_GLOBAL_API_KEY" \
+              "$phase"
+          })"
+          jq -e '
+            if .success == true then [.result.rules[] | {
+                ref,
+                description,
+                action,
+                enabled,
+                expression,
+                action_parameters
+              }] else error("Cloudflare ruleset read failed") end
+          ' <<<"$current"
+
       - name: Verify Worker route and secret bindings
         working-directory: infra/cloudflare/workers/apps-router
         run: |
