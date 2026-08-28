@@ -13,7 +13,6 @@ import {
   SESSION_PROMPTS_IDLE_POLL_MS,
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
-  promptsRefetchInterval,
   readSessionPromptsInbox,
   sessionPromptsPollMs,
   startSessionWithPrompt,
@@ -399,7 +398,7 @@ describe('readSessionPromptsInbox and the open bundle', () => {
   test('falls back to /prompts when the bundle could not read the inbox', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch((url) =>
-      url.includes('snapshot')
+      url.includes('open-bundle')
         ? bundle({ known: false, reason: 'inbox read failed' })
         : { prompts: [{ prompt_id: 'p9', state: 'queued' }] },
     );
@@ -407,28 +406,5 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
     expect(urls.some((u) => u.endsWith('/prompts'))).toBe(true);
     expect(prompts[0]?.prompt_id).toBe('p9');
-  });
-});
-
-describe('promptsRefetchInterval (stream presence hands the cadence over)', () => {
-  test('poll owner with no stream keeps the two-cadence contract', () => {
-    expect(
-      promptsRefetchInterval({ pollOwner: true, streamConnected: false, count: 2, believedPending: 0 }),
-    ).toBe(SESSION_PROMPTS_POLL_MS);
-    expect(
-      promptsRefetchInterval({ pollOwner: true, streamConnected: false, count: 0, believedPending: 0 }),
-    ).toBe(SESSION_PROMPTS_IDLE_POLL_MS);
-  });
-
-  test('a connected stream silences the poll — kortix.control.queue is the same list', () => {
-    expect(
-      promptsRefetchInterval({ pollOwner: true, streamConnected: true, count: 2, believedPending: 1 }),
-    ).toBe(false);
-  });
-
-  test('a non-owner never polls', () => {
-    expect(
-      promptsRefetchInterval({ pollOwner: false, streamConnected: false, count: 5, believedPending: 0 }),
-    ).toBe(false);
   });
 });

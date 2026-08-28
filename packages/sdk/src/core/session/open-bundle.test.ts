@@ -75,7 +75,7 @@ describe('the session-open bundle coalescer', () => {
       claimOpenBundle(PID, SID),
     ]);
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toContain('/projects/P1/sessions/S1/snapshot');
+    expect(requests[0]).toContain('/projects/P1/sessions/S1/open-bundle');
     for (const claim of claims) expect(claim?.observed_at).toBe('2026-08-26T12:00:00.000Z');
   });
 

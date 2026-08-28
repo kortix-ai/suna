@@ -15,7 +15,6 @@ import {
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
   workingPollMs,
-  workingRefetchInterval,
   streamObservationStamp,
   streamTurnPhase,
 } from './use-session-working';
@@ -415,7 +414,7 @@ describe('readSessionTurnObservation', () => {
   test('falls back to /turn when the bundle could not answer that leg', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch((url) =>
-      url.includes('snapshot')
+      url.includes('open-bundle')
         ? {
             observed_at: BUNDLE_AT,
             turn: { known: false, reason: 'turn read exploded' },
@@ -432,33 +431,5 @@ describe('readSessionTurnObservation', () => {
     // UNKNOWN is not idle: the fallback must ASK, not assume.
     expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
     expect(observation.turns[0]?.turn_token).toBe('tt-2');
-  });
-});
-
-describe('workingRefetchInterval (stream presence hands the cadence over)', () => {
-  const projection = {
-    state: 'working',
-    source: 'server',
-    turnId: 'msg_1',
-    since: T0,
-    serverOpenTurnToken: 'tt-1',
-  } as const;
-
-  test('poll owner with no stream polls at the projection cadence', () => {
-    expect(
-      workingRefetchInterval({ pollOwner: true, streamConnected: false, projection }),
-    ).toBe(WORKING_POLL_ACTIVE_MS);
-  });
-
-  test('a connected stream silences the poll — the control channel carries the same projection', () => {
-    expect(
-      workingRefetchInterval({ pollOwner: true, streamConnected: true, projection }),
-    ).toBe(false);
-  });
-
-  test('a non-owner never polls, stream or not', () => {
-    expect(
-      workingRefetchInterval({ pollOwner: false, streamConnected: false, projection }),
-    ).toBe(false);
   });
 });

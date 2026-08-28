@@ -32,11 +32,17 @@ permissions:
 jobs:
   authorize:
     name: Authorize exact preview SHA
+    # A labelled preview stays up until the label comes off or the pull request
+    # closes — so a push REDEPLOYS it in place instead of tearing it down. The
+    # approval bar is unchanged: same-repository pull requests only, and the
+    # actor needs write. On `synchronize` the actor is whoever pushed, who
+    # already holds write on this repository, so nothing is loosened.
     if: >-
       (github.event_name == 'pull_request_target' &&
-      github.event.action == 'labeled' &&
-      github.event.label.name == 'preview' &&
-      github.event.pull_request.head.repo.full_name == github.repository) ||
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      ((github.event.action == 'labeled' && github.event.label.name == 'preview') ||
+      (github.event.action == 'synchronize' &&
+      contains(github.event.pull_request.labels.*.name, 'preview')))) ||
       github.event_name == 'workflow_dispatch'
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
@@ -47,6 +53,9 @@ jobs:
       sha: ${{ steps.preview.outputs.sha }}
       ref: ${{ steps.preview.outputs.ref }}
       lockfile_sha256: ${{ steps.preview.outputs.lockfile_sha256 }}
+      head_branch: ${{ steps.preview.outputs.head_branch }}
+      public_origin: ${{ steps.preview.outputs.public_origin }}
+      public_worker: ${{ steps.preview.outputs.public_worker }}
       provider: ${{ steps.preview.outputs.provider }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -57,6 +66,7 @@ jobs:
       INPUT_PR_NUMBER: ${{ inputs.pr_number }}
       INPUT_PROVIDER: ${{ inputs.provider }}
       APPROVER: ${{ github.actor }}
+      PUBLIC_ORIGINS: ${{ vars.PREVIEW_PUBLIC_ORIGINS }}
     steps:
       - name: Require writer approval for the current head SHA
         id: preview
@@ -114,6 +124,34 @@ jobs:
             echo "sha=$sha"
             echo "ref=refs/pull/${num}/head"
             echo "lockfile_sha256=$lockfile_sha256"
+            branch="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.ref)"
+            echo "head_branch=$branch"
+            # A branch MAY be fronted by a stable hostname instead of being
+            # reached at the provider's own url. PREVIEW_PUBLIC_ORIGINS maps
+            # `branch=https://host`, one per line; anything unlisted — which is
+            # every branch by default — keeps the provider origin. The stack is
+            # CONFIGURED with whatever this resolves to, so it must be the origin
+            # the browser actually uses or every auth redirect leaves it.
+            entry="$(printf '%s\n' "${PUBLIC_ORIGINS:-}" \
+              | awk -F= -v b="$branch" '$1 == b { print; exit }')"
+            public_origin="$(printf '%s' "$entry" | cut -d= -f2)"
+            # Optional third field: the worker under infra/cloudflare/workers/
+            # that SERVES that hostname. Without it the name is assumed to be
+            # fronted some other way and nothing is re-pointed.
+            public_worker="$(printf '%s' "$entry" | cut -d= -f3)"
+            case "$public_origin" in
+              ''|https://*) ;;
+              *) echo "::error::PREVIEW_PUBLIC_ORIGINS entry for ${branch} must be an https origin."; exit 1 ;;
+            esac
+            case "$public_worker" in
+              ''|*[!a-z0-9-]*)
+                [ -z "$public_worker" ] || {
+                  echo "::error::PREVIEW_PUBLIC_ORIGINS worker for ${branch} must match [a-z0-9-]+."
+                  exit 1
+                } ;;
+            esac
+            echo "public_origin=$public_origin"
+            echo "public_worker=$public_worker"
             echo "provider=$provider"
           } >> "$GITHUB_OUTPUT"
           echo "${APPROVER} approved preview PR ${num} at ${sha} with provider=${provider}."
@@ -276,6 +314,18 @@ jobs:
       APPROVER: ${{ github.actor }}
       NUM: ${{ needs.authorize.outputs.pr_number }}
       COMMIT: ${{ needs.authorize.outputs.sha }}
+      # Naming the environment after the BRANCH is what makes it persistent:
+      # the sandbox is reused instead of replaced, so its URL survives every
+      # push and stays bookmarkable until the label comes off or the pull
+      # request closes. See previewSandboxIdentity in tests/src/core.
+      # The suite is the GATE, so it runs when the label goes on and on an
+      # explicit dispatch. A redeploy from a push skips it: the environment is
+      # persistent now, so pushes are iteration, and paying ~10 min of
+      # --target-full on each one would make the label unusable for working in.
+      # Re-run it any time from the Actions tab with 'Run workflow'.
+      PREVIEW_RUN_TESTS: ${{ (github.event.action == 'labeled' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
+      PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.head_branch }}
+      PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}
       PREVIEW_PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
       PREVIEW_SHA: ${{ needs.authorize.outputs.sha }}
       PREVIEW_REF: ${{ needs.authorize.outputs.ref }}
@@ -293,6 +343,11 @@ jobs:
       KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
       MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
       MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
+      # Optional, and takes PRECEDENCE over the App when set. The App can only
+      # create repos if it is installed on the owner AND has administration:
+      # write; a PAT needs neither. Set this to unblock project creation
+      # without touching the App's permissions.
+      MANAGED_GIT_GITHUB_TOKEN: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_TOKEN }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -370,6 +425,36 @@ jobs:
         id: preview
         continue-on-error: true
         run: bun tests/bin/sandbox-preview.ts deploy
+      - name: Point the stable hostname at this sandbox
+        # A stable hostname is served by a Worker that proxies to the sandbox's
+        # OWN origin, and that origin is derived from the sandbox id — so it
+        # changes whenever the box is rebuilt. Re-publishing on every deploy is
+        # what stops the name going dead the one time that happens; a reused
+        # sandbox just re-points at the value it already had.
+        #
+        # Runs only for a branch whose PREVIEW_PUBLIC_ORIGINS entry names a
+        # worker, so an ordinary preview never touches Cloudflare.
+        # Deliberately NOT gated on the suite passing. A failing flow still
+        # leaves a working environment, and leaving the hostname pointed at the
+        # previous sandbox — or at nothing — would be worse than a red flow.
+        # Only a deploy that produced no sandbox at all has nothing to point at.
+        if: always() && needs.authorize.outputs.public_worker != ''
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
+          WORKER: ${{ needs.authorize.outputs.public_worker }}
+        run: |
+          set -euo pipefail
+          target="$(jq -r '.sandboxOrigin // empty' tests/test-results/preview/deployment.json 2>/dev/null || true)"
+          if [ -z "$target" ]; then
+            # The deploy produced no sandbox, and has already failed loudly for
+            # it. A second error here would only add noise.
+            echo "::notice::no sandbox origin in the deploy result; nothing to re-point"
+            exit 0
+          fi
+          dir="infra/cloudflare/workers/${WORKER}"
+          [ -f "${dir}/wrangler.toml" ] || { echo "::error::${dir}/wrangler.toml does not exist"; exit 1; }
+          echo "pointing ${{ needs.authorize.outputs.public_origin }} -> ${target}"
+          (cd "$dir" && npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${target}")
       - name: Publish GitHub deployment result
         if: always() && steps.deployment.outputs.id != ''
         env:
@@ -449,9 +534,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.event.action == 'closed' ||
-      (github.event.action == 'unlabeled' && github.event.label.name == 'preview') ||
-      (github.event.action == 'synchronize' &&
-      contains(github.event.pull_request.labels.*.name, 'preview')))
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     permissions:
@@ -462,6 +545,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       PREVIEW_PR_NUMBER: ${{ github.event.pull_request.number }}
+      # The persistent sandbox is named after the branch, so teardown must be
+      # told which one or it finds nothing and leaves the box running — a
+      # branch environment has no expiry to fall back on.
+      PREVIEW_BRANCH_ENV: ${{ github.event.pull_request.head.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
       PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
       DAYTONA_API_URL: ${{ secrets.DAYTONA_API_URL }}
@@ -475,12 +562,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - name: Delete the Platinum or Daytona preview sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
-      - name: Remove stale preview approval
-        if: github.event.action == 'synchronize'
-        run: |
-          set -euo pipefail
-          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PREVIEW_PR_NUMBER}/labels/preview" --silent
-          echo "Removed preview approval after the pull request head changed."
       - name: Mark GitHub deployment inactive
         run: |
           set -euo pipefail

@@ -196,21 +196,11 @@ function ThoughtChainStepImpl({
   const userToggled = useRef(false);
   const liveElapsed = useLiveElapsedMs(running);
   const elapsed = formatDuration(running ? liveElapsed : (durationMs ?? 0));
-  // Present tense ONLY while running. A settled thought reads as past tense —
-  // "Thought" — even with no recorded duration. The old fallback said the live
-  // "Thinking" for any thought with no timing, so on a degraded/absent runtime
-  // channel (an old daemon that never relays the completion) every historical
-  // turn's trailing thought shimmered "Thinking" above the message the user
-  // just sent, as if three finished turns were all still running. Tense follows
-  // `running` — the turn's control-authoritative working state — never the
-  // presence of a duration the daemon may never have sent.
-  const label = running
-    ? elapsed
+  const label = elapsed
+    ? running
       ? `Thinking for ${elapsed}`
-      : 'Thinking'
-    : elapsed
-      ? `Thought for ${elapsed}`
-      : 'Thought';
+      : `Thought for ${elapsed}`
+    : 'Thinking';
 
   useEffect(() => {
     if (userToggled.current) return;

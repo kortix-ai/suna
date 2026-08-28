@@ -107,28 +107,20 @@ export type { SessionHealthResponse, SessionHealthResult } from './core/session/
 export type { SessionRuntimeEntry } from './core/session/session-runtime-registry';
 
 /**
- * The framework-free session-stream primitive — ONE reconnecting SSE to
- * `GET /projects/:pid/sessions/:sid/stream` (runtime + control channels),
- * with cursor bookkeeping, a heartbeat watchdog, and typed resync/gap
- * signals. ZERO react/react-query imports: any host (worker, CLI, non-React
- * UI) can call it directly; `session.stream()` and `@kortix/sdk/react`'s
- * session controller are thin wrappers over it. This replaced the
- * opencode-proxy `openEventStream` machine — the stream now comes from the
- * control plane, so it works while the box is stopped or waking.
+ * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
+ * heartbeat watchdog, and event coalescing, with ZERO react/react-query
+ * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
+ * around this for the React host; any other host (worker, CLI, non-React UI)
+ * can call it directly.
  */
 export {
-  HEARTBEAT_TIMEOUT_MS,
-  connectSessionStream,
-  runtimeFrameToOpenCodeEvent,
-  type ConnectSessionStreamOptions,
+  openEventStream,
+  type EventStreamClient,
   type EventStreamHandle,
+  type EventStreamTimers,
   type OpenCodeEvent,
-  type RuntimeGapInfo,
-  type RuntimeResyncInfo,
-  type SessionStreamConnection,
-  type SessionStreamReader,
-  type SessionStreamTimers,
-} from './core/stream/session-stream-controller';
+  type OpenEventStreamOptions,
+} from './core/stream/event-stream';
 
 /**
  * Typed error classes for the REST surface — isomorphic (no DOM/React deps),
@@ -352,19 +344,6 @@ export type {
 } from './core/rest/projects-client';
 
 /**
- * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
- * by someone Kortix already authenticated, so `getToken: kortixAppViewerToken()`
- * is the whole of its auth. See `core/auth/app-viewer.ts`.
- */
-export {
-  fetchKortixAppViewer,
-  kortixAppViewerToken,
-  clearKortixAppViewerCache,
-  type KortixAppViewerSession,
-  type KortixAppViewerOptions,
-} from './core/auth/app-viewer';
-
-/**
  * Headless regular auth — `kortix.auth.*` (sign-up, password / magic-link /
  * social sign-in, refresh, password reset, sign-out through the Kortix API)
  * and `createKortixSession`, the self-refreshing token store for `getToken`.
@@ -469,6 +448,7 @@ export {
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
 export * from './core/session/url';
+export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
@@ -482,3 +462,17 @@ export type {
 export type {
   OpencodeAgentConfig as RuntimeAgentConfig,
 } from './core/rest/projects-client/agent-config';
+
+/**
+ * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
+ * by someone Kortix already authenticated, so `getToken: kortixAppViewerToken()`
+ * is the whole of its auth. See `core/auth/app-viewer.ts`. (Kept across the
+ * runtime-client revert — app-viewer has no runtime-client dependency.)
+ */
+export {
+  fetchKortixAppViewer,
+  kortixAppViewerToken,
+  clearKortixAppViewerCache,
+  type KortixAppViewerSession,
+  type KortixAppViewerOptions,
+} from './core/auth/app-viewer';

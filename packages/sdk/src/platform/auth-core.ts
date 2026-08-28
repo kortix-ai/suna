@@ -82,14 +82,7 @@ export const DEFAULT_FETCH_TIMEOUT_MS = 120_000;
  */
 export function isStreamingRequest(input: RequestInfo | URL): boolean {
 	const url = input instanceof Request ? input.url : String(input);
-	if (url.includes('/global/event')) return true;
-	// The Kortix session stream (`GET .../sessions/:sid/stream`, read by
-	// `core/rest/projects-client/session-stream.ts`). Same reason as
-	// `/global/event`: it is a never-ending `text/event-stream` that owns its own
-	// lifecycle, so a 30 s request deadline would kill every healthy one on
-	// schedule. Matched on the path segment, and anchored on `/sessions/` so a
-	// route that merely CONTAINS the word "stream" is not accidentally exempted.
-	return /\/sessions\/[^/?#]+\/stream(?:$|[?#])/.test(url);
+	return url.includes('/global/event');
 }
 
 /**

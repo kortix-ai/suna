@@ -131,6 +131,36 @@ describe('connected join', () => {
   test('a nameless connector contributes no empty key', () => {
     expect(connectedCatalogKeys([conn({ slug: 'x', name: '   ' })]).has('')).toBe(false);
   });
+
+  // Prod 2026-08-28: all 6 GitHub connections had a null `connected_account_id`
+  // — the OAuth handshake never completed — and zero GitHub tool calls had ever
+  // executed. The catalogue still showed GitHub as connected, because a
+  // connector ROW existing was treated as proof of a working connection. The
+  // user saw a checkmark while every agent call was refused `needs_auth`.
+  test('a connector that never completed auth is NOT connected', () => {
+    const keys = connectedCatalogKeys([
+      conn({ slug: 'github', name: 'GitHub', provider: 'composio', status: 'needs_auth' }),
+    ]);
+    expect(keys.has('github')).toBe(false);
+    expect(keys.has('provider:composio')).toBe(false);
+  });
+
+  test('an errored connector still counts as connected — it has a credential', () => {
+    const keys = connectedCatalogKeys([
+      conn({ slug: 'github', name: 'GitHub', provider: 'composio', status: 'error' }),
+    ]);
+    expect(keys.has('github')).toBe(true);
+  });
+
+  test('one unauthorized connector does not hide a working sibling', () => {
+    const keys = connectedCatalogKeys([
+      conn({ slug: 'github', name: 'GitHub', provider: 'composio', status: 'needs_auth' }),
+      conn({ slug: 'gmail', name: 'Gmail', provider: 'composio', status: 'active' }),
+    ]);
+    expect(keys.has('github')).toBe(false);
+    expect(keys.has('gmail')).toBe(true);
+    expect(keys.has('provider:composio')).toBe(true);
+  });
 });
 
 describe('catalogSections', () => {

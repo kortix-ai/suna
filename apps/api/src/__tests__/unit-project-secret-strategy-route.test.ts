@@ -1181,7 +1181,23 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
   });
 
-  test('defaults a known LLM credential to the LLM gateway', async () => {
+  // Was: 'defaults a known LLM credential to the LLM gateway'.
+  //
+  // The server no longer infers delivery from a secret's NAME. It used to stamp
+  // `broker`/`llm_gateway` whenever the name matched any provider credential env
+  // in the models.dev catalogue — 204 providers, one of which (`github-copilot`)
+  // claims `GITHUB_TOKEN`. An ordinary GitHub PAT was therefore classified as a
+  // model credential and withheld from the sandbox: the user set a secret, the
+  // agent could not read it, and nothing said why (prod 2026-08-27). The name is
+  // arbitrary, so carving out one name would only relocate the bug.
+  //
+  // Every caller that genuinely means "model credential" says so explicitly —
+  // web provider-connect, the custom-provider form, `kortix providers set`, and
+  // the Codex OAuth flow (which writes its row directly with `strategyLocked`).
+  // The web secrets manager already sent `runtime`/`sandbox` outright, so the old
+  // default also produced a split brain where the same name landed differently
+  // depending on which surface created it.
+  test('does not infer a delivery policy from the secret name', async () => {
     const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1189,20 +1205,32 @@ describe('POST /v1/projects/:projectId/secrets audit', () => {
     });
 
     expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ delivery_status: 'available' });
+    // The provider-shaped NAME buys no special treatment: this lands as an
+    // ordinary sandbox secret, which is what the caller asked for by not asking
+    // for anything else.
+    expect(row).toMatchObject({ consumer: 'sandbox' });
+    expect(audits[0]).toMatchObject({ after: { configured: true, rotated: true } });
+  });
+
+  test('an explicit gateway choice is still honored for the same name', async () => {
+    const response = await buildApp().request(`/v1/projects/${PROJECT_ID}/secrets`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'ANTHROPIC_API_KEY',
+        value: 'plaintext-test-value',
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+      }),
+    });
+
+    expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       strategy: 'broker',
       consumer: 'llm_gateway',
-      delivery_status: 'available',
     });
     expect(row).toMatchObject({ strategy: 'broker', consumer: 'llm_gateway' });
-    expect(audits[0]).toMatchObject({
-      after: {
-        configured: true,
-        strategy: 'broker',
-        consumer: 'llm_gateway',
-        rotated: true,
-      },
-    });
   });
 
   test('keeps an explicit runtime choice for a known LLM credential', async () => {
