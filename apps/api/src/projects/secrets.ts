@@ -595,6 +595,31 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  * `rows` contains one deterministic winner per env key. The function mutates
  * the caller-owned map. It never adds a key that the grant resolver excluded.
  */
+/**
+ * Does the LLM-gateway strip apply to this row?
+ *
+ * Name-based ON PURPOSE: a provider API key must never reach opencode while the
+ * gateway owns that provider, even if the row was stored with `consumer:
+ * 'sandbox'` — see the `secret-delivery-withholding` test that pins it.
+ *
+ * KNOWN COLLISION (not fixed here): `isGatewayManagedEnv` answers from the
+ * models.dev catalog, whose `github-copilot` provider declares
+ * `env: ["GITHUB_TOKEN"]`. A project's OWN `GITHUB_TOKEN` therefore matches and
+ * is deleted from the sandbox env. Verified in prod 2026-08-27. Deciding
+ * between "trust the consumer stamp" and "only strip providers this project
+ * actually connected" is a product call, so this helper only NAMES the rule and
+ * makes it testable; it does not change it.
+ *
+ * Pure so the rule is testable without a model catalog.
+ */
+export function gatewayStripsRow(input: {
+  llmGatewayEnabled: boolean;
+  nameIsGatewayManaged: boolean;
+  consumer: SecretConsumer | null | undefined;
+}): boolean {
+  return input.llmGatewayEnabled && input.nameIsGatewayManaged;
+}
+
 export async function materializeSecretDelivery(
   rows: ResolvedProjectSecret[],
   env: Record<string, string>,
@@ -616,10 +641,26 @@ export async function materializeSecretDelivery(
      */
     llmGatewayEnabled: boolean;
   },
-): Promise<void> {
+): Promise<ResolvedProjectSecret[]> {
+  const delivered: ResolvedProjectSecret[] = [];
   for (const row of rows) {
     if (!(row.key in env)) continue;
-    if (input.llmGatewayEnabled && isGatewayManagedEnv(row.key)) {
+    // A gateway-managed NAME is not the same thing as a gateway-managed ROW.
+    // `isGatewayManagedEnv` asks the models.dev catalog, which today maps the
+    // `github-copilot` provider to `GITHUB_TOKEN` — so a project's own
+    // `GITHUB_TOKEN` (stored `consumer: 'sandbox'`, the shape the secrets UI
+    // creates) was silently deleted from every sandbox env while the capability
+    // catalog kept advertising it. The platform stamps `consumer` when it
+    // stores a model credential (`routes/r3.ts` defaultToGateway); trust that
+    // stamp, not a third-party name table. `consumer == null` is a legacy row
+    // with no stamp to trust, so it keeps today's strip.
+    if (
+      gatewayStripsRow({
+        llmGatewayEnabled: input.llmGatewayEnabled,
+        nameIsGatewayManaged: isGatewayManagedEnv(row.key),
+        consumer: row.consumer,
+      })
+    ) {
       delete env[row.key];
       continue;
     }
@@ -628,6 +669,7 @@ export async function materializeSecretDelivery(
       // platform defaulted provider keys there (routes/r3.ts `defaultToGateway`,
       // the provider-connect UI). With no gateway in the path it delivers like a
       // `runtime` row — plaintext, so toggling the flag never strands the key.
+      delivered.push(row);
       continue;
     }
     const delivery = resolveSecretDelivery({
@@ -644,7 +686,10 @@ export async function materializeSecretDelivery(
         : row.egressPolicy?.backend === 'kortix_fetch'
           ? 'http_broker'
           : (row.egressPolicy?.backend ?? null));
-    if (delivery.emit === 'plaintext' && consumer === 'sandbox') continue;
+    if (delivery.emit === 'plaintext' && consumer === 'sandbox') {
+      delivered.push(row);
+      continue;
+    }
     if (
       delivery.emit === 'handle' &&
       delivery.strategy === 'broker' &&
@@ -652,6 +697,7 @@ export async function materializeSecretDelivery(
       row.egressPolicy?.backend === 'kortix_fetch'
     ) {
       env[row.key] = await input.mintHandleFor(row);
+      delivered.push(row);
       continue;
     }
     // Egress-enforced: the KEY holds the HANDLE, never the value.
@@ -680,10 +726,12 @@ export async function materializeSecretDelivery(
       row.egressPolicy
     ) {
       env[row.key] = await input.mintHandleFor(row);
+      delivered.push(row);
       continue;
     }
     delete env[row.key];
   }
+  return delivered;
 }
 
 async function mintSessionSecretHandle(
@@ -828,7 +876,7 @@ export async function listProjectSecretsSnapshotForUser(
   // model credentials from the same decision — a caller cannot pass a stale
   // mode and desynchronise the box from the project's flag.
   const llmGatewayEnabled = await projectLlmGatewayEnabledById(projectId);
-  await materializeSecretDelivery(selected, env, {
+  const delivered = await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,
     llmGatewayEnabled,
@@ -839,7 +887,12 @@ export async function listProjectSecretsSnapshotForUser(
   });
 
   const names = Object.keys(env).sort();
-  const capabilities = buildSecretCapabilities(selected, {
+  // From `delivered`, never `selected`: a row whose value materialization
+  // dropped must not be advertised. `secretNamesForSandbox` states the
+  // invariant — a name appears IFF a value is emitted for it — and building
+  // capabilities from the pre-delivery set is exactly how the box came to be
+  // told it held a `GITHUB_TOKEN` that was never in its env.
+  const capabilities = buildSecretCapabilities(delivered, {
     grantEnv,
     sessionId: sessionId ?? null,
   });
