@@ -170,8 +170,14 @@ export function configFromEnv(): WorkerConfig {
     modelMode: mode,
     providerId: process.env.KORTIX_PROVIDER ?? 'openrouter',
     modelId: process.env.KORTIX_MODEL,
-    apiKey: process.env.KORTIX_API_KEY,
-    gatewayUrl: process.env.KORTIX_GATEWAY_URL,
+    // The platform injects the session credential and the gateway base under
+    // its OWN names (KORTIX_TOKEN / KORTIX_LLM_BASE_URL, see
+    // provisionSessionSandbox). The bench sets the KORTIX_API_KEY /
+    // KORTIX_GATEWAY_URL pair. Read both, or a real session finds no
+    // credential at all and cannot start — the bench names are the only ones
+    // that ever existed here, so nothing outside a bench ever worked.
+    apiKey: process.env.KORTIX_API_KEY ?? process.env.KORTIX_TOKEN,
+    gatewayUrl: process.env.KORTIX_GATEWAY_URL ?? process.env.KORTIX_LLM_BASE_URL,
     storeUrl: process.env.KORTIX_STORE_URL,
     storeHeaders: process.env.KORTIX_STORE_HEADERS ? JSON.parse(process.env.KORTIX_STORE_HEADERS) : undefined,
     sessionId: process.env.KORTIX_SESSION_ID ?? 'session-local',
@@ -222,7 +228,18 @@ export async function buildHarness(cfg: WorkerConfig) {
   let model: any;
   let faux: ReturnType<typeof fauxProvider> | undefined;
 
-  if (cfg.modelMode === 'faux') {
+  // A real session with no credential used to take the `else` branch and throw
+  // during boot, which stopped the sandbox — the operator saw a session that
+  // went `running` then died, with the cause nowhere in the session record.
+  // Degrade to faux and SAY SO instead: the turn still answers (emptily), and
+  // the reason is in /kortix/health where it can be read.
+  const missingCredential = cfg.modelMode === 'real' && !cfg.apiKey;
+  if (missingCredential) {
+    console.error(
+      '[worker] KORTIX_MODEL_MODE=real but no credential (KORTIX_API_KEY / KORTIX_TOKEN); using faux',
+    );
+  }
+  if (cfg.modelMode === 'faux' || missingCredential) {
     faux = fauxProvider({ provider: 'faux', models: [{ id: 'faux-1', name: 'Faux' }] });
     models.setProvider(faux.provider);
     model = faux.getModel();
