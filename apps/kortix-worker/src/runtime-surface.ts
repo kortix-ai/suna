@@ -25,6 +25,7 @@
  * disagree between the two.
  */
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { mintWireMessageId, wireIdTime } from './wire-message-id';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
@@ -262,6 +263,8 @@ export class RuntimeSurface {
   private activeTurnMessageId: string | null = null;
   private turnInFlight = false;
   private messageSeq = 0;
+  /** Clock of the last id this surface minted — see . */
+  private lastMintedTime: bigint | null = null;
   private readonly createdAt = Date.now();
   private updatedAt = Date.now();
   private title: string;
@@ -271,8 +274,36 @@ export class RuntimeSurface {
     this.title = opts.agentName ? `${opts.agentName} session` : 'Pi session';
   }
 
-  /** Zero-padded so message ids sort in mint order — the id ORDER is load-bearing. */
-  mintMessageId = (): string => `msg_pi${String(++this.messageSeq).padStart(8, '0')}`;
+  /**
+   * The id IS the transcript's sort key, so it has to be a real OpenCode wire
+   * id — `msg_` + 12 hex clock chars + 14 base62.
+   *
+   * This used to mint `msg_pi00000001`, zero-padded "so message ids sort in
+   * mint order". They did sort in mint order among THEMSELVES, and that was
+   * the whole bug: the web client splits messages on `/^msg_[0-9a-f]{12}/`
+   * into "the server placed this" and "only this tab knows about it", and
+   * sorts every local one after every placed one. `p` and `i` are not hex,
+   * so every reply this worker produced sorted below the entire transcript and
+   * `groupMessagesIntoTurns` attached them all to the LAST user message —
+   * three questions rendered as three bubbles followed by three answers.
+   *
+   * Seeded from the turn's own user message id, so a reply cannot sort above
+   * the question it answers however far this box's clock has drifted, and from
+   * the previous mint, so two replies inside one millisecond still order.
+   */
+  mintMessageId = (): string => {
+    this.messageSeq++;
+    const parentTime = wireIdTime(this.activeTurnMessageId);
+    const floor =
+      this.lastMintedTime === null
+        ? parentTime
+        : parentTime === null || this.lastMintedTime > parentTime
+          ? this.lastMintedTime
+          : parentTime;
+    const minted = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: floor });
+    this.lastMintedTime = minted.time;
+    return minted.id;
+  };
 
   /** Sequence one adapter wire event AND fold it into the transcript. */
   publishWire(wire: { type: string; properties: Record<string, unknown> }): void {
