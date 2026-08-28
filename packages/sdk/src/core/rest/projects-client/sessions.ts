@@ -752,7 +752,11 @@ export async function getSessionOpenBundle(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionOpenBundle>(
-      `/projects/${projectId}/sessions/${sessionId}/open-bundle${qs ? `?${qs}` : ''}`,
+      // `/snapshot` is the canonical path; #6987 renamed the route while this
+      // client kept requesting `/open-bundle`, so every session open 404'd the
+      // bundle and silently fell back to 6-8 serial reads. (The API keeps an
+      // `/open-bundle` alias for SDKs published before the rename.)
+      `/projects/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
       // A 404 here is an EXPECTED race: the session exists but the control
       // plane has not marked it visible yet. `openSessionBundle` already
       // resolves `null` and every consumer falls back to its direct read
@@ -844,6 +848,11 @@ export interface CreateSessionPromptResult {
   message_id: string;
   /** The submission name already named a row: this call added nothing. */
   deduped: boolean;
+  /** The SERVER's clock after the write. The ordering stamp a client ranks
+   *  this acceptance with against queue snapshots — a read issued before the
+   *  POST carries an older stamp and can never erase the row. Absent from
+   *  servers older than this field. */
+  observed_at?: string;
 }
 
 export interface CreateSessionPromptInput {
@@ -901,13 +910,15 @@ export async function createSessionPrompt(
 }
 
 /** Every prompt this session still owes the user, oldest first. Delivered
- *  prompts are omitted — they are in the transcript. */
+ *  prompts are omitted — they are in the transcript. `observed_at` is the
+ *  SERVER's clock captured BEFORE the read: the ordering stamp this snapshot
+ *  ranks with against other server observations. Absent from older servers. */
 export async function listSessionPrompts(
   projectId: string,
   sessionId: string,
-): Promise<{ prompts: SessionPrompt[] }> {
+): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.get<{ prompts: SessionPrompt[] }>(
+    await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
     ),
   );

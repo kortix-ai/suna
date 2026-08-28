@@ -4822,7 +4822,7 @@ export function SessionChat({
   // accepted-but-never-started prompts, and that state is structurally gone —
   // a prompt is a durable inbox row before anything else happens, and an
   // unconfirmed delivery is redelivered by the reaper (see step 7).
-  const { isNotFound, isDataLoading } = resolveSessionContentState({
+  const { isNotFound, isDataLoading: resolvedDataLoading } = resolveSessionContentState({
     runtimeReady,
     sessionFetched,
     hasRuntimeSession: Boolean(session),
@@ -4842,6 +4842,18 @@ export function SessionChat({
     // the user saw an empty conversation instead of a wait.
     transcriptLoaded: !syncMessagesLoading,
   });
+  // MONOTONIC: once this component has painted content, the loader may never
+  // replace it. The resolver holds the FIRST paint for the transcript read
+  // (so a session open paints the whole conversation at once instead of
+  // user-only inbox bubbles with the replies popping in later) — but the same
+  // rule re-evaluated after content is on screen would hide it again: the
+  // home→session hand-off paints the first-prompt preview before the runtime
+  // session resolves, and a bubble typed mid-boot exists before the first
+  // read lands. A loader is a promise about what is coming, not a curtain
+  // over what is already there.
+  const [contentPainted, setContentPainted] = useState(false);
+  if (!resolvedDataLoading && !contentPainted) setContentPainted(true);
+  const isDataLoading = resolvedDataLoading && !contentPainted;
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.

@@ -124,8 +124,42 @@ describe('emission', () => {
       prompts: [{ id: 'p1', state: 'waiting', reason: 'held' }],
       // The derived bit the client would otherwise recompute.
       held: true,
+      // The server clock at the read — the frame's rank among queue snapshots.
+      observed_at: expect.any(String),
     });
     handle.release();
+  });
+
+  test('the queue frame carries observed_at from BEFORE the read', async () => {
+    // The queue's freshness protocol (JAY-728): a stream frame ranks against
+    // GET/POST/bundle snapshots on the server clock, so the stamp must be the
+    // instant the read was ASKED — stamped at publish time, a slow reconciler
+    // read published an OLD empty queue under a NEW instant and erased a
+    // newer confirmed row.
+    mock.module('../session-lifecycle/inbox-rows', () => ({
+      listInboxPrompts: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return inboxRows;
+      },
+    }));
+    try {
+      const handle = acquireControlReconciler(SESSION);
+      await handle.ready();
+      const done = Date.now();
+      const queue = handle.snapshot().find((event) => event.type === 'kortix.control.queue');
+      const payload = queue!.payload as Record<string, unknown>;
+      const observed = Date.parse(String(payload.observed_at));
+      expect(Number.isFinite(observed)).toBe(true);
+      expect(observed).toBeLessThanOrEqual(done - 25);
+      handle.release();
+    } finally {
+      mock.module('../session-lifecycle/inbox-rows', () => ({
+        listInboxPrompts: async () => {
+          inboxReads += 1;
+          return inboxRows;
+        },
+      }));
+    }
   });
 
   test('a pass that changes nothing publishes NOTHING', async () => {

@@ -16,7 +16,7 @@ import {
   retrySessionPrompt,
 } from '../core/rest/projects-client/sessions';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
-import { countLiveInboxPrompts } from '../core/session/working';
+import { countLiveInboxPrompts, inboxObservationSupersedes } from '../core/session/working';
 import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
@@ -82,8 +82,11 @@ export function noteInboxObservation(
   sessionId: string,
   prompts: readonly SessionPrompt[],
   atMs: number,
+  serverAtMs?: number,
 ): void {
-  useSessionWorkingStore.getState().noteInboxPending(sessionId, countLiveInboxPrompts(prompts), atMs);
+  useSessionWorkingStore
+    .getState()
+    .noteInboxPending(sessionId, countLiveInboxPrompts(prompts), atMs, serverAtMs);
 }
 
 /**
@@ -93,16 +96,28 @@ export function noteInboxObservation(
  * working projection through `noteInboxObservation` already rejected an older
  * answer, but updating the React Query cache did not. That split let an old
  * empty control frame hide a prompt that a newer POST/read had confirmed.
+ *
+ * `atMs` is this tab's clock (age); `serverAtMs` is the server's `observed_at`
+ * (ordering). Snapshots that both carry a server stamp rank on the server clock
+ * alone — `inboxObservationSupersedes` — so a read issued before a POST can
+ * never erase the row the POST confirmed, and a client clock ±10 minutes off
+ * changes nothing.
  */
 export function applyInboxObservation(
   sessionId: string,
   cached: readonly SessionPrompt[] | undefined,
   prompts: readonly SessionPrompt[],
   atMs: number,
+  serverAtMs?: number,
 ): SessionPrompt[] {
   const current = useSessionWorkingStore.getState().inbox[sessionId];
-  if (current && current.atMs > atMs) return [...(cached ?? [])];
-  noteInboxObservation(sessionId, prompts, atMs);
+  const candidate = {
+    pending: countLiveInboxPrompts(prompts),
+    atMs,
+    ...(serverAtMs != null ? { serverAtMs } : {}),
+  };
+  if (!inboxObservationSupersedes(candidate, current)) return [...(cached ?? [])];
+  noteInboxObservation(sessionId, prompts, atMs, serverAtMs);
   return reconcileOptimisticPrompts(cached, prompts);
 }
 
@@ -234,25 +249,36 @@ export async function readSessionPromptsInbox(
     const bundle = await claimed;
     const bundled = bundle ? openBundleQueue(bundle) : null;
     if (bundled) {
-      // Stamped from the bundle's own clock, and fed to the working projection
-      // exactly as a direct read is: the inbox observation is what keeps the
-      // composer on Stop while a prompt is durable but not yet a turn.
+      // TWO stamps, two clocks. Age is this tab's clock at receive time — the
+      // bundle's `observed_at` is the API's clock, and ageing it against
+      // browser `nowMs` let a ±10-minute skew expire the observation on
+      // arrival (composer flipped to Send over a queued prompt) or latch it.
+      // Ordering keeps the server's own stamp, ranked only against other
+      // server stamps.
       const observedAtMs = Date.parse(bundle!.observed_at);
       return applyInboxObservation(
         sessionId,
         cached,
         bundled,
-        Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
+        Date.now(),
+        Number.isFinite(observedAtMs) ? observedAtMs : undefined,
       );
     }
   }
-  // Stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
+  // Age stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
   // as the moment it was asked.
   const atMs = Date.now();
-  const { prompts } = await listSessionPrompts(projectId, sessionId);
+  const { prompts, observed_at } = await listSessionPrompts(projectId, sessionId);
+  const serverAtMs = observed_at ? Date.parse(observed_at) : Number.NaN;
   // Keep this tab's not-yet-confirmed rows on screen across a poll that landed
   // before their POST returned.
-  return applyInboxObservation(sessionId, cached, prompts, atMs);
+  return applyInboxObservation(
+    sessionId,
+    cached,
+    prompts,
+    atMs,
+    Number.isFinite(serverAtMs) ? serverAtMs : undefined,
+  );
 }
 
 export interface UseSessionPromptsResult {
@@ -348,7 +374,17 @@ export function useSessionPrompts(
     mutationFn: async (input: CreateSessionPromptInput) => {
       const result = await createSessionPrompt(projectId!, sessionId!, input);
       if (result.state !== 'failed') {
-        useSessionWorkingStore.getState().notePromptAccepted(sessionId!, Date.now());
+        // The response's `observed_at` is the write's place on the SERVER
+        // clock — what bars a queue read issued before this POST from erasing
+        // the row after it settles.
+        const serverAtMs = result.observed_at ? Date.parse(result.observed_at) : Number.NaN;
+        useSessionWorkingStore
+          .getState()
+          .notePromptAccepted(
+            sessionId!,
+            Date.now(),
+            Number.isFinite(serverAtMs) ? serverAtMs : undefined,
+          );
       }
       return result;
     },
@@ -459,8 +495,11 @@ export async function startSessionWithPrompt(
       throw new Error('This prompt was refused — its earlier delivery already failed.');
     }
     const acceptedAt = now();
+    const serverAtMs = result.observed_at ? Date.parse(result.observed_at) : Number.NaN;
     useSessionWorkingStore.getState().acceptSendReceipt(sessionId, clientMessageId, acceptedAt);
-    useSessionWorkingStore.getState().notePromptAccepted(sessionId, acceptedAt);
+    useSessionWorkingStore
+      .getState()
+      .notePromptAccepted(sessionId, acceptedAt, Number.isFinite(serverAtMs) ? serverAtMs : undefined);
     return result;
   } catch (error) {
     // Named, so a slow refusal cannot drop a receipt a later send now owns.

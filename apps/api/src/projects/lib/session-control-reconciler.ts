@@ -198,6 +198,12 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
   if (reconciler.ticking) return;
   reconciler.ticking = true;
   try {
+    // Captured BEFORE the reads: the queue frame ranks against GET/POST/bundle
+    // snapshots on the server clock, and a snapshot is no fresher than the
+    // moment it was asked for. Stamped at publish time, a slow read published
+    // an OLD empty queue under a NEW instant and erased a newer confirmed row
+    // (JAY-728).
+    const observedAt = new Date().toISOString();
     const [turn, queue, runtime, mirror, audit] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
@@ -211,13 +217,21 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     }
     if (queue.status === 'fulfilled') {
       const prompts = queue.value.map(serializePrompt);
-      emit(sessionId, reconciler, 'kortix.control.queue', {
-        known: true,
-        prompts,
-        held: prompts.some(
-          (prompt) => prompt.state === 'waiting' && prompt.reason === 'held',
-        ),
-      });
+      emit(
+        sessionId,
+        reconciler,
+        'kortix.control.queue',
+        {
+          known: true,
+          prompts,
+          held: prompts.some(
+            (prompt) => prompt.state === 'waiting' && prompt.reason === 'held',
+          ),
+        },
+        // Outside the fingerprint: a fresh stamp on unchanged content must not
+        // defeat the change detection and re-publish every tick.
+        { observed_at: observedAt },
+      );
     }
     if (runtime.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.runtime', runtime.value);
@@ -254,13 +268,17 @@ function emit(
   reconciler: Reconciler,
   type: ControlEventType,
   payload: unknown,
+  /** Merged into the published frame AFTER change detection — a freshness
+   *  stamp that must never count as a content change (`observed_at`). */
+  stamp?: Record<string, unknown>,
 ): void {
   const fingerprint = JSON.stringify(payload) ?? 'null';
   const held = reconciler.latest.get(type);
   const stale = !held || Date.now() - held.at >= CONTROL_REFRESH_MS;
   if (reconciler.fingerprints.get(type) === fingerprint && !stale) return;
   reconciler.fingerprints.set(type, fingerprint);
-  reconciler.latest.set(type, publishControlEvent(sessionId, type, payload));
+  const published = stamp ? Object.assign({}, payload as object, stamp) : payload;
+  reconciler.latest.set(type, publishControlEvent(sessionId, type, published));
 }
 
 /**

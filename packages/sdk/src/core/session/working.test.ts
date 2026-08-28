@@ -8,6 +8,7 @@ import {
   STREAM_OBSERVATION_MAX_MS,
   TURN_END_LEDGER_LAG_MS,
   countLiveInboxPrompts,
+  inboxObservationSupersedes,
   projectWorking,
   workingExpiryAtMs,
 } from './working';
@@ -1107,6 +1108,67 @@ describe('projectWorking — a queued prompt outlives the turn in front of it', 
     });
 
     expect(projection).toMatchObject({ state: 'working', source: 'server' });
+  });
+});
+
+/**
+ * One freshness clock per comparison — never the browser's against the API's.
+ *
+ * The inbox entry carries TWO stamps. `atMs` is this tab's clock at issue or
+ * receive time, and only ever meets `nowMs` (same clock) in the age bound.
+ * `serverAtMs` is the API's own clock at the observation, and only ever meets
+ * another `serverAtMs` in the ordering rule. Before the split, a bundle stamped
+ * from the API clock was ranked against a direct read stamped from the browser
+ * clock, so a client ±10 minutes off either rejected every later read or
+ * expired every bundle observation on arrival.
+ */
+describe('inboxObservationSupersedes', () => {
+  test('two server-stamped observations rank on the server clock alone', () => {
+    const current = { pending: 1, atMs: 1_000, serverAtMs: 5_000 };
+    // Newer on the server clock supersedes, even stamped EARLIER on the
+    // browser clock (a bundle received before a direct read was issued).
+    expect(inboxObservationSupersedes({ pending: 0, atMs: 500, serverAtMs: 6_000 }, current)).toBe(
+      true,
+    );
+    // Older on the server clock never supersedes, however new its browser stamp.
+    expect(
+      inboxObservationSupersedes({ pending: 0, atMs: 999_999, serverAtMs: 4_000 }, current),
+    ).toBe(false);
+  });
+
+  test('a ±10-minute client clock skew cannot change the ranking', () => {
+    const skew = 10 * 60_000;
+    const current = { pending: 1, atMs: 1_000, serverAtMs: 1_000 + skew };
+    // The browser stamps sit 10 minutes BEHIND the server stamps on both
+    // observations; the server clock still decides, in both directions.
+    expect(
+      inboxObservationSupersedes({ pending: 0, atMs: 2_000, serverAtMs: 2_000 + skew }, current),
+    ).toBe(true);
+    expect(
+      inboxObservationSupersedes({ pending: 0, atMs: 2_000, serverAtMs: 500 + skew }, current),
+    ).toBe(false);
+  });
+
+  test('without a shared server clock, the browser stamps rank — same clock again', () => {
+    expect(inboxObservationSupersedes({ pending: 0, atMs: 200 }, { pending: 1, atMs: 100 })).toBe(
+      true,
+    );
+    expect(inboxObservationSupersedes({ pending: 0, atMs: 50 }, { pending: 1, atMs: 100 })).toBe(
+      false,
+    );
+    // One side stamped, the other not: no shared clock exists, so the browser
+    // stamps are the only pair drawn from one clock.
+    expect(
+      inboxObservationSupersedes({ pending: 0, atMs: 200 }, { pending: 1, atMs: 100, serverAtMs: 9 }),
+    ).toBe(true);
+    expect(
+      inboxObservationSupersedes({ pending: 0, atMs: 50, serverAtMs: 9 }, { pending: 1, atMs: 100 }),
+    ).toBe(false);
+  });
+
+  test('the first observation always stands', () => {
+    expect(inboxObservationSupersedes({ pending: 1, atMs: 1 }, null)).toBe(true);
+    expect(inboxObservationSupersedes({ pending: 1, atMs: 1 }, undefined)).toBe(true);
   });
 });
 

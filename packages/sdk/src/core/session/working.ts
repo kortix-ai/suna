@@ -262,7 +262,44 @@ export interface WorkingActivityInput {
  *  still going to run, and when that list was read. */
 export interface WorkingInboxInput {
   pending: number;
+  /** This tab's clock at ISSUE or RECEIVE time. The AGE stamp: it only ever
+   *  meets `nowMs` — the same clock — in `INBOX_OBSERVATION_MAX_MS`. */
   atMs: number;
+  /**
+   * The SERVER's clock at the observation — `observed_at` captured before the
+   * read (GET, bundle, stream frame) or after the write (`POST .../prompts`).
+   * The ORDERING stamp: it only ever meets another `serverAtMs`. Absent when
+   * the server did not supply one.
+   *
+   * Two stamps because one field served both jobs and the jobs need different
+   * clocks. Ranked against a browser stamp, an API clock ±10 minutes off
+   * either rejected every later direct read (skew ahead) or aged the
+   * observation out on arrival (skew behind) — both reproduced in PR #6957's
+   * review as a stale empty snapshot hiding a backend-confirmed queue row.
+   */
+  serverAtMs?: number;
+}
+
+/**
+ * May `candidate` replace `current` as the session's inbox observation?
+ *
+ * ONE clock per comparison. When both observations carry the server's stamp,
+ * the server clock decides — it is the only pair drawn from one clock, and it
+ * orders a read against a write exactly (a read issued before a POST carries an
+ * older `observed_at` than the POST's response, so it can never erase it).
+ * Otherwise the browser stamps decide, as before. Ties stand aside for the
+ * candidate: two reads of the same instant agree, and the newer arrival may
+ * carry a corrected list.
+ */
+export function inboxObservationSupersedes(
+  candidate: WorkingInboxInput,
+  current: WorkingInboxInput | null | undefined,
+): boolean {
+  if (!current) return true;
+  if (current.serverAtMs != null && candidate.serverAtMs != null) {
+    return candidate.serverAtMs >= current.serverAtMs;
+  }
+  return candidate.atMs >= current.atMs;
 }
 
 export interface WorkingInputs {

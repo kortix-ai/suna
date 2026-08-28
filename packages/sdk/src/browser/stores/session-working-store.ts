@@ -1,7 +1,12 @@
 'use client';
 
 import { create } from 'zustand';
-import type { AbortReceipt, SendReceipt, WorkingInboxInput } from '../../core/session/working';
+import {
+  inboxObservationSupersedes,
+  type AbortReceipt,
+  type SendReceipt,
+  type WorkingInboxInput,
+} from '../../core/session/working';
 
 /**
  * The LOCAL-ISH inputs to `projectWorking`, one set per Kortix session.
@@ -58,14 +63,18 @@ interface SessionWorkingState {
   /** The server acknowledged the cancel. Stamped once — the first
    *  acknowledgement is the one a server read can be measured against. */
   settleAbortReceipt: (sessionId: string, atMs: number) => void;
-  /** One reading of the durable prompt inbox, stamped at ISSUE time. */
-  noteInboxPending: (sessionId: string, pending: number, atMs: number) => void;
+  /** One reading of the durable prompt inbox. `atMs` is this tab's clock at
+   *  ISSUE/RECEIVE time (age); `serverAtMs` is the server's `observed_at`
+   *  (ordering) when the endpoint supplied one. See `WorkingInboxInput`. */
+  noteInboxPending: (sessionId: string, pending: number, atMs: number, serverAtMs?: number) => void;
   /** `POST .../prompts` returned: the row EXISTS, and the server said so. Raise
    *  the inbox floor to at least one pending row, covering the gap between that
    *  response and the list query refetching — a `/turn` poll landing in that gap
    *  answers "no turns" honestly and used to flip the composer back to Send with
-   *  the user's prompt already queued. */
-  notePromptAccepted: (sessionId: string, atMs: number) => void;
+   *  the user's prompt already queued. `serverAtMs` is the response's
+   *  `observed_at`: the write's place on the server clock, which is what bars a
+   *  read issued BEFORE the POST from erasing the row after it settles. */
+  notePromptAccepted: (sessionId: string, atMs: number, serverAtMs?: number) => void;
   /** Drop every input this session holds. Called by `useSessionWorking` when
    *  the LAST observer of the session unmounts — the maps otherwise accumulate
    *  one entry per session visited for the tab's lifetime. Correctness never
@@ -127,25 +136,55 @@ export const useSessionWorkingStore = create<SessionWorkingState>()((set) => ({
       return { aborts: { ...state.aborts, [sessionId]: { ...current, settledAtMs: atMs } } };
     }),
 
-  noteInboxPending: (sessionId, pending, atMs) =>
+  noteInboxPending: (sessionId, pending, atMs, serverAtMs) =>
     set((state) => {
       if (!sessionId) return state;
       const current = state.inbox[sessionId];
       // Readings settle in whatever order the network gives them; only the
       // newest OBSERVATION may stand, or a late older one would walk the
-      // projection backwards.
-      if (current && current.atMs > atMs) return state;
-      if (current && current.atMs === atMs && current.pending === pending) return state;
-      return { inbox: { ...state.inbox, [sessionId]: { pending, atMs } } };
+      // projection backwards. Server-stamped readings rank on the server's own
+      // clock — see `inboxObservationSupersedes`.
+      const candidate: WorkingInboxInput = {
+        pending,
+        atMs,
+        ...(serverAtMs != null ? { serverAtMs } : {}),
+      };
+      if (!inboxObservationSupersedes(candidate, current)) return state;
+      if (
+        current &&
+        current.atMs === atMs &&
+        current.pending === pending &&
+        current.serverAtMs === candidate.serverAtMs
+      ) {
+        return state;
+      }
+      return { inbox: { ...state.inbox, [sessionId]: candidate } };
     }),
 
-  notePromptAccepted: (sessionId, atMs) =>
+  notePromptAccepted: (sessionId, atMs, serverAtMs) =>
     set((state) => {
       if (!sessionId) return state;
       const current = state.inbox[sessionId];
       if (current && current.atMs > atMs) return state;
+      // A reading whose server stamp postdates this POST already answered for
+      // it — the acceptance must not walk the ordering key backwards.
+      if (current?.serverAtMs != null && serverAtMs != null && current.serverAtMs > serverAtMs) {
+        return state;
+      }
       const pending = Math.max(1, current?.pending ?? 0);
-      return { inbox: { ...state.inbox, [sessionId]: { pending, atMs } } };
+      const merged =
+        serverAtMs != null || current?.serverAtMs != null
+          ? Math.max(
+              serverAtMs ?? Number.NEGATIVE_INFINITY,
+              current?.serverAtMs ?? Number.NEGATIVE_INFINITY,
+            )
+          : undefined;
+      return {
+        inbox: {
+          ...state.inbox,
+          [sessionId]: { pending, atMs, ...(merged != null ? { serverAtMs: merged } : {}) },
+        },
+      };
     }),
 
   clearSession: (sessionId) =>

@@ -50,6 +50,24 @@ export function clearLastProjectId(): void {
 }
 
 /**
+ * Forget the remembered project ONLY if it names `projectId` (JAY-729).
+ *
+ * The self-heal for an unrenderable target: a project that turned out deleted
+ * (404), denied (403), or that the user just archived must stop being where
+ * `/`, sign-in, and the settings exit land — otherwise every escape route
+ * funnels straight back into the failure. Scoped to the exact project so a
+ * verdict about one project can never forget a healthy one, and owner-scoped
+ * like every other read here.
+ */
+export function forgetLastProjectId(
+  userId: string | null | undefined,
+  projectId: string,
+): void {
+  if (readLastProjectId(userId) !== projectId) return;
+  clearLastProjectId();
+}
+
+/**
  * Where "take me into the app" goes from client code: the latest project this
  * user had open, else the landing door that resolves one.
  *

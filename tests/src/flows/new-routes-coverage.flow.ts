@@ -193,6 +193,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
       'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
       'GET /v1/projects/:projectId/sessions/:sessionId/events',
     ],
   },
@@ -290,6 +291,36 @@ flow(
         throw new Error(
           `bundle turn must equal GET /turn: ${JSON.stringify(bundleTurn)} vs ${JSON.stringify(singleBody)}`,
         );
+      }
+    });
+
+    await ctx.step('The /open-bundle alias serves the same snapshot envelope', async () => {
+      // Every published `@kortix/sdk` requests `/open-bundle`
+      // (`getSessionOpenBundle`); the #6987 rename to `/snapshot` left those
+      // clients 404ing and silently falling back to 6-8 serial reads per
+      // session open. The alias is the same handler — assert the same
+      // tri-state envelope answers, so shipped SDKs keep the accelerator.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{
+        observed_at: string;
+        session: { session_id: string };
+        turn: { known: boolean };
+        queue: { known: boolean };
+      }>();
+      if (body.session.session_id !== session.id) {
+        throw new Error(`alias answered for the wrong session: ${body.session.session_id}`);
+      }
+      if (typeof body.turn?.known !== 'boolean' || typeof body.queue?.known !== 'boolean') {
+        throw new Error(`alias must serve the tri-state envelope: ${JSON.stringify(body)}`);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}T/.test(body.observed_at)) {
+        throw new Error(`observed_at must stamp the envelope, got ${body.observed_at}`);
       }
     });
 
