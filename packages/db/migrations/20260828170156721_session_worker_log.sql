@@ -22,13 +22,12 @@ set statement_timeout = '30s';
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
 CREATE TABLE "kortix"."session_worker_log" (
+	"id" bigserial PRIMARY KEY NOT NULL,
 	"session_id" text NOT NULL,
-	"seq" integer NOT NULL,
 	"item" jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "session_worker_log_session_id_seq_pk" PRIMARY KEY("session_id","seq"),
-	CONSTRAINT "session_worker_log_seq_check" CHECK ("kortix"."session_worker_log"."seq" >= 0),
 	CONSTRAINT "session_worker_log_item_object_check" CHECK (jsonb_typeof("kortix"."session_worker_log"."item") = 'object')
 );
 --> statement-breakpoint
-ALTER TABLE "kortix"."session_worker_log" ADD CONSTRAINT "session_worker_log_session_id_project_sessions_session_id_fk" FOREIGN KEY ("session_id") REFERENCES "kortix"."project_sessions"("session_id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "kortix"."session_worker_log" ADD CONSTRAINT "session_worker_log_session_id_project_sessions_session_id_fk" FOREIGN KEY ("session_id") REFERENCES "kortix"."project_sessions"("session_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_session_worker_log_session_id" ON "kortix"."session_worker_log" USING btree ("session_id","id");

@@ -1,5 +1,5 @@
 {
-  "id": "c34134d4-ef4f-47b8-b7f5-d11b4f1d1e19",
+  "id": "a8f1b800-2822-4c0a-970f-f593fbbf6962",
   "prevId": "0405819a-1a99-4063-a899-028e0eb7dca1",
   "version": "7",
   "dialect": "postgresql",
@@ -18264,15 +18264,15 @@
       "name": "session_worker_log",
       "schema": "kortix",
       "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
         "session_id": {
           "name": "session_id",
           "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "seq": {
-          "name": "seq",
-          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -18290,7 +18290,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_session_worker_log_session_id": {
+          "name": "idx_session_worker_log_session_id",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "session_worker_log_session_id_project_sessions_session_id_fk": {
           "name": "session_worker_log_session_id_project_sessions_session_id_fk",
@@ -18307,22 +18329,10 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "session_worker_log_session_id_seq_pk": {
-          "name": "session_worker_log_session_id_seq_pk",
-          "columns": [
-            "session_id",
-            "seq"
-          ]
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "session_worker_log_seq_check": {
-          "name": "session_worker_log_seq_check",
-          "value": "\"kortix\".\"session_worker_log\".\"seq\" >= 0"
-        },
         "session_worker_log_item_object_check": {
           "name": "session_worker_log_item_object_check",
           "value": "jsonb_typeof(\"kortix\".\"session_worker_log\".\"item\") = 'object'"

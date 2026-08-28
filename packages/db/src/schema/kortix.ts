@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigint,
+  bigserial,
   boolean,
   check,
   foreignKey,
@@ -886,40 +887,33 @@ export const projectSessions = kortixSchema.table(
  * path of a running turn.
  *
  * Why a table and not the sandbox: today history lives inside the running box,
- * so reading a stopped session's transcript means waking it — that is the
- * "session looks stopped, then a huge delay" class of bug the plan calls out.
- * With the log here, history is servable with nothing running at all.
+ * so reading a stopped session's transcript means waking it — the "session
+ * looks stopped, then a huge delay" class of bug the plan calls out. With the
+ * log here, history is servable with nothing running at all.
  *
- * `seq` is assigned by the WRITER and is unique per session: the worker replays
- * this log in order to rebuild its storage on resume, so a gap or a reorder
- * silently corrupts the conversation. It is a plain integer rather than a
- * generated identity because the worker's own ordering is the authority.
+ * ORDER IS THE CONTRACT. The worker replays this log to rebuild its storage on
+ * resume, so a reorder silently corrupts the conversation. `id` is assigned by
+ * the DATABASE rather than the client because the worker's append carries no
+ * sequence of its own — it POSTs the bare mutation and relies on arrival order,
+ * which is safe precisely because one worker writes one session serially.
  */
 export const sessionWorkerLog = kortixSchema.table(
   'session_worker_log',
   {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
-    seq: integer('seq').notNull(),
     item: jsonb('item').$type<Record<string, unknown>>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    // (session_id, seq) IS the read pattern — replay reads one session in seq
-    // order — so the primary key's own btree already serves it. A separate
-    // index on the same columns in the same order would only cost writes.
-    primaryKey({ columns: [table.sessionId, table.seq] }),
-    check('session_worker_log_seq_check', sql`${table.seq} >= 0`),
+    // The only read this table has: one session, in append order.
+    index('idx_session_worker_log_session_id').on(table.sessionId, table.id),
     check('session_worker_log_item_object_check', sql`jsonb_typeof(${table.item}) = 'object'`),
   ],
 );
 
-/**
- * Durable, non-secret wrapper context for one project session. It is kept out
- * of user-editable session metadata and materialized only as the single
- * server-owned KORTIX_SESSION_CONTEXT JSON envelope.
- */
 export const projectSessionRuntimeContexts = kortixSchema.table(
   'project_session_runtime_contexts',
   {

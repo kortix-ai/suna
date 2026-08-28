@@ -28,17 +28,18 @@ import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { UUID_V4_REGEX } from '../lib/serializers';
 
-/** One appended mutation. `item` is the worker's own LogItem, stored verbatim. */
-const LogItemSchema = z.object({
-  seq: z.number().int().min(0),
-  item: z.record(z.unknown()),
-});
-
-const LogPageSchema = z.object({
-  session_id: z.string(),
-  items: z.array(z.record(z.unknown())),
-  next_seq: z.number().int(),
-});
+/**
+ * The wire shape is the WORKER's, not ours: it POSTs the bare mutation and
+ * expects a bare array back (apps/kortix-worker/src/session-store.ts —
+ * `RemoteSessionLog`). That contract is already proven by the Phase 0 spike and
+ * its benches, so the server matches it rather than the other way round.
+ *
+ * There is no client sequence number in it. Ordering is arrival order, assigned
+ * by the database, which is safe because exactly one worker writes one session
+ * and its turns are serialized.
+ */
+const LogItemSchema = z.record(z.unknown());
+const LogPageSchema = z.array(z.record(z.unknown()));
 
 /**
  * A single append may not be unbounded: one runaway tool result would otherwise
@@ -94,34 +95,22 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: LogItemSchema } } },
     },
     responses: {
-      204: { description: 'Appended, or already present with identical content' },
+      204: { description: 'Appended' },
       400: errors[400],
       401: errors[401],
       403: errors[403],
       404: errors[404],
-      409: { description: 'That seq already holds a different item' },
       413: { description: 'Item exceeds the per-append size limit' },
     },
   }),
   async (c: any) => {
     const gate = await authorizeLogCall(c, PROJECT_ACTIONS.SESSION_START);
     if (gate.kind === 'error') return gate.response;
-    const { seq, item } = c.req.valid('json');
+    const item = c.req.valid('json') as Record<string, unknown>;
     if (Buffer.byteLength(JSON.stringify(item), 'utf8') > MAX_ITEM_BYTES) {
       return c.json({ error: 'log item too large' }, 413);
     }
-    // Idempotent on replay: the worker awaits every append, so a retry after a
-    // network failure must not become a second entry at the same seq.
-    const existing = await db
-      .select({ item: sessionWorkerLog.item })
-      .from(sessionWorkerLog)
-      .where(and(eq(sessionWorkerLog.sessionId, gate.sessionId), eq(sessionWorkerLog.seq, seq)))
-      .limit(1);
-    if (existing.length > 0) {
-      const same = JSON.stringify(existing[0].item) === JSON.stringify(item);
-      return same ? c.body(null, 204) : c.json({ error: 'seq already written' }, 409);
-    }
-    await db.insert(sessionWorkerLog).values({ sessionId: gate.sessionId, seq, item });
+    await db.insert(sessionWorkerLog).values({ sessionId: gate.sessionId, item });
     return c.body(null, 204);
   },
 );
@@ -137,7 +126,7 @@ projectsApp.openapi(
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      query: z.object({ after: z.coerce.number().int().min(-1).optional() }),
+      query: z.object({ after: z.coerce.number().int().min(0).optional() }),
     },
     responses: {
       200: json(LogPageSchema, 'The session transcript log'),
@@ -150,18 +139,13 @@ projectsApp.openapi(
   async (c: any) => {
     const gate = await authorizeLogCall(c, PROJECT_ACTIONS.PROJECT_READ);
     if (gate.kind === 'error') return gate.response;
-    const after = c.req.valid('query').after ?? -1;
+    const after = c.req.valid('query').after ?? 0;
     const rows = await db
-      .select({ seq: sessionWorkerLog.seq, item: sessionWorkerLog.item })
+      .select({ item: sessionWorkerLog.item })
       .from(sessionWorkerLog)
-      .where(and(eq(sessionWorkerLog.sessionId, gate.sessionId), gt(sessionWorkerLog.seq, after)))
-      .orderBy(asc(sessionWorkerLog.seq));
-    return c.json({
-      session_id: gate.sessionId,
-      items: rows.map((r) => r.item),
-      // Where a resuming reader continues from; -1 when the log is empty, which
-      // is the same value a first-time reader passes.
-      next_seq: rows.length > 0 ? rows[rows.length - 1].seq : after,
-    });
+      .where(and(eq(sessionWorkerLog.sessionId, gate.sessionId), gt(sessionWorkerLog.id, after)))
+      .orderBy(asc(sessionWorkerLog.id));
+    // A bare array: the worker replays exactly what it appended, in order.
+    return c.json(rows.map((r) => r.item));
   },
 );

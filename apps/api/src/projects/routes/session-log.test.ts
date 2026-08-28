@@ -26,18 +26,21 @@ describe('session worker log routes', () => {
     expect(source.split('authorizeLogCall(c,').length - 1).toBe(2);
   });
 
-  test('an append is idempotent at a seq, and a CONFLICTING one is refused', async () => {
+  test('the wire shape is the WORKER\'s: bare item in, bare array out', async () => {
     const source = await routeSource();
-    // Replay depends on seq ordering, so a retry must not become a second
-    // entry and a different item at a taken seq must not silently win.
-    expect(source).toContain('existing.length > 0');
-    expect(source).toContain("c.json({ error: 'seq already written' }, 409)");
-    expect(source).toMatch(/same \?\s*c\.body\(null, 204\)/);
+    // RemoteSessionLog POSTs `JSON.stringify(item)` and does
+    // `(await res.json()) as LogItem[]`. An envelope on either side silently
+    // breaks replay: appends 400 and restore iterates nothing.
+    expect(source).toContain('const LogItemSchema = z.record(z.unknown());');
+    expect(source).toContain('const LogPageSchema = z.array(z.record(z.unknown()));');
+    expect(source).toContain('return c.json(rows.map((r) => r.item));');
+    expect(source).not.toMatch(/session_id:\s*gate\.sessionId,\s*\n\s*items:/);
   });
 
-  test('reads are ordered by seq and bounded appends protect the replay path', async () => {
+  test('reads are in append order and appends are size-bounded', async () => {
     const source = await routeSource();
-    expect(source).toContain('orderBy(asc(sessionWorkerLog.seq))');
+    // Order IS the contract — replay rebuilds the conversation from it.
+    expect(source).toContain('orderBy(asc(sessionWorkerLog.id))');
     expect(source).toContain('MAX_ITEM_BYTES');
     expect(source).toContain("c.json({ error: 'log item too large' }, 413)");
   });
