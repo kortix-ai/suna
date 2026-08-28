@@ -94,8 +94,6 @@ Visible result:
 - No assistant response contained `FINAL_P2_DONE`.
 - The lifecycle layer marked both rows as delivered.
 
-![Original PR head: P1 result appears under P2](/Users/jay/root/kortix/suna-session-protocol/output/reports/pr-6957/screenshots/09-final-head-result.png)
-
 This is a data-attribution failure. It is not a cosmetic ordering problem.
 
 ## Fixes implemented
@@ -197,10 +195,6 @@ Sequence:
 4. `GET /prompts` retained P2 with reason `turn_active` and attempts `0`.
 5. A browser refresh preserved P1 and P2.
 6. The queued P2 row remained visible with the `Remove from queue` control.
-
-![P2 remains queued while P1 owns the turn](/Users/jay/root/kortix/suna-session-protocol/output/playwright/pr-6957-p2-queued-during-p1.png)
-
-![The queued message remains visible after refresh](/Users/jay/root/kortix/suna-session-protocol/output/playwright/pr-6957-queued-message-visible-after-refresh.png)
 
 Verified:
 
