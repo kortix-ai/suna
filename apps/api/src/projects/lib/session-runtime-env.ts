@@ -198,8 +198,17 @@ export function buildPiWorkerSessionEnvVars(input: {
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // No repo checkout exists on a worker box.
     KORTIX_PROJECT_AUTO_CLONE: '0',
+    // The worker defaults to its scripted `faux` provider when this is unset
+    // (`KORTIX_MODEL_MODE ?? 'faux'`, apps/kortix-worker/src/worker.ts). That
+    // default belongs to the benchmarks, which measure infrastructure with no
+    // credentials — a REAL session that inherits it answers every prompt with
+    // an empty assistant turn and no error anywhere, which reads as "pi never
+    // replies". A session is always real; only a bench opts into faux.
+    KORTIX_MODEL_MODE: 'real',
     // The resolved session model override. The worker maps it onto the
-    // gateway exactly like a baked model ref (env wins over bake).
+    // gateway exactly like a baked model ref (env wins over bake). Absent, the
+    // compiled artifact's own baked model is used — which is why this stays
+    // conditional and must not fall back to the platform resolution.
     ...(input.opencodeModel ? { KORTIX_MODEL: input.opencodeModel } : {}),
   };
 }
