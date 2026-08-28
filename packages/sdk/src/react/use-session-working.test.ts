@@ -461,4 +461,70 @@ describe('workingRefetchInterval (stream presence hands the cadence over)', () =
       workingRefetchInterval({ pollOwner: false, streamConnected: false, projection }),
     ).toBe(false);
   });
+
+  /**
+   * Resuming a session showed "Gathering thoughts..." over a finished
+   * transcript for ~45s.
+   *
+   * The poll stood down the moment the stream connected, on the promise that
+   * `kortix.control.turn` carries the same projection. It does — but the
+   * reconciler pushes those frames ON CHANGE, and a session resumed with a
+   * turn row already open produces no change and therefore no frame. Nothing
+   * re-read `/turn`, so the stale row decided the UI until the whole
+   * observation aged past SERVER_OBSERVATION_MAX_MS.
+   */
+  describe('a connected stream that has not answered yet', () => {
+    test('keeps polling while it claims work on an uncorroborated observation', () => {
+      expect(
+        workingRefetchInterval({
+          pollOwner: true,
+          streamConnected: true,
+          streamCorroborated: false,
+          projection,
+        }),
+      ).toBe(WORKING_POLL_ACTIVE_MS);
+    });
+
+    test('stands down as soon as a turn frame arrives', () => {
+      expect(
+        workingRefetchInterval({
+          pollOwner: true,
+          streamConnected: true,
+          streamCorroborated: true,
+          projection,
+        }),
+      ).toBe(false);
+    });
+
+    test('does not poll an IDLE session — only the working claim needs converging', () => {
+      // An idle projection is not the failure mode: a turn STARTING is a change,
+      // so the reconciler pushes a frame for it. Polling here would reinstate
+      // the duplication the stand-down exists to remove.
+      expect(
+        workingRefetchInterval({
+          pollOwner: true,
+          streamConnected: true,
+          streamCorroborated: false,
+          projection: { ...projection, state: 'idle', turnId: null, serverOpenTurnToken: null },
+        }),
+      ).toBe(false);
+    });
+
+    test('a non-owner still never polls', () => {
+      expect(
+        workingRefetchInterval({
+          pollOwner: false,
+          streamConnected: true,
+          streamCorroborated: false,
+          projection,
+        }),
+      ).toBe(false);
+    });
+
+    test('an absent flag reads as corroborated, so the gate can only ADD polling', () => {
+      expect(
+        workingRefetchInterval({ pollOwner: true, streamConnected: true, projection }),
+      ).toBe(false);
+    });
+  });
 });

@@ -27,6 +27,18 @@ interface PresenceScope {
    *  the tick to invalidate its query on a real change instead of polling. */
   auditFingerprint: string | null;
   auditTick: number;
+  /**
+   * Has a `kortix.control.turn` frame arrived since the CURRENT attach?
+   *
+   * `connected` is a promise that the control channel will answer; this is the
+   * answer having arrived. The reconciler pushes turn frames ON CHANGE, so a
+   * session resumed with a turn row already open produces no change and no
+   * frame — the poll that would have converged it had already stood down on
+   * `connected`, and the stale row then read as `working` until the whole
+   * observation aged out (`SERVER_OBSERVATION_MAX_MS`, 45s). Resuming showed
+   * "Gathering thoughts..." over a finished transcript for that long.
+   */
+  turnCorroborated: boolean;
   listeners: Set<() => void>;
   /** Separate listeners so an audit change does not re-render presence
    *  consumers (turn/prompt poll owners), which read `connected`/`runtimeLive`
@@ -44,6 +56,7 @@ function stateFor(scope: string): PresenceScope {
       runtimeLive: false,
       auditFingerprint: null,
       auditTick: 0,
+      turnCorroborated: false,
       listeners: new Set(),
       auditListeners: new Set(),
     };
@@ -70,8 +83,37 @@ export function markSessionStreamConnected(scope: string, connected: boolean): v
   const was = state.connected > 0;
   state.connected = Math.max(0, state.connected + (connected ? 1 : -1));
   const is = state.connected > 0;
-  if (was !== is) for (const listener of state.listeners) listener();
+  // A new attach starts UNCORROBORATED: whatever the last connection was told
+  // says nothing about this one, and a reconnect is exactly when a stale open
+  // row is most likely to be sitting in the cache.
+  if (was !== is) {
+    state.turnCorroborated = false;
+    for (const listener of state.listeners) listener();
+  }
   forget(scope, state);
+}
+
+/**
+ * Record that a `kortix.control.turn` frame has arrived for `scope`.
+ *
+ * This is what makes standing the `/turn` poll down on `connected` safe: until
+ * it fires, a connected stream has promised an answer and not yet given one.
+ */
+export function markSessionControlTurn(scope: string): void {
+  if (!scope) return;
+  const state = stateFor(scope);
+  if (state.turnCorroborated) {
+    forget(scope, state);
+    return;
+  }
+  state.turnCorroborated = true;
+  for (const listener of state.listeners) listener();
+  forget(scope, state);
+}
+
+/** Has the control channel answered about turns since the current attach? */
+export function isSessionTurnCorroborated(scope: string): boolean {
+  return scopes.get(scope)?.turnCorroborated ?? false;
 }
 
 /** Is at least one stream delivering for `scope` right now? */

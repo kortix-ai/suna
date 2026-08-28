@@ -55,6 +55,7 @@ import {
 } from '../core/stream/session-stream-controller';
 import {
   markSessionAuditWatermark,
+  markSessionControlTurn,
   markSessionRuntimeChannelLive,
   markSessionStreamConnected,
 } from '../core/stream/session-stream-presence';
@@ -256,6 +257,12 @@ export function useSessionRuntimeStream(
       },
       applyControlTurn: (observation: SessionTurnObservation) => {
         queryClient.setQueryData(qk.project.sessionTurn(projectId, sessionId), observation);
+        // The control channel has now ANSWERED about turns, which is what lets
+        // the `/turn` poll stand down. Presence alone is only a promise: turn
+        // frames are pushed on CHANGE, so a resume with a row already open
+        // yields no frame, and a poll that stood down on `connected` left the
+        // stale row reading as `working` for the full 45s observation window.
+        markSessionControlTurn(scope);
       },
       applyControlQueue: (prompts: SessionPrompt[], atMs: number) => {
         noteInboxObservation(sessionId, prompts, atMs);

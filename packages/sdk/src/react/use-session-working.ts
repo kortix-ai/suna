@@ -22,7 +22,11 @@ import {
 import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
-import { sessionStreamScope, useSessionStreamPresence } from './use-session-stream-presence';
+import {
+  sessionStreamScope,
+  useSessionStreamPresence,
+  useSessionTurnCorroborated,
+} from './use-session-stream-presence';
 
 /**
  * The ONE answer to "is this session working?", and where the answer came from.
@@ -60,9 +64,26 @@ export function workingPollMs(projection: WorkingProjection): number {
 export function workingRefetchInterval(input: {
   pollOwner: boolean;
   streamConnected: boolean;
+  /**
+   * Has a `kortix.control.turn` frame arrived since this stream attached? A
+   * connected stream has PROMISED to carry turn state; this is the promise
+   * kept. Absent (older callers) is treated as corroborated, so the gate can
+   * only ever add polling, never remove it.
+   */
+  streamCorroborated?: boolean;
   projection: WorkingProjection;
 }): number | false {
-  if (!input.pollOwner || input.streamConnected) return false;
+  if (!input.pollOwner) return false;
+  // Standing down on a connected stream is only safe once that stream has
+  // answered. Turn frames are pushed ON CHANGE, so a session resumed with a
+  // row already open generates neither — and the stale row then reads as
+  // `working` until the observation ages out 45s later ("Gathering thoughts..."
+  // over a finished transcript, on every resume). Keep the poll until either
+  // the stream corroborates or the projection stops claiming work.
+  const corroborated = input.streamCorroborated ?? true;
+  if (input.streamConnected && (corroborated || input.projection.state !== 'working')) {
+    return false;
+  }
   return workingPollMs(input.projection);
 }
 
@@ -318,9 +339,9 @@ export function useSessionWorking(
     projectWorking(inputsFor(turn, nowMs));
 
   const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
-  const streamConnected = useSessionStreamPresence(
-    canRead ? sessionStreamScope(projectId, sessionId) : '',
-  );
+  const streamScope = canRead ? sessionStreamScope(projectId, sessionId) : '';
+  const streamConnected = useSessionStreamPresence(streamScope);
+  const streamCorroborated = useSessionTurnCorroborated(streamScope);
 
   const query = useQuery({
     queryKey: qk.project.sessionTurn(projectId, sessionId),
@@ -340,6 +361,7 @@ export function useSessionWorking(
       workingRefetchInterval({
         pollOwner,
         streamConnected,
+        streamCorroborated,
         projection: project(query.state.data, Date.now()),
       }),
     // Coming back to a tab is the moment a turn that started (or ended) while

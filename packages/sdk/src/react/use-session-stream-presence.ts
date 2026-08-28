@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react';
 import {
   getSessionAuditTick,
   isSessionStreamConnected,
+  isSessionTurnCorroborated,
   subscribeSessionAudit,
   subscribeSessionStreamPresence,
 } from '../core/stream/session-stream-presence';
@@ -22,6 +23,26 @@ export function useSessionStreamPresence(scope: string): boolean {
     (onChange) => (scope ? subscribeSessionStreamPresence(scope, onChange) : () => {}),
     () => !!scope && isSessionStreamConnected(scope),
     // On the server no stream exists to be connected.
+    () => false,
+  );
+}
+
+/**
+ * Has the control channel actually answered about turns since this stream
+ * attached?
+ *
+ * `useSessionStreamPresence` says a stream is CONNECTED. That is a promise the
+ * control channel will carry turn state; it is not the state having arrived.
+ * The reconciler pushes `kortix.control.turn` on CHANGE, so a session resumed
+ * with a row already open produces no change and no frame — and the poll that
+ * would have converged it has already stood down on presence alone. Poll
+ * owners pair the two so they only hand their cadence over once someone has
+ * actually answered.
+ */
+export function useSessionTurnCorroborated(scope: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => (scope ? subscribeSessionStreamPresence(scope, onChange) : () => {}),
+    () => !!scope && isSessionTurnCorroborated(scope),
     () => false,
   );
 }

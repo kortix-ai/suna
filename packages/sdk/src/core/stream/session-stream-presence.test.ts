@@ -3,7 +3,9 @@ import {
   getSessionAuditTick,
   isSessionRuntimeChannelLive,
   isSessionStreamConnected,
+  isSessionTurnCorroborated,
   markSessionAuditWatermark,
+  markSessionControlTurn,
   markSessionRuntimeChannelLive,
   markSessionStreamConnected,
   resetSessionStreamPresence,
@@ -117,5 +119,76 @@ describe('audit watermark signal', () => {
     expect(presence).toBe(1);
     un1();
     un2();
+  });
+});
+
+/**
+ * `connected` is a PROMISE that the control channel will carry turn state.
+ * Corroboration is that promise kept.
+ *
+ * Turn frames are pushed on CHANGE, so a session resumed with a row already
+ * open produces neither a change nor a frame — while the `/turn` poll had
+ * already stood down on `connected` alone. The stale row then read as
+ * `working` for the full observation window, which is the "Gathering
+ * thoughts..." over a finished transcript seen on every resume.
+ */
+describe('turn corroboration', () => {
+  beforeEach(() => resetSessionStreamPresence());
+
+  test('a fresh scope has not been answered', () => {
+    expect(isSessionTurnCorroborated('p/s')).toBe(false);
+    markSessionStreamConnected('p/s', true);
+    expect(isSessionStreamConnected('p/s')).toBe(true);
+    expect(isSessionTurnCorroborated('p/s')).toBe(false);
+  });
+
+  test('a control turn frame corroborates the scope', () => {
+    markSessionStreamConnected('p/s', true);
+    markSessionControlTurn('p/s');
+    expect(isSessionTurnCorroborated('p/s')).toBe(true);
+  });
+
+  test('a RECONNECT starts uncorroborated again', () => {
+    markSessionStreamConnected('p/s', true);
+    markSessionControlTurn('p/s');
+    expect(isSessionTurnCorroborated('p/s')).toBe(true);
+
+    // The whole point: what the previous connection was told says nothing
+    // about this one, and a reconnect is exactly when a stale open row is most
+    // likely to be sitting in the cache.
+    markSessionStreamConnected('p/s', false);
+    markSessionStreamConnected('p/s', true);
+    expect(isSessionTurnCorroborated('p/s')).toBe(false);
+  });
+
+  test('a refcount overlap is not a reconnect', () => {
+    // StrictMode double-mounts and reconnect overlap hold two connections for
+    // one scope. Neither crosses the boolean, so neither may discard an answer
+    // the surviving connection already gave.
+    markSessionStreamConnected('p/s', true);
+    markSessionControlTurn('p/s');
+    markSessionStreamConnected('p/s', true);
+    markSessionStreamConnected('p/s', false);
+    expect(isSessionStreamConnected('p/s')).toBe(true);
+    expect(isSessionTurnCorroborated('p/s')).toBe(true);
+  });
+
+  test('presence subscribers are notified when the answer lands', () => {
+    markSessionStreamConnected('p/s', true);
+    let calls = 0;
+    const off = subscribeSessionStreamPresence('p/s', () => calls++);
+    markSessionControlTurn('p/s');
+    expect(calls).toBe(1);
+    markSessionControlTurn('p/s'); // already true — no churn
+    expect(calls).toBe(1);
+    off();
+  });
+
+  test('scopes do not share an answer', () => {
+    markSessionStreamConnected('a/1', true);
+    markSessionStreamConnected('b/2', true);
+    markSessionControlTurn('a/1');
+    expect(isSessionTurnCorroborated('a/1')).toBe(true);
+    expect(isSessionTurnCorroborated('b/2')).toBe(false);
   });
 });
