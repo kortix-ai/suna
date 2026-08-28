@@ -29,7 +29,7 @@
  */
 
 import type { Message, Part, QuestionAnswer, SessionStatus, Todo } from '../runtime/client';
-import type { OpenCodeEvent } from './session-stream-controller';
+import type { OpenCodeEvent } from './event-stream';
 
 export interface KortixChatEventMessageUpdated {
   type: 'message.updated';

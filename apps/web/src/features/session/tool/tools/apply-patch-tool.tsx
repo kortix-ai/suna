@@ -148,7 +148,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
                   {/* Sentence case, regular weight. An uppercase bold "ADD" is
 									    the same jargon register the title just lost — the badge is
 									    a label on a row, not a shout. */}
-                  <Badge variant={typeMeta.tone} size="sm" className="shrink-0 normal-case">
+                  <Badge variant={typeMeta.tone} size="sm" className="shrink-0">
                     {typeMeta.label}
                   </Badge>
                   <span

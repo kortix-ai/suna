@@ -352,13 +352,6 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: 'kortix-ppwarm-test',
-    tip: 'a'.repeat(40),
-    built: false,
-    provider: 'daytona',
-  }),
-  routedPerProjectWarmImageName: () => 'kpp2-test',
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 

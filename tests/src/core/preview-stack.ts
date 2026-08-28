@@ -7,6 +7,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'KORTIX_GITHUB_APP_SLUG',
   'MANAGED_GIT_GITHUB_INSTALL_ID',
   'MANAGED_GIT_GITHUB_OWNER',
+  'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
 ] as const;
 
@@ -177,16 +178,31 @@ export function applyPreviewEnvironment(
   if (!postgresPassword || !anonKey || !serviceRoleKey || !internalServiceKey) {
     throw new Error('self-host environment is missing generated preview credentials');
   }
-  const managedGitValues = [
+  // Managed git has two supported shapes, and the API prefers the PAT when both
+  // are present (see managedGithubToken in projects/git-backends/github.ts):
+  //
+  //   1. a GitHub App — short-lived, repo-scoped, auto-rotating installation
+  //      tokens, but it only works if the App is installed on the owner org AND
+  //      carries `administration: write`, or it cannot create a repo at all;
+  //   2. a single org PAT — no install/permission dance, at the cost of a
+  //      long-lived org-wide token.
+  //
+  // Accept either. Requiring the App shape made a preview whose App lacks the
+  // permission unfixable without a code change, which is what blocked every
+  // preview from creating ANY project.
+  const owner = rawSecrets.MANAGED_GIT_GITHUB_OWNER?.trim();
+  const managedGitApp = [
     rawSecrets.KORTIX_GITHUB_APP_ID,
     rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY,
     rawSecrets.KORTIX_GITHUB_APP_SLUG,
     rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID,
-    rawSecrets.MANAGED_GIT_GITHUB_OWNER,
-  ];
-  const managedGitEnabled = managedGitValues.every((value) => Boolean(value?.trim()));
+  ].every((value) => Boolean(value?.trim()));
+  const managedGitPat = Boolean(rawSecrets.MANAGED_GIT_GITHUB_TOKEN?.trim());
+  const managedGitEnabled = Boolean(owner) && (managedGitApp || managedGitPat);
   if (!managedGitEnabled) {
-    throw new Error('preview target-full requires the complete managed GitHub App configuration');
+    throw new Error(
+      'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
+    );
   }
 
   Object.assign(runtime, {
@@ -235,6 +251,7 @@ export function applyPreviewEnvironment(
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
+    MANAGED_GIT_GITHUB_TOKEN: rawSecrets.MANAGED_GIT_GITHUB_TOKEN ?? '',
     KORTIX_GITHUB_APP_ID: rawSecrets.KORTIX_GITHUB_APP_ID ?? '',
     KORTIX_GITHUB_APP_PRIVATE_KEY:
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',

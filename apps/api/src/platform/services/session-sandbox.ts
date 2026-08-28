@@ -48,7 +48,6 @@ import {
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
-import { deleteProjectSandboxImage } from '../../snapshots/project-image-delete';
 import { config } from '../../config';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
@@ -232,7 +231,6 @@ export function decideSessionBoot(input: {
   providerName: string;
   providerSupportsIdBoot: boolean;
   imageIsDefault?: boolean;
-  imageIsProjectImage?: boolean;
   imageSnapshotName?: string;
   disabledForSession?: boolean;
 }): { bootByTemplateId: string | null } {
@@ -589,7 +587,6 @@ export async function provisionSessionSandbox(opts: {
       contentHash: string;
       isDefault: boolean;
       runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
-      isProjectImage?: boolean;
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -649,7 +646,6 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
         runtimeProfile: image.runtimeProfile,
-        isProjectImage: image.isProjectImage,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -672,13 +668,8 @@ export async function provisionSessionSandbox(opts: {
         // profile has its own content-addressed name and must never boot that
         // standard pin by mistake.
         imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
-        imageIsProjectImage: image.isProjectImage,
         imageSnapshotName: image.snapshotName,
-        disabledForSession:
-          idBootDisabled ||
-          opts.allowProjectImage === false ||
-          (config.KORTIX_FAST_COLD_BOOT_CONFIGURED &&
-            !config.KORTIX_FAST_COLD_BOOT_ENABLED),
+        disabledForSession: idBootDisabled || opts.allowProjectImage === false,
       });
       if (bootDecision.bootByTemplateId) {
         console.log(
@@ -1044,10 +1035,10 @@ export async function provisionSessionSandbox(opts: {
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        const imageDelete = imageInfo.isProjectImage
-          ? deleteProjectSandboxImage(imageInfo.snapshotName, providerName)
-          : deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName });
-        await imageDelete.catch((err) =>
+        await deleteSandboxImage(opts.gitProject, {
+          slug: imageInfo.slug,
+          provider: providerName,
+        }).catch((err: unknown) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,

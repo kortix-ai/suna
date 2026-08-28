@@ -19,12 +19,7 @@ describe('project session engine boundary', () => {
 
   test('SessionChat consumes supplied SDK state without a second engine', () => {
     expect(chatSource).toContain("useSessionSync(sessionState ? '' : sessionId)");
-    // The 2 s permission/question self-heal polls are DELETED by the Kortix
-    // Runtime API cutover: the sequenced runtime channel makes a missed
-    // `question.asked`/`permission.asked` a detectable gap, and the control
-    // snapshot re-seeds open asks on every attach. Pin their absence.
-    expect(chatSource).not.toContain('useQuestionSelfHeal');
-    expect(chatSource).not.toContain('usePermissionSelfHeal');
+    expect(chatSource).toContain('enabled: !sessionState && isActiveSessionTab');
     expect(chatSource).not.toContain('const client = getClient()');
     expect(chatSource).toContain('sessionState?.runCommand');
     expect(chatSource).not.toContain('@/stores/opencode-compaction-store');

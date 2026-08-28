@@ -652,11 +652,25 @@ projectsApp.openapi(
   ) {
     return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
   }
-  const defaultToGateway =
-    requestedStrategy === undefined &&
-    requestedConsumer === undefined &&
-    isGatewayManagedEnv(name);
-  const explicitStrategy = (requestedStrategy ?? (defaultToGateway ? 'broker' : undefined)) as
+  // The server does NOT infer delivery from the secret's NAME.
+  //
+  // It used to: a create with no `strategy`/`consumer` whose name matched any
+  // provider credential env in the models.dev catalogue was stamped
+  // `broker`/`llm_gateway`. That catalogue has 204 providers and one of them,
+  // `github-copilot`, claims `GITHUB_TOKEN` — so an ordinary GitHub PAT was
+  // classified as a model credential and withheld from the sandbox. The user
+  // set a secret, the agent could not read it, and nothing said why (prod
+  // 2026-08-27). Any name a provider happens to claim had the same problem;
+  // carving out one name would only move it.
+  //
+  // The callers that actually mean "model credential" all say so explicitly —
+  // web provider-connect, the custom-provider form, `kortix providers set`, and
+  // the Codex OAuth flow, which writes its row directly with `strategyLocked`.
+  // Every other caller means "a secret for my sandbox", which is now what they
+  // get. The web secrets manager already sent `runtime`/`sandbox` outright, so
+  // this also ends a split-brain where the same name landed differently
+  // depending on which surface created it.
+  const explicitStrategy = requestedStrategy as
     | 'runtime'
     | 'broker'
     | 'egress'
@@ -664,12 +678,10 @@ projectsApp.openapi(
     | undefined;
   const explicitConsumer =
     requestedConsumer === undefined
-      ? defaultToGateway
-        ? 'llm_gateway'
-        : requestedStrategy === 'runtime'
-          ? 'sandbox'
-          : requestedStrategy === 'egress'
-            ? 'network'
+      ? requestedStrategy === 'runtime'
+        ? 'sandbox'
+        : requestedStrategy === 'egress'
+          ? 'network'
           : requestedStrategy === 'denied'
             ? null
             : undefined

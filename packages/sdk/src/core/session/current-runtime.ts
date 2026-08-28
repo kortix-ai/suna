@@ -22,15 +22,6 @@ export interface CurrentRuntimeState {
    *  scoped APIs like per-sandbox API keys that key on the DB row, not the
    *  external id (which the backend would mistake for the primary key). */
   dbSandboxId: string | null;
-  /**
-   * True once this session's open-bundle has been applied (its runtime-state
-   * roster — agents/commands/sessions — seeded into the query caches, or the
-   * bundle resolved without one). The roster hooks gate their OWN proxied
-   * `/agent` `/command` `/session` reads on this so they read the seeded cache
-   * instead of racing the bundle and each firing a redundant read. Resets to
-   * false on every runtime switch (a new session's bundle has not landed yet).
-   */
-  bundleApplied: boolean;
   version: number;
 }
 
@@ -38,7 +29,6 @@ let state: CurrentRuntimeState = {
   url: null,
   sandboxId: null,
   dbSandboxId: null,
-  bundleApplied: false,
   version: 0,
 };
 
@@ -69,20 +59,7 @@ export function setCurrentRuntime(
 ): void {
   if (state.url === url && state.sandboxId === sandboxId && state.dbSandboxId === dbSandboxId)
     return;
-  // A new runtime: its bundle has not been applied yet, so the roster hooks
-  // wait for it again rather than reading the previous session's seeded cache.
-  state = { url, sandboxId, dbSandboxId, bundleApplied: false, version: state.version + 1 };
-  for (const listener of listeners) listener();
-}
-
-/**
- * Mark the current runtime's open-bundle as applied — called once the
- * runtime-state leg has been seeded (or the bundle resolved without one). This
- * releases the roster hooks to read the seeded caches. Idempotent.
- */
-export function markCurrentRuntimeBundleApplied(): void {
-  if (state.bundleApplied) return;
-  state = { ...state, bundleApplied: true, version: state.version + 1 };
+  state = { url, sandboxId, dbSandboxId, version: state.version + 1 };
   for (const listener of listeners) listener();
 }
 

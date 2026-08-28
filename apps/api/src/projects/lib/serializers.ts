@@ -26,7 +26,7 @@ import {
   classifySnapshotError,
   describeSnapshotError,
 } from '../../snapshots/error-classify';
-import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import type { ProjectRole } from '../access';
 import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';

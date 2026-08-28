@@ -518,15 +518,6 @@ const envSchema = z.object({
   // template row still references. On by default; boot auto-heal covers the rare
   // cross-env race where another env's row pointed at the reaped (identical) name.
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
-  // Optional per-project accelerator. When enabled, Kortix bakes the project's
-  // default-branch repository into a derivative of the shared platform image.
-  // A disabled or failed accelerator never blocks a session. Sessions boot from
-  // the shared image and clone the repository into /workspace instead.
-  //
-  // This switch controls only automatic session-miss and managed-git-push
-  // bakes. Provider transitions still prepare their target image explicitly.
-  // Default OFF keeps the session path on one shared image per provider.
-  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   // Pi worker pool (harness/worker split P1.8): keep this many PARKED boxes of
   // the shared pi-worker snapshot per environment, claimed at session create
   // (a claim skips provider create + box boot, ~4s of the cold path measured
@@ -537,19 +528,15 @@ const envSchema = z.object({
   // auto-stop backstop a parked box is created with, so an orphaned box
   // reclaims itself even if every API instance dies.
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: optInt(60),
-  // One kill switch for additive cold-boot accelerators. It keeps the standard
-  // runtime image and every tool. It enables native OpenCode binary prefetch,
-  // Platinum rootfs materialization, and stopped per-project images with the
-  // exact repository tip baked into /workspace. It never keeps a sandbox or
-  // OpenCode process running. An explicit false also disables the legacy
-  // session per-project image path. An unset value preserves the legacy
-  // KORTIX_WARM_SNAPSHOT_ENABLED rollout while leaving new accelerators off.
+  // Additive cold-boot accelerators that keep the standard runtime image and
+  // every tool: Platinum rootfs materialization and the native OpenCode binary
+  // prefetch. It never keeps a sandbox or an OpenCode process running.
   //
-  // NOT gated here any more (default boot since 2026-08-27, see
-  // docs/specs/2026-08-27-fast-clone-path.md): the fresh-session Git fast path
-  // has its own switch, KORTIX_FAST_GIT_BOOT_ENABLED below. deploy-dev.yml
-  // injects an explicit `false` here on every push, so this flag can never
-  // double as that path's kill switch.
+  // NOT gated here: the fresh-session Git fast path has its own switch,
+  // KORTIX_FAST_GIT_BOOT_ENABLED below (deploy-dev injects an explicit `false`
+  // for THIS flag on every push, so it can never double as that path's kill
+  // switch: deploy-dev.yml injects an explicit `false` for THIS flag on every
+  // push). The per-project warm-image system it also used to gate is gone.
   KORTIX_FAST_COLD_BOOT_ENABLED: optBoolUnset,
   // The fresh-session Git fast path: KORTIX_SESSION_FRESH, the base-tip +
   // scaffold-delta hint (inline or remote bundle), and the OpenCode config-dir
@@ -565,13 +552,6 @@ const envSchema = z.object({
     .enum(['off', 'shadow', 'prefer', 'required'])
     .optional()
     .default('off'),
-  // Per-provider allowlist for legacy WARM project images of CUSTOM
-  // (non-default-slug) templates. The FAST experiment never uses this
-  // allowlist; it creates project images only for the shared default template.
-  // Defaults to 'platinum'. Comma-separated, with the same syntax and parser as
-  // ALLOWED_SANDBOX_PROVIDERS. A provider that is not globally enabled is a
-  // no-op because the lists are intersected below.
-  KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: optStrDefault('platinum'),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -788,10 +768,10 @@ export const KNOWN_PROVIDERS: readonly SandboxProviderName[] = [
 /**
  * Parse comma-separated provider list (e.g. "daytona,platinum"). `fallback` is
  * returned both when `raw` is empty and when every entry in it is unrecognised
- * — kept as a parameter (rather than hardcoding `['daytona']`) so callers whose
- * empty/all-invalid answer should mean "nothing enabled" (e.g.
- * KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS) don't silently inherit
- * ALLOWED_SANDBOX_PROVIDERS' "default to daytona" safety belt.
+ * — kept as a parameter (rather than hardcoding `['daytona']`) so a caller
+ * whose empty/all-invalid answer should mean "nothing enabled" does not
+ * silently inherit ALLOWED_SANDBOX_PROVIDERS' "default to daytona" safety
+ * belt.
  */
 export function parseAllowedProviders(
   raw: string,
@@ -1024,12 +1004,6 @@ const env = validateEnv();
 // ─── Parse Providers ────────────────────────────────────────────────────────
 
 const allowedProviders = parseAllowedProviders(env.ALLOWED_SANDBOX_PROVIDERS);
-// Intersected with `allowedProviders`: a provider listed here that isn't itself
-// enabled globally must never become "enabled for custom-template warming only".
-const customTemplateWarmProviders = parseAllowedProviders(
-  env.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS,
-  ['platinum'],
-).filter((p) => allowedProviders.includes(p));
 
 // ─── Config Object (typed, validated) ───────────────────────────────────────
 
@@ -1177,11 +1151,9 @@ export const config = {
   DAYTONA_TARGET: env.DAYTONA_TARGET,
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
-  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
-  KORTIX_FAST_COLD_BOOT_CONFIGURED: env.KORTIX_FAST_COLD_BOOT_ENABLED !== undefined,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,
   KORTIX_COMPILED_BOOT_MODE: env.KORTIX_COMPILED_BOOT_MODE,
 
@@ -1202,7 +1174,6 @@ export const config = {
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
-  KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS: customTemplateWarmProviders,
 
   /**
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.
@@ -1362,15 +1333,6 @@ export const config = {
 
   isE2BEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('e2b') && !!this.E2B_API_KEY;
-  },
-
-  /**
-   * True iff `provider` is allowlisted for the legacy WARM custom-template
-   * project-image path. `perProjectWarmEligible` also requires the legacy flag.
-   * The list is already intersected with ALLOWED_SANDBOX_PROVIDERS.
-   */
-  isCustomTemplateWarmEligible(provider: SandboxProviderName): boolean {
-    return this.KORTIX_WARM_SNAPSHOT_CUSTOM_TEMPLATE_PROVIDERS.includes(provider);
   },
 };
 

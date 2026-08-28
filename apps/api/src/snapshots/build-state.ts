@@ -1,6 +1,6 @@
 /** Pure helpers for interpreting the append-only snapshot build log. */
 
-import { isWarmBuildSlug } from './ppwarm-names';
+import { isWarmBuildSlug } from './build-slug';
 
 export type SnapshotBuildStateLike = {
   status: 'building' | 'ready' | 'failed';

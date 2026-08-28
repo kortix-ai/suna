@@ -126,7 +126,6 @@ disabled_flags_filter='
   and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
   and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
   and .KORTIX_WARM_POOL_ENABLED == "false"
-  and .KORTIX_WARM_SNAPSHOT_ENABLED == "false"
 '
 
 enabled_flags_filter='
@@ -139,7 +138,6 @@ enabled_flags_filter='
   and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
   and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
   and .KORTIX_WARM_POOL_ENABLED == "false"
-  and .KORTIX_WARM_SNAPSHOT_ENABLED == "false"
 '
 
 assert_flags() {
@@ -184,7 +182,6 @@ write_flags() {
         | .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED = "false"
         | .KORTIX_SUNA_MIGRATION_WORKER_ENABLED = "false"
         | .KORTIX_WARM_POOL_ENABLED = "false"
-        | .KORTIX_WARM_SNAPSHOT_ENABLED = "false"
       ' <<<"$secret_json" >"$secret_file"
       ;;
     disabled)
@@ -198,7 +195,6 @@ write_flags() {
         | .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED = "false"
         | .KORTIX_SUNA_MIGRATION_WORKER_ENABLED = "false"
         | .KORTIX_WARM_POOL_ENABLED = "false"
-        | .KORTIX_WARM_SNAPSHOT_ENABLED = "false"
       ' <<<"$secret_json" >"$secret_file"
       ;;
     *)
@@ -319,8 +315,7 @@ status() {
     KORTIX_PROJECT_MAINTENANCE_ENABLED,
     KORTIX_LEGACY_MIGRATION_WORKER_ENABLED,
     KORTIX_SUNA_MIGRATION_WORKER_ENABLED,
-    KORTIX_WARM_POOL_ENABLED,
-    KORTIX_WARM_SNAPSHOT_ENABLED
+    KORTIX_WARM_POOL_ENABLED
   }' <<<"$secret_json"
   aws ecs describe-services \
     --region "$AWS_REGION" \

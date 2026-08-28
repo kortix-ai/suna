@@ -88,10 +88,8 @@ let imageResolutionQueue: Array<{
   slug: string;
   contentHash: string;
   isDefault: boolean;
-  isProjectImage?: boolean;
   built: boolean;
 }> = [];
-let projectImageDeleteCalls: Array<{ snapshotName: string; provider: string }> = [];
 let standardImageDeleteCalls: Array<{ slug?: string; provider?: string }> = [];
 let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
 let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
@@ -102,7 +100,6 @@ let activeRouting: {
   activeExternalTemplateId: string | null;
   activeSnapshotName: string | null;
 } | null = null;
-let projectImageResolved = false;
 let agentGrantError: Error | null = null;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
@@ -110,7 +107,6 @@ const testConfig = {
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
   LLM_GATEWAY_BASE_URL: undefined,
-  KORTIX_FAST_COLD_BOOT_CONFIGURED: false,
   KORTIX_FAST_COLD_BOOT_ENABLED: false,
 };
 function compile(condition: unknown): { sql: string; params: unknown[] } {
@@ -279,7 +275,6 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  routedPerProjectWarmImageName: () => 'kpp2-test',
   ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
@@ -290,7 +285,6 @@ mock.module('../../snapshots/builder', () => ({
       slug: 'default',
       contentHash: 'hash-1',
       isDefault: true,
-      isProjectImage: projectImageResolved,
       built: false,
     };
   },
@@ -319,12 +313,6 @@ mock.module('../../snapshots/builder', () => ({
     standardImageDeleteCalls.push(opts);
   },
   resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
-}));
-
-mock.module('../../snapshots/project-image-delete', () => ({
-  deleteProjectSandboxImage: async (snapshotName: string, provider: string) => {
-    projectImageDeleteCalls.push({ snapshotName, provider });
-  },
 }));
 
 let onProviderEvent: (() => void) | null = null;
@@ -434,16 +422,13 @@ beforeEach(() => {
   imageRequests = [];
   fastImageRequests = [];
   imageResolutionQueue = [];
-  projectImageDeleteCalls = [];
   standardImageDeleteCalls = [];
   accountTokenCreateCalls = [];
   serviceAccountCreateCalls = [];
   networkBoundaryBindings = [];
   providerSyncCalls = [];
   activeRouting = null;
-  projectImageResolved = false;
   agentGrantError = null;
-  testConfig.KORTIX_FAST_COLD_BOOT_CONFIGURED = false;
   testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
 });
 
@@ -614,7 +599,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a restricted workspace cannot boot an activated project-image id', async () => {
+  test('a restricted workspace cannot boot an activated template id', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_activated_project_image',
@@ -636,7 +621,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a shared-image fallback cannot boot an activated project-image id with another name', async () => {
+  test('a resolved image cannot boot an activated template id recorded under another name', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_activated_project_image',
@@ -654,15 +639,17 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a missing project image deletes that exact image, re-resolves to the intact base, and succeeds', async () => {
-    const projectImageName = 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa';
+  test('a missing image named like a retired project image heals through the SAME slug rebuild path', async () => {
+    // The per-project image system is gone: there is no longer a second delete
+    // path keyed on the image name. Every snapshot-missing heal now deletes by
+    // (slug, provider) and re-resolves, whatever the stale image was called.
+    const legacyProjectImageName = 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa';
     imageResolutionQueue = [
       {
-        snapshotName: projectImageName,
+        snapshotName: legacyProjectImageName,
         slug: 'default',
         contentHash: 'hash-1',
         isDefault: true,
-        isProjectImage: true,
         built: false,
       },
       {
@@ -673,7 +660,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         built: false,
       },
     ];
-    providerCreateErrors.daytona = `snapshot ${projectImageName} not found`;
+    providerCreateErrors.daytona = `snapshot ${legacyProjectImageName} not found`;
     providerCreateErrorLimits.daytona = 3;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -682,10 +669,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(projectImageDeleteCalls).toEqual([
-      { snapshotName: projectImageName, provider: 'daytona' },
-    ]);
-    expect(standardImageDeleteCalls).toEqual([]);
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
     expect(imageRequests).toHaveLength(2);
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-base-intact');
   });
@@ -716,19 +700,17 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(projectImageDeleteCalls).toEqual([]);
     expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
     expect(imageRequests).toHaveLength(2);
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-rebuilt');
   });
 
-  test('a per-project image uses the activated id when its image name matches', async () => {
+  test('the resolved image boots by the activated id when its image name matches', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_current_project_image',
       activeSnapshotName: 'snap-test-1',
     };
-    projectImageResolved = true;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -741,13 +723,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a per-project image name-boots when its image name differs from the activated image', async () => {
+  test('the resolved image name-boots when its name differs from the activated image', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_older_project_image',
       activeSnapshotName: 'snap-project-older',
     };
-    projectImageResolved = true;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -760,13 +741,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a per-project image name-boots when activated image metadata is missing', async () => {
+  test('the resolved image name-boots when the activation records no image name', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_without_image_name',
       activeSnapshotName: null,
     };
-    projectImageResolved = true;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -794,27 +774,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     expect(providerIdCreateCalls).toEqual([]);
     expect(providerCreateCalls).toBe(1);
-  });
-
-  test('explicit FAST false never boots a project image by external id', async () => {
-    testConfig.KORTIX_FAST_COLD_BOOT_CONFIGURED = true;
-    testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
-    activeRouting = {
-      activeProvider: 'platinum',
-      activeExternalTemplateId: 'tpl_activated_project_image',
-      activeSnapshotName: 'snap-test-1',
-    };
-    projectImageResolved = true;
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
-    await opened;
-
-    expect(providerIdCreateCalls).toEqual([]);
-    expect(providerCreateCalls).toBe(1);
-    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
   test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {

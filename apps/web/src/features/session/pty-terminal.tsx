@@ -298,10 +298,18 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     const connectWebSocket = async () => {
       if (disposedRef.current) return;
       // A user-initiated attach (panel open, "Reconnect now") may WAKE a parked
-      // sandbox; an automatic backoff retry may not. Consume the flag here so a
-      // single intent wakes the box exactly once — see getPtyWebSocketUrl.
+      // sandbox — see getPtyWebSocketUrl.
+      //
+      // The flag is consumed on a SUCCESSFUL open (ws.onopen), not here. Clearing
+      // it before dialing meant the first attempt asked for a wake, failed while
+      // the box was still waking, and every backoff retry then dialed WITHOUT
+      // `wake=1` — so the API answered `sandbox not ready` (503), refused the
+      // upgrade, and the browser saw a bare `code 1006` with no reason. That is
+      // the "Waking the sandbox…" -> "Reconnecting in 1s/2s/4s (code 1006)" loop
+      // users hit, and with a 15-minute autostop against 23,852 stopped boxes it
+      // is the common case, not an edge case. Waking an already-awake box is a
+      // no-op, so keeping the flag armed across retries costs nothing.
       const wake = wakeOnNextConnectRef.current;
-      wakeOnNextConnectRef.current = false;
 
       // --- WebSocket connect ---
       globalPtyConnectionId++;
@@ -364,6 +372,9 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
           ws.close();
           return;
         }
+        // Consumed only now: the attach succeeded, so the box is awake and the
+        // next dial has nothing left to wake.
+        wakeOnNextConnectRef.current = false;
         if (connectTimeoutRef.current) {
           clearTimeout(connectTimeoutRef.current);
           connectTimeoutRef.current = null;

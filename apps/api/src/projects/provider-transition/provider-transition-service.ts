@@ -9,9 +9,8 @@ import { db as appDb } from '../../shared/db';
 import { getSandboxProvider } from '../../snapshots/providers';
 import {
   DEFAULT_SANDBOX_SLUG,
-  ensurePerProjectWarmImage,
+  ensureSandboxImage,
   resolveCommitSha,
-  routedPerProjectWarmImageName,
 } from '../../snapshots/builder';
 import { resolveTemplateBySlug, computeTemplateIdentity } from '../../snapshots/templates';
 import { config } from '../../config';
@@ -78,23 +77,31 @@ export async function projectDeclaresCustomTemplates(
   return rows.length > 0;
 }
 
-/** Resolve the current prep identity: default-branch tip + shared-default base
- *  runtime fingerprint on the target + the resulting ppwarm image name. This is
- *  EXACTLY the name ensureSandboxImage's session-start warm lookup computes, so a
- *  ready transition guarantees the first session warm-HITs (no clone).
+/** Renew the row lease this often while a provider build runs (lease TTL is
+ *  10 minutes; a cold template build can take several). */
+const LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
+
+/** Resolve the current prep identity: default-branch tip + the SHARED default
+ *  template image on the target provider. That template image is exactly what a
+ *  session boots from (`ensureSandboxImage`), so a ready transition guarantees
+ *  the first session finds its image already built on the new provider.
  *
- *  SCOPE (FIX-M1): the prepared warm image covers ONLY the DEFAULT template. A
- *  project's custom (non-default-slug) templates are deliberately NOT prepared
- *  before the switch — Fable rejects a blocking prepare-all because a broken or
- *  unused custom template would wedge the project's migration forever. A
- *  custom-template project therefore migrates on the default warm image and its
- *  custom-template sessions COLD-boot on first use after the switch; that cold
- *  boot is made observable via the `custom_template_cold_boot` metric emitted at
- *  activation (see the runner), never hidden as a warm hit.
- *  TODO(provider-transition): async best-effort custom-template bakes — kick a
- *  non-blocking prepare for each custom template after (or alongside) the default
- *  activation so the FIRST custom boot is warm too, WITHOUT ever gating the switch
- *  on a custom build succeeding. Explicit follow-up; not implemented here. */
+ *  HISTORY: this used to prepare a per-project warm image (repo baked in at the
+ *  tip). That system was removed — it minted one provider template per commit,
+ *  which collided with provider template/snapshot quotas, and its session-side
+ *  read path had been disabled in every environment, so the prepared image was
+ *  never actually booted. The repo now arrives through the fast git path
+ *  (scaffold + delta bundle, ~0.2 s) instead of being baked into an image.
+ *
+ *  `commitSha` is still recorded on the row: it is the durable identity a
+ *  transition was requested at, and the runner's drift check pairs it with
+ *  `baseRuntimeIdentity`. A tip move now costs at most a forked row that finds
+ *  the same template image already built — never another bake.
+ *
+ *  SCOPE: only the DEFAULT template is prepared. A project's custom templates
+ *  are deliberately not prepared before the switch; their first session after
+ *  the switch builds on demand, made observable via `custom_template_cold_boot`
+ *  at activation (see the runner), never hidden as a hit. */
 export async function resolvePrepIdentity(
   project: GitBackedProject,
   targetProvider: string,
@@ -102,12 +109,11 @@ export async function resolvePrepIdentity(
   const template = await resolveTemplateBySlug(project, DEFAULT_SANDBOX_SLUG);
   const baseIdentity = await computeTemplateIdentity(project, template);
   const commitSha = await resolveCommitSha(project, project.defaultBranch);
-  const snapshotName = routedPerProjectWarmImageName(
-    project.projectId,
+  return {
     commitSha,
-    baseIdentity.snapshotName,
-  );
-  return { commitSha, baseRuntimeIdentity: baseIdentity.snapshotName, snapshotName };
+    baseRuntimeIdentity: baseIdentity.snapshotName,
+    snapshotName: baseIdentity.snapshotName,
+  };
 }
 
 /** Bind the runner to real collaborators. `kick` re-drives fork/adopt rows. */
@@ -117,17 +123,28 @@ export function defaultTransitionDeps(database: Database = appDb): TransitionDep
     now: () => new Date(),
     getProvider: (id) => getSandboxProvider(id),
     ensureWarmImage: async (project, opts) => {
-      const r = await ensurePerProjectWarmImage(project, {
-        provider: opts.provider,
-        accountId: opts.accountId,
-        source: 'background',
-        // Renew the lease during the (up to ~12-min) provider build wait so a long
-        // build never lets the 10-min TTL lapse into a double-drive.
-        heartbeat: opts.heartbeat,
-        snapshotName: opts.snapshotName,
-      });
-      // FIX-B: surface the build-proven external template id so the runner pins it.
-      return { snapshotName: r.snapshotName, built: r.built, externalTemplateId: r.externalTemplateId ?? null };
+      // Build the shared default template on the TARGET provider. A cold build
+      // can outlive the row's 10-minute lease, and `ensureSandboxImage` has no
+      // heartbeat of its own, so drive the caller's heartbeat on an interval for
+      // the duration — without it a long build lapses into a double-drive.
+      const beat = opts.heartbeat
+        ? setInterval(() => void opts.heartbeat?.(), LEASE_HEARTBEAT_INTERVAL_MS)
+        : null;
+      try {
+        const r = await ensureSandboxImage(project, {
+          slug: DEFAULT_SANDBOX_SLUG,
+          provider: opts.provider,
+          accountId: opts.accountId,
+          source: 'background',
+          // A transition prepares the RUNTIME, never a repo-bearing image.
+          allowProjectImage: false,
+        });
+        // The runner falls back to `provider.getSnapshotExternalId(name)` when a
+        // build surfaces no id, which is the case for every template build.
+        return { snapshotName: r.snapshotName, built: r.built, externalTemplateId: null };
+      } finally {
+        if (beat) clearInterval(beat);
+      }
     },
     resolvePrepIdentity,
     loadProject: async (projectId) => {

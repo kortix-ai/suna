@@ -36,12 +36,10 @@ import {
 } from '../session/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 import {
-  connectSessionStream,
-  runtimeFrameToOpenCodeEvent,
+  openEventStream,
   type EventStreamHandle,
   type OpenCodeEvent,
-} from '../stream/session-stream-controller';
-import type { SessionStreamRuntimeFrame } from '../rest/projects-client/session-stream';
+} from '../stream/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
 export type SessionModel = { providerID: string; modelID: string };
@@ -1227,19 +1225,17 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /**
        * Live SSE stream of THIS session's runtime events (message/part
        * updates, session status, permissions/questions, lsp diagnostics, …).
-       * A thin facade over the framework-free `connectSessionStream`
-       * primitive: ONE connection to the CONTROL PLANE
-       * (`GET /projects/:pid/sessions/:sid/stream`) whose runtime channel
-       * carries the sandbox daemon's envelopes verbatim — so the events are
-       * the same OpenCode shapes as before, id-bound to THIS session, and
-       * two session handles never cross wires. Framework-free — safe to call
-       * from a server-side "Kortix as a Backend" wrapper (Node/Bun), a
-       * worker, a CLI, or any non-React host.
+       * A thin facade over the framework-free `openEventStream` primitive
+       * (`@kortix/sdk`'s `openEventStream`, also used verbatim by
+       * `@kortix/sdk/react`'s `useOpenCodeEventStream`): resolves THIS
+       * handle's own runtime first (`ensureReady()`), then connects a client
+       * bound to that runtime URL — never the module-global "active" one, so
+       * two session handles on two different sandboxes never cross wires.
+       * Framework-free — safe to call from a server-side "Kortix as a
+       * Backend" wrapper (Node/Bun), a worker, a CLI, or any non-React host.
        *
-       * Handles connect/reconnect/backoff and a heartbeat watchdog
-       * internally. `onGapRehydrate` fires when the server could not replay a
-       * gap exactly (a resync, or a detected dense-seq gap) — re-read
-       * whatever you fear went stale. Call `handle.close()` to stop.
+       * Handles connect/reconnect/backoff, a 15s heartbeat watchdog, and
+       * event coalescing internally. Call `handle.close()` to stop.
        *
        *   const handle = await session.stream({ onEvent: (e) => console.log(e) });
        *   // later
@@ -1250,22 +1246,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         onGapRehydrate?: (gapMs: number) => void;
         signal?: AbortSignal;
       }): Promise<EventStreamHandle> => {
-        // Wake/resolve the runtime first, for parity with the old contract:
-        // a caller that only opens a stream still gets a running session.
-        await ensureReady();
-        const connection = connectSessionStream({
-          projectId,
-          sessionId,
-          onFrame: (frame) => {
-            if (frame.channel !== 'runtime') return;
-            const event = runtimeFrameToOpenCodeEvent(frame as SessionStreamRuntimeFrame);
-            if (event) opts.onEvent(event);
-          },
-          onRuntimeResync: () => opts.onGapRehydrate?.(0),
-          onRuntimeGap: () => opts.onGapRehydrate?.(0),
-          ...(opts.signal ? { signal: opts.signal } : {}),
+        const { runtimeUrl } = await ensureReady();
+        return openEventStream({
+          client: getClientForUrl(runtimeUrl),
+          onEvent: opts.onEvent,
+          onGapRehydrate: opts.onGapRehydrate,
+          signal: opts.signal,
         });
-        return { close: connection.close };
       },
 
       // ── runtime (opencode v2, THIS session's own sandbox) ────────────────

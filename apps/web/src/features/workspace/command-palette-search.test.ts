@@ -266,7 +266,6 @@ describe('queries return the rows they name', () => {
       'nav:account-access-projects',
       'nav:account-audit',
       'nav:account-billing',
-      'nav:account-branding',
       'nav:account-general',
       'nav:account-git',
       'nav:account-groups',

@@ -40,10 +40,7 @@ export const USER_PARTS_GRACE_MS = 1_500;
 /** Builds the SSE event handler; all closure dependencies are injected. */
 export function createEventHandler(deps: {
   queryClient: QueryClient;
-  /** Optional: only the default `reconcileSessionTail` fallback dials the
-   *  runtime client directly. The session-stream consumer passes its own
-   *  `reconcileSessionTail`, so it never needs a pre-resolved client. */
-  client?: ReturnType<typeof getClient>;
+  client: ReturnType<typeof getClient>;
   applySyncEvent: (event: OpenCodeSdkEvent) => void;
   stopCompaction: (sessionID: string) => void;
   addPermission: (req: PermissionRequest) => void;
@@ -87,7 +84,7 @@ export function createEventHandler(deps: {
   const reconcileTail =
     deps.reconcileSessionTail ??
     (async (sessionID: string) => {
-      const result = await (client ?? getClient()).session.messages({
+      const result = await client.session.messages({
         sessionID,
         limit: SESSION_SYNC_PAGE_SIZE,
       });

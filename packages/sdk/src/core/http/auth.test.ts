@@ -81,26 +81,6 @@ test('does NOT impose a default timeout on the SSE event stream endpoint (/globa
 	expect(signal).toBeUndefined();
 });
 
-test('does NOT impose a default timeout on the Kortix session stream', () => {
-	// A never-ending multiplexed stream. A 30 s deadline here would kill every
-	// healthy session view on schedule, and the failure would look like a flaky
-	// connection rather than a deliberate abort.
-	const url = 'http://api.test/v1/projects/p1/sessions/s1/stream';
-	expect(isStreamingRequest(url)).toBe(true);
-	expect(isStreamingRequest(`${url}?since=41&epoch=ep`)).toBe(true);
-	expect(withDefaultTimeout(url, undefined)).toBeUndefined();
-});
-
-test('a route that merely CONTAINS the word stream is still deadline-bounded', () => {
-	// The exemption is anchored on `/sessions/:id/stream`; widening it by
-	// substring would silently un-bound unrelated routes.
-	expect(isStreamingRequest('http://api.test/v1/projects/p1/streams')).toBe(false);
-	expect(isStreamingRequest('http://api.test/v1/projects/p1/sessions/s1/stream/extra')).toBe(
-		false,
-	);
-	expect(withDefaultTimeout('http://api.test/v1/projects/p1/streams', undefined)).toBeDefined();
-});
-
 test('composes a caller-supplied signal with the default timeout on a non-streaming request', () => {
 	const controller = new AbortController();
 	controller.abort();

@@ -2,10 +2,6 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { and, eq, ne } from 'drizzle-orm';
 import { createDb, accounts, projects, sandboxTemplates, type Database } from '@kortix/db';
 import {
-  perProjectWarmImageName,
-  scopedPerProjectWarmImageName,
-} from '../../snapshots/ppwarm-names';
-import {
   providerTransitionMetricsSnapshot,
   resetProviderTransitionMetricsForTest,
 } from './provider-transition-metrics';
@@ -171,8 +167,14 @@ function makeDeps(world: FakeWorld, now: () => Date = () => new Date()): Transit
   };
 }
 
-function identity(projectId: string, commit: string, base: string): ResolvedPrepIdentity {
-  return { commitSha: commit, baseRuntimeIdentity: base, snapshotName: perProjectWarmImageName(projectId, commit, base) };
+/**
+ * Mirrors the real `resolvePrepIdentity`: a transition prepares the SHARED
+ * DEFAULT template image, so the prepared snapshot name IS the base runtime
+ * identity. (It used to be a per-project warm image name derived from the tip;
+ * that system is gone — the repo now arrives through the fast git path.)
+ */
+function identity(_projectId: string, commit: string, base: string): ResolvedPrepIdentity {
+  return { commitSha: commit, baseRuntimeIdentity: base, snapshotName: base };
 }
 
 beforeAll(async () => {
@@ -302,8 +304,8 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     const projectId = await freshProject();
     const id = identity(projectId, 'commit-a', 'kortix-default-r1');
     const world = makeWorld(id);
-    // The content-addressed image is already building (another drive/replica or
-    // an on-push ppwarm bake kicked it). ensureWarmImage MUST NOT be called.
+    // The content-addressed image is already building (another drive or replica
+    // kicked it). ensureWarmImage MUST NOT be called.
     world.state.set(id.snapshotName, 'building');
     world.ensureBehavior = 'throw_permanent'; // would blow up if ensureWarmImage ran
     const res = await reserveSwitchTransition(db, {
@@ -468,10 +470,10 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect((await readActiveRouting(db, projectId))?.activeExternalTemplateId).toBe('tpl_b');
   });
 
-  test('the prepared snapshot name equals the session warm-lookup name (first session does not clone)', async () => {
+  test('the prepared snapshot name is the shared default template image the first session boots', async () => {
     const projectId = await freshProject();
     const id = identity(projectId, 'deadbeef', 'kortix-default-r1');
-    expect(id.snapshotName).toBe(perProjectWarmImageName(projectId, 'deadbeef', 'kortix-default-r1'));
+    expect(id.snapshotName).toBe(id.baseRuntimeIdentity);
     const world = makeWorld(id);
     const res = await reserveSwitchTransition(db, { accountId, sourceProvider: 'daytona', identity: { projectId, targetProvider: 'platinum', ...id } });
     await driveProviderTransition(makeDeps(world), res.row.transitionId);
@@ -573,18 +575,12 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect((await readActiveRouting(db, projectId))?.activeProvider).toBe('platinum');
   });
 
-  test('FAST false→true adopts a READY prebuild under its persisted snapshot name', async () => {
+  test('a renamed image resolution adopts a READY prebuild under its PERSISTED snapshot name', async () => {
     const projectId = await freshProject();
     const beforeFast = identity(projectId, 'commit-a', 'kortix-default-r1');
     const afterFast = {
       ...beforeFast,
-      snapshotName: scopedPerProjectWarmImageName(
-        '1'.repeat(12),
-        projectId,
-        beforeFast.commitSha,
-        beforeFast.baseRuntimeIdentity,
-        'default',
-      ),
+      snapshotName: 'kortix-default-r1-renamed',
     };
     const world = makeWorld(afterFast);
     world.state.set(beforeFast.snapshotName, 'active');
@@ -618,18 +614,12 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     });
   });
 
-  test('FAST false→true resumes a BUILDING transition under its persisted snapshot name', async () => {
+  test('a renamed image resolution resumes a BUILDING transition under its PERSISTED snapshot name', async () => {
     const projectId = await freshProject();
     const beforeFast = identity(projectId, 'commit-a', 'kortix-default-r1');
     const afterFast = {
       ...beforeFast,
-      snapshotName: scopedPerProjectWarmImageName(
-        '1'.repeat(12),
-        projectId,
-        beforeFast.commitSha,
-        beforeFast.baseRuntimeIdentity,
-        'default',
-      ),
+      snapshotName: 'kortix-default-r1-renamed',
     };
     const world = makeWorld(afterFast);
     world.state.set(beforeFast.snapshotName, 'building');
@@ -653,18 +643,12 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     );
   });
 
-  test('FAST false→true builds a missing image under its persisted snapshot name', async () => {
+  test('a renamed image resolution builds the missing image under its PERSISTED snapshot name', async () => {
     const projectId = await freshProject();
     const beforeFast = identity(projectId, 'commit-a', 'kortix-default-r1');
     const afterFast = {
       ...beforeFast,
-      snapshotName: scopedPerProjectWarmImageName(
-        '1'.repeat(12),
-        projectId,
-        beforeFast.commitSha,
-        beforeFast.baseRuntimeIdentity,
-        'default',
-      ),
+      snapshotName: 'kortix-default-r1-renamed',
     };
     const world = makeWorld(afterFast);
     const reserved = await reserveSwitchTransition(db, {
@@ -996,9 +980,9 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
 
   // ── FIX-M1: default-only eligibility scoping (custom templates cold-boot) ────
   //
-  // The prepared warm image covers ONLY the default template. A project that
+  // The prepared image covers ONLY the default template. A project that
   // declares custom (non-default-slug) templates still migrates on the default
-  // warm image WITHOUT blocking on a custom build (Fable rejects prepare-all —
+  // template image WITHOUT blocking on a custom build (Fable rejects prepare-all —
   // a broken custom template would wedge the project forever); its custom
   // first-boot after the switch is a known COLD boot, made observable via the
   // `custom_template_cold_boot` event at activation. `hasCustomTemplates` here is
@@ -1013,7 +997,7 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     return rows.length > 0;
   };
 
-  test('FIX-M1: a custom-template project activates on the DEFAULT warm image (non-blocking) and emits custom_template_cold_boot', async () => {
+  test('FIX-M1: a custom-template project activates on the DEFAULT template image (non-blocking) and emits custom_template_cold_boot', async () => {
     resetProviderTransitionMetricsForTest();
     const projectId = await freshProject();
     // Declare a custom (non-default-slug) template for this project.
@@ -1027,9 +1011,9 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     });
     const id = identity(projectId, 'commit-a', 'kortix-default-r1');
     const world = makeWorld(id);
-    // The DEFAULT template's warm image is ready — activation must proceed on it.
+    // The DEFAULT template image is ready — activation must proceed on it.
     world.state.set(id.snapshotName, 'active');
-    world.externalIds.set(id.snapshotName, 'tpl_default_warm');
+    world.externalIds.set(id.snapshotName, 'tpl_default_image');
     world.ensureBehavior = 'throw_permanent'; // no custom build is attempted (never blocks)
     const deps = makeDeps(world);
     deps.hasCustomTemplates = customTemplateProbe(db);
@@ -1043,7 +1027,7 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     expect(world.buildCount).toBe(0); // custom template was NOT built before activation
     const routing = await readActiveRouting(db, projectId);
     expect(routing?.activeProvider).toBe('platinum');
-    expect(routing?.activeExternalTemplateId).toBe('tpl_default_warm'); // the DEFAULT warm image
+    expect(routing?.activeExternalTemplateId).toBe('tpl_default_image'); // the DEFAULT template image
     const snap = providerTransitionMetricsSnapshot();
     expect(snap['custom_template_cold_boot']).toBe(1); // the cold boot is observable
     expect(snap['custom_template_cold_boot:platinum']).toBe(1);
@@ -1055,7 +1039,7 @@ d('provider transition — durable flow (throwaway Postgres)', () => {
     const id = identity(projectId, 'commit-a', 'kortix-default-r1');
     const world = makeWorld(id);
     world.state.set(id.snapshotName, 'active');
-    world.externalIds.set(id.snapshotName, 'tpl_default_warm');
+    world.externalIds.set(id.snapshotName, 'tpl_default_image');
     const deps = makeDeps(world);
     deps.hasCustomTemplates = customTemplateProbe(db);
     const res = await reserveSwitchTransition(db, {

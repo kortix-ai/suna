@@ -337,7 +337,6 @@ jobs:
             and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
             and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
             and .KORTIX_WARM_POOL_ENABLED == "false"
-            and .KORTIX_WARM_SNAPSHOT_ENABLED == "false"
             and .TUNNEL_ENABLED == "false"
             and .POOL_ENABLED == "false"
           ' <<<"$secret_json" >/dev/null

@@ -580,37 +580,6 @@ export class UploadUrlRejectedError extends Error {
   }
 }
 
-const MALFORMED_BUILD_CAPACITY =
-  'Malformed Platinum template build capacity: expected integer values with 0 <= templates.used <= templates.cap and templates.cap >= 1';
-const MISSING_ATOMIC_ADMISSION =
-  'Platinum template builds require the atomic template admission capability';
-
-function parseSnapshotBuildCapacity(body: unknown): { used: number; cap: number } {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw new Error(MALFORMED_BUILD_CAPACITY);
-  }
-  const templates = (body as Record<string, unknown>).templates;
-  if (!templates || typeof templates !== 'object' || Array.isArray(templates)) {
-    throw new Error(MALFORMED_BUILD_CAPACITY);
-  }
-  const { used, cap, atomicAdmission } = templates as Record<string, unknown>;
-  if (
-    typeof used !== 'number' ||
-    typeof cap !== 'number' ||
-    !Number.isSafeInteger(used) ||
-    !Number.isSafeInteger(cap) ||
-    used < 0 ||
-    cap < 1 ||
-    used > cap
-  ) {
-    throw new Error(MALFORMED_BUILD_CAPACITY);
-  }
-  if (atomicAdmission !== true) {
-    throw new Error(MISSING_ATOMIC_ADMISSION);
-  }
-  return { used, cap };
-}
-
 export class PlatinumAdapter implements SandboxProviderAdapter {
   readonly id = 'platinum' as const;
 
@@ -625,11 +594,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
 
   isConfigured(): boolean {
     return this.client.isConfigured();
-  }
-
-  async getSnapshotBuildCapacity(): Promise<{ used: number; cap: number }> {
-    const body = await this.client.json<unknown>('/v1/auth/orgs/quota', { method: 'GET' });
-    return parseSnapshotBuildCapacity(body);
   }
 
   async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<BuildSnapshotResult> {
@@ -671,7 +635,6 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       userDockerfile,
       runtimeProfile: input.runtimeProfile,
       appContext: input.appContext,
-      warmRepo: input.warmRepo,
       isShared: input.isShared,
     });
     const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);

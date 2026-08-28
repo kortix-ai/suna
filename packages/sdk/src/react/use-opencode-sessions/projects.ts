@@ -1,5 +1,4 @@
 'use client';
-import { readDaemonOpencode } from '../../core/runtime/daemon-read';
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
@@ -31,8 +30,9 @@ export function useOpenCodeCurrentProject() {
   return useQuery<Project>({
     queryKey: opencodeKeys.currentProject(),
     queryFn: async () => {
-      // `/kortix/opencode/project-current` daemon passthrough, not raw `/project/current`.
-      return readDaemonOpencode<Project>('project-current');
+      const client = getClient();
+      const result = await client.project.current();
+      return unwrap(result);
     },
     enabled: runtimeReady,
     staleTime: Infinity,

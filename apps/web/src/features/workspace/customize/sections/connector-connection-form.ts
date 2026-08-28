@@ -87,6 +87,14 @@ export function connectorSetupStatus(
   connector: Pick<AdminConnector, 'authorizationStrategy' | 'authSecret' | 'secretSet' | 'status'>,
 ): ConnectorSetupStatus {
   if (connector.status === 'error') return 'error';
+  // An authorization that never completed is setup that never finished. This
+  // used to fall through to the `authSecret`/`secretSet` branches, so an
+  // unauthorized connector still rendered `connected` — a checkmark on the
+  // connector grid (`connectors-page.tsx`), a green dot, and a place in the
+  // "ready" partition, while the gateway refused every tool call against it
+  // with `needs_auth`. Prod 2026-08-28: 6 of 6 GitHub connections had no
+  // connected account and no GitHub tool call had ever run.
+  if (connector.status === 'needs_auth') return 'needs_setup';
   if (!connector.authSecret) return 'no_auth';
   if (connector.authorizationStrategy === 'user') return 'user_managed';
   return connector.secretSet ? 'connected' : 'needs_setup';
