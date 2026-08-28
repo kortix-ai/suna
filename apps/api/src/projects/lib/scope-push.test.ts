@@ -41,7 +41,14 @@ let SESSION_ROW: {
   manifestPath: string;
   accountId: string;
 };
-let activeSandbox: { externalId: string; provider: string; config: Record<string, unknown> } | null;
+let activeSandbox: {
+  externalId: string;
+  provider: string;
+  config: Record<string, unknown>;
+  // The push path selects `status` so a non-active row can be NAMED rather than
+  // silently swallowed; the double has to be able to carry it.
+  status?: string;
+} | null;
 let gatewayEnabled = false;
 
 function freshSessionRow(): typeof SESSION_ROW {
