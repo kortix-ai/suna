@@ -293,6 +293,11 @@ jobs:
       KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
       MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
       MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
+      # Optional, and takes PRECEDENCE over the App when set. The App can only
+      # create repos if it is installed on the owner AND has administration:
+      # write; a PAT needs neither. Set this to unblock project creation
+      # without touching the App's permissions.
+      MANAGED_GIT_GITHUB_TOKEN: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_TOKEN }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
