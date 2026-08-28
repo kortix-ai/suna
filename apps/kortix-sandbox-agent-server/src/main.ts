@@ -44,6 +44,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from './kortix-event-bus'
 import { runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
@@ -860,13 +861,34 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  // Auto-resume ROOT turns killed by a TRANSIENT provider/stream error — a
+  // stalled model host mid-stream ("Upstream idle timeout exceeded"), a reset,
+  // a 5xx after opencode's own retries. Instead of surfacing a dead red turn,
+  // the turn is re-prompted to continue. Budget-limited (3 per 15min per
+  // session) with growing backoff; permanent errors, subagent sessions, staged
+  // reverts and exhausted budget fall through and surface exactly as before.
+  // See turn-auto-resume.ts. This wiring was LOST in the ACP-runtime refactor
+  // churn (the module survived, its call site did not — #4152 first added it),
+  // so every transient provider error had been surfacing raw.
+  const autoResumer = createTurnAutoResumer({
+    opencode,
+    cfg,
+    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
+  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
-    kortixEventBus().publishDaemon(
-      'kortix.turn',
-      { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
-      opencodeSessionId,
-    )
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
+    void (async () => {
+      // A successful resume means the turn is being re-prompted to continue, so
+      // it must NOT surface as the turn's final outcome — neither on the event
+      // bus nor in the API ledger. maybeResume returns false when the error is
+      // not resumable → relay it exactly as before this feature.
+      if (await autoResumer.maybeResume(opencodeSessionId, error)) return
+      kortixEventBus().publishDaemon(
+        'kortix.turn',
+        { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
+        opencodeSessionId,
+      )
+      await relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error)
+    })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
