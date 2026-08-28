@@ -117,7 +117,7 @@ describe('account hub — every Access rail item maps to its own READ probe', ()
   });
 
   test('the write-only sections keep their write gate', () => {
-    for (const section of ['identity', 'transactions', 'git', 'tokens', 'settings']) {
+    for (const section of ['identity', 'transactions', 'git', 'tokens', 'settings', 'branding']) {
       expect(sectionVisible).toContain(`${section}: canWriteAccount === true`);
     }
     expect(sectionVisible).toContain('billing: canWriteAccount === true && billingActive');

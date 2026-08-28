@@ -96,7 +96,7 @@ Kortix agents can authenticate to the protected API with a user-authorized OAuth
 3. Request only the scopes required for the task.
 4. Send the access token as \`Authorization: Bearer <token>\`.
 
-Kortix does not publish dynamic OAuth client registration. Contact Kortix support to provision an OAuth client.
+Register an OAuth client yourself at Account → Tokens → OAuth apps, or \`POST /v1/accounts/{accountId}/iam/oauth-clients\` (needs \`token.create\`). Authorization-server metadata for the Kortix-native provider: ${KORTIX_API_ORIGIN.replace(/\/v1$/, '')}/.well-known/oauth-authorization-server.
 
 ## Agent registration with a personal access token
 

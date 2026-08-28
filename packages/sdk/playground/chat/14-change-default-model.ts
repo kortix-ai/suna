@@ -15,7 +15,7 @@
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \
- *     bun run playground/chat/14-change-default-model.ts glm-5.2 [projectId]
+ *     bun run playground/chat/14-change-default-model.ts glm-5.3-flash [projectId]
  *
  * As an npm consumer, the import lines change to:
  *   import { createKortix } from '@kortix/sdk';
@@ -27,7 +27,7 @@ import { createKortix } from "../../src/index";
 
 const MODEL_IDS = [
   "grok-4.6",
-  "glm-5.2",
+  "glm-5.3-flash",
   "deepseek-v4-flash",
   "deepseek-v4-pro-0813",
   "muse-spark-1.2",

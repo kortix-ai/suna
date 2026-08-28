@@ -43,7 +43,7 @@ import {
   runSessionsStop,
   runSessionsWarm,
 } from './sessions-lifecycle.ts';
-import { runSessionsQueue } from './sessions-queue.ts';
+import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
@@ -660,27 +660,36 @@ async function sessionsNew(
   return 0;
 }
 
-/** Deliver a prompt through the shipped OpenCode REST runtime. */
+/**
+ * Deliver a prompt through the durable inbox — the ONE source of truth for
+ * prompt delivery (`session_lifecycle_commands`), same path as the web composer
+ * and `kortix ... queue`. NOT a direct runtime send: the previous
+ * `runtime.session.promptAsync` here bypassed the inbox, so a CLI prompt got
+ * none of its durability/ordering/exactly-once guarantees. The engine forwards
+ * to the box as soon as it is ready, so no `ensureReady()` is needed here.
+ */
 async function sendPromptToSession(
   ctx: { auth: Auth; projectId: string },
   session: ProjectSession,
   text: string,
 ): Promise<void> {
   const handle = kortixFromAuth(ctx.auth).session(ctx.projectId, session.session_id);
-  const ready = await handle.ensureReady();
-  // Carry the session's persisted model + agent: an async prompt without them
-  // is stored but never processed (OpenCode falls back to its own default
-  // model, which Kortix sandboxes don't provision).
+  // Carry the session's persisted model + agent: a prompt delivered without
+  // them lets OpenCode fall back to a model Kortix sandboxes don't provision.
   const defaults = sessionPromptDefaults(session);
-  const result = await handle.runtime.session.promptAsync({
-    sessionID: ready.opencodeSessionId,
+  await handle.prompts.create({
+    clientMessageId: randomUUID(),
+    messageId: wireMessageId(),
     parts: [{ type: 'text', text }],
-    ...defaults,
+    ...(defaults.agent || defaults.model
+      ? {
+          overrides: {
+            ...(defaults.agent ? { agent: defaults.agent } : {}),
+            ...(defaults.model ? { model: defaults.model } : {}),
+          },
+        }
+      : {}),
   });
-  if (result?.error) {
-    const detail = (result.error as { data?: { message?: string } })?.data?.message;
-    throw new Error(`prompt delivery failed${detail ? `: ${detail}` : ''}`);
-  }
 }
 
 export async function prepareClientCreatedBranch(

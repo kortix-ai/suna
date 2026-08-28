@@ -17,7 +17,9 @@ import {
 } from '../core/rest/projects-client/sessions';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { countLiveInboxPrompts } from '../core/session/working';
+import { claimOpenBundle, openBundleQueue } from '../core/session/open-bundle';
 import { qk } from './query-keys';
+import { usePollOwner } from './use-poll-owner';
 import { mintSessionWireMessageId } from './use-opencode-sessions/messages';
 
 /**
@@ -203,6 +205,27 @@ export async function readSessionPromptsInbox(
   cached: readonly SessionPrompt[] | undefined,
 ): Promise<SessionPrompt[]> {
   if (!projectId || !sessionId) return [...(cached ?? [])];
+  // The SESSION-OPEN BUNDLE first. Two hooks mount this list on a session route
+  // and the open path reads it before either can, so the first reads of an open
+  // collapse onto one server answer. A claim only succeeds while a bundle is in
+  // flight or seconds old; every poll after it reads the endpoint.
+  const claimed = claimOpenBundle(projectId, sessionId);
+  if (claimed) {
+    const bundle = await claimed;
+    const bundled = bundle ? openBundleQueue(bundle) : null;
+    if (bundled) {
+      // Stamped from the bundle's own clock, and fed to the working projection
+      // exactly as a direct read is: the inbox observation is what keeps the
+      // composer on Stop while a prompt is durable but not yet a turn.
+      const observedAtMs = Date.parse(bundle!.observed_at);
+      noteInboxObservation(
+        sessionId,
+        bundled,
+        Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
+      );
+      return reconcileOptimisticPrompts(cached, bundled);
+    }
+  }
   // Stamped BEFORE the request, like `/turn`'s: an answer is only as fresh
   // as the moment it was asked.
   const atMs = Date.now();
@@ -244,6 +267,8 @@ export function useSessionPrompts(
     (state) => (sessionId ? (state.inbox[sessionId]?.pending ?? 0) : 0),
   );
 
+  const pollOwner = usePollOwner(`prompts:${projectId ?? ''}/${sessionId ?? ''}`, enabled);
+
   const query = useQuery({
     queryKey: key,
     enabled,
@@ -253,9 +278,15 @@ export function useSessionPrompts(
         sessionId,
         queryClient.getQueryData<SessionPrompt[]>(key),
       ),
-    // Two cadences, never `false` — see the note above.
+    // Two cadences, never `false` for the OWNER — see the note above. The
+    // cadence is owned by one observer per session because `refetchInterval` is
+    // scheduled per observer, and two components mount this hook on a session
+    // route: two timers on one key polled the inbox at twice its cadence. Every
+    // observer still reads the entry the owner refreshes.
     refetchInterval: (q) =>
-      sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs, believedPending),
+      pollOwner
+        ? sessionPromptsPollMs(q.state.data?.length ?? 0, options?.pollMs, believedPending)
+        : false,
     // Per-query, because the host disables focus refetching globally. Coming
     // back to a tab is the moment a prompt the server handed back while it was
     // hidden has to be on screen.

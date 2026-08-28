@@ -72,7 +72,6 @@ beforeEach(() => {
 let dockerfileSeen = '';
 let scaffoldPresentAtDaytonaBoundary = false;
 let scaffoldBareAtDaytonaBoundary = false;
-let warmGitArchivePresentAtDaytonaBoundary = false;
 // One push per build attempt — the composed Dockerfile path (== context dir).
 // Each entry is a DISTINCT temp dir iff the adapter re-staged a fresh context.
 const contextPaths: string[] = [];
@@ -95,9 +94,6 @@ mock.module('@daytonaio/sdk', () => ({
         execFileSync('git', ['--git-dir', scaffoldPath, 'rev-parse', '--is-bare-repository'], {
           encoding: 'utf8',
         }).trim() === 'true';
-      warmGitArchivePresentAtDaytonaBoundary = existsSync(
-        join(path, '..', 'kortix-warm-repo-git.tar'),
-      );
       contextPaths.push(path);
       return { kind: 'mock-image', path };
     },
@@ -141,49 +137,6 @@ describe('Daytona snapshot build context', () => {
     expect(scaffoldPresentAtDaytonaBoundary).toBe(true);
     expect(scaffoldBareAtDaytonaBoundary).toBe(true);
   });
-
-  test('uploads Git metadata as one visible archive and restores .git in the image', async () => {
-    const source = join(fixtureRoot, 'warm-source');
-    rmSync(source, { recursive: true, force: true });
-    await mkdir(source, { recursive: true });
-    writeFileSync(join(source, 'README.md'), '# warm\n');
-    const gitEnv = {
-      ...process.env,
-      GIT_AUTHOR_NAME: 'Kortix Test',
-      GIT_AUTHOR_EMAIL: 'test@kortix.test',
-      GIT_COMMITTER_NAME: 'Kortix Test',
-      GIT_COMMITTER_EMAIL: 'test@kortix.test',
-    };
-    execFileSync('git', ['init', '-b', 'main'], { cwd: source, env: gitEnv });
-    execFileSync('git', ['add', '-A'], { cwd: source, env: gitEnv });
-    execFileSync('git', ['commit', '-m', 'warm fixture'], { cwd: source, env: gitEnv });
-    const tip = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: source,
-      env: gitEnv,
-      encoding: 'utf8',
-    }).trim();
-
-    warmGitArchivePresentAtDaytonaBoundary = false;
-    await daytonaProvider.buildSnapshot({
-      snapshotName: 'kortix-warm-git-archive',
-      baseImageRef: 'registry.example.test/kortix-default:latest',
-      spec: {},
-      slug: 'default',
-      warmRepo: {
-        cloneUrl: `file://${source}`,
-        cloneHeaders: {},
-        branch: 'main',
-        tip,
-        originUrl: 'https://api.example.test/v1/projects/project-1/git',
-      },
-    });
-
-    expect(warmGitArchivePresentAtDaytonaBoundary).toBe(true);
-    expect(dockerfileSeen).toContain('ADD kortix-warm-repo-git.tar /workspace/');
-    expect(dockerfileSeen.match(/kortix-warm-repo-git\.tar/g)).toHaveLength(1);
-    expect(dockerfileSeen).not.toContain('/tmp/kortix-warm-repo-git.tar');
-    expect(dockerfileSeen).not.toContain('tar -xf');
-  }, 30_000);
 });
 
 describe('Daytona snapshot state', () => {

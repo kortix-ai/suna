@@ -2,6 +2,7 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
@@ -198,14 +199,17 @@ export function AddToProjectModal({
           ...(gitSettingsAccountId
             ? {
                 button: (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      onOpenChange(false);
-                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
-                    }}
-                  >
-                    Open Git settings
+                  <Button size="sm" asChild>
+                    {/* An anchor, so the destination is prefetched while the
+                        toast is on screen and the click cannot fall back to a
+                        full document load. */}
+                    <Link
+                      href={`/accounts/${gitSettingsAccountId}?tab=git`}
+                      prefetch
+                      onClick={() => onOpenChange(false)}
+                    >
+                      Open Git settings
+                    </Link>
                   </Button>
                 ),
               }

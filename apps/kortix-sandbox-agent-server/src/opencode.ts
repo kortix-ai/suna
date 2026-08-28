@@ -1243,15 +1243,6 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     limit: { context: 1_048_575, output: 384_000 },
     cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
   },
-  'glm-5.2': {
-    name: 'GLM 5.2',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: false,
-    temperature: true,
-    limit: { context: 1_000_000, output: 131_072 },
-  },
   'muse-spark-1.2': {
     name: 'Muse Spark 1.2',
     provider: 'kortix',
@@ -1300,21 +1291,22 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
       context_over_200k: { input: 4, output: 12, cache_read: 1 },
     },
   },
-  // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
-  // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
-  // `temperature:false` — models.dev advertises Kimi K3 as
-  // `temperature:false` (it rejects a client-sent temperature), matching
-  // capabilitiesOf() in the served catalog. Must NOT advertise temperature
-  // support or OpenCode sends one and 400s the turn.
-  // 'kimi-k3': {
-  //   name: 'Kimi K3',
-  //   provider: 'kortix',
-  //   reasoning: true,
-  //   tool_call: true,
-  //   attachment: true,
-  //   temperature: false,
-  //   limit: { context: 1_048_576, output: 131_072 },
-  // },
+  // Mirrors @kortix/llm-catalog `glm-5.3-flash` (added 2026-08-27). Capabilities
+  // = models.dev openrouter/z-ai/glm-5.3-flash: effort low/high/max, image
+  // input, temperature:true, structured_output:true. Limit = the safe
+  // intersection of the pinned z-ai + novita hosts.
+  'glm-5.3-flash': {
+    name: 'GLM 5.3 Flash',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
+    tool_call: true,
+    attachment: true,
+    structured_output: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 131_072 },
+    cost: { input: 0.075, output: 0.25, cache_read: 0.015 },
+  },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',
@@ -1674,6 +1666,20 @@ export type Opencode = {
   restart(): Promise<void>
   reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
   /**
+   * The workspace (repo checkout, config-dir deps, injected skills) landed
+   * AFTER this process spawned. Rewrite the composed config with the same
+   * inputs a spawn uses and dispose every OpenCode instance in place, so the
+   * next directory-scoped request re-detects the git root and re-reads config
+   * without a respawn. False when dispose is unavailable (caller restarts).
+   */
+  reloadForWorkspace(): Promise<boolean>
+  /**
+   * Open the directory-scoped probe gate: the workspace (checkout + config-dir
+   * deps + injected skills) is complete, so OpenCode may now create its
+   * per-directory Instance. See `deferDirectoryProbe`.
+   */
+  markWorkspaceReady(): void
+  /**
    * Boot the new opencode, verify it serves, then swap and retire the old one.
    * Never leaves the session without an opencode.
    */
@@ -1708,6 +1714,24 @@ export type Opencode = {
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
+  /**
+   * First HTTP response of ANY status from the spawned process: the port is
+   * bound and bun has finished loading the binary. The gap to
+   * onFirstReadyResponse is then OpenCode's Instance init for the workspace.
+   */
+  onFirstListeningResponse?: () => void
+  /**
+   * Start with the directory-scoped readiness probe CLOSED. OpenCode creates
+   * an Instance for a directory on the first directory-scoped request, and it
+   * reads that directory's `node_modules` (local tools) ONCE per process: an
+   * Instance created before the checkout landed keeps a tool registry whose
+   * imports failed, for the life of the process (dev, 2026-08-27:
+   * `ResolveMessage: Cannot find module '@mendable/firecrawl-js' from
+   * /workspace/.kortix/opencode/tools/scrape_webpage.ts`). The early-spawn
+   * boot path therefore probes liveness on a non-Instance route until
+   * `markWorkspaceReady()`.
+   */
+  deferDirectoryProbe?: boolean
   binaryPathOverride?: string
   binaryPathResolverOverride?: () => Promise<string | null>
   nativeBinaryFastPathEnabled?: boolean
@@ -1766,6 +1790,8 @@ export function createOpencodeSupervisor(
   let livenessFailures = 0
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let firstReadyResponseReported = false
+  let firstListeningResponseReported = false
+  let directoryProbeOpen = options.deferDirectoryProbe !== true
   let readyResponseProcess: ChildProcess | null = null
   const readyResponseWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
@@ -1868,6 +1894,28 @@ export function createOpencodeSupervisor(
    * it exits: it is on trial, and a candidate that dies is a verdict, not an
    * outage.
    */
+  /**
+   * Compose + write the Kortix OpenCode config exactly as a spawn does: the
+   * injected managed-skills dir under the CURRENT config dir and the secret
+   * capability instruction. Shared by spawn and by the in-place reloads so a
+   * reload can never drop a contributor the spawn declared.
+   */
+  async function writeComposedConfig(baseEnv: NodeJS.ProcessEnv): Promise<string | null> {
+    let secretCapabilitiesInstructionPath: string | null = null
+    try {
+      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return writeKortixOpencodeConfig(baseEnv, {
+      configPath: options.configPathOverride,
+      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      secretCapabilitiesInstructionPath,
+    })
+  }
+
   async function spawnChild(
     bin: string,
     opts: { port?: number; supervise?: boolean } = {},
@@ -1911,20 +1959,14 @@ export function createOpencodeSupervisor(
     if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
-
-    let secretCapabilitiesInstructionPath: string | null = null
-    try {
-      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
-    } catch (err) {
-      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
-        err: err instanceof Error ? err.message : String(err),
-      })
+    // The standalone binary already embeds a models.dev snapshot, and Kortix
+    // injects its managed provider catalog below. A remote catalog refresh adds
+    // network contention without adding a model that this session can use.
+    if (process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1') {
+      env.OPENCODE_DISABLE_MODELS_FETCH = '1'
     }
-    const configPath = await writeKortixOpencodeConfig(baseEnv, {
-      configPath: options.configPathOverride,
-      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
-      secretCapabilitiesInstructionPath,
-    })
+
+    const configPath = await writeComposedConfig(baseEnv)
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
@@ -2234,6 +2276,7 @@ export function createOpencodeSupervisor(
   }
 
   async function checkReady(port = livePort()): Promise<boolean> {
+    if (!directoryProbeOpen) return false
     return probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)
   }
 
@@ -2259,15 +2302,18 @@ export function createOpencodeSupervisor(
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
-    const written = await writeKortixOpencodeConfig(baseEnv, {
-      configPath: options.configPathOverride,
-    }).catch((err) => {
+    const written = await writeComposedConfig(baseEnv).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
       })
       return null
     })
     if (!written) return false
+    return disposeInstances()
+  }
+
+  /** `POST /global/dispose`: every instance re-reads config on its next request. */
+  async function disposeInstances(): Promise<boolean> {
     try {
       const res = await fetch(
         `http://127.0.0.1:${livePort()}/global/dispose`,
@@ -2336,7 +2382,15 @@ export function createOpencodeSupervisor(
       if (stopping) return
       const probedPort = livePort()
       const probedChild = child
-      const ready = await checkReady(probedPort)
+      // Closed gate → liveness only, on a route that creates no Instance.
+      const probe = directoryProbeOpen
+        ? await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
+        : ((await probeOpencodeListening(`http://127.0.0.1:${probedPort}`, 2_000)) ? 'listening' : 'down')
+      const ready = probe === 'ready'
+      if (probe !== 'down' && !firstListeningResponseReported && probedChild === child) {
+        firstListeningResponseReported = true
+        options.onFirstListeningResponse?.()
+      }
       if (stopping) return
       if (probedPort !== livePort()) {
         scheduleReadinessProbe()
@@ -2518,6 +2572,42 @@ export function createOpencodeSupervisor(
      * a future opencode that drops the endpoint degrades to today's behaviour
      * rather than silently not applying the config.
      */
+    markWorkspaceReady() {
+      if (directoryProbeOpen) return
+      directoryProbeOpen = true
+      logger.info('[opencode] workspace ready; directory-scoped readiness probe opened')
+    },
+    async reloadForWorkspace(): Promise<boolean> {
+      if (stopping || !child) return false
+      // The composed config was written at spawn, when the workspace's
+      // injected-skills dir did not exist yet: rewrite it now so the FIRST
+      // Instance init reads the complete config.
+      const baseEnv = currentProjectEnv
+        ? mergeProjectEnv(process.env, currentProjectEnv)
+        : process.env
+      const written = await writeComposedConfig(baseEnv).catch((err) => {
+        logger.warn('[opencode] could not rewrite config for workspace reload', {
+          err: (err as Error).message,
+        })
+        return null
+      })
+      if (!written) return false
+      // Instances are created lazily by the first directory-scoped request.
+      // If none answered yet, nothing has read the old config or the missing
+      // git root — there is nothing to dispose, and disposing would only
+      // fail against a port that is still coming up (a restart would then
+      // throw away a perfectly good boot).
+      if (readyResponseProcess !== child) {
+        logger.info('[opencode] workspace landed before the first instance; no dispose needed')
+        return true
+      }
+      // An Instance already answered for this directory, i.e. it was created
+      // before the workspace was complete. Its tool registry / module
+      // resolution is process-cached, so dispose is NOT enough — take the
+      // restart. With the probe gate this is a fallback, not the normal path.
+      logger.warn('[opencode] an instance answered before the workspace was ready; restarting instead of disposing')
+      return false
+    },
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {
@@ -2688,6 +2778,20 @@ export async function waitForOpencodeReady(
 
 /** Richer boot probe: 'down' = port not answering at all, 'listening' = answers
  *  HTTP but /session not 2xx yet, 'ready' = /session 2xx/3xx. */
+/**
+ * Is the process serving HTTP at all? Any status counts, and the path is
+ * deliberately NOT directory-scoped: OpenCode answers unknown paths from its
+ * SPA catch-all, so this never creates an Instance for a directory.
+ */
+async function probeOpencodeListening(baseUrl: string, timeoutMs = 1_000): Promise<boolean> {
+  try {
+    await fetch(`${baseUrl}/kortix-liveness-probe`, { signal: AbortSignal.timeout(timeoutMs) })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function probeOpencodeReadiness(
   baseUrl: string,
   directory: string,

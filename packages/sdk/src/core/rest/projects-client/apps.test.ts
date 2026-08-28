@@ -146,6 +146,7 @@ test('App access reads, updates, and creates a browser exchange URL through proj
     member_ids: ['11111111-1111-4111-8111-111111111111'],
     group_ids: [],
     password_configured: false,
+    viewer_token_scope: 'identity' as const,
   };
   const session = {
     url: 'https://dev-demo-aaaaaaaaaaaaaaaa.apps.kortix.com/?__kortix_access=token',
@@ -162,11 +163,12 @@ test('App access reads, updates, and creates a browser exchange URL through proj
   expect(await updateAppAccess('project-1', 'app-1', {
     mode: 'restricted',
     member_ids: policy.member_ids,
+    viewer_token_scope: 'api',
   })).toEqual({ ...policy, revision: 5 });
   expect(last()).toMatchObject({
     method: 'PATCH',
     url: 'http://backend.test/v1/projects/project-1/apps/app-1/access',
-    body: { mode: 'restricted', member_ids: policy.member_ids },
+    body: { mode: 'restricted', member_ids: policy.member_ids, viewer_token_scope: 'api' },
   });
 
   expect(await createAppAccessSession('project-1', 'app-1')).toEqual(session);

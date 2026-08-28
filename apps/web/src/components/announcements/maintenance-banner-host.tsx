@@ -24,6 +24,7 @@ export function MaintenanceBannerHost() {
     if (config?.level !== 'blocking' || !isMaintenanceProductRoute(pathname)) return;
 
     const from = `${window.location.pathname}${window.location.search}`;
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Maintenance evacuation: leave the product with a document load so no client cache, socket or in-flight request survives into /maintenance.
     window.location.assign(`/maintenance?from=${encodeURIComponent(from)}`);
   }, [config?.level, pathname]);
 

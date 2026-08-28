@@ -35,20 +35,71 @@
   --color-fd-ring: var(--ring);
 }
 
-/* Docs borders run a step darker than the app's hairline --border — the
-   default reads too faint on docs surfaces (callouts, tables, code chrome).
-   Scoped to the fumadocs layout root so the rest of the app keeps the lighter
-   token. --color-fd-border must be re-declared here: the :root mapping above
-   already resolved var(--border) at the root, so it would not pick up this
-   scoped override on its own. */
-#nd-docs-layout {
-  --border: oklch(0.86 0 0);
-  --color-fd-border: var(--border);
+/* Docs use the app's own hairline --border, with no scoped step.
+   `#nd-docs-layout` used to darken it (`oklch(0.86 0 0)` light, a lighter
+   `oklch(0.34 0.006 286.033)` dark) on the argument that the default read too
+   faint on callouts, tables and code chrome. In practice it read as heavy: the
+   docs draw far more borders per screen than an app view, so a step that is
+   right on one card compounds across a page of them. The fd-* mapping above
+   already carries --border through to fumadocs, so removing the override is
+   all that is needed — one hairline, one value, everywhere. */
+
+/* Inline code in a SEARCH RESULT is the same chip as inline code anywhere else.
+
+   Fumadocs renders each result's content as markdown and hands inline code its
+   own look — `border rounded-md px-px bg-fd-secondary text-fd-secondary-
+   foreground`, hardcoded in `mdComponents` inside
+   `fumadocs-ui/dist/components/dialog/search.js`. Against the app's chip that
+   is a different radius, a different inset and a filled surface, so the same
+   `agents:` reads as one thing on the page and another in the palette that
+   found it.
+
+   CSS rather than the dialog's `renderMarkdown` hook: overriding that means
+   supplying the whole component map, and the rest of it — the `mark` that
+   paints the matched term, the `a`-as-span, the custom-element chip — is
+   package-internal and unexported. Restyling one element beats re-declaring
+   five and drifting on the next release.
+
+   The values mirror `INLINE_CODE` (`components/markdown/code/inline-chip.tsx`).
+   They are restated because the element is built inside the package and there
+   is nowhere to hand it a class; change one, change the other. `color` is
+   inherited on purpose — a selected row paints itself `fd-accent-foreground`,
+   and a pinned colour would fight it.
+
+   `button[aria-selected]` is the result row: every item in the list is that
+   button (`SearchDialogListItem`), and it is what the pointer highlights. */
+[role='dialog'] button[aria-selected] code {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  padding: 0 0.25em;
+  font-size: 0.8rem;
+  color: inherit;
 }
-.dark #nd-docs-layout {
-  /* In dark theme a literally darker border would vanish into the background —
-     step lighter instead for the same contrast boost. */
-  --border: oklch(0.34 0.006 286.033);
+
+/* Inline code in a TOC entry is code, not a button.
+
+   Fumadocs puts `prose` on every TOC LINK
+   (`fumadocs-ui/dist/components/toc/default.js`), so a heading's inline code
+   lands under the preset's own `.prose :where(code)` rule: a filled
+   `--color-fd-muted` chip with a hardcoded 13px size and 3px of padding on
+   every side. In a 14px column of muted links that reads as a pressable
+   control, and it is the only filled surface in the whole aside.
+
+   The body is unaffected — `docsMdxComponents.code` gives it the app's
+   `INLINE_CODE` class, and a utility class (0,1,0) plus later source order
+   beats the preset. A TOC item's `<code>` comes from the heading AST with no
+   class at all, so CSS is the only place to reach it.
+
+   `a.prose` rather than `#nd-toc`: `prose` on an ANCHOR is what causes this,
+   and it is what the popover TOC on narrow viewports carries too. If fumadocs
+   ever drops that class the bug goes with it and this rule becomes a no-op.
+   Fill and metrics only — the border and the inherited link colour are the
+   preset's, so the entry still takes its active and hover states. */
+a.prose code {
+  background: transparent;
+  padding: 0 0.25em;
+  font-size: 0.9em;
 }
 
 /* Legacy --sidebar-* values used by the app's own sidebar components. The
@@ -223,6 +274,9 @@
   --color-kortix-green: var(--kortix-green);
   --color-kortix-purple: var(--kortix-purple);
   --color-kortix-red: var(--kortix-red);
+  --color-liquid-glass: var(--liquid-glass-bg);
+  --color-liquid-glass-hover: var(--liquid-glass-bg-hover);
+  --shadow-liquid-glass: var(--liquid-glass-shadow);
   /* Terminal surface. The PTY pane and its chrome (the connect strip, the
      panel shell behind it) are always dark, in every app theme, because they
      mirror a real shell — so these are literals, not light/dark pairs. One
@@ -724,6 +778,19 @@
   --ease-in: cubic-bezier(0.4, 0, 1, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Liquid glass — frosted secondary surface. Pair with `@utility liquid-glass`.
+     Mix with transparent (not --background) so backdrop-filter can show through.
+     Light: drop shadow + bright specular. Dark: no drop shadow, 1px inset rim.
+     Call sites should not need `dark:`. */
+  --liquid-glass-bg: color-mix(in oklch, var(--secondary) 45%, transparent);
+  --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 62%, transparent);
+  --liquid-glass-blur: 20px;
+  --liquid-glass-saturate: 1.8;
+  --liquid-glass-shadow:
+    0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35),
+    inset 0 -1px 0 oklch(1 0 0 / 0.08);
+  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%);
 }
 
 .dark {
@@ -775,6 +842,11 @@
   --kortix-green: oklch(0.581 0.165 146.619);
   --kortix-purple: oklch(0.675 0.131 306.212);
   --kortix-red: oklch(0.648 0.202 24.745);
+
+  --liquid-glass-bg: color-mix(in oklch, var(--secondary) 38%, transparent);
+  --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 52%, transparent);
+  --liquid-glass-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
+  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.12), transparent 55%);
 }
 
 @layer base {
@@ -868,6 +940,7 @@
       'Noto Sans Mono CJK SC', 'Noto Sans Mono CJK TC';
     font-weight: 500;
     line-height: 1.2;
+    letter-spacing: -0.025em; /* tracking-tight — mono glyphs read cleaner when pulled in */
   }
 }
 
@@ -1097,23 +1170,6 @@
    inline style beats a stylesheet declaration, which meant the stagger
    survived `prefers-reduced-motion` on `.kx-fade-up` — the movement stopped
    but the staged reveal did not. */
-@keyframes blur-fade-in {
-  from {
-    opacity: 0;
-    filter: blur(8px);
-    transform: translateY(2px);
-  }
-  50% {
-    opacity: 0.7;
-    filter: blur(3px);
-    transform: translateY(1px);
-  }
-  to {
-    opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
-  }
-}
 
 .kortix-markdown.streaming-active {
   position: relative;
@@ -1137,10 +1193,6 @@
   font-size: 1.05em;
 }
 
-.kortix-markdown[data-streaming='true'] > *:last-child {
-  animation: stream-fade-in 180ms ease-out;
-}
-
 @keyframes text-shimmer {
   0% {
     background-position: -200% center;
@@ -1150,9 +1202,17 @@
   }
 }
 
-.kortix-markdown[data-streaming='true'] > *:last-child {
-  animation: blur-fade-in 0.3s ease-out forwards;
-}
+/* Streaming text is NOT animated.
+ *
+ * This used to run `blur-fade-in` (blur 8px -> 3px -> 0) on the last child of a
+ * streaming block. `filter: blur()` promotes the element to its own layer and
+ * re-rasterises it every frame, and during a stream the last child changes on
+ * every token append — so the animation restarted continuously over live text.
+ * On refresh it read as the whole reply arriving blurred and then sharpening.
+ *
+ * Text that is being read as it arrives must be legible the instant it lands.
+ * If a reveal is ever wanted here it has to be opacity-only: no filter, no
+ * transform, nothing that forces a repaint of glyphs mid-stream. */
 
 /* Pulse heartbeat animation for reasoning section Kortix icon */
 @keyframes pulse-heartbeat {
@@ -1221,22 +1281,18 @@ html:not(.consent-enabled) #cookieyes {
   mix-blend-mode: normal;
 }
 
-::view-transition-new(root) {
-  filter: blur(20px);
-  animation: view-transition-sharpen 400ms ease-in-out forwards;
-}
-
-@keyframes view-transition-sharpen {
-  0% {
-    filter: blur(20px);
-  }
-  60% {
-    filter: blur(6px);
-  }
-  100% {
-    filter: blur(0px);
-  }
-}
+/* The incoming view is NOT blurred.
+ *
+ * This ran `blur(20px) -> 6px -> 0` over 400ms across the ENTIRE page root on
+ * every view transition. A root-level filter rasterises the whole viewport on
+ * every frame of that animation, and it sits directly between the navigation
+ * and the first legible paint — so the reply you navigated to arrived blurred
+ * and stayed unreadable for 400ms while the compositor worked.
+ *
+ * The rule above already sets `animation: none` on both halves, which is the
+ * behaviour we want: the new view simply appears. Nothing here should reach for
+ * `filter` again — a full-viewport blur is the most expensive way to spend the
+ * exact moment the user is waiting to read. */
 
 @keyframes kortix-spin {
   to {
@@ -1656,6 +1712,23 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
    margin (e.g. the Files file-preview top bar): drop it past the inset too. */
 .kx-titlebar-safe-mt {
   margin-top: calc(0.75rem + var(--kx-titlebar-inset, 0px));
+}
+
+/* ─── Liquid glass — frosted tinted surface (tokens: --liquid-glass-*) ─────
+   Theme-aware: light drop-shadow, dark inset rim. Specular lives on
+   background-image so this does not steal ::before from hit-area.
+   Use: className="liquid-glass rounded-full" */
+@utility liquid-glass {
+  border: 1px solid var(--border);
+  background-color: var(--liquid-glass-bg);
+  background-image: var(--liquid-glass-highlight);
+  -webkit-backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturate));
+  backdrop-filter: blur(var(--liquid-glass-blur)) saturate(var(--liquid-glass-saturate));
+  box-shadow: var(--liquid-glass-shadow);
+
+  &:hover {
+    background-color: var(--liquid-glass-bg-hover);
+  }
 }
 
 /* ─── Hit area — expand interactive targets without layout shift ───────────

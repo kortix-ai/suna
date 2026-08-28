@@ -91,7 +91,13 @@ describe('session audit polling', () => {
 
   test('late cache readers do not refetch on mount', () => {
     const source = readFileSync(new URL('./session-audit-shared.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('refetchOnMount: options?.poll ? true : false');
+    // Matched on the BEHAVIOUR, not on one spelling of the condition. The
+    // source hoisted `options?.poll` into a local `poll` const, which turned
+    // this assertion red on main while the behaviour was unchanged. main fixed
+    // it by pinning the NEW spelling; a regex that accepts either survives the
+    // next rename too — a source-scan test should track the guarantee, not the
+    // variable name.
+    expect(source).toMatch(/refetchOnMount:\s*(options\?\.)?poll\s*\?\s*true\s*:\s*false/);
   });
 });
 

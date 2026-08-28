@@ -1203,6 +1203,14 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
     const { hasAuth } = authOf(row);
     return hasAuth && row.providerType === 'channel';
   });
+  // Composio rows need the same liveness question channel rows already ask.
+  // `authOf` forces `hasAuth = true` for composio and the shared-credential
+  // lookup below checks a table Composio never writes to, so a composio
+  // connector serialized as `active` no matter whether its OAuth handshake ever
+  // completed. `connectorConnected` already answers correctly for composio (it
+  // reads `connected_account_id` / `is_no_auth` out of the connection metadata,
+  // the same facts the gateway denies calls on) — it was simply never asked.
+  const composioRows = conns.filter((row) => row.providerType === 'composio');
   const boundSecretIdentifiers = [
     ...new Set(
       credentialRows
@@ -1210,7 +1218,13 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
         .filter((identifier): identifier is string => Boolean(identifier)),
     ),
   ];
-  const [actions, credentialConnectorIds, connectedChannelSlugs, validBoundSecrets] =
+  const [
+    actions,
+    credentialConnectorIds,
+    connectedChannelSlugs,
+    authorizedComposioSlugs,
+    validBoundSecrets,
+  ] =
     await Promise.all([
       db
         .select()
@@ -1224,6 +1238,11 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
       Promise.all(
         channelRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
+      ).then(
+        (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
+      ),
+      Promise.all(
+        composioRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
@@ -1276,7 +1295,22 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       provider: row.providerType,
       platform: channelPlatform(row.config),
       iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
-      status: row.status,
+      // A composio connector whose authorization never completed reports
+      // `needs_auth` rather than the stored `active`. The gateway already
+      // refuses every call on such a connector, so reporting `active` made the
+      // product contradict itself: a checkmark in the UI and `needs_auth` on
+      // every tool call, with nothing explaining the gap. Prod 2026-08-28: all 6
+      // GitHub connections carried a null `connected_account_id` and no GitHub
+      // tool call had ever executed, while the connector read `active`.
+      //
+      // Read-side only. `disabled` and `error` are deliberate operator/sync
+      // states and outrank this; the DB column is left alone.
+      status:
+        row.providerType === 'composio' &&
+        row.status === 'active' &&
+        !authorizedComposioSlugs.has(row.slug)
+          ? ('needs_auth' as const)
+          : row.status,
       authorizationStrategy: row.authorizationStrategy,
       sensitive: config?.sensitive === true,
       actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({

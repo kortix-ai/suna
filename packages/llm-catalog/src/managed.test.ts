@@ -10,18 +10,25 @@ import {
 } from './index';
 
 describe('managed catalog', () => {
-  // 2026-08-10: claude-opus-4.8 / claude-sonnet-4.6 / kimi-k3 deactivated
-  // (commented out in MANAGED_MODELS, reactivatable by diff); muse-spark-1.2,
-  // minimax-m3, and gpt-5.6-luna added the same day.
+  test('does not expose the retired AsterLab transport or GLM 5.2 model', () => {
+    expect(DEFAULT_MANAGED_MODEL_IDS).not.toContain('glm-5.2');
+    expect(
+      MANAGED_MODELS.some((model) => (model as { transport: string }).transport === 'aster'),
+    ).toBe(false);
+  });
+
+  // 2026-08-10: claude-opus-4.8 / claude-sonnet-4.6 deactivated; muse-spark-1.2,
+  // minimax-m3, and gpt-5.6-luna added. 2026-08-27: glm-5.3-flash added.
+  // 2026-08-28: glm-5.2 and the AsterLab transport removed.
   test('exposes the managed lineup', () => {
     expect(DEFAULT_MANAGED_MODEL_IDS).toEqual([
       'grok-4.6',
-      'glm-5.2',
       'deepseek-v4-flash',
       'deepseek-v4-pro-0813',
       'muse-spark-1.2',
       'minimax-m3',
       'gpt-5.6-luna',
+      'glm-5.3-flash',
     ]);
   });
 
@@ -39,7 +46,7 @@ describe('managed catalog', () => {
     for (const m of MANAGED_MODELS) {
       expect(m.upstreamModelId.length, `${m.id} needs an upstream id`).toBeGreaterThan(0);
       expect(m.pricingRef.length, `${m.id} needs a pricing ref`).toBeGreaterThan(0);
-      expect(['aster', 'bedrock', 'openrouter']).toContain(m.transport);
+      expect(['bedrock', 'openrouter']).toContain(m.transport);
     }
   });
 
@@ -49,8 +56,8 @@ describe('managed catalog', () => {
   // catalog id ('claude-opus-4-8') — every consumer's pricing/capability
   // lookup by `pricingRef` silently missed and fell back to a permissive
   // synthetic record. Guard the SOURCE OF TRUTH directly for the Claude
-  // (bedrock-transport) managed models specifically — unlike glm-5.2 and
-  // deepseek-v4-flash, whose `pricingRef` is DELIBERATELY unresolvable
+  // (bedrock-transport) managed models specifically — unlike
+  // deepseek-v4-flash, whose `pricingRef` is deliberately unresolvable
   // on models.dev under a matching provider id (z-ai≠zhipuai, qwen≠alibaba —
   // see the `vision`/`limit` doc comment above), Claude's pricingRef SHOULD
   // always resolve since `anthropic` is a real models.dev provider id.
@@ -107,11 +114,6 @@ describe('managed catalog', () => {
       } else if (m.transport === 'openrouter') {
         // OpenRouter slugs are provider/model.
         expect(m.upstreamModelId, `${m.id} OpenRouter slug`).toContain('/');
-      } else {
-        // AsterLab accepts a bare, slash-free upstream model id on its
-        // OpenAI-compatible endpoint (e.g. `glm-5.2`, `kimi-k3`).
-        expect(m.transport, `${m.id} transport`).toBe('aster');
-        expect(m.upstreamModelId, `${m.id} AsterLab slug`).toMatch(/^[^/]+$/);
       }
     }
   });
@@ -126,15 +128,6 @@ describe('managed catalog', () => {
 
 describe('managed resolution + back-compat aliases', () => {
   test('resolves current ids', () => {
-    expect(getManagedModel('glm-5.2')?.name).toBe('GLM 5.2');
-    expect(getManagedModel('glm-5.2')?.transport).toBe('aster');
-    expect(getManagedModel('glm-5.2')?.upstreamModelId).toBe('glm-5.2');
-    expect(getManagedModel('glm-5.2')?.pricing).toEqual({
-      inputPerMillion: 1,
-      cachedInputPerMillion: 0.2,
-      cacheWritePerMillion: 1,
-      outputPerMillion: 4,
-    });
     expect(getManagedModel('deepseek-v4-flash')?.providerBrand).toBeUndefined();
     expect(getManagedModel('deepseek-v4-flash')?.pricing).toEqual({
       inputPerMillion: 0.0938,
@@ -181,6 +174,29 @@ describe('managed resolution + back-compat aliases', () => {
         allow_fallbacks: true,
       },
     });
+    // Measured 2026-08-27 on OpenRouter: z-ai (first-party) + novita at
+    // $0.075/$0.25/$0.015, 1_048_576 ctx / 131_072 out; gmicloud degraded
+    // (status -2, 86.9% uptime) and ignored. Vision: models.dev lists
+    // text+image+video input.
+    expect(getManagedModel('glm-5.3-flash')).toMatchObject({
+      name: 'GLM 5.3 Flash',
+      upstreamModelId: 'z-ai/glm-5.3-flash',
+      transport: 'openrouter',
+      pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+      pricing: {
+        inputPerMillion: 0.075,
+        cachedInputPerMillion: 0.015,
+        outputPerMillion: 0.25,
+      },
+      tier: 'fast',
+      vision: true,
+      limit: { context: 1_048_576, output: 131_072 },
+      openrouterProvider: {
+        order: ['z-ai', 'novita'],
+        ignore: ['gmicloud'],
+        allow_fallbacks: true,
+      },
+    });
   });
 
   test('retired / superseded model ids no longer resolve (aliases removed)', () => {
@@ -197,6 +213,7 @@ describe('managed resolution + back-compat aliases', () => {
       'claude-opus-4.8',
       'claude-sonnet-4.6',
       'kimi-k3',
+      'glm-5.2',
     ]) {
       expect(getManagedModel(old), `${old} should be gone`).toBeUndefined();
       expect(isManagedModelId(old), `${old} should be gone`).toBe(false);

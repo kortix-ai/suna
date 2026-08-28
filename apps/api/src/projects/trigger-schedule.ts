@@ -83,10 +83,57 @@ export function triggerScheduleRevision(spec: TriggerScheduleSpec): string {
   return createHash('sha256').update(JSON.stringify(scheduleConfig)).digest('hex');
 }
 
+/**
+ * Default spread for identical cron expressions across projects, in ms.
+ *
+ * A cron expression is shared by every project that copied the same manifest,
+ * so an unjittered fleet fires as ONE burst. `0 0 3 * * *` in the project
+ * starter put 756 projects on the same millisecond and exhausted the sandbox
+ * provider every night (2026-08-26: 779 provisions at 03:00, 654 failed, 346
+ * of them `capacity` — while every other hour of that day was 100% healthy at
+ * 6–28 provisions). Set `KORTIX_TRIGGER_SCHEDULE_JITTER_WINDOW_MS=0` to
+ * restore exact-to-the-second firing.
+ */
+export function triggerScheduleJitterWindowMs(): number {
+  const raw = Number(process.env.KORTIX_TRIGGER_SCHEDULE_JITTER_WINDOW_MS);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return 1_800_000; // 30 minutes
+}
+
+/**
+ * Deterministic offset in `[0, windowMs)` for one trigger.
+ *
+ * Deterministic on purpose: the catalog writes `next_fire_at` and the claim
+ * sweep RECOMPUTES it from the same spec. A random offset would make those two
+ * disagree and either double-fire or skip a slot. Same key ⇒ same offset,
+ * forever, on every API instance.
+ */
+export function triggerScheduleJitterMs(key: string, windowMs: number): number {
+  if (windowMs <= 0) return 0;
+  return createHash('sha256').update(key).digest().readUInt32BE(0) % windowMs;
+}
+
+/**
+ * The jitter actually applied to one cron, capped at a quarter of its own
+ * period. Without the cap a 30-minute spread would mangle a five-minute cron;
+ * with it, a five-minute cron spreads by at most 75s and a daily cron gets the
+ * full window.
+ */
+function cronJitterMs(cron: Cron, after: Date, key: string, windowMs: number): number {
+  if (windowMs <= 0) return 0;
+  const first = cron.nextRun(after);
+  if (!first) return 0;
+  const second = cron.nextRun(first);
+  if (!second) return 0;
+  const periodMs = second.getTime() - first.getTime();
+  const cappedWindow = Math.min(windowMs, Math.floor(periodMs / 4));
+  return triggerScheduleJitterMs(key, cappedWindow);
+}
+
 export function nextTriggerScheduleSlot(
   spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone'>,
   after: Date,
-  options: { includePastOneOff?: boolean } = {},
+  options: { includePastOneOff?: boolean; jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
   if (spec.type !== 'cron' || !spec.enabled) return null;
   if (spec.runAt) {
@@ -99,20 +146,33 @@ export function nextTriggerScheduleSlot(
   const error = validateTriggerCron(spec.cron, spec.timezone);
   if (error) throw new Error(error);
   const cron = new Cron(spec.cron, { paused: true, timezone: spec.timezone });
-  return cron.nextRun(after);
+  if (!options.jitterKey) return cron.nextRun(after);
+  const jitterMs = cronJitterMs(
+    cron,
+    after,
+    options.jitterKey,
+    options.jitterWindowMs ?? triggerScheduleJitterWindowMs(),
+  );
+  if (jitterMs <= 0) return cron.nextRun(after);
+  // Search from `after - jitter` so the jittered result is still strictly after
+  // `after` — otherwise a slot whose base already passed would be skipped.
+  const base = cron.nextRun(new Date(after.getTime() - jitterMs));
+  return base ? new Date(base.getTime() + jitterMs) : null;
 }
 
 export function initialTriggerScheduleSlot(
   spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone'>,
   now: Date,
+  options: { jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
-  return nextTriggerScheduleSlot(spec, now, { includePastOneOff: true });
+  return nextTriggerScheduleSlot(spec, now, { ...options, includePastOneOff: true });
 }
 
 export function advanceTriggerScheduleSlot(
   spec: Pick<TriggerScheduleSpec, 'type' | 'enabled' | 'cron' | 'runAt' | 'timezone'>,
   scheduledFor: Date,
+  options: { jitterKey?: string; jitterWindowMs?: number } = {},
 ): Date | null {
   if (spec.runAt) return null;
-  return nextTriggerScheduleSlot(spec, scheduledFor);
+  return nextTriggerScheduleSlot(spec, scheduledFor, options);
 }

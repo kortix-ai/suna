@@ -931,6 +931,7 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'monitors',
     'review_center',
     'secrets_egress',
+    'pi_worker',
     'teams',
     'warm_sessions',
   ];

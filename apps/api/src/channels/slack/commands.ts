@@ -120,7 +120,7 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
   // Everything lives behind the one `/kortix` panel; the rest are power-user
   // shortcuts for people who'd rather type than click.
   const advanced: Array<{ cmd: string; desc: string }> = [
-    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.2` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
+    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.3-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
     { cmd: `${command} agent <name>`, desc: 'Set the channel agent directly (`default` to reset).' },
     ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different project.' }]),
     { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions here.' },
@@ -1202,7 +1202,7 @@ async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse>
     return { response_type: 'ephemeral', text: 'Model reset to the project default.' };
   }
   if (/\s/.test(id)) {
-    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.2\` or \`glm-5.2\`).` };
+    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.3-flash\` or \`glm-5.3-flash\`).` };
   }
   // Two paths on the project's `llm_gateway` flag (same fork as session
   // create). Gateway OFF: OpenCode owns the catalog — enforce the native

@@ -1,4 +1,5 @@
 import { CodeBlock } from '@/components/markdown/code/code-block';
+import { HexColorCode, INLINE_CODE, isHexColor } from '@/components/markdown/code/inline-chip';
 import { DocsMermaid } from '@/components/markdown/docs-mermaid';
 import { isInternalUrl } from '@/components/markdown/unified-markdown-utils';
 import { cn } from '@/lib/utils';
@@ -30,13 +31,6 @@ const linkClass = cn(
   'transition-colors hover:decoration-kortix-blue',
   '[overflow-wrap:anywhere]',
 );
-
-// Inline-code chip — unified-markdown's INLINE_CODE at its non-clickable size.
-// `[overflow-wrap:anywhere]` matches linkClass above: a long unbreakable token
-// (e.g. a full `kortix cr open --title ...` invocation) is wider than a 390px
-// viewport and scrolls the whole page sideways without it.
-const inlineCodeClass =
-  'rounded-sm border border-border/40 bg-muted px-1.5 py-[0.1rem] font-mono text-[0.8rem] text-foreground/95 dark:bg-card [overflow-wrap:anywhere]';
 
 // By the time the `pre` override runs, rehype-code has replaced the fence's
 // text with token spans — walk them back down to the raw string so the app
@@ -147,9 +141,21 @@ export const docsMdxComponents = {
 
   // Inline code becomes the bordered chip; multiline/block code is the shiki
   // <code> inside <pre> — pass it through untouched for fumadocs' CodeBlock.
+  //
+  // `INLINE_CODE` itself, not a copy of it. This file used to carry its own
+  // near-miss of the same class string (`rounded-sm`, `bg-muted`, `px-1.5`),
+  // so a docs page and a chat message drew visibly different chips for the
+  // same backticks and every tune to one silently skipped the other — the
+  // chip's baseline fix among them (see `code/inline-code.tsx`).
   code: ({ children, ...props }: ComponentPropsWithoutRef<'code'>) => {
     if (typeof children === 'string' && !children.includes('\n')) {
-      return <code className={inlineCodeClass}>{children}</code>;
+      // A docs page quoting `#0ea5e9` is as unreadable as a message quoting
+      // it, so the swatch is the shared component rather than a chat-only
+      // flourish. Everything else `ClickableInlineCode` does — file previews,
+      // URL links — is session behaviour and deliberately stays out of docs.
+      const text = children.trim();
+      if (isHexColor(text)) return <HexColorCode hex={text}>{children}</HexColorCode>;
+      return <code className={INLINE_CODE}>{children}</code>;
     }
     return <code {...props}>{children}</code>;
   },

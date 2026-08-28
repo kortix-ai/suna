@@ -3383,6 +3383,72 @@ describe("useSyncStore — a removed user message the control plane still owns k
 		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
 	});
 
+	test("a re-minted prompt taken back out by Stop is superseded by ITS OWN re-delivery", () => {
+		// The stop-release path, end to end, for TWO prompts queued mid-turn:
+		//
+		//   opt  -> the id this tab painted (the wire id it minted)
+		//   fwd  -> the drain re-mints above the live turn on the first delivery
+		//   Stop -> the settle deletes the fwd copy (message.removed) and holds
+		//           the row; the bubble goes back to being optimistic under `fwd`
+		//   rel  -> the release re-mints AGAIN, so the echo carries a third id
+		//
+		// The inbox row always names {wire_message_id: opt, message_id: <newest>},
+		// so the alias the host registers is opt -> rel. `opt` stopped being
+		// optimistic at the first supersede, and the bubble on screen is `fwd`:
+		// unless the alias follows that chain, the echo matches nothing, and with
+		// two sends in flight the ordinal fallback refuses to guess — each echo is
+		// inserted BESIDE its own bubble and the user sees every prompt twice.
+		const store = useSyncStore.getState();
+		for (const n of ["1", "2"]) {
+			store.optimisticAdd("ses_1", userMessage(`msg_opt${n}`), [
+				textPart(`prt_${n}`, `msg_opt${n}`, `prompt ${n}`),
+			]);
+			store.markOptimisticDispatched("ses_1", `msg_opt${n}`);
+			store.markOptimisticInboxBacked("ses_1", `msg_opt${n}`);
+			// First delivery: the row names the re-minted id before the echo lands.
+			store.registerOptimisticEcho("ses_1", `msg_opt${n}`, `msg_fwd${n}`);
+			store.applyEvent({
+				type: "message.updated",
+				properties: { info: userMessage(`msg_fwd${n}`) },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_fwd1",
+			"msg_fwd2",
+		]);
+
+		// Stop: the settle takes both copies back out of OpenCode.
+		for (const n of ["1", "2"]) {
+			store.applyEvent({
+				type: "message.removed",
+				properties: { sessionID: "ses_1", messageID: `msg_fwd${n}` },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_fwd1",
+			"msg_fwd2",
+		]);
+
+		// Release: the row re-mints once more and names the new id against the
+		// SAME wire id it has always reported.
+		for (const n of ["1", "2"]) {
+			store.registerOptimisticEcho("ses_1", `msg_opt${n}`, `msg_rel${n}`);
+		}
+		for (const n of ["1", "2"]) {
+			store.applyEvent({
+				type: "message.updated",
+				properties: { info: userMessage(`msg_rel${n}`) },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_rel1",
+			"msg_rel2",
+		]);
+		// And the host's key for each bubble still points at the id it painted.
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_rel1")).toBe("msg_opt1");
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_rel2")).toBe("msg_opt2");
+	});
+
 	test("message.removed for a message nobody owns still removes it", () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_x"));

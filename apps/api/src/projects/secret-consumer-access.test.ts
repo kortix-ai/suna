@@ -435,3 +435,56 @@ describe('listProjectSecretNamesForConsumer', () => {
     ).toEqual(['CODEX_AUTH_JSON']);
   });
 });
+
+// Webhook trigger signing secrets (dashboard wizard regression guard):
+// the wizard must create its auto-generated HMAC key as broker/connector.
+// A policy-less upsert persists runtime/sandbox, which the connector
+// boundary rejects as delivery_mismatch — that mismatch is what broke
+// webhook trigger creation ("Webhook secret is not available to the
+// connector consumer").
+
+import { projectSecretIsConfiguredForConsumer } from './secrets';
+
+describe('webhook signing secret delivery (wizard flow)', () => {
+  test('policy-less runtime/sandbox row is delivery_mismatch for connector', async () => {
+    rows = [
+      secret({
+        identifier: 'WEBHOOK_TEST_SECRET',
+        name: 'WEBHOOK_TEST_SECRET',
+        scope: 'runtime',
+        strategy: 'runtime',
+        consumer: 'sandbox',
+        active: true,
+      }),
+    ];
+
+    expect(
+      await getProjectSecretConsumerConfigurationStatus({
+        projectId: PROJECT_ID,
+        name: 'WEBHOOK_TEST_SECRET',
+        consumer: 'connector',
+      }),
+    ).toBe('delivery_mismatch');
+  });
+
+  test('broker/connector signing key passes webhook validation', async () => {
+    rows = [
+      secret({
+        identifier: 'WEBHOOK_TEST_SECRET',
+        name: 'WEBHOOK_TEST_SECRET',
+        scope: 'runtime',
+        strategy: 'broker',
+        consumer: 'connector',
+        active: true,
+      }),
+    ];
+
+    expect(
+      await projectSecretIsConfiguredForConsumer({
+        projectId: PROJECT_ID,
+        name: 'WEBHOOK_TEST_SECRET',
+        consumer: 'connector',
+      }),
+    ).toBe(true);
+  });
+});

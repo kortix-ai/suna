@@ -84,7 +84,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
@@ -480,12 +480,12 @@ function SessionListHeader({
         SESSION_ROW_HEIGHT_CLASS,
       )}
     >
-      <Link
+      <HoverPrefetchLink
         href={`/projects/${projectId}/sessions`}
         className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
       >
         <span className="truncate">Sessions</span>
-      </Link>
+      </HoverPrefetchLink>
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
           <SessionFilterMenu
@@ -714,7 +714,12 @@ function ProjectSessionRow({
             : 'text-muted-foreground hover:text-sidebar-foreground bg-[var(--session-row-surface)] [--session-row-surface:var(--sidebar)] hover:[--session-row-surface:var(--sidebar-border)]',
         )}
       >
-        <Link
+        {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
+            the viewport, so opening ONE session made the browser fetch the RSC
+            payload of every OTHER session in the sidebar — 19-20 dynamic server
+            renders (~24KB each) per open, 21 hits on this one route where 1 is
+            correct. The prefetch now starts on hover/focus/touch. */}
+        <HoverPrefetchLink
           href={href}
           onClick={onNavigate}
           aria-busy={isSwitching || undefined}
@@ -738,7 +743,7 @@ function ProjectSessionRow({
               {childCount}
             </span>
           )}
-        </Link>
+        </HoverPrefetchLink>
 
         <div className="flex shrink-0 items-center gap-0" data-session-indicators="true">
           {spawnedBy && !nested && (
@@ -886,7 +891,9 @@ function ProjectSubsessionRow({
     : '';
 
   return (
-    <Link href={href} className="block">
+    // Same reason as ProjectSessionRow: sub-session rows are session routes too,
+    // so prefetching them on mount multiplies the per-open RSC storm.
+    <HoverPrefetchLink href={href} className="block">
       <div
         className={cn(
           'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
@@ -899,7 +906,7 @@ function ProjectSubsessionRow({
         </span>
         {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
       </div>
-    </Link>
+    </HoverPrefetchLink>
   );
 }
 

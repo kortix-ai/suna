@@ -233,6 +233,9 @@ export type {
   // Accounts / IAM
   KortixAccount,
   AccountDetail,
+  AccountBranding,
+  AccountBrandingAssetKind,
+  AccountBrandingState,
   AccountMember,
   AccountRole,
   ProjectRole,
@@ -331,7 +334,50 @@ export type {
   // Auth validate helper
   AccountIdentity,
   ValidateTokenResult,
+  // Sign in with Kortix — OAuth client registry (`kortix.iam.oauthClients`)
+  OAuthClient,
+  CreatedOAuthClient,
+  CreateOAuthClientInput,
+  UpdateOAuthClientInput,
+  OAuthClientType,
+  OAuthScope,
 } from './core/rest/projects-client';
+
+/**
+ * Headless regular auth — `kortix.auth.*` (sign-up, password / magic-link /
+ * social sign-in, refresh, password reset, sign-out through the Kortix API)
+ * and `createKortixSession`, the self-refreshing token store for `getToken`.
+ */
+export {
+  // The functions behind `kortix.auth.*` — exported so `Kortix`'s inferred type
+  // stays nameable from the root entry (TS2742 in a consumer's declaration
+  // emit otherwise, e.g. apps/whitelabel-demo `next build`).
+  signUp,
+  signInWithPassword,
+  sendMagicLink,
+  verifyOtp,
+  signInWithProvider,
+  exchangeCode,
+  refreshSession,
+  resetPassword,
+  updatePassword,
+  authUser,
+  signOut,
+  HeadlessAuthError,
+  type HeadlessAuthApi,
+  type AuthSession,
+  type AuthUser,
+  type AuthSessionResult,
+  type AuthOtpType,
+  type AuthProvider,
+  type AuthRequestOptions,
+} from './core/rest/platform-client/auth';
+export {
+  createKortixSession,
+  type KortixSession,
+  type KortixSessionOptions,
+  type KortixSessionStorage,
+} from './core/auth/session';
 
 /**
  * Linear-time trailing-slash strip shared with hosts — see
@@ -416,3 +462,17 @@ export type {
 export type {
   OpencodeAgentConfig as RuntimeAgentConfig,
 } from './core/rest/projects-client/agent-config';
+
+/**
+ * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
+ * by someone Kortix already authenticated, so `getToken: kortixAppViewerToken()`
+ * is the whole of its auth. See `core/auth/app-viewer.ts`. (Kept across the
+ * runtime-client revert — app-viewer has no runtime-client dependency.)
+ */
+export {
+  fetchKortixAppViewer,
+  kortixAppViewerToken,
+  clearKortixAppViewerCache,
+  type KortixAppViewerSession,
+  type KortixAppViewerOptions,
+} from './core/auth/app-viewer';

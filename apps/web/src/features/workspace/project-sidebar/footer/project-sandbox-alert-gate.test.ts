@@ -24,8 +24,8 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     expect(code).toContain('caps[PROJECT_ACTIONS.PROJECT_WRITE]');
   });
 
-  // "Details" is a Customize destination, not a modal — `openSandboxSection`
-  // routes to `projectSettingsSectionHref(projectId, 'sandbox')`.
+  // "Details" is a Customize destination, not a modal — each control is a
+  // `<Link>` to `projectSettingsSectionHref(projectId, 'sandbox')`.
   test('Details gates on customize.read, the recovery actions on project.write', () => {
     expect(code).toContain(
       'const canOpenDetails = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed !== false;',
@@ -33,9 +33,14 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     expect(code).toContain(
       'const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;',
     );
-    // Every `openSandboxSection` call site sits behind the details gate.
-    const details = (code.match(/onClick=\{openSandboxSection\}/g) ?? []).length;
+    // All three "Details" controls sit behind the details gate. They are
+    // prefetching anchors, not buttons: this alert only shows when the project
+    // is already unhealthy, which is the worst moment to risk the full page
+    // reload a cold `router.push` can degrade into
+    // (fetch-server-response.js:148/177/181).
+    const details = (code.match(/<Link href=\{sandboxSectionHref\} prefetch>/g) ?? []).length;
     expect(details).toBe(3);
+    expect(code).not.toContain('onClick={openSandboxSection}');
     expect((code.match(/canOpenDetails/g) ?? []).length).toBeGreaterThanOrEqual(4);
     expect(code).toContain('{canFixWithAgent && canRecover && (');
     expect(code).toContain('{canRecover ? (');

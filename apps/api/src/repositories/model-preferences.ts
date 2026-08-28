@@ -7,7 +7,7 @@ import { db } from '../shared/db';
 //   per-agent default (scope='agent', key=agent_name) → project default
 //   (scope='project', key=project_id) → account default (scope='account') →
 //   platform default.
-// Stored `model` values are gateway wire models (bare managed id like 'glm-5.2',
+// Stored `model` values are gateway wire models (bare managed id like 'glm-5.3-flash',
 // a BYOK 'provider/model', or 'codex/<id>') — never the synthetic `auto` and
 // never the opencode-only `kortix/` prefix.
 //

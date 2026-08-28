@@ -4,7 +4,7 @@ import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/
 import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { AppWindowIcon, GlobeIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -38,14 +38,16 @@ export function ProjectAppsNavItem() {
            icon and label ~8px left of its neighbours and a shade darker. */
         className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
       >
-        <Link href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
+        {/* Hover-gated prefetch: prefetching on mount cost every session open a
+            full dynamic render of /apps for a route most opens never visit. */}
+        <HoverPrefetchLink href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
           {/* shrink-0 so the glyph keeps its box when the label is long or the
               sidebar is narrow — the sibling rows wrap their icons the same way. */}
           <span className="shrink-0">
             <AppWindowIcon />
           </span>
           Apps
-        </Link>
+        </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

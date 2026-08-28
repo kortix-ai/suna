@@ -10,6 +10,7 @@ import {
   probeFileAvailability,
   type FileAvailability,
 } from '@/features/session/file-availability';
+import { useInsideLink } from './inside-link-context';
 import { resolveRuntimePath } from '@/features/session/use-oc-file-open';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
@@ -19,10 +20,11 @@ import Link from 'next/link';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { childrenToText } from './children-text';
+// Server-safe by design — see `inline-chip.tsx`. Re-exported so the client
+// consumers that already import them from here keep working.
+import { HexColorCode, INLINE_CODE, isHexColor } from './inline-chip';
 
-// ─── Inline code ─────────────────────────────────────────────────────────────
-export const INLINE_CODE =
-  'rounded-[5px] bg-muted px-1.5 py-[0.08rem] font-mono text-[0.9rem] text-foreground/95 [overflow-wrap:anywhere] dark:bg-card border border-muted-foreground/5';
+export { HexColorCode, INLINE_CODE, isHexColor };
 
 /**
  * A path inside a message, rendered as a door to the file — but only while
@@ -142,12 +144,28 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
 // Inline code that becomes a link (URLs) or opens a file preview (paths).
 export function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const { proxyUrl } = useSandboxProxy();
+  const insideLink = useInsideLink();
   const text = childrenToText(children).trim();
+
+  // Before the URL and path checks: a hex is neither, and the test is a single
+  // anchored regex against a string that is at most nine characters.
+  if (isHexColor(text)) {
+    return <HexColorCode hex={text}>{children}</HexColorCode>;
+  }
+
   const isUrl = looksLikeUrl(text);
 
   if (isUrl) {
     const href = proxyUrl(text) ?? text;
     const linkClass = cn(INLINE_CODE, 'hover:text-foreground cursor-pointer transition-colors');
+
+    // Already inside a markdown link (e.g. `` [`http://x`](http://x) ``): a
+    // nested <a> is invalid HTML and throws a React hydration error. The
+    // surrounding anchor already carries the click, so render the styled code
+    // WITHOUT its own anchor. See `inside-link-context.ts`.
+    if (insideLink) {
+      return <code className={cn(linkClass, 'text-[0.8rem]')}>{children}</code>;
+    }
 
     // A malformed absolute URL (e.g. `http://:`) must not reach next/link —
     // its prefetch path throws `Cannot prefetch '...'` (see isLinkSafeHref).

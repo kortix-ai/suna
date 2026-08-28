@@ -32,7 +32,12 @@ fi
 
 # Trusted Publishing (OIDC) requires npm >= 11.5.1; node 22 ships npm 10. Do
 # not mutate the runner's npm installation until the auth preflight passes.
-npm install -g npm@latest
+# Pin to the 11.x line, NOT npm@latest: npm@12 requires node >= 22.22.2, but
+# `actions/setup-node@v7` with `node-version: 22` resolves to 22.22.0, so
+# `npm@latest` fails `EBADENGINE` before it can publish. This broke the
+# v0.13.6 deploy-prod npm publishes (2026-08-26). 11.x satisfies the OIDC
+# floor and runs on 22.22.0. Revisit when setup-node@22 ships >= 22.22.2.
+npm install -g 'npm@^11.5.1'
 echo "npm $(npm --version)"
 
 name="$(node -p "require('./package.json').name")"

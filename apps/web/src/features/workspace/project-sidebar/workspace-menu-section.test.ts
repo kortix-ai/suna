@@ -22,7 +22,12 @@ describe('WorkspaceMenuSection reaches account settings two ways', () => {
     // Comments are stripped above, so this file's own prose about the row —
     // and the component's — cannot satisfy the match.
     expect(code).toContain('Account settings');
-    expect(code).toContain('router.push(`/accounts/${switcherAccountId}`)');
+    // An anchor, not a handler. A menu row that calls `router.push` runs the
+    // RSC fetch cold at click time, and Next turns that fetch into a full
+    // document load whenever it answers wrong — an auth bounce, a build-id
+    // skew mid-deploy, a network blip (fetch-server-response.js:148/177/181).
+    expect(code).toContain('<Link href={`/accounts/${switcherAccountId}`} prefetch>');
+    expect(code).not.toContain('router.push');
     expect(code).toContain('resolveSwitcherAccountId({');
   });
 
@@ -33,8 +38,16 @@ describe('WorkspaceMenuSection reaches account settings two ways', () => {
   });
 
   test('a workspace row asks where it goes instead of assuming a switch', () => {
-    expect(code).toContain('resolveWorkspaceRowNavigation(project, activeProjectId)');
-    expect(code).toContain('onSelect={() => openWorkspaceRow(workspace)}');
+    // Resolved during RENDER, which is what lets the row be an anchor at all.
+    // Resolving inside the click handler is the shape that forced a cold fetch.
+    expect(code).toContain('resolveWorkspaceRowNavigation(workspace, activeProjectId)');
+    expect(code).toContain('href={target.href}');
+    // The side effects hang off the ANCHOR's click, not Radix's `onSelect`.
+    // `onSelect` fires for a cmd-click too, but `next/link` hands a modified
+    // click back to the browser — so switch state would mutate in the tab the
+    // user just left behind. See `isModifiedClick`.
+    expect(code).toContain('onClick={(event) => startWorkspaceRow(event, workspace, target)}');
+    expect(code).toContain('isModifiedClick(event)');
     // The early `return` this replaced is what made clicking the active row a
     // no-op. It must not come back.
     expect(code).not.toContain('if (project.project_id === activeProjectId) return;');
@@ -44,7 +57,7 @@ describe('WorkspaceMenuSection reaches account settings two ways', () => {
     // `beginSwitch` drives the per-row spinner and the project-switch overlay.
     // Firing it for the account-settings navigation would spin a row that is
     // never going to change the active workspace.
-    expect(code).toContain("if (target.kind === 'switch') {");
+    expect(code).toContain("if (target.kind !== 'switch') return;");
     const beginSwitchCalls = [...code.matchAll(/beginSwitch\(/g)].length;
     expect(beginSwitchCalls).toBe(1);
   });

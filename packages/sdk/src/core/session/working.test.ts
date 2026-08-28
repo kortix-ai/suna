@@ -341,6 +341,46 @@ describe('projectWorking', () => {
     });
   });
 
+  test('an accepted idle send keeps its turn id while the inbox owns working', () => {
+    const projection = projectWorking({
+      optimistic: {
+        messageId: 'msg_new',
+        turnId: 'msg_new',
+        atMs: T0,
+        acceptedAtMs: T0 + 300,
+      },
+      inbox: { pending: 1, atMs: T0 + 300 },
+      server: { turns: [], atMs: T0 + 400 },
+      stream: { type: 'idle', atMs: T0 - 1 },
+      nowMs: T0 + 500,
+    });
+
+    expect(projection).toEqual({
+      state: 'working',
+      source: 'server',
+      turnId: 'msg_new',
+      since: T0 + 300,
+      serverOpenTurnToken: null,
+    });
+  });
+
+  test('a send made during another response keeps the existing turn association', () => {
+    const projection = projectWorking({
+      optimistic: {
+        messageId: 'msg_queued',
+        turnId: 'msg_active',
+        atMs: T0,
+        acceptedAtMs: T0 + 300,
+      },
+      inbox: { pending: 1, atMs: T0 + 300 },
+      server: { turns: [], atMs: T0 + 400 },
+      stream: { type: 'busy', atMs: T0 - 1 },
+      nowMs: T0 + 500,
+    });
+
+    expect(projection.turnId).toBe('msg_active');
+  });
+
   test('an inbox reading nobody has refreshed stops deciding on ITS own bound', () => {
     // Three prompt-list cadences, not three `/turn` cadences. The list polls at
     // 3s while rows exist, so a reading that has survived 10s is one the poll

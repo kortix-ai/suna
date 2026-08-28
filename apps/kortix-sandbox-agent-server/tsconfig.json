@@ -34,7 +34,13 @@
     // The Dockerfile places packages/api-contract at the matching relative
     // path.
     "paths": {
-      "@kortix/api-contract/*": ["../../packages/api-contract/src/*"]
+      "@kortix/api-contract/*": ["../../packages/api-contract/src/*"],
+      // env-rpc-worker-integration.test.ts imports the worker's real source.
+      // That source lazily references `ws`, but this standalone package keeps
+      // its own node_modules below the worker's module-resolution ancestry.
+      // Point TypeScript at the locally installed declaration package. The
+      // daemon build does not bundle or execute the worker's WebSocket path.
+      "ws": ["./node_modules/@types/ws/index.d.mts"]
     }
   },
   "include": ["src/**/*.ts"]

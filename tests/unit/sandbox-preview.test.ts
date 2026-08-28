@@ -3,6 +3,7 @@ import {
   PreviewInfrastructureError,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewSandboxIdentity,
   previewSandboxName,
   runSandboxPreview,
   selectStalePreviewSandboxIds,
@@ -22,6 +23,123 @@ const input = {
 describe('provider-neutral preview lifecycle', () => {
   it('uses one stable sandbox name per pull request', () => {
     expect(previewSandboxName(6337)).toBe('kortix-preview-pr-6337');
+  });
+
+  it('gives a pull request preview a disposable identity and a branch environment a standing one', () => {
+    expect(previewSandboxIdentity({ prNumber: 6337 })).toEqual({
+      name: 'kortix-preview-pr-6337',
+      owner: 'kortix-preview',
+      autoArchiveDays: 7,
+      autoDeleteDays: 7,
+      reuseExisting: false,
+    });
+    expect(previewSandboxIdentity({ prNumber: 6998, branchEnv: 'pi-worker' })).toEqual({
+      name: 'kortix-env-pi-worker',
+      owner: 'kortix-branch-env',
+      autoArchiveDays: 0,
+      autoDeleteDays: 0,
+      reuseExisting: true,
+    });
+  });
+
+  it('names a branch environment after the branch, not the pull request that carries it', () => {
+    // The whole point is a URL that survives a push, so the PR number must not
+    // reach the name — two deploys of one branch have to land on one sandbox.
+    const first = previewSandboxIdentity({ prNumber: 1, branchEnv: 'feat/Pi_Worker' });
+    const second = previewSandboxIdentity({ prNumber: 999, branchEnv: 'feat/Pi_Worker' });
+    expect(first.name).toBe(second.name);
+    expect(first.name).toBe('kortix-env-feat-pi-worker');
+    expect(() => previewSandboxIdentity({ prNumber: 1, branchEnv: '///' })).toThrow(
+      /invalid branch for a persistent environment/,
+    );
+  });
+
+  it('runs the suite in a pull request preview and skips it in a branch environment', () => {
+    const base = {
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://x.example.test',
+    };
+    // Match the executed LINE: the skip branch names the command in a hint, so
+    // a substring check would report it as running.
+    const executesSuite = (script: string) =>
+      script.split('\n').some((line) => line.trim() === 'pnpm test -- --target-full');
+
+    expect(executesSuite(buildPreviewBootstrapScript(base))).toBe(true);
+    expect(executesSuite(buildPreviewBootstrapScript({ ...base, runTests: true }))).toBe(true);
+    expect(executesSuite(buildPreviewBootstrapScript({ ...base, runTests: false }))).toBe(false);
+
+    // Skipping the suite must not skip the proof that the stack came up on
+    // this commit — that check is what the deploy is actually gated on.
+    for (const runTests of [true, false]) {
+      expect(buildPreviewBootstrapScript({ ...base, runTests })).toContain('/v1/health');
+    }
+  });
+
+  it('health-checks the stack locally, never through the public name', () => {
+    // The public name is served by a proxy that is only re-pointed at this
+    // sandbox AFTER the deploy returns. Checking through it would deadlock the
+    // first deploy, and on later ones would be answered by the PREVIOUS
+    // sandbox — reporting success for a stack that never came up.
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://pi.example.test',
+      runTests: false,
+    });
+    expect(script).toContain('HEALTH=http://127.0.0.1:8080/v1/health');
+    // The Caddyfile is a bind mount: `compose up -d` will not recreate the edge
+    // for new bytes in it, and Caddy does not watch it. Without an explicit
+    // reload a reused sandbox keeps the config it booted with — which pins a
+    // stale X-Forwarded-Host and kills every Server Action.
+    expect(script).toContain('exec -T preview-edge caddy reload --config /etc/caddy/Caddyfile');
+    expect(script).not.toContain('https://pi.example.test/v1/health');
+    // The stack is still CONFIGURED with the public origin — that is what ends
+    // up in SITE_URL, the redirect allowlist and the frontend's own URLs.
+    expect(script).toContain("PREVIEW_ORIGIN='https://pi.example.test'");
+  });
+
+  it('retires a branch environment when its pull request stops being an active preview', () => {
+    // A labelled preview stays up until the label comes off or the pull request
+    // closes — and deleting the branch closes it. `activePullRequests` holds
+    // only open, labelled pull requests, so absence IS the retirement signal.
+    const sandboxes = [
+      { id: 'branch-live', metadata: { owner: 'kortix-branch-env', pr_number: '10', git_sha: 'old' } },
+      { id: 'branch-gone', metadata: { owner: 'kortix-branch-env', pr_number: '11', git_sha: 'x' } },
+      { id: 'pr-current', metadata: { owner: 'kortix-preview', pr_number: '12', git_sha: 'head' } },
+      { id: 'pr-moved', metadata: { owner: 'kortix-preview', pr_number: '13', git_sha: 'stale' } },
+    ];
+    const active = new Map<number, string>([
+      [10, 'moved-on'], // the branch env's head moved: NORMAL, it redeploys in place
+      [12, 'head'],
+      [13, 'head'],
+    ]);
+    // Only the unlabelled/closed branch env and the moved ephemeral preview go.
+    expect(selectStalePreviewSandboxIds(sandboxes, active).sort()).toEqual([
+      'branch-gone',
+      'pr-moved',
+    ]);
+  });
+
+  it('does not sweep a branch environment for the one thing that retires a preview', () => {
+    // A MOVED HEAD is the difference between the two owners. It makes an
+    // ephemeral preview stale — it was built for exactly one commit — but it is
+    // the normal state of a branch environment, which is redeployed in place and
+    // must survive it. Sweeping on sha would delete a live environment on every
+    // push, which is the whole thing persistence exists to prevent.
+    const sandboxes = [
+      { id: 'pr-moved', metadata: { owner: 'kortix-preview', pr_number: '4242', git_sha: 'built' } },
+      { id: 'branch-env', metadata: { owner: 'kortix-branch-env', pr_number: '6998', git_sha: 'built' } },
+    ];
+    const active = new Map<number, string>([
+      [4242, 'pushed'],
+      [6998, 'pushed'],
+    ]);
+    expect(selectStalePreviewSandboxIds(sandboxes, active)).toEqual(['pr-moved']);
   });
 
   it('uses a new Platinum idempotency key for each deployment run', () => {

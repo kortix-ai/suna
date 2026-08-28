@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 export function formatBashOutput(rawOutput: string): {
   content: string;
@@ -126,6 +127,9 @@ export function SessionTimeLabel({ timestamp }: { timestamp: number }) {
 
 export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[] }) {
   const { enabled: navigationEnabled, openTab } = useToolNavigation();
+  // `/projects/<id>/sessions/<id>`, not `/sessions/<id>` — the latter is not a
+  // route and 404s on reload or Back. See `session-href.ts`.
+  const sessionHref = useProjectSessionHref();
 
   return (
     <div className="flex flex-col gap-1 p-1.5">
@@ -141,7 +145,7 @@ export function SessionMetadataList({ sessions }: { sessions: ParsedSessionMeta[
               id: s.id,
               title: s.title || 'Session',
               type: 'session',
-              href: `/sessions/${s.id}`,
+              href: sessionHref(s.id) ?? `/projects/${s.id}`,
             })
           }
           className={cn(

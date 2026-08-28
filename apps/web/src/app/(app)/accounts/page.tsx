@@ -20,6 +20,7 @@ import {
   UsersIcon as Users,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
@@ -125,7 +126,6 @@ export default function AccountsPage() {
                 key={account.account_id}
                 account={account}
                 active={account.account_id === selectedAccountId}
-                onClick={() => router.push(`/accounts/${account.account_id}`)}
               />
             ))}
           </ul>
@@ -160,21 +160,14 @@ export default function AccountsPage() {
   );
 }
 
-function AccountRow({
-  account,
-  active,
-  onClick,
-}: {
-  account: KortixAccount;
-  active: boolean;
-  onClick: () => void;
-}) {
+function AccountRow({ account, active }: { account: KortixAccount; active: boolean }) {
   const label = account.name || 'Account';
   return (
     <li>
-      <button
-        type="button"
-        onClick={onClick}
+      {/* The account hub is a render-time destination, so the row is an anchor.
+          A button would run the RSC fetch cold on every click. */}
+      <Link
+        href={`/accounts/${account.account_id}`}
         className="group bg-popover hover:bg-accent flex w-full cursor-pointer items-center gap-3 rounded-md border px-4 py-2.5 text-left transition-colors"
       >
         <EntityAvatar label={label} size="md" />
@@ -194,7 +187,7 @@ function AccountRow({
           ) : null}
         </span>
         <ChevronRight className="text-muted-foreground size-4 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-      </button>
+      </Link>
     </li>
   );
 }

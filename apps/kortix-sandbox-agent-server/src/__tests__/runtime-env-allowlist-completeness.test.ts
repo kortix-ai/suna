@@ -84,6 +84,9 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   // Manual operator debug toggle (checked against `process.env` directly, not
   // part of the env-sync contract at all).
   'KORTIX_OPENCODE_DEBUG',
+  // Artifact identity is fixed before PID 1 starts. A live update installs a
+  // new artifact and daemon instead of changing this value through /env.
+  'KORTIX_COMPILED_RUNTIME_FORMAT',
   // Static project identity baked at seed — see the comment beside its read.
   'KORTIX_PROJECT_ID',
 ])
@@ -137,6 +140,7 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
     expect([...consumed].sort()).toEqual([
       'KORTIX_API_URL',
       'KORTIX_COMPILED_AGENT_CONFIG',
+      'KORTIX_COMPILED_RUNTIME_FORMAT',
       'KORTIX_CONNECTORS_MCP_ENABLED',
       'KORTIX_CONNECTORS_PROXY_URL',
       'KORTIX_LLM_BASE_URL',

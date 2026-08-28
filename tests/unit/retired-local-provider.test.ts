@@ -36,7 +36,6 @@ const excludedFiles = new Set([
   // rows without modifying the immutable migration file.
   'packages/db/scripts/migration-runtime-overrides.ts',
   'packages/db/scripts/migration-runtime-overrides.test.ts',
-  'packages/sdk/PROGRESS.md',
   'tests/unit/retired-local-provider.test.ts',
 ]);
 

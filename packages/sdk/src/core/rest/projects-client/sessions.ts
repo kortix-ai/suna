@@ -658,6 +658,112 @@ export async function getSessionTurn(
   );
 }
 
+// ── The session-open bundle ─────────────────────────────────────────────────
+//
+// ONE round trip for everything a session view needs to PAINT and ARM: the
+// session row, the running turns, the prompt queue, the durable transcript
+// mirror, the composer's control-plane essentials, and the model defaults.
+// It replaces 6 serial reads on the open path and introduces NO new truth —
+// every leg is byte-identical to the endpoint that already served it, so a
+// consumer can hand a leg straight to the code that reads that endpoint.
+//
+// EVERY LEG IS TRI-STATE. `known: false` means the server could not answer
+// that leg, and the client must render UNKNOWN — never idle, never an empty
+// queue, never "no transcript". A default rendered as an answer is the defect
+// class the bundle exists to remove; it must not come back wearing this name.
+
+/** A leg the server could not answer. Render the fact as UNKNOWN. */
+export interface SessionOpenBundleUnknown {
+  known: false;
+  reason: string;
+}
+
+/** = `GET .../turn`, plus the tri-state tag. */
+export type SessionOpenBundleTurn =
+  | ({ known: true } & SessionTurnStatus)
+  | SessionOpenBundleUnknown;
+
+/** = `GET .../prompts`, plus whether Stop is holding the whole queue. */
+export type SessionOpenBundleQueue =
+  | { known: true; prompts: SessionPrompt[]; held: boolean }
+  | SessionOpenBundleUnknown;
+
+/** = `GET .../transcript?shape=sync`. `requested: false` answers a
+ *  `transcript: 0` read: the caller asked for the pointer only, which is NOT
+ *  the same as the transcript being unknown. */
+export type SessionOpenBundleTranscript =
+  | { known: true; requested: false }
+  | ({ known: true; requested: true } & SessionTranscriptSyncEnvelope)
+  | SessionOpenBundleUnknown;
+
+/** Composer essentials that need no sandbox. Deliberately NOT the `/config`
+ *  route's freshness verdict — that one compiles the manifest and re-reads the
+ *  box, which a first paint must never wait on. */
+export interface SessionOpenBundleConfig {
+  known: true;
+  base_ref: string | null;
+  agent_name: string | null;
+  llm_gateway_enabled: boolean;
+}
+
+/** = `GET /projects/:id/model-defaults`. `known: false` with
+ *  `reason: 'llm_gateway_disabled'` mirrors that route's own 404. */
+export type SessionOpenBundleModels =
+  | {
+      known: true;
+      platformDefault: string | null;
+      accountDefault: string | null;
+      agentDefaults: Record<string, string>;
+      projectDefault: string | null;
+      resolvedForCaller: string | null;
+      resolvedSource: string;
+      freeTier: boolean;
+    }
+  | SessionOpenBundleUnknown;
+
+export interface SessionOpenBundle {
+  /** ONE clock for the whole envelope. Every leg is a snapshot at this instant,
+   *  and every projection that ranks a server observation against local
+   *  optimistic state must stamp from HERE, never from arrival time. */
+  observed_at: string;
+  session: ProjectSession;
+  turn: SessionOpenBundleTurn;
+  queue: SessionOpenBundleQueue;
+  transcript: SessionOpenBundleTranscript;
+  config: SessionOpenBundleConfig;
+  models: SessionOpenBundleModels;
+}
+
+/**
+ * Read the session-open bundle.
+ *
+ * `transcript` is the mirrored-message window: the default matches the SDK's
+ * own first-paint span, and `0` asks for the pointer only — what a client whose
+ * store is already warm wants, because it needs the identity and the count to
+ * TRUST what it holds, not the bytes it already has.
+ */
+export async function getSessionOpenBundle(
+  projectId: string,
+  sessionId: string,
+  options?: { transcript?: number; signal?: AbortSignal },
+): Promise<SessionOpenBundle> {
+  const search = new URLSearchParams();
+  if (options?.transcript != null) search.set('transcript', String(options.transcript));
+  const qs = search.toString();
+  return unwrap(
+    await backendApi.get<SessionOpenBundle>(
+      `/projects/${projectId}/sessions/${sessionId}/open-bundle${qs ? `?${qs}` : ''}`,
+      // A 404 here is an EXPECTED race: the session exists but the control
+      // plane has not marked it visible yet. `openSessionBundle` already
+      // resolves `null` and every consumer falls back to its direct read
+      // (`/message`, `/turn`, `/prompts`), so this must never fire the host's
+      // global "Not found" toast / Sentry. `showErrors: false` keeps the
+      // handled fallback silent.
+      { signal: options?.signal, showErrors: false },
+    ),
+  );
+}
+
 // ── The prompt inbox ────────────────────────────────────────────────────────
 //
 // A user prompt is a DURABLE SERVER ROW from the instant the composer accepts

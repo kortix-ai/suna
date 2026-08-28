@@ -27,7 +27,11 @@ const databaseStore: TriggerRuntimeCatalogStore = {
     // `initialTriggerScheduleSlot` returns null for every non-cron type, so
     // `next_fire_at` stays NULL and `claimDueScheduleSlots` — which filters
     // `trigger_type = 'cron'` — can never claim it.
-    const nextFireAt = initialTriggerScheduleSlot(spec, now);
+    // Jittered by (project, slug): identical manifests across projects share a
+    // cron expression, and an unjittered fleet fires as one burst.
+    const nextFireAt = initialTriggerScheduleSlot(spec, now, {
+      jitterKey: `${projectId}:${spec.slug}`,
+    });
     await db
       .insert(projectTriggerRuntime)
       .values({

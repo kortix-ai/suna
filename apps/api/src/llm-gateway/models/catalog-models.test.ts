@@ -13,12 +13,11 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
   });
 
-  test('serves Aster GLM pricing instead of a models.dev provider price', () => {
-    expect(full['glm-5.2']?.cost).toEqual({
-      input: 1,
-      output: 4,
-      cache_read: 0.2,
-      cache_write: 1,
+  test('serves the curated managed GLM 5.3 Flash price', () => {
+    expect(full['glm-5.3-flash']?.cost).toEqual({
+      input: 0.075,
+      output: 0.25,
+      cache_read: 0.015,
     });
   });
 
@@ -42,8 +41,8 @@ describe('gatewayModelCatalog — served catalog', () => {
     // Curated fields win over the models.dev record.
     expect(luna?.attachment).toBe(true);
     expect(luna?.limit?.context).toBe(1_050_000);
-    // Unresolvable pricingRef (glm-5.2) keeps the permissive defaults.
-    expect(full['glm-5.2']?.temperature).toBe(true);
+    // GLM 5.3 Flash supports temperature in the live catalog.
+    expect(full['glm-5.3-flash']?.temperature).toBe(true);
   });
 
   test('serves Grok 4.6 capabilities and context-tier pricing from models.dev', () => {
@@ -93,7 +92,7 @@ describe('gatewayModelCatalog — served catalog', () => {
   test('synthetic auto is absent; anonymous callers get managed-only', () => {
     expect(full.auto).toBeUndefined();
     expect(full['deepseek-v4-flash']).toBeDefined();
-    expect(full['glm-5.2']).toBeDefined();
+    expect(full['glm-5.3-flash']).toBeDefined();
 
     const managedOnly = gatewayModelCatalog(undefined);
     expect(managedOnly.auto).toBeUndefined();
@@ -138,7 +137,7 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['anthropic/claude-opus-4-8']?.provider).toBe('anthropic');
     // Managed models brand as `kortix`.
     expect(full['deepseek-v4-flash']?.provider).toBe('kortix');
-    expect(full['glm-5.2']?.provider).toBe('kortix');
+    expect(full['glm-5.3-flash']?.provider).toBe('kortix');
     // Codex (ChatGPT subscription) models brand as their own `codex` provider,
     // distinct from the raw `openai` BYOK provider.
     expect(full['codex/gpt-5.6-sol']?.provider).toBe('codex');
@@ -201,7 +200,7 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
 
   test('free tier sees no managed Kortix models', () => {
     expect(freeFull.auto).toBeUndefined();
-    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.2', 'kimi-k3', 'deepseek-v4-flash']) {
+    for (const id of ['claude-opus-4.8', 'claude-sonnet-4.6', 'glm-5.3-flash', 'kimi-k3', 'deepseek-v4-flash']) {
       expect(freeFull[id], id).toBeUndefined();
     }
   });
@@ -246,9 +245,7 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
   // deactivated. deepseek-v4-flash keeps the regression covered — its
   // pricingRef ('openrouter/deepseek/deepseek-v4-flash') resolves to the REAL
   // models.dev openrouter entry, whose reasoning_options ('high'/'xhigh') the
-  // synthetic fallback would not carry. (glm-5.2's 'z-ai/glm-5.2' is
-  // DELIBERATELY unresolvable — z-ai is not a models.dev provider id — so it
-  // cannot serve as the regression fixture.)
+  // synthetic fallback would not carry.
   test('resolves a managed bare id to its REAL catalog capabilities via pricingRef, not the synthetic fallback', () => {
     const flash = catalogModelForWireModel('deepseek-v4-flash');
     expect(flash).toBeDefined();

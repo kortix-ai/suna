@@ -66,6 +66,21 @@ function triggerTitle(html: string): string {
   return html.slice(start, html.indexOf('</span>', marker) + '</span>'.length);
 }
 
+/**
+ * The disclosure body's text, tags stripped.
+ *
+ * The command pane renders through Shiki, which splits the command across one
+ * `<span>` per token — so `toContain('python main.py')` over raw markup is an
+ * assertion about the TRIGGER's plain copy, not about the card. That is
+ * exactly what these tests were silently doing until the trigger stopped
+ * repeating the command on an open row.
+ */
+function cardText(html: string): string {
+  const body = html.indexOf('class="overflow-hidden text-xs"');
+  if (body < 0) throw new Error('the row rendered no disclosure body');
+  return html.slice(body).replace(/<[^>]*>/g, '');
+}
+
 // `hasStructuredContent` fires on a Python traceback.
 const TRACEBACK = [
   'Traceback (most recent call last):',
@@ -101,7 +116,7 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
 
     // Pre-fix this render threw `code.slice is not a function`.
     expect(html).toContain('ValueError');
-    expect(html).toContain('python main.py');
+    expect(cardText(html)).toContain('python main.py');
   });
 
   test('session metadata output renders the session list', () => {
@@ -129,7 +144,7 @@ describe('BashTool renders rich output without pushing elements through Shiki', 
       withProviders(<BashTool part={makePart('echo hi', 'hi')} defaultOpen />),
     );
 
-    expect(html).toContain('echo hi');
+    expect(cardText(html)).toContain('echo hi');
     expect(html).toContain('hi');
   });
 });
@@ -435,6 +450,87 @@ describe('BashTool trigger renders the title the helper answers (W9)', () => {
   });
 });
 
+/**
+ * Just the trigger row's markup — from the row element to the start of the
+ * disclosure body.
+ *
+ * The open card renders the same command the trigger used to, so a
+ * whole-document `not.toContain` could never tell "the trigger dropped it"
+ * apart from "the card lost it". Slicing to the trigger is what makes the
+ * assertion about the row.
+ */
+function triggerRegion(html: string): string {
+  const start = html.indexOf('data-component="tool-trigger"');
+  if (start < 0) throw new Error('no [data-component="tool-trigger"] in the rendered row');
+  const body = html.indexOf('class="overflow-hidden text-xs"', start);
+  return html.slice(start, body < 0 ? undefined : body);
+}
+
+describe('BashTool trigger drops the command once the card is showing it', () => {
+  test('closed, the command is the row — open, it is the card', () => {
+    const part = makePart('pnpm install', 'done', 'install the workspace dependencies');
+
+    const closed = renderToStaticMarkup(withProviders(<BashTool part={part} />));
+    expect(triggerRegion(closed)).toContain('pnpm install');
+
+    const open = renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />));
+    // The row keeps the half the card does not repeat…
+    expect(triggerRegion(open)).toContain('Install the workspace dependencies');
+    // …and drops the half it does. The truncated copy also disagreed with the
+    // full one for every command longer than the row.
+    expect(triggerRegion(open)).not.toContain('pnpm install');
+    // The command is still on screen — one line down, highlighted and whole.
+    expect(cardText(open)).toContain('pnpm install');
+  });
+
+  test('the +N line count goes with it', () => {
+    const part = makePart('cat <<EOF\ntwo\nthree\nEOF', 'done');
+
+    expect(triggerRegion(renderToStaticMarkup(withProviders(<BashTool part={part} />)))).toContain(
+      '+3',
+    );
+    expect(
+      triggerRegion(renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />))),
+    ).not.toContain('+3');
+  });
+
+  test('a failed row keeps its verdict when open — the card never says it', () => {
+    // The exit-code strip is inside the card; the WORD "failed" is the row's.
+    const part = makePart('bun test', 'FAIL\n<exit_code>1</exit_code>', 'run the unit suite');
+    const open = triggerRegion(
+      renderToStaticMarkup(withProviders(<BashTool part={part} defaultOpen />)),
+    );
+
+    expect(open).toContain('Command failed');
+    expect(open).not.toContain('bun test');
+  });
+
+  test('a RUNNING row still shimmers when open, with the label carrying it', () => {
+    // Mid-flight the row has to read as in-progress. With the command gone
+    // there is nothing else left on it to carry the motion, so the shimmer
+    // moves to the label.
+    const running = {
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call-1',
+      state: { status: 'running', input: { command: 'pnpm install' }, metadata: {} },
+    } as unknown as ToolPart;
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolRunningContext.Provider value>
+          <BashTool part={running} defaultOpen />
+        </ToolRunningContext.Provider>,
+      ),
+    );
+    const trigger = triggerRegion(html);
+
+    expect(trigger).toContain('Running command');
+    expect(trigger).not.toContain('pnpm install');
+    // `TextShimmer`'s own paint, on the label.
+    expect(trigger).toContain('bg-clip-text');
+  });
+});
+
 describe('BashTool card, for the cases with nothing to show', () => {
   test('a multi-line command admits there is more than the line shown', () => {
     // A collapsed row drew line 1 of a 30-line heredoc and said nothing about
@@ -635,13 +731,35 @@ describe('dedentCommand — incidental indent never reaches the pane', () => {
     expect(dedentCommand('ls -la\n')).toBe('ls -la');
   });
 
+  test('a one-line command loses EVERY leading blank, not just spaces and tabs', () => {
+    // The reported bug. A common-indent rule only strips what it can measure,
+    // and the measure was `[ \t]` — so a command indented with a non-breaking
+    // space (agents paste these out of rendered docs and spreadsheets) kept its
+    // indent, and the card drew line 1 two characters deeper than its own
+    // wrapped continuation and the output below.
+    expect(dedentCommand('\u00a0\u00a0agent-browser screenshot shot.png')).toBe(
+      'agent-browser screenshot shot.png',
+    );
+    // The other Unicode spaces a paste can carry: figure, narrow no-break,
+    // ideographic.
+    expect(dedentCommand('\u2007\u202f\u3000ls -la')).toBe('ls -la');
+    // A single line has no structure to protect, so a mixed run goes whole.
+    expect(dedentCommand(' \t\u00a0 echo hi')).toBe('echo hi');
+  });
+
+  test('a SCRIPT still keeps its shape — the rule is common indent, not a trim', () => {
+    // The broadened character class must not turn the multi-line branch into a
+    // per-line trim: nesting is what a script's indentation is FOR.
+    expect(dedentCommand('\u00a0\u00a0a\n\u00a0\u00a0\u00a0\u00a0b')).toBe('a\n\u00a0\u00a0b');
+  });
+
   test('the rendered card starts the command at the pane inset, not two characters in', () => {
     const html = renderToStaticMarkup(
       withProviders(<BashTool part={makePart('  echo hi', 'hi')} defaultOpen />),
     );
 
-    expect(html).toContain('echo hi');
-    expect(html).not.toContain('  echo hi');
+    expect(cardText(html)).toContain('echo hi');
+    expect(cardText(html)).not.toContain('  echo hi');
   });
 });
 

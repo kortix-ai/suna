@@ -2,11 +2,13 @@
 // LOG_FORMAT, parseLogStdout, decodeStatusChar) used by branches.ts and
 // merge.ts as well.
 
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateRef, validateSha } from '../git-ref';
 import { normalizeTreePath, refreshMirror, runGit } from './mirror';
+import { resolveOpencodeConfigDirAtSha } from './opencode-config-dir';
+import { scaffoldTreeSha } from './scaffold-identity';
 import type {
   CommitDiff,
   GetCommitDiffOptions,
@@ -111,31 +113,96 @@ export interface FastBootGitHint {
   gitDeltaBundleBase64?: string;
   gitDeltaParentSha?: string;
   gitDeltaParentCommitBase64?: string;
+  /**
+   * The delta exceeds the inline env cap. The daemon downloads it with ONE
+   * authenticated GET (`/v1/git/<project>.git/fast-boot-bundle`) instead of a
+   * negotiated `git fetch` through the proxy.
+   */
+  gitDeltaBundleRemote?: boolean;
+  /**
+   * OpenCode config dir at `baseSha`, relative to the repo root, or `null` when
+   * the revision ships no `opencode.json[c]` (daemon uses its baked default).
+   * Lets the daemon spawn OpenCode BEFORE the checkout exists.
+   */
+  opencodeConfigDir?: string | null;
+}
+
+/** Hard ceiling for a remote (downloaded) fast-boot bundle. */
+export const MAX_FAST_BOOT_GIT_BUNDLE_BYTES = 64 * 1024 * 1024;
+/** Refuse to bundle more history than this — a repo this deep is not a scaffold delta. */
+export const MAX_FAST_BOOT_DELTA_COMMITS = 5_000;
+
+export interface ScaffoldDeltaBundle {
+  baseSha: string;
+  /** Boundary commit the sandbox already owns (or can reconstruct from its tree). */
+  parentSha: string;
+  parentCommitBase64: string;
+  /** Inline payload when it fits the env cap; otherwise null → remote download. */
+  bundleBase64: string | null;
+  bundleBytes: number;
 }
 
 /**
- * Build a bundle containing only a branch tip's single commit above its first
- * parent. The sandbox image already owns the parent scaffold, so this payload
- * supplies the exact remote commit without an in-sandbox fetch.
+ * Locate the bundle boundary for `tip`: the first-parent ROOT commit. Every
+ * project seeded from the Kortix starter starts life as the deterministic
+ * scaffold commit, so the root is the one commit the sandbox image can supply
+ * from `/opt/kortix/scaffold.git` — either byte-for-byte (same SHA) or by tree
+ * (a provider rewrote commit metadata; the daemon re-creates the commit object
+ * from `parentCommitBase64` on top of the baked tree).
+ *
+ * `scaffoldTreeSha`, when known, gates the bundle on the root's tree matching
+ * the CURRENT starter: an imported repo (unrelated root) would otherwise bundle
+ * its entire history for a payload the daemon then rejects.
  */
-export async function buildSingleParentDeltaBundle(
+export async function resolveScaffoldDeltaBoundary(
   repoPath: string,
   ref: string,
-): Promise<{
-  baseSha: string;
-  parentSha: string;
-  parentCommitBase64: string;
-  bundleBase64: string;
-} | null> {
+  opts: { scaffoldTreeSha?: string | null } = {},
+): Promise<{ baseSha: string; parentSha: string; commitCount: number } | null> {
   const treeRef = validateRef(ref);
-  const revision = await runGit(
-    ['rev-list', '--parents', '-n', '1', treeRef],
-    repoPath,
-    false,
+  const baseSha = (
+    await runGit(['rev-parse', '--verify', `${treeRef}^{commit}`], repoPath, false)
+  ).stdout.trim();
+  if (!/^[0-9a-f]{40}$/.test(baseSha)) return null;
+  const root = (
+    await runGit(
+      ['rev-list', '--first-parent', '--max-parents=0', '-n', '1', baseSha],
+      repoPath,
+      false,
+    )
+  ).stdout.trim();
+  if (!/^[0-9a-f]{40}$/.test(root) || root === baseSha) return null;
+  if (opts.scaffoldTreeSha) {
+    const rootTree = (
+      await runGit(['rev-parse', '--verify', `${root}^{tree}`], repoPath, false)
+    ).stdout.trim();
+    if (rootTree !== opts.scaffoldTreeSha) return null;
+  }
+  const commitCount = Number(
+    (await runGit(['rev-list', '--count', `${root}..${baseSha}`], repoPath, false)).stdout.trim(),
   );
-  const [baseSha, ...parents] = revision.stdout.trim().split(/\s+/);
-  if (!baseSha || !/^[0-9a-f]{40}$/.test(baseSha) || parents.length !== 1) return null;
-  const parentSha = parents[0]!;
+  if (!Number.isFinite(commitCount) || commitCount <= 0 || commitCount > MAX_FAST_BOOT_DELTA_COMMITS) {
+    return null;
+  }
+  return { baseSha, parentSha: root, commitCount };
+}
+
+/**
+ * Build the bundle `tip ^root`: every commit the project accumulated above
+ * its scaffold root. The sandbox image already owns the root (see
+ * `resolveScaffoldDeltaBoundary`), so this payload supplies the exact base
+ * tip without an in-sandbox fetch. Small deltas ride the session env inline;
+ * larger ones stay on the API for a single authenticated download.
+ */
+export async function buildScaffoldDeltaBundle(
+  repoPath: string,
+  ref: string,
+  opts: { scaffoldTreeSha?: string | null; inlineCapBytes?: number } = {},
+): Promise<ScaffoldDeltaBundle | null> {
+  const treeRef = validateRef(ref);
+  const boundary = await resolveScaffoldDeltaBoundary(repoPath, treeRef, opts);
+  if (!boundary) return null;
+  const { baseSha, parentSha } = boundary;
   const parentCommitBase64 = Buffer.from(
     (await runGit(['cat-file', 'commit', parentSha], repoPath, false)).stdout,
   ).toString('base64');
@@ -147,17 +214,86 @@ export async function buildSingleParentDeltaBundle(
       repoPath,
       false,
     );
-    const bundleBase64 = (await readFile(bundlePath)).toString('base64');
-    if (
-      Buffer.byteLength(bundleBase64 + parentCommitBase64, 'utf8') >
-      MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES
-    ) {
-      return null;
-    }
-    return { baseSha, parentSha, parentCommitBase64, bundleBase64 };
+    const bytes = await readFile(bundlePath);
+    if (bytes.byteLength > MAX_FAST_BOOT_GIT_BUNDLE_BYTES) return null;
+    const bundleBase64 = bytes.toString('base64');
+    const inlineCap = opts.inlineCapBytes ?? MAX_FAST_BOOT_GIT_BUNDLE_BASE64_BYTES;
+    const fitsInline =
+      Buffer.byteLength(bundleBase64 + parentCommitBase64, 'utf8') <= inlineCap;
+    return {
+      baseSha,
+      parentSha,
+      parentCommitBase64,
+      bundleBase64: fitsInline ? bundleBase64 : null,
+      bundleBytes: bytes.byteLength,
+    };
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
+}
+
+/**
+ * Legacy shape kept for callers/tests that expect an inline-only payload:
+ * `null` when the delta does not fit the env cap.
+ */
+export async function buildSingleParentDeltaBundle(
+  repoPath: string,
+  ref: string,
+): Promise<{
+  baseSha: string;
+  parentSha: string;
+  parentCommitBase64: string;
+  bundleBase64: string;
+} | null> {
+  const delta = await buildScaffoldDeltaBundle(repoPath, ref);
+  if (!delta || !delta.bundleBase64) return null;
+  return {
+    baseSha: delta.baseSha,
+    parentSha: delta.parentSha,
+    parentCommitBase64: delta.parentCommitBase64,
+    bundleBase64: delta.bundleBase64,
+  };
+}
+
+/**
+ * Write the bundle `tip ^parent` to `outPath` for the remote download route.
+ * Fails when `tip` is not a descendant of `parent` in this mirror.
+ */
+export async function writeScaffoldDeltaBundle(
+  repoPath: string,
+  ref: string,
+  tipSha: string,
+  parentSha: string,
+  outPath: string,
+): Promise<number> {
+  const treeRef = validateRef(ref);
+  validateSha(tipSha);
+  validateSha(parentSha);
+  const actual = (
+    await runGit(['rev-parse', '--verify', `${treeRef}^{commit}`], repoPath, false)
+  ).stdout.trim();
+  if (actual !== tipSha) {
+    throw new Error(`fast-boot bundle: ${treeRef} is at ${actual}, not ${tipSha}`);
+  }
+  const ancestor = await runGit(
+    ['merge-base', '--is-ancestor', parentSha, tipSha],
+    repoPath,
+    false,
+  ).then(() => true, () => false);
+  if (!ancestor) {
+    throw new Error(`fast-boot bundle: ${parentSha} is not an ancestor of ${tipSha}`);
+  }
+  await runGit(
+    ['bundle', 'create', outPath, `refs/heads/${treeRef}`, `^${parentSha}`],
+    repoPath,
+    false,
+  );
+  const size = (await stat(outPath)).size;
+  if (size > MAX_FAST_BOOT_GIT_BUNDLE_BYTES) {
+    await rm(outPath, { force: true });
+    throw new Error(`fast-boot bundle exceeds ${MAX_FAST_BOOT_GIT_BUNDLE_BYTES} bytes (${size})`);
+  }
+  return size;
 }
 
 /** Resolve the base tip and attach a bounded local-mirror delta when possible. */
@@ -174,24 +310,30 @@ export async function resolveFastBootGitHint(
   if (!/^[0-9a-f]{40}$/.test(baseSha)) {
     throw new Error(`Unexpected git rev-parse output for ${treeRef}: ${baseSha}`);
   }
-  try {
-    const delta = await buildSingleParentDeltaBundle(repoPath, treeRef);
-    return delta?.baseSha === baseSha
-      ? {
-          baseSha,
-          gitDeltaBundleBase64: delta.bundleBase64,
-          gitDeltaParentSha: delta.parentSha,
-          gitDeltaParentCommitBase64: delta.parentCommitBase64,
-        }
-      : { baseSha };
-  } catch (error) {
-    console.warn('[git] fast-boot delta bundle unavailable', {
-      projectId: project.projectId,
-      ref: treeRef,
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return { baseSha };
+  // Both look-ups read the same mirror and are independent; the config dir is
+  // what lets the daemon spawn OpenCode before the checkout lands.
+  const [delta, opencodeConfigDir] = await Promise.all([
+    scaffoldTreeSha()
+      .then((tree) => buildScaffoldDeltaBundle(repoPath, treeRef, { scaffoldTreeSha: tree }))
+      .catch((error) => {
+        console.warn('[git] fast-boot delta bundle unavailable', {
+          projectId: project.projectId,
+          ref: treeRef,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }),
+    resolveOpencodeConfigDirAtSha(repoPath, project, baseSha).catch(() => undefined),
+  ]);
+  const hint: FastBootGitHint = { baseSha };
+  if (opencodeConfigDir !== undefined) hint.opencodeConfigDir = opencodeConfigDir;
+  if (delta?.baseSha === baseSha) {
+    hint.gitDeltaParentSha = delta.parentSha;
+    hint.gitDeltaParentCommitBase64 = delta.parentCommitBase64;
+    if (delta.bundleBase64) hint.gitDeltaBundleBase64 = delta.bundleBase64;
+    else hint.gitDeltaBundleRemote = true;
   }
+  return hint;
 }
 
 export async function listCommits(

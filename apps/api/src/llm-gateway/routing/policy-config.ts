@@ -28,14 +28,14 @@ const fallbackPoliciesSchema = z.array(fallbackPolicySchema).superRefine((polici
 export const DEFAULT_LLM_GATEWAY_FALLBACK_POLICIES = JSON.stringify([
   {
     id: 'platform-default-resilience',
-    models: ['glm-5.2'],
+    models: ['glm-5.3-flash'],
     fallbackModels: ['deepseek-v4-flash'],
     fallbackOn: 'transient',
   },
   {
     id: 'platform-default-degrade',
     models: ['codex/gpt-5.6-sol'],
-    fallbackModels: ['glm-5.2'],
+    fallbackModels: ['glm-5.3-flash'],
     fallbackOn: 'any-error',
   },
 ]);

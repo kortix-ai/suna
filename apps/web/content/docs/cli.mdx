@@ -522,7 +522,7 @@ Per-agent model settings on the linked project.
 | `kortix agents scope <agent> --show [--json]` | Print the agent's current scope. |
 | `kortix agents config <agent> [--json]` | Print the full agent config block. |
 | `kortix agents config <agent> --file <path>` | Replace the block with a JSON file's contents. `-` reads stdin. |
-| `kortix agents config <agent> --set <key>=<value> ...` | Change single dotted keys, merged in. Repeatable, e.g. `opencode.model=glm-5.2`, `enabled=false`, `connectors=["slack"]`. |
+| `kortix agents config <agent> --set <key>=<value> ...` | Change single dotted keys, merged in. Repeatable, e.g. `opencode.model=glm-5.3-flash`, `enabled=false`, `connectors=["slack"]`. |
 
 Every scope option replaces; none merge. A `--set` value is parsed as JSON when
 it parses, and kept as a string otherwise. Model pins and `scope` apply
@@ -547,7 +547,7 @@ it decides what pickers offer, never what the gateway serves.
 | `kortix models default <model-id> [--account]` | Set the project default, or the account-wide one with `--account`. |
 | `kortix models default --clear [--account]` | Clear the project, or account, default. |
 
-Model ids are gateway wire ids — a bare managed id (`glm-5.2`) or a BYOK
+Model ids are gateway wire ids — a bare managed id (`glm-5.3-flash`) or a BYOK
 `provider/model`. Copy one from `kortix models ls --json`. Per-agent pins live
 on `kortix agents model <agent> <model-id>`. Writes need
 `project.customize.write`.

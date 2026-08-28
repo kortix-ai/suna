@@ -62,6 +62,7 @@ export const FeatureFlagMapSchema = z.object({
   monitors: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
+  pi_worker: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 

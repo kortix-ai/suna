@@ -200,6 +200,9 @@ export function SqliteRenderer({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
+  // Bumped by the error-state Retry button. It re-runs the init effect below,
+  // which is all "retry" ever meant — the button used to reload the document.
+  const [reloadKey, setReloadKey] = useState(0);
   const [expandedCell, setExpandedCell] = useState<{
     column: string;
     value: string;
@@ -387,7 +390,7 @@ export function SqliteRenderer({
         dbRef.current = null;
       }
     };
-  }, [filePath]);
+  }, [filePath, reloadKey]);
 
   // ── Get table data ────────────────────────────────────────────────────
   const tableData = useMemo((): { columns: string[]; rows: Record<string, unknown>[] } => {
@@ -848,7 +851,7 @@ export function SqliteRenderer({
             <p className="text-muted-foreground mt-1 max-w-sm text-xs">{error}</p>
           </div>
           <button
-            onClick={() => window.location.reload()}
+            onClick={() => setReloadKey((key) => key + 1)}
             className="hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-2xl border px-3 text-xs transition-colors"
           >
             <RefreshCw className="h-3 w-3" />

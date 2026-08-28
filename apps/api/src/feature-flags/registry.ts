@@ -280,6 +280,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
   },
+  {
+    key: 'pi_worker',
+    name: 'Pi Worker Runtime (compiled)',
+    description:
+      'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
+    stability: 'experimental',
+    available: () => true,
+    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
+    // the download route answers 403.
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

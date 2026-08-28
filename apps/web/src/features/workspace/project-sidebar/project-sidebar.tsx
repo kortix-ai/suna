@@ -36,6 +36,7 @@ import {
   SidebarSimpleIcon as PanelLeft,
 } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef } from 'react';
 import { SidebarBalanceWarning } from './footer/project-balance-warning';
 import { SidebarUpgradeButton } from './footer/project-upgrade-button';
@@ -56,10 +57,32 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   // Open the project composer without creating a durable session.
   const newSession = useNewProjectSession(projectId);
   const creatingSession = useIsCreatingProjectSession(projectId);
+  // Cmd+J only. The row itself is an anchor (below), so the keyboard path is
+  // the one entry point left that has to ask the hook to navigate.
   const handleNewSession = useCallback(() => {
     newSession();
     if (isMobile) setOpenMobile(false);
   }, [newSession, isMobile, setOpenMobile]);
+  // The anchor performs the navigation; this keeps the row's one side effect.
+  const handleNewSessionClick = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
+  // Shared by the row's anchor and its creating-session state, which stays a
+  // real <button> so `disabled` still holds.
+  const newSessionRowBody = (
+    <>
+      <span className="shrink-0">
+        <NavigationArrowIcon className="rotate-90" />
+      </span>
+      <span>
+        {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491')}
+      </span>
+      <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
+        <Kbd>{modSymbol}</Kbd>
+        <Kbd>J</Kbd>
+      </KbdGroup>
+    </>
+  );
 
   // Mobile: the sidebar is a Sheet, so leaving it open would stack the palette
   // dialog on top of it. Dismiss it first — same order as opening a new
@@ -183,25 +206,24 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <SidebarGroup className="py-0">
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  onClick={handleNewSession}
-                  disabled={creatingSession}
-                  aria-busy={creatingSession}
-                  className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
-                >
-                  <span className="shrink-0">
-                    <NavigationArrowIcon className="rotate-90" />
-                  </span>
-                  <span>
-                    {tI18nHardcoded.raw(
-                      'autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491',
-                    )}
-                  </span>
-                  <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
-                    <Kbd>{modSymbol}</Kbd>
-                    <Kbd>J</Kbd>
-                  </KbdGroup>
-                </SidebarMenuButton>
+                {creatingSession ? (
+                  <SidebarMenuButton
+                    disabled
+                    aria-busy
+                    className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+                  >
+                    {newSessionRowBody}
+                  </SidebarMenuButton>
+                ) : (
+                  <SidebarMenuButton
+                    asChild
+                    className="group/menu-button text-muted-foreground hover:text-sidebar-foreground relative flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+                  >
+                    <Link href={`/projects/${projectId}`} prefetch onClick={handleNewSessionClick}>
+                      {newSessionRowBody}
+                    </Link>
+                  </SidebarMenuButton>
+                )}
               </SidebarMenuItem>
               <ProjectCustomizeNavItem />
               {/* Apps belongs with Customize, not down in the bottom group: it

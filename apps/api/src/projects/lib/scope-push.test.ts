@@ -41,7 +41,14 @@ let SESSION_ROW: {
   manifestPath: string;
   accountId: string;
 };
-let activeSandbox: { externalId: string; provider: string; config: Record<string, unknown> } | null;
+let activeSandbox: {
+  externalId: string;
+  provider: string;
+  config: Record<string, unknown>;
+  // The push path selects `status` so a non-active row can be NAMED rather than
+  // silently swallowed; the double has to be able to carry it.
+  status?: string;
+} | null;
 let gatewayEnabled = false;
 
 function freshSessionRow(): typeof SESSION_ROW {
@@ -223,5 +230,27 @@ describe('pushSessionScopeToSandbox', () => {
     expect(result.applied).toBe(false);
     expect(result.reason).toContain('daemon unreachable');
     // beforeEach restores the recording fetch for any subsequent test.
+  });
+});
+
+// Prod 2026-08-27, session b3848cf5: `session_sandboxes.status` was 'stopped'
+// while the Platinum VM was genuinely running and serving prompts. Every push
+// filtered the lookup on `status = 'active'` and returned a bare
+// 'no active sandbox' that no caller logged, so the session silently received
+// no secret, model or scope push for HOURS. The only visible symptom was an
+// agent that could not read a secret the UI said it had.
+describe('a live box behind a non-active row is named, not swallowed', () => {
+  test('the skip reason carries the actual status', async () => {
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'stopped' };
+    const result = await pushSessionScopeToSandbox(INPUT);
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe("sandbox row is 'stopped', not active");
+    expect(posted).toEqual([]);
+  });
+
+  test('an active row still pushes', async () => {
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'active' };
+    const result = await pushSessionScopeToSandbox(INPUT);
+    expect(result.applied).toBe(true);
   });
 });

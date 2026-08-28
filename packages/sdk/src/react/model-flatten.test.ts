@@ -153,7 +153,7 @@ describe('flattenModels — native mode (llm_gateway off)', () => {
       connected: ['anthropic', 'kortix'],
       all: [
         ...(nativeList.all ?? []),
-        { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.2': { name: 'GLM' } } },
+        { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.3-flash': { name: 'GLM' } } },
       ],
     } as unknown as ProviderListResponse;
     const flat = flattenModels(withStaleKortix, { providerMode: 'native' });
@@ -174,7 +174,7 @@ describe('isOfferedModel', () => {
   const models = [
     { providerID: 'kortix', modelID: 'anthropic/claude-fable-5', enabled: true },
     { providerID: 'kortix', modelID: 'anthropic/claude-opus-4-1', enabled: false },
-    { providerID: 'kortix', modelID: 'glm-5.2' },
+    { providerID: 'kortix', modelID: 'glm-5.3-flash' },
   ] as FlatModel[];
 
   test('offers a model the server enabled', () => {
@@ -192,7 +192,7 @@ describe('isOfferedModel', () => {
   test('offers a model from a catalog that carries no enablement at all', () => {
     // Native/legacy catalogs never stamp `enabled`; absence means "not
     // applicable", never "hidden".
-    expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'glm-5.2' })).toBe(true);
+    expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(true);
   });
 
   test('refuses a key that is not in the catalog', () => {

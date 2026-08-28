@@ -70,8 +70,8 @@ describe('createModelPricingLookup', () => {
     const cached = buildModelsDevPricingMap({
       openrouter: {
         models: {
-          'z-ai/glm-5.2': {
-            id: 'z-ai/glm-5.2',
+          'z-ai/glm-5.3-flash': {
+            id: 'z-ai/glm-5.3-flash',
             cost: { input: 0.435, output: 0.87 },
           },
         },
@@ -85,8 +85,8 @@ describe('createModelPricingLookup', () => {
           id: 'kortix',
           name: 'Kortix',
           models: {
-            'glm-5.2': {
-              name: 'GLM 5.2',
+            'glm-5.3-flash': {
+              name: 'GLM 5.3 Flash',
               cost: { input: 1, output: 4, cache_read: 0.2, cache_write: 1 },
             },
           },
@@ -96,7 +96,7 @@ describe('createModelPricingLookup', () => {
     } as unknown as ProviderListResponse;
 
     const lookup = createModelPricingLookup(providers, cached);
-    expect(lookup('kortix', 'glm-5.2')).toEqual({
+    expect(lookup('kortix', 'glm-5.3-flash')).toEqual({
       inputPer1M: 1,
       outputPer1M: 4,
       cacheReadPer1M: 0.2,
@@ -108,8 +108,8 @@ describe('createModelPricingLookup', () => {
     const cached = buildModelsDevPricingMap({
       openrouter: {
         models: {
-          'z-ai/glm-5.2': {
-            id: 'z-ai/glm-5.2',
+          'z-ai/glm-5.3-flash': {
+            id: 'z-ai/glm-5.3-flash',
             cost: { input: 0.435, output: 0.87 },
           },
         },
@@ -117,7 +117,7 @@ describe('createModelPricingLookup', () => {
     });
 
     const lookup = createModelPricingLookup(undefined, cached);
-    expect(lookup('kortix', 'glm-5.2')).toBeNull();
+    expect(lookup('kortix', 'glm-5.3-flash')).toBeNull();
   });
 
   test('returns null when no provider or cached pricing matches', () => {
@@ -147,13 +147,13 @@ describe('createModelPricingLookup', () => {
 
   test('keeps managed pricing unavailable until the managed catalog loads', () => {
     const emptyLookup = createModelPricingLookup(undefined, new Map());
-    expect(emptyLookup('kortix', 'glm-5.2')).toBeNull();
+    expect(emptyLookup('kortix', 'glm-5.3-flash')).toBeNull();
 
     const cached = buildModelsDevPricingMap({
       'z-ai': {
         models: {
-          'z-ai/glm-5.2': {
-            id: 'z-ai/glm-5.2',
+          'z-ai/glm-5.3-flash': {
+            id: 'z-ai/glm-5.3-flash',
             cost: { input: 0.435, output: 0.87 },
           },
         },
@@ -161,6 +161,6 @@ describe('createModelPricingLookup', () => {
     });
 
     const loadedLookup = createModelPricingLookup(undefined, cached);
-    expect(loadedLookup('kortix', 'glm-5.2')).toBeNull();
+    expect(loadedLookup('kortix', 'glm-5.3-flash')).toBeNull();
   });
 });

@@ -476,6 +476,33 @@ describe('applyOptimisticAbort', () => {
     expect(() => applyOptimisticAbort('sess-empty')).not.toThrow();
     expect(useSyncStore.getState().sessionStatus['sess-empty']).toBeUndefined();
   });
+
+  // The abort belongs to the turn the user just stopped — the LAST one. The
+  // backward walk skipped any assistant message that already carried an error
+  // and kept going, so stopping a turn whose assistant message was already
+  // marked (an earlier interrupt, or a turn that failed) scarred a COMPLETED
+  // turn further up the transcript with "Interrupted" instead.
+  test('never reaches back past the newest assistant message', () => {
+    const store = useSyncStore.getState();
+    store.upsertMessage('sess-3', { id: 'm1', sessionID: 'sess-3', role: 'user' } as any);
+    // A finished, clean turn from earlier in the conversation.
+    store.upsertMessage('sess-3', { id: 'm2', sessionID: 'sess-3', role: 'assistant' } as any);
+    store.upsertMessage('sess-3', { id: 'm3', sessionID: 'sess-3', role: 'user' } as any);
+    // The turn being stopped, already carrying an error of its own.
+    store.upsertMessage('sess-3', {
+      id: 'm4',
+      sessionID: 'sess-3',
+      role: 'assistant',
+      error: { name: 'SomeOtherError', data: {} },
+    } as any);
+
+    applyOptimisticAbort('sess-3');
+
+    const find = (id: string) =>
+      useSyncStore.getState().messages['sess-3']?.find((m) => m.id === id) as any;
+    expect(find('m2').error).toBeUndefined(); // the completed turn is not scarred
+    expect(find('m4').error.name).toBe('SomeOtherError'); // and the newest is left as it was
+  });
 });
 
 // ============================================================================
@@ -518,7 +545,7 @@ describe('replayStartStash', () => {
     const handle = replayStartStash({
       sessionId: 'sess-1',
       timers,
-      checkReadiness: () => ({ model: 'kortix/glm-5.2' }),
+      checkReadiness: () => ({ model: 'kortix/glm-5.3-flash' }),
       prepare: (stash, ready) => ({
         messageId: 'msg-1',
         optimisticText: stash.prompt,

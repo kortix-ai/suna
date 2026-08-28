@@ -14,7 +14,7 @@ import {
 import { recordAuditEvent } from '../../shared/audit';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { ttlMemo } from '../../shared/ttl-memo';
 import {
   isImpersonatingAccount,
@@ -24,6 +24,7 @@ import {
 // pulled in by most of the project surface, and several suites mock the barrel
 // with a partial shape — a barrel import here turns those into module-load
 // SyntaxErrors far from anything they're testing.
+import { invalidateRequestMemo, requestMemo } from '../../lib/request-context';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { authorize } from '../../iam/authorize';
 import { actorForToken } from '../../iam/actor';
@@ -247,13 +248,38 @@ export interface ProjectGitRemote {
 }
 
 
+/**
+ * Request-memo key for one project's git connection. Exported so the write path
+ * below (and any future one) invalidates the exact same key it caches under.
+ */
+function gitConnectionMemoKey(projectId: string): string {
+  return `project-git-connection:${projectId}`;
+}
+
+/**
+ * The project's git connection row.
+ *
+ * Reached through four independent helpers (`withProjectGitAuth`,
+ * `resolveProjectUpstream`, `hasServerManagedGitAuth`, and the `/detail`
+ * response field), so a single request loads it two to three times: measured
+ * 3× on `GET /:projectId/detail` and 2× on `/secrets`, `/sandbox-health` and
+ * `/sessions/:id/config` (postgres.js statement trace, 2026-08-26). Each is a
+ * separate serial round trip on the request's critical path.
+ *
+ * Memoized for the duration of ONE request only — never across requests — so a
+ * caller can never observe a connection row written before its own request
+ * started. The upsert below drops the entry, so a read AFTER a write in the
+ * same request still sees the new row.
+ */
 export async function getProjectGitConnection(projectId: string): Promise<ProjectGitConnectionRow | null> {
-  const [row] = await db
-    .select()
-    .from(projectGitConnections)
-    .where(eq(projectGitConnections.projectId, projectId))
-    .limit(1);
-  return row ?? null;
+  return requestMemo(gitConnectionMemoKey(projectId), async () => {
+    const [row] = await db
+      .select()
+      .from(projectGitConnections)
+      .where(eq(projectGitConnections.projectId, projectId))
+      .limit(1);
+    return row ?? null;
+  });
 }
 
 
@@ -315,6 +341,9 @@ export async function upsertProjectGitConnection(input: {
       set: values,
     })
     .returning();
+  // The read above is request-memoized; a write inside the same request must
+  // not leave the pre-write row cached behind it.
+  invalidateRequestMemo(gitConnectionMemoKey(input.projectId));
   return row;
 }
 
@@ -666,17 +695,71 @@ export type GitProxyAuth =
  * not new reach.
  */
 
+/**
+ * A clone is 2–3 requests within seconds, and the agent's later `git push`
+ * / `fetch` are pairs too. Every one used to pay the full authorization walk
+ * (project row + token row + sandbox join, each a cross-region DB round trip).
+ * Memoize a POSITIVE verdict per (token, project, scope) for a short window;
+ * denials are never cached, so a revoked token is refused on its next request
+ * and an accepted one is at most GIT_PROXY_AUTHZ_TTL_MS stale.
+ */
+const GIT_PROXY_AUTHZ_TTL_MS = 30_000;
+const gitProxyAuthzMemo = new Map<string, { value: GitProxyAuth; expiresAt: number }>();
+export function __resetGitProxyAuthzMemoForTests(): void {
+  gitProxyAuthzMemo.clear();
+}
+// Per-process random key: the memo key is an HMAC of the credential, so a heap
+// dump exposes neither the credential nor a reusable digest of it.
+const gitProxyAuthzMemoKey = randomBytes(32);
+function authzMemoKey(token: string, projectId: string, scope: GitScope): string {
+  const digest = createHmac('sha256', gitProxyAuthzMemoKey).update(token).digest('hex');
+  return `${digest}|${projectId}|${scope}`;
+}
+
 export async function authorizeGitProxy(
   token: string,
   projectId: string,
   scope: GitScope,
   requestCtx: RequestContext = {},
 ): Promise<GitProxyAuth> {
-  const [project] = await db
+  const key = authzMemoKey(token, projectId, scope);
+  const now = Date.now();
+  const hit = gitProxyAuthzMemo.get(key);
+  if (hit && hit.expiresAt > now) return hit.value;
+  const verdict = await authorizeGitProxyUncached(token, projectId, scope, requestCtx);
+  if (verdict.ok) {
+    gitProxyAuthzMemo.set(key, { value: verdict, expiresAt: now + GIT_PROXY_AUTHZ_TTL_MS });
+    if (gitProxyAuthzMemo.size > 10_000) {
+      for (const [k, v] of gitProxyAuthzMemo) if (v.expiresAt <= now) gitProxyAuthzMemo.delete(k);
+    }
+  }
+  return verdict;
+}
+
+async function authorizeGitProxyUncached(
+  token: string,
+  projectId: string,
+  scope: GitScope,
+  requestCtx: RequestContext = {},
+): Promise<GitProxyAuth> {
+  // The project row and the token row are independent look-ups; overlap them
+  // instead of paying two sequential cross-region round trips.
+  const projectPromise = db
     .select()
     .from(projects)
     .where(eq(projects.projectId, projectId))
-    .limit(1);
+    .limit(1)
+    .then((rows) => rows[0]);
+  const tokenPromise: Promise<
+    | { kind: 'account'; result: Awaited<ReturnType<typeof validateAccountToken>> }
+    | { kind: 'kortix'; result: Awaited<ReturnType<typeof validateSecretKey>> }
+    | { kind: 'none' }
+  > = isAccountToken(token)
+    ? validateAccountToken(token).then((result) => ({ kind: 'account' as const, result }))
+    : isKortixToken(token)
+      ? validateSecretKey(token).then((result) => ({ kind: 'kortix' as const, result }))
+      : Promise.resolve({ kind: 'none' as const });
+  const [project, tokenCheck] = await Promise.all([projectPromise, tokenPromise]);
   if (!project || project.status === 'archived') {
     return { ok: false, status: 404, message: 'Not found' };
   }
@@ -703,8 +786,8 @@ export async function authorizeGitProxy(
   // CLI PAT first — `isKortixToken` also matches the `kortix_pat_` prefix, so
   // the account-token check MUST run before the API-key check (mirrors the auth
   // middleware ordering).
-  if (isAccountToken(token)) {
-    const result = await validateAccountToken(token);
+  if (tokenCheck.kind === 'account') {
+    const result = tokenCheck.result;
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid PAT' };
     }
@@ -735,8 +818,8 @@ export async function authorizeGitProxy(
     return { ok: true, project };
   }
 
-  if (isKortixToken(token)) {
-    const result = await validateSecretKey(token);
+  if (tokenCheck.kind === 'kortix') {
+    const result = tokenCheck.result;
     if (!result.isValid || !result.accountId) {
       return { ok: false, status: 401, message: result.error || 'Invalid token' };
     }

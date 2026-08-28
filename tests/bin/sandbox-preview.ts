@@ -107,7 +107,25 @@ const daytona = {
 if (action === 'deploy') {
   const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
   const sha = required('PREVIEW_SHA');
+  // PREVIEW_BRANCH_ENV turns this deploy into a PERSISTENT per-branch
+  // environment: the sandbox is reused instead of replaced, so the URL is
+  // stable across pushes (see branchEnvSandboxName).
+  const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
+  // A PR preview is a gate, so it runs the suite. A branch environment is a
+  // place to work: the suite is ~10 of the ~14 minutes a deploy takes and
+  // proves nothing the stack health check has not, so it is off by default
+  // there. PREVIEW_RUN_TESTS=1 forces it back on for a deliberate full run.
+  const runTests = process.env.PREVIEW_RUN_TESTS?.trim() === '1' || !branchEnv;
+  // PREVIEW_PUBLIC_ORIGIN is the stable name a proxy serves the environment at.
+  // The stack is configured with it; the provider's own hostname stays the
+  // proxy's target and comes back as `sandboxOrigin`. It is supplied by the
+  // caller, never hardcoded here — a preview origin is provider-issued unless
+  // an operator deliberately fronts it.
+  const publicOrigin = process.env.PREVIEW_PUBLIC_ORIGIN?.trim() || undefined;
   const deployment: SandboxPreviewDeploymentInput = {
+    ...(branchEnv ? { branchEnv } : {}),
+    ...(publicOrigin ? { publicOrigin } : {}),
+    runTests,
     repository,
     ref: value('PREVIEW_REF', sha),
     sha,
@@ -142,8 +160,11 @@ if (action === 'deploy') {
   process.exitCode = result.exitCode;
 } else if (action === 'teardown') {
   const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
+  // A persistent environment's sandbox is named after the BRANCH, so teardown
+  // has to be told which branch or it deletes nothing and the box runs forever.
+  const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
   const [platinumDeleted, daytonaDeleted] = await Promise.all([
-    teardownPlatinumPreview({ ...platinum, prNumber }),
+    teardownPlatinumPreview({ ...platinum, prNumber, ...(branchEnv ? { branchEnv } : {}) }),
     teardownDaytonaPreview({ ...daytona, prNumber }),
   ]);
   console.log(`[sandbox-preview] teardown platinum=${platinumDeleted} daytona=${daytonaDeleted}`);

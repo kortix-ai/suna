@@ -173,9 +173,14 @@ export function recordPlatformLogout(options: HostRequestOptions): Promise<unkno
 }
 
 export interface OAuthConsentRequest {
+  client_id?: string;
   client_name?: string;
+  /** `confidential` (server app) or `public` (browser/native, PKCE only). */
+  client_type?: 'confidential' | 'public' | string;
   scopes?: unknown[];
   scope?: string;
+  /** True when this user already approved this client for every requested scope — approve without asking. */
+  remembered?: boolean;
 }
 
 export function getOAuthConsentRequest(

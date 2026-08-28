@@ -214,7 +214,7 @@ mock.module('../projects/git', () => ({
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
 mock.module('../snapshots/builder', () => ({
-  routedPerProjectWarmImageName: () => 'kpp2-test',
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -252,12 +252,6 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ healed: 0 }),
   reconcileProjectTemplates: async () => {},
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: 'kortix-ppwarm-test',
-    tip: 'a'.repeat(40),
-    built: false,
-    provider: 'daytona',
-  }),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 

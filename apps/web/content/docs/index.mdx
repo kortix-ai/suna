@@ -3,7 +3,17 @@ title: Kortix
 description: Kortix is the AI command center for your company.
 ---
 
-import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Card, Cards } from '@/components/markdown/docs-card';
+import {
+  CloudIcon,
+  CodeIcon,
+  CubeIcon,
+  FlagIcon,
+  PathIcon,
+  RocketIcon,
+  ShareNetworkIcon,
+  TerminalIcon,
+} from '@/lib/icons/ssr';
 
 Kortix is the Autonomous Company Operating System — a cloud computer where a
 workforce of AI agents runs your company, and everything is code you own.
@@ -23,12 +33,12 @@ New projects use a v2 manifest and OpenCode REST. Existing v1 projects keep
 their compatibility behavior.
 
 <Cards>
-  <Card title="Quickstart" href="/docs/quickstart">Create a project, start a session, and merge your first change request.</Card>
-  <Card title="Your project" href="/docs/project">Set up the manifest, agents, models, and secrets.</Card>
-  <Card title="Running work" href="/docs/work">Sessions, sandboxes, and change requests.</Card>
-  <Card title="Connect & automate" href="/docs/connect">Connectors, Slack, computers, and triggers.</Card>
-  <Card title="Feature flags" href="/docs/feature-flags">Per-project opt-ins, including Apps.</Card>
-  <Card title="CLI" href="/docs/cli">Develop and run Kortix from your terminal.</Card>
-  <Card title="SDK" href="/docs/sdk">Build on Kortix from TypeScript with the client SDK.</Card>
-  <Card title="Self-hosting" href="/docs/host">Install and operate Kortix on your own infrastructure.</Card>
+  <Card icon={<RocketIcon />} title="Quickstart" href="/docs/quickstart">Create a project, start a session, and merge your first change request.</Card>
+  <Card icon={<CubeIcon />} title="Your project" href="/docs/project">Set up the manifest, agents, models, and secrets.</Card>
+  <Card icon={<PathIcon />} title="Running work" href="/docs/work">Sessions, sandboxes, and change requests.</Card>
+  <Card icon={<ShareNetworkIcon />} title="Connect & automate" href="/docs/connect">Connectors, Slack, computers, and triggers.</Card>
+  <Card icon={<FlagIcon />} title="Feature flags" href="/docs/feature-flags">Per-project opt-ins, including Apps.</Card>
+  <Card icon={<TerminalIcon />} title="CLI" href="/docs/cli">Develop and run Kortix from your terminal.</Card>
+  <Card icon={<CodeIcon />} title="SDK" href="/docs/sdk">Build on Kortix from TypeScript with the client SDK.</Card>
+  <Card icon={<CloudIcon />} title="Self-hosting" href="/docs/host">Install and operate Kortix on your own infrastructure.</Card>
 </Cards>

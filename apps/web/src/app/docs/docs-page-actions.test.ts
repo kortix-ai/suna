@@ -15,8 +15,20 @@ import { resolve } from 'node:path';
 const WEB_ROOT = resolve(import.meta.dir, '../../..');
 const ACTIONS = resolve(WEB_ROOT, 'src/app/docs/docs-page-actions.tsx');
 
+/**
+ * Comments in `docs-page-actions.tsx` legitimately name the things the
+ * negative assertions below forbid — the "Copied" label the icon replaced,
+ * the `@/lib/icons/ssr` module it must not import from. Strip them so those
+ * tests constrain the code and not the prose about it (the same rule the
+ * breadcrumb test at the bottom of this file follows).
+ */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+}
+
 describe('docs page actions', () => {
   const source = readFileSync(ACTIONS, 'utf8');
+  const code = stripComments(source);
 
   test('is a client component', () => {
     const firstLine = source.split('\n').find((line) => line.trim().length > 0);
@@ -80,10 +92,62 @@ describe('docs page actions', () => {
     expect(source).toContain('size="sm"');
   });
 
-  test('copies markdown to the clipboard and shows a transient "Copied" state', () => {
+  test('copies markdown to the clipboard and confirms with the icon, not a label swap', () => {
     expect(source).toContain('navigator.clipboard.writeText');
+
+    // The label is fixed for the whole cycle — both the wide and the narrow
+    // form. Swapping it to "Copied" resized the button and shoved the "Open"
+    // trigger sideways for two seconds.
     expect(source).toContain('Copy Markdown');
-    expect(source).toContain('Copied');
+    expect(source).toContain('>Copy</span>');
+
+    // The word only survives on `aria-label`, lower-cased. A capital-C
+    // "Copied" anywhere in this file means the visible label swap is back.
+    // (`COPIED_RESET_MS` is all-caps, so it does not trip this.)
+    expect(code).not.toContain('Copied');
+    expect(code).toContain("aria-label={copied ? 'Markdown copied' : 'Copy markdown'}");
+  });
+
+  /**
+   * The design system bans the hard `{copied ? <Check/> : <Copy/>}` swap:
+   * both glyphs share one fixed box and cross-fade with blur + scale +
+   * opacity, exactly as `components/markdown/copy-button.tsx` does for code
+   * blocks. Pinned by the transition's own values, since a regression here
+   * looks identical in a screenshot and only shows up in motion.
+   */
+  test('cross-fades the copy and check icons instead of hard-swapping them', () => {
+    expect(source).toContain("import { AnimatePresence, m } from 'motion/react';");
+    expect(source).toContain("key={copied ? 'check' : 'copy'}");
+    expect(source).toContain("scale: 0.25, opacity: 0, filter: 'blur(4px)'");
+    expect(source).toContain("scale: 1, opacity: 1, filter: 'blur(0px)'");
+    expect(source).toContain("type: 'spring', duration: 0.3, bounce: 0");
+    // Nothing animates on first paint.
+    expect(source).toContain('initial={false}');
+  });
+
+  /**
+   * `@/lib/icons/ssr` exists for React Server Components, which cannot read
+   * context and so need the weight pre-bound. This file is 'use client', so
+   * its icons must come from the main entry and stay wired to `IconProvider`.
+   */
+  test('takes CheckIcon from the client Phosphor entry, not the RSC-only module', () => {
+    expect(code).toContain('<CheckIcon');
+    expect(code).not.toContain('@/lib/icons/ssr');
+
+    const importBlock = code.slice(0, code.indexOf('type OpenAction'));
+    expect(importBlock).toContain('CheckIcon,');
+    expect(importBlock).toContain("} from '@phosphor-icons/react';");
+  });
+
+  /**
+   * `size="sm"` reaches its tighter `px-2.5` through `has-[>svg]:px-2.5`,
+   * which stopped matching once the icon moved inside the crossfade wrapper.
+   * Without the explicit class this button sits a notch wider than the two
+   * beside it.
+   */
+  test('restores the icon-button padding the crossfade wrapper broke', () => {
+    const buttonBlock = source.slice(source.indexOf('function CopyMarkdownButton'));
+    expect(buttonBlock).toContain("'shrink-0 gap-1.5 px-2.5'");
   });
 
   /**

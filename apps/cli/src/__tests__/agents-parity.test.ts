@@ -116,11 +116,11 @@ function startServer(): string {
       }
       if (p === '/model-defaults' && req.method === 'GET') {
         return Response.json({
-          platformDefault: 'glm-5.2',
+          platformDefault: 'glm-5.3-flash',
           accountDefault: null,
           projectDefault: null,
           agentDefaults: agentModelPins,
-          resolvedForCaller: 'glm-5.2',
+          resolvedForCaller: 'glm-5.3-flash',
         });
       }
       if (p === '/model-defaults' && req.method === 'PUT') {
@@ -195,15 +195,15 @@ describe('kortix agents — default, scope, config', () => {
 
   test('the existing `model` surface is unchanged', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['agents', 'model', 'reviewer', 'glm-5.2', '--project', PROJECT], config);
+    const r = await runCli(['agents', 'model', 'reviewer', 'glm-5.3-flash', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls.at(-1)).toEqual({
       method: 'PUT',
       path: `/v1/projects/${PROJECT}/model-defaults`,
-      body: { scope: 'agent', agentName: 'reviewer', model: 'glm-5.2' },
+      body: { scope: 'agent', agentName: 'reviewer', model: 'glm-5.3-flash' },
     });
     const ls = await runCli(['agents', 'ls', '--project', PROJECT, '--json'], config);
-    expect(JSON.parse(ls.stdout).platformDefault).toBe('glm-5.2');
+    expect(JSON.parse(ls.stdout).platformDefault).toBe('glm-5.3-flash');
   });
 
   test('default --show reads the project detail; default <agent> PUTs /default-agent', async () => {
@@ -304,7 +304,7 @@ describe('kortix agents — default, scope, config', () => {
     const r = await runCli(
       [
         'agents', 'config', 'reviewer',
-        '--set', 'opencode.model=glm-5.2',
+        '--set', 'opencode.model=glm-5.3-flash',
         '--set', 'enabled=false',
         '--project', PROJECT,
       ],
@@ -324,7 +324,7 @@ describe('kortix agents — default, scope, config', () => {
       body: {
         ...REVIEWER_BLOCK,
         enabled: false,
-        opencode: { ...REVIEWER_BLOCK.opencode, model: 'glm-5.2' },
+        opencode: { ...REVIEWER_BLOCK.opencode, model: 'glm-5.3-flash' },
       },
     });
     expect(r.stdout).toContain('reviewer config saved');

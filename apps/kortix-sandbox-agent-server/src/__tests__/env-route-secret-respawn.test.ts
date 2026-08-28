@@ -53,6 +53,7 @@ function baseConfig(): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',

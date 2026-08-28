@@ -50,7 +50,7 @@ test("routing policy transport supports get, whole-document set, reset, and prev
   const project = {
     defaultModel: "codex/gpt-5.6-sol",
     visionModel: "anthropic/claude-sonnet-4.6",
-    defaultFallback: { models: ["glm-5.2"], fallbackOn: "any-error" as const },
+    defaultFallback: { models: ["glm-5.3-flash"], fallbackOn: "any-error" as const },
     rules: [
       {
         model: "anthropic/claude-opus-4.8",

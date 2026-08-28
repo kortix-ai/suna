@@ -33,6 +33,7 @@ EOF
 
 run_case() { # <name>  (expects $TMP prepared by caller)
   KORTIX_TEST_LOG="${TMP}/log" \
+  KORTIX_COMPILED_BOOT_MODE="${KORTIX_TEST_COMPILED_MODE:-off}" \
   KORTIX_AGENT_BIN="${TMP}/bin/kortix-agent" \
   KORTIX_AGENT_STATE_DIR="${TMP}/state" \
   KORTIX_WORKSPACE="${TMP}/ws" \
@@ -231,6 +232,62 @@ code=$(run_case)
 ! grep -q AGENT:v2 "${TMP}/log" && [ ! -f "${TMP}/state/agent.next" ] \
   && ok "pinned box refuses staged updates" \
   || no "pinned" "log=$(tr '\n' ',' < "${TMP}/log")"
+rm -rf "${TMP}"
+
+setup
+cat > "${TMP}/bin/kortix-agent" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "install-compiled-runtime" ]; then
+  cat > "${KORTIX_AGENT_STATE_DIR}/server.mjs" <<'MJS'
+import { spawnSync } from "node:child_process";
+const child = spawnSync(process.env.KORTIX_AGENT_BIN, ["compiled-child"], { env: process.env, stdio: "inherit" });
+process.exit(child.status ?? 1);
+MJS
+  echo "${KORTIX_AGENT_STATE_DIR}/server.mjs"
+  exit 0
+fi
+echo "AGENT:${1:-legacy}" >> "${KORTIX_TEST_LOG}"
+exit 0
+EOF
+chmod +x "${TMP}/bin/kortix-agent"
+KORTIX_TEST_COMPILED_MODE=prefer
+code=$(run_case)
+unset KORTIX_TEST_COMPILED_MODE
+[ "${code}" = "0" ] && grep -q 'AGENT:compiled-child' "${TMP}/log" \
+  && ok "compiled prefer: verified server.mjs launches the agent" \
+  || no "compiled prefer" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
+rm -rf "${TMP}"
+
+setup
+cat > "${TMP}/bin/kortix-agent" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "install-compiled-runtime" ]; then exit 1; fi
+echo "AGENT:legacy" >> "${KORTIX_TEST_LOG}"
+exit 0
+EOF
+chmod +x "${TMP}/bin/kortix-agent"
+KORTIX_TEST_COMPILED_MODE=prefer
+code=$(run_case)
+unset KORTIX_TEST_COMPILED_MODE
+[ "${code}" = "0" ] && grep -q 'AGENT:legacy' "${TMP}/log" \
+  && ok "compiled prefer: failed install falls back to the baked agent" \
+  || no "compiled prefer fallback" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
+rm -rf "${TMP}"
+
+setup
+cat > "${TMP}/bin/kortix-agent" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "install-compiled-runtime" ]; then exit 1; fi
+echo "AGENT:must-not-run" >> "${KORTIX_TEST_LOG}"
+exit 0
+EOF
+chmod +x "${TMP}/bin/kortix-agent"
+KORTIX_TEST_COMPILED_MODE=required
+code=$(run_case)
+unset KORTIX_TEST_COMPILED_MODE
+[ "${code}" = "1" ] && ! grep -q 'AGENT:must-not-run' "${TMP}/log" \
+  && ok "compiled required: failed install stops before legacy boot" \
+  || no "compiled required" "code=${code} log=$(tr '\n' ',' < "${TMP}/log")"
 rm -rf "${TMP}"
 
 echo

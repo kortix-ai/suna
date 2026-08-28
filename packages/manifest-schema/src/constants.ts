@@ -318,7 +318,7 @@ export const LEGACY_SANDBOX_KEYS = [
   'gpu',
 ] as const;
 
-export const V2_RUNTIME_VALUES = ['opencode'] as const;
+export const V2_RUNTIME_VALUES = ['opencode', 'pi'] as const;
 export const AGENT_MODES_V2 = ['primary', 'subagent', 'all'] as const;
 export const WORKSPACE_MODES_V2 = ['runtime', 'read', 'branch'] as const;
 export const PERMISSION_ACTIONS_V2 = ['ask', 'allow', 'deny'] as const;

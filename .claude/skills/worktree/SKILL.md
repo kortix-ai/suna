@@ -1,6 +1,6 @@
 ---
 name: worktree
-description: "How to do feature work in this repo with git worktrees via `pnpm worktree`. Each worktree gets its own branch, its own block of app ports, its own node_modules, and by default shares the primary checkout's standard local Supabase DB for fast setup; pass `--db` only when a separate Supabase project/data plane is needed. Load WHENEVER starting a feature, bugfix, refactor, experiment, or any change you'll want to run/test in isolation; whenever the user mentions worktrees, isolated/parallel dev instances, running multiple branches at once, or 'spin up a worktree'; and whenever you need the exact non-interactive `pnpm worktree` commands and flags. Enforces: every non-trivial change happens in its own worktree."
+description: "How to do feature work in this repo with git worktrees via `pnpm worktree`. Each worktree gets its own branch, its own block of app ports, its own node_modules, and by default shares the primary checkout's standard local Supabase DB for fast setup; pass `--db` only when a separate Supabase project/data plane is needed. Load WHENEVER starting a feature, bugfix, refactor, experiment, or any change you'll want to run/test in isolation; whenever the user mentions worktrees, isolated/parallel dev instances, running multiple branches at once, or 'spin up a worktree'; and whenever you need the exact non-interactive `pnpm worktree` commands and flags. Enforces: one canonical branch per objective, one worktree per branch — join the existing worktree instead of creating another."
 ---
 
 # Worktrees (`pnpm worktree`)
@@ -15,35 +15,37 @@ project, schema, auth users, storage, or destructive data changes. The CLI lives
 at `scripts/worktree/cli.ts`, run via the root `package.json` script
 `pnpm worktree`.
 
-## THE RULE — always work in a worktree
+## THE RULE — one canonical branch, one worktree
 
-**Default to a worktree for any feature, bugfix, refactor, or experiment** that
-spans more than a one-line edit or that you'll want to run, migrate, or test.
-Never do feature work directly in the primary checkout — it keeps `main`/your
-base clean, lets work run in parallel without port/dependency collisions, and
-gives each change its own branch automatically. Use shared DB mode for ordinary
-UI/API work; opt into `--db` when database isolation is materially required.
+**A worktree maps 1:1 to a canonical branch** — the branch for whatever is being
+worked on. Work in a worktree, but **do not create one by reflex.**
+
+**First, look for the worktree that already exists.** Run `pnpm worktree list`.
+If the work continues, extends, fixes, or cleans up something already in flight,
+it belongs in that worktree, on that branch. Join it. Spinning a second worktree
+for the same objective is the mistake this rule exists to prevent.
+
+**Create a new worktree only when the work is genuinely a new thing.** Use
+shared-DB mode for ordinary UI/API work; opt into `--db` when database isolation
+is materially required.
+
+**Pack more into the branch, not less.** Follow-up fixes, rename cleanups, and
+stale-reference sweeps belong on the same branch as the change that caused them,
+and land together. Sub-branches off the canonical branch are fine — they merge
+back into it, and never open a PR against `main`.
 
 Carve-outs (a worktree is *not* required):
 - Read-only investigation / answering questions.
 - A trivial single-file typo/comment fix on the branch you're already on.
 - Operating on the primary `pnpm dev` stack itself.
 
-When in doubt, spin a worktree. Shared-DB worktrees are cheap to create and
-`nuke` removes only the app worktree resources; isolated-DB worktrees also clean
-up their own Supabase containers and volumes.
+Shared-DB worktrees are cheap and `nuke` removes only the app worktree
+resources; isolated-DB worktrees also clean up their Supabase containers and
+volumes.
 
-> **Session start:** `AGENTS.md` ("First, at session start: where do you work?")
-> has you *ask the user* which environment to use before non-trivial work — a
-> new worktree (this skill, the recommended default), straight in the primary
-> `pnpm dev` checkout, or an existing worktree. A fresh worktree is the default
-> answer, but honour the user's choice.
-
-> **Session start:** `AGENTS.md` ("First, at session start: where do you work?")
-> has you *ask the user* which environment to use before non-trivial work — a
-> new worktree (this skill, the recommended default), straight in the primary
-> `pnpm dev` checkout, or an existing worktree. A fresh worktree is the default
-> answer, but honour the user's choice.
+> **Session start:** the repo-root `AGENTS.md` ("First, at session start: which
+> canonical branch are you in?") governs. Join the existing canonical branch when
+> one exists; ask the user which branch when it is not obvious.
 
 ## Agent quick start (non-interactive, non-blocking)
 

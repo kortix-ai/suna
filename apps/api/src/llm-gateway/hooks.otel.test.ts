@@ -164,9 +164,9 @@ describe('emitGatewayGenAiSpan', () => {
           },
           {
             attempt: 2,
-            provider: 'aster',
-            routeModel: 'glm-5.2',
-            resolvedModel: 'glm-5.2',
+            provider: 'openrouter',
+            routeModel: 'glm-5.3-flash',
+            resolvedModel: 'z-ai/glm-5.3-flash',
             stage: 'completion_validation',
             code: 'empty_completion',
             message: 'Upstream stream closed before producing usable content',

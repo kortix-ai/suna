@@ -63,6 +63,7 @@ let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
 const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
+let lifecycleDrainClaimWhere: unknown = null;
 let lastSessionListWhere: unknown = null;
 // `active_since` / `deadline_at` are assigned by a DB trigger, never by
 // application code, so these HTTP-contract fixtures deliberately omit them —
@@ -133,6 +134,7 @@ function resetState() {
   activeSessionCount = 0;
   lastSessionInsertValues = null;
   lifecycleCommandInserts.length = 0;
+  lifecycleDrainClaimWhere = null;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -252,6 +254,17 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+// The fresh-session fast-boot hint is ALWAYS resolved at session create
+// (2026-08-27): against this fixture's fake repo URL the mirror clone fails
+// slowly (~0.4 s), which let fire-and-forget provisions from earlier tests
+// land inside a later test's counter window. Resolve it instantly here; the
+// hint itself is covered by fast-boot-git-hint.test.ts and the REST flows.
+const realFastBootGitHint = await import('../projects/lib/fast-boot-git-hint');
+mock.module('../projects/lib/fast-boot-git-hint', () => ({
+  ...realFastBootGitHint,
+  resolveFastBootGitHintWithCache: async () => undefined,
+}));
+
 mock.module('../projects/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
@@ -299,6 +312,7 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -338,13 +352,6 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: 'kortix-ppwarm-test',
-    tip: 'a'.repeat(40),
-    built: false,
-    provider: 'daytona',
-  }),
-  routedPerProjectWarmImageName: () => 'kpp2-test',
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
@@ -624,7 +631,11 @@ mock.module('../shared/db', () => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
-          orderBy: async () => {
+          orderBy: () => {
+            if (table === sessionLifecycleCommands) {
+              lifecycleDrainClaimWhere = predicate ?? null;
+              return { limit: async () => [] };
+            }
             if (table === projectSecrets) return secretRows;
             if (table === projectSessions) {
               // Recorded so a test can assert WHICH predicate the list route
@@ -632,9 +643,9 @@ mock.module('../shared/db', () => ({
               // asserting on the response alone would pass even if the filter
               // were never applied.
               lastSessionListWhere = predicate ?? null;
-              return sessionRow ? [sessionRow] : [];
+              return Promise.resolve(sessionRow ? [sessionRow] : []);
             }
-            return [];
+            return Promise.resolve([]);
           },
           limit: async () => {
             if (fields && Object.keys(fields).includes('activeCount'))
@@ -1463,6 +1474,68 @@ describe('project session API contract', () => {
     expect(body.stage).toBe('starting');
     expect(body.retriable).toBe(true);
     expect(body.reason).not.toBe('runtime_wake_failed');
+  });
+
+  test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
+    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
+    // boot was judged against a 10-minute cap that had already run ~7 minutes.
+    // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
+    // turn at 13:34:49.216.
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    const attempt1 = new Date(Date.now() - 11 * 60_000).toISOString();
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_boot_failed',
+          runtimeParkReason: 'runtime_not_ready_timeout',
+          runtimeStartFailureCount: 2,
+          runtimeStartFailedAt: attempt1,
+          runtimeStartRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+          // Attempt 1's clocks, which nothing used to clear.
+          opencodeBootWaitFirstSeenAt: attempt1,
+          opencodeNotReadyWaitStartedAt: attempt1,
+          opencodeReadyWaitReason: 'not_ready',
+          opencodeBootPhase: 'config-deps|opencode=starting',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+
+    const claimed = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    // Every readiness clock is gone: attempt 2 boots against a clean budget.
+    expect(claimed.opencodeBootWaitFirstSeenAt).toBeUndefined();
+    expect(claimed.opencodeBootPhase).toBeUndefined();
+    expect(claimed.opencodeNotReadyWaitStartedAt).toBeUndefined();
+    expect(claimed.opencodeReadyWaitReason).toBeUndefined();
+    // …and the escalation accounting survives, unlike a human Restart.
+    expect(claimed.runtimeStartFailureCount).toBe(2);
+    expect(claimed.runtimeStartFailedAt).toBe(attempt1);
+    // The claim is live, so /start reports a wake rather than a stamp.
+    expect(typeof claimed.runtimeWakeId).toBe('string');
   });
 
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
@@ -3859,6 +3932,9 @@ describe('project session API contract', () => {
     });
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+    await flushUntil(() => lifecycleDrainClaimWhere !== null);
+    const drainClaim = new PgDialect().sqlToQuery(lifecycleDrainClaimWhere as SQL);
+    expect(drainClaim.params).toContain(`prompt:${SESSION_ID}:pending-first`);
   });
 
   test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {

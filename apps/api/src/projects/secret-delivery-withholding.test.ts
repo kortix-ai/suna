@@ -145,9 +145,14 @@ describe('only GRANTED rows may vote on a shared key (Strix HIGH)', () => {
 
 describe('materializeSecretDelivery', () => {
   test('withholds model credentials even when a legacy row says runtime', async () => {
+    // A LEGACY row: written before `consumer` existed, so it carries no stamp.
+    // The fixture used to say `consumer: 'sandbox'`, which today is what the
+    // secrets UI stamps on a HUMAN's own secret — conflating "legacy" with
+    // "explicitly a sandbox secret". That conflation is what withheld a
+    // project's own GITHUB_TOKEN (models.dev maps `github-copilot` to that
+    // name). An unstamped row still strips; see `gatewayStripsRow`.
     const provider = row('openai', 'OPENAI_API_KEY', {
       strategy: 'runtime',
-      consumer: 'sandbox',
     });
     const env = envFor([provider]);
 

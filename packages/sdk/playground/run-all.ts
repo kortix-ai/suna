@@ -3,8 +3,7 @@
  *
  * - Creates ONE session up front and pins it via KORTIX_SESSION_ID, so the
  *   five sandbox scripts (04, 06, 07, 09, 11) share a single boot.
- * - Defaults KORTIX_MODEL to glm-5.2 when unset (the local stack's
- *   default model currently 400s on `max_tokens`).
+ * - Defaults KORTIX_MODEL to glm-5.3-flash when unset.
  * - Keeps going after a failure; exits 1 if anything failed.
  * - Skipped on purpose: 14-change-default-model (mutates the project's
  *   default model — run it deliberately) and full-flow.ts (duplicates 01+03+04).
@@ -54,10 +53,10 @@ run("run-all", async () => {
   const kortix = makeKortix();
   const projectId = await pickProjectId(kortix);
 
-  const model = process.env.KORTIX_MODEL ?? "glm-5.2";
+  const model = process.env.KORTIX_MODEL ?? "glm-5.3-flash";
   if (!process.env.KORTIX_MODEL) {
     console.log(
-      `KORTIX_MODEL not set — defaulting to ${model} (local gateway bug workaround)`,
+      `KORTIX_MODEL not set — defaulting to ${model}`,
     );
   }
 

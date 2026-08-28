@@ -46,7 +46,7 @@ describe('session-title origins — create-time title source', () => {
     const body = {
       agent_name: 'default',
       initial_prompt: 'Triage the new Sentry issue and open a change request',
-      opencode_model: 'kortix/glm-5.2',
+      opencode_model: 'kortix/glm-5.3-flash',
     };
     expect(titleSourceForCreate(body)).toBe(
       'Triage the new Sentry issue and open a change request',

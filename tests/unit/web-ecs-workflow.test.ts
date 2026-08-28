@@ -161,7 +161,11 @@ describe('web ECS migration', () => {
     expect(buildJobs.match(/platforms: linux\/amd64/g)).toHaveLength(3);
     expect(workflow).toContain("github.event.action == 'labeled'");
     expect(workflow).toContain("github.event.action == 'synchronize'");
-    expect(workflow).toContain('labels/preview');
+    // The label used to be STRIPPED on every push; a labelled preview now stays
+    // online until the label is removed or the pull request closes, so nothing
+    // in this workflow may delete it any more.
+    expect(workflow).not.toContain('labels/preview');
+    expect(workflow).toContain('PREVIEW_BRANCH_ENV');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');

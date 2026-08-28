@@ -45,7 +45,7 @@ export function auditLoginSuccess(args: {
   c: Context;
   userId: string;
   accountId?: string | null;
-  authType: 'supabase' | 'pat' | 'apiKey' | 'service_account';
+  authType: 'supabase' | 'pat' | 'apiKey' | 'service_account' | 'oauth';
   metadata?: Record<string, unknown>;
 }): void {
   fireAndForget(

@@ -99,11 +99,11 @@ describe('starter template agent model declarations', () => {
   });
 
   test('parses the frontmatter model key it relies on', () => {
-    expect(frontmatterModel('---\nmode: primary\nmodel: kortix/glm-5.2\n---\nbody\n')).toBe(
-      'kortix/glm-5.2',
+    expect(frontmatterModel('---\nmode: primary\nmodel: kortix/glm-5.3-flash\n---\nbody\n')).toBe(
+      'kortix/glm-5.3-flash',
     );
     expect(frontmatterModel('---\nmode: primary\n---\nbody\n')).toBeUndefined();
-    expect(frontmatterModel('# not frontmatter\nmodel: kortix/glm-5.2\n')).toBeUndefined();
-    expect(frontmatterModel('---\nmodel: "kortix/glm-5.2"\n---\n')).toBe('kortix/glm-5.2');
+    expect(frontmatterModel('# not frontmatter\nmodel: kortix/glm-5.3-flash\n')).toBeUndefined();
+    expect(frontmatterModel('---\nmodel: "kortix/glm-5.3-flash"\n---\n')).toBe('kortix/glm-5.3-flash');
   });
 });

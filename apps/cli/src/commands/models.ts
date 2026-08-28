@@ -76,7 +76,7 @@ Subcommands:
                                   one with --account).
   default --clear [--account]     Clear the project (or account) default.
 
-Model ids are gateway wire ids — a bare managed id (\`glm-5.2\`) or a BYOK
+Model ids are gateway wire ids — a bare managed id (\`glm-5.3-flash\`) or a BYOK
 \`provider/model\`. Copy one from \`kortix models ls --json\`.
 
 Per-agent pins live on \`kortix agents model <agent> <model-id>\`.

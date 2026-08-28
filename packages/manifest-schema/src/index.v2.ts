@@ -55,8 +55,10 @@ export type AgentModeV2 = 'primary' | 'subagent' | 'all';
 /** Kortix governance field — validated only in this phase; enforcement is Phase 4. */
 export type WorkspaceModeV2 = 'runtime' | 'read' | 'branch';
 
-/** The only legal `runtime` today; reserved so `runtime: claude` is a one-line project change later. */
-export type RuntimeV2 = 'opencode';
+/** Session runtimes. `pi` boots the compiled pi worker (behind the project's
+ *  `pi_worker` feature flag); anything else — including absence — keeps the
+ *  OpenCode path byte-for-byte. Reserved room for `claude` later. */
+export type RuntimeV2 = 'opencode' | 'pi';
 
 /** `$defs.PermissionActionConfig` in the OpenCode config schema. */
 export type PermissionActionV2 = 'ask' | 'allow' | 'deny';

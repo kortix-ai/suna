@@ -88,7 +88,6 @@ class E2BAdapter implements SandboxProviderAdapter {
       userDockerfile,
       runtimeProfile: input.runtimeProfile,
       appContext: input.appContext,
-      warmRepo: input.warmRepo,
       isShared: input.isShared,
     });
     observeTemplates.invalidate();

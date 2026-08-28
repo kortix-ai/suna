@@ -15,15 +15,15 @@ import {
 import { useRuntimeMessages } from '@kortix/sdk/react';
 import { capitalizeWords } from '@kortix/shared';
 import { CpuIcon as Cpu, ArrowSquareOutIcon as ExternalLink } from '@phosphor-icons/react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useMemo, useState } from 'react';
 import { projectChildSessionHref } from './session-spawn-urls';
 
 export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
   const pathname = usePathname();
-  const router = useRouter();
 
   const agentName = capitalizeWords((input.agent as string) || 'kortix');
   const description = (input.description as string) || '';
@@ -70,11 +70,6 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
     if (hasPreview) setModalOpen(true);
   };
 
-  const openFullSession = useCallback(() => {
-    if (!childHref) return;
-    router.push(childHref);
-  }, [childHref, router]);
-
   return (
     <>
       <div
@@ -112,15 +107,14 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           )}
         </button>
         {childHref && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={openFullSession}
-            className="h-6 shrink-0 gap-1 px-1.5 text-xs"
-          >
-            Open session
-            <ExternalLink className="size-3" />
+          <Button asChild variant="ghost" size="xs" className="h-6 shrink-0 gap-1 px-1.5 text-xs">
+            {/* An anchor, not a button: the child session href is known at render
+                time, so Next prefetches it and the click never runs a cold RSC
+                fetch that could degrade into a full page load. */}
+            <Link href={childHref} prefetch>
+              Open session
+              <ExternalLink className="size-3" />
+            </Link>
           </Button>
         )}
       </div>

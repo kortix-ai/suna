@@ -143,6 +143,10 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `INV-4` `POST /account-invites/:inviteId/accept` → 200 membership created (rate-limited); already accepted by this user → 200 `{already_accepted:true}`; **expired → 410**; wrong email → 403.
 `INV-5` `POST /account-invites/:inviteId/decline` → 200; already accepted → 409; wrong email → 403; not found → 404.
 
+### Organization branding (Enterprise)
+
+`ACCT-BRAND-1` `GET /accounts/:id/branding` → member → 200 `{branding:{app_name,logo_url,icon_url,favicon_url,logo_dark_url,icon_dark_url,favicon_dark_url}, entitled}` (the STORED record). `PUT /accounts/:id/branding {app_name}` and `POST /accounts/:id/branding/assets/:kind` (`kind` ∈ `logo|icon|favicon|logo_dark|icon_dark|favicon_dark`, multipart `file`, bytes sniffed: PNG/JPEG/WebP/SVG-without-script/ICO, ≤ 1 MiB) → `ACCOUNT_WRITE` **and** the `branding` entitlement → 200; non-entitled → **402 `{code:"entitlement_required", entitlement:"branding"}`**; `MEMBER` → 403. `DELETE …/assets/:kind` and `DELETE /accounts/:id/branding` (reset) → `ACCOUNT_WRITE` only — a downgraded account can always unwind. `GET /accounts` and `GET /accounts/:id` carry `branding` = the record while entitled, `null` otherwise (serving is entitlement-checked; the local profile has no Enterprise tier, so writes 402 and the list carries `null`).
+
 ### Account PATs (CLI tokens)
 
 `TOK-1` `GET /accounts/tokens` → list.
@@ -516,6 +520,10 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `OAU-2` `GET /oauth/authorize/consent/:requestId` (auth) → consent data; `POST /oauth/authorize/consent` → submit.
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
 `OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
+`OAU-5` RFC 8414 discovery: `GET /.well-known/oauth-authorization-server` (API root) and its mirror `GET /v1/oauth/.well-known/oauth-authorization-server` (public) → `issuer` = the configured public API origin, every endpoint, `scopes_supported` ⊇ {`profile`,`email`,`kortix`}, `code_challenge_methods_supported` = [`S256`].
+`OAU-6` Self-serve client registry `GET/POST /accounts/:accountId/iam/oauth-clients` · `GET/PATCH/DELETE /:clientId` · `POST /:clientId/rotate-secret` (`token.read` / `token.create` / `token.revoke`). Create/rotate return `client_secret` exactly once (null for `client_type: "public"`); list/get never do. Redirect URIs must be absolute https (http on localhost only, no fragment); scopes ⊆ {`profile`,`email`,`kortix`} else 400. NONMEMBER → 403; unknown/malformed id → 404.
+`OAU-7` The full "Sign in with Kortix" exchange over HTTP with a real client: `/authorize` (302, opaque `request_id`, request persisted) → consent GET (`remembered:false` the first time) → consent POST (code bound to the STORED redirect/scopes/challenge; replay → 400; consent remembered → a later authorize for ⊆ scopes reports `remembered:true`) → `/token` (`authorization_code` + PKCE: wrong verifier → 400 `invalid_grant`) → `kortix_oat_`/`kortix_ort_`. A `kortix`-scoped access token is a first-class credential on every auth middleware (`GET /accounts/me` → `token_context.auth_type: "oauth"`); `refresh_token` rotates (old refresh → 400, old access → 401); `POST /oauth/revoke` (RFC 7009, client-authenticated, form-encoded) kills the pair, answers 200 `revoked:false` for an unknown token, 401 for a bad client secret.
+`OAU-8` Identity-only + public clients: a `client_type: "public"` client exchanges with PKCE alone and is refused (401) when it sends a secret; a token without the `kortix` scope reaches only `/oauth/userinfo` and `/accounts/me` — the general API answers 403 `insufficient_scope`.
 
 ### Tunnel (reverse tunnel to local machines)
 
@@ -715,7 +723,7 @@ supplied scope field without restarting the session.
 
 ## 25. Parallel-authored domains (git/platform/iam/channels/queue/audit/scim)
 
-`GH-9` `GET /git/:project/info/refs` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → smart-HTTP proxy, git token auth (not JWT); bad/no token → 401/502.
+`GH-9` `GET /git/:project/info/refs` · `GET …/compiled-checkout` · `GET …/compiled-runtime` · `GET …/compiled-pi-runtime` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → Git proxy and compiled boot artifacts, git token auth (not JWT); bad/no token → 401/502.
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
 `GH-12` `POST /projects/:id/git/collaborators` → missing username → 400; non-managed → 409; no install → 502.
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.
@@ -773,6 +781,10 @@ supplied scope field without restarting the session.
 `BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
 `AUTH-2` `POST /v1/webhooks/auth/send-email` — Supabase Auth send-email hook, public + Standard Webhooks HMAC (`AUTH_EMAIL_HOOK_SECRET`, `v1,whsec_…`) over the RAW body. Unsigned → 401 (503 when no secret is configured); valid signature over a tampered body → 401; signed `magiclink` payload → 200 and the mail goes out through the one platform transport (`EMAIL_URL`); unknown `email_action_type` → 400.
+`AUTH-3` Headless regular auth (public, per-IP token bucket 30/min, every call a server-side GoTrue request with the API key + forwarded client IP, errors passed through as `{error,error_description}` + upstream status): `POST /v1/auth/signup {email,password,data?,redirect_to?}` → 200 `{user, session|null, requires_email_confirmation}`; `POST /v1/auth/sign-in/password` → `{session,user}` (wrong password → 400 GoTrue error); `POST /v1/auth/refresh {refresh_token}` → rotated `{session,user}` (dead token → 400); `GET /v1/auth/user` (bearer) → `{user}`; `POST /v1/auth/sign-out` (bearer, `{scope?}`) → GoTrue logout + Kortix session revoke → 200 `{ok:true}`. ANON on a bearer route → 401.
+`AUTH-4` `POST /v1/auth/sign-in/magic-link {email,create_user?,redirect_to?}` → 200 `{sent:true}`; `POST /v1/auth/verify-otp {email,token,type}` (`magiclink|signup|recovery|email|email_change`) → `{session,user}`; a bogus code → 4xx GoTrue error.
+`AUTH-5` Social sign-in, PKCE kept by the client: `POST /v1/auth/sign-in/oauth {provider,redirect_to,scopes?}` → 200 `{url, code_verifier}` (provider not enabled on the instance → GoTrue's 4xx); non-http(s) `redirect_to` or unknown provider → 400 before GoTrue; `POST /v1/auth/oauth/exchange {code,code_verifier}` → `{session,user}`; bogus → 4xx.
+`AUTH-6` `POST /v1/auth/password/reset {email,redirect_to?}` → 200 `{sent:true}` for unknown addresses too (never reveals existence); invalid email → 400. `POST /v1/auth/password/update {password}` (bearer) → 200 `{user}`; ANON → 401.
 `BILL-11` `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session` → unknown/missing → 4xx.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
 `BILL-4b` `POST /billing/cancel-subscription` · `sync-seat-quantity` → NONMEMBER → 403.
@@ -949,7 +961,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `SESS-17` A project member reads session previews. Unknown sessions and non-members are rejected.
 `SESS-18` Warming a project creates one ordinary session marked unused, and returns that same session until it is used. The unused session is hidden from the `visible` session list and present in the manager's `project` inventory. First use drops the marker and the session lists normally; a second use returns `409 WARM_SESSION_ALREADY_CLAIMED`. The next warm creates a replacement. Adoption via `POST /start` (the path the browser actually takes) drops the marker in the same statement that stamps `last_activity_at` and advances `updated_at` beyond `created_at`, so the adopted session lists immediately and its activity sort is current. The contract requires `last_activity_at > created_at` and `updated_at >= last_activity_at` on the adopted row. Later lifecycle writes can advance `updated_at` before read-back. A warm ensure after adoption never returns the adopted session — handing a used session back is how a project-home send lands its prompt inside an existing conversation. A warm ensure carrying `exclude_session_id` creates a fresh session even while the excluded session's marker is still set.
 `SESS-19` Session configuration freshness, reload, and streamed reload routes reject anonymous callers and hide unknown projects.
-`SESS-20` The session transcript route returns 404 for an unknown session.
+`SESS-20` The session transcript route returns 404 for an unknown session. The session-open bundle answers the session row, the turn, the prompt queue, the transcript mirror, the config essentials and the model defaults in ONE round trip, tags every leg with `known` so a degraded leg reads as unknown rather than as an empty answer, serves the same turn projection `GET .../turn` serves, 404s an unknown session and refuses an anonymous caller.
 `SYS-8` Live and ready health aliases return the same service-state contract.
 `SYS-9` Metrics requires internal authorization and router health returns its configured availability state.
 `TOK-5` Revoking a project CLI token immediately blocks its project, secret, and trigger mutations.

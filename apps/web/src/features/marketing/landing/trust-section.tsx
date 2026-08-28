@@ -53,8 +53,9 @@ function TrustColumn({
 /**
  * The closing section: what makes the platform trustworthy, and exactly where
  * we stand on certification. Tembo runs the same shape (one dark card, badges,
- * three pillars); the honest half is ours — the badge row states plainly that
- * nothing is certified yet.
+ * three pillars); the honest half is ours — the badge row states plainly what
+ * we hold and what is still in progress. SOC 2 Type I is held (rendered bare,
+ * like GDPR); SOC 2 Type II is still in progress.
  */
 export function TrustSection(): ReactNode {
   return (
@@ -86,7 +87,7 @@ export function TrustSection(): ReactNode {
 
             <div className="w-full min-w-0 lg:col-span-5 lg:justify-self-end">
               <ul className="grid w-full grid-cols-3 items-start">
-                <TrustSeal label="In progress">
+                <TrustSeal>
                   <Soc2Type1 />
                 </TrustSeal>
                 <TrustSeal label="In progress">

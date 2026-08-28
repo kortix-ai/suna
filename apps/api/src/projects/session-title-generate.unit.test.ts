@@ -8,13 +8,13 @@ import {
 
 describe('titleCompletionBody', () => {
   test('grants reasoning models enough completion budget to emit content', () => {
-    const body = JSON.parse(titleCompletionBody('glm-5.2', 'Create a demo PDF about cats.'));
+    const body = JSON.parse(titleCompletionBody('glm-5.3-flash', 'Create a demo PDF about cats.'));
     // Reasoning models (GLM, DeepSeek, o-series) spend tokens on `reasoning`
     // BEFORE `content`. A tight cap (the old 24) returned finish_reason
     // "length" with an empty content — and the session stayed untitled
     // forever. The floor here is the regression guard.
     expect(body.max_tokens).toBeGreaterThanOrEqual(128);
-    expect(body.model).toBe('glm-5.2');
+    expect(body.model).toBe('glm-5.3-flash');
     expect(body.stream).toBe(false);
     // The message is quoted as DATA inside a titling instruction — passed
     // bare, smaller models answer it (emit code) instead of titling it.
@@ -24,7 +24,7 @@ describe('titleCompletionBody', () => {
   });
 
   test('truncates oversized prompt text', () => {
-    const body = JSON.parse(titleCompletionBody('glm-5.2', 'x'.repeat(TITLE_SOURCE_MAX_CHARS + 500)));
+    const body = JSON.parse(titleCompletionBody('glm-5.3-flash', 'x'.repeat(TITLE_SOURCE_MAX_CHARS + 500)));
     expect(body.messages[1].content).not.toContain('x'.repeat(TITLE_SOURCE_MAX_CHARS + 1));
     expect(body.messages[1].content).toContain('x'.repeat(TITLE_SOURCE_MAX_CHARS));
   });

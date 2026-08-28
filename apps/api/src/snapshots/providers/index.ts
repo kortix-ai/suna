@@ -12,7 +12,6 @@
 import { daytonaProvider } from './daytona';
 import { e2bProvider } from './e2b';
 import { platinumProvider } from './platinum';
-import type { WarmRepoContext } from '../build-context';
 
 interface SandboxResourceSpec {
   cpu?: number;
@@ -30,24 +29,9 @@ export interface AppBuildContext {
 export interface BuildableTemplate {
   /** Snapshot name the provider should write under. */
   snapshotName: string;
-  /**
-   * Exactly one of `image`, `userDockerfile`, or `baseImageRef` is set.
-   */
+  /** Exactly one of `image` or `userDockerfile` is set. */
   image?: string;
   userDockerfile?: string;
-  /**
-   * Per-project warm FAST PATH: a registry-addressable ref to an
-   * already-built, active runtime image (the shared default) to `FROM`
-   * instead of composing the full toolchain Dockerfile. When set, the
-   * provider stages a minimal Dockerfile (see `stageWarmFromBaseContext`)
-   * that only adds `warmRepo` on top — the toolchain (including the
-   * Chromium install that per-project bakes could otherwise re-download
-   * under a build-cache miss) is INHERITED, not re-run. Only meaningful
-   * together with `warmRepo`; providers that don't support this (no
-   * `getSnapshotImageRef`) never receive it — the caller falls back to
-   * `userDockerfile` instead.
-   */
-  baseImageRef?: string;
   /** Optional entrypoint override; null means use the provider default. */
   entrypoint?: string[];
   /** Resource spec. */
@@ -57,18 +41,9 @@ export interface BuildableTemplate {
   /** Shared platform default (vs per-project). Every template is built cold. */
   isShared?: boolean;
   /** Selects a fixed platform runtime instead of the full standard layer. */
-  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'app';
+  runtimeProfile?: 'standard' | 'fast' | 'meta' | 'app' | 'pi-worker';
   /** Required when runtimeProfile is app. */
   appContext?: AppBuildContext;
-  /**
-   * Per-project COLD warm: bake the project's repo checkout into /workspace at
-   * build time. Threaded straight to `stageBuildContext` (or, on the
-   * `baseImageRef` fast path, `stageWarmFromBaseContext`) → the Dockerfile
-   * layer, which clones the repo (build-time creds) and keeps /workspace. The
-   * image stays capture:'none' (no memory snapshot) — BOTH providers boot it
-   * cold. Absent for the shared default image (workspace stays empty).
-   */
-  warmRepo?: WarmRepoContext;
 }
 
 export type ProviderState =
@@ -111,12 +86,6 @@ export interface SandboxProviderAdapter {
   readonly id: string;
 
   /**
-   * Optional authoritative provider capacity for snapshot/template builds.
-   * Providers without a quota endpoint omit this method.
-   */
-  getSnapshotBuildCapacity?(): Promise<{ used: number; cap: number }>;
-
-  /**
    * Build the snapshot. The caller has already composed the layered Dockerfile
    * (user Dockerfile + Kortix runtime). Returns when the snapshot is `active`,
    * throws on terminal failure. May return the exact external template id the
@@ -144,19 +113,6 @@ export interface SandboxProviderAdapter {
   deleteSnapshot(snapshotName: string): Promise<void>;
   /** List provider snapshots/templates owned by the current account. */
   listSnapshots(): Promise<Array<{ name: string }>>;
-
-  /**
-   * Optional: resolve a registry-addressable image reference for an
-   * ALREADY-BUILT snapshot, for use as `BuildableTemplate.baseImageRef` on a
-   * later build (the per-project warm FAST PATH — see builder.ts
-   * `ensurePerProjectWarmImage`). Returns null when the snapshot doesn't exist,
-   * the provider has no such reference to give, or on any lookup error — every
-   * caller treats null as "fall back to the full rebuild path", never as a
-   * hard failure. Absent on providers that don't expose an image reference at
-   * all (Platinum and E2B); callers must null-check the method
-   * itself, not just its return value.
-   */
-  getSnapshotImageRef?(snapshotName: string): Promise<string | null>;
 
   /**
    * Optional: resolve the provider-side EXTERNAL template/build id for an

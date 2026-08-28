@@ -57,7 +57,27 @@ compile_with_retry() {
 echo "Typechecking (tsc --noEmit) before compile…"
 bun run typecheck
 
+bun build --target=bun --format=esm --outfile=dist/server.mjs src/main.ts
 compile_with_retry
 chmod +x dist/kortix-agent
+
+# Invalidate the snapshot builder's source-staleness memo (dist/kortix-agent.srchash,
+# see apps/api/src/snapshots/build-context.ts `agentBinaryStale`). This freshly
+# compiled binary IS current, so the guard must re-memoize the source hash from
+# it rather than trust a stale record from a previous build.
+rm -f dist/kortix-agent.srchash
+
+# The product name is `kortixd`. `dist/kortixd` is the primary artifact — what
+# install.sh downloads and what `kortixd install/update` manage on a normal
+# machine. `dist/kortix-agent` is KEPT as a compatibility name: it is the
+# load-bearing on-disk contract for already-deployed boxes and the snapshot
+# bake (apps/sandbox/Dockerfile COPYs dist/kortix-agent → /usr/local/bin/
+# kortix-agent, entrypoint.sh treats that path as the immutable floor, and the
+# API serves it as the runtime-assets `/agent` artifact). Renaming that path is
+# a fleet migration, not a build change, so both names ship from one compile.
+cp -f dist/kortix-agent dist/kortixd
+chmod +x dist/kortixd
+
 size="$(stat -f%z dist/kortix-agent 2>/dev/null || stat -c%s dist/kortix-agent)"
-echo "Built dist/kortix-agent for ${target} (${size} bytes)"
+bundle_size="$(stat -f%z dist/server.mjs 2>/dev/null || stat -c%s dist/server.mjs)"
+echo "Built dist/kortixd (+ compat dist/kortix-agent) for ${target} (${size} bytes) and dist/server.mjs (${bundle_size} bytes)"

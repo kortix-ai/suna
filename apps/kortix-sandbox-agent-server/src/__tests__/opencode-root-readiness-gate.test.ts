@@ -82,11 +82,12 @@ describe('fast OpenCode root readiness gate', () => {
     const runtimeStart = src.indexOf('async function startSessionRuntime(')
     const runtimeEnd = src.indexOf('\n// Establish the session', runtimeStart)
     const runtime = src.slice(runtimeStart, runtimeEnd)
-    const eventLoopAt = runtime.indexOf('const loop = startOpencodeEventLoop(')
+    const eventLoopAt = runtime.indexOf('startOpencodeEventLoop(opencode, cfg, eventHandlers)')
     const initialSessionAt = runtime.indexOf('await maybeCreateInitialOpencodeSession(', eventLoopAt)
 
     expect(eventLoopAt).toBeGreaterThan(-1)
     expect(initialSessionAt).toBeGreaterThan(eventLoopAt)
+    expect(runtime.slice(eventLoopAt, initialSessionAt)).not.toContain('await startOpencodeEventLoop')
 
     const initialStart = src.indexOf('async function maybeCreateInitialOpencodeSession(')
     const initialEnd = src.indexOf('\nasync function resolveExistingRoot', initialStart)
@@ -105,5 +106,16 @@ describe('fast OpenCode root readiness gate', () => {
     )
     expect(initial).toContain('fastPathEnabled: fastRootReadinessEnabled')
     expect(initial).toContain('onListening,\n    fastRootReadinessEnabled,')
+  })
+
+  test('initial prompt delivery never waits for the event stream handshake', async () => {
+    const src = await Bun.file(new URL('../main.ts', import.meta.url).pathname).text()
+    const initialStart = src.indexOf('async function maybeCreateInitialOpencodeSession(')
+    const initialEnd = src.indexOf('\nasync function resolveExistingRoot', initialStart)
+    const initial = src.slice(initialStart, initialEnd)
+
+    expect(initial).not.toContain('eventLoopConnected')
+    expect(initial).not.toContain('timer = setTimeout(r, 10_000)')
+    expect(initial).not.toContain("bootMark('event-loop-connected')")
   })
 })

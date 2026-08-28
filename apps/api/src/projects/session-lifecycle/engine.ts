@@ -2016,6 +2016,16 @@ async function executeCreateSession(
       retryable: isRetryableCreateError(result.error.status),
     };
   }
+  if (result.pendingPromptIdempotencyKey) {
+    void drainSessionLifecycleQueue({
+      idempotencyKey: result.pendingPromptIdempotencyKey,
+    }).catch((error) => {
+      logger.error('[session-lifecycle] first prompt targeted drain failed', {
+        sessionId: result.row!.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
   return {
     status: 'created',
     sessionId: result.row!.sessionId,

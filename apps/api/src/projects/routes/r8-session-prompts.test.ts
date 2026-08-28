@@ -24,6 +24,7 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 type CommandRow = {
   commandId: string;
   commandType: string;
+  idempotencyKey: string | null;
   sessionId: string | null;
   status: string;
   attempts: number;
@@ -45,6 +46,7 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
   return {
     commandId: PROMPT_ID,
     commandType: 'continue_session',
+    idempotencyKey: `prompt:${SESSION_ID}:q_1`,
     sessionId: SESSION_ID,
     status: 'queued',
     attempts: 0,
@@ -706,6 +708,7 @@ describe('POST .../prompts/:promptId/retry', () => {
     expect(commandTable[0].result).toEqual({ promoted: true });
     expect(commandTable[0].payload.remintOnDelivery).toBe(true);
     expect(commandTable[0].payload.wireMessageId).toBe(WIRE_ID);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
   });
 
   test('404s a prompt that is not retryable', async () => {

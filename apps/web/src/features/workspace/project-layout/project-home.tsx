@@ -12,7 +12,9 @@ import {
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -62,6 +64,18 @@ export interface ProjectHomeSendOptions extends ComposerOptions {
   sandbox_slug?: string;
 }
 
+/** The bell's icon and count, shared by its anchor and its pre-`account_id` state. */
+function AccessRequestsBellBody({ count }: { count: number }) {
+  return (
+    <>
+      <Bell className="size-4" />
+      <Badge size="xs" variant="new" className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums">
+        {count}
+      </Badge>
+    </>
+  );
+}
+
 export function ProjectHome({
   projectId,
   onSend,
@@ -100,7 +114,6 @@ export function ProjectHome({
   }, [metaSelected]);
 
   const showSandboxPicker = sandboxItems.length >= 1;
-  const router = useRouter();
   // `GET /projects/:id/access-requests` asserts project.members.manage
   // (`apps/api/src/projects/routes/r6.ts`), so firing it for a plain member is
   // a guaranteed 403 for a bell they could never act on anyway. Probe the leaf
@@ -131,6 +144,12 @@ export function ProjectHome({
     ...contract('config'),
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
+  // Resolved during render so the bell is an anchor and Next holds its payload
+  // in the segment cache. `account_id` arrives on a different query than the
+  // count, so the bell can paint before the destination exists.
+  const accessRequestsHref = accountId
+    ? `/accounts/${accountId}?tab=access-projects&project=${projectId}`
+    : null;
 
   const handleSend = useCallback(
     (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
@@ -193,26 +212,31 @@ export function ProjectHome({
           <Hint
             label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
           >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="bg-background/80 relative backdrop-blur-sm"
-              onClick={() =>
-                accountId &&
-                router.push(`/accounts/${accountId}?tab=access-projects&project=${projectId}`)
-              }
-              aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
-            >
-              <Bell className="size-4" />
-              <Badge
-                size="xs"
-                variant="new"
-                className="absolute -top-1 -right-1 min-w-5 px-1 tabular-nums"
+            {accessRequestsHref ? (
+              <Button
+                asChild
+                variant="ghost"
+                size="icon"
+                className="bg-background/80 relative backdrop-blur-sm"
+                aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
               >
-                {pendingAccessCount}
-              </Badge>
-            </Button>
+                <Link href={accessRequestsHref} prefetch>
+                  <AccessRequestsBellBody count={pendingAccessCount} />
+                </Link>
+              </Button>
+            ) : (
+              // The destination needs `account_id`. Until it lands the bell is
+              // inert, exactly as it was before — never a broken href.
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="bg-background/80 relative backdrop-blur-sm"
+                aria-label={`${pendingAccessCount} pending access request${pendingAccessCount === 1 ? '' : 's'}`}
+              >
+                <AccessRequestsBellBody count={pendingAccessCount} />
+              </Button>
+            )}
           </Hint>
         </div>
       ) : null}
@@ -608,8 +632,6 @@ export const PROJECT_SETUP_TILE_ACTIONS: readonly string[] = [
 ];
 
 function ProjectHomeSections({ projectId }: { projectId: string }) {
-  const router = useRouter();
-
   // One batched probe for every leaf the six tiles name — not one hook per
   // tile, which would fan out six `/effective` GETs on a page that already
   // fires nine of them.
@@ -645,6 +667,16 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
     <div className="flex w-full max-w-3xl flex-wrap items-center justify-center gap-2">
       {tiles.map((tile) => {
         const { icon: TileIcon, title, desc, section, href } = tile;
+        // Resolved during render, not inside the click handler, so the tile is
+        // an anchor Next can prefetch. Only "Your team" returns undefined, and
+        // only while `account_id` is still loading — skip it rather than render
+        // a tile that swallows the click.
+        const target = href
+          ? href(projectId, accountId)
+          : isCapabilityTabKey(section)
+            ? capabilityTabHref(projectId, section)
+            : projectSettingsSectionHref(projectId, section);
+
 
         return (
           // Keyed by title, not by section: two tiles land on the Connectors
@@ -652,20 +684,40 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
           // section key is no longer unique across this list.
           <Hint key={title} label={desc} side="top">
             <Button
+              // Only "Your team" can lack a target, and only while
+              // `qk.project.detail` is still in flight — which is EVERY time
+              // inside the instant session shell, since that surface has no
+              // project-detail query of its own. Dropping the tile from the DOM
+              // meanwhile reflowed the other five across a `flex-wrap` row.
+              //
+              // So it keeps its place and simply carries no anchor yet: same
+              // box, same size, click inert, exactly as before this row became
+              // anchors. NOT `disabled` — `project-home.test.tsx` pins the rule
+              // that a tile is hidden on a received denial and is never shown
+              // greyed out while a read is still in flight.
+              asChild={Boolean(target)}
               variant="outline"
               size="sm"
-              onClick={() => {
-                const target = href
-                  ? href(projectId, accountId)
-                  : isCapabilityTabKey(section)
-                    ? capabilityTabHref(projectId, section)
-                    : projectSettingsSectionHref(projectId, section);
-                if (target) router.push(target);
-              }}
               className="bg-background/60 gap-1.5 rounded-md backdrop-blur-sm"
             >
-              <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
-              {title}
+              {/* Intent-gated, not mount-gated. Six tiles render here, and a
+                  forced `prefetch` would issue six dynamic RSC renders of six
+                  capability routes on every project-home paint for a grid most
+                  users never touch — the same flood `HoverPrefetchLink` was
+                  built to stop in the sidebar (21 RSC fetches per session
+                  open). Hover/focus/touch arms it, which still lands
+                  100-300ms before the click. */}
+              {target ? (
+                <HoverPrefetchLink href={target} prefetch>
+                  <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
+                  {title}
+                </HoverPrefetchLink>
+              ) : (
+                <>
+                  <TileIcon className="text-muted-foreground size-4.5 shrink-0" />
+                  {title}
+                </>
+              )}
             </Button>
           </Hint>
         );

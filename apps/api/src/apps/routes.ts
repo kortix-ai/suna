@@ -1,3 +1,4 @@
+import { revokeAppViewerTokens } from './viewer';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
@@ -328,6 +329,7 @@ const AppAccessSchema = z.object({
   member_ids: z.array(z.string().uuid()).max(100).default([]),
   group_ids: z.array(z.string().uuid()).max(100).default([]),
   password_configured: z.boolean(),
+  viewer_token_scope: z.enum(['off', 'identity', 'api']),
 });
 
 projectsApp.openapi(
@@ -355,6 +357,7 @@ projectsApp.openapi(
         member_ids: z.array(z.string().uuid()).max(100).optional(),
         group_ids: z.array(z.string().uuid()).max(100).optional(),
         password: z.string().min(8).max(256).optional(),
+        viewer_token_scope: z.enum(['off', 'identity', 'api']).optional(),
       }) } } },
     },
     responses: { 200: json(AppAccessSchema, 'App access policy'), ...errors(400, 403, 404) },
@@ -391,6 +394,14 @@ projectsApp.openapi(
       memberIds,
       groupIds,
       password: body.password,
+      viewerTokenScope: body.viewer_token_scope,
+    });
+    // Every viewer token this App minted dies with the old policy. Narrowing
+    // access has to take effect NOW, not in up to an hour: the cookie is
+    // revision-checked on the next request, and this closes the same door on
+    // the token an App is already holding.
+    await revokeAppViewerTokens(current.appId).catch((error) => {
+      console.warn(`[apps] viewer-token revoke failed for ${current.appId}:`, error);
     });
     return c.json(await serializeAppAccessPolicy(row));
   },

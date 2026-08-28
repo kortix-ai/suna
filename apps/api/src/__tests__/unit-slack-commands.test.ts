@@ -71,9 +71,9 @@ mock.module('../llm-gateway/models/picker', () => ({
         managed: false,
         hint: 'Most capable',
       },
-      { id: 'kortix/glm-5.2', label: 'GLM 5.2', provider: 'kortix', managed: true, hint: null },
+      { id: 'kortix/glm-5.3-flash', label: 'GLM 5.3 Flash', provider: 'kortix', managed: true, hint: null },
     ],
-    projectDefault: { model: 'kortix/glm-5.2', source: 'project', label: 'GLM 5.2' },
+    projectDefault: { model: 'kortix/glm-5.3-flash', source: 'project', label: 'GLM 5.3 Flash' },
   }),
   labelForModelRef: (id: string) =>
     id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id,

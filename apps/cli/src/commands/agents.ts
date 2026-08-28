@@ -85,7 +85,7 @@ kortix.yaml on the project's default branch.
 Subcommands:
   ls [--json]                     Show every agent's pinned model + the fallback
                                   default. (Alias: \`models\`.)
-  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.2).
+  model <agent> <model-id>        Pin an agent to a plain model id (e.g. glm-5.3-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
   default --show [--json]         Print the current default agent.
@@ -103,7 +103,7 @@ Scope options (all replace, none merge):
 Config options:
   --file <path>                   A JSON file holding the WHOLE block. \`-\` = stdin.
   --set <key>=<value>             Repeatable. Dotted path, e.g.
-                                  \`opencode.model=glm-5.2\`, \`enabled=false\`,
+                                  \`opencode.model=glm-5.3-flash\`, \`enabled=false\`,
                                   \`connectors=["slack"]\`. The value is parsed as
                                   JSON when it parses, else kept as a string.
 
@@ -211,7 +211,7 @@ export async function runAgents(argv: string[]): Promise<number> {
           return 0;
         }
         const model = positional[1];
-        if (!model) return missing('a plain model id (e.g. glm-5.2) — or --clear');
+        if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
         await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
         process.stdout.write(
           `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,

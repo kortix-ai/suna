@@ -42,7 +42,7 @@ describe('the identity a badged row is decided by', () => {
    * quietly loses its badge — no error, no failing render.
    */
   test('wireToModelKey keeps the whole wire id in modelID', () => {
-    expect(wireToModelKey('glm-5.2')).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
+    expect(wireToModelKey('glm-5.3-flash')).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
   });
 
   test('a BYOK provider/model wire id is NOT split across the two fields', () => {
@@ -53,7 +53,7 @@ describe('the identity a badged row is decided by', () => {
   });
 
   test('the round trip a row comparison depends on holds for both id shapes', () => {
-    for (const wire of ['glm-5.2', 'anthropic/claude-opus-4-8', 'us.anthropic.claude-opus-4-8']) {
+    for (const wire of ['glm-5.3-flash', 'anthropic/claude-opus-4-8', 'us.anthropic.claude-opus-4-8']) {
       expect(wireToModelKey(wire).modelID).toBe(wire);
     }
   });

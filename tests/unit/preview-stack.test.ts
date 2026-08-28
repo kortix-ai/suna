@@ -11,10 +11,23 @@ const SHA = 'a'.repeat(40);
 
 describe('ephemeral self-host preview stack', () => {
   it('routes every public surface through one origin', () => {
-    const caddy = buildPreviewCaddyfile();
+    const caddy = buildPreviewCaddyfile('preview.example.test');
     expect(caddy).toContain(':8080');
     expect(caddy).toContain('@api path /v1*');
     expect(caddy).toContain('reverse_proxy kortix-api:8008');
+    // Every API route mounted outside `/v1` in `apps/api/src/index.ts`. Without
+    // these the shared preview origin sends them to the frontend, which answers
+    // 307 -> /auth (SYS-1/8/9, SCIM-1..5, GW-1/8/10/12, SEC-J all failed on it).
+    for (const path of [
+      '/health',
+      '/health/*',
+      '/metrics',
+      '/scim/v2/*',
+      '/internal/*',
+      '/.well-known/oauth-authorization-server',
+    ]) {
+      expect(caddy.split('\n').find((line) => line.startsWith('  @api path '))).toContain(path);
+    }
     expect(caddy).toContain('@supabase path /auth/v1* /rest/v1* /storage/v1*');
     expect(caddy).toContain('reverse_proxy supabase-kong:8000');
     expect(caddy).toContain('handle_path /_gateway/*');
@@ -24,6 +37,35 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('handle_path /_mailpit/*');
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
+  });
+
+  it('accepts either a GitHub App or a PAT as managed-git configuration', () => {
+    const base = [
+      'POSTGRES_PASSWORD=p',
+      'SUPABASE_ANON_KEY=a',
+      'SUPABASE_SERVICE_ROLE_KEY=s',
+      'INTERNAL_SERVICE_KEY=i',
+    ].join('\n');
+    const stack = { origin: 'https://x.example.test', sha: SHA, apiImage: 'a', gatewayImage: 'g', frontendImage: 'f' };
+    const app = {
+      KORTIX_GITHUB_APP_ID: '1',
+      KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
+      KORTIX_GITHUB_APP_SLUG: 's',
+      MANAGED_GIT_GITHUB_INSTALL_ID: '2',
+      MANAGED_GIT_GITHUB_OWNER: 'o',
+    };
+    // The App shape still works unchanged.
+    expect(applyPreviewEnvironment(base, stack, app).testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
+    // A PAT alone is enough — an App that lacks `administration: write` cannot
+    // create a repo, and before this the preview had no way to work around it.
+    const pat = { MANAGED_GIT_GITHUB_OWNER: 'o', MANAGED_GIT_GITHUB_TOKEN: 't' };
+    const patEnv = applyPreviewEnvironment(base, stack, pat);
+    expect(patEnv.testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
+    expect(patEnv.runtimeEnv).toContain('MANAGED_GIT_GITHUB_TOKEN=t');
+    // An owner on its own still is not managed git.
+    expect(() => applyPreviewEnvironment(base, stack, { MANAGED_GIT_GITHUB_OWNER: 'o' })).toThrow(
+      /MANAGED_GIT_GITHUB_OWNER plus either/,
+    );
   });
 
   it('adds preview ingress, Mailpit, direct database access, and preview-only Auth capacity', () => {
@@ -47,6 +89,7 @@ describe('ephemeral self-host preview stack', () => {
       'KORTIX_GITHUB_APP_SLUG',
       'MANAGED_GIT_GITHUB_INSTALL_ID',
       'MANAGED_GIT_GITHUB_OWNER',
+      'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
     ]);
     expect(() =>
@@ -109,6 +152,19 @@ describe('ephemeral self-host preview stack', () => {
         },
         {},
       ),
-    ).toThrow('complete managed GitHub App configuration');
+    ).toThrow('MANAGED_GIT_GITHUB_OWNER plus either');
+  });
+
+  // 2026-08-27: every Server Action on the preview 500'd with `Invalid Server
+  // Actions request` — surfaced in the browser as minified React error #441 —
+  // because the sandbox ingress sets `x-forwarded-host` to the INTERNAL host
+  // (`*.aec.local`) while the browser's `origin` is the public one, and Next's
+  // CSRF guard compares the two. The whole auth flow was unusable.
+  it('pins the PUBLIC host on the Next upstream for Server Actions', () => {
+    const caddy = buildPreviewCaddyfile('8080-abc.eu-west.sbx.platinum.dev');
+    expect(caddy).toContain('X-Forwarded-Host 8080-abc.eu-west.sbx.platinum.dev');
+    expect(caddy).toContain('X-Forwarded-Proto https');
+    const frontendBlock = caddy.slice(caddy.indexOf('reverse_proxy frontend:3000'));
+    expect(frontendBlock).toContain('X-Forwarded-Host');
   });
 });

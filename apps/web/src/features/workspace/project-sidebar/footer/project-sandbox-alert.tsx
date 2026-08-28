@@ -3,6 +3,7 @@
 import { ArrowClockwiseIcon as RefreshCw } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
@@ -159,13 +160,13 @@ function SandboxAlertContent({
   severity: SandboxAlertSeverity;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const router = useRouter();
   // Sandbox templates is a section of the Customize bar's Settings tab now, so
-  // "Details" is a route, not an overlay open.
-  const openSandboxSection = useCallback(
-    () => router.push(projectSettingsSectionHref(projectId, 'sandbox')),
-    [router, projectId],
-  );
+  // "Details" is a route, not an overlay open — and every "Details" below is an
+  // anchor rather than a handler. `router.push` would run the RSC fetch cold at
+  // click time, and that fetch degrades into a full document load whenever it
+  // answers wrong. This card only renders when the project is already
+  // unhealthy, which is the worst moment to reboot the SPA.
+  const sandboxSectionHref = projectSettingsSectionHref(projectId, 'sandbox');
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   // The alert TEXT is information a plain member needs — "new sessions can't
   // start until this image builds" explains why the composer is refusing them.
@@ -191,13 +192,10 @@ function SandboxAlertContent({
       <SidebarAlertBody>
         <SidebarAlertText>{describeSandboxSeverity(severity, status)}</SidebarAlertText>
         {!failure && severity !== 'building' && canOpenDetails && (
-          <Button
-            variant="transparent"
-            size="sm"
-            className={cn(DETAILS_LINK, 'mt-1')}
-            onClick={openSandboxSection}
-          >
-            Details
+          <Button asChild variant="transparent" size="sm" className={cn(DETAILS_LINK, 'mt-1')}>
+            <Link href={sandboxSectionHref} prefetch>
+              Details
+            </Link>
           </Button>
         )}
       </SidebarAlertBody>
@@ -216,12 +214,14 @@ function SandboxAlertContent({
             ) : null}
             {canOpenDetails ? (
               <Button
+                asChild
                 variant="transparent"
                 size="sm"
                 className={cn(DETAILS_LINK, 'ml-auto')}
-                onClick={openSandboxSection}
               >
-                Details
+                <Link href={sandboxSectionHref} prefetch>
+                  Details
+                </Link>
               </Button>
             ) : null}
           </div>
@@ -239,8 +239,10 @@ function SandboxAlertContent({
         <SidebarAlertActions>
           {severity === 'building' ? (
             canOpenDetails ? (
-              <Button size="sm" variant="outline" className="w-full" onClick={openSandboxSection}>
-                Details
+              <Button asChild size="sm" variant="outline" className="w-full">
+                <Link href={sandboxSectionHref} prefetch>
+                  Details
+                </Link>
               </Button>
             ) : null
           ) : (

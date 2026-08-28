@@ -301,7 +301,7 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   await kortix.project('PID123').gateway.routing.set({
     defaultModel: 'codex/gpt-5.6-sol',
     visionModel: null,
-    defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+    defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
     rules: [],
   });
   expect(last().method).toBe('PUT');
@@ -901,7 +901,7 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
       return jsonResponse({
         session_id: 'SESS-INHERITED',
         agent_name: 'kortix',
-        metadata: { opencode_model: 'kortix/glm-5.2' },
+        metadata: { opencode_model: 'kortix/glm-5.3-flash' },
       });
     }
     return jsonResponse({ ok: true });
@@ -920,13 +920,13 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
   );
   expect(promptCall?.body).toMatchObject({
     agent: 'kortix',
-    model: { providerID: 'kortix', modelID: 'glm-5.2' },
+    model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
     parts: [{ type: 'text', text: 'hello from inherited state' }],
   });
 });
 
 test('changeModel invalidates the persisted default before the next send', async () => {
-  let persistedModel = 'kortix/glm-5.2';
+  let persistedModel = 'kortix/glm-5.3-flash';
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
     const url = requestUrl(input);
     const request = input instanceof Request ? input : null;
@@ -973,7 +973,7 @@ test('changeModel invalidates the persisted default before the next send', async
   );
   expect(prompts.map((call) => call.body)).toEqual([
     expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
     }),
     expect.objectContaining({
       model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },

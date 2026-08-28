@@ -39,7 +39,11 @@ describe('kortix-projects SQL safety', () => {
 });
 
 describe('kortix-projects authorization safety', () => {
-  test('session inventory requires project.session.read before querying sessions', () => {
+  // The inventory read moved out of the route into projects/lib/session-list.ts
+  // (`loadProjectSessionInventory`) so a batch/bundle route can reuse the exact
+  // same queries. The invariant is unchanged and still enforced here: the
+  // project.session.read gate must run BEFORE anything reads session rows.
+  test('session inventory requires project.session.read before reading sessions', () => {
     const source = readProjectRoute('project-sessions.ts');
     const routeStart = source.indexOf('// GET /v1/projects/:projectId/sessions');
     const routeEnd = source.indexOf("path: '/{projectId}/sessions/{sessionId}'", routeStart);
@@ -47,11 +51,31 @@ describe('kortix-projects authorization safety', () => {
     const capabilityGate = route.indexOf(
       'await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);',
     );
-    const sessionQuery = route.indexOf('.from(projectSessions)');
+    const inventoryRead = route.indexOf('loadProjectSessionInventory({');
 
     expect(routeStart).toBeGreaterThanOrEqual(0);
     expect(routeEnd).toBeGreaterThan(routeStart);
     expect(capabilityGate).toBeGreaterThanOrEqual(0);
-    expect(sessionQuery).toBeGreaterThan(capabilityGate);
+    expect(inventoryRead).toBeGreaterThan(capabilityGate);
+    // The route itself must not have grown a second, ungated session read.
+    expect(route).not.toContain('.from(projectSessions)');
+  });
+
+  // `loadProjectSessionInventory` carries no request context and therefore no
+  // gate of its own — it is authorized by its caller. Keep it that way: an
+  // inventory helper that could authorize itself would invite a caller to skip
+  // the leaf assert, which is exactly the regression the test above guards.
+  test('the extracted inventory read stays caller-authorized and tenant-scoped', () => {
+    const source = readFileSync(
+      join(import.meta.dir, '../projects/lib/session-list.ts'),
+      'utf8',
+    );
+
+    expect(source).toContain('eq(projectSessions.projectId, input.projectId)');
+    expect(source).toContain('eq(projectSessions.accountId, input.accountId)');
+    expect(source).toContain('eq(sessionSandboxes.projectId, input.projectId)');
+    expect(source).toContain('eq(sessionSandboxes.accountId, input.accountId)');
+    expect(source).not.toContain('assertProjectCapability');
+    expect(source).not.toContain('db.execute(`');
   });
 });

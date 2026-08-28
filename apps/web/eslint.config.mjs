@@ -2,6 +2,8 @@ import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import nextTypescript from 'eslint-config-next/typescript';
 import { readFileSync } from 'node:fs';
 
+import navContract from './eslint-rules/no-router-push-for-static-href.mjs';
+
 const sdkBoundaryBaseline = JSON.parse(
   readFileSync(new URL('./src/sdk-boundary-baseline.json', import.meta.url), 'utf8'),
 );
@@ -19,12 +21,20 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
+    plugins: { 'nav-contract': navContract },
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       'react/no-unescaped-entities': 'off',
       'react-hooks/exhaustive-deps': 'warn',
       '@next/next/no-img-element': 'warn',
+      // Nav contract. Both rules exist for one reason: a click that leaves the
+      // App Router — or that runs a cold RSC fetch — can become a full page
+      // reload. See eslint-rules/no-router-push-for-static-href.mjs for the
+      // four Next 16.3 triggers. Errors, not warnings: as warnings they sat
+      // buried under ~400 react-hooks messages and nobody ever saw them.
+      '@next/next/no-location-assign-relative-destination': 'error',
+      'nav-contract/no-router-push-for-static-href': 'error',
       '@typescript-eslint/no-empty-object-type': 'off',
       'prefer-const': 'warn',
       'no-restricted-imports': [

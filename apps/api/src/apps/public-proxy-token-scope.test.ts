@@ -16,6 +16,7 @@
  * token may act only on its bound project.
  */
 import { describe, expect, mock, test } from 'bun:test';
+import * as realCrypto from '../shared/crypto';
 
 process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.KORTIX_APPS_BASE_DOMAIN = 'apps.kortix.com';
@@ -41,6 +42,9 @@ const BINDING_BY_TOKEN_ID = new Map(
 );
 
 mock.module('../shared/crypto', () => ({
+  // Spread the real module: mock.module replaces it WHOLESALE, and the auth
+  // middleware now reaches shared/crypto through oauth/token-hash too.
+  ...realCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
   isKortixToken: (t: string) => t.startsWith('kortix_'),

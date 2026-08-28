@@ -1,0 +1,34 @@
+# Cloudflare Worker that serves `pi.kortix.com` — the stable name for the
+# pi-worker branch environment, the way dev.kortix.com is for dev.
+#
+# Deploy:
+#   wrangler deploy --var TARGET_ORIGIN:https://8080-<sandbox>.eu-west.sbx.platinum.dev
+#
+# `custom_domain = true` makes Cloudflare create and own the DNS record and the
+# certificate for pi.kortix.com, so there is no separate DNS step.
+#
+# Auth: CLOUDFLARE_APPS_EDGE_API_TOKEN (Account Workers Scripts Write; kortix.com
+# zone DNS Write, Workers Routes Write, SSL and Certificates Write, Zone Read) —
+# the same token configure-preview-edge.yml uses.
+#
+# This lives on main because deploy-preview.yml checks out the DEFAULT BRANCH; a
+# worker that exists only on a feature branch cannot be re-pointed by it.
+#
+# TARGET_ORIGIN is re-published by deploy-preview.yml on every deploy of the
+# branch whose PREVIEW_PUBLIC_ORIGINS entry names this worker
+# (`pi-worker=https://pi.kortix.com=pi-router`), so a rebuilt sandbox re-points
+# the name automatically. The empty value below is only the bootstrap default
+# for a manual first deploy; the Worker answers 503 until it is set.
+
+main = "worker.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = false
+account_id = "9785405a992435bb0c7bd19f9b6d26d5"
+
+name = "kortix-pi-router"
+routes = [
+  { pattern = "pi.kortix.com", custom_domain = true },
+]
+
+[vars]
+TARGET_ORIGIN = ""

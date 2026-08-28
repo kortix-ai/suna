@@ -9,9 +9,10 @@
  * every line below traces to shipped code, and the citation is in the comment
  * above it. This is the page an enterprise reviewer will hold us to.
  *
- *  - SOC 2 is IN PROGRESS. Never "compliant", never "certified". No ISO, no
- *    HIPAA — we do not hold them. GDPR is a posture we run, not a third-party
- *    certificate, so it carries no "in progress" state.
+ *  - SOC 2 Type I is held (certified — the report has landed). SOC 2 Type II is
+ *    IN PROGRESS — never "compliant", never "certified" for it until its report
+ *    lands. No ISO, no HIPAA — we do not hold them. GDPR is a posture we run,
+ *    not a third-party certificate, so it carries no "in progress" state.
  *  - Never name a licence — "open source" and stop.
  *  - Say "cloud computer" / "sandbox". NEVER "container".
  *  - No invented metrics, customers, latency, or uptime numbers.
@@ -368,9 +369,10 @@ export const audit = {
 } as const;
 
 /* ── 7 · deployment + posture ──────────────────────────────────────────────
-   HONESTY GATE. SOC 2 Type I and Type II are IN PROGRESS. GDPR is a posture we
-   operate, not a pending third-party certificate, so it has no state string.
-   No ISO. No HIPAA. Do not add a badge here without a report to point at. */
+   HONESTY GATE. SOC 2 Type I is held (the report has landed). SOC 2 Type II is
+   IN PROGRESS. GDPR is a posture we operate, not a pending third-party
+   certificate, so it has no state string. No ISO. No HIPAA. Do not add a badge
+   here without a report to point at. */
 export const posture = {
   eyebrow: 'Deployment & posture',
   title: 'Run it where your policy says it has to run.',
@@ -396,7 +398,7 @@ export const posture = {
     label: 'Where we actually stand',
     /** Never move an item out of "In progress" without the report in hand. */
     items: [
-      { k: 'SOC 2 Type I', v: 'In progress' },
+      { k: 'SOC 2 Type I', v: 'Certified' },
       { k: 'SOC 2 Type II', v: 'In progress' },
       { k: 'GDPR', v: 'Operated' },
     ],

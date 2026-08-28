@@ -1,5 +1,10 @@
 packages:
   - 'apps/*'
+  # Standalone bun package (own bun.lock, installed by its Docker build stage
+  # and dev tooling). Excluded from pnpm because its pinned @earendil-works/pi
+  # release is younger than the workspace's 72h minimumReleaseAge cooldown;
+  # fold it into the workspace once the pin ages past the window.
+  - '!apps/kortix-worker'
   - 'packages/*'
   - 'tests'
 

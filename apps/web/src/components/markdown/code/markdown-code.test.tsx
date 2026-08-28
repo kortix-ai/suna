@@ -6,6 +6,7 @@ import {
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { isHexColor } from './inline-chip';
 import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
 
 const render = (props: MarkdownCodeProps) => renderToStaticMarkup(<MarkdownCode {...props} />);
@@ -115,6 +116,84 @@ describe('MarkdownCode — inline code', () => {
     // Neither of the ClickableInlineCode treatments applies to a bare command.
     expect(markup).not.toContain('role="button"');
     expect(markup).not.toContain('href');
+  });
+
+  test('a hex colour shows the colour it names', () => {
+    // `#0ea5e9` in prose is a value nobody can read — the reader has to paste
+    // it somewhere to find out whether the agent picked a blue or a green.
+    const markup = render({ children: '#0ea5e9' });
+
+    expect(markup.startsWith('<code')).toBe(true);
+    // The hex itself stays literal: it is what gets copied into a stylesheet.
+    expect(markup).toContain('#0ea5e9');
+    expect(markup).toContain('background-color:#0ea5e9');
+    // The square carries no information the hex does not.
+    expect(markup).toContain('aria-hidden="true"');
+  });
+
+  test('every CSS hex form is recognised, and nothing else is', () => {
+    for (const hex of ['#fff', '#FFFF', '#0ea5e9', '#0EA5E9FF']) {
+      expect(isHexColor(hex)).toBe(true);
+    }
+    // A swatch claims the WHOLE token is a colour.
+    for (const notHex of ['#ff0000-ish', 'color: #fff', '#12345', '#ghijkl', '#']) {
+      expect(isHexColor(notHex)).toBe(false);
+    }
+  });
+
+/**
+ * The `<code>` chip's own class attribute.
+ *
+ * The chip and the swatch inside it have separate alignment rules — the chip
+ * takes the paragraph's baseline, the swatch takes the chip's — so a
+ * whole-markup match would let one element's classes answer for the other.
+ */
+function chipClass(html: string): string {
+  const found = html.match(/<code\b[^>]*\bclass="([^"]*)"/);
+  if (!found) throw new Error('no <code> chip with a class in the rendered markup');
+  return found[1];
+}
+
+  test('the chip sits ON the line — no vertical-align, no flex box', () => {
+    // Both knocked it out of the sentence. `align-middle` centres the box on
+    // the parent's baseline plus half its x-height, and the chip is
+    // `text-[0.8rem]` inside `text-base` prose — so the chip's own baseline
+    // landed below the surrounding text and it read as sagging. `inline-flex`
+    // makes the chip atomic: it takes its height from the flex line box
+    // (`code { line-height: 1.2 }`) instead of the glyphs, and a long URL can
+    // no longer wrap the way `[overflow-wrap:anywhere]` promises.
+    for (const markup of [render({ children: 'npm run dev' }), render({ children: '#0ea5e9' })]) {
+      expect(chipClass(markup)).not.toContain('align-');
+      expect(chipClass(markup)).not.toContain('inline-flex');
+      expect(chipClass(markup)).not.toContain('text-center');
+    }
+  });
+
+  test('the swatch stands on the baseline, sized in the text\'s own em', () => {
+    // The baseline is the anchor: an inline-block whose `overflow` is not
+    // `visible` takes its baseline from the bottom margin edge, so the square
+    // and the hex beside it start on the same line. Roobert Mono's capHeight
+    // is 700/1000 = 0.70em, so at 0.8em the square stands a tenth of an em
+    // proud of the digits — a deliberate weight, not a drift.
+    //
+    // Not `align-middle`: `vertical-align: middle` centres on half the
+    // X-HEIGHT (0.504em → 0.252em), the middle of LOWERCASE text, which sank
+    // the square 0.148em below the baseline of its own hex. Not `size-3`
+    // either — a fixed 12px square in a 12.8px font is the whole em box.
+    const markup = render({ children: '#0ea5e9' });
+
+    expect(markup).toContain('inline-block');
+    expect(markup).toContain('align-baseline');
+    expect(markup).toContain('size-[0.8em]');
+    expect(markup).not.toContain('align-middle');
+    expect(markup).not.toContain('size-3');
+  });
+
+  test('a non-colour token keeps the plain chip — no swatch', () => {
+    const markup = render({ children: '#hashtag' });
+
+    expect(markup).not.toContain('aria-hidden="true"');
+    expect(markup).toContain('#hashtag');
   });
 
   test('inline code holding a setup-link path renders the setup chip', () => {

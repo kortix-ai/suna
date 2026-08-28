@@ -52,10 +52,10 @@ describe('providerFlagship', () => {
 
 describe('labelForModelRef', () => {
   test('managed ref (kortix/<id>) → the managed display name', () => {
-    const glm = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'glm-5.2');
-    expect(labelForModelRef('kortix/glm-5.2')).toBe(glm!.name);
+    const glm = RUNTIME_MANAGED_MODELS.find((m) => m.id === 'glm-5.3-flash');
+    expect(labelForModelRef('kortix/glm-5.3-flash')).toBe(glm!.name);
     // bare managed id resolves too
-    expect(labelForModelRef('glm-5.2')).toBe(glm!.name);
+    expect(labelForModelRef('glm-5.3-flash')).toBe(glm!.name);
   });
 
   test('an unknown ref falls back to the raw id (never throws)', () => {
@@ -109,7 +109,7 @@ describe('projectPickerCatalog', () => {
   test('keeps managed and connected-provider models without returning the full runtime catalog', () => {
     const full = {
       auto: { name: 'Auto' },
-      'glm-5.2': { name: 'GLM 5.2' },
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash' },
       'anthropic/claude-a': { name: 'Claude A' },
       'anthropic/claude-b': { name: 'Claude B' },
       'openai/gpt-a': { name: 'GPT A' },
@@ -121,7 +121,7 @@ describe('projectPickerCatalog', () => {
         'openai/gpt-a',
       ]),
     ).toEqual({
-      'glm-5.2': full['glm-5.2'],
+      'glm-5.3-flash': full['glm-5.3-flash'],
       'anthropic/claude-a': full['anthropic/claude-a'],
       'anthropic/claude-b': full['anthropic/claude-b'],
       'openai/gpt-a': full['openai/gpt-a'],

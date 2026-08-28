@@ -55,7 +55,7 @@ function sessionRow(sessionId = SESSION) {
     agent_name: 'kortix',
     status: 'running',
     error: null,
-    metadata: { opencode_model: 'kortix/glm-5.2' },
+    metadata: { opencode_model: 'kortix/glm-5.3-flash' },
     sharing: { mode: 'private', ownerId: 'user-1' },
     created_at: '2026-01-01T00:00:00.000Z',
     updated_at: '2026-01-01T00:00:00.000Z',
@@ -649,7 +649,7 @@ describe('kortix sessions chat --queue', () => {
     expect(body.parts).toEqual([{ type: 'text', text: 'ship the thing' }]);
     expect(body.overrides).toEqual({
       agent: 'kortix',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
     });
     expect(typeof body.client_sent_at_ms).toBe('number');
     expect(JSON.parse(r.stdout).prompt_id).toBe(PROMPT_ROW);
@@ -670,16 +670,16 @@ describe('kortix sessions chat --queue', () => {
 
 describe('kortix sessions model', () => {
   test('PUTs the model and reports the live application', async () => {
-    const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.2', ...P], config);
+    const r = await runCli(['sessions', 'model', SESSION, 'kortix/glm-5.3-flash', ...P], config);
     expect(r.code).toBe(0);
     expect(calls('PUT', `/v1/projects/${PROJECT}/sessions/${SESSION}/model`)).toEqual([
       {
         method: 'PUT',
         path: `/v1/projects/${PROJECT}/sessions/${SESSION}/model`,
-        body: { opencode_model: 'kortix/glm-5.2' },
+        body: { opencode_model: 'kortix/glm-5.3-flash' },
       },
     ]);
-    expect(r.stdout).toContain('Now running kortix/glm-5.2');
+    expect(r.stdout).toContain('Now running kortix/glm-5.3-flash');
   });
 
   test('push_failed is an error, not a success', async () => {
@@ -706,8 +706,8 @@ describe('kortix sessions compact', () => {
     const r = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);
     expect(r.code).toBe(0);
     const call = calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)[0];
-    expect(call?.body).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
-    expect(JSON.parse(r.stdout).model).toBe('kortix/glm-5.2');
+    expect(call?.body).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+    expect(JSON.parse(r.stdout).model).toBe('kortix/glm-5.3-flash');
   });
 
   test('a session with no resolvable model exits 1 instead of guessing one', async () => {

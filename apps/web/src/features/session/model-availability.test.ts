@@ -29,13 +29,13 @@ describe('session model availability', () => {
   });
 
   test('removes a selected model that is not usable for the account', () => {
-    const selectedModel = { providerID: 'kortix', modelID: 'glm-5.2' };
+    const selectedModel = { providerID: 'kortix', modelID: 'glm-5.3-flash' };
 
     expect(resolveAvailableSelectedModel(selectedModel, () => false)).toBeNull();
   });
 
   test('keeps a selected model that is usable for the account', () => {
-    const selectedModel = { providerID: 'kortix', modelID: 'glm-5.2' };
+    const selectedModel = { providerID: 'kortix', modelID: 'glm-5.3-flash' };
 
     expect(resolveAvailableSelectedModel(selectedModel, () => true)).toEqual(selectedModel);
   });

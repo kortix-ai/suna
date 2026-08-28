@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { WIRE_ID_TIME_SCALE, wireIdTime } from '../wire-message-id';
 import type { PlacementTipMessage } from './forwarded-placement';
-import { type HoldSettleDeps, settleInboxHoldAfterStop } from './inbox-hold-settle';
+import {
+  type HoldSettleDeps,
+  settleInboxHoldAfterStop,
+  stopPausedOnWireScope,
+} from './inbox-hold-settle';
 
 const id = (ms: number, tail: string) =>
   `msg_${((BigInt(ms) * WIRE_ID_TIME_SCALE + BigInt(1)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}${tail}`;
@@ -145,5 +150,57 @@ describe('settleInboxHoldAfterStop', () => {
     expect(out.unreadable).toBe(true);
     expect(calls.hold).toHaveLength(0);
     expect(calls.close).toHaveLength(0);
+  });
+
+  test('a released Stop delivers a held-back prompt exactly once', async () => {
+    // The whole point of holding it back: after this settle the row is an
+    // ordinary queued+held row and OpenCode no longer holds a copy — so the
+    // release POSTs the prompt for the first and only time.
+    const tip = tipOf([{ id: u1, role: 'user' }, { id: u2, role: 'user' }]);
+    const { deps, calls } = fakeDeps({
+      tips: [tip],
+      listStopPaused: async () => [{ commandId: 'c2', wireIds: [u2] }],
+    });
+    const out = await settleInboxHoldAfterStop('s', deps);
+    expect(out.heldBack).toBe(1);
+    // Exactly one copy taken out, exactly one row re-queued, nothing closed as
+    // delivered (which would have made the release a no-op instead).
+    expect(calls.remove).toEqual([['s', u2]]);
+    expect(calls.hold).toEqual([['c2']]);
+    expect(calls.close).toHaveLength(0);
+  });
+});
+
+/**
+ * The predicate `listStopPaused` runs. Every behavioural test above stubs
+ * `listStopPaused`, so the live query was the one part of this module nothing
+ * could catch regressing — and it HAD regressed: it excluded
+ * `result.held = 'true'`, which is the exact marker `holdInboxPrompts` writes
+ * on every forwarded row a Stop pauses, moments before this settle starts.
+ */
+describe('stopPausedOnWireScope', () => {
+  const compiled = () => {
+    const q = new PgDialect().sqlToQuery(stopPausedOnWireScope('ses-1')!);
+    return { sql: q.sql.replace(/\s+/g, ' ').trim(), params: q.params };
+  };
+
+  test('does NOT exclude a row the Stop just marked held', () => {
+    // The row this whole module exists for. Excluding it is what made the
+    // release re-POST a prompt OpenCode still held, and the user saw the same
+    // prompt twice.
+    expect(compiled().sql).not.toContain("'held'");
+  });
+
+  test('selects only this session\'s composer prompts that went out recently', () => {
+    const { sql, params } = compiled();
+    // The inbox scope: this session, `continue_session`, and a client message
+    // id (which is what separates a composer prompt from an automation one).
+    expect(params).toContain('ses-1');
+    expect(params).toContain('continue_session');
+    expect(sql).toContain("->>'clientMessageId'");
+    // On the wire, both ways a POST that landed is recorded.
+    expect(sql).toContain("IN ('forwarded', 'delivered')");
+    // Recent only — an old delivered row is history, not a Stop's business.
+    expect(sql).toContain("interval '10 minutes'");
   });
 });
