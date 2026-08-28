@@ -20,6 +20,7 @@ jobs:
       # Workers Routes Write, Transform Rules Write, SSL and Certificates Write,
       # and Zone Read.
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
+      CLOUDFLARE_EDGE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_GLOBAL_API_KEY: ${{ secrets.CLOUDFLARE_GLOBAL_API_KEY }}
       CLOUDFLARE_EMAIL: ${{ secrets.CLOUDFLARE_EMAIL }}
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
@@ -45,8 +46,7 @@ jobs:
           phase="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/rulesets/phases/http_request_firewall_custom/entrypoint"
           current="$({
             curl --fail-with-body --silent --show-error \
-              --header "X-Auth-Email: $CLOUDFLARE_EMAIL" \
-              --header "X-Auth-Key: $CLOUDFLARE_GLOBAL_API_KEY" \
+              --header "Authorization: Bearer $CLOUDFLARE_EDGE_API_TOKEN" \
               "$phase"
           })"
           jq -e '
