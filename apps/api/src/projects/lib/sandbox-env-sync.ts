@@ -1089,6 +1089,35 @@ async function runBounded<T>(
  * Callers that are already restarting the box pay nothing extra; a caller doing
  * this mid-session is interrupting a turn and must say so.
  */
+/**
+ * A push target that exists but is not `active` is a control-plane DIVERGENCE,
+ * not an ordinary miss, and it must say so.
+ *
+ * Every push below used to filter the lookup on `status = 'active'` and return a
+ * bare `'no active sandbox'`, which no caller logged. A session whose row said
+ * `stopped` while its VM was genuinely running — serving prompts the whole time
+ * — therefore received no secret, model or scope push for HOURS, and the only
+ * visible symptom was an agent that could not see a secret the UI insisted it
+ * had (prod 2026-08-27, session b3848cf5). `backend.ts` deliberately refuses to
+ * heal a row whose deadline has expired, so nothing else reconciles this and
+ * nothing else reports it.
+ *
+ * `sessionSandboxes.status` is NOT NULL, so callers guard on a truthy value
+ * only to stay compatible with test doubles that select a narrower row shape.
+ */
+function nonActiveSandboxSkip(
+  what: string,
+  input: { sessionId: string; projectId?: string },
+  status: string,
+): { applied: false; reason: string } {
+  console.warn(`[env-sync] skipping ${what} — sandbox row is not active`, {
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    sandboxStatus: status,
+  });
+  return { applied: false, reason: `sandbox row is '${status}', not active` };
+}
+
 export async function pushSessionAgentConfigToSandbox(input: {
   projectId: string;
   sessionId: string;
@@ -1136,14 +1165,25 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // downgrade to no agents at all. Leave the box as it is.
     if (!compiled) return { applied: false, reason: 'no compiled agent config' };
 
+    // Selected WITHOUT the status filter so a non-active row can be NAMED. The
+    // filtered form returned a bare 'no active sandbox' and the caller logged
+    // nothing, so a session whose row said `stopped` while its VM was genuinely
+    // running — serving prompts the whole time — silently received no secret or
+    // config push for HOURS. Prod 2026-08-27, session b3848cf5: every push
+    // since the secret was created was skipped this way, and the only visible
+    // symptom was an agent that could not see a secret the UI said it had.
     const [row] = await db
-      .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
+      .select({
+        externalId: sessionSandboxes.externalId,
+        config: sessionSandboxes.config,
+        status: sessionSandboxes.status,
+      })
       .from(sessionSandboxes)
-      .where(
-        and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')),
-      )
+      .where(eq(sessionSandboxes.sessionId, input.sessionId))
       .limit(1);
-    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+    if (!row?.externalId) return { applied: false, reason: 'no sandbox for session' };
+    if (row.status && row.status !== 'active')
+      return nonActiveSandboxSkip('agent-config push', input, row.status);
 
     const config = (row.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
@@ -1199,16 +1239,14 @@ export async function pushSessionModelToSandbox(input: {
       .select({
         externalId: sessionSandboxes.externalId,
         config: sessionSandboxes.config,
+        status: sessionSandboxes.status,
       })
       .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sessionId, input.sessionId),
-          eq(sessionSandboxes.status, 'active'),
-        ),
-      )
+      .where(eq(sessionSandboxes.sessionId, input.sessionId))
       .limit(1);
     if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+    if (row.status && row.status !== 'active')
+      return nonActiveSandboxSkip('model push', input, row.status);
 
     const config = (row.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
@@ -1285,16 +1323,14 @@ export async function pushSessionScopeToSandbox(input: {
         externalId: sessionSandboxes.externalId,
         provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
+        status: sessionSandboxes.status,
       })
       .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sessionId, input.sessionId),
-          eq(sessionSandboxes.status, 'active'),
-        ),
-      )
+      .where(eq(sessionSandboxes.sessionId, input.sessionId))
       .limit(1);
     if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+    if (row.status && row.status !== 'active')
+      return nonActiveSandboxSkip('scope push', input, row.status);
 
     const config = (row.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
