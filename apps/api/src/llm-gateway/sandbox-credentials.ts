@@ -32,6 +32,28 @@ export function nativeProviderEnvNames(): string[] {
   return [...providerCredentialEnv()];
 }
 
+/**
+ * Names a model provider claims that users overwhelmingly set for something
+ * else.
+ *
+ * models.dev maps `github-copilot` to `GITHUB_TOKEN`, so every project secret
+ * called `GITHUB_TOKEN` looked like a Copilot BYOK credential. At create time
+ * that guess is wrong far more often than right: people store a GitHub PAT to
+ * clone, push, and open pull requests, not to talk to Copilot. Guessing wrong
+ * stamped the row `broker`/`llm_gateway`, which withheld it from the sandbox —
+ * so the agent could not use the token the user had just added, and the UI gave
+ * no hint why (prod 2026-08-27).
+ *
+ * This ONLY relaxes the create-time default. A user who really is connecting
+ * Copilot still says so explicitly with `strategy`/`consumer`, and nothing here
+ * changes how an already-stamped row is delivered.
+ */
+const DUAL_PURPOSE_CREDENTIAL_ENV = new Set(['GITHUB_TOKEN']);
+
+export function isDualPurposeCredentialEnv(name: string): boolean {
+  return DUAL_PURPOSE_CREDENTIAL_ENV.has(name);
+}
+
 export function isGatewayManagedEnv(name: string): boolean {
   return isManagedEnv(name);
 }

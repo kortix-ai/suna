@@ -16,7 +16,7 @@ import {
   propagateProjectSecretsToActiveSandboxes,
   type ProjectSecretPropagationResult,
 } from '../lib/sandbox-env-sync';
-import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
+import { isDualPurposeCredentialEnv, isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -652,10 +652,16 @@ projectsApp.openapi(
   ) {
     return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
   }
+  // `isGatewayManagedEnv` asks models.dev, which claims `GITHUB_TOKEN` for its
+  // `github-copilot` provider. Defaulting on that alone stamped every
+  // user-created GitHub PAT as a gateway credential and withheld it from the
+  // sandbox. See `isDualPurposeCredentialEnv` — an explicit
+  // `strategy`/`consumer` still opts into the gateway.
   const defaultToGateway =
     requestedStrategy === undefined &&
     requestedConsumer === undefined &&
-    isGatewayManagedEnv(name);
+    isGatewayManagedEnv(name) &&
+    !isDualPurposeCredentialEnv(name);
   const explicitStrategy = (requestedStrategy ?? (defaultToGateway ? 'broker' : undefined)) as
     | 'runtime'
     | 'broker'
