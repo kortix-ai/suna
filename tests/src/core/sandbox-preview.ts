@@ -255,16 +255,30 @@ export function previewSandboxIdentity(input: {
   };
 }
 
+/**
+ * Sandboxes the nightly sweep should delete.
+ *
+ * Both owners are reaped, by DIFFERENT rules, because they promise different
+ * things. An ephemeral preview is pinned to one commit, so a moved head makes it
+ * stale. A branch environment is pinned to a BRANCH and redeployed in place, so
+ * a moved head is its normal state — only the pull request leaving the active
+ * set retires it, which is what closing it or removing the `preview` label does,
+ * and deleting the branch does both.
+ *
+ * `activePullRequests` holds only OPEN pull requests carrying the `preview`
+ * label, so "not in the map" already means "no longer approved".
+ */
 export function selectStalePreviewSandboxIds(
   sandboxes: PreviewSandboxRecord[],
   activePullRequests: ReadonlyMap<number, string>,
 ): string[] {
   return sandboxes
-    .filter((sandbox) => sandbox.metadata?.owner === 'kortix-preview')
     .filter((sandbox) => {
-      const prNumber = Number(sandbox.metadata?.pr_number);
-      const activeSha = activePullRequests.get(prNumber);
-      return !activeSha || activeSha !== sandbox.metadata?.git_sha;
+      const owner = sandbox.metadata?.owner;
+      if (owner !== 'kortix-preview' && owner !== 'kortix-branch-env') return false;
+      const activeSha = activePullRequests.get(Number(sandbox.metadata?.pr_number));
+      if (!activeSha) return true;
+      return owner === 'kortix-preview' && activeSha !== sandbox.metadata?.git_sha;
     })
     .map((sandbox) => sandbox.id);
 }

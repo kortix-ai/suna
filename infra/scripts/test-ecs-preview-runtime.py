@@ -394,18 +394,53 @@ class PreviewTeardown(unittest.TestCase):
         # NEW: one sandbox holds the whole stack, so teardown deletes it on both
         # providers and refuses to touch a sandbox it does not own.
         teardown_action = cli_action("teardown")
-        self.assertIn("teardownPlatinumPreview({ ...platinum, prNumber })", teardown_action)
+        # Both shapes are deleted: the PR-named sandbox always, and the
+        # branch-named one when this pull request runs a persistent preview.
+        self.assertIn(
+            "teardownPlatinumPreview({ ...platinum, prNumber, ...(branchEnv ? { branchEnv } : {}) })",
+            teardown_action,
+        )
         self.assertIn("teardownDaytonaPreview({ ...daytona, prNumber })", teardown_action)
         self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         self.assertIn("sandbox.metadata?.owner === 'kortix-preview' &&", PREVIEW_PROVIDERS)
         self.assertIn("Mark GitHub deployment inactive", teardown)
         self.assertNotIn("branch-scoped Vercel", WORKFLOW)
 
-    def test_a_new_head_sha_invalidates_the_approval(self):
+    def test_a_new_head_sha_redeploys_instead_of_revoking_the_approval(self):
+        # WAS: a push deleted the sandbox AND stripped the `preview` label, so
+        # every push cost a human re-approval and a NEW url. A labelled preview
+        # now stays online until the label comes off or the pull request closes.
+        #
+        # The approval bar is unchanged, only re-expressed: `authorize` still
+        # runs on the push, still accepts SAME-REPOSITORY pull requests only, and
+        # still requires the actor to hold write. On `synchronize` that actor is
+        # whoever pushed — who necessarily already holds write on this
+        # repository — so nothing is loosened. The exact-SHA revalidation before
+        # deploy is untouched.
+        authorize = job("authorize")
+        self.assertIn("github.event.action == 'synchronize'", authorize)
+        self.assertIn(
+            "contains(github.event.pull_request.labels.*.name, 'preview')", authorize
+        )
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository", authorize
+        )
+        # A branch MAY be fronted by a stable hostname; every branch keeps the
+        # provider origin unless PREVIEW_PUBLIC_ORIGINS lists it, and the entry
+        # must be https or the deploy refuses rather than configuring the stack
+        # with an origin the browser will never use.
+        self.assertIn("PUBLIC_ORIGINS: ${{ vars.PREVIEW_PUBLIC_ORIGINS }}", authorize)
+        self.assertIn("''|https://*) ;;", authorize)
+        self.assertIn(
+            "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
+        )
+
         teardown = job("teardown")
-        self.assertIn("gh api -X DELETE", teardown)
-        self.assertIn("labels/preview", teardown)
-        self.assertIn("if: github.event.action == 'synchronize'", teardown)
+        # A push must no longer tear anything down, and must not strip the label.
+        self.assertNotIn("synchronize", teardown)
+        self.assertNotIn("labels/preview", teardown)
+        self.assertIn("github.event.action == 'closed'", teardown)
+        self.assertIn("github.event.label.name == 'preview'", teardown)
 
     def test_the_nightly_sweep_deletes_only_unapproved_sandboxes(self):
         # OLD: MAX_ACTIVE_PREVIEWS=20 and PREVIEW_MAX_AGE_HOURS=72 bounded a
@@ -422,8 +457,19 @@ class PreviewTeardown(unittest.TestCase):
             "reconcileDaytonaPreviews({ ...daytona, activePullRequests: active })", reconcile_action
         )
         self.assertIn("selectStalePreviewSandboxIds", PREVIEW_CORE)
-        self.assertIn("return !activeSha || activeSha !== sandbox.metadata?.git_sha;", PREVIEW_CORE)
-        self.assertIn(".filter((sandbox) => sandbox.metadata?.owner === 'kortix-preview')", PREVIEW_CORE)
+        # Both owners are reaped, by different rules. A moved head makes an
+        # EPHEMERAL preview stale (it was built for one commit); it is the normal
+        # state of a branch environment, which is redeployed in place. Sweeping a
+        # branch environment on sha would delete a live environment every push.
+        self.assertIn("if (!activeSha) return true;", PREVIEW_CORE)
+        self.assertIn(
+            "return owner === 'kortix-preview' && activeSha !== sandbox.metadata?.git_sha;",
+            PREVIEW_CORE,
+        )
+        self.assertIn(
+            "if (owner !== 'kortix-preview' && owner !== 'kortix-branch-env') return false;",
+            PREVIEW_CORE,
+        )
         self.assertIn("const approved = pull.labels?.some((label) => label.name === 'preview');", PREVIEW_CLI)
         self.assertIn("const sameRepository = pull.head?.repo?.full_name === repository;", PREVIEW_CLI)
         # A PR preview is swept after 7 idle days; the Platinum retention now
@@ -434,11 +480,15 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("autoDeleteDays: 7,", PREVIEW_CORE)
         self.assertIn("autoArchiveInterval: 10_080,", PREVIEW_PROVIDERS)
         self.assertIn("autoDeleteInterval: 10_080,", PREVIEW_PROVIDERS)
-        # A branch environment is exempt from the sweep BY OWNER, not by luck:
-        # it never expires, and the reconciler above only reaps 'kortix-preview'.
+        # A branch environment carries NO provider expiry — it is retired by the
+        # pull request leaving the active set, which is what closing it or
+        # removing the label does, and deleting the branch does both. Teardown
+        # must therefore know the branch, or the box outlives everything.
         self.assertIn("owner: 'kortix-branch-env',", PREVIEW_CORE)
         self.assertIn("autoArchiveDays: 0,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 0,", PREVIEW_CORE)
+        self.assertIn("branchEnvSandboxName(input.branchEnv)", PREVIEW_PROVIDERS)
+        self.assertIn("PREVIEW_BRANCH_ENV", job("teardown"))
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):
         # OLD: assertNotIn("|| printf closed") — a shell fallback that turned a

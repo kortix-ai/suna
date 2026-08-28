@@ -34,6 +34,7 @@ import {
   PreviewInfrastructureError,
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
+  branchEnvSandboxName,
   previewLockfileHash,
   previewSandboxIdentity,
   previewSandboxName,
@@ -480,20 +481,32 @@ export async function deployDaytonaPreview(
   }
 }
 
+/**
+ * Delete this pull request's sandbox, in whichever shape it was deployed.
+ *
+ * `branchEnv` is passed when the pull request runs a persistent environment. Its
+ * sandbox is named after the BRANCH, so looking only for the PR-named one would
+ * leave it running forever — a branch environment has no expiry to fall back on.
+ */
 export async function teardownPlatinumPreview(input: {
   apiUrl: string;
   apiKey: string;
   prNumber: number;
+  branchEnv?: string;
 }): Promise<number> {
   if (!input.apiKey) return 0;
   const api = new PlatinumApi(input.apiUrl, input.apiKey);
-  const name = previewSandboxName(input.prNumber);
-  const owned = (await allPlatinumPreviewSandboxes(api)).filter(
-    (sandbox) =>
-      sandbox.name === name &&
-      sandbox.metadata?.owner === 'kortix-preview' &&
-      Number(sandbox.metadata?.pr_number) === input.prNumber,
-  );
+  const ephemeral = previewSandboxName(input.prNumber);
+  const persistent = input.branchEnv ? branchEnvSandboxName(input.branchEnv) : null;
+  const owned = (await allPlatinumPreviewSandboxes(api)).filter((sandbox) => {
+    if (Number(sandbox.metadata?.pr_number) !== input.prNumber) return false;
+    if (sandbox.name === ephemeral && sandbox.metadata?.owner === 'kortix-preview') return true;
+    return (
+      persistent !== null &&
+      sandbox.name === persistent &&
+      sandbox.metadata?.owner === 'kortix-branch-env'
+    );
+  });
   for (const sandbox of owned) await deletePlatinum(api, sandbox.id);
   return owned.length;
 }

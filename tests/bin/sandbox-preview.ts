@@ -160,8 +160,11 @@ if (action === 'deploy') {
   process.exitCode = result.exitCode;
 } else if (action === 'teardown') {
   const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
+  // A persistent environment's sandbox is named after the BRANCH, so teardown
+  // has to be told which branch or it deletes nothing and the box runs forever.
+  const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
   const [platinumDeleted, daytonaDeleted] = await Promise.all([
-    teardownPlatinumPreview({ ...platinum, prNumber }),
+    teardownPlatinumPreview({ ...platinum, prNumber, ...(branchEnv ? { branchEnv } : {}) }),
     teardownDaytonaPreview({ ...daytona, prNumber }),
   ]);
   console.log(`[sandbox-preview] teardown platinum=${platinumDeleted} daytona=${daytonaDeleted}`);

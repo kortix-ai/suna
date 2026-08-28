@@ -21,6 +21,64 @@ linked, not inlined.
 
 ## Register
 
+### `compose up -d` does not restart a container because a bind-mounted FILE changed (2026-08-28)
+
+**When:** a redeploy rewrites a config file that a container reads through a
+bind mount — a Caddyfile, an nginx conf, a prometheus.yml. Compose recreates a
+container for a new image, env var, port or volume DEFINITION; new bytes inside
+an already-mounted file are not part of that comparison. If the process does not
+watch its config either (Caddy does not), the container keeps serving what it
+loaded when it first booted, for as long as the box lives.
+
+A per-PR preview never showed this because it is deleted and recreated on every
+push. It appeared the first time a REUSED environment's config actually changed:
+moving the branch environment to `pi.kortix.com` rewrote the Caddyfile's pinned
+`X-Forwarded-Host`, the file said the new host both on disk and inside the
+container, and the running Caddy still pinned the old one — so every Server
+Action died with React #441 again (see the entry below).
+
+**The rule: after writing a mounted config, reload the process that reads it**
+(`compose exec -T <svc> caddy reload --config …`), or recreate that service
+explicitly. Never infer from "compose up succeeded" that a mounted config took
+effect.
+
+**Diagnostic:** compare the file with the process's LIVE configuration, not with
+the file inside the container — those two agree even when the bug is present.
+For Caddy, `curl localhost:2019/config/` from inside the container; the same
+shape of check applies to any config-reloading daemon.
+*Near-miss:* the pi branch environment, 2026-08-28. Caught within minutes by
+driving the real sign-in page; nothing deployed was affected.
+*Enforcer:* `tests/unit/sandbox-preview.test.ts` asserts the bootstrap issues
+the reload. Nothing detects a NEW mounted config file that lacks one.
+
+### An environment that shares ONE origin between frontend and API must enumerate every path the API serves outside the common prefix (2026-08-27)
+
+**When:** editing the preview edge (`buildPreviewCaddyfile`), or mounting a
+route in `apps/api/src/index.ts` anywhere other than under `/v1`.
+Deployed environments give the API a host of its own, so every path it serves
+reaches it and prefix questions never arise. A preview shares one origin with
+the frontend and splits by prefix, and the `@api` matcher listed only `/v1*`.
+So `/health`, `/health/live`, `/health/ready`, `/metrics`, `/scim/v2/*`,
+`/internal/*` and `/.well-known/oauth-authorization-server` went to
+`frontend:3000`, which answered `307 -> /auth?redirect=…`. 13 flows failed on
+it (SYS-1/8/9, SCIM-1..5, GW-1/8/10/12, SEC-J), each reading as an auth or
+availability bug rather than a routing one.
+
+**The rule: a new non-`/v1` mount is TWO edits** — the route and the preview
+matcher — and the matcher carries a comment saying so. More generally, an
+environment whose topology differs from dev (one origin instead of two hosts)
+does not inherit dev's routing for free; enumerate what the difference hides.
+
+**Diagnostic:** a `307` to `/auth` on a path that needs no auth is the frontend
+answering, not the API. `curl -o /dev/null -w '%{http_code} %{redirect_url}'`
+tells them apart in one call — the API returns the endpoint's own status
+(`200`/`401`), never a redirect to a login page.
+*Near-miss:* PR #7012, found while verifying preview↔dev parity. Preview only;
+no deployed environment is affected, because none of them share an origin.
+*Enforcer:* `tests/unit/preview-stack.test.ts` asserts each of the six paths is
+present in the `@api` line. Nothing yet fails when a NEW non-`/v1` mount is
+added to the API without updating the matcher — that check is the TODO.
+
 ### A reverse proxy in front of Next.js owns `x-forwarded-host`, or every Server Action dies (2026-08-27)
 
 **When:** putting any proxy/ingress in front of a Next.js app — a preview edge,

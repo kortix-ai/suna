@@ -103,17 +103,43 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain("PREVIEW_ORIGIN='https://pi.example.test'");
   });
 
-  it('keeps branch environments out of the nightly sweep', () => {
-    // A branch environment has no pull request to close, so the reconciler must
-    // never see it as stale. It is excluded by OWNER, not by an expiry date.
-    const stale = selectStalePreviewSandboxIds(
-      [
-        { id: 'closed-pr', metadata: { owner: 'kortix-preview', pr_number: '4242', git_sha: 'a' } },
-        { id: 'branch-env', metadata: { owner: 'kortix-branch-env', pr_number: '6998', git_sha: 'b' } },
-      ],
-      new Map<number, string>(),
-    );
-    expect(stale).toEqual(['closed-pr']);
+  it('retires a branch environment when its pull request stops being an active preview', () => {
+    // A labelled preview stays up until the label comes off or the pull request
+    // closes — and deleting the branch closes it. `activePullRequests` holds
+    // only open, labelled pull requests, so absence IS the retirement signal.
+    const sandboxes = [
+      { id: 'branch-live', metadata: { owner: 'kortix-branch-env', pr_number: '10', git_sha: 'old' } },
+      { id: 'branch-gone', metadata: { owner: 'kortix-branch-env', pr_number: '11', git_sha: 'x' } },
+      { id: 'pr-current', metadata: { owner: 'kortix-preview', pr_number: '12', git_sha: 'head' } },
+      { id: 'pr-moved', metadata: { owner: 'kortix-preview', pr_number: '13', git_sha: 'stale' } },
+    ];
+    const active = new Map<number, string>([
+      [10, 'moved-on'], // the branch env's head moved: NORMAL, it redeploys in place
+      [12, 'head'],
+      [13, 'head'],
+    ]);
+    // Only the unlabelled/closed branch env and the moved ephemeral preview go.
+    expect(selectStalePreviewSandboxIds(sandboxes, active).sort()).toEqual([
+      'branch-gone',
+      'pr-moved',
+    ]);
+  });
+
+  it('does not sweep a branch environment for the one thing that retires a preview', () => {
+    // A MOVED HEAD is the difference between the two owners. It makes an
+    // ephemeral preview stale — it was built for exactly one commit — but it is
+    // the normal state of a branch environment, which is redeployed in place and
+    // must survive it. Sweeping on sha would delete a live environment on every
+    // push, which is the whole thing persistence exists to prevent.
+    const sandboxes = [
+      { id: 'pr-moved', metadata: { owner: 'kortix-preview', pr_number: '4242', git_sha: 'built' } },
+      { id: 'branch-env', metadata: { owner: 'kortix-branch-env', pr_number: '6998', git_sha: 'built' } },
+    ];
+    const active = new Map<number, string>([
+      [4242, 'pushed'],
+      [6998, 'pushed'],
+    ]);
+    expect(selectStalePreviewSandboxIds(sandboxes, active)).toEqual(['pr-moved']);
   });
 
   it('uses a new Platinum idempotency key for each deployment run', () => {
