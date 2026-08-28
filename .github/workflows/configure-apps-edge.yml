@@ -43,20 +43,21 @@ jobs:
       - name: Inspect API firewall rules
         run: |
           set -euo pipefail
-          phase="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/rulesets/phases/http_request_firewall_custom/entrypoint"
+          phase="https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/firewall/rules?per_page=100"
           current="$({
             curl --fail-with-body --silent --show-error \
-              --header "Authorization: Bearer $CLOUDFLARE_EDGE_API_TOKEN" \
+              --header "X-Auth-Email: $CLOUDFLARE_EMAIL" \
+              --header "X-Auth-Key: $CLOUDFLARE_GLOBAL_API_KEY" \
               "$phase"
           })"
           jq -e '
-            if .success == true then [.result.rules[] | {
-                ref,
+            if .success == true then [.result[] | {
+                id,
                 description,
                 action,
-                enabled,
-                expression,
-                action_parameters
+                paused,
+                priority,
+                filter: {id: .filter.id, expression: .filter.expression}
               }] else error("Cloudflare ruleset read failed") end
           ' <<<"$current"
 
