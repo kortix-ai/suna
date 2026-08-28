@@ -85,3 +85,5 @@ symptom is a minified React error.
   branch**. Anything the workflow itself reads — files under `tests/`, a Worker
   under `infra/cloudflare/workers/` — must be on `main` first. The pull request
   only ever contributes the images.
+
+<!-- smoke: second commit, to prove the url survives a push -->
