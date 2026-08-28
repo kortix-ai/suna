@@ -28,8 +28,6 @@ import {
   listDaytonaSnapshots,
 } from '../shared/daytona';
 import { db } from '../shared/db';
-import { collectPinnedImageRefs } from './pinned-images';
-import { currentProjectImageDataPlaneScope } from './project-image-scope';
 import {
   DAYTONA_ORG_SNAPSHOT_LIMIT,
   QUOTA_GC_MAX_PER_PASS,
@@ -39,16 +37,11 @@ import {
   selectSnapshotsToReap,
 } from './quota-gc-select';
 
-/** A project counts as ACTIVE (its legacy warm pointer is protected) when it has a
- * session within this window. */
-const QUOTA_GC_PROJECT_ACTIVE_MS = 14 * 24 * 60 * 60 * 1000;
-
 export type QuotaGcObservationStatus =
   | 'provider_not_configured'
   | 'complete'
   | 'org_list_failed'
-  | 'referenced_names_failed'
-  | 'pin_lookup_failed';
+  | 'referenced_names_failed';
 
 export interface QuotaGcResult {
   /** Whether every observation needed for safe deletion and admission succeeded. */
@@ -71,7 +64,6 @@ export type DaytonaProjectImageAdmissionReason =
   | 'provider_not_configured'
   | 'org_list_failed'
   | 'referenced_names_failed'
-  | 'pin_lookup_failed'
   | 'budget_unresolved'
   | 'deferred_candidates'
   | 'org_target_reached';
@@ -86,7 +78,6 @@ export interface SnapshotQuotaIo {
   isConfigured(): boolean;
   listSnapshots(): Promise<SnapshotLike[]>;
   loadReferencedSnapshotNames(now: number): Promise<Set<string>>;
-  loadPinnedImageRefs(): Promise<Set<string>>;
   deleteSnapshotById(snapshotId: string): Promise<boolean>;
 }
 
@@ -99,30 +90,6 @@ async function loadReferencedSnapshotNames(now: number): Promise<Set<string>> {
         .where(isNotNull(sandboxTemplates.providerSnapshotName))
     ).map((r) => r.name as string),
   );
-  // Legacy per-project warm-snapshot pointers (kortix-wproj-*) may still live in
-  // projects.metadata. Protect each live, recently active pointer.
-  const activityCutoff = new Date(now - QUOTA_GC_PROJECT_ACTIVE_MS).toISOString();
-  const pointerRows = await db.execute(sql`
-    SELECT p.metadata -> 'warm_snapshot' ->> 'name' AS name,
-           (
-             p.status <> 'archived' AND (
-               EXISTS (
-                 SELECT 1 FROM kortix.project_sessions ps
-                 WHERE ps.project_id = p.project_id AND ps.created_at > ${activityCutoff}::timestamptz
-               )
-             )
-           ) AS active
-    FROM kortix.projects p
-    WHERE p.metadata -> 'warm_snapshot' ->> 'name' IS NOT NULL
-  `);
-  const pointerList = ((pointerRows as unknown as { rows?: any[] }).rows ??
-    (pointerRows as unknown as any[])) as Array<{
-    name: string;
-    active: boolean;
-  }>;
-  for (const row of pointerList) {
-    if (row.name && row.active) referenced.add(row.name);
-  }
   return referenced;
 }
 
@@ -130,7 +97,6 @@ const defaultSnapshotQuotaIo: SnapshotQuotaIo = {
   isConfigured: isDaytonaConfigured,
   listSnapshots: listDaytonaSnapshots,
   loadReferencedSnapshotNames,
-  loadPinnedImageRefs: collectPinnedImageRefs,
   deleteSnapshotById: deleteDaytonaSnapshotById,
 };
 
@@ -185,31 +151,9 @@ export async function reconcileSnapshotQuota(
     return result;
   }
 
-  // FIX-K-lite: never reap an image that is the ACTIVE routing pin of ANY project.
-  // proj8 (8 hex) scoping over the org-wide list could otherwise let one project's
-  // superseded-tip selection delete another project's LIVE pinned cache on a
-  // collision. A lookup failure disables every deletion for this pass because
-  // project-image admission and periodic GC share the same complete-view boundary.
-  result.observationStatus = 'pin_lookup_failed';
-  let pinnedImages: Set<string>;
-  try {
-    pinnedImages = await io.loadPinnedImageRefs();
-  } catch (err) {
-    console.warn(
-      '[snapshot-gc] pinned-image lookup failed — pass skipped:',
-      err instanceof Error ? err.message : err,
-    );
-    return result;
-  }
   result.observationStatus = 'complete';
 
-  const plan = selectSnapshotsToReap({
-    all,
-    referenced,
-    pinnedImages,
-    ownedPpwarmDataPlaneScope: currentProjectImageDataPlaneScope(),
-    now,
-  });
+  const plan = selectSnapshotsToReap({ all, referenced, now });
   result.orgTotal = plan.orgTotal;
   result.managedCount = plan.managedCount;
   result.eligible = plan.doomed.length + plan.deferred;

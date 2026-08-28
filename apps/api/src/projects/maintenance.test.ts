@@ -53,7 +53,6 @@ mock.module('../billing/services/compute-metering', () => ({
   tickRunningComputeCharges: async () => ({ settled: 0, reconciled: 0 }),
 }));
 mock.module('../snapshots/builder', () => ({
-  routedPerProjectWarmImageName: () => 'kpp2-test',
   ensurePiWorkerImage: async () => undefined,
   reconcileStaleBuilds: async () => ({ checked: 0, closedReady: 0, closedFailed: 0 }),
 }));

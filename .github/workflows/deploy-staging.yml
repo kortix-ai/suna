@@ -228,7 +228,6 @@ jobs:
               CORS_ALLOWED_ORIGINS: $frontend,
               LLM_GATEWAY_BASE_URL: $gateway,
               ALLOWED_SANDBOX_PROVIDERS: "daytona,platinum",
-              KORTIX_WARM_SNAPSHOT_ENABLED: "false",
               # Pinned, not inherited: the base above can be kortix-dev-env,
               # which still carries the RETIRED `code-storage` value. The API
               # refuses that value for new repos anyway

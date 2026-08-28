@@ -431,8 +431,32 @@ class PreviewTeardown(unittest.TestCase):
         # with an origin the browser will never use.
         self.assertIn("PUBLIC_ORIGINS: ${{ vars.PREVIEW_PUBLIC_ORIGINS }}", authorize)
         self.assertIn("''|https://*) ;;", authorize)
+        # A stable hostname is proxied to the sandbox's OWN origin, which is
+        # derived from the sandbox id — so it dies on a rebuild unless the deploy
+        # re-points it. The optional third field names the worker that serves it;
+        # it is constrained so it cannot escape the workers directory.
+        self.assertIn("public_worker=", authorize)
+        self.assertIn("''|*[!a-z0-9-]*)", authorize)
+        deploy = job("deploy")
+        self.assertIn("Point the stable hostname at this sandbox", deploy)
+        self.assertIn("needs.authorize.outputs.public_worker != ''", deploy)
+        # NOT gated on the suite: a failing flow still leaves a working
+        # environment, and a hostname left pointing at the previous sandbox —
+        # or at nothing — is worse than a red flow.
+        self.assertIn("if: always() && needs.authorize.outputs.public_worker != ''", deploy)
+        self.assertIn('dir="infra/cloudflare/workers/${WORKER}"', deploy)
+        self.assertIn('wrangler@4 deploy --var "TARGET_ORIGIN:${target}"', deploy)
         self.assertIn(
             "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
+        )
+        # Making every labelled preview persistent turned the --target-full gate
+        # OFF by default, because runTests defaults off once branchEnv is set.
+        # The suite must still run when the label goes on; only a redeploy from a
+        # push skips it, so pushes stay fast without losing the gate.
+        self.assertIn(
+            "PREVIEW_RUN_TESTS: ${{ (github.event.action == 'labeled' || "
+            "github.event_name == 'workflow_dispatch') && '1' || '0' }}",
+            job("deploy"),
         )
 
         teardown = job("teardown")
