@@ -365,7 +365,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     });
   }
 
-  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages };
+  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -374,7 +374,7 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries } = await buildHarness(cfg);
+  const { agent, env, faux, timing, session, restoredEntries, storeError } = await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
   agent.subscribe((event: any) => {
