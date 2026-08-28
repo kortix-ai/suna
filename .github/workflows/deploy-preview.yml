@@ -3,7 +3,15 @@ name: Deploy Preview (PR)
 on:
   pull_request_target:
     branches: [main]
-    types: [labeled, unlabeled, synchronize, closed]
+    # `closed` is deliberately absent. A preview environment lives until its
+    # BRANCH is deleted, not until the pull request is closed — closing one is
+    # routine (superseded, reopened later, split into two) and used to destroy a
+    # working environment plus its Postgres volume. The explicit off switches are
+    # removing the `preview` label and deleting the branch.
+    types: [labeled, unlabeled, synchronize]
+  # Branch deleted: the one event that retires a branch environment. It carries
+  # no pull request, so `teardown-branch` below identifies the sandbox by branch.
+  delete:
   workflow_dispatch:
     inputs:
       pr_number:
@@ -23,7 +31,9 @@ on:
     - cron: "17 6 * * *"
 
 concurrency:
-  group: deploy-preview-${{ github.event.pull_request.number || inputs.pr_number || 'reconcile' }}
+  # `github.event.ref` is the deleted branch, so two branch deletions run in
+  # parallel and neither queues behind the nightly sweep.
+  group: deploy-preview-${{ github.event.pull_request.number || inputs.pr_number || github.event.ref || 'reconcile' }}
   cancel-in-progress: false
 
 permissions:
@@ -32,8 +42,8 @@ permissions:
 jobs:
   authorize:
     name: Authorize exact preview SHA
-    # A labelled preview stays up until the label comes off or the pull request
-    # closes — so a push REDEPLOYS it in place instead of tearing it down. The
+    # A labelled preview stays up until the label comes off or the branch is
+    # deleted — so a push REDEPLOYS it in place instead of tearing it down. The
     # approval bar is unchanged: same-repository pull requests only, and the
     # actor needs write. On `synchronize` the actor is whoever pushed, who
     # already holds write on this repository, so nothing is loosened.
@@ -316,8 +326,8 @@ jobs:
       COMMIT: ${{ needs.authorize.outputs.sha }}
       # Naming the environment after the BRANCH is what makes it persistent:
       # the sandbox is reused instead of replaced, so its URL survives every
-      # push and stays bookmarkable until the label comes off or the pull
-      # request closes. See previewSandboxIdentity in tests/src/core.
+      # push and stays bookmarkable until the label comes off or the branch is
+      # deleted. See previewSandboxIdentity in tests/src/core.
       # The suite is the GATE, so it runs when the label goes on and on an
       # explicit dispatch. A redeploy from a push skips it: the environment is
       # persistent now, so pushes are iteration, and paying ~10 min of
@@ -530,11 +540,14 @@ jobs:
 
   teardown:
     name: Tear down preview and invalidate stale approval
+    # Removing the label is the EXPLICIT off switch, and the only pull request
+    # action that retires an environment. Closing the pull request no longer
+    # does: the branch, not the pull request, is what the environment belongs to
+    # — see `teardown-branch` below.
     if: >-
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      (github.event.action == 'closed' ||
-      (github.event.action == 'unlabeled' && github.event.label.name == 'preview'))
+      github.event.action == 'unlabeled' && github.event.label.name == 'preview'
     runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     permissions:
@@ -577,6 +590,51 @@ jobs:
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
             'The Platinum or Daytona sandbox and its full self-host data plane were deleted.')"
           [ -z "$id" ] || gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" >/dev/null
+
+  teardown-branch:
+    name: Tear down the deleted branch's environment
+    # The event that actually retires a branch environment. The sandbox is named
+    # after the branch and carries NO provider expiry (autoDeleteDays: 0), so if
+    # nothing deletes it here it runs and bills until a human notices. Deleting
+    # a branch is also what GitHub does on merge when auto-delete is on, so a
+    # merged pull request still cleans up.
+    #
+    # `ref_type` gates out tag deletions, which share this event and name no
+    # branch. Deleting a branch needs push access, the same bar as applying the
+    # `preview` label, and this job reads only default-branch code.
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    # One Platinum list plus at most one delete — a small runner is enough, and
+    # this fires on EVERY branch deletion in the repository, not just previewed
+    # ones.
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      # No PREVIEW_PR_NUMBER: a delete event carries no pull request, and it
+      # needs none — the branch IS the environment's identity, so the CLI
+      # accepts the branch alone. There is no Daytona credential either: a
+      # branch environment is pinned to Platinum (a Daytona fallback would
+      # change its origin), so nothing of it can exist there.
+      #
+      # The branch name is attacker-chosen text, so it arrives as an environment
+      # variable and is never interpolated into a `run:` script. `bun` compares
+      # it as a string, and branchEnvSandboxName slugs it to [a-z0-9-] first.
+      PREVIEW_BRANCH_ENV: ${{ github.event.ref }}
+      PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
+      PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - name: Delete the branch environment's sandbox
+        run: bun tests/bin/sandbox-preview.ts teardown
+      # No deployment or sticky-comment step: a delete event has no pull request
+      # to patch. The nightly sweep no longer needs one either — it judges a
+      # branch environment by whether its branch still exists.
 
   reconcile:
     name: Reconcile stale preview sandboxes

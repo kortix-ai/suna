@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 import {
   type SandboxPreviewProvider,
+  branchEnvSandboxName,
   runSandboxPreview,
 } from '../src/core/sandbox-preview';
 import {
@@ -92,6 +93,39 @@ async function activePreviewPullRequests(
   }
 }
 
+/**
+ * The slugged sandbox name of every branch that currently exists on the remote.
+ *
+ * A branch environment is retired by its BRANCH disappearing, not by its pull
+ * request closing, so the sweep compares against this rather than against open
+ * pull requests. Slugging both sides is what makes the lossy
+ * `branchEnvSandboxName` mapping comparable.
+ */
+async function liveBranchNames(repository: string, token: string): Promise<Set<string>> {
+  const names = new Set<string>();
+  for (let page = 1; ; page += 1) {
+    const response = await fetch(
+      `https://api.github.com/repos/${repository}/branches?per_page=100&page=${page}`,
+      {
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: 'application/vnd.github+json',
+          'x-github-api-version': '2022-11-28',
+        },
+        signal: AbortSignal.timeout(30_000),
+      },
+    );
+    // Failing OPEN here would make every branch look deleted and the sweep would
+    // delete every branch environment at once.
+    if (!response.ok) throw new Error(`GitHub branch list returned ${response.status}`);
+    const branches = (await response.json()) as Array<{ name?: string }>;
+    for (const branch of branches) {
+      if (branch.name) names.add(branchEnvSandboxName(branch.name));
+    }
+    if (branches.length < 100) return names;
+  }
+}
+
 const action = process.argv[2] ?? 'deploy';
 const repository = value('GITHUB_REPOSITORY', 'kortix-ai/suna');
 const platinum = {
@@ -159,19 +193,31 @@ if (action === 'deploy') {
   await writeOutput('report_url', result.previewUrl ? `${result.previewUrl}/_tests/` : '');
   process.exitCode = result.exitCode;
 } else if (action === 'teardown') {
-  const prNumber = positiveInteger('PREVIEW_PR_NUMBER');
   // A persistent environment's sandbox is named after the BRANCH, so teardown
   // has to be told which branch or it deletes nothing and the box runs forever.
+  // A branch-deleted event carries the branch and no pull request, so the number
+  // is optional whenever the branch is known.
   const branchEnv = process.env.PREVIEW_BRANCH_ENV?.trim() || undefined;
+  const prNumber = branchEnv && !process.env.PREVIEW_PR_NUMBER?.trim()
+    ? undefined
+    : positiveInteger('PREVIEW_PR_NUMBER');
   const [platinumDeleted, daytonaDeleted] = await Promise.all([
-    teardownPlatinumPreview({ ...platinum, prNumber, ...(branchEnv ? { branchEnv } : {}) }),
-    teardownDaytonaPreview({ ...daytona, prNumber }),
+    teardownPlatinumPreview({
+      ...platinum,
+      ...(prNumber === undefined ? {} : { prNumber }),
+      ...(branchEnv ? { branchEnv } : {}),
+    }),
+    prNumber === undefined ? Promise.resolve(0) : teardownDaytonaPreview({ ...daytona, prNumber }),
   ]);
   console.log(`[sandbox-preview] teardown platinum=${platinumDeleted} daytona=${daytonaDeleted}`);
 } else if (action === 'reconcile') {
-  const active = await activePreviewPullRequests(repository, required('GITHUB_TOKEN'));
+  const token = required('GITHUB_TOKEN');
+  const active = await activePreviewPullRequests(repository, token);
+  // A branch environment is retired by its BRANCH disappearing, not by its pull
+  // request closing, so the sweep needs to know which branches still exist.
+  const liveBranchSandboxNames = await liveBranchNames(repository, token);
   const [platinumDeleted, daytonaDeleted] = await Promise.all([
-    reconcilePlatinumPreviews({ ...platinum, activePullRequests: active }),
+    reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames }),
     reconcileDaytonaPreviews({ ...daytona, activePullRequests: active }),
   ]);
   console.log(

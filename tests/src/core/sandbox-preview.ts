@@ -30,6 +30,8 @@ export function previewLockfileHash(value: string): string {
 
 export interface PreviewSandboxRecord {
   id: string;
+  /** Present on Platinum records; teardown matches on it as well as ownership. */
+  name?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -231,7 +233,8 @@ export interface PreviewSandboxIdentity {
  * auto-deleted. Reuse is what holds the sandbox id — and therefore the public
  * URL — still, so the environment can be bookmarked, registered as a Stripe
  * webhook target, and keep its Postgres volume across deploys. The distinct
- * owner is what keeps the nightly sweep from reaping it: it has no PR to close.
+ * owner is what makes the sweep judge it by its BRANCH rather than by its pull
+ * request, so closing the pull request does not retire it.
  */
 export function previewSandboxIdentity(input: {
   prNumber: number;
@@ -256,29 +259,75 @@ export function previewSandboxIdentity(input: {
 }
 
 /**
+ * Sandboxes to delete, in whichever shape the pull request deployed.
+ *
+ * Either key may be given. `prNumber` matches the ephemeral preview named after
+ * it; `branchEnv` matches the persistent environment named after the branch. A
+ * branch-deleted event knows the branch but no pull request, so the persistent
+ * match does not require one — the branch IS that environment's identity, two
+ * pull requests cannot share it, and ownership is still checked so this can only
+ * ever return a sandbox this system created.
+ *
+ * `branchEnv` must be passed whenever a persistent environment exists: it has NO
+ * provider expiry (`autoDeleteDays: 0`), so if teardown does not find it,
+ * nothing ever will.
+ */
+export function selectTeardownSandboxIds(
+  sandboxes: PreviewSandboxRecord[],
+  input: { prNumber?: number; branchEnv?: string },
+): string[] {
+  const ephemeral = input.prNumber === undefined ? null : previewSandboxName(input.prNumber);
+  const persistent = input.branchEnv ? branchEnvSandboxName(input.branchEnv) : null;
+  if (ephemeral === null && persistent === null) {
+    throw new Error('preview teardown needs a pull request number or a branch');
+  }
+  return sandboxes
+    .filter((sandbox) => {
+      const owner = sandbox.metadata?.owner;
+      if (
+        ephemeral !== null &&
+        sandbox.name === ephemeral &&
+        owner === 'kortix-preview' &&
+        Number(sandbox.metadata?.pr_number) === input.prNumber
+      ) {
+        return true;
+      }
+      return persistent !== null && sandbox.name === persistent && owner === 'kortix-branch-env';
+    })
+    .map((sandbox) => sandbox.id);
+}
+
+/**
  * Sandboxes the nightly sweep should delete.
  *
- * Both owners are reaped, by DIFFERENT rules, because they promise different
- * things. An ephemeral preview is pinned to one commit, so a moved head makes it
- * stale. A branch environment is pinned to a BRANCH and redeployed in place, so
- * a moved head is its normal state — only the pull request leaving the active
- * set retires it, which is what closing it or removing the `preview` label does,
- * and deleting the branch does both.
- *
- * `activePullRequests` holds only OPEN pull requests carrying the `preview`
- * label, so "not in the map" already means "no longer approved".
+ * The two owners are retired by different facts, because they are identified by
+ * different things. An EPHEMERAL preview belongs to one commit of one pull
+ * request, so a closed pull request or a moved head makes it stale. A BRANCH
+ * environment belongs to the branch: it is redeployed in place, outlives the
+ * pull request being closed, and is retired only when the branch itself is
+ * gone. `liveBranchSandboxNames` therefore carries the slugged name of every
+ * branch that currently exists on the remote.
  */
 export function selectStalePreviewSandboxIds(
   sandboxes: PreviewSandboxRecord[],
   activePullRequests: ReadonlyMap<number, string>,
+  liveBranchSandboxNames: ReadonlySet<string> = new Set(),
 ): string[] {
   return sandboxes
     .filter((sandbox) => {
       const owner = sandbox.metadata?.owner;
-      if (owner !== 'kortix-preview' && owner !== 'kortix-branch-env') return false;
+      if (owner === 'kortix-branch-env') {
+        // The name is the ONLY record of which branch this is — nothing puts
+        // the branch in metadata. Without one the sandbox cannot be judged, so
+        // it is kept: an unidentifiable box costs money, while deleting one on
+        // a listing that stopped returning names would destroy every branch
+        // environment and its Postgres volume at once, irreversibly.
+        if (sandbox.name === undefined) return false;
+        return !liveBranchSandboxNames.has(sandbox.name);
+      }
+      if (owner !== 'kortix-preview') return false;
       const activeSha = activePullRequests.get(Number(sandbox.metadata?.pr_number));
-      if (!activeSha) return true;
-      return owner === 'kortix-preview' && activeSha !== sandbox.metadata?.git_sha;
+      return !activeSha || activeSha !== sandbox.metadata?.git_sha;
     })
     .map((sandbox) => sandbox.id);
 }
