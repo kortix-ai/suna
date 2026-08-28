@@ -205,12 +205,13 @@ export function buildPiWorkerSessionEnvVars(input: {
     // an empty assistant turn and no error anywhere, which reads as "pi never
     // replies". A session is always real; only a bench opts into faux.
     KORTIX_MODEL_MODE: 'real',
-    // P1.8 — the durable transcript log. The worker write-throughs every
-    // mutation here, so history survives the process and a stopped session's
-    // transcript is readable without waking its sandbox. The worker appends
-    // `/sessions/<id>/log` to this base (session-store.ts), and authenticates
-    // with its own KORTIX_TOKEN, which the route scopes to this session alone.
-    KORTIX_STORE_URL: `${input.apiUrl.replace(/\/+$/, '')}/projects/${input.projectId}`,
+    // P1.8 — the durable transcript log is NOT activated yet. The server side
+    // (kortix.session_worker_log + the /log routes) is live and inert; setting
+    // KORTIX_STORE_URL here is what turns it on. Every session that booted with
+    // it set died before listening (sandbox_url 502, engine never reported), and
+    // guarding the store open did not fix it — so the cause is upstream of the
+    // store and is not yet isolated. Left off until a session is PROVEN to boot
+    // with it, because an unbootable session is worse than a non-durable one.
     // The resolved session model override. The worker maps it onto the
     // gateway exactly like a baked model ref (env wins over bake). Absent, the
     // compiled artifact's own baked model is used — which is why this stays

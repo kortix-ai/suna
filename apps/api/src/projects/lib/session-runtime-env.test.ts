@@ -374,11 +374,9 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
       apiUrl: 'https://api.example.test',
     });
     expect(env.KORTIX_MODEL_MODE).toBe('real');
-    // The worker appends `/sessions/<id>/log` to this base, so it must be the
-    // PROJECT root and must not carry a trailing slash — `${base}/sessions/…`
-    // would otherwise produce a double slash and a 404 on every append.
-    expect(env.KORTIX_STORE_URL).toBe('https://api.example.test/projects/p');
-    expect(env.KORTIX_STORE_URL).not.toMatch(/\/\/$|\/$/);
+    // P1.8 is not activated: a session that booted with KORTIX_STORE_URL set
+    // never started listening. The store stays off until that is isolated.
+    expect(env.KORTIX_STORE_URL).toBeUndefined();
     // No explicit session model: the compiled artifact's baked model is used,
     // so KORTIX_MODEL must stay absent rather than fall back to the platform
     // resolution, which would clobber the bake.
@@ -405,8 +403,6 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
       // A session is always REAL. The worker's own default is the benchmark
       // faux provider, which answers every prompt with an empty turn.
       KORTIX_MODEL_MODE: 'real',
-      // P1.8: the durable transcript log the worker write-throughs to.
-      KORTIX_STORE_URL: 'https://api.kortix.test/v1/projects/proj-1',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_FRONTEND_URL: 'https://kortix.test',
       KORTIX_PROJECT_AUTO_CLONE: '0',
