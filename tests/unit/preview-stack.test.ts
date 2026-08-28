@@ -15,6 +15,19 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain(':8080');
     expect(caddy).toContain('@api path /v1*');
     expect(caddy).toContain('reverse_proxy kortix-api:8008');
+    // Every API route mounted outside `/v1` in `apps/api/src/index.ts`. Without
+    // these the shared preview origin sends them to the frontend, which answers
+    // 307 -> /auth (SYS-1/8/9, SCIM-1..5, GW-1/8/10/12, SEC-J all failed on it).
+    for (const path of [
+      '/health',
+      '/health/*',
+      '/metrics',
+      '/scim/v2/*',
+      '/internal/*',
+      '/.well-known/oauth-authorization-server',
+    ]) {
+      expect(caddy.split('\n').find((line) => line.startsWith('  @api path '))).toContain(path);
+    }
     expect(caddy).toContain('@supabase path /auth/v1* /rest/v1* /storage/v1*');
     expect(caddy).toContain('reverse_proxy supabase-kong:8000');
     expect(caddy).toContain('handle_path /_gateway/*');
