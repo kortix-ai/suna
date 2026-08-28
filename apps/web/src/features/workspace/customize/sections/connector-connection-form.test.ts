@@ -165,6 +165,23 @@ describe('connector setup status', () => {
     ).toBe('user_managed');
   });
 
+  // Prod 2026-08-28: 6 of 6 GitHub connections had a null `connected_account_id`
+  // — authorization was never completed — and no GitHub tool call had ever run,
+  // yet the connector grid showed a checkmark. `needs_auth` used to fall
+  // through to the secretSet branch and read as `connected`.
+  test('an authorization that never completed is setup that never finished', () => {
+    expect(connectorSetupStatus({ ...connector, status: 'needs_auth' })).toBe('needs_setup');
+    // Even with a credential present it is NOT connected — the credential is
+    // not the thing that is missing.
+    expect(
+      connectorSetupStatus({ ...connector, status: 'needs_auth', secretSet: true }),
+    ).toBe('needs_setup');
+  });
+
+  test('error still outranks needs_auth', () => {
+    expect(connectorSetupStatus({ ...connector, status: 'error' })).toBe('error');
+  });
+
   test('keeps error and no-auth states independent of credential ownership', () => {
     expect(connectorSetupStatus({ ...connector, status: 'error' })).toBe('error');
     expect(connectorSetupStatus({ ...connector, authSecret: null })).toBe('no_auth');
