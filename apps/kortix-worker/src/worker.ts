@@ -154,7 +154,12 @@ export interface WorkerConfig {
 export function configFromEnv(): WorkerConfig {
   const mode = (process.env.KORTIX_MODEL_MODE ?? 'faux') as 'faux' | 'real';
   return {
-    port: Number(process.env.PORT ?? 8080),
+    // KORTIX_SERVICE_PORT is what the PLATFORM injects and what the session
+    // proxy dials (sandbox_url ends /8000); PORT is the bench's name. Reading
+    // only PORT made every real session bind 8080 while the proxy asked 8000,
+    // so the box was healthy and answered 502 "proxy upstream error" forever —
+    // with the worker's own log saying "worker listening" the whole time.
+    port: Number(process.env.KORTIX_SERVICE_PORT ?? process.env.PORT ?? 8080),
     envUrl: process.env.KORTIX_ENV_URL ?? 'http://127.0.0.1:8100',
     envUrlExplicit: Boolean(process.env.KORTIX_ENV_URL),
     envCwd: process.env.KORTIX_ENV_CWD ?? '/workspace',
