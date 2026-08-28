@@ -67,6 +67,7 @@ export {
   chatUserIdentities,
   projectSessions,
   projectSessionRuntimeContexts,
+  sessionWorkerLog,
   accountModelPreferences,
   projectLlmRoutingPolicies,
   projectSessionGrants,

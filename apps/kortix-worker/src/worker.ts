@@ -179,7 +179,16 @@ export function configFromEnv(): WorkerConfig {
     apiKey: process.env.KORTIX_API_KEY ?? process.env.KORTIX_TOKEN,
     gatewayUrl: process.env.KORTIX_GATEWAY_URL ?? process.env.KORTIX_LLM_BASE_URL,
     storeUrl: process.env.KORTIX_STORE_URL,
-    storeHeaders: process.env.KORTIX_STORE_HEADERS ? JSON.parse(process.env.KORTIX_STORE_HEADERS) : undefined,
+    // The control plane sets only KORTIX_STORE_URL and relies on the session
+    // credential it already injects; the bench passes explicit headers. Without
+    // this fallback a real session would post to the log unauthenticated and
+    // every append would 401 — losing the whole transcript, silently, because
+    // appends are the only thing that crosses the network.
+    storeHeaders: process.env.KORTIX_STORE_HEADERS
+      ? JSON.parse(process.env.KORTIX_STORE_HEADERS)
+      : process.env.KORTIX_TOKEN
+        ? { authorization: `Bearer ${process.env.KORTIX_TOKEN}` }
+        : undefined,
     sessionId: process.env.KORTIX_SESSION_ID ?? 'session-local',
   };
 }

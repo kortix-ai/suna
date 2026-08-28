@@ -95,6 +95,18 @@ export const uncoveredAllow: AllowEntry[] = [
   },
   {
     method: "POST",
+    path: "/v1/projects/:*/sessions/:*/log",
+    reason:
+      "DEBT. Harness/worker split P1.8: the pi worker appends its transcript here from INSIDE a sandbox with its own session credential, which the local flow profile cannot stand up (it excludes cloud sandboxes). The session-caller self-scope, the idempotent-append/409-on-conflict rule, the size bound and the no-runtime read path are pinned source-level in apps/api/src/projects/routes/session-log.test.ts. Needs a staging flow once target-full grows a pi lane.",
+  },
+  {
+    method: "GET",
+    path: "/v1/projects/:*/sessions/:*/log",
+    reason:
+      "DEBT. Read sibling of the append above — same gate, and the whole point is that it serves history with NO runtime running, so a flow that first has to boot one would not exercise what it exists for. Pinned in the same source test.",
+  },
+  {
+    method: "POST",
     path: "/v1/projects/:*/sessions/:*/environment/stop",
     reason:
       "DEBT. Stop sibling of environment/ensure — same cloud-sandbox exclusion; pinned in the same source test.",

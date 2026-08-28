@@ -876,6 +876,46 @@ export const projectSessions = kortixSchema.table(
 );
 
 /**
+ * Append-only transcript log for a pi worker session (harness/worker split
+ * P1.8 — "history readable with nothing running").
+ *
+ * The worker holds its conversation in memory and writes every MUTATION
+ * through to this table (apps/kortix-worker/src/session-store.ts —
+ * DurableSessionStorage over RemoteSessionLog). Reads during a turn stay
+ * local; only mutations cross the network, so the store never sits on the hot
+ * path of a running turn.
+ *
+ * Why a table and not the sandbox: today history lives inside the running box,
+ * so reading a stopped session's transcript means waking it — that is the
+ * "session looks stopped, then a huge delay" class of bug the plan calls out.
+ * With the log here, history is servable with nothing running at all.
+ *
+ * `seq` is assigned by the WRITER and is unique per session: the worker replays
+ * this log in order to rebuild its storage on resume, so a gap or a reorder
+ * silently corrupts the conversation. It is a plain integer rather than a
+ * generated identity because the worker's own ordering is the authority.
+ */
+export const sessionWorkerLog = kortixSchema.table(
+  'session_worker_log',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    seq: integer('seq').notNull(),
+    item: jsonb('item').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // (session_id, seq) IS the read pattern — replay reads one session in seq
+    // order — so the primary key's own btree already serves it. A separate
+    // index on the same columns in the same order would only cost writes.
+    primaryKey({ columns: [table.sessionId, table.seq] }),
+    check('session_worker_log_seq_check', sql`${table.seq} >= 0`),
+    check('session_worker_log_item_object_check', sql`jsonb_typeof(${table.item}) = 'object'`),
+  ],
+);
+
+/**
  * Durable, non-secret wrapper context for one project session. It is kept out
  * of user-editable session metadata and materialized only as the single
  * server-owned KORTIX_SESSION_CONTEXT JSON envelope.

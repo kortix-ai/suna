@@ -205,6 +205,12 @@ export function buildPiWorkerSessionEnvVars(input: {
     // an empty assistant turn and no error anywhere, which reads as "pi never
     // replies". A session is always real; only a bench opts into faux.
     KORTIX_MODEL_MODE: 'real',
+    // P1.8 — the durable transcript log. The worker write-throughs every
+    // mutation here, so history survives the process and a stopped session's
+    // transcript is readable without waking its sandbox. The worker appends
+    // `/sessions/<id>/log` to this base (session-store.ts), and authenticates
+    // with its own KORTIX_TOKEN, which the route scopes to this session alone.
+    KORTIX_STORE_URL: `${input.apiUrl.replace(/\/+$/, '')}/projects/${input.projectId}`,
     // The resolved session model override. The worker maps it onto the
     // gateway exactly like a baked model ref (env wins over bake). Absent, the
     // compiled artifact's own baked model is used — which is why this stays
