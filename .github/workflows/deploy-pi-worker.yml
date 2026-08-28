@@ -242,6 +242,11 @@ jobs:
           KORTIX_GITHUB_APP_SLUG: ${{ secrets.PREVIEW_KORTIX_GITHUB_APP_SLUG }}
           MANAGED_GIT_GITHUB_OWNER: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_OWNER }}
           MANAGED_GIT_GITHUB_INSTALL_ID: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID }}
+          # Optional, and takes PRECEDENCE over the App. The App cannot create
+          # a repo unless it is installed on the owner AND has administration:
+          # write; a PAT needs neither. Setting this one secret is what makes
+          # project creation work here.
+          MANAGED_GIT_GITHUB_TOKEN: ${{ secrets.PREVIEW_MANAGED_GIT_GITHUB_TOKEN }}
         # `deploy` boots the environment AND runs the full suite inside it,
         # exiting non-zero for either. This is a development environment, so a
         # failing flow is a finding, not a broken deploy — the gate below is
