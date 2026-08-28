@@ -154,6 +154,12 @@ MAX_EARLY_EXITS=2
 
 early_exits=0
 
+# A SIGKILL death (128+9) is the guest kernel's OOM-killer, never the daemon
+# choosing to stop. It is bounded so a daemon that is genuinely unable to start
+# cannot hot-loop; a run that lasted HEALTHY_AFTER_S earns a fresh budget.
+MAX_SIGKILL_RELAUNCH=5
+sigkill_exits=0
+
 # Move a verified staged binary into place. Any failure leaves the live binary
 # untouched — the caller simply relaunches what is already there.
 promote_staged_agent() {
@@ -321,6 +327,33 @@ while :; do
       continue
     fi
     [ "${early_exits}" -lt "${MAX_EARLY_EXITS}" ] && continue
+  fi
+
+  # A SIGKILL is not the daemon exiting on its own terms — it is the guest
+  # kernel's OOM-killer. Exit 137 after HOURS of healthy service used to fall
+  # through to `exit` below, and the comment above assumed that was safe
+  # because "this is PID 1 and the provider decides what a stopped sandbox
+  # means". That assumption is FALSE on Platinum, where PID 1 is
+  # `/bin/sh /sbin/pt-init`: this script exiting does not stop the VM. It left
+  # a corpse — DB `status='active'`, provider `state='running'`, port 8000
+  # closed forever — and nothing reconciled it, so the control plane kept
+  # routing users to a box that could never answer.
+  #
+  # Observed on 2 of 21 active prod sandboxes (2026-08-28):
+  #   `148 Killed "${agent_bin}" "$@"` then
+  #   `[entrypoint] agent exited 137 after 4472s; exiting`
+  # Correlation was exact across the fleet: oom_kill ⟺ exit 137 ⟺ port 8000 shut.
+  #
+  # Only SIGKILL relaunches. SIGTERM (143) and SIGINT (130) are deliberate stops
+  # and must still exit, or a provider-initiated shutdown would fight this loop.
+  if [ "${status}" -eq 137 ]; then
+    [ "${ran}" -ge "${HEALTHY_AFTER_S}" ] && sigkill_exits=0
+    sigkill_exits=$(( sigkill_exits + 1 ))
+    if [ "${sigkill_exits}" -le "${MAX_SIGKILL_RELAUNCH}" ]; then
+      echo "[entrypoint] agent SIGKILLed after ${ran}s (likely OOM); relaunching ${sigkill_exits}/${MAX_SIGKILL_RELAUNCH}" >&2
+      continue
+    fi
+    echo "[entrypoint] agent SIGKILLed ${sigkill_exits} times without a healthy run; giving up" >&2
   fi
 
   echo "[entrypoint] agent exited ${status} after ${ran}s; exiting" >&2
