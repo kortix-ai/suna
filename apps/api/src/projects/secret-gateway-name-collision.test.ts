@@ -42,14 +42,13 @@ const materialize = (rows: ResolvedProjectSecret[], env: Record<string, string>,
   });
 
 describe('gatewayStripsRow', () => {
-  // Pins TODAY's rule so the collision is visible in a test rather than only in
-  // production: a gateway-managed NAME is stripped regardless of the consumer
-  // stamp. `GITHUB_TOKEN` matches because models.dev's `github-copilot`
-  // provider declares it, which is how a project's own token was withheld.
-  test('a gateway-managed NAME is stripped even when stored consumer: sandbox', () => {
+  // The regression. `GITHUB_TOKEN` is a gateway-managed NAME only because
+  // models.dev's `github-copilot` provider declares it; a project's own secret
+  // carrying that name must still reach the box.
+  test("a project's own sandbox secret survives a gateway-managed NAME", () => {
     expect(
       gatewayStripsRow({ llmGatewayEnabled: true, nameIsGatewayManaged: true, consumer: 'sandbox' }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   test('a real gateway credential is still stripped', () => {
@@ -62,7 +61,7 @@ describe('gatewayStripsRow', () => {
     ).toBe(true);
   });
 
-  test('a row with no consumer stamp is stripped too', () => {
+  test('a legacy row with no consumer stamp keeps the old behavior — no widening', () => {
     expect(
       gatewayStripsRow({ llmGatewayEnabled: true, nameIsGatewayManaged: true, consumer: null }),
     ).toBe(true);
@@ -107,13 +106,13 @@ describe('capabilities never advertise a value the env does not hold', () => {
     expect(delivered.map((r) => r.key)).toEqual(['UI_AUTH_STATE_JSON']);
   });
 
-  test('an ordinary sandbox secret keeps its plaintext and is reported delivered', async () => {
-    const ordinary = row('notes', 'NOTES_API_KEY', { strategy: 'runtime', consumer: 'sandbox' });
-    const env = envFor([ordinary]);
+  test('a sandbox-consumer GITHUB_TOKEN keeps its plaintext and is reported delivered', async () => {
+    const github = row('github', 'GITHUB_TOKEN', { strategy: 'runtime', consumer: 'sandbox' });
+    const env = envFor([github]);
 
-    const delivered = await materialize([ordinary], env, true);
+    const delivered = await materialize([github], env, true);
 
-    expect(env.NOTES_API_KEY).toBe('value-of-notes');
-    expect(delivered.map((r) => r.key)).toEqual(['NOTES_API_KEY']);
+    expect(env.GITHUB_TOKEN).toBe('value-of-github');
+    expect(delivered.map((r) => r.key)).toEqual(['GITHUB_TOKEN']);
   });
 });

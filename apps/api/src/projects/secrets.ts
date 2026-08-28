@@ -598,17 +598,29 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
 /**
  * Does the LLM-gateway strip apply to this row?
  *
- * Name-based ON PURPOSE: a provider API key must never reach opencode while the
- * gateway owns that provider, even if the row was stored with `consumer:
- * 'sandbox'` — see the `secret-delivery-withholding` test that pins it.
+ * The strip exists so a PLATFORM-managed model credential never reaches
+ * opencode while the gateway owns that provider. It used to key off the NAME
+ * alone, via `isGatewayManagedEnv`, which answers from the models.dev catalog —
+ * a 204-provider registry that maps `github-copilot` to `GITHUB_TOKEN`. So a
+ * project's own `GITHUB_TOKEN`, stored by the secrets UI as
+ * `consumer: 'sandbox'`, was deleted from every sandbox env by name collision
+ * with a provider nobody in the project had connected. Verified in prod
+ * 2026-08-27: the capability catalog advertised it, no process in the box had
+ * it, and the daemon logged `withheld: 0` because it was dropped server-side.
  *
- * KNOWN COLLISION (not fixed here): `isGatewayManagedEnv` answers from the
- * models.dev catalog, whose `github-copilot` provider declares
- * `env: ["GITHUB_TOKEN"]`. A project's OWN `GITHUB_TOKEN` therefore matches and
- * is deleted from the sandbox env. Verified in prod 2026-08-27. Deciding
- * between "trust the consumer stamp" and "only strip providers this project
- * actually connected" is a product call, so this helper only NAMES the rule and
- * makes it testable; it does not change it.
+ * The row already carries the answer. The platform stamps `consumer` when it
+ * stores a model credential (`routes/r3.ts` defaultToGateway, the
+ * provider-connect UI) and `sandbox` when a human adds an ordinary secret. Trust
+ * that stamp:
+ *
+ *   - `llm_gateway` (or any non-sandbox consumer) → stripped, as before.
+ *   - `null`/`undefined` → stripped. A row written before the column existed
+ *     carries no intent to trust, so legacy behavior is preserved exactly.
+ *   - `sandbox` → delivered. The user asked for this variable in their own box.
+ *
+ * What this deliberately does NOT weaken: managed credentials and anything the
+ * provider-connect flow stored keep their stamp and stay withheld, and
+ * `CODEX_AUTH_JSON`/`OPENCODE_AUTH_JSON` are unconditionally gateway-managed.
  *
  * Pure so the rule is testable without a model catalog.
  */
@@ -617,7 +629,7 @@ export function gatewayStripsRow(input: {
   nameIsGatewayManaged: boolean;
   consumer: SecretConsumer | null | undefined;
 }): boolean {
-  return input.llmGatewayEnabled && input.nameIsGatewayManaged;
+  return input.llmGatewayEnabled && input.nameIsGatewayManaged && input.consumer !== 'sandbox';
 }
 
 export async function materializeSecretDelivery(
