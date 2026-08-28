@@ -11,9 +11,14 @@
 # zone DNS Write, Workers Routes Write, SSL and Certificates Write, Zone Read) —
 # the same token configure-preview-edge.yml uses.
 #
-# TARGET_ORIGIN is re-published by .github/workflows/deploy-pi-worker.yml on
-# every deploy, so a rebuilt sandbox re-points the name automatically. The value
-# below is only the bootstrap default for a manual first deploy.
+# This lives on main because deploy-preview.yml checks out the DEFAULT BRANCH; a
+# worker that exists only on a feature branch cannot be re-pointed by it.
+#
+# TARGET_ORIGIN is re-published by deploy-preview.yml on every deploy of the
+# branch whose PREVIEW_PUBLIC_ORIGINS entry names this worker
+# (`pi-worker=https://pi.kortix.com=pi-router`), so a rebuilt sandbox re-points
+# the name automatically. The empty value below is only the bootstrap default
+# for a manual first deploy; the Worker answers 503 until it is set.
 
 main = "worker.mjs"
 compatibility_date = "2026-08-01"
