@@ -34,6 +34,7 @@ import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
 import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
+import { showsGeneratingIndicator } from '@kortix/sdk';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -149,9 +150,19 @@ export const SessionLayout = memo(function SessionLayout({
     enabled: !!projectId && !!projectSessionId,
     runtimeSessionId: sessionId,
   });
+  // `showsGeneratingIndicator`, not `working.state`: this drives VISIBLE state
+  // (the deliverable-ready chip, the action panel), and `state` also answers
+  // `working` from a `GET .../turn` read — a row open in the ledger, which a
+  // separate relay closes and which routinely outlives its turn.
+  //
+  // It is the same defect the comment above describes for the OLD raw-slot
+  // approach, arriving by the other door: a stale row pins this at "running"
+  // forever, `useDeliverableReadiness` never sees the running→settled
+  // transition, and the ready chip never fires. Only the runtime's own stream
+  // (or this tab's own send) may say the agent is working.
   const isSessionBusy =
     projectId && projectSessionId
-      ? working.state === 'working'
+      ? showsGeneratingIndicator({ projection: working })
       : sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the

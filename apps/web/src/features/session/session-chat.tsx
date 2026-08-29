@@ -2594,20 +2594,45 @@ export function SessionChat({
   // a compaction started by a second device is visible here at all.
   const effectiveBusy = isServerBusy || isOptimisticCompacting;
 
+  /**
+   * Is the agent GENERATING — the one answer every VISIBLE "something is
+   * running" affordance reads.
+   *
+   * `effectiveBusy` above is the broader "a turn may be open", and it is right
+   * for the decisions that must fail safe. It is wrong for anything the user
+   * SEES, because one of its inputs is a `GET .../turn` read: that reports a
+   * ROW open in the ledger, rows are closed by a separate relay, and one
+   * routinely outlives its turn. Measured on pi.kortix.com: nine rows across
+   * four sessions, every one `active`, the oldest 67 minutes after its answer
+   * was written.
+   *
+   * Driving the visible state off the ledger meant the UI ASSERTED things that
+   * were not true — the shimmer first, and then, once that was fixed, a Stop
+   * button over a session with nothing to stop. Both are the same defect: a
+   * poll is not the runtime speaking. `showsGeneratingIndicator` accepts only
+   * `stream` (the runtime's own SSE) and `optimistic` (this tab's own send).
+   *
+   * Compaction is folded back in deliberately: it is not a turn and the
+   * projection knows nothing about it, but it IS real work this tab can see,
+   * so the Stop button belongs to it.
+   */
+  const generating = showsGeneratingIndicator({ projection: working });
+  const visiblyBusy = generating || isOptimisticCompacting;
+
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
-  const [isBusy, setIsBusy] = useState(effectiveBusy);
+  const [isBusy, setIsBusy] = useState(visiblyBusy);
   const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
-    if (effectiveBusy) {
+    if (visiblyBusy) {
       clearTimeout(busyTimerRef.current);
       setIsBusy(true);
     } else {
       busyTimerRef.current = setTimeout(() => setIsBusy(false), 300);
     }
     return () => clearTimeout(busyTimerRef.current);
-  }, [effectiveBusy]);
+  }, [visiblyBusy]);
 
   // The one working answer the LAST turn card renders (its shimmer). Resolved
   // here, once, so the card never reads the raw slot for a Kortix session —
@@ -2629,12 +2654,13 @@ export function SessionChat({
   // The composer keeps the ungated projection below on purpose: holding `/`
   // commands over a turn that MIGHT be open is the safe direction, while
   // telling the user the agent is thinking when it is not is simply false.
-  const generating = showsGeneratingIndicator({ projection: working });
   const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
-    // same frame instead of the card flickering 300ms earlier.
-    projectionBusy: isBusy && generating,
+    // same frame instead of the card flickering 300ms earlier. `isBusy` is
+    // already the GENERATING answer (see `visiblyBusy`), so the shimmer and
+    // every other visible affordance settle on one fact.
+    projectionBusy: isBusy,
     rawSlotBusy: getWorkingState(sessionStatus, true),
   });
 
