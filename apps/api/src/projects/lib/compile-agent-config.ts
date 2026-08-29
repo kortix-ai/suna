@@ -272,10 +272,12 @@ export function compileSelectedAgentConfig(
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents)
       ? v2.agents
       : {};
-  const block = rawAgents[agentName];
-  if (!block) {
+  // Key presence, not truthiness: a declared agent may legitimately have a
+  // null block (comments only), and that is NOT "undeclared".
+  if (!Object.hasOwn(rawAgents, agentName)) {
     throw new CompileAgentConfigError(`Agent "${agentName}" is not declared.`, agentName);
   }
+  const block: AgentBlockV2 = rawAgents[agentName] ?? ({} as AgentBlockV2);
   if (block.enabled === false) {
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
@@ -299,10 +301,23 @@ export function compileSelectedAgentConfig(
  */
 function compileAgentBlock(
   name: string,
-  block: AgentBlockV2,
+  rawBlock: AgentBlockV2 | null | undefined,
   mdPath: string,
   mdContent: string | undefined,
 ): OpencodeAgentConfig {
+  // A declared agent whose block holds only comments parses as NULL in YAML:
+  //
+  //   echo-probe:
+  //     # grants nothing
+  //
+  // That is a legitimate declaration — the agent exists and grants nothing —
+  // but it used to reach `block.enabled` and throw, and this compile is
+  // ALL-OR-NOTHING: one such agent took down the whole project's config, so
+  // every session booted with no compiled agent config at all and the
+  // per-agent prebuild fell back to the default agent alone. Seen on
+  // pi.kortix.com 2026-08-29: "null is not an object (evaluating
+  // 'block.enabled')".
+  const block: AgentBlockV2 = rawBlock ?? ({} as AgentBlockV2);
   const out: OpencodeAgentConfig = {};
 
   if (mdContent !== undefined) {
