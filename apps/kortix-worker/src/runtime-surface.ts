@@ -324,19 +324,61 @@ export class RuntimeSurface {
    * burst of "new" events for messages it already has.
    */
   seedRestoredMessages(
-    messages: Array<{ role?: string; content?: unknown; timestamp?: number | string }>,
+    messages: Array<{
+      role?: string;
+      content?: unknown;
+      timestamp?: number | string;
+      toolCallId?: string;
+      toolName?: string;
+      isError?: boolean;
+    }>,
   ): number {
     let seeded = 0;
+    // A tool call and its result are TWO durable messages (the assistant's
+    // `toolCall` block, then a `role: 'toolResult'` message pointing back at it
+    // by `toolCallId`). The live wire shape is one `tool` part that moves from
+    // running to completed, so the result has to fold onto the part the call
+    // created rather than become a bubble of its own — otherwise a resumed
+    // session shows "Successfully wrote 4 bytes to number.txt" as something
+    // the assistant SAID, and the write card it belongs to is missing.
+    const toolParts = new Map<string, { messageId: string; partId: string; tool: string; input: unknown }>();
+
     for (const message of messages) {
-      const role = message.role === 'user' ? 'user' : 'assistant';
-      const parts = Array.isArray(message.content) ? message.content : [];
-      const texts = parts
-        .filter((p): p is { type?: string; text?: string } => typeof p === 'object' && p !== null)
-        .filter((p) => typeof p.text === 'string' && p.text.length > 0);
-      // A message with nothing renderable would show as an empty bubble.
-      if (texts.length === 0) continue;
-      const id = this.mintMessageId();
+      const blocks = Array.isArray(message.content) ? message.content : [];
       const created = typeof message.timestamp === 'number' ? message.timestamp : Date.now();
+
+      if (message.role === 'toolResult') {
+        const pending = message.toolCallId ? toolParts.get(message.toolCallId) : undefined;
+        // An orphan result (its call fell outside the restored window) has no
+        // part to update. Dropping it is right: on its own it is a bare string
+        // with nothing to attach it to.
+        if (!pending) continue;
+        const output = blocks
+          .filter((b: any) => b && typeof b.text === 'string')
+          .map((b: any) => b.text)
+          .join('');
+        this.applyToolPart(pending, {
+          ...(message.isError
+            ? { status: 'error', error: output }
+            : { status: 'completed', output }),
+          input: pending.input,
+          time: { start: created, end: created },
+        });
+        continue;
+      }
+
+      const role = message.role === 'user' ? 'user' : 'assistant';
+      const id = this.mintMessageId();
+      const parts: Array<{ kind: 'text'; text: string } | { kind: 'tool'; call: any }> = [];
+      for (const block of blocks) {
+        if (!block || typeof block !== 'object') continue;
+        const b = block as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
+        if (typeof b.text === 'string' && b.text.length > 0) parts.push({ kind: 'text', text: b.text });
+        else if (b.type === 'toolCall' && b.name) parts.push({ kind: 'tool', call: b });
+      }
+      // A message with nothing renderable would show as an empty bubble.
+      if (parts.length === 0) continue;
+
       this.transcript.apply({
         type: 'message.updated',
         properties: {
@@ -344,24 +386,49 @@ export class RuntimeSurface {
           info: { id, role, sessionID: this.rootId, time: { created } },
         },
       });
-      texts.forEach((part, index) => {
-        this.transcript.apply({
-          type: 'message.part.updated',
-          properties: {
-            sessionID: this.rootId,
-            part: {
-              id: `${id}-p${index}`,
-              messageID: id,
+      parts.forEach((part, index) => {
+        const partId = `${id}-p${index}`;
+        if (part.kind === 'text') {
+          this.transcript.apply({
+            type: 'message.part.updated',
+            properties: {
               sessionID: this.rootId,
-              type: 'text',
-              text: part.text,
+              part: { id: partId, messageID: id, sessionID: this.rootId, type: 'text', text: part.text },
             },
-          },
-        });
+          });
+          return;
+        }
+        const entry = { messageId: id, partId, tool: String(part.call.name), input: part.call.arguments };
+        // Left 'running' on purpose when no result follows: that is exactly
+        // what an interrupted turn was, and claiming it completed would be a lie.
+        this.applyToolPart(entry, { status: 'running', input: entry.input, time: { start: created } });
+        if (typeof part.call.id === 'string') toolParts.set(part.call.id, entry);
       });
       seeded++;
     }
     return seeded;
+  }
+
+  /** One `tool` part, in the same shape the live adapter emits (chat-events.ts). */
+  private applyToolPart(
+    entry: { messageId: string; partId: string; tool: string },
+    state: Record<string, unknown>,
+  ): void {
+    this.transcript.apply({
+      type: 'message.part.updated',
+      properties: {
+        sessionID: this.rootId,
+        part: {
+          id: entry.partId,
+          messageID: entry.messageId,
+          sessionID: this.rootId,
+          type: 'tool',
+          tool: entry.tool,
+          callID: entry.partId,
+          state,
+        },
+      },
+    });
   }
 
   /** Sequence one adapter wire event AND fold it into the transcript. */

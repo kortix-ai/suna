@@ -74,3 +74,70 @@ describe('RuntimeSurface.seedRestoredMessages', () => {
     expect(seen).toHaveLength(0);
   });
 });
+
+// Verbatim from the durable log of a real pi.kortix.com turn (session
+// 3069ad04, "create number.txt containing 4417").
+const toolTurn = [
+  { role: 'user', content: [{ type: 'text', text: 'create number.txt with 4417' }], timestamp: 1 },
+  {
+    role: 'assistant',
+    timestamp: 2,
+    content: [
+      {
+        id: 'call_j4mbycnp9oK0SkGqZx39VeDn',
+        name: 'write',
+        type: 'toolCall',
+        arguments: { path: 'number.txt', content: '4417' },
+      },
+    ],
+  },
+  {
+    role: 'toolResult',
+    timestamp: 3,
+    isError: false,
+    toolName: 'write',
+    toolCallId: 'call_j4mbycnp9oK0SkGqZx39VeDn',
+    content: [{ type: 'text', text: 'Successfully wrote 4 bytes to number.txt' }],
+  },
+  { role: 'assistant', content: [{ type: 'text', text: 'SAVED' }], timestamp: 4 },
+];
+
+describe('RuntimeSurface.seedRestoredMessages — tool calls', () => {
+  test('a call and its result restore as ONE completed tool part, not two bubbles', () => {
+    const surface = new RuntimeSurface({ sessionId: 's' });
+    // 3 messages, not 4: the toolResult folds onto the call it answers.
+    expect(surface.seedRestoredMessages(toolTurn)).toBe(3);
+
+    const page = surface.transcript.page({ limit: 50, before: null });
+    expect(page.messages).toHaveLength(3);
+    const [, call, answer] = page.messages;
+
+    const part = call!.parts[0] as any;
+    expect(part.type).toBe('tool');
+    expect(part.tool).toBe('write');
+    expect(part.state.status).toBe('completed');
+    expect(part.state.input).toEqual({ path: 'number.txt', content: '4417' });
+    expect(part.state.output).toBe('Successfully wrote 4 bytes to number.txt');
+
+    // The result text is NOT something the assistant said. Before this it was
+    // seeded as its own text bubble and the write card vanished.
+    expect(answer!.parts.map((p: any) => p.text).join('')).toBe('SAVED');
+    expect(page.messages.some((m) => m.parts.some((p: any) => p.text?.startsWith('Successfully')))).toBe(
+      false,
+    );
+  });
+
+  test('a call whose result never came stays running — an interrupted turn is not a completed one', () => {
+    const surface = new RuntimeSurface({ sessionId: 's' });
+    expect(surface.seedRestoredMessages(toolTurn.slice(0, 2))).toBe(2);
+    const page = surface.transcript.page({ limit: 10, before: null });
+    expect((page.messages[1]!.parts[0] as any).state.status).toBe('running');
+  });
+
+  test('an orphan result is dropped rather than shown as a bare string', () => {
+    // Its call fell outside the restored window; alone it has nothing to attach to.
+    const surface = new RuntimeSurface({ sessionId: 's' });
+    expect(surface.seedRestoredMessages([toolTurn[2]!])).toBe(0);
+    expect(surface.transcript.page({ limit: 10, before: null }).messages).toHaveLength(0);
+  });
+});
