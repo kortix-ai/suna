@@ -1,5 +1,6 @@
 import { resolveCommitSha } from '../projects/git';
 import type { GitBackedProject } from '../projects/git/types';
+import { refreshMirror } from '../projects/git/mirror';
 import {
   buildCompiledPiRuntimeArtifact,
   listPiAgentNames,
@@ -72,6 +73,15 @@ export async function prebuildDefaultBranchPiRuntime(
   project: GitBackedProject,
   resolveTip: typeof resolveCommitSha = resolveCommitSha,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
+  // FORCE the mirror forward first. `resolveCommitSha` refreshes without
+  // force, and `refreshIntervalMs()` is 60 s — but this runs immediately after
+  // a push, which has just touched the mirror, so the unforced refresh is a
+  // no-op and the tip resolves to the PREVIOUS commit. The push then prebuilt
+  // the wrong sha and the first session on the new one compiled on demand,
+  // which is the whole thing this prebuild exists to avoid. Caught on
+  // pi.kortix.com 2026-08-29: pushing `echo-probe` prebuilt 3 agents for the
+  // pre-push sha and none for the pushed one.
+  await refreshMirror(project, true).catch(() => {});
   const sourceSha = await resolveTip(project, project.defaultBranch);
   // Bake the DEFAULT agent by name. The artifact is keyed per agent, so
   // prebuilding under the empty name would warm an entry no session asks for.

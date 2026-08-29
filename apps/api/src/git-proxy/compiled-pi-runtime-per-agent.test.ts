@@ -123,6 +123,18 @@ describe('durable shared artifact store', () => {
     expect(source).toContain('rows.slice(retain)');
   });
 
+  test('the push prebuild forces the mirror forward before resolving the tip', async () => {
+    const source = await prebuildSource();
+    const fn = source.slice(source.indexOf('export async function prebuildDefaultBranchPiRuntime'));
+    const force = fn.indexOf('refreshMirror(project, true)');
+    const resolve = fn.indexOf('resolveTip(project, project.defaultBranch)');
+    expect(force).toBeGreaterThan(-1);
+    // Without this the tip resolves through a 60s-unforced refresh that the
+    // push itself just satisfied, so the prebuild compiles the PREVIOUS commit
+    // and the first session on the new one compiles on demand.
+    expect(force).toBeLessThan(resolve);
+  });
+
   test('a push prebuilds EVERY declared agent, best-effort', async () => {
     const source = await prebuildSource();
     expect(source).toContain('listPiAgentNames(project, sourceSha)');
