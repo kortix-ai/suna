@@ -66,8 +66,13 @@ describe('one artifact, one agent', () => {
     const source = await routeSource();
     // Putting the agent in the fetch URL would edit the image's fetch script,
     // change the pi snapshot fingerprint and rebuild the shared template.
-    expect(source).toContain('agentOfCallingSession');
+    expect(source).toContain('agentOfCallingSession(auth.sessionId)');
     expect(source).toContain('projectSessions.agentName');
+    // The id must come from the AUTH RESULT: this route authenticates its own
+    // token and never runs the middleware that populates the Hono context, so
+    // reading the context there silently yielded '' and every artifact was
+    // baked under the empty name.
+    expect(source).not.toContain('callerKortixSessionId');
     const route = source.slice(source.indexOf("path: '/{project}/compiled-pi-runtime'"));
     expect(route.slice(0, 1200)).toContain('agent: z.string().max(64).optional()');
   });

@@ -667,7 +667,12 @@ export async function resolveProjectUpstream(
 
 
 export type GitProxyAuth =
-  | { ok: true; project: ProjectRow }
+  /**
+   * `sessionId` is set when the caller IS a session (a sandbox/session token),
+   * so a route can name the session without a second token round-trip. The pi
+   * runtime route uses it to bake the session's own agent into the artifact.
+   */
+  | { ok: true; project: ProjectRow; sessionId?: string | null }
   | { ok: false; status: number; message: string };
 
 /**
@@ -815,7 +820,7 @@ async function authorizeGitProxyUncached(
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }
-    return { ok: true, project };
+    return { ok: true, project, sessionId: result.sessionId ?? null };
   }
 
   if (tokenCheck.kind === 'kortix') {
@@ -865,7 +870,8 @@ async function authorizeGitProxyUncached(
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
-      return { ok: true, project };
+      // session_id == sandbox_id for a session box (the platform invariant).
+      return { ok: true, project, sessionId: result.sandboxId };
     }
     // Account-scoped user API key. No per-project fallback here: an API key
     // carries no user identity, so there is no principal to evaluate project

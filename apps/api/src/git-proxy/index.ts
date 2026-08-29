@@ -41,7 +41,6 @@ import { refreshMirror, runGit } from '../projects/git/mirror';
 import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { db } from '../shared/db';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { writeScaffoldDeltaBundle } from '../projects/git/commits';
 import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
 import { createHash } from 'node:crypto';
@@ -125,13 +124,15 @@ function validProjectIdOrResponse(c: any, raw: string): string | Response {
  * session (a human, the prebuild, a test).
  *
  * The pi worker fetches its runtime with its OWN session credential, so the
- * API can name the agent without the worker sending it. That is deliberate:
+ * API can name the agent without the worker sending it. The id comes from the
+ * git-proxy authorization result rather than the Hono context: this route
+ * authenticates its own token and never runs the auth middleware that would
+ * populate the context. That is deliberate:
  * putting the agent in the fetch URL would mean editing the image's
  * fetch-runtime script, which changes the pi snapshot fingerprint and rebuilds
  * the shared template for something the server already knows.
  */
-async function agentOfCallingSession(c: any): Promise<string> {
-  const sessionId = callerKortixSessionId(c);
+async function agentOfCallingSession(sessionId: string | null | undefined): Promise<string> {
   if (!sessionId) return '';
   const [row] = await db
     .select({ agentName: projectSessions.agentName })
@@ -714,7 +715,7 @@ gitProxyApp.openapi(
     const { ref, sha, agent } = c.req.valid('query');
     try {
       const project = await loadGitProject({ row: auth.project });
-      const agentName = agent ?? (await agentOfCallingSession(c));
+      const agentName = agent ?? (await agentOfCallingSession(auth.sessionId));
       const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha, agentName);
       return new Response(Bun.file(artifact.path), {
         status: 200,
