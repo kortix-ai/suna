@@ -113,3 +113,42 @@ describe('session environment lifecycle bounds', () => {
     expect(block).toContain('autoStopInterval: 60');
   });
 });
+
+async function orphanReaperSource(): Promise<string> {
+  return Bun.file(new URL('../reaping/orphan-boxes.ts', import.meta.url)).text();
+}
+async function stopSource(): Promise<string> {
+  return Bun.file(new URL('../session-lifecycle/stop.ts', import.meta.url)).text();
+}
+async function deleteSource(): Promise<string> {
+  return Bun.file(new URL('../session-lifecycle/actions.ts', import.meta.url)).text();
+}
+
+describe('an environment does not outlive the session that owns it', () => {
+  test('stopping a session stops its environment box', async () => {
+    const source = await stopSource();
+    // Otherwise the compute box runs on nothing but the provider idle timer.
+    expect(source).toContain('stopSessionEnvironment(sessionId)');
+    // After the fact and best-effort: the session is already stopped, so a
+    // provider hiccup must not turn a successful stop into a 502.
+    expect(source).toContain('[session-stop] environment stop failed');
+  });
+
+  test('deleting a session deletes its environment box AND row', async () => {
+    const source = await deleteSource();
+    // Sessions are SOFT-deleted (metadata.deletedAt), so nothing cascades.
+    expect(source).toContain('deleteSessionEnvironment(sessionId)');
+  });
+
+  test('the orphan reaper keeps live environments — it used to stop them at ~1h', async () => {
+    const source = await orphanReaperSource();
+    // An environment has its own table and no session_sandboxes row, exactly
+    // like a monitor box. Missing from the keepSet, this sweep stopped the
+    // compute box under a live session and nothing recovered: `ensure` only
+    // resumes a row whose status reads 'stopped', and the reaper never writes
+    // that column.
+    expect(source).toContain('.from(sessionEnvironments)');
+    expect(source).toContain('...environmentKeepRows');
+    expect(source).toContain('sessionEnvironments.lastUsedAt');
+  });
+});
