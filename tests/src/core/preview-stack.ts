@@ -97,7 +97,18 @@ export function buildPreviewCaddyfile(publicHost: string): string {
     file_server browse
   }
 
-  handle_path /_mailpit/* {
+  # NOT handle_path: that strips the prefix, and Mailpit then serves a page
+  # whose assets are absolute (\`/dist/app.css\`, \`/favicon.svg\`). Those
+  # requests fall through to the frontend, so the UI loaded as a BLANK PAGE —
+  # HTML with no CSS or JS (reported 2026-08-29). \`MP_WEBROOT\` below makes
+  # Mailpit emit \`/_mailpit/…\` asset paths instead, so the prefix has to
+  # survive to the upstream.
+  #
+  # The bare \`/_mailpit\` is redirected because the matcher needs a path
+  # segment after the prefix; without this it fell through to the frontend and
+  # 404'd, which is how most people first meet this route.
+  redir /_mailpit /_mailpit/ 308
+  handle /_mailpit/* {
     reverse_proxy mailpit:8025
   }
 
@@ -147,6 +158,11 @@ export function buildPreviewComposeOverlay(
     restart: unless-stopped
   mailpit:
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    environment:
+      # Mailpit is reached at \`<origin>/_mailpit/\`, and it builds asset URLs
+      # from this. Unset, it emits root-absolute \`/dist/app.css\` which the
+      # preview's Caddy sends to the frontend — the UI rendered blank.
+      MP_WEBROOT: /_mailpit
     restart: unless-stopped
   supabase-auth:
     environment:
