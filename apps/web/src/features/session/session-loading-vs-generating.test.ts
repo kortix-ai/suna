@@ -28,15 +28,6 @@ const skeleton = strip(skeletonSource);
  *  - generating → the agent is working. That is what the shimmer is for.
  *  - messages on screen → neither. No extra indicator at all.
  */
-test('the turn card shows the shimmer ONLY for runtime evidence, never a poll', () => {
-  // The rule lives in `showsGeneratingIndicator` (SDK, unit-tested there):
-  // `stream` or `optimistic` paint it, `server` never does. What this file must
-  // get right is USING it for the card and not for the composer.
-  expect(code).toContain('showsGeneratingIndicator({ projection: working })');
-  // `isBusy` IS the generating answer now (see `visiblyBusy`), so the card
-  // reads it directly rather than re-anding the same fact.
-  expect(code).toContain('projectionBusy: isBusy,');
-});
 
 test('the gate takes no presence inputs — corroboration was the wrong question', () => {
   // The first version withheld a server read only until the stream
@@ -94,32 +85,37 @@ const layout = strip(
   readFileSync(join(import.meta.dir, 'session-layout.tsx'), 'utf8'),
 );
 
-test('every VISIBLE busy affordance derives from the generating answer', () => {
-  // `isBusy` is the one flag behind the Stop button, Escape-to-stop, and the
-  // standalone busy indicator, so gating it covers all of them at once.
+test('THE INTERRUPT AFFORDANCE fails SAFE — isBusy keeps the broad answer', () => {
+  // Reported 2026-08-29 on pi: a long answer had NO Stop button, because this
+  // was gated on `generating`. A pi-worker runtime emits no status frames, so
+  // a real streaming turn is visible only through the `/turn` read; once the
+  // send receipt aged out, the escape hatch vanished mid-answer.
+  //
+  // The two directions are not symmetric. Stop shown with nothing running is
+  // one dead click; Stop hidden with a turn running means the user cannot stop
+  // their own agent. So this stays broad.
+  expect(code).toContain('useState(effectiveBusy)');
+  expect(code).toContain('}, [effectiveBusy]);');
+  expect(code).not.toContain('useState(visiblyBusy)');
+});
+
+test('the SHIMMER stays strict — a poll may never claim the agent is thinking', () => {
+  // The claim needs the runtime's own voice, which is what keeps "Gathering
+  // thoughts…" off a finished transcript when a stale ledger row is open.
   expect(code).toContain('const generating = showsGeneratingIndicator({ projection: working })');
-  expect(code).toContain('const visiblyBusy = generating || isOptimisticCompacting');
-  expect(code).toContain('useState(visiblyBusy)');
-  expect(code).toContain('}, [visiblyBusy]);');
+  expect(code).toContain('projectionBusy: isBusy && generating');
 });
 
-test('compaction still counts as visibly busy — it is real work this tab can see', () => {
-  // It is not a turn and the projection knows nothing about it, but Stop
-  // legitimately belongs to it.
-  expect(code).toContain('generating || isOptimisticCompacting');
-});
-
-test('the COMMAND gate keeps the ungated projection — failing safe is right there', () => {
+test('the COMMAND gate keeps the ungated projection too', () => {
   // A `/` command goes straight at the runtime with no admission gate, so
-  // holding it over a turn that MIGHT be open is correct. This is the one
-  // place the broader answer must survive.
+  // holding it over a turn that MIGHT be open is correct.
   expect(code).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
 });
 
-test('the layout panel uses the same rule, so the ready chip cannot stall', () => {
-  // A stale ledger row pinned `isSessionBusy` at running forever, so
-  // `useDeliverableReadiness` never saw running→settled and the chip never
-  // fired — the same defect its own comment describes for the old raw slot.
-  expect(layout).toContain('showsGeneratingIndicator({ projection: working })');
-  expect(layout).not.toContain("? working.state === 'working'");
+test('the layout panel keeps the broad answer, for the same asymmetry', () => {
+  // Narrowing it was tried and reverted: with no status frames on pi, this
+  // panel went blind to real work. A stale row makes the ready chip late,
+  // which is the harmless direction.
+  expect(layout).toContain("? working.state === 'working'");
+  expect(layout).not.toContain('showsGeneratingIndicator');
 });

@@ -2617,22 +2617,35 @@ export function SessionChat({
    * so the Stop button belongs to it.
    */
   const generating = showsGeneratingIndicator({ projection: working });
-  const visiblyBusy = generating || isOptimisticCompacting;
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
-  const [isBusy, setIsBusy] = useState(visiblyBusy);
+  //
+  // Driven by `effectiveBusy` — the BROAD answer, `/turn` read included —
+  // because this flag owns the INTERRUPT affordance (Stop, Escape-to-stop) and
+  // those must fail SAFE. The two failure directions are not symmetric:
+  //
+  //   Stop shown with nothing running  -> one dead click.
+  //   Stop hidden with a turn running  -> the user cannot stop their agent.
+  //
+  // Gating this on `generating` cost exactly that. On a pi-worker session the
+  // runtime does not emit the status frames that produce a `stream` source, so
+  // a genuinely streaming turn is only ever visible through the `/turn` read —
+  // and once the send receipt aged out there was no Stop button at all for a
+  // long answer (reported 2026-08-29, pi). The shimmer keeps the strict rule
+  // below; the escape hatch does not.
+  const [isBusy, setIsBusy] = useState(effectiveBusy);
   const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
-    if (visiblyBusy) {
+    if (effectiveBusy) {
       clearTimeout(busyTimerRef.current);
       setIsBusy(true);
     } else {
       busyTimerRef.current = setTimeout(() => setIsBusy(false), 300);
     }
     return () => clearTimeout(busyTimerRef.current);
-  }, [visiblyBusy]);
+  }, [effectiveBusy]);
 
   // The one working answer the LAST turn card renders (its shimmer). Resolved
   // here, once, so the card never reads the raw slot for a Kortix session —
@@ -2657,10 +2670,14 @@ export function SessionChat({
   const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
-    // same frame instead of the card flickering 300ms earlier. `isBusy` is
-    // already the GENERATING answer (see `visiblyBusy`), so the shimmer and
-    // every other visible affordance settle on one fact.
-    projectionBusy: isBusy,
+    // same frame instead of the card flickering 300ms earlier.
+    //
+    // `&& generating` is what keeps "Gathering thoughts…" off a finished
+    // transcript: `isBusy` deliberately includes the `/turn` read so Stop can
+    // fail safe, and a stale ledger row would otherwise shimmer for as long as
+    // it stayed open. The CLAIM that the agent is thinking needs the runtime's
+    // own voice; the ESCAPE HATCH does not.
+    projectionBusy: isBusy && generating,
     rawSlotBusy: getWorkingState(sessionStatus, true),
   });
 

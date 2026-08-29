@@ -34,7 +34,6 @@ import { useTabStore } from '@/stores/tab-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import type { SessionStartStage } from '@kortix/sdk';
 import { useRuntimeMessages, useSessionStateStore, useSessionWorking } from '@kortix/sdk/react';
-import { showsGeneratingIndicator } from '@kortix/sdk';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
 import type React from 'react';
@@ -150,19 +149,15 @@ export const SessionLayout = memo(function SessionLayout({
     enabled: !!projectId && !!projectSessionId,
     runtimeSessionId: sessionId,
   });
-  // `showsGeneratingIndicator`, not `working.state`: this drives VISIBLE state
-  // (the deliverable-ready chip, the action panel), and `state` also answers
-  // `working` from a `GET .../turn` read — a row open in the ledger, which a
-  // separate relay closes and which routinely outlives its turn.
-  //
-  // It is the same defect the comment above describes for the OLD raw-slot
-  // approach, arriving by the other door: a stale row pins this at "running"
-  // forever, `useDeliverableReadiness` never sees the running→settled
-  // transition, and the ready chip never fires. Only the runtime's own stream
-  // (or this tab's own send) may say the agent is working.
+  // The BROAD answer, `/turn` read included. Narrowing this to the runtime's
+  // own stream was tried and reverted: on a pi-worker session the runtime emits
+  // no status frames, so a genuinely running turn has only the `/turn` read
+  // behind it and this panel went blind to real work. A stale row biases this
+  // toward "still running", which is the harmless direction here — the ready
+  // chip arrives late rather than announcing a turn that has not finished.
   const isSessionBusy =
     projectId && projectSessionId
-      ? showsGeneratingIndicator({ projection: working })
+      ? working.state === 'working'
       : sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // W1/W9 — announce finished deliverables and blocked-on-you states while the
