@@ -384,3 +384,36 @@ export async function stopSessionEnvironment(sessionId: string): Promise<Session
     ? { sessionId, status: updated.status, externalId: updated.externalId, previewUrl: null, previewToken: null }
     : null;
 }
+
+/**
+ * Retire a session's environment for good: power the box off and drop the row.
+ *
+ * Sessions are soft-deleted (`metadata.deletedAt`), so nothing cascades to this
+ * table — before this, a deleted session left its environment box behind with
+ * only the provider's 60 s idle timer to stop it and NOTHING to ever delete it.
+ * Best-effort on the provider call: a box we cannot reach must still lose its
+ * row, or it becomes invisible AND permanent.
+ */
+export async function deleteSessionEnvironment(sessionId: string): Promise<void> {
+  const row = await readRow(sessionId);
+  if (!row) return;
+  if (row.externalId) {
+    try {
+      const daytona = getDaytona();
+      const sandbox = await withTimeout(
+        daytona.get(row.externalId),
+        PROVIDER_CALL_TIMEOUT_MS,
+        `Daytona get(${row.externalId})`,
+      );
+      await withTimeout(
+        (daytona as unknown as { delete(sandbox: unknown): Promise<unknown> }).delete(sandbox),
+        60_000,
+        `Daytona delete(${row.externalId})`,
+      );
+    } catch (err) {
+      console.warn(`[session-env] delete of ${row.externalId} failed:`, err);
+    }
+  }
+  await db.delete(sessionEnvironments).where(eq(sessionEnvironments.sessionId, sessionId));
+}
+
