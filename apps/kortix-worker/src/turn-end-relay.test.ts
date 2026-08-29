@@ -1,0 +1,173 @@
+import { describe, expect, test } from 'bun:test';
+
+import { buildTurnEndRelay, turnEndPayload, turnEndUrl } from './turn-end-relay';
+
+/**
+ * Measured on `pi.kortix.com` 2026-08-29, four sessions sampled through the
+ * live API:
+ *
+ *   AGENT OK       3 turn rows — 3 still `active`, oldest 15:44 (39 min old)
+ *   PER AGENT OK   1 turn row  — 1 still `active`
+ *   hey kortix     4 turn rows — 4 still `active`, oldest 15:16 (67 min old)
+ *   cold start     1 turn row  — 1 still `active`
+ *
+ * Nine rows, nine `active`, zero `ended`. No turn on that environment had ever
+ * been closed.
+ *
+ * Cause: the sandbox daemon relays turn end from OpenCode's NATIVE `/event`
+ * stream (`startOpencodeEventLoop`, `opencode.getInternalUrl()/event`). The pi
+ * worker does not serve that surface — it serves the Kortix Runtime API at
+ * `/kortix/opencode/*` — so `onSessionIdle` never fires for a pi session and
+ * `relayTurnEndToApi` is never reached. The worker is the only process that
+ * knows its own turn ended, so the relay belongs here.
+ *
+ * Consequences of a row that never closes, beyond the visible one:
+ *  - `serverOpenTurnToken` stays non-null, so the composer holds `/` commands
+ *    and shows Stop over a finished turn;
+ *  - the transcript paints "Gathering thoughts…" until the runtime's own idle
+ *    frame vetoes the read;
+ *  - `box-reaper` only clears an unobservable turn past `deadlineAt`, which is
+ *    `KORTIX_SANDBOX_TURN_GRANT_MINUTES` — 240 by default — so sandboxes stay
+ *    alive for hours after their work is done.
+ */
+
+const cfg = {
+  apiUrl: 'https://api.example.test/v1',
+  projectId: 'proj-1',
+  sessionId: 'sess-1',
+  kortixToken: 'tok-1',
+};
+
+describe('turnEndUrl', () => {
+  test('targets the project turn-stream route the API actually serves', () => {
+    expect(turnEndUrl('https://api.example.test/v1', 'proj-1')).toBe(
+      'https://api.example.test/v1/projects/proj-1/turn-stream',
+    );
+  });
+
+  test('tolerates a trailing slash on the API root', () => {
+    expect(turnEndUrl('https://api.example.test/v1/', 'proj-1')).toBe(
+      'https://api.example.test/v1/projects/proj-1/turn-stream',
+    );
+  });
+
+  test('encodes the project id', () => {
+    expect(turnEndUrl('https://x.test', 'a/b')).toBe('https://x.test/projects/a%2Fb/turn-stream');
+  });
+});
+
+describe('turnEndPayload', () => {
+  test('sends the kind and status the API branches on', () => {
+    // `r4.ts` accepts `kind: 'end' | 'turn_end'` and reads `status` as
+    // 'error' | anything-else-means-idle.
+    expect(turnEndPayload({ sessionId: 'sess-1', status: 'idle' })).toEqual({
+      session_id: 'sess-1',
+      kind: 'turn_end',
+      status: 'idle',
+    });
+  });
+
+  test('carries an error status through', () => {
+    expect(turnEndPayload({ sessionId: 'sess-1', status: 'error' })).toMatchObject({
+      status: 'error',
+    });
+  });
+});
+
+describe('buildTurnEndRelay', () => {
+  test('THE FIX: an agent turn end posts turn_end to the control plane', async () => {
+    const calls: Array<{ url: string; body: unknown; auth: string | null }> = [];
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      fetch: (async (url: any, init: any) => {
+        calls.push({
+          url: String(url),
+          body: JSON.parse(init.body),
+          auth: init.headers?.Authorization ?? null,
+        });
+        return { ok: true, status: 200 } as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    await relay('idle');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url).toBe('https://api.example.test/v1/projects/proj-1/turn-stream');
+    expect(calls[0].auth).toBe('Bearer tok-1');
+    expect(calls[0].body).toEqual({ session_id: 'sess-1', kind: 'turn_end', status: 'idle' });
+  });
+
+  test('retries a network failure, because a lost end leaves the row open for hours', async () => {
+    let attempts = 0;
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      waitMs: async () => {},
+      fetch: (async () => {
+        attempts += 1;
+        if (attempts < 3) throw new Error('network down');
+        return { ok: true, status: 200 } as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    await relay('idle');
+    expect(attempts).toBe(3);
+  });
+
+  test('stops on ANY ok response — a non-ok 4xx is a definitive answer, not a retry', async () => {
+    // Mirrors the daemon's own rule: apps/api answering "already finalized" is
+    // an answer. Only network/5xx failures are worth another attempt.
+    let attempts = 0;
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      waitMs: async () => {},
+      fetch: (async () => {
+        attempts += 1;
+        return { ok: false, status: 409 } as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    await relay('idle');
+    expect(attempts).toBe(1);
+  });
+
+  test('gives up after its budget rather than retrying forever', async () => {
+    let attempts = 0;
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      waitMs: async () => {},
+      fetch: (async () => {
+        attempts += 1;
+        throw new Error('still down');
+      }) as unknown as typeof fetch,
+    });
+
+    await relay('idle');
+    expect(attempts).toBe(4);
+  });
+
+  test('never throws — a failed relay must not take the turn down with it', async () => {
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      waitMs: async () => {},
+      fetch: (async () => {
+        throw new Error('boom');
+      }) as unknown as typeof fetch,
+    });
+    await expect(relay('idle')).resolves.toBeUndefined();
+  });
+
+  test('is inert when the platform did not inject the wiring', async () => {
+    // The bench runs the worker with no control plane at all. It must not
+    // attempt a relay, and must not crash for the lack of one.
+    let called = false;
+    const spyFetch = (async () => {
+      called = true;
+      return { ok: true, status: 200 } as Response;
+    }) as unknown as typeof fetch;
+    for (const missing of ['apiUrl', 'projectId', 'sessionId', 'kortixToken'] as const) {
+      const relay = buildTurnEndRelay({ ...cfg, [missing]: undefined, fetch: spyFetch });
+      await relay('idle');
+    }
+    expect(called).toBe(false);
+  });
+});
