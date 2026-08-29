@@ -518,8 +518,12 @@ process.exit(1);
 `;
 
 function buildPiWorkerDockerfile(): string {
-  return `FROM node:22-slim
-RUN useradd --create-home --shell /usr/sbin/nologin kortix \\
+  // alpine, not slim: the worker is pure JS (`@earendil-works/pi-*` + `ws`,
+  // no native modules, no child_process), so musl costs nothing and the base
+  // is ~40 MB smaller. `adduser` is busybox's, not shadow's — the Debian
+  // `useradd` flags do not exist here.
+  return `FROM node:22-alpine
+RUN adduser -D -s /sbin/nologin kortix \\
     && mkdir -p /opt/kortix && chown kortix:kortix /opt/kortix
 COPY pi-worker-entrypoint /usr/local/bin/pi-worker-entrypoint
 COPY fetch-runtime.mjs /opt/kortix/fetch-runtime.mjs

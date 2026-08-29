@@ -135,6 +135,19 @@ describe('durable shared artifact store', () => {
     expect(force).toBeLessThan(resolve);
   });
 
+  test('the OpenCode prebuild forces the mirror forward too', async () => {
+    const source = await prebuildSource();
+    const fn = source.slice(
+      source.indexOf('export async function prebuildDefaultBranchArtifacts'),
+      source.indexOf('export async function prebuildDefaultBranchPiRuntime'),
+    );
+    // Same trap, same fix: without it a push prebuilds the PREVIOUS commit.
+    const force = fn.indexOf('refreshMirror(project, true)');
+    const resolve = fn.indexOf('dependencies.resolveTip(');
+    expect(force).toBeGreaterThan(-1);
+    expect(force).toBeLessThan(resolve);
+  });
+
   test('a push prebuilds EVERY declared agent, best-effort', async () => {
     const source = await prebuildSource();
     expect(source).toContain('listPiAgentNames(project, sourceSha)');

@@ -52,6 +52,15 @@ export async function prebuildDefaultBranchArtifacts(
   runtimeRepoUrl: string,
   dependencies: CompiledPrebuildDependencies = defaults,
 ): Promise<CompiledBootArtifacts> {
+  // Same stale-tip trap as the pi prebuild below: `resolveCommitSha` refreshes
+  // the mirror WITHOUT force and the interval is 60 s, but this runs right
+  // after a push that has just touched the mirror — so the refresh no-ops and
+  // the tip resolves to the PRE-push commit. The push then prebuilds the wrong
+  // sha and the first session on the new one compiles on demand, which is the
+  // whole thing this prebuild exists to prevent. Proven on the pi path
+  // (2026-08-29): pushing a fourth agent prebuilt three artifacts for the
+  // pre-push sha and none for the pushed one.
+  await refreshMirror(project, true).catch(() => {});
   const sourceSha = await dependencies.resolveTip(project, project.defaultBranch);
   return prebuildCompiledBootArtifacts(
     project,
