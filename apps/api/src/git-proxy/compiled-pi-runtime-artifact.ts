@@ -20,6 +20,10 @@ import { refreshMirror, runGit, runGitCapture } from "../projects/git/mirror";
 import type { GitBackedProject } from "../projects/git/types";
 import { getPiWorkerBundle, type PiWorkerBundle } from "./pi-worker-bundle";
 import {
+  putStoredPiRuntimeArtifact,
+  readStoredPiRuntimeArtifact,
+} from "./pi-runtime-store";
+import {
   COMPILED_PI_RUNTIME_FORMAT,
   compilePiRuntime,
   type CompiledPiRuntimeManifest,
@@ -178,6 +182,58 @@ async function readCachedArtifact(
   }
 }
 
+/**
+ * Write a shared-store artifact onto local disk so later boots on THIS replica
+ * take the fast path. Returns null when the bytes do not match their recorded
+ * digest — a corrupt row must send the caller to a clean recompile, not serve.
+ */
+async function hydrateFromStore(
+  record: { sha256: string; size: number; manifest: Record<string, unknown>; content: Buffer },
+  runtimePath: string,
+  metadataPath: string,
+  key: {
+    projectId: string;
+    ref: string;
+    sourceSha: string;
+    agentName: string;
+    workerBundleSha256: string;
+  },
+): Promise<StoredCompiledPiRuntimeArtifact | null> {
+  const digest = createHash("sha256").update(record.content).digest("hex");
+  if (digest !== record.sha256 || record.content.byteLength !== record.size) return null;
+  const staged = `${runtimePath}.${crypto.randomUUID()}.tmp`;
+  try {
+    await mkdir(cacheRoot(), { recursive: true });
+    await writeFile(staged, record.content, { mode: 0o700 });
+    await rename(staged, runtimePath);
+    const metadata: CachedPiRuntimeMetadata = {
+      format: COMPILED_PI_RUNTIME_FORMAT,
+      projectId: key.projectId,
+      ref: key.ref,
+      sourceSha: key.sourceSha,
+      workerBundleSha256: key.workerBundleSha256,
+      agentName: key.agentName,
+      sha256: record.sha256,
+      size: record.size,
+      manifest: record.manifest as unknown as CompiledPiRuntimeManifest,
+    };
+    await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
+    return {
+      path: runtimePath,
+      sha256: record.sha256,
+      size: record.size,
+      sourceSha: key.sourceSha,
+      cacheHit: true,
+      manifest: metadata.manifest,
+    };
+  } catch (error) {
+    console.warn("[pi-runtime-store] could not hydrate local cache", error);
+    return null;
+  } finally {
+    await rm(staged, { force: true });
+  }
+}
+
 async function compileArtifact(
   project: GitBackedProject,
   ref: string,
@@ -186,6 +242,7 @@ async function compileArtifact(
   runtimePath: string,
   metadataPath: string,
   agentName: string,
+  artifactKey: string,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
   const mirror = await assertExactSource(project, ref, sourceSha);
   const resolved = await resolveCompiledAgentConfigForSession(project, sourceSha);
@@ -235,6 +292,20 @@ async function compileArtifact(
       manifest: artifact.manifest,
     };
     await writeFile(metadataPath, `${JSON.stringify(metadata)}\n`, { mode: 0o600 });
+    // Publish to the shared store so no other replica — and no boot after the
+    // next deploy — has to reach git for this same (project, ref, sha, agent).
+    await putStoredPiRuntimeArtifact({
+      artifactKey,
+      projectId: project.projectId,
+      ref,
+      sourceSha,
+      agentName,
+      workerBundleSha256: workerBundle.sha256,
+      sha256: artifact.sha256,
+      size: artifact.size,
+      manifest: artifact.manifest as unknown as Record<string, unknown>,
+      content: Buffer.from(artifact.source),
+    });
     return {
       path: runtimePath,
       sha256: artifact.sha256,
@@ -267,6 +338,27 @@ export async function resolvePiDefaultAgentName(
 ): Promise<string> {
   const mirror = await refreshMirror(project);
   return (await resolveDefaultAgentAtSha(mirror, project, sourceSha)) ?? "";
+}
+
+/**
+ * Every agent declared at `sourceSha`, so a push can prebuild one bundle each.
+ *
+ * The artifact is per-agent now, so prebuilding only the default left every
+ * OTHER agent compiling on its first session — the exact "compile on session
+ * start" this store exists to remove.
+ */
+export async function listPiAgentNames(
+  project: GitBackedProject,
+  sourceSha: string,
+): Promise<string[]> {
+  const serialized = await resolveCompiledAgentConfigForSession(project, sourceSha);
+  if (!serialized) return [];
+  try {
+    const parsed = JSON.parse(serialized) as { agent?: Record<string, unknown> };
+    return Object.keys(parsed?.agent ?? {});
+  } catch {
+    return [];
+  }
 }
 
 export function normalizePiAgentName(input: string | null | undefined): string {
@@ -303,6 +395,20 @@ export async function buildCompiledPiRuntimeArtifact(
   );
   if (cached) return cached;
 
+  // Local disk missed. Before recompiling — which needs git — ask the shared
+  // store. This is the whole point of it: a deploy wipes the container's cache,
+  // and a boot must not depend on the upstream being reachable.
+  const shared = await readStoredPiRuntimeArtifact(key);
+  if (shared) {
+    const hydrated = await hydrateFromStore(
+      shared,
+      runtimePath,
+      metadataPath,
+      { projectId: project.projectId, ref, sourceSha, agentName, workerBundleSha256: workerBundle.sha256 },
+    );
+    if (hydrated) return hydrated;
+  }
+
   const active = builds.get(key);
   if (active) return active;
   const build = compileArtifact(
@@ -313,6 +419,7 @@ export async function buildCompiledPiRuntimeArtifact(
     runtimePath,
     metadataPath,
     agentName,
+    key,
   ).finally(() => {
     builds.delete(key);
   });

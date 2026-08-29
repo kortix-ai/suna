@@ -77,3 +77,57 @@ describe('one artifact, one agent', () => {
     expect(route.slice(0, 1200)).toContain('agent: z.string().max(64).optional()');
   });
 });
+
+async function storeSource(): Promise<string> {
+  return Bun.file(new URL('./pi-runtime-store.ts', import.meta.url)).text();
+}
+
+describe('durable shared artifact store', () => {
+  test('a local miss asks the store BEFORE recompiling — boot must not need git', async () => {
+    const source = await artifactSource();
+    const readAt = source.indexOf('readStoredPiRuntimeArtifact(key)');
+    const compileAt = source.indexOf('const build = compileArtifact(');
+    expect(readAt).toBeGreaterThan(-1);
+    // Order matters: recompiling reaches the mirror, and on 2026-08-29 a git
+    // outage made that path boot sessions with no agent config at all.
+    expect(readAt).toBeLessThan(compileAt);
+  });
+
+  test('a compiled artifact is published for every other replica and every later deploy', async () => {
+    const source = await artifactSource();
+    expect(source).toContain('putStoredPiRuntimeArtifact({');
+    expect(source).toContain('content: Buffer.from(artifact.source)');
+  });
+
+  test('hydration refuses bytes that do not match their digest', async () => {
+    const source = await artifactSource();
+    const fn = source.slice(source.indexOf('async function hydrateFromStore'));
+    // A corrupt row must send the caller to a clean recompile, never be served.
+    expect(fn.slice(0, 900)).toContain('digest !== record.sha256');
+    expect(fn.slice(0, 900)).toContain('return null');
+  });
+
+  test('neither reading nor publishing can fail a boot', async () => {
+    const source = await storeSource();
+    for (const fn of ['readStoredPiRuntimeArtifact', 'putStoredPiRuntimeArtifact']) {
+      const body = source.slice(source.indexOf(`export async function ${fn}`));
+      expect(body.slice(0, 1400)).toContain('catch');
+    }
+    // Publishing is an optimisation; a duplicate is a no-op, not an error.
+    expect(source).toContain('onConflictDoNothing()');
+  });
+
+  test('retention is bounded per (project, agent)', async () => {
+    const source = await storeSource();
+    expect(source).toContain('RETAIN_PER_AGENT');
+    expect(source).toContain('rows.slice(retain)');
+  });
+
+  test('a push prebuilds EVERY declared agent, best-effort', async () => {
+    const source = await prebuildSource();
+    expect(source).toContain('listPiAgentNames(project, sourceSha)');
+    expect(source).toContain("name !== defaultAgent");
+    // One broken agent must not fail the push or the caller's artifact.
+    expect(source).toContain('.catch(');
+  });
+});

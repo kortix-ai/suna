@@ -5,6 +5,7 @@ import {
   bigserial,
   boolean,
   check,
+  customType,
   foreignKey,
   index,
   integer,
@@ -911,6 +912,59 @@ export const sessionWorkerLog = kortixSchema.table(
     // The only read this table has: one session, in append order.
     index('idx_session_worker_log_session_id').on(table.sessionId, table.id),
     check('session_worker_log_item_object_check', sql`jsonb_typeof(${table.item}) = 'object'`),
+  ],
+);
+
+/** Raw bytes. drizzle-orm has no first-class bytea column. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
+
+/**
+ * Compiled pi worker runtimes — one row per (project, ref, sha, AGENT).
+ *
+ * The artifact used to live only in `/tmp/kortix/compiled-boot` inside the API
+ * container, which is not a store: it has no mount, so every deploy destroys
+ * it, and each replica keeps its own copy. That made session boot depend on
+ * git being reachable AND on which replica answered. When managed-git auth
+ * broke on 2026-08-29 the compile failed and sessions booted with NO agent
+ * config at all.
+ *
+ * So the durable copy lives here — the one store every environment has,
+ * including self-host, which has no S3. The container directory stays in front
+ * of it as a read-through cache. `content` is ~900 KB of minified JS per row,
+ * TOASTed and compressed by PostgreSQL; `pruneStoredPiRuntimeArtifacts` keeps
+ * only the newest few per (project, agent).
+ */
+export const piRuntimeArtifacts = kortixSchema.table(
+  'pi_runtime_artifacts',
+  {
+    /** The cache key: sha256 of (format, project, ref, sha, workerBundle, agent). */
+    artifactKey: text('artifact_key').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: text('ref').notNull(),
+    sourceSha: text('source_sha').notNull(),
+    /** '' means the project default, resolved at build time. */
+    agentName: text('agent_name').notNull(),
+    workerBundleSha256: text('worker_bundle_sha256').notNull(),
+    sha256: text('sha256').notNull(),
+    size: integer('size').notNull(),
+    manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    content: bytea('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // The retention sweep reads exactly this: newest-first within one agent.
+    index('idx_pi_runtime_artifacts_retention').on(
+      table.projectId,
+      table.agentName,
+      table.createdAt,
+    ),
   ],
 );
 

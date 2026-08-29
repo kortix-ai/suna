@@ -68,6 +68,7 @@ export {
   projectSessions,
   projectSessionRuntimeContexts,
   sessionWorkerLog,
+  piRuntimeArtifacts,
   accountModelPreferences,
   projectLlmRoutingPolicies,
   projectSessionGrants,
