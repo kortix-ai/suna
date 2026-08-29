@@ -124,3 +124,66 @@ export function buildTurnEndRelay(cfg: TurnEndRelayConfig): (status: TurnEndStat
     log(JSON.stringify({ msg: 'turn-end relay gave up', sessionId, status }));
   };
 }
+
+/**
+ * Close a turn row a PREVIOUS worker process left open.
+ *
+ * `buildTurnEndRelay` fixes turns going forward and cannot touch a row that was
+ * already stuck. On pi.kortix.com every session had one — nine rows across four
+ * sessions, none ever closed — so re-entering any existing session still
+ * painted "Gathering thoughts…" over a finished answer, with the composer stuck
+ * on Stop. Those rows would otherwise sit until `deadlineAt`
+ * (`KORTIX_SANDBOX_TURN_GRANT_MINUTES`, 240 by default).
+ *
+ * A worker boots whenever a parked session is opened, and at that instant it is
+ * provably running no turn: `restoredMessages` is history read from the durable
+ * store, not work in progress. So boot is exactly the moment to say "this
+ * session is idle", and it lands the moment the user opens the session — which
+ * is when they would otherwise see the stale shimmer.
+ *
+ * ## The race, and why the delay is the fix
+ *
+ * A prompt delivered immediately after boot starts a REAL turn whose row must
+ * NOT be closed. Two guards, both required:
+ *
+ *  - `delayMs` — wait before firing, so a prompt already in flight gets to
+ *    start its turn first;
+ *  - `noteTurnStarted()` — the worker calls this the moment the agent begins
+ *    work, and the reconcile then stands down permanently.
+ *
+ * Worst case if both are lost: one row is closed under a live turn. That is
+ * self-correcting rather than sticky — `projectWorking`'s content-first rule
+ * ranks the runtime's own streamed output above a `/turn` read, so a turn that
+ * is really producing output keeps reading as working.
+ */
+export interface BootReconcile {
+  /** Call when the agent starts a turn — cancels the reconcile for good. */
+  noteTurnStarted(): void;
+  /** Wait out the delay, then relay idle unless a turn started. Fires once. */
+  run(): Promise<void>;
+}
+
+export function scheduleBootReconcile(input: {
+  relay: (status: TurnEndStatus) => Promise<void>;
+  delayMs?: number;
+  wait?: (ms: number) => Promise<void>;
+}): BootReconcile {
+  const delayMs = input.delayMs ?? 1_500;
+  const wait = input.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let turnStarted = false;
+  let fired = false;
+
+  return {
+    noteTurnStarted() {
+      turnStarted = true;
+    },
+    async run() {
+      if (fired) return;
+      fired = true;
+      await wait(delayMs);
+      // Re-checked AFTER the wait, which is the whole point of waiting.
+      if (turnStarted) return;
+      await input.relay('idle');
+    },
+  };
+}

@@ -38,7 +38,7 @@ import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
-import { buildTurnEndRelay } from './turn-end-relay.ts';
+import { buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
 
 /**
  * pi's session layer runs `assertJsonSerializable` on every durable payload:
@@ -395,7 +395,12 @@ export async function buildHarness(cfg: WorkerConfig) {
   // — the control plane's row and the durable transcript are independent
   // records.
   const relayTurnEnd = buildTurnEndRelay(cfg);
+  // Close whatever a PREVIOUS process left open. Armed here, run after listen.
+  const bootReconcile = scheduleBootReconcile({ relay: relayTurnEnd });
   agent.subscribe((event: any) => {
+    // ANY agent event means this process is doing work, so the boot reconcile
+    // must never fire — it exists only for a session that booted idle.
+    bootReconcile.noteTurnStarted();
     if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
     // `error` when the agent ended on a failure, so the API records the same
     // end_reason the daemon would have. `void`: the relay owns its retries and
@@ -403,7 +408,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle');
   });
 
-  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError };
+  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -412,7 +417,7 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError } =
+  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile } =
     await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
@@ -799,6 +804,11 @@ export async function startWorker(cfg = configFromEnv()) {
   LISTEN_MS = Date.now() - BOOT_T0;
   const port = (server.address() as any).port;
   console.log(JSON.stringify({ msg: 'worker listening', port, bootMs: LISTEN_MS, vmUptimeAtListenMs: LISTEN_UPTIME_MS, modelMode: cfg.modelMode, env: cfg.envUrl }));
+  // Fire-and-forget, AFTER listen: a session that booted with no work to do
+  // tells the control plane so, closing a row a previous process left open.
+  // Not awaited — the worker must be answering requests immediately, and the
+  // reconcile deliberately waits out its own race window first.
+  void bootReconcile.run();
   return { server, agent, env, port, close: () => new Promise<void>((r) => server.close(() => r())) };
 }
 

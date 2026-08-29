@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildTurnEndRelay, turnEndPayload, turnEndUrl } from './turn-end-relay';
+import {
+  buildTurnEndRelay,
+  scheduleBootReconcile,
+  turnEndPayload,
+  turnEndUrl,
+  type TurnEndStatus,
+} from './turn-end-relay';
 
 /**
  * Measured on `pi.kortix.com` 2026-08-29, four sessions sampled through the
@@ -169,5 +175,80 @@ describe('buildTurnEndRelay', () => {
       await relay('idle');
     }
     expect(called).toBe(false);
+  });
+});
+
+/**
+ * The second half, and the one that fixes what a user actually sees.
+ *
+ * `buildTurnEndRelay` closes turns GOING FORWARD. It cannot touch a row that
+ * was already stuck when it shipped — and on pi.kortix.com every session had
+ * one, so re-entering any existing session still painted "Gathering thoughts…"
+ * over a finished answer with the composer on Stop.
+ *
+ * A worker boots whenever a parked session is opened, and at that instant it is
+ * provably running no turn: its messages were restored from the durable store
+ * as history. That is the moment to tell the control plane the session is idle,
+ * which closes whatever row a previous process left behind.
+ *
+ * The race it must not lose: a prompt delivered immediately after boot starts a
+ * REAL turn, and closing that row would report a running turn as finished. So
+ * the reconcile waits a beat and stands down entirely if a turn started.
+ */
+describe('scheduleBootReconcile', () => {
+  const base = {
+    apiUrl: 'https://api.example.test/v1',
+    projectId: 'proj-1',
+    sessionId: 'sess-1',
+    kortixToken: 'tok-1',
+  };
+
+  test('closes a row left open by a previous process', async () => {
+    const sent: string[] = [];
+    const relay = async (status: TurnEndStatus) => void sent.push(status);
+    const reconcile = scheduleBootReconcile({ relay, delayMs: 0, wait: async () => {} });
+    await reconcile.run();
+    expect(sent).toEqual(['idle']);
+  });
+
+  test('THE RACE: stands down when a turn started during the delay', async () => {
+    const sent: string[] = [];
+    const relay = async (status: TurnEndStatus) => void sent.push(status);
+    const reconcile = scheduleBootReconcile({ relay, delayMs: 0, wait: async () => {} });
+    // A prompt landed and the agent began work before the reconcile fired.
+    reconcile.noteTurnStarted();
+    await reconcile.run();
+    expect(sent).toEqual([]);
+  });
+
+  test('fires at most once, however many times it is run', async () => {
+    const sent: string[] = [];
+    const relay = async (status: TurnEndStatus) => void sent.push(status);
+    const reconcile = scheduleBootReconcile({ relay, delayMs: 0, wait: async () => {} });
+    await reconcile.run();
+    await reconcile.run();
+    expect(sent).toEqual(['idle']);
+  });
+
+  test('a turn that starts AFTER the reconcile already fired does not re-arm it', async () => {
+    const sent: string[] = [];
+    const relay = async (status: TurnEndStatus) => void sent.push(status);
+    const reconcile = scheduleBootReconcile({ relay, delayMs: 0, wait: async () => {} });
+    await reconcile.run();
+    reconcile.noteTurnStarted();
+    await reconcile.run();
+    expect(sent).toEqual(['idle']);
+  });
+
+  test('waits before firing, so an immediate prompt wins the race', async () => {
+    const waits: number[] = [];
+    const relay = async () => {};
+    const reconcile = scheduleBootReconcile({
+      relay,
+      delayMs: 1500,
+      wait: async (ms: number) => void waits.push(ms),
+    });
+    await reconcile.run();
+    expect(waits).toEqual([1500]);
   });
 });
