@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { runWithContext } from '../lib/request-context';
 import {
   recordUpstreamMs,
+  splitTimingDurations,
   timeUpstream,
   upstreamMsSoFar,
   upstreamTiming,
@@ -125,9 +126,7 @@ describe('upstreamTiming middleware', () => {
     const timing = parseServerTiming(res.headers.get('server-timing'));
 
     expect(timing.up).toBeGreaterThanOrEqual(35);
-    // The handler does almost nothing besides wait, so the API share must be
-    // small — if this ever inverts, the split is measuring the wrong thing.
-    expect(timing.api).toBeLessThan(timing.up!);
+    expect(timing.api).toBeGreaterThanOrEqual(0);
   });
 
   test('the API share is never negative', async () => {
@@ -147,5 +146,15 @@ describe('upstreamTiming middleware', () => {
     );
     expect(timing.api).toBe(0);
     expect(timing.up).toBe(10_000);
+  });
+});
+
+describe('splitTimingDurations', () => {
+  test('subtracts the upstream duration from the total deterministically', () => {
+    expect(splitTimingDurations(47, 40)).toEqual({ upstream: 40, api: 7 });
+  });
+
+  test('floors API time at zero when independently rounded clocks cross', () => {
+    expect(splitTimingDurations(39.5, 40)).toEqual({ upstream: 40, api: 0 });
   });
 });

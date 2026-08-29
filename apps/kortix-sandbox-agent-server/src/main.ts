@@ -957,7 +957,15 @@ async function startSessionRuntime(
     // connect reconciliation closes the residual event-loss race.
     startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    const finalizeInitialSession = async () => {
+    const completeInitialSessionBoot = async () => {
+      // `maybeCreateInitialOpencodeSession` (direct call above, or via
+      // `attemptInitialSession` under the retry ladder below) already wrote
+      // the id onto `bootState` before this runs — see the `if
+      // (bootState.initialOpenCodeSessionId)` / `established()` guards at
+      // both call sites. Re-applying it through the pure helper is what
+      // clears a poisoned `initialOpenCodeSessionError` from an earlier
+      // failed attempt; see `finalizeInitialSession`.
+      finalizeInitialSession(bootState, bootState.initialOpenCodeSessionId as string)
       await reconcileInitialTurnAcceptance()
       bootMark('initial-turn-accepted')
       opencode.markReady()
@@ -994,7 +1002,7 @@ async function startSessionRuntime(
         logger.warn('[boot] initial opencode session setup failed', err)
       })
     if (bootState.initialOpenCodeSessionId) {
-      await finalizeInitialSession()
+      await completeInitialSessionBoot()
       return
     }
     // NOT established — a `defer` (opencode slow to answer, prior root pinned)
@@ -1008,7 +1016,7 @@ async function startSessionRuntime(
     void retryUntilInitialSessionEstablished({
       attempt: attemptInitialSession,
       established: () => bootState.initialOpenCodeSessionId !== null,
-      finalize: finalizeInitialSession,
+      finalize: completeInitialSessionBoot,
     })
   }
   const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, markOpencodeListening)
@@ -1492,6 +1500,31 @@ async function runWarmSeedMode(
 /** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
 export function initialSessionRetryDelayMs(attempt: number): number {
   return Math.min(5_000 * Math.max(attempt, 1), 30_000)
+}
+
+/** The subset of `SandboxBootState` the initial-session finalizer touches. */
+type InitialSessionBootState = Pick<
+  SandboxBootState,
+  'initialOpenCodeSessionId' | 'initialOpenCodeSessionError' | 'initialOpenCodeSessionRequired'
+>
+
+/**
+ * Record that the initial OpenCode session is established under `sessionId`,
+ * and release a poisoned failure flag left by an earlier attempt.
+ *
+ * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
+ * not the box. `proxy.ts` (`initial_opencode_session_failed`, 503) and
+ * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
+ * because until now nothing ever cleared it: it was written on a caught
+ * throw in two places and cleared in none, so one throwing attempt wedged
+ * the sandbox for its whole life even after `retryUntilInitialSessionEstablished`
+ * established the root on a later rung. Only a manual Restart healed it.
+ * Pure and exported so it can be exercised directly — see
+ * initial-session-poison-flag.test.ts.
+ */
+export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
+  bootState.initialOpenCodeSessionId = sessionId
+  bootState.initialOpenCodeSessionError = null
 }
 
 /**

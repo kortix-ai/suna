@@ -427,13 +427,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
-  test('a prompt delivered INTO A LIVE TURN is re-minted on its FIRST claim', async () => {
-    // The mid-turn path does not wait, so it is not re-minted by having waited
-    // — and the id it carries is the browser clock at Enter, with no lift. The
-    // turn in flight has been writing higher ids ever since it started, so a
-    // browser even slightly behind the sandbox delivers an id that sorts BELOW
-    // them, and OpenCode reads that as already answered. A live turn is exactly
-    // the condition to re-mint on.
+  test('a prompt submitted into a live turn stays queued until that turn ends', async () => {
     boxRow = {
       status: 'active',
       metadata: {
@@ -448,17 +442,11 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         },
       },
     };
-    transcript = [
-      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
-    ];
-
     const outcome = await executeQueuedContinue(baseRow());
 
-    expect(outcome).toBe('succeeded');
-    const sent = capturedBodies[0].messageID as string;
-    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
-    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
-    expect(persistedWireIds()).toEqual([sent]);
+    expect(outcome).toBe('queued');
+    expect(capturedBodies).toHaveLength(0);
+    expect(requeues.map(({ reason }) => reason)).toEqual(['turn_active']);
   });
 
   test('a second prompt sent inside the persistence lag clears the FIRST one’s id', async () => {
@@ -575,7 +563,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(capturedBodies).toHaveLength(2);
   });
 
-  test('two prompts of the SAME session stay in order, one at a time', async () => {
+  test('one drain sends only the head prompt of a session and requeues its sibling', async () => {
     let releaseFirst!: () => void;
     openDelayBySession['sess-ordered'] = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -592,6 +580,10 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
 
     releaseFirst();
     await drain;
-    expect(capturedBodies).toHaveLength(2);
+    expect(capturedBodies).toHaveLength(1);
+    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toContainEqual({
+      commandId: 'cmd-2',
+      reason: 'older_prompt_pending',
+    });
   });
 });

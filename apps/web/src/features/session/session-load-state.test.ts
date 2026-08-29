@@ -196,9 +196,38 @@ describe('resolveSessionContentState — the transcript read, not the session ob
     ).toEqual({ isNotFound: false, isDataLoading: false });
   });
 
-  test('an optimistic prompt is content too, read or no read', () => {
+  /**
+   * DELIBERATE CONTRACT CHANGE (Jay, 2026-08-28). The old rule — "an
+   * optimistic prompt is content too, read or no read" — let the prompt-inbox
+   * rows (one fast DB read off the open bundle) dismiss the loader before the
+   * transcript hydrated. The user watched their own messages paint alone and
+   * the assistant replies pop in seconds later as a second mutation. On an
+   * EXISTING session the paint is now atomic: hold the loader while the first
+   * transcript read is outstanding, whatever the inbox says, then paint the
+   * whole conversation at once.
+   */
+  test('inbox rows do not end the loader while the transcript read is outstanding', () => {
     expect(
       resolveSessionContentState({ ...base, hasOptimisticPrompt: true, transcriptLoaded: false }),
+    ).toEqual({ isNotFound: false, isDataLoading: true });
+  });
+
+  test('once the transcript read lands, inbox rows paint with it', () => {
+    expect(
+      resolveSessionContentState({ ...base, hasOptimisticPrompt: true, transcriptLoaded: true }),
+    ).toEqual({ isNotFound: false, isDataLoading: false });
+  });
+
+  test('a BRAND-NEW session still paints its first prompt on the keypress', () => {
+    // No runtime session exists yet — there is no transcript to wait for, and
+    // the Enter-paints-now contract holds: the optimistic bubble is the page.
+    expect(
+      resolveSessionContentState({
+        ...base,
+        hasRuntimeSession: false,
+        hasOptimisticPrompt: true,
+        transcriptLoaded: false,
+      }),
     ).toEqual({ isNotFound: false, isDataLoading: false });
   });
 

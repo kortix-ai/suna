@@ -82,12 +82,12 @@ function failed(error: unknown): { known: false; reason: string } {
   return { known: false, reason: 'leg_failed' };
 }
 
-projectsApp.openapi(
+const sessionSnapshotRoute = (path: string, summary: string) =>
   createRoute({
     method: 'get',
-    path: '/{projectId}/sessions/{sessionId}/snapshot',
+    path,
     tags: ['sessions'],
-    summary: 'GET /:projectId/sessions/:sessionId/snapshot',
+    summary,
     ...auth,
     request: {
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
@@ -97,8 +97,9 @@ projectsApp.openapi(
       200: json(AnyObject, 'Everything the session view needs to paint and arm'),
       ...errors(400, 404),
     },
-  }),
-  async (c: any) => {
+  });
+
+const handleSessionSnapshot = async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
     if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -137,6 +138,12 @@ projectsApp.openapi(
 
     const gatewayEnabled = projectLlmGatewayEnabled(loaded.row.metadata);
     const userId = c.get('userId') as string;
+
+    // Captured BEFORE the fan-out: every leg is a snapshot no fresher than the
+    // moment it was asked for. Stamping at response-build time claimed the
+    // reads' SETTLE instant, which let a slow bundle outrank a direct read
+    // issued after it — the cross-clock half of JAY-728.
+    const observedAt = new Date().toISOString();
 
     // ONE fan-out. `allSettled`, never `all`: the bundle's whole value is that
     // it arrives together, and one leg failing must degrade that leg, not the
@@ -204,10 +211,10 @@ projectsApp.openapi(
     }
 
     return c.json({
-      // ONE clock for the whole envelope. Every sub-object is a snapshot at this
-      // instant, and every client-side projection that ranks a server
-      // observation against its own optimistic state compares against it.
-      observed_at: new Date().toISOString(),
+      // ONE clock for the whole envelope, captured BEFORE the reads began.
+      // Every sub-object is a snapshot no fresher than this instant, and every
+      // client-side projection ranks it against other SERVER stamps only.
+      observed_at: observedAt,
 
       // The session row, byte-identical to `GET .../sessions/:sessionId`.
       session: serializeSession(visible.row, {
@@ -282,5 +289,23 @@ projectsApp.openapi(
       runtime:
         runtime.status === 'fulfilled' ? runtime.value : failed(runtime.reason),
     });
-  },
+  };
+
+projectsApp.openapi(
+  sessionSnapshotRoute(
+    '/{projectId}/sessions/{sessionId}/snapshot',
+    'GET /:projectId/sessions/:sessionId/snapshot',
+  ),
+  handleSessionSnapshot,
+);
+// The path every published `@kortix/sdk` requests (`getSessionOpenBundle`).
+// The #6987 rename to `/snapshot` left shipped clients 404ing here — the
+// bundle degraded silently to 6-8 serial reads on every session open. Same
+// handler, same contract; keep until no supported SDK requests it.
+projectsApp.openapi(
+  sessionSnapshotRoute(
+    '/{projectId}/sessions/{sessionId}/open-bundle',
+    'GET /:projectId/sessions/:sessionId/open-bundle',
+  ),
+  handleSessionSnapshot,
 );

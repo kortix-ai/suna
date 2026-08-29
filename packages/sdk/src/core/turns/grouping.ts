@@ -148,6 +148,22 @@ export function groupMessagesIntoTurns<M extends MessageWithPartsLike>(
 
     const assistantMsg = msg.info;
 
+    // A runtime can persist an assistant shell before it writes any content.
+    // If that shell completes with zero usage and zero parts, it is an audit
+    // record, not a visible response. Keeping it in the source transcript
+    // preserves auditability; omitting it from the render projection prevents
+    // a malformed or stale parent from making a later user prompt look active.
+    const tokens = assistantMsg.tokens;
+    if (
+      !assistantMsg.error &&
+      msg.parts.length === 0 &&
+      tokens?.input === 0 &&
+      tokens.output === 0 &&
+      tokens.reasoning === 0
+    ) {
+      continue;
+    }
+
     // Try parentID-based linking first (matches SolidJS)
     if (assistantMsg.parentID) {
       const parentTurn = turnsByUserMsgId.get(assistantMsg.parentID);

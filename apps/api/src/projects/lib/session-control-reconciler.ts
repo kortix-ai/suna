@@ -18,12 +18,11 @@
  * optimisation, and nothing is built on top of it.
  *
  * ─── THE COST, STATED ──────────────────────────────────────────────────────
- * Three indexed reads per {@link CONTROL_RECONCILE_MS} per session that has at
- * least one stream open — and ZERO for a session nobody is watching. What it
- * replaces per client: `GET .../turn` and `GET .../prompts` on their own
- * timers, each a full HTTP round trip through the edge, per TAB. One
- * reconciler serves every tab on the instance, so the DB load falls as the
- * client count rises, which is the opposite of the polling it retires.
+ * Four subsystem reads per {@link CONTROL_RECONCILE_MS} per session that has at
+ * least one stream open — and ZERO for a session nobody is watching. It
+ * replaces the per-tab `GET .../prompts` timer. The client keeps one owner
+ * polling `GET .../turn` as a recovery path because transport presence does
+ * not prove that control frames are arriving.
  *
  * ─── EVERY EMISSION IS A FULL SNAPSHOT ─────────────────────────────────────
  * See `session-control-events.ts`. A frame carries its subsystem's whole state,
@@ -71,6 +70,19 @@ const PROMPT_LIST_LIMIT = 200;
  * nothing.
  */
 export const RECONCILER_IDLE_TTL_MS = 5 * 60_000;
+
+/**
+ * How long a retained control frame may go un-restamped.
+ *
+ * The client ages every snapshot it holds. A producer that suppresses
+ * redundant content also suppresses freshness. Refreshing retained snapshots
+ * keeps stream consumers current and prevents a new subscriber from receiving
+ * an already-expired replay.
+ *
+ * A frame is a snapshot, not an event, so re-sending an identical one is
+ * idempotent. Must stay comfortably under half the client's 45s bound.
+ */
+export const CONTROL_REFRESH_MS = 20_000;
 
 interface Reconciler {
   refs: number;
@@ -186,6 +198,12 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
   if (reconciler.ticking) return;
   reconciler.ticking = true;
   try {
+    // Captured BEFORE the reads: the queue frame ranks against GET/POST/bundle
+    // snapshots on the server clock, and a snapshot is no fresher than the
+    // moment it was asked for. Stamped at publish time, a slow read published
+    // an OLD empty queue under a NEW instant and erased a newer confirmed row
+    // (JAY-728).
+    const observedAt = new Date().toISOString();
     const [turn, queue, runtime, mirror, audit] = await Promise.allSettled([
       readSessionTurnState(sessionId),
       listInboxPrompts(sessionId, PROMPT_LIST_LIMIT),
@@ -199,13 +217,21 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
     }
     if (queue.status === 'fulfilled') {
       const prompts = queue.value.map(serializePrompt);
-      emit(sessionId, reconciler, 'kortix.control.queue', {
-        known: true,
-        prompts,
-        held: prompts.some(
-          (prompt) => prompt.state === 'waiting' && prompt.reason === 'held',
-        ),
-      });
+      emit(
+        sessionId,
+        reconciler,
+        'kortix.control.queue',
+        {
+          known: true,
+          prompts,
+          held: prompts.some(
+            (prompt) => prompt.state === 'waiting' && prompt.reason === 'held',
+          ),
+        },
+        // Outside the fingerprint: a fresh stamp on unchanged content must not
+        // defeat the change detection and re-publish every tick.
+        { observed_at: observedAt },
+      );
     }
     if (runtime.status === 'fulfilled') {
       emit(sessionId, reconciler, 'kortix.control.runtime', runtime.value);
@@ -226,17 +252,33 @@ async function tick(sessionId: string, reconciler: Reconciler): Promise<void> {
   }
 }
 
-/** Publish only when the subsystem's serialized state actually moved. */
+/**
+ * Publish when the subsystem's serialized state moved, OR when the frame we are
+ * holding has gone stale.
+ *
+ * The staleness half is not an optimisation. The client ages what it holds, so
+ * suppressing an unchanged frame suppresses freshness for stream consumers.
+ *
+ * Re-stamping also fixes what a NEW stream is handed: `snapshot()` replays the
+ * retained frame verbatim, so without this a client attaching mid-turn received
+ * a frame already older than its own expiry window.
+ */
 function emit(
   sessionId: string,
   reconciler: Reconciler,
   type: ControlEventType,
   payload: unknown,
+  /** Merged into the published frame AFTER change detection — a freshness
+   *  stamp that must never count as a content change (`observed_at`). */
+  stamp?: Record<string, unknown>,
 ): void {
   const fingerprint = JSON.stringify(payload) ?? 'null';
-  if (reconciler.fingerprints.get(type) === fingerprint) return;
+  const held = reconciler.latest.get(type);
+  const stale = !held || Date.now() - held.at >= CONTROL_REFRESH_MS;
+  if (reconciler.fingerprints.get(type) === fingerprint && !stale) return;
   reconciler.fingerprints.set(type, fingerprint);
-  reconciler.latest.set(type, publishControlEvent(sessionId, type, payload));
+  const published = stamp ? Object.assign({}, payload as object, stamp) : payload;
+  reconciler.latest.set(type, publishControlEvent(sessionId, type, published));
 }
 
 /**

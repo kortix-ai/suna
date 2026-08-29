@@ -414,7 +414,7 @@ describe('readSessionTurnObservation', () => {
   test('falls back to /turn when the bundle could not answer that leg', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch((url) =>
-      url.includes('open-bundle')
+      url.includes('/snapshot')
         ? {
             observed_at: BUNDLE_AT,
             turn: { known: false, reason: 'turn read exploded' },

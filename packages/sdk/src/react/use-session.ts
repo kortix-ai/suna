@@ -82,6 +82,7 @@ import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
+import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
 
@@ -179,7 +180,11 @@ export function shouldPollSessionStart(
  * is the safe direction — it never cuts short a legitimate wake, only delays
  * how quickly a genuine outage surfaces its error card.
  */
-export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
+export {
+  START_INCONCLUSIVE_GIVE_UP_MS,
+  hasStartGivenUp,
+  nextInconclusiveSince,
+} from './use-session-start-give-up';
 
 /**
  * Has `/start` been returning nothing usable — no data, no error — for at
@@ -189,18 +194,6 @@ export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
  * caller stop waiting on it" are different questions once the first answer
  * is permanently yes.
  */
-export function hasStartGivenUp(
-  data: SessionStartResult | null | undefined,
-  error: unknown,
-  inconclusiveSinceMs: number | null,
-  nowMs: number,
-): boolean {
-  if (data || error) return false;
-  return (
-    inconclusiveSinceMs !== null && nowMs - inconclusiveSinceMs >= START_INCONCLUSIVE_GIVE_UP_MS
-  );
-}
-
 /**
  * Compute the next value for the "inconclusive since" clock that feeds
  * {@link hasStartGivenUp}, given one poll tick's outcome. Pure and separate
@@ -218,30 +211,17 @@ export function hasStartGivenUp(
  *   up" nor is it "still working" — it hasn't started. A stamp taken while
  *   disabled must not survive into the enabled window.
  * - Data or error arrived → clear to `null`. The poll said SOMETHING.
- * - Enabled, inconclusive (no data, no error), not mid-fetch → arm at
+ * - Enabled and inconclusive (no data, no error) → arm at
  *   `nowMs` if nothing is armed yet; otherwise keep the existing stamp — the
  *   clock starts once, at the FIRST inconclusive tick, not every tick.
- * - Mid-fetch → keep whatever is already armed; a fetch in flight is not
- *   itself informative either way, and time spent waiting on it still counts.
+ * - The first mid-fetch state also arms the clock. A request that never settles
+ *   must reach the same bounded verdict as repeated empty responses.
  *
  * Session-identity resetting (`projectId`/`sessionId` changing under a reused
  * hook instance) is handled by a separate effect, not here — this function
  * has no session id to key on by design, matching the narrow input the
  * `useEffect` actually has on each tick.
  */
-export function nextInconclusiveSince(input: {
-  current: number | null;
-  enabled: boolean;
-  hasData: boolean;
-  hasError: boolean;
-  isFetching: boolean;
-  nowMs: number;
-}): number | null {
-  if (!input.enabled) return null;
-  if (input.hasData || input.hasError) return null;
-  if (input.isFetching) return input.current;
-  return input.current ?? input.nowMs;
-}
 
 /**
  * Whether the `/start` poll should be treated as SETTLED — resolved, failed,
@@ -910,40 +890,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // error — so `computeStartSettled` can bound the "given up" case (see
   // START_INCONCLUSIVE_GIVE_UP_MS) instead of waiting on a poll that a
   // swallowed transport failure can keep alive forever. `nextInconclusiveSince`
-  // owns the arm/reset decision (pure, unit-tested); the effects here are thin
-  // callers of it. Only the RAW TIMESTAMP lives in a ref — `hasGivenUp` below
-  // is the one piece of *derived* state, and everything else `phase` needs
-  // (`enabled`/`isFetching`/`data`/`error`) is read fresh at render, never
-  // stored (see the comment on `startSettled` below for why).
-  const startInconclusiveSinceRef = useRef<number | null>(null);
-  const [startGivenUp, setStartGivenUp] = useState(false);
-  // A new session gets a fresh clock AND a fresh give-up verdict. This hook
-  // instance is reused across session navigation (see the switch effect
-  // below), and neither may bleed from a DIFFERENT (projectId, sessionId)
-  // into this one's give-up budget. Declared before the arming effect so both
-  // clear first, within the same commit, when the session changes.
-  useEffect(() => {
-    startInconclusiveSinceRef.current = null;
-    setStartGivenUp(false);
-  }, [projectId, sessionId]);
-  useEffect(() => {
-    // `Date.now()` lives here, not in the render body: reading it during
-    // render made this impure and a StrictMode/concurrent-render hazard. One
-    // read feeds both the arm decision and the give-up decision, computed
-    // together so they never disagree about "now".
-    const nowMs = Date.now();
-    startInconclusiveSinceRef.current = nextInconclusiveSince({
-      current: startInconclusiveSinceRef.current,
-      enabled: startEnabled,
-      hasData: !!start.data,
-      hasError: !!start.error,
-      isFetching: start.isFetching,
-      nowMs,
-    });
-    setStartGivenUp(
-      hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, nowMs),
-    );
-  }, [startEnabled, start.data, start.error, start.isFetching]);
+  // owns the arm/reset decision. `useSessionStartGiveUp` owns the timestamp and
+  // timer. The hook-level test proves that a first request which never settles
+  // still reaches this verdict.
+  const startGivenUp = useSessionStartGiveUp({
+    identity: `${projectId}\u0000${sessionId}`,
+    enabled: startEnabled,
+    hasData: !!start.data,
+    hasError: !!start.error,
+    isFetching: start.isFetching,
+  });
   // `startEnabled`/`start.isFetching`/`start.data`/`start.error` are read
   // FRESH here, on every render — never stored. Only `startGivenUp` comes
   // from state. The PREVIOUS version stored `computeStartSettled`'s entire
@@ -1507,6 +1463,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     switched,
     /** Whether polling /start again can still make progress (false = terminal). */
     retriable: startData?.retriable ?? false,
+    /** Is a provider operation running for this session right now, per the
+     *  latest /start's `boot.actively_starting`? `false` while a `starting`
+     *  stage is only waiting out a retry cooldown, not driving the box. */
+    activelyStarting: startData?.boot?.actively_starting ?? false,
     /** Terminal /start failure, for hosts to render instead of spinning forever. */
     startError,
     /** Typed provider-neutral terminal provisioning failure. */

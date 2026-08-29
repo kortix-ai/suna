@@ -94,6 +94,7 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
 import { SessionBusyIndicator } from './session-busy-indicator';
+import { resolveEffectiveBusy } from './session-chat-busy';
 import { SessionTurnMeta } from './session-turn-meta';
 import {
   sessionTurnDurationMs,
@@ -2590,7 +2591,11 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
-  const effectiveBusy = isServerBusy || isOptimisticCompacting;
+  const effectiveBusy = resolveEffectiveBusy({
+    isServerBusy,
+    isOptimisticCompacting,
+    hasRetryingAssistant,
+  });
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
@@ -4817,7 +4822,7 @@ export function SessionChat({
   // accepted-but-never-started prompts, and that state is structurally gone —
   // a prompt is a durable inbox row before anything else happens, and an
   // unconfirmed delivery is redelivered by the reaper (see step 7).
-  const { isNotFound, isDataLoading } = resolveSessionContentState({
+  const { isNotFound, isDataLoading: resolvedDataLoading } = resolveSessionContentState({
     runtimeReady,
     sessionFetched,
     hasRuntimeSession: Boolean(session),
@@ -4837,6 +4842,18 @@ export function SessionChat({
     // the user saw an empty conversation instead of a wait.
     transcriptLoaded: !syncMessagesLoading,
   });
+  // MONOTONIC: once this component has painted content, the loader may never
+  // replace it. The resolver holds the FIRST paint for the transcript read
+  // (so a session open paints the whole conversation at once instead of
+  // user-only inbox bubbles with the replies popping in later) — but the same
+  // rule re-evaluated after content is on screen would hide it again: the
+  // home→session hand-off paints the first-prompt preview before the runtime
+  // session resolves, and a bubble typed mid-boot exists before the first
+  // read lands. A loader is a promise about what is coming, not a curtain
+  // over what is already there.
+  const [contentPainted, setContentPainted] = useState(false);
+  if (!resolvedDataLoading && !contentPainted) setContentPainted(true);
+  const isDataLoading = resolvedDataLoading && !contentPainted;
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
@@ -5414,10 +5431,9 @@ export function SessionChat({
               // decides whether a `/` command may be dispatched, and a fade
               // timer that has already lapsed would let one abort a live turn.
               // `effectiveBusy` folds in optimistic compaction (not a turn, so
-              // not in `working`), and `hasRetryingAssistant` covers the
-              // window where a retryable provider error keeps the turn alive
-              // with no busy frame to show for it.
-              sessionWorking={effectiveBusy || hasRetryingAssistant}
+              // not in `working`) and the retrying-turn predicate, so this
+              // site reads one value instead of re-OR-ing a term onto it.
+              sessionWorking={effectiveBusy}
               // Gates `/` COMMANDS only. A prompt typed at a sleeping box is
               // an inbox row and goes out when the box answers; a command has
               // no row, and `runCommand` swallows it silently until the

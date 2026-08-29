@@ -1559,10 +1559,16 @@ importers:
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.18)
+      '@types/react-test-renderer':
+        specifier: ^19.1.0
+        version: 19.1.0
       react:
         specifier: ^19.2.0
         version: 19.2.8
       react-dom:
+        specifier: ^19.2.0
+        version: 19.2.8(react@19.2.8)
+      react-test-renderer:
         specifier: ^19.2.0
         version: 19.2.8(react@19.2.8)
       tsc-alias:
@@ -13172,6 +13178,12 @@ packages:
       '@types/react': 19.2.18
     dev: true
 
+  /@types/react-test-renderer@19.1.0:
+    resolution: {integrity: sha512-XD0WZrHqjNrxA/MaR9O22w/RNidWR9YZmBdRGI7wcnWGrv/3dA8wKCJ8m63Sn+tLJhcjmuhOi629N66W6kgWzQ==}
+    dependencies:
+      '@types/react': 19.2.18
+    dev: true
+
   /@types/react@19.2.18:
     resolution: {integrity: sha512-AnzbBERsrLKtk2XSfTbYRLjQPdy116Sty4q+T+Bp3IC4l6jNBvreVPAHmpq9qhXQM7CXZPjLVmGMw9sy+hxQ3w==}
     dependencies:
@@ -24205,6 +24217,10 @@ packages:
   /react-is@19.2.7:
     resolution: {integrity: sha512-kZFnouyVv7eP/Phmrlo9FK+zcAdriZJvzxXHF1Sl1P377WSGe2G/JxVolhTrB/jeV47lKImhNUsijjHAAbcl/A==}
 
+  /react-is@19.2.8:
+    resolution: {integrity: sha512-s5un28nYxKJw5gvUHyW5PCC28CvBqLu9r3cWgzHT4Vo/5fqqkFcdRYsGcKf50WMPpjjFZS5d76fn3YCo2njKwQ==}
+    dev: true
+
   /react-markdown@10.1.0(@types/react@19.2.18)(react@19.2.8):
     resolution: {integrity: sha512-qKxVopLT/TyA6BX3Ue5NwabOsAzm0Q7kAPwq6L+wWDwisYs7R8vZ0nRXqq6rkueboxpkjvLGU9fWifiX/ZZFxQ==}
     peerDependencies:
@@ -24806,6 +24822,16 @@ packages:
       react: 19.1.0
       refractor: 5.0.0
     dev: false
+
+  /react-test-renderer@19.2.8(react@19.2.8):
+    resolution: {integrity: sha512-GHKPaDRaNYU24PHTLG8Bx8VMY9t+qNfxQbt/Yjp7aMWBkKU6766SR0n6TnYu7P5I1MfEuAMUadqiyDHyI4Yy9Q==}
+    peerDependencies:
+      react: ^19.2.8
+    dependencies:
+      react: 19.2.8
+      react-is: 19.2.8
+      scheduler: 0.27.0
+    dev: true
 
   /react-use-measure@2.1.7(react-dom@19.2.8)(react@19.2.8):
     resolution: {integrity: sha512-KrvcAo13I/60HpwGO5jpW7E9DfusKyLPLvuHlUyP5zqnmAPhNc6qTRjUQrdTADl0lpPpDVU2/Gg51UlOGHXbdg==}

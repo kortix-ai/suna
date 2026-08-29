@@ -300,9 +300,11 @@ export async function enqueueContinueSessionCommand(
  * Reading a display marker to make a correctness decision is how the id got
  * sent stale; the payload merge (`||`) is the durable half.
  */
+export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+
 export async function requeueForAdmission(
   commandId: string,
-  reason: 'older_prompt_pending',
+  reason: InboxAdmissionReason,
   availableAt: Date,
 ): Promise<void> {
   await db

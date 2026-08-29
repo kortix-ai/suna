@@ -193,6 +193,7 @@ flow(
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
       'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
       'GET /v1/projects/:projectId/sessions/:sessionId/events',
     ],
   },
@@ -293,6 +294,36 @@ flow(
       }
     });
 
+    await ctx.step('The /open-bundle alias serves the same snapshot envelope', async () => {
+      // Every published `@kortix/sdk` requests `/open-bundle`
+      // (`getSessionOpenBundle`); the #6987 rename to `/snapshot` left those
+      // clients 404ing and silently falling back to 6-8 serial reads per
+      // session open. The alias is the same handler — assert the same
+      // tri-state envelope answers, so shipped SDKs keep the accelerator.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{
+        observed_at: string;
+        session: { session_id: string };
+        turn: { known: boolean };
+        queue: { known: boolean };
+      }>();
+      if (body.session.session_id !== session.id) {
+        throw new Error(`alias answered for the wrong session: ${body.session.session_id}`);
+      }
+      if (typeof body.turn?.known !== 'boolean' || typeof body.queue?.known !== 'boolean') {
+        throw new Error(`alias must serve the tri-state envelope: ${JSON.stringify(body)}`);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}T/.test(body.observed_at)) {
+        throw new Error(`observed_at must stamp the envelope, got ${body.observed_at}`);
+      }
+    });
+
     await ctx.step('Session snapshot carries a TRI-STATE runtime leg', async () => {
       // The leg that replaces seven proxied reads of the box (`/agent`
       // `/command` `/config` `/session` `/session/status` `/permission`
@@ -321,7 +352,7 @@ flow(
       }
     });
 
-    await ctx.step('Session stream serves control events with NO sandbox attached', async () => {
+    await ctx.step('Session events stream serves control events with NO sandbox attached', async () => {
       // The stream's load-bearing property: it is a 200 that keeps delivering
       // control-plane facts even when the box is stopped, missing or
       // unreachable. A stream that errored because a sandbox was absent would
@@ -388,7 +419,7 @@ flow(
       }
     });
 
-    await ctx.step('Session stream refuses an anonymous caller', async () => {
+    await ctx.step('Session events stream refuses an anonymous caller', async () => {
       const response = await ctx.client
         .as(ctx.P.ANON)
         .get('/v1/projects/:projectId/sessions/:sessionId/events', {
@@ -397,7 +428,7 @@ flow(
       response.status([401, 403, 404]);
     });
 
-    await ctx.step('Session stream returns 404 for an unknown session', async () => {
+    await ctx.step('Session events stream returns 404 for an unknown session', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/sessions/:sessionId/events', {

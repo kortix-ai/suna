@@ -69,7 +69,11 @@ import type {
   PromptPartWire,
   QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
+import {
+  INBOX_ORDER_BACKOFF_MS,
+  admitInboxPrompt,
+  sessionHoldsLiveTurn,
+} from './inbox-admission';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import {
   type PlacementTipMessage,
@@ -701,16 +705,13 @@ export async function drainSessionLifecycleQueue(
     else lanes.set(lane, [row]);
   }
 
-  const runRow = async (
-    row: SessionLifecycleCommandRow,
-    opts: ExecuteQueuedContinueOptions = {},
-  ): Promise<void> => {
+  const runRow = async (row: SessionLifecycleCommandRow): Promise<void> => {
     if (row.commandType === 'continue_session') {
       // Contained per row. Every row in this batch is CLAIMED (`running`), and
       // one throw escaping the loop would leave the rest of them there — a
       // state nothing reclaims until the lock expires, and one that blocks
       // every later prompt of the same session behind it.
-      const outcome = await executeQueuedContinue(row, opts).catch(async (err) => {
+      const outcome = await executeQueuedContinue(row).catch(async (err) => {
         await markCommandFailed(
           row.commandId,
           `drain failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -772,12 +773,12 @@ export async function drainSessionLifecycleQueue(
 
   await Promise.all(
     [...lanes.values()].map(async (lane) => {
-      // Same-session INBOX rows go as ONE batch: the head lands first (it may
-      // open the turn), then the rest mint in queue order and POST together
-      // — so everything queued reaches OpenCode within one proxy round-trip
-      // of the head instead of ~1.5 s apiece, and the step after the current
-      // one answers all of them at once. Measured before: 4 prompts queued
-      // during boot ran as 3 + 1 across two steps.
+      // One inbox row per session reaches OpenCode in one drain. The legacy
+      // `/prompt_async` route interleaves same-session posts, so batching the
+      // siblings reproduced the exact failure this queue exists to prevent:
+      // both rows reported delivered while the first answer rendered under
+      // the second prompt. Remaining claimed siblings are returned to the
+      // queue. The turn-end promotion makes the next one due immediately.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
@@ -797,35 +798,15 @@ export async function drainSessionLifecycleQueue(
         };
         const batch = lane.slice(i, j).sort((a, b) => sendOrder(a) - sendOrder(b));
         i = j;
-        const headDone = runRow(batch[0]);
-        if (batch.length === 1) {
-          await headDone;
-          continue;
+        await runRow(batch[0]);
+        for (const sibling of batch.slice(1)) {
+          await requeueForAdmission(
+            sibling.commandId,
+            'older_prompt_pending',
+            new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
+          );
+          out.queued += 1;
         }
-        const rest = batch.slice(1);
-        // One gate per member: the FIRST waits for the HEAD (its id is not
-        // final until its delivery placed it — minting before that inverted
-        // head and member on the wire), each next waits for the previous
-        // member's mint; the POSTs then run concurrently.
-        const gates: BatchPlacementGate[] = [];
-        let previous: Promise<bigint | null> = headDone.then(
-          () => null,
-          () => null,
-        );
-        for (let k = 0; k < rest.length; k += 1) {
-          let release!: (mintedTime?: bigint | null) => void;
-          const mine = new Promise<bigint | null>((resolve) => {
-            release = (mintedTime) => resolve(mintedTime ?? null);
-          });
-          gates.push({ waitTurn: previous, release });
-          previous = mine;
-        }
-        await Promise.all([
-          headDone,
-          ...rest.map((member, k) =>
-            runRow(member, { batch: gates[k] }).finally(() => gates[k].release()),
-          ),
-        ]);
       }
     }),
   );
@@ -1165,10 +1146,6 @@ async function remintWireMessageId(
   row: SessionLifecycleCommandRow,
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
-  /** A batch member's hard floor: the PREVIOUS member's minted clock, so the
-   *  batch's ids are strictly ascending in send order — a skew sample landing
-   *  mid-batch made two members mint on different rules and swap. */
-  batchFloor: bigint | null = null,
 ): Promise<string> {
   const submitted = wireIdTime(payload.wireMessageId ?? '');
   const floor = transcript.read
@@ -1185,8 +1162,7 @@ async function remintWireMessageId(
   // and OpenCode reads it as already answered and never runs it. The inbox
   // already knows every id it put on the wire; that is the missing floor.
   const delivered = await readDeliveredWireIdFloor(row);
-  let known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
-  if (batchFloor !== null && (known === null || batchFloor > known)) known = batchFloor;
+  const known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
   const newest = known !== null && (submitted === null || known > submitted) ? known : submitted;
 
   // Placed at the BOX's clock "now" when it is known (see forwarded-placement
@@ -1405,30 +1381,8 @@ function externalIdFromSandboxUrlField(url: string | null): string | null {
   return match?.[1] ?? null;
 }
 
-/**
- * How one row of a same-session BATCH (see the drain's lane runner)
- * coordinates with the rows before it: it waits its turn to MINT (so ids come
- * out in queue order), releases the next row the moment its id is final, and
- * then POSTs concurrently with everyone else.
- */
-export interface BatchPlacementGate {
-  /** Resolves with the previous member's minted id clock (null for the first
-   *  member after the head) — this member's mint floor, so batch ids are
-   *  strictly ascending in send order whatever the skew cache says. */
-  waitTurn: Promise<bigint | null>;
-  release: (mintedTime?: bigint | null) => void;
-}
-
-export interface ExecuteQueuedContinueOptions {
-  /** A member of a same-session batch after the head: admission is the
-   *  batch's own ordering, and the id is placed as into a LIVE turn (the head
-   *  opened one) and proven afterwards. */
-  batch?: BatchPlacementGate;
-}
-
 export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
-  opts: ExecuteQueuedContinueOptions = {},
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
   const text = typeof payload.text === 'string' ? payload.text : '';
@@ -1448,8 +1402,9 @@ export async function executeQueuedContinue(
   // ADMISSION FIRST, before any side effect. A prompt that arrives behind an
   // older prompt of its own session — or beside a sibling already on the wire —
   // waits, so the user's messages keep the order they were typed in. A live
-  // turn is NOT one of those reasons any more. The refusal gives the claim's
-  // attempt increment back, so waiting can never dead-letter a prompt.
+  // turn also holds admission because legacy `/prompt_async` can interleave
+  // concurrent inputs. The refusal gives the claim's attempt increment back,
+  // so waiting can never dead-letter a prompt.
   //
   // Wrapped: this row is CLAIMED (`running`), and a read that throws out of
   // here would strand it there — where nothing reclaims it until its lock
@@ -1461,11 +1416,7 @@ export async function executeQueuedContinue(
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
-    // A batch member's ordering IS the batch: the lane minted the rows before
-    // it first (see the gate below), so the admission read — "is an older
-    // prompt of this session in flight?" — would only ever refuse it for the
-    // siblings it is being delivered with.
-    admission = opts.batch ? { admit: true } : await admitInboxPrompt(row);
+    admission = await admitInboxPrompt(row);
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
@@ -1624,15 +1575,7 @@ export async function executeQueuedContinue(
   // none, and every id-less producer would pay for this read for nothing.
   const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
   let turnLive = false;
-  // The head of the batch landed and opened a turn (or joined the live one);
-  // every row after it is placed as into a live turn, by definition.
-  let batchFloor: bigint | null = null;
-  if (opts.batch) {
-    batchFloor = await opts.batch.waitTurn;
-    tl.mark('batch-turn');
-    turnLive = true;
-  }
-  if (payload.wireMessageId && !remintKnown && !opts.batch) {
+  if (payload.wireMessageId && !remintKnown) {
     try {
       turnLive = await sessionHoldsLiveTurn(row.sessionId);
     } catch (err) {
@@ -1665,7 +1608,6 @@ export async function executeQueuedContinue(
     if (stagedRevertEarly) {
       const settled = await settleStagedRevert();
       if (settled) {
-        opts.batch?.release();
         return settled;
       }
     }
@@ -1690,7 +1632,6 @@ export async function executeQueuedContinue(
         { status: 'skipped', reason: 'already_answered' },
         row.sessionId,
       );
-      opts.batch?.release();
       return 'succeeded';
     }
     // A LATE delivery does not always go to the top. When the transcript
@@ -1702,7 +1643,6 @@ export async function executeQueuedContinue(
     // first. Only a first delivery may do this: a re-POST's original id may
     // already be persisted.
     if (
-      !opts.batch &&
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
       payload.wireMessageId &&
@@ -1714,13 +1654,10 @@ export async function executeQueuedContinue(
       underPlaced = true;
       tl.mark('under-placed');
     } else {
-      wireMessageId = await remintWireMessageId(row, payload, transcript, batchFloor);
+      wireMessageId = await remintWireMessageId(row, payload, transcript);
       tl.mark('remint');
     }
   }
-  // The id is final: the next batch member may mint above it.
-  opts.batch?.release(wireMessageId ? wireIdTime(wireMessageId) : null);
-
   {
     const stagedRevertLate = await stagedRevertPromise;
     tl.mark('staged-revert');
@@ -2164,7 +2101,18 @@ function isProviderName(value: string | null): value is ProviderName {
  * commands even when their text matches exactly.
  */
 /**
- * The agent names THIS session's runtime reports, cached per sandbox.
+ * The roster cache key. The directory is part of it because `/agent` answers a
+ * DIFFERENT set per directory: a project-scoped agent exists only under the
+ * directory that defines it. Keying on `externalId` alone made one box's
+ * `/workspace` roster answer for every other directory on that box.
+ */
+export function runtimeAgentRosterCacheKey(externalId: string, directory: string): string {
+  return `${externalId}::${directory}`;
+}
+
+/**
+ * The agent names THIS session's runtime reports, cached per sandbox AND
+ * directory.
  *
  * Read through the same signed proxy endpoint every drain-side transcript read
  * uses, so it inherits the session's own authentication and needs no second
@@ -2175,12 +2123,16 @@ async function sessionRuntimeAgentRoster(
   externalId: string,
   callerSessionId: string,
   actorUserId: string,
+  /** The directory the prompt will be forwarded with. `/agent` answers a
+   *  different set per directory, so reading the roster for `/workspace` while
+   *  forwarding under another directory dropped valid project-scoped agents. */
+  directory: string,
 ): Promise<{ names: readonly string[] | null }> {
-  return runtimeAgentRoster(externalId, async () => {
+  return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
     const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
     if (!resolved) return null;
     const res = await fetch(
-      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(WORKSPACE)}`,
+      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(directory)}`,
       {
         method: 'GET',
         headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
@@ -2223,7 +2175,14 @@ async function postPrompt(
   const deliverableAgent = resolveDeliverableAgent(
     overrides?.agent ?? null,
     overrides?.agent
-      ? await sessionRuntimeAgentRoster(externalId, callerSessionId, userId)
+      ? await sessionRuntimeAgentRoster(
+          externalId,
+          callerSessionId,
+          userId,
+          // Same directory expression the forward uses at the bottom of this
+          // function, so the roster read and the prompt forward always agree.
+          overrides?.directory || WORKSPACE,
+        )
       : { names: null },
   );
   if (deliverableAgent.dropped) {

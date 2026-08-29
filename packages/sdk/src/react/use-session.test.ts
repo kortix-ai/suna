@@ -919,7 +919,8 @@ describe('nextInconclusiveSince', () => {
     ).toBe(armedAt);
   });
 
-  test('a fetch in flight with nothing armed yet stays null — not yet inconclusive', () => {
+  test('the first fetch arms the deadline so a never-settling request cannot spin forever', () => {
+    const nowMs = Date.now();
     expect(
       nextInconclusiveSince({
         current: null,
@@ -927,9 +928,9 @@ describe('nextInconclusiveSince', () => {
         hasData: false,
         hasError: false,
         isFetching: true,
-        nowMs: Date.now(),
+        nowMs,
       }),
-    ).toBeNull();
+    ).toBe(nowMs);
   });
 
   test('sitting disabled past the budget, then enabling, does not pre-consume the grace window', () => {

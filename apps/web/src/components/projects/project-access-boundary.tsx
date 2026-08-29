@@ -14,7 +14,8 @@ import { AuthPendingScreen, DetailPanel, DetailRow } from '@/features/auth/auth-
 import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { clearLastProjectId, readLastProjectId } from '@/lib/onboarding/last-project-cookie';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { focusWithoutScroll } from '@/lib/utils/focus-without-scroll';
 import { getProject, requestProjectAccess, setAdminBypass } from '@kortix/sdk';
@@ -139,6 +140,20 @@ export function gateAction(state: AccessGateState): GateAction {
 }
 
 /**
+ * Where a failing project's escape links may point (JAY-729).
+ *
+ * `appHome` comes from the last-project cookie — which usually names EXACTLY
+ * the project this gate is refusing, because the shell records a project the
+ * moment its detail loads. "Back to projects" then navigated the user straight
+ * back into the screen they were escaping. When the remembered home IS the
+ * failing project, the escape is the landing door, which resolves a project
+ * the user can actually open (or renders its own inline empty state).
+ */
+export function gateEscapePath(appHome: string, projectId: string): string {
+  return appHome === `/projects/${projectId}` ? PROJECT_LANDING_PATH : appHome;
+}
+
+/**
  * Decides which screen wins when the user has a request in flight AND the
  * project fetch is failing.
  *
@@ -207,17 +222,21 @@ export function ProjectAccessBoundary({ projectId, children }: ProjectAccessBoun
   }, [polling, recheck]);
 
   const forbidden = errorState === 'request';
+  // The two TERMINAL unrenderable verdicts. `unavailable` is deliberately not
+  // here: a transient 500/tunnel drop must not forget a project that will read
+  // fine on the next attempt.
+  const unrenderable = forbidden || errorState === 'notFound';
 
   // Stop this screen from becoming the user's permanent landing page. If the
-  // remembered project is one they cannot read, every `/` hit and every sign-in
-  // would redirect straight back here. The shell's self-heal does not fire for
-  // this case: a private project is a legitimate 403 surface, not a failed
+  // remembered project is one they cannot read — access denied, or DELETED —
+  // every `/` hit, every sign-in, and the settings exit would redirect straight
+  // back here (JAY-729's softlock). The shell's self-heal does not fire for
+  // the 403 case: a private project is a legitimate 403 surface, not a failed
   // fetch. Forget it and let the landing door resolve a project they can open.
   useEffect(() => {
-    if (!forbidden) return;
-    if (readLastProjectId(user?.id) !== projectId) return;
-    clearLastProjectId();
-  }, [forbidden, projectId, user?.id]);
+    if (!unrenderable) return;
+    forgetLastProjectId(user?.id, projectId);
+  }, [unrenderable, projectId, user?.id]);
 
   if (query.isSuccess) return <>{children}</>;
 
@@ -273,6 +292,9 @@ function AccessGateScreen({
   // while its getProject query is loading, which is its state on the server —
   // so the value can go straight into an href without desyncing hydration.
   const appHome = useAppHome();
+  // Never link the escape back into the project that is failing — the cookie
+  // behind `useAppHome` usually names exactly this project. See gateEscapePath.
+  const escapeHome = gateEscapePath(appHome, projectId);
   const { data: adminRole } = useAdminRole();
   const noteId = useId();
   const [message, setMessage] = useState('');
@@ -411,7 +433,7 @@ function AccessGateScreen({
             // button's own styling rather than the quiet link the other screens
             // show underneath — an anchor, so the payload is already cached.
             <Button asChild size="lg" className="mt-5 w-full">
-              <Link href={appHome} prefetch>
+              <Link href={escapeHome} prefetch>
                 {t.raw('projectAccessBoundary.projectsAction')}
               </Link>
             </Button>
@@ -439,7 +461,7 @@ function AccessGateScreen({
                   <span />
                 ) : (
                   <Link
-                    href={appHome}
+                    href={escapeHome}
                     prefetch
                     className="hover:text-foreground -my-2 inline-block cursor-pointer py-2 underline-offset-4 transition-colors hover:underline"
                   >

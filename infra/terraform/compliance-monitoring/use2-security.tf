@@ -211,6 +211,64 @@ resource "aws_wafv2_web_acl" "use2" {
             }
           }
         }
+
+        # OAuth 2.0 public clients use loopback redirect URIs. Exclude only this
+        # protocol-defined query value from the common managed rule group. The
+        # API still validates the complete registered redirect URI.
+        scope_down_statement {
+          not_statement {
+            statement {
+              and_statement {
+                statement {
+                  byte_match_statement {
+                    field_to_match {
+                      method {}
+                    }
+                    positional_constraint = "EXACTLY"
+                    search_string         = "GET"
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+
+                statement {
+                  byte_match_statement {
+                    field_to_match {
+                      uri_path {}
+                    }
+                    positional_constraint = "EXACTLY"
+                    search_string         = "/v1/oauth/authorize"
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+
+                statement {
+                  regex_match_statement {
+                    field_to_match {
+                      single_query_argument {
+                        name = "redirect_uri"
+                      }
+                    }
+                    regex_string = "^http://(localhost|127\\.0\\.0\\.1)"
+                    text_transformation {
+                      priority = 0
+                      type     = "URL_DECODE"
+                    }
+                    text_transformation {
+                      priority = 1
+                      type     = "LOWERCASE"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
     visibility_config {

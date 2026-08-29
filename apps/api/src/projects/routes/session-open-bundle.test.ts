@@ -258,6 +258,35 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/open-bundle', () => {
     expect(body.models.resolvedForCaller).toBe('anthropic/claude-sonnet-4-6');
   });
 
+  test('still answers at /open-bundle — the path every published SDK requests', async () => {
+    // #6987 renamed the route to `/snapshot` without moving the SDK's
+    // `getSessionOpenBundle`, so every session open 404'd the bundle and
+    // silently fell back to 6-8 serial reads. The alias keeps already-shipped
+    // clients on the accelerator.
+    const response = await buildApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/open-bundle`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, any>;
+    expect(body.queue).toEqual({ known: true, prompts: [], held: false });
+    expect(body.observed_at).toMatch(ISO_UTC_MS);
+  });
+
+  test('the envelope clock is captured BEFORE the legs run, not when they settle', async () => {
+    // The queue's freshness protocol (JAY-728): a snapshot is no fresher than
+    // the moment it was ASKED for. Stamped at response-build time, a slow
+    // bundle claimed its reads' settle instant and outranked a direct read
+    // issued after it.
+    queueLeg = async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return [];
+    };
+    const response = await openBundle();
+    const done = Date.now();
+    const body = (await response.json()) as Record<string, any>;
+    expect(Date.parse(body.observed_at)).toBeLessThanOrEqual(done - 25);
+  });
+
   test('defaults the transcript window to the SDK first-paint span', async () => {
     await openBundle();
     expect(transcriptLimits).toEqual([40]);

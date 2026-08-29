@@ -33,9 +33,10 @@ describe('boot instrumentation', () => {
       expect(at, mark).toBeGreaterThan(cursor)
       cursor = at
     }
-    const finalize = MAIN.indexOf('const finalizeInitialSession = async () => {')
+    const finalize = MAIN.indexOf('const completeInitialSessionBoot = async () => {')
     const accepted = MAIN.indexOf("bootMark('initial-turn-accepted')", finalize)
     const ready = MAIN.indexOf("bootMark('opencode-ready')", finalize)
+    expect(finalize).toBeGreaterThan(-1)
     expect(accepted).toBeGreaterThan(finalize)
     expect(ready).toBeGreaterThan(accepted)
   })
