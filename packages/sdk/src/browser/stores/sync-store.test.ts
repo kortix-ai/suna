@@ -3692,3 +3692,36 @@ describe("replayed frames are history, not live output", () => {
 		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThanOrEqual(before);
 	});
 });
+
+describe("a replayed STATUS frame is history too", () => {
+	// The activity stamp was only half of it. `streamAnswers` in projectWorking
+	// reads `sessionStatusAt`, and that was also `Date.now()` — so a stale
+	// `running` status replayed from the since= backlog read as a FRESH
+	// observation and returned working/stream, which is what kept the Stop
+	// button up on a session whose answer had finished the day before
+	// (pi.kortix.com, 6/6 samples on a freshly loaded settled session).
+	test("a replayed running status is stamped old, not now", () => {
+		const sid = "ses_replay_status";
+		const longAgo = Date.now() - 10 * 60_000;
+		useSyncStore.setState({ sessionStatus: {}, sessionStatusAt: {}, sessionStatusOrigin: {} });
+
+		useSyncStore.getState().applyEvent({
+			type: "session.status",
+			at: longAgo,
+			properties: { sessionID: sid, status: { type: "running" } },
+		} as never);
+
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBe(longAgo);
+	});
+
+	test("a status with no emit time still stamps now", () => {
+		const sid = "ses_live_status";
+		useSyncStore.setState({ sessionStatus: {}, sessionStatusAt: {}, sessionStatusOrigin: {} });
+		const before = Date.now();
+		useSyncStore.getState().applyEvent({
+			type: "session.status",
+			properties: { sessionID: sid, status: { type: "running" } },
+		} as never);
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThanOrEqual(before);
+	});
+});

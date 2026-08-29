@@ -288,7 +288,20 @@ interface SyncState {
 		delta: string,
 		eventID?: string,
 	) => void;
-	setStatus: (sessionID: string, status: SessionStatus, origin?: "wire" | "local") => void;
+	/**
+	 * `emittedAt` is when the RUNTIME produced the frame. A REPLAYED status —
+	 * the `since=` backlog every connect and page load asks for — carries an
+	 * old one, and stamping it with `Date.now()` made a stale `running` from a
+	 * finished turn read as a FRESH observation for `STREAM_OBSERVATION_MAX_MS`.
+	 * Omitted (a local fabrication) still stamps now, which is correct: the tab
+	 * really did decide that just then.
+	 */
+	setStatus: (
+		sessionID: string,
+		status: SessionStatus,
+		origin?: "wire" | "local",
+		emittedAt?: number,
+	) => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
 	/**
@@ -1307,8 +1320,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
-	setStatus: (sessionID, status, origin = "wire") =>
+	setStatus: (sessionID, status, origin = "wire", emittedAt) =>
 		set((s) => {
+			const observedAt = emittedAt ?? Date.now();
 			// A value that did not change is not news. `useSessionWorking` stamps
 			// its stream observation from this object's IDENTITY, so an
 			// equal-valued rewrite that minted a new object re-started
@@ -1325,13 +1339,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
 				return {
 					sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
-					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
 				};
 			}
 			return {
 				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
 				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
-				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: observedAt },
 			};
 		}),
 
@@ -2562,12 +2576,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					status: SessionStatus;
 				};
 				if (props.sessionID && props.status)
-					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event));
+					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event), emittedAt);
 				return;
 			}
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
-			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event));
+			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
 			// Streaming finished for THIS session — clear only its own delta
 			// tracking so future message.part.updated snapshots for it are
 			// accepted normally. Never the whole map: another session may
@@ -2585,7 +2599,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const sid = props.sessionID;
 			const error = props.error;
 			// Mark session idle — errors terminate the response.
-			store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
+			store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);
