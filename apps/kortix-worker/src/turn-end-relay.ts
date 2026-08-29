@@ -48,12 +48,38 @@ export function turnEndUrl(apiUrl: string, projectId: string): string {
  * `turn_end` rather than `end` — it is the alias newer sandboxes send, and the
  * one the API documents as carrying status plus the session id.
  */
-export function turnEndPayload(input: { sessionId: string; status: TurnEndStatus }) {
+export function turnEndPayload(input: {
+  sessionId: string;
+  status: TurnEndStatus;
+  identity?: TurnEndIdentity | null;
+}) {
   return {
     session_id: input.sessionId,
     kind: 'turn_end' as const,
     status: input.status,
+    // Omitted when unknown rather than sent as null: `completeSandboxTurn`
+    // branches on `IS NOT NULL`, and an explicit null is the same as absent.
+    ...(input.identity?.opencodeSessionId
+      ? { opencode_session_id: input.identity.opencodeSessionId }
+      : {}),
+    ...(input.identity?.messageId ? { turn_message_id: input.identity.messageId } : {}),
   };
+}
+
+/**
+ * Which turn ended. Both fields come from the worker's own RuntimeSurface
+ * (`turnEndIdentity()`), and both are REQUIRED for the row to actually close —
+ * see that method for the two SQL branches that read them.
+ *
+ * Sending neither is why the first version of this relay closed nothing: on
+ * pi.kortix.com 2026-08-30 a fresh session answered correctly, the relay POSTed
+ * `turn_end`, apps/api answered 200, and the row stayed `active` — the
+ * candidate set was empty because every pi turn stores a `ses_pi…` id and the
+ * payload claimed none.
+ */
+export interface TurnEndIdentity {
+  opencodeSessionId?: string | null;
+  messageId?: string | null;
 }
 
 const MAX_ATTEMPTS = 4;
@@ -79,7 +105,9 @@ export interface TurnEndRelayConfig {
  * correct answer must not be reported as failed because a bookkeeping call
  * could not be delivered.
  */
-export function buildTurnEndRelay(cfg: TurnEndRelayConfig): (status: TurnEndStatus) => Promise<void> {
+export function buildTurnEndRelay(
+  cfg: TurnEndRelayConfig,
+): (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<void> {
   const { apiUrl, projectId, sessionId, kortixToken } = cfg;
   if (!apiUrl || !projectId || !sessionId || !kortixToken) {
     return async () => {};
@@ -90,8 +118,8 @@ export function buildTurnEndRelay(cfg: TurnEndRelayConfig): (status: TurnEndStat
   const log = cfg.log ?? ((line: string) => console.error(line));
   const url = turnEndUrl(apiUrl, projectId);
 
-  return async (status: TurnEndStatus): Promise<void> => {
-    const body = JSON.stringify(turnEndPayload({ sessionId, status }));
+  return async (status: TurnEndStatus, identity?: TurnEndIdentity | null): Promise<void> => {
+    const body = JSON.stringify(turnEndPayload({ sessionId, status, identity }));
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
         const res = await doFetch(url, {
@@ -164,7 +192,9 @@ export interface BootReconcile {
 }
 
 export function scheduleBootReconcile(input: {
-  relay: (status: TurnEndStatus) => Promise<void>;
+  relay: (status: TurnEndStatus, identity?: TurnEndIdentity | null) => Promise<void>;
+  /** Read at fire time — the surface exists by then, and boot is not a turn. */
+  identity?: () => TurnEndIdentity | null;
   delayMs?: number;
   wait?: (ms: number) => Promise<void>;
 }): BootReconcile {
@@ -183,7 +213,7 @@ export function scheduleBootReconcile(input: {
       await wait(delayMs);
       // Re-checked AFTER the wait, which is the whole point of waiting.
       if (turnStarted) return;
-      await input.relay('idle');
+      await input.relay('idle', input.identity?.() ?? null);
     },
   };
 }

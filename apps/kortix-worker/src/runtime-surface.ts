@@ -474,6 +474,26 @@ export class RuntimeSurface {
   }
 
   /**
+   * Who the ending turn IS, for `POST /turn-stream`.
+   *
+   * `completeSandboxTurn` (apps/api) does not close "the open turn" — it
+   * SELECTS one by identity, and both fields are load-bearing:
+   *   • a candidate is only considered when its stored `opencodeSessionId` is
+   *     null OR equals the one reported, and every pi turn stores `ses_pi…`,
+   *     so omitting it makes the candidate set empty;
+   *   • the matched row must then equal the reported `messageId`, because the
+   *     no-id fallback branch only matches turns whose own `messageId` is null.
+   * Relaying without these returns HTTP 200 having closed NOTHING, which the
+   * relay reads as success — the failure mode this method exists to prevent.
+   *
+   * Read SYNCHRONOUSLY at `agent_end`: the id is cleared by `markTurn(_, false)`
+   * in `runTurn`'s `finally`, which runs once `agent.prompt()` resolves.
+   */
+  turnEndIdentity(): { opencodeSessionId: string; messageId: string | null } {
+    return { opencodeSessionId: this.rootId, messageId: this.activeTurnMessageId };
+  }
+
+  /**
    * The turn-probe answer for `GET /kortix/health?turn=1&turn_message_id=…`.
    * The API's turn-lifecycle polls this to renew the box's deadline while a
    * turn runs and to settle it when the turn ends — without it the reaper can

@@ -78,6 +78,41 @@ describe('turnEndPayload', () => {
       status: 'error',
     });
   });
+
+  // 2026-08-30, pi.kortix.com, session 6afb4e2d: a FRESH sandbox running the
+  // deployed relay answered its prompt, POSTed turn_end, got HTTP 200 — and the
+  // row stayed `active`. The live `activeTurns` entry read
+  //   { messageId: 'msg_01a04fa487a1...', opencodeSessionId: 'ses_pib78964...' }
+  // while the payload named neither, so `completeSandboxTurn`'s candidate CTE
+  // (`opencodeSessionId IS NULL OR = reported`) selected nothing. A relay that
+  // does not say WHICH turn ended closes none of them and still reads as
+  // success.
+  test('THE FIX: names the turn, because the API selects the row by identity', () => {
+    expect(
+      turnEndPayload({
+        sessionId: 'sess-1',
+        status: 'idle',
+        identity: { opencodeSessionId: 'ses_pi123', messageId: 'msg_abc' },
+      }),
+    ).toEqual({
+      session_id: 'sess-1',
+      kind: 'turn_end',
+      status: 'idle',
+      opencode_session_id: 'ses_pi123',
+      turn_message_id: 'msg_abc',
+    });
+  });
+
+  test('omits an unknown id rather than sending null, which the API reads as absent', () => {
+    expect(
+      turnEndPayload({ sessionId: 'sess-1', status: 'idle', identity: { opencodeSessionId: 'ses_pi123', messageId: null } }),
+    ).toEqual({
+      session_id: 'sess-1',
+      kind: 'turn_end',
+      status: 'idle',
+      opencode_session_id: 'ses_pi123',
+    });
+  });
 });
 
 describe('buildTurnEndRelay', () => {
@@ -101,6 +136,21 @@ describe('buildTurnEndRelay', () => {
     expect(calls[0].url).toBe('https://api.example.test/v1/projects/proj-1/turn-stream');
     expect(calls[0].auth).toBe('Bearer tok-1');
     expect(calls[0].body).toEqual({ session_id: 'sess-1', kind: 'turn_end', status: 'idle' });
+  });
+
+  test('puts the turn identity on the wire', async () => {
+    let body: any = null;
+    const relay = buildTurnEndRelay({
+      ...cfg,
+      fetch: (async (_url: any, init: any) => {
+        body = JSON.parse(init.body);
+        return { ok: true, status: 200 } as Response;
+      }) as unknown as typeof fetch,
+    });
+
+    await relay('idle', { opencodeSessionId: 'ses_pi999', messageId: 'msg_zzz' });
+
+    expect(body).toMatchObject({ opencode_session_id: 'ses_pi999', turn_message_id: 'msg_zzz' });
   });
 
   test('retries a network failure, because a lost end leaves the row open for hours', async () => {

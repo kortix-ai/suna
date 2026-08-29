@@ -38,7 +38,7 @@ import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
-import { buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
+import { type TurnEndIdentity, buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
 
 /**
  * pi's session layer runs `assertJsonSerializable` on every durable payload:
@@ -395,20 +395,35 @@ export async function buildHarness(cfg: WorkerConfig) {
   // — the control plane's row and the durable transcript are independent
   // records.
   const relayTurnEnd = buildTurnEndRelay(cfg);
+  // WHICH turn ended. `completeSandboxTurn` selects the row by identity, so a
+  // relay that names no turn closes none and still answers 200 — set by
+  // `startWorker` once the RuntimeSurface exists (it is built after the
+  // harness, and it is the only holder of the `ses_pi…` id).
+  let turnIdentity: (() => TurnEndIdentity | null) | null = null;
+  const setTurnIdentity = (source: () => TurnEndIdentity | null) => {
+    turnIdentity = source;
+  };
   // Close whatever a PREVIOUS process left open. Armed here, run after listen.
-  const bootReconcile = scheduleBootReconcile({ relay: relayTurnEnd });
+  const bootReconcile = scheduleBootReconcile({
+    relay: relayTurnEnd,
+    identity: () => turnIdentity?.() ?? null,
+  });
   agent.subscribe((event: any) => {
     // ANY agent event means this process is doing work, so the boot reconcile
     // must never fire — it exists only for a session that booted idle.
     bootReconcile.noteTurnStarted();
     if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
+    // Snapshotted HERE, synchronously: `runTurn`'s `finally` clears the active
+    // message id as soon as `agent.prompt()` resolves, so reading it inside the
+    // awaited relay would read null and match nothing.
+    const identity = turnIdentity?.() ?? null;
     // `error` when the agent ended on a failure, so the API records the same
     // end_reason the daemon would have. `void`: the relay owns its retries and
     // never throws, and the turn must not wait on bookkeeping.
-    void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle');
+    void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle', identity);
   });
 
-  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile };
+  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile, setTurnIdentity };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -417,7 +432,7 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile } =
+  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile, setTurnIdentity } =
     await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
@@ -468,6 +483,11 @@ export async function startWorker(cfg = configFromEnv()) {
       }
     },
   });
+
+  // The relay's turn identity. Set here because the surface is the only holder
+  // of the `ses_pi…` session id and the live user message id, and it does not
+  // exist until after the harness that owns the relay subscription.
+  setTurnIdentity(() => surface.turnEndIdentity());
   // A resumed box must come back with the SAME conversation: one pi instance is
   // one session. Seed BEFORE the adapter is wired so every id this turn mints
   // sorts above the restored transcript instead of back inside it.
