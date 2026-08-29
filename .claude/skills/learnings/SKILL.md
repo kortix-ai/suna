@@ -21,6 +21,58 @@ linked, not inlined.
 
 ## Register
 
+### A write endpoint that SELECTS its target by identity answers 200 when it matched nothing (2026-08-30)
+
+**When:** relaying a lifecycle event to `POST /:projectId/turn-stream`, or
+calling any apps/api route whose SQL picks a row by a reported identity rather
+than by a key in the URL. `completeSandboxTurn` does not close "the open turn":
+its candidate CTE keeps a turn only when the stored `opencodeSessionId`
+`IS NULL OR = the reported one`, and the matched row must then equal the
+reported `messageId` (the no-id branch matches only turns whose own `messageId`
+is null). The pi worker's new relay sent `{session_id, kind, status}` and named
+neither, so it selected zero rows — and the route still returned 200, which the
+relay's own rule ("any ok response settles it") read as success. Live rows:
+`{ messageId: 'msg_01a04fa487a1…', opencodeSessionId: 'ses_pib78964…' }`.
+Result: 3 of 72 turns on pi.kortix.com had ever closed cleanly; the rest were
+swept as `runtime_gone` when the box died, and every finished session showed
+Stop plus "Gathering thoughts…" for up to
+`KORTIX_SANDBOX_TURN_GRANT_MINUTES` (240).
+
+**Rules:** (1) a relay is verified by the STATE it changed, never by the status
+code — assert the row, not the 200; (2) when a route selects by identity, send
+every identity field it can match on, and omit an unknown one rather than
+sending `null` (the SQL branches on `IS NOT NULL`); (3) snapshot identity
+synchronously at the terminal event — `runTurn`'s `finally` clears the active
+message id the moment `agent.prompt()` resolves, so an awaited relay reads null.
+*Incident:* pi.kortix.com, fixed in `b9e94af8` (worker) after `1f0a7de4`
+shipped the relay itself and looked green. Preview only.
+*Enforcer:* `turn-end-relay.test.ts` pins the payload's identity fields.
+A route-level test that fails a `turn_end` matching zero rows is the TODO —
+today that case is indistinguishable from success.
+
+### A reused preview environment 502s through its own redeploy, because the edge outlives the apps (2026-08-30)
+
+**When:** changing `buildPreviewCaddyfile`, or triaging a Cloudflare 502 on a
+stable preview hostname. A branch environment is REUSED in place, so
+`compose up -d` recreates `frontend` and `kortix-api` while `preview-edge` keeps
+running — measured on pi.kortix.com as edge `Up 4 hours` against kortix-api
+`Up 6 minutes`. For the ~10-30 s the swap takes, Caddy's dial is refused and
+every request answers 502, so the "stable" hostname is only as stable as its
+worst upstream window, several times a day.
+**The rule:** every `reverse_proxy` in a reused environment carries
+`lb_try_duration` — a redeploy then costs latency, not an error page. It retries
+CONNECTION failures only, so it cannot mask a 502 the app itself returns.
+Controlled proof through one `docker restart kortix-pr-6998-frontend-1`:
+**40/40 requests 307 with the fix** (one held 8.2 s) vs **30/30 502 without it**.
+A Caddy snippet is a TOP-LEVEL form — declaring `(swap_tolerant)` inside the
+site block fails the adapter with `File to import not found`, caught only by
+`caddy validate`.
+*Incident:* pi.kortix.com, recurring; fixed in `c3d57e9a` on
+`ino/preview-parity`. `tests/` deploys from the DEFAULT branch, so the fix is
+inert until it reaches `main`.
+*Enforcer:* `tests/unit/preview-stack.test.ts` pins the snippet's position, the
+budget, and every upstream that imports it.
+
 ### `deploy-preview.yml` runs from the DEFAULT BRANCH, so everything it references must be on main (2026-08-28)
 
 **When:** adding anything the preview deploy touches — a file under `tests/`, a
