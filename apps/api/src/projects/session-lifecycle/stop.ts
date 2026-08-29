@@ -7,6 +7,7 @@ import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
+import { stopSessionEnvironment } from '../../platform/services/session-environment';
 
 /**
  * Manual, user-triggered stop: pause the running sandbox in place (disk kept,
@@ -119,6 +120,15 @@ export async function stopSession(input: {
       now,
     });
   }
+
+  // A pi session's compute lives in a SECOND box (the environment). Stopping
+  // the worker without it left that box running on nothing but the provider's
+  // 60 s idle timer. Best-effort and after the fact: the session is already
+  // stopped, and a provider hiccup here must not turn a successful stop into a
+  // 502.
+  await stopSessionEnvironment(sessionId).catch((err) => {
+    console.warn(`[session-stop] environment stop failed for ${sessionId}:`, err);
+  });
 
   return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
 }
