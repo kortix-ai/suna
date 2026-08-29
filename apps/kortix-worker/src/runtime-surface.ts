@@ -244,6 +244,16 @@ export interface RuntimeSurfaceOptions {
   agents?: Record<string, { description?: string; model?: string }>;
   defaultModel?: string | null;
   workspace?: string;
+  /**
+   * Stop the run in flight. Wired to `Agent.abort()` by the worker.
+   *
+   * Without it, the client's Stop (`session.abort` -> POST
+   * `session/:id/abort`) fell through to this surface's catch-all 404: the UI
+   * showed "Interrupted" from its own optimistic receipt while the agent kept
+   * generating (reported 2026-08-29, pi). Optional so the bench, which builds
+   * a surface with no agent, keeps working.
+   */
+  onAbort?: () => void;
 }
 
 function agentModel(ref: string | undefined): { providerID: string; modelID: string } | null {
@@ -655,6 +665,24 @@ export class RuntimeSurface {
         tool_outputs_truncated: 0,
         messages: page.messages,
       });
+    }
+
+    // POST session/:id/abort — the client's Stop button.
+    //
+    // Placed BEFORE the GET read below because both match `session/`, and this
+    // one is the state change: `session.abort({ sessionID })` on the OpenCode
+    // runtime client resolves to exactly this path. Answering 200 without
+    // calling the agent would be worse than 404ing, so the handler is only
+    // reached once the session id matches this root.
+    const abortMatch = sub.match(/^session\/([^/]+)\/abort$/);
+    if (abortMatch && req.method === 'POST') {
+      const sessionId = decodeURIComponent(abortMatch[1]!);
+      if (sessionId !== this.rootId) return json(404, { error: 'unknown session' });
+      // Idempotent by contract: the UI can send Stop against a turn row that is
+      // already closed, and `Agent.abort()` on an idle agent is a no-op. An
+      // unwired surface (the bench) answers the same way.
+      this.opts.onAbort?.();
+      return json(200, { ok: true });
     }
 
     if (sub.startsWith('session/') && req.method === 'GET') {

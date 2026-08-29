@@ -451,6 +451,22 @@ export async function startWorker(cfg = configFromEnv()) {
     agents: compiledPayload?.agentConfig?.agent ?? {},
     defaultModel: cfg.modelId ?? compiledPayload?.agentConfig?.model ?? null,
     workspace: cfg.envCwd,
+    // The Stop button. `session.abort` on the runtime client is POST
+    // `session/:id/abort`, which this surface answered with its catch-all 404
+    // until now — so the UI showed "Interrupted" from its own optimistic
+    // receipt while the agent kept generating (reported 2026-08-29, pi).
+    //
+    // Guarded: `abort()` on an idle agent is a no-op, and a throw here must not
+    // take down the request — the caller has already decided to stop.
+    onAbort: () => {
+      try {
+        (agent as { abort?: () => void }).abort?.();
+      } catch (e) {
+        console.error(
+          JSON.stringify({ msg: 'agent abort failed', error: String((e as Error)?.message ?? e) }),
+        );
+      }
+    },
   });
   // A resumed box must come back with the SAME conversation: one pi instance is
   // one session. Seed BEFORE the adapter is wired so every id this turn mints

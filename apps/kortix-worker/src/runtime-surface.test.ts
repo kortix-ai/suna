@@ -141,3 +141,82 @@ describe('RuntimeSurface.seedRestoredMessages — tool calls', () => {
     expect(surface.transcript.page({ limit: 10, before: null }).messages).toHaveLength(0);
   });
 });
+
+
+/**
+ * Drive one request through `handle()` with a fake node req/res pair, so the
+ * routing and auth are exercised exactly as the server does.
+ */
+function callSurface(surface: RuntimeSurface, method: string, path: string, token?: string) {
+  const url = new URL(`http://127.0.0.1:8000${path}`);
+  const req = { method, headers: token ? { authorization: `Bearer ${token}` } : {} } as any;
+  let status = 0;
+  let body = '';
+  const res = {
+    writeHead(code: number) {
+      status = code;
+      return res;
+    },
+    end(chunk?: string) {
+      body = chunk ?? '';
+      return res;
+    },
+  } as any;
+  const handled = surface.handle(req, res, url);
+  return { handled, status, body };
+}
+
+/**
+ * Reported 2026-08-29 on pi: pressing Stop showed "Interrupted" in the
+ * transcript and the answer kept streaming.
+ *
+ * The client's Stop is `session.abort({ sessionID })` on the OpenCode runtime
+ * client, which is `POST session/:id/abort`. This surface implemented exactly
+ * four routes — `state`, `messages/:id`, `session/:id` (GET) and `events` — so
+ * the abort fell through to the catch-all 404 (`no pi handler for
+ * /kortix/opencode/…`). Nothing ever reached the agent, which kept generating,
+ * while the UI applied its optimistic abort receipt and said "Interrupted".
+ *
+ * `Agent.abort()` exists in pi-agent-core; only the route was missing.
+ */
+describe('RuntimeSurface session abort', () => {
+  test('routes POST session/:id/abort to the agent', () => {
+    let aborted = 0;
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok', onAbort: () => { aborted += 1; } });
+    const res = callSurface(surface, 'POST', `/kortix/opencode/session/${surface.rootId}/abort`, 'tok');
+    expect(res.status).toBe(200);
+    expect(aborted).toBe(1);
+  });
+
+  test('refuses an unknown session rather than aborting the wrong run', () => {
+    let aborted = 0;
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok', onAbort: () => { aborted += 1; } });
+    const res = callSurface(surface, 'POST', '/kortix/opencode/session/not-this-one/abort', 'tok');
+    expect(res.status).toBe(404);
+    expect(aborted).toBe(0);
+  });
+
+  test('still requires auth — an abort is a state change', () => {
+    let aborted = 0;
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok', onAbort: () => { aborted += 1; } });
+    const res = callSurface(surface, 'POST', `/kortix/opencode/session/${surface.rootId}/abort`, 'wrong');
+    expect(res.status).toBe(401);
+    expect(aborted).toBe(0);
+  });
+
+  test('is harmless with no run in flight and no handler wired', () => {
+    // The UI can send Stop against a stale open turn row, and the bench runs
+    // this surface with no agent at all. Both must be a no-op, not an error.
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+    const res = callSurface(surface, 'POST', `/kortix/opencode/session/${surface.rootId}/abort`, 'tok');
+    expect(res.status).toBe(200);
+  });
+
+  test('GET session/:id still returns the session, not an abort', () => {
+    // The abort match must not swallow the existing read route.
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+    const res = callSurface(surface, 'GET', `/kortix/opencode/session/${surface.rootId}`, 'tok');
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body).id).toBe(surface.rootId);
+  });
+});
