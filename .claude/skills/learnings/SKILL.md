@@ -21,6 +21,63 @@ linked, not inlined.
 
 ## Register
 
+### A request that provisions a machine can never satisfy the 25s deadline — return status and do the work out of band (2026-08-29)
+
+**When:** writing or reviewing any endpoint that creates/resumes a sandbox, VM,
+or other multi-second resource, especially one a poller calls.
+`POST /sessions/:id/environment/ensure` awaited a full Daytona provision inside
+the request; `middleware/request-deadline` kills every request at 25s, and the
+loser of the claim waited a further 120s (`CLAIM_WAIT_MS`). So the FIRST compute
+tool call of every pi session got 503 after 503 until the worker's 180s budget
+expired: `write` sat at `running` for three minutes and then failed, on a
+session that was otherwise healthy. The caller was ALREADY a poller
+(`LazyKortixEnv.attach` re-asks every 2s until `active`) — the blocking wait
+bought nothing and cost everything.
+**The rule:** claim, start the work detached, return the current status. And
+detaching costs one thing the request-bound version got free — **a claim whose
+owner dies must expire**: nothing else ever re-claims a `provisioning` row, so
+add a staleness window (`PROVISION_STALE_MS`) or one crash wedges that resource
+forever. Diagnostic: a 503 whose `duration` is exactly the deadline, repeating
+at the caller's poll interval.
+*Incident:* pi.kortix.com, every session, until #7024. No prod impact — pi is
+preview-only. *Enforcer:* `session-environment.test.ts` pins that `ensure` never
+awaits the work and that a stale claim is re-claimable.
+
+### An adapter that passes a foreign error vocabulary through breaks the consumer silently (2026-08-29)
+
+**When:** bridging one runtime's filesystem/exec contract to another's over
+HTTP (env-rpc, tool bridges, anything returning `{code, message}`).
+The daemon's env-rpc is a thin `fs` proxy and returns the real errno; the
+worker's `KortixExecutionEnv` handed it straight to pi as a `FileError.code`.
+pi's `withFileMutationQueue` canonicalises a mutation target first and tolerates
+a path that does not exist YET — but only for code `not_found`, rethrowing
+anything else. So `ENOENT` meant **`write` could never create a file**: every
+new file died on its own pre-flight lstat and the agent fell back to `bash`
+heredocs (10 in one turn, live), while the tool's own description promised
+"Creates the file if it doesn't exist".
+**The rule:** translate at the adapter, mirror the reference implementation
+verbatim (pi's `harness/env/nodejs.js`, its spellings `not_directory` /
+`is_directory` included), and map unmapped errnos to `unknown` rather than
+leaking a second raw code. A passthrough default is what hides this: the happy
+path works, only the CREATE path fails.
+*Incident:* pi.kortix.com, all file creation, until #7024.
+*Enforcer:* `kortix-env.test.ts`.
+
+### `docker image prune --filter until=24h` reclaims nothing on an environment that redeploys daily (2026-08-29)
+
+**When:** adding disk housekeeping to any long-lived, frequently-redeployed box.
+The persistent branch environment pulls ~3GB of images per deploy and never
+reclaimed them; it hit 100% and the stack stopped coming up. The first fix used
+`until=24h` to "keep today's generation as a rollback" — it reclaimed **0 B**,
+because that box deploys several times a day so every superseded image is
+younger than a day. Unfiltered (`docker image prune -af`) the same box went
+90% -> 46%, 20.35 GB, with all 12 services still running: a running container
+holds a reference to its own image, so only genuinely dead layers go.
+**The rule:** prune AFTER the new stack passes its health check, with no age
+filter, never fatal (`|| true`) — and verify the reclaim on the real box, because
+a prune that frees nothing looks exactly like a prune that works.
+*Enforcer:* `tests/unit/sandbox-preview.test.ts`.
+
 ### `deploy-preview.yml` runs from the DEFAULT BRANCH, so everything it references must be on main (2026-08-28)
 
 **When:** adding anything the preview deploy touches — a file under `tests/`, a
