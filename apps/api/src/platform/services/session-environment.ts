@@ -35,8 +35,16 @@ import type { GitBackedProject } from '../../projects/git';
 import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { getProvider } from '../providers';
+import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
+/**
+ * What an environment box costs, for metering. It is created from the
+ * project's own image with no explicit size, so it lands on the platform
+ * default — the same 2 vCPU / 4 GB / 20 GB `session-sandbox.ts` meters an
+ * unsized session box at.
+ */
+const ENVIRONMENT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 /** A claim whose owner died mid-provision is re-claimable after this. */
 const PROVISION_STALE_MS = 5 * 60_000;
 
@@ -253,6 +261,21 @@ async function runEnvironmentWork(
   if (externalId) {
     try {
       await resumeEnvironment(externalId);
+      // A resumed box burns compute again, and its previous window was closed
+      // when it stopped — so open a new one, still against the parent session.
+      const resumed = await readRow(input.sessionId);
+      const meteredId = (resumed?.metadata as { environmentId?: string } | null)?.environmentId;
+      if (meteredId) {
+        await startComputeSession({
+          sandboxId: meteredId,
+          accountId: input.accountId,
+          sessionId: input.sessionId,
+          actorUserId: input.userId ?? null,
+          provider: 'daytona',
+          spec: { ...ENVIRONMENT_METERING_SPEC },
+          metadata: { workload: 'session-environment', externalId, resumed: true },
+        });
+      }
       await db
         .update(sessionEnvironments)
         .set({ status: 'active', lastUsedAt: new Date(), updatedAt: new Date() })
@@ -323,6 +346,21 @@ async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promi
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
       },
     } as never);
+    // Meter the environment AS PART OF THE PARENT SESSION: the compute row
+    // carries the session's id, so its seconds and cost roll into that
+    // session's line rather than appearing as a second, unattributed box.
+    // Until now an environment was metered NOWHERE — it has no
+    // session_sandboxes row, which is what every billing join keys on, so a
+    // pi session's compute was invisible the moment the work moved into it.
+    await startComputeSession({
+      sandboxId: environmentId,
+      accountId: input.accountId,
+      sessionId: input.sessionId,
+      actorUserId: input.userId ?? null,
+      provider: 'daytona',
+      spec: { ...ENVIRONMENT_METERING_SPEC },
+      metadata: { workload: 'session-environment', externalId: result.externalId },
+    });
     await db
       .update(sessionEnvironments)
       .set({
@@ -375,6 +413,10 @@ export async function stopSessionEnvironment(sessionId: string): Promise<Session
       console.warn(`[session-env] stop of ${row.externalId} failed:`, err);
     }
   }
+  // Close the meter with the box. `environmentId` is the compute row's
+  // sandbox id (the provider's externalId is a different value).
+  const meteredId = (row.metadata as { environmentId?: string } | null)?.environmentId;
+  if (meteredId) await endComputeSession(meteredId).catch(() => {});
   const [updated] = await db
     .update(sessionEnvironments)
     .set({ status: 'stopped', updatedAt: new Date() })
@@ -397,6 +439,8 @@ export async function stopSessionEnvironment(sessionId: string): Promise<Session
 export async function deleteSessionEnvironment(sessionId: string): Promise<void> {
   const row = await readRow(sessionId);
   if (!row) return;
+  const meteredId = (row.metadata as { environmentId?: string } | null)?.environmentId;
+  if (meteredId) await endComputeSession(meteredId).catch(() => {});
   if (row.externalId) {
     try {
       const daytona = getDaytona();

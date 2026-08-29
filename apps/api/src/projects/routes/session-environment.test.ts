@@ -152,3 +152,46 @@ describe('an environment does not outlive the session that owns it', () => {
     expect(source).toContain('sessionEnvironments.lastUsedAt');
   });
 });
+
+describe('an environment meters against its PARENT session', () => {
+  // An environment has no session_sandboxes row — the table every billing join
+  // keys on — so before this its compute was metered NOWHERE, and a pi
+  // session's cost went invisible the moment the work moved into the second
+  // box. Metered as part of the parent session (not as its own line), so the
+  // seconds and cost roll into that session's existing figure.
+  test('the compute window carries the parent session id, not the box id', async () => {
+    const source = await serviceSource();
+    // Anchor on the METER call: `sandboxId: environmentId` also appears in
+    // `provider.create` above it, and it is the resume call that comes first
+    // in the file.
+    const call = source.slice(
+      source.indexOf('await startComputeSession({\n      sandboxId: environmentId'),
+    );
+    expect(call.slice(0, 300)).toContain('sandboxId: environmentId');
+    // THE decision: attribution follows the session, not the environment.
+    expect(call.slice(0, 300)).toContain('sessionId: input.sessionId');
+  });
+
+  test('the window closes with the box, on stop and on delete', async () => {
+    const source = await serviceSource();
+    const stop = source.slice(source.indexOf('export async function stopSessionEnvironment'));
+    const del = source.slice(source.indexOf('export async function deleteSessionEnvironment'));
+    expect(stop.slice(0, 2000)).toContain('endComputeSession(meteredId)');
+    expect(del.slice(0, 700)).toContain('endComputeSession(meteredId)');
+  });
+
+  test('a resumed environment opens a NEW window — the old one closed on stop', async () => {
+    const source = await serviceSource();
+    const resume = source.slice(source.indexOf('await resumeEnvironment(externalId)'));
+    expect(resume.slice(0, 900)).toContain('startComputeSession({');
+    expect(resume.slice(0, 900)).toContain('sessionId: input.sessionId');
+  });
+
+  test('metering keys off environmentId, never the provider externalId', async () => {
+    const source = await serviceSource();
+    // They are different values: `environmentId` is the id we minted and
+    // passed to provider.create as its sandboxId; `externalId` is what the
+    // provider handed back. `endComputeSession` looks up by the former.
+    expect(source).toContain("metadata as { environmentId?: string }");
+  });
+});
