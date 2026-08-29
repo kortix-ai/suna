@@ -227,9 +227,6 @@ import {
   useSessionPrompts,
   useSessionStateStore,
   useSessionSync,
-  sessionStreamScope,
-  useSessionStreamPresence,
-  useSessionTurnCorroborated,
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
@@ -2542,13 +2539,6 @@ export function SessionChat({
     enabled: !isChildSession,
     runtimeSessionId: sessionId,
   });
-  // The same scope `useSessionWorking` polls under, so the indicator gate below
-  // reads the very presence facts that hook's own poll gate reads.
-  const workingStreamScope = !isChildSession
-    ? sessionStreamScope(projectId ?? '', projectSessionId ?? '')
-    : '';
-  const streamConnectedForSession = useSessionStreamPresence(workingStreamScope);
-  const streamTurnCorroborated = useSessionTurnCorroborated(workingStreamScope);
   const isServerBusy = working.state === 'working';
 
   // The one transcript-derived gate that survives, and the only one that
@@ -2625,26 +2615,21 @@ export function SessionChat({
   // What the TURN CARD shows — a strictly narrower question than what the
   // composer holds on.
   //
-  // Entering a session painted "Gathering thoughts…" for ~30-45s over a fully
-  // rendered transcript with nothing running, then cleared itself (reported
-  // 2026-08-29). The only evidence was a `GET .../turn` read still holding a
-  // row open for a turn nobody was running: control frames are pushed ON
-  // CHANGE, so a session resumed with a row already open produces none, and
-  // nothing contradicts the stale read until it ages out.
+  // The shimmer means the agent is GENERATING, and only the runtime can report
+  // that: `source: 'stream'` (its own SSE frames, including the content-first
+  // activity rule) or `'optimistic'` (this tab's own send, covering the
+  // milliseconds before the stream takes over). A `GET .../turn` read reports
+  // something else entirely — that a ROW IS OPEN in the ledger — and rows are
+  // closed by a separate relay, so one routinely outlives its turn.
   //
-  // `showsGeneratingIndicator` withholds ONLY that case — server-sourced, on a
-  // stream that is attached and has not answered about turns yet. A runtime
-  // actually producing output arrives as `stream`, this tab's own send as
-  // `optimistic`, and a surface with no stream keeps deciding on the server
-  // read; none of those are gated. The composer keeps the ungated projection
-  // below on purpose: holding `/` commands over a turn that MIGHT be open is
-  // the safe direction, while telling the user the agent is thinking when it
-  // is not is simply false.
-  const generating = showsGeneratingIndicator({
-    projection: working,
-    streamConnected: streamConnectedForSession,
-    streamCorroborated: streamTurnCorroborated,
-  });
+  // Measured on pi.kortix.com: nine ledger rows across four sessions, all still
+  // `active`, the oldest 67 minutes after its answer was written. Every one of
+  // those sessions painted the shimmer over a finished transcript.
+  //
+  // The composer keeps the ungated projection below on purpose: holding `/`
+  // commands over a turn that MIGHT be open is the safe direction, while
+  // telling the user the agent is thinking when it is not is simply false.
+  const generating = showsGeneratingIndicator({ projection: working });
   const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the

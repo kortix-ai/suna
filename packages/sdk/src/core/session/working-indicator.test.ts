@@ -20,80 +20,47 @@ const workingFrom = (source: WorkingProjection['source']): WorkingProjection => 
 });
 
 /**
- * Reported 2026-08-29 on `pi-worker`: entering a session paints "Gathering
- * thoughts…" for ~30s over a transcript that is already fully rendered and a
- * turn that is not running, then it clears on its own.
+ * "Gathering thoughts…" means the agent is generating. Only the RUNTIME can
+ * report that, over the stream. A `GET .../turn` poll reports something else —
+ * that a row is open in the control plane's ledger — and rows are closed by a
+ * separate relay, so one routinely outlives its turn.
  *
- * The evidence behind that claim is a `GET .../turn` read alone — the control
- * plane still holding a row open for a turn nobody is running. The session
- * stream has attached and PROMISED to carry turn state
- * (`kortix.control.turn`), but frames are pushed ON CHANGE, so a session
- * resumed with a row already open produces no frame and nothing contradicts
- * the stale read until it ages out.
- *
- * `workingRefetchInterval` already applies exactly this rule to the POLL — it
- * refuses to stand down on a connected-but-uncorroborated stream. This applies
- * the same rule to what the user SEES, which is the half that was missing.
+ * Observed on pi.kortix.com 2026-08-29: nine ledger rows across four sessions,
+ * every one still `active`, the oldest 67 minutes after its answer was written.
+ * Every affected session painted the shimmer over a finished transcript with
+ * the composer stuck on Stop.
  */
 describe('showsGeneratingIndicator', () => {
-  test('idle never shows it', () => {
-    expect(
-      showsGeneratingIndicator({ projection: idle, streamConnected: true, streamCorroborated: true }),
-    ).toBe(false);
-  });
-
-  test('THE BUG: a server-only claim on a connected but uncorroborated stream is withheld', () => {
-    expect(
-      showsGeneratingIndicator({
-        projection: workingFrom('server'),
-        streamConnected: true,
-        streamCorroborated: false,
-      }),
-    ).toBe(false);
-  });
-
-  test('the same claim shows once the stream corroborates it', () => {
-    expect(
-      showsGeneratingIndicator({
-        projection: workingFrom('server'),
-        streamConnected: true,
-        streamCorroborated: true,
-      }),
-    ).toBe(true);
-  });
-
-  test('with NO stream attached the server read is all there is, so it decides', () => {
-    // Never gate on a promise nobody made. A surface with no stream (or one
-    // whose stream dropped) must not go permanently quiet over a real turn.
-    expect(
-      showsGeneratingIndicator({
-        projection: workingFrom('server'),
-        streamConnected: false,
-        streamCorroborated: false,
-      }),
-    ).toBe(true);
-  });
-
-  test('stream and optimistic evidence are never withheld', () => {
-    // `stream` is the runtime's own voice and `optimistic` is this tab's own
-    // send — neither is the stale-row case, and delaying either would put a
-    // visible lag on the thing the user just did.
-    for (const source of ['stream', 'optimistic'] as const) {
-      expect(
-        showsGeneratingIndicator({
-          projection: workingFrom(source),
-          streamConnected: true,
-          streamCorroborated: false,
-        }),
-      ).toBe(true);
+  test('idle never shows it, whatever the source', () => {
+    for (const source of ['server', 'stream', 'optimistic'] as const) {
+      expect(showsGeneratingIndicator({ projection: { ...idle, source } })).toBe(false);
     }
   });
 
-  test('an absent corroboration flag is treated as corroborated', () => {
-    // Older callers must not lose their indicator: the gate may only ever
-    // withhold on a POSITIVE "the stream has not answered yet".
+  test('THE RULE: a server poll NEVER paints the shimmer', () => {
+    // Unconditional. The previous version let this through once the stream had
+    // "corroborated" — but control frames carry the same ledger rows, so a
+    // stale row corroborated itself and the shimmer came straight back.
+    expect(showsGeneratingIndicator({ projection: workingFrom('server') })).toBe(false);
+  });
+
+  test('the live stream does paint it — that is the runtime generating', () => {
+    expect(showsGeneratingIndicator({ projection: workingFrom('stream') })).toBe(true);
+  });
+
+  test('this tab own send paints it, so pressing send is not a dead click', () => {
+    // The receipt covers the milliseconds between the click and the first SSE
+    // frame. Without it there is a visible gap with no feedback at all.
+    expect(showsGeneratingIndicator({ projection: workingFrom('optimistic') })).toBe(true);
+  });
+
+  test('an unrecognized source is silent, not assumed live', () => {
+    // Allowlist, not denylist: a future observer must be opted IN by someone
+    // deciding it means the runtime is generating.
     expect(
-      showsGeneratingIndicator({ projection: workingFrom('server'), streamConnected: true }),
-    ).toBe(true);
+      showsGeneratingIndicator({
+        projection: { state: 'working', source: 'poll-v2' as WorkingProjection['source'] },
+      }),
+    ).toBe(false);
   });
 });

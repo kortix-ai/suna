@@ -28,11 +28,20 @@ const skeleton = strip(skeletonSource);
  *  - generating → the agent is working. That is what the shimmer is for.
  *  - messages on screen → neither. No extra indicator at all.
  */
-test('the turn card cannot show the generating shimmer on an uncorroborated server read', () => {
-  // The gate is `showsGeneratingIndicator` (SDK, unit-tested there). What this
-  // file must get right is USING it for the card and not for the composer.
-  expect(code).toContain('showsGeneratingIndicator({');
+test('the turn card shows the shimmer ONLY for runtime evidence, never a poll', () => {
+  // The rule lives in `showsGeneratingIndicator` (SDK, unit-tested there):
+  // `stream` or `optimistic` paint it, `server` never does. What this file must
+  // get right is USING it for the card and not for the composer.
+  expect(code).toContain('showsGeneratingIndicator({ projection: working })');
   expect(code).toContain('projectionBusy: isBusy && generating');
+});
+
+test('the gate takes no presence inputs — corroboration was the wrong question', () => {
+  // The first version withheld a server read only until the stream
+  // "corroborated" it. Control frames carry the same ledger rows, so a stale
+  // row corroborated itself and the shimmer returned. Source is the answer.
+  expect(code).not.toContain('streamCorroborated:');
+  expect(code).not.toContain('useSessionTurnCorroborated(');
 });
 
 test('the COMPOSER keeps the ungated projection — holding on a maybe-open turn is the safe direction', () => {
