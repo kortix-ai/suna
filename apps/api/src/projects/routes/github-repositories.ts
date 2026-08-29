@@ -1,7 +1,7 @@
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
 import { auth, errors, json } from '../../openapi';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isSelfHostOperator } from '../../shared/platform-roles';
 import { managedGithubOwner, managedGithubOwnerType, managedGithubToken } from '../git-backends';
 import {
   createInstallationToken,
@@ -66,9 +66,11 @@ projectsApp.openapi(
     // no real GitHub App installation to list repos from — list via the PAT
     // itself instead of an installation token.
     if (installationId === PAT_MANAGED_GIT_INSTALLATION_ID) {
-      if (!(await isPlatformAdmin(scope.userId))) {
+      // `isSelfHostOperator`, not `isPlatformAdmin` — this lists the WHOLE
+      // managed org, which on cloud holds every customer's project repo.
+      if (!(await isSelfHostOperator(scope.userId))) {
         return c.json(
-          { error: 'Managed GitHub repository import requires platform admin access' },
+          { error: 'Managed GitHub repository import is only available to a self-host operator' },
           403,
         );
       }

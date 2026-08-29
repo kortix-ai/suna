@@ -138,17 +138,23 @@ function GitHubSourceFields({
   });
 
   const installations = installationsQuery.data?.installations ?? [];
-  // `create-repo` needs org/repo-admin scope on a real GitHub App
-  // installation. `serializeGitHubInstallations` can also return the synthetic
-  // `pat` entry (the self-host "use a token" setup), which `link-repository`
-  // accepts and `create-repo` does not — so it is offered for import only,
-  // exactly as the old create modal split them.
-  const selectable =
-    state.source === 'github-create'
-      ? installations.filter((installation) =>
-          isGitHubAppInstallationId(installation.installation_id),
-        )
-      : installations;
+  // REAL GitHub App installations only — for BOTH sources.
+  //
+  // `serializeGitHubInstallations` can also return a synthetic `pat` entry
+  // standing for the server's managed-git token, and picking it lists
+  // MANAGED_GIT_GITHUB_OWNER's ENTIRE repository set. On cloud that owner is
+  // `managed-kortix`, which holds every customer's project repo — so on
+  // 2026-08-29 this picker showed a Kortix admin a list of other people's
+  // private repositories, one click from importing one.
+  //
+  // The server no longer offers that entry to anyone but a self-host operator
+  // (`isSelfHostOperator`, apps/api/src/shared/self-host-operator.ts). This
+  // filter is the second layer: `/new` is a "create MY workspace" flow, and an
+  // org-wide token is not a thing a person picks there. An operator who wants
+  // it has the CLI and `link-repository` directly.
+  const selectable = installations.filter((installation) =>
+    isGitHubAppInstallationId(installation.installation_id),
+  );
 
   const installationId = state.installationId;
   const onlyInstallationId =

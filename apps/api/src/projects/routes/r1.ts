@@ -5,7 +5,7 @@ import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isSelfHostOperator } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
@@ -685,8 +685,14 @@ projectsApp.openapi(
   // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
   // account isn't told "GitHub isn't connected" just because it never
   // installed an App (see serializeGitHubInstallations).
+  // `isSelfHostOperator`, NOT `isPlatformAdmin`. The synthetic entry exposes
+  // MANAGED_GIT_GITHUB_OWNER's whole repository list, and on cloud that owner
+  // is `managed-kortix` — every customer's project repo. `isPlatformAdmin` is
+  // also true for Kortix staff, so gating on it put every customer's private
+  // repo in the `/new` import picker (reported 2026-08-29). Only the self-host
+  // operator, for whom that org is their own, may see it.
   const patFallbackOwner =
-    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+    rows.length === 0 && managedGithubToken() && (await isSelfHostOperator(scope.userId))
       ? managedGithubOwner()
       : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
@@ -721,8 +727,14 @@ projectsApp.openapi(
   // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
   // account isn't told "GitHub isn't connected" just because it never
   // installed an App (see serializeGitHubInstallations).
+  // `isSelfHostOperator`, NOT `isPlatformAdmin`. The synthetic entry exposes
+  // MANAGED_GIT_GITHUB_OWNER's whole repository list, and on cloud that owner
+  // is `managed-kortix` — every customer's project repo. `isPlatformAdmin` is
+  // also true for Kortix staff, so gating on it put every customer's private
+  // repo in the `/new` import picker (reported 2026-08-29). Only the self-host
+  // operator, for whom that org is their own, may see it.
   const patFallbackOwner =
-    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+    rows.length === 0 && managedGithubToken() && (await isSelfHostOperator(scope.userId))
       ? managedGithubOwner()
       : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));

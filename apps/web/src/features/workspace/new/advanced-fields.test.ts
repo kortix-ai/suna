@@ -190,3 +190,32 @@ describe('AdvancedFields: exports', () => {
     expect(code).toContain('onChange: (next: NewWorkspaceFormState) => void');
   });
 });
+
+describe('AdvancedFields: the managed org is never an import source', () => {
+  /**
+   * Reported 2026-08-29: picking "Import from GitHub" as a Kortix platform
+   * admin listed `managed-kortix/*` — other customers' private project repos —
+   * and would have imported one on a click.
+   *
+   * The synthetic `pat` installation stands for the server's managed-git TOKEN,
+   * whose owner on cloud is the shared org holding every customer's repo. It
+   * has no place in a "create my workspace" flow for either source. The server
+   * side is fixed too (`isSelfHostOperator`); this is the second layer.
+   */
+  test('filters to real GitHub App installations for BOTH sources, not just github-create', () => {
+    expect(code).toContain(
+      'const selectable = installations.filter((installation) =>\n    isGitHubAppInstallationId(installation.installation_id),\n  );',
+    );
+    // The old shape branched on the source and let the synthetic entry through
+    // for import. It must not come back.
+    expect(code).not.toContain("state.source === 'github-create'\n      ? installations.filter");
+  });
+
+  test('never renders the managed-git PAT installation id', () => {
+    // `githubInstallationLabel` prints "Managed GitHub · github.com/<owner>"
+    // for id 'pat'. With the filter above that branch is unreachable from
+    // this screen, and nothing here may special-case it back into view.
+    expect(code).not.toContain("'pat'");
+    expect(code).not.toContain('Managed GitHub');
+  });
+});

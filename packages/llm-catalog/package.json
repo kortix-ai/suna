@@ -32,8 +32,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "build": "tsc -p tsconfig.build.json && node scripts/copy-catalog.mjs",
-    "prepublishOnly": "tsc -p tsconfig.build.json && node scripts/copy-catalog.mjs"
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && node scripts/copy-catalog.mjs",
+    "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && node scripts/copy-catalog.mjs"
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
