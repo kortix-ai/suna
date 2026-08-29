@@ -38,6 +38,7 @@ import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
+import { buildTurnEndRelay } from './turn-end-relay.ts';
 
 /**
  * pi's session layer runs `assertJsonSerializable` on every durable payload:
@@ -379,6 +380,28 @@ export async function buildHarness(cfg: WorkerConfig) {
       persisted = all.length;
     });
   }
+
+  // Close the control plane's turn row.
+  //
+  // The sandbox daemon does this for an OpenCode session by watching OpenCode's
+  // NATIVE `/event` stream, which the pi worker does not serve — so without
+  // this, a pi turn's row stays `active` forever. Measured on pi.kortix.com
+  // 2026-08-29: nine rows across four sessions, nine still `active`, the oldest
+  // 67 minutes after its answer was written. See `./turn-end-relay`.
+  //
+  // A SEPARATE subscriber from the persistence one above, deliberately: the
+  // relay must fire even if a message append throws, and an append must not be
+  // skipped because a relay is retrying. Ordering between them does not matter
+  // — the control plane's row and the durable transcript are independent
+  // records.
+  const relayTurnEnd = buildTurnEndRelay(cfg);
+  agent.subscribe((event: any) => {
+    if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
+    // `error` when the agent ended on a failure, so the API records the same
+    // end_reason the daemon would have. `void`: the relay owns its retries and
+    // never throws, and the turn must not wait on bookkeeping.
+    void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle');
+  });
 
   return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError };
 }
