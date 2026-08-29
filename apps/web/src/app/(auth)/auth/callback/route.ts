@@ -7,6 +7,13 @@ import {
   sanitizeAuthReturnUrl,
 } from '@/lib/auth/return-url';
 import {
+  isSsoIdentityMismatch,
+  readSsoExpectedEmail,
+  SSO_EXPECTED_EMAIL_COOKIE,
+  SSO_IDENTITY_MISMATCH,
+  SSO_IDENTITY_PARAM,
+} from '@/lib/auth/sso-identity';
+import {
   LAST_PROJECT_COOKIE,
   POST_AUTH_INTENT_COOKIE,
   POST_AUTH_INTENT_MAX_AGE,
@@ -157,19 +164,22 @@ export async function GET(request: NextRequest) {
 
       let finalDestination = next;
       let shouldClearReferralCookie = false;
+      let ssoIdentityMismatch = false;
       let authEvent = 'login';
       let authMethod = 'email';
 
       if (data.user) {
-        // TODO(sso-identity-mismatch-notice): an IdP can return an already
-        // authenticated identity that differs from the email the user typed
-        // on /auth (IdP session reuse) — they land signed in as someone else
-        // with zero indication anything unusual happened. Once the typed
-        // email travels through the redirect (query param or short-lived
-        // cookie set before the IdP hop), compare it to data.user.email here
-        // and carry a "You signed in as {actual_email}" notice through to the
-        // redirect instead of proceeding silently. See docs/ENTRA_SSO_SCIM_SETUP.md
-        // "Known behaviors & caveats".
+        // An IdP can answer our request with an identity the user never typed:
+        // if the browser already holds an IdP session for somebody else, that
+        // is who comes back, and the exchange above has just signed the browser
+        // in as them. `/auth` recorded the address we ASKED for right before
+        // the hop; this is where the two are compared, so the landing page can
+        // say who the user actually is instead of proceeding silently.
+        ssoIdentityMismatch = isSsoIdentityMismatch(
+          readSsoExpectedEmail(request.cookies.get(SSO_EXPECTED_EMAIL_COOKIE)?.value),
+          data.user.email,
+        );
+
         // Determine if this is a new user (for analytics tracking)
         const createdAt = new Date(data.user.created_at).getTime();
         const now = Date.now();
@@ -275,6 +285,12 @@ export async function GET(request: NextRequest) {
       const redirectUrl = new URL(`${baseUrl}${finalDestination}`);
       redirectUrl.searchParams.set('auth_event', authEvent);
       redirectUrl.searchParams.set('auth_method', authMethod);
+      // No address in the URL on purpose — it would land in history and in the
+      // Referer of anything the destination requests. The notice reads the
+      // address from the session it already holds.
+      if (ssoIdentityMismatch) {
+        redirectUrl.searchParams.set(SSO_IDENTITY_PARAM, SSO_IDENTITY_MISMATCH);
+      }
       const response = NextResponse.redirect(redirectUrl);
 
       // Authentication just completed, and this redirect is about to land on
@@ -287,6 +303,12 @@ export async function GET(request: NextRequest) {
         path: '/',
         sameSite: 'lax',
       });
+
+      // Unconditionally, whether or not it matched and whether or not this was
+      // even an SSO sign-in. The expectation belongs to the hop that just
+      // finished; leaving it set would let it mislabel the next sign-in on this
+      // browser.
+      response.cookies.set(SSO_EXPECTED_EMAIL_COOKIE, '', { maxAge: 0, path: '/' });
 
       // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' });
