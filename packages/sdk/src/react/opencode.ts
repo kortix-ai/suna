@@ -197,6 +197,7 @@ export {
 export {
   useSessionAuditSignal,
   useSessionStreamPresence,
+  useSessionTurnCorroborated,
   sessionStreamScope,
 } from './use-session-stream-presence';
 export { useRuntimePhase, type RuntimePhase } from './use-runtime-phase';
