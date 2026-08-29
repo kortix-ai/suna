@@ -44,6 +44,7 @@ import {
   restartClaimIsActive,
   runtimeRestartClaimMetadata,
 } from './runtime-restart-fence';
+import { deleteSessionEnvironment } from '../../platform/services/session-environment';
 
 export async function deleteSession(input: {
   projectId: string;
@@ -87,6 +88,13 @@ export async function deleteSession(input: {
     .returning();
 
   if (!row) return { error: 'Not found', status: 404 };
+
+  // The session is soft-deleted, so nothing cascades to its environment box —
+  // without this it outlives the session that owns it, with no row and no
+  // reaper to ever remove it.
+  await deleteSessionEnvironment(sessionId).catch((err) => {
+    console.warn(`[session-delete] environment delete failed for ${sessionId}:`, err);
+  });
 
   if (sandbox) {
     await db
