@@ -2,6 +2,7 @@ import { resolveCommitSha } from '../projects/git';
 import type { GitBackedProject } from '../projects/git/types';
 import {
   buildCompiledPiRuntimeArtifact,
+  resolvePiDefaultAgentName,
   type StoredCompiledPiRuntimeArtifact,
 } from './compiled-pi-runtime-artifact';
 import {
@@ -71,5 +72,8 @@ export async function prebuildDefaultBranchPiRuntime(
   resolveTip: typeof resolveCommitSha = resolveCommitSha,
 ): Promise<StoredCompiledPiRuntimeArtifact> {
   const sourceSha = await resolveTip(project, project.defaultBranch);
-  return buildCompiledPiRuntimeArtifact(project, project.defaultBranch, sourceSha);
+  // Bake the DEFAULT agent by name. The artifact is keyed per agent, so
+  // prebuilding under the empty name would warm an entry no session asks for.
+  const agent = await resolvePiDefaultAgentName(project, sourceSha).catch(() => "");
+  return buildCompiledPiRuntimeArtifact(project, project.defaultBranch, sourceSha, agent);
 }

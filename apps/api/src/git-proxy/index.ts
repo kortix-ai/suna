@@ -38,6 +38,10 @@ import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { refreshMirror, runGit } from '../projects/git/mirror';
+import { eq } from 'drizzle-orm';
+import { projectSessions } from '@kortix/db';
+import { db } from '../shared/db';
+import { callerKortixSessionId } from '../projects/lib/caller-session';
 import { writeScaffoldDeltaBundle } from '../projects/git/commits';
 import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
 import { createHash } from 'node:crypto';
@@ -114,6 +118,27 @@ function validProjectIdOrResponse(c: any, raw: string): string | Response {
     return c.text('invalid project identifier', 400);
   }
   return projectId;
+}
+
+/**
+ * The agent of the session making this request, or '' when the caller is not a
+ * session (a human, the prebuild, a test).
+ *
+ * The pi worker fetches its runtime with its OWN session credential, so the
+ * API can name the agent without the worker sending it. That is deliberate:
+ * putting the agent in the fetch URL would mean editing the image's
+ * fetch-runtime script, which changes the pi snapshot fingerprint and rebuilds
+ * the shared template for something the server already knows.
+ */
+async function agentOfCallingSession(c: any): Promise<string> {
+  const sessionId = callerKortixSessionId(c);
+  if (!sessionId) return '';
+  const [row] = await db
+    .select({ agentName: projectSessions.agentName })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.agentName ?? '';
 }
 
 async function authorize(c: any, projectId: string, scope: GitScope): Promise<GitProxyAuth> {
@@ -650,6 +675,12 @@ gitProxyApp.openapi(
       query: z.object({
         ref: z.string().min(1),
         sha: z.string().regex(/^[0-9a-f]{40}$/),
+        // Optional: the artifact is baked for ONE agent. Omitted, the agent is
+        // taken from the calling session (the worker holds its session's own
+        // credential), and failing that the project default. Kept optional so
+        // the worker image's fetch script — and therefore the single pi
+        // snapshot template — needs no change.
+        agent: z.string().max(64).optional(),
       }),
     },
     responses: {
@@ -680,10 +711,11 @@ gitProxyApp.openapi(
     if (!resolveFeatureFlag(auth.project.metadata, 'pi_worker')) {
       return c.json(featureDisabledBody('pi_worker'), 403);
     }
-    const { ref, sha } = c.req.valid('query');
+    const { ref, sha, agent } = c.req.valid('query');
     try {
       const project = await loadGitProject({ row: auth.project });
-      const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha);
+      const agentName = agent ?? (await agentOfCallingSession(c));
+      const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha, agentName);
       return new Response(Bun.file(artifact.path), {
         status: 200,
         headers: {
