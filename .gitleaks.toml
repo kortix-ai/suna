@@ -2,23 +2,39 @@
 # auto-detects .gitleaks.toml at the repo root).
 #
 # We keep ALL the default gitleaks rules (the array of provider patterns), and
-# only add a narrow allowlist so the dotenvx-ENCRYPTED apps/api/.env does not
-# trip the generic high-entropy rule. Its values are AES ciphertext
-# (`encrypted:…`) and a public key — neither is a usable secret.
+# only add narrow allowlists so the dotenvx-ENCRYPTED profiles do not trip the
+# generic high-entropy rule. Their values are AES ciphertext (`encrypted:…`) and
+# a public key — neither is a usable secret.
+#
+# EVERY allowlist that names `paths` must ALSO carry `condition = "AND"` and a
+# non-empty `regexes`. A path-only allowlist exempts the whole file, including a
+# plaintext secret — and so does `condition = "AND"` with no `regexes`, because
+# the AND then intersects nothing.
+#
+# Note also that this scan runs on the PULL REQUEST, i.e. AFTER the commit is
+# pushed. The guard that runs BEFORE the commit is `.githooks/pre-commit`,
+# activated by the root package.json `prepare` script, and re-checked in CI by
+# secrets-guard.yml.
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "dotenvx-encrypted apps/api profiles (AES ciphertext + non-secret DOTENV_PUBLIC_KEY)"
-# Scope the exception to the encrypted profile files only — a plaintext secret
-# committed anywhere else still fails the scan.
+description = "dotenvx-ENCRYPTED apps/{api,web} profiles. condition=AND + regexTarget=line means a line is exempt ONLY if it is a dotenvx artifact: an `encrypted:` AES value or the non-secret DOTENV_PUBLIC_KEY. A PLAINTEXT value committed to these same files still fails the scan. (Before 2026-08-29 this allowlist was path-only, so any secret in these six files was exempt unconditionally.)"
+condition = "AND"
+regexTarget = "line"
 paths = [
   '''apps/api/\.env$''',
   '''apps/api/\.env\.dev$''',
+  '''apps/api/\.env\.staging$''',
   '''apps/api/\.env\.prod$''',
   '''apps/web/\.env$''',
   '''apps/web/\.env\.dev$''',
+  '''apps/web/\.env\.staging$''',
   '''apps/web/\.env\.prod$''',
+]
+regexes = [
+  '''encrypted:''',
+  '''DOTENV_PUBLIC_KEY''',
 ]
 
 [[allowlists]]

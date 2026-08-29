@@ -92,6 +92,8 @@ try {
       catalogTarballPath,
       tarballPath,
       executorTarballPath,
+      'react@19',
+      '@tanstack/react-query@5',
     ],
     workdir,
   );
@@ -101,9 +103,11 @@ try {
     join(workdir, 'smoke.mjs'),
     [
       "import { createKortix, ApiError, classifyTurn, getSessionCostRecord, listSessionCosts } from '@kortix/sdk';",
+      "import { useSession } from '@kortix/sdk/react';",
       "import { createScopedKortix, createKortixAuth } from '@kortix/sdk/server';",
       "import { createExecutorClient, ExecutorClient, ExecutorError } from '@kortix/executor-sdk';",
       "if (typeof createKortix !== 'function') throw new Error('createKortix is not a function');",
+      "if (typeof useSession !== 'function') throw new Error('useSession missing from React entry');",
       "if (typeof classifyTurn !== 'function') throw new Error('classifyTurn is not a function');",
       "if (typeof createScopedKortix !== 'function') throw new Error('createScopedKortix missing');",
       "if (typeof createKortixAuth !== 'function') throw new Error('createKortixAuth missing');",
