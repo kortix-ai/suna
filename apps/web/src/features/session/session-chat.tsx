@@ -13,6 +13,7 @@ import {
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
+  showsGeneratingIndicator,
 } from '@kortix/sdk';
 import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
 import {
@@ -112,6 +113,7 @@ import { ChatMinimap } from '@/features/session/chat-minimap';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { usePlanInChat } from '@/features/session/plan-surface';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { SessionTranscriptSkeleton } from '@/features/session/session-transcript-skeleton';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
 import {
@@ -225,6 +227,9 @@ import {
   useSessionPrompts,
   useSessionStateStore,
   useSessionSync,
+  sessionStreamScope,
+  useSessionStreamPresence,
+  useSessionTurnCorroborated,
   useSessionWorking,
   useSessionWorkingStore,
 } from '@kortix/sdk/react';
@@ -2537,6 +2542,13 @@ export function SessionChat({
     enabled: !isChildSession,
     runtimeSessionId: sessionId,
   });
+  // The same scope `useSessionWorking` polls under, so the indicator gate below
+  // reads the very presence facts that hook's own poll gate reads.
+  const workingStreamScope = !isChildSession
+    ? sessionStreamScope(projectId ?? '', projectSessionId ?? '')
+    : '';
+  const streamConnectedForSession = useSessionStreamPresence(workingStreamScope);
+  const streamTurnCorroborated = useSessionTurnCorroborated(workingStreamScope);
   const isServerBusy = working.state === 'working';
 
   // The one transcript-derived gate that survives, and the only one that
@@ -2610,11 +2622,34 @@ export function SessionChat({
   // The one working answer the LAST turn card renders (its shimmer). Resolved
   // here, once, so the card never reads the raw slot for a Kortix session —
   // see `resolveLastTurnWorking` for the split and the defect it removes.
+  // What the TURN CARD shows — a strictly narrower question than what the
+  // composer holds on.
+  //
+  // Entering a session painted "Gathering thoughts…" for ~30-45s over a fully
+  // rendered transcript with nothing running, then cleared itself (reported
+  // 2026-08-29). The only evidence was a `GET .../turn` read still holding a
+  // row open for a turn nobody was running: control frames are pushed ON
+  // CHANGE, so a session resumed with a row already open produces none, and
+  // nothing contradicts the stale read until it ages out.
+  //
+  // `showsGeneratingIndicator` withholds ONLY that case — server-sourced, on a
+  // stream that is attached and has not answered about turns yet. A runtime
+  // actually producing output arrives as `stream`, this tab's own send as
+  // `optimistic`, and a surface with no stream keeps deciding on the server
+  // read; none of those are gated. The composer keeps the ungated projection
+  // below on purpose: holding `/` commands over a turn that MIGHT be open is
+  // the safe direction, while telling the user the agent is thinking when it
+  // is not is simply false.
+  const generating = showsGeneratingIndicator({
+    projection: working,
+    streamConnected: streamConnectedForSession,
+    streamCorroborated: streamTurnCorroborated,
+  });
   const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
     // same frame instead of the card flickering 300ms earlier.
-    projectionBusy: isBusy,
+    projectionBusy: isBusy && generating,
     rawSlotBusy: getWorkingState(sessionStatus, true),
   });
 
@@ -4902,12 +4937,26 @@ export function SessionChat({
             forever with no way out but a page reload. The stage must also track
             the real runtime — hardcoding "ready" froze the copy on
             "Connecting" no matter what the boot was actually doing. */}
-        <SessionStartingLoader
-          stage={runtimeReady ? 'ready' : 'starting'}
-          variant="compact"
-          projectId={projectId}
-          sessionId={projectSessionId}
-        />
+        {/* Two different waits, two different visuals.
+　
+            Reading a transcript back is not a boot: it is fast, it is silent,
+            and it ends with messages. `SessionTranscriptSkeleton` shows the
+            SHAPE of what is arriving, so the swap reads as content landing.
+            The staged boot loader stays for the wait it was written for — a
+            sandbox actually coming up, which is slow enough to need naming
+            ("Preparing your workspace") and to earn a restart offer. Using the
+            boot loader for both made an ordinary session open look like a cold
+            start every time. */}
+        {runtimeReady ? (
+          <SessionTranscriptSkeleton />
+        ) : (
+          <SessionStartingLoader
+            stage="starting"
+            variant="compact"
+            projectId={projectId}
+            sessionId={projectSessionId}
+          />
+        )}
       </div>
     );
   }
