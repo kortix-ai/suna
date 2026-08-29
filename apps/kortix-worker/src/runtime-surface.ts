@@ -432,8 +432,19 @@ export class RuntimeSurface {
   }
 
   /** Sequence one adapter wire event AND fold it into the transcript. */
-  publishWire(wire: { type: string; properties: Record<string, unknown> }): void {
+  publishWire(wire: {
+    type: string;
+    properties: Record<string, unknown>;
+    transcriptOnly?: boolean;
+  }): void {
     this.updatedAt = Date.now();
+    // A transcript-only frame is the full-text twin of a `message.part.delta`:
+    // the transcript stores the whole string, the bus carries the append. Put
+    // both on the bus and a subscriber applies the text twice.
+    if (wire.transcriptOnly) {
+      this.transcript.apply(wire);
+      return;
+    }
     if (wire.type === 'session.status') {
       const status = wire.properties.status as { type?: string } | undefined;
       if (status?.type) this.status = { type: status.type };
