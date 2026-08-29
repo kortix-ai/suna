@@ -134,7 +134,32 @@ for stack_attempt in 1 2; do
     break
   fi
   test "$stack_attempt" -lt 2
-  printf 'stack readiness failed on attempt %s; retrying once after container restarts\n' "$stack_attempt"
+
+  # WHY THE STACK FAILED, in the log, before anything retries.
+  #
+  # \`compose up -d\` prints container STATE and never container OUTPUT, so a
+  # one-shot service that exits non-zero produced exactly one line —
+  # \`service "kortix-migrate" didn't complete successfully: exit 1\` — and the
+  # reason for that 1 was nowhere. A branch environment's public name served a
+  # 502 for hours behind a log that could not say why (2026-08-29). \`kortix-migrate\` is the one
+  # service that can fail this way; the health-gated ones report through
+  # \`--wait\`.
+  printf '::group::kortix-migrate output (attempt %s)\n' "$stack_attempt"
+  ${compose} logs --no-color --tail 200 kortix-migrate 2>&1 || true
+  printf '::endgroup::\n'
+  ${compose} ps --all --format '{{.Service}}\t{{.State}}\t{{.Status}}' 2>&1 || true
+
+  # A branch environment REUSES its sandbox, so a container left behind by a
+  # previous failed deploy is still there — and Docker refuses to recreate a
+  # name it already holds:
+  #   Conflict. The container name "/…_kortix-pr-NNNN-kortix-migrate-1" is
+  #   already in use by container "c18af76fa9df…"
+  # That made every failure poison the next deploy. Clear the wreckage before
+  # retrying rather than retrying into it. Deliberately WITHOUT \`-v\`: the
+  # named volumes carry this environment's Postgres, and the whole point of a
+  # branch environment is that its data outlives a redeploy.
+  printf 'stack readiness failed on attempt %s; clearing containers and retrying\n' "$stack_attempt"
+  ${compose} down --remove-orphans --timeout 30 2>&1 || true
   sleep 10
 done
 

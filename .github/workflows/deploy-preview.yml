@@ -447,7 +447,9 @@ jobs:
         # Deliberately NOT gated on the suite passing. A failing flow still
         # leaves a working environment, and leaving the hostname pointed at the
         # previous sandbox — or at nothing — would be worse than a red flow.
-        # Only a deploy that produced no sandbox at all has nothing to point at.
+        # It IS gated on the sandbox serving /v1/health: a suite that fails
+        # still leaves somewhere to debug, a stack that never came up does not,
+        # and re-pointing at one is how the public name goes dark. See below.
         if: always() && needs.authorize.outputs.public_worker != ''
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
@@ -460,6 +462,31 @@ jobs:
             # it. A second error here would only add noise.
             echo "::notice::no sandbox origin in the deploy result; nothing to re-point"
             exit 0
+          fi
+          # A sandbox EXISTING is not the same as its stack SERVING, and this
+          # step is deliberately not gated on the suite — so ask the origin
+          # whether it can answer before sending the public name at it.
+          #
+          # On 2026-08-29 `kortix-migrate` exited 1, the stack never bound 8080,
+          # and the name was re-pointed at that box anyway: pi.kortix.com served
+          # Cloudflare's 502 until someone noticed. A failing SUITE still
+          # deserves a live environment to debug in; a failing STACK has nothing
+          # to point at, and the previous sandbox is still serving.
+          #
+          # Left unset on a first-ever deploy, the Worker answers its own 503
+          # naming the missing target — which is the true statement.
+          ok=
+          for _ in $(seq 1 12); do
+            if curl -fsS --max-time 10 "${target%/}/v1/health" 2>/dev/null \
+              | jq -e '.status == "ok"' >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::${target} is not serving /v1/health — leaving ${{ needs.authorize.outputs.public_origin }} on its previous target rather than pointing it at a dead stack"
+            exit 1
           fi
           dir="infra/cloudflare/workers/${WORKER}"
           [ -f "${dir}/wrangler.toml" ] || { echo "::error::${dir}/wrangler.toml does not exist"; exit 1; }

@@ -22,7 +22,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { getEnv } from '@/lib/env-config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useDeploymentCliInstallCommand } from '@/lib/use-deployment-cli-install-command';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   getProjectDetail,
@@ -50,10 +50,23 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { CopyButton } from '@/components/markdown/copy-button';
 import {
   connectionStatusLabel,
+  providerLabel,
   providerSentence,
   repositoryWebUrl,
   type ConnectionTone,
 } from './git-view-helpers';
+
+/**
+ * The leaves this view gates on, as ONE stable list.
+ *
+ * Action-list identity is part of the SDK's `effective:batch` query key, so a
+ * literal rebuilt on each render would mint a new cache entry every time.
+ * Module scope is what collapses both gates into a single request.
+ */
+const GIT_VIEW_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
+] as const;
 
 const DOCS_CLI = '/docs/cli';
 const DOCS_MANIFEST = '/docs/project/manifest';
@@ -580,13 +593,112 @@ function OwnGitClient({ project }: { project: ProjectWithOrigin }) {
   );
 }
 
-function RepoCollaboratorInvite({
+/**
+ * "People with access" — always rendered for someone who may manage members,
+ * with a body that depends on who actually controls the repository.
+ *
+ * The section used to be gated on `managed && canEdit` and render NOTHING
+ * otherwise, which produced the support question this replaces: a workspace
+ * owner on a BYO repo saw the Git repo panel with no access row under it and
+ * no way to find out why. Hiding a control does not answer "where do I add
+ * someone" — it just moves the question into a support thread.
+ *
+ * Two things the old gate got wrong, both fixed here:
+ *
+ * 1. It read `project.write`. The route asserts `project.members.manage`
+ *    (`apps/api/src/projects/routes/r1.ts`, "Inviting a git collaborator
+ *    grants a human standing access to the repo — membership-tier, not plain
+ *    write"). A custom role holding write-but-not-members.manage saw the form
+ *    and got a 403 on submit; the reverse role saw nothing though the API
+ *    would have accepted it. The gate now asks for the leaf the route asks
+ *    for.
+ * 2. A non-managed repository disappeared instead of explaining itself.
+ */
+function RepoAccessSection({
   projectId,
-  canManage,
+  connection,
+  managed,
+  canManageMembers,
 }: {
   projectId: string;
-  canManage: boolean;
+  connection: ProjectGitConnection | null | undefined;
+  managed: boolean;
+  canManageMembers: boolean;
 }) {
+  // Still gated on the capability — someone who cannot grant repository access
+  // has no use for either the form or an explanation of where to grant it.
+  if (!canManageMembers) return null;
+
+  return (
+    <section className="space-y-3">
+      <SettingsSubsectionHeader
+        title="People with access"
+        description={
+          managed
+            ? 'Invite someone by their GitHub username. GitHub emails them an invite to accept.'
+            : 'Who can read and write this workspace’s repository.'
+        }
+      />
+      {managed ? (
+        <RepoCollaboratorInvite projectId={projectId} />
+      ) : (
+        <ExternallyManagedRepoAccess connection={connection} />
+      )}
+    </section>
+  );
+}
+
+/**
+ * The body for a repository Kortix does not own.
+ *
+ * Collaborator invites go through the managed org's admin credential
+ * (`managedAdminAuth`, `apps/api/src/projects/git-backends/github.ts`), which
+ * only has repo-admin scope on repositories Kortix created — so for a BYO repo
+ * there is nothing Kortix could do here even with the user's permission. The
+ * honest answer is where to go instead, and for GitHub that is a real link
+ * rather than a description of one.
+ *
+ * Providers other than GitHub reach this too: a workspace provisioned while
+ * `MANAGED_GIT_PROVIDER=code-storage` was the default (between #5063 and its
+ * retirement in #6796) is a MANAGED repo whose backend has no
+ * `inviteCollaborator` at all. Naming the provider is what tells those users
+ * they are not looking at a broken GitHub connection.
+ */
+function ExternallyManagedRepoAccess({
+  connection,
+}: {
+  connection: ProjectGitConnection | null | undefined;
+}) {
+  const provider = connection?.provider;
+  // GitHub only. `repositoryWebUrl` also answers for GitLab, but the deep link
+  // below is `/settings/access`, which is GitHub's path — GitLab's is
+  // `/-/project_members`. A link that 404s is worse than no link, so the button
+  // is scoped to the one host whose path is known here.
+  const webUrl =
+    provider === 'github' && connection?.repo_url
+      ? repositoryWebUrl(provider, connection.repo_url)
+      : null;
+
+  return (
+    <div className="bg-popover rounded-md border px-4 py-3">
+      <p className="text-muted-foreground text-xs text-pretty">
+        {provider === 'github'
+          ? 'Kortix did not create this repository, so it cannot add collaborators to it. Manage access from the repository settings on GitHub.'
+          : `This workspace’s repository is hosted on ${providerLabel(provider)}, which does not support collaborator invites from Kortix. Manage access where the repository lives.`}
+      </p>
+      {webUrl ? (
+        <Button asChild variant="outline" size="sm" className="mt-3 gap-1.5">
+          <a href={`${webUrl}/settings/access`} target="_blank" rel="noopener noreferrer">
+            <ExternalLink className="size-3.5 shrink-0" />
+            Manage on GitHub
+          </a>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function RepoCollaboratorInvite({ projectId }: { projectId: string }) {
   const [username, setUsername] = useState('');
   const [permission, setPermission] = useState<'read' | 'write'>('write');
 
@@ -605,18 +717,11 @@ function RepoCollaboratorInvite({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!canManage) return;
     if (username.trim() && !inviteMutation.isPending) inviteMutation.mutate();
   };
 
-  if (!canManage) return null;
-
   return (
-    <section className="space-y-3">
-      <SettingsSubsectionHeader
-        title="People with access"
-        description="Invite someone by their GitHub username. GitHub emails them an invite to accept."
-      />
+    <>
       {/* `p-3` and `rounded-sm` controls inside a `rounded-md` panel: concentric
           radius, and no third level of inset. The `Field`/`FieldGroup` wrappers
           this form used to carry are gone — they exist to structure a label and
@@ -672,7 +777,7 @@ function RepoCollaboratorInvite({
           </Button>
         </form>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -686,11 +791,19 @@ export function GitView({ projectId }: { projectId: string }) {
   // its `default_branch`/`manifest_path` from this SAME query rather than firing
   // a second project fetch.
   const project = detail.data?.project;
-  // One leaf, asked once. This used to be `role === 'manager' || project.write`,
-  // an OR that existed only because the role label could not express the leaf —
-  // every manager holds `project.write`, so the first half added nothing except
-  // a false positive for a custom role denied that leaf.
-  const canEdit = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_WRITE).allowed === true;
+  // Two leaves, one roundtrip. This used to be a single `project.write` probe
+  // reused for BOTH the repository settings and the collaborator invite — but
+  // the invite route asserts `project.members.manage`
+  // (`apps/api/src/projects/routes/r1.ts`), a strictly different leaf, so the
+  // one probe was answering a question the server never asked. `GIT_VIEW_ACTIONS`
+  // is module-level and stable because the action-list identity is part of the
+  // SDK query key.
+  const cans = useProjectCans(projectId, GIT_VIEW_ACTIONS);
+  const canEdit = cans[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
+  const canManageMembers = cans[PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE]?.allowed === true;
+  // Managed = Kortix created this repository, so the managed-org admin
+  // credential has repo-admin scope on it. False for a BYO repo and for a
+  // repository on any provider other than GitHub.
   const managed = project ? isManagedGithubProject(project) : false;
 
   return (
@@ -733,7 +846,12 @@ export function GitView({ projectId }: { projectId: string }) {
             connection={detail.data?.git_connection}
             canManage={canEdit}
           />
-          {managed ? <RepoCollaboratorInvite projectId={projectId} canManage={canEdit} /> : null}
+          <RepoAccessSection
+            projectId={projectId}
+            connection={detail.data?.git_connection}
+            managed={managed}
+            canManageMembers={canManageMembers}
+          />
           <LocalSetup projectId={projectId} />
           <OwnGitClient project={project as ProjectWithOrigin} />
         </>

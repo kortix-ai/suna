@@ -1,4 +1,5 @@
 import type { ProjectIconValue } from '@/features/projects/modal/project-icon-field';
+import { githubSourceReady } from '@/features/workspace/new/github-source';
 import { validateWorkspaceName } from '@/features/workspace/new/workspace-name';
 import type { KortixAccount } from '@kortix/sdk';
 
@@ -12,6 +13,15 @@ export interface NewWorkspaceFormState {
   templateId: string | null;
   /** Null means "the user has exactly one account, so there is nothing to pick". */
   accountId: string | null;
+  /**
+   * The GitHub App installation the two GitHub sources act through — the
+   * `installation_id` both `POST /projects/create-repo` and
+   * `POST /projects/link-repository` require. Null for `managed`, which needs
+   * no GitHub account at all.
+   */
+  installationId: string | null;
+  /** `owner/repo`, for `github-import` only. Null for the other two sources. */
+  repoFullName: string | null;
 }
 
 /**
@@ -27,6 +37,8 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
   defaultBranch: 'main',
   templateId: null,
   accountId: null,
+  installationId: null,
+  repoFullName: null,
 };
 
 /**
@@ -105,6 +117,12 @@ export function resolveDefaultCreatableAccountId(
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {
   if (!validateWorkspaceName(state.name).ok) return false;
+  // The two GitHub sources need inputs `managed` does not: an installation for
+  // both, and a repository for `github-import`. Gated HERE rather than at the
+  // page, which is where the old `state.source === 'managed'` blanket refusal
+  // lived — that one disabled submit for a correctly-filled GitHub form as
+  // readily as an empty one, because no GitHub form existed to fill.
+  if (!githubSourceReady(state)) return false;
   // Zero is never a legitimate "ready to submit" state. It means either the
   // accounts query has not resolved yet — in which case a multi-account user
   // would submit with no account_id and the server would silently fall back to

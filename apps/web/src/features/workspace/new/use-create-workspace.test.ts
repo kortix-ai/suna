@@ -362,6 +362,8 @@ describe('runCreate: the full create() orchestration', () => {
       attemptKeyFor,
       clearAttemptKey,
       runCreateAttempt: async () => fakeProject('created'),
+      createGitHubRepoProject: async () => fakeProject('created-github'),
+      importGitHubRepoProject: async () => fakeProject('imported-github'),
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
@@ -402,6 +404,8 @@ describe('runCreate: the full create() orchestration', () => {
         clearAttemptKey(fingerprint);
       },
       runCreateAttempt: async () => fakeProject('created-order'),
+      createGitHubRepoProject: async () => fakeProject('created-order'),
+      importGitHubRepoProject: async () => fakeProject('created-order'),
       primeProjectCache: () => order.push('primeCache'),
       invalidateProjects: () => order.push('invalidate'),
       writeLastProjectId: () => order.push('writeCookie'),
@@ -484,6 +488,8 @@ describe('runCreate: the full create() orchestration', () => {
           },
           wait: async () => {},
         }),
+      createGitHubRepoProject: async () => fakeProject('created-retry-mint'),
+      importGitHubRepoProject: async () => fakeProject('created-retry-mint'),
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
@@ -595,6 +601,168 @@ describe('runCreate: the full create() orchestration', () => {
     );
 
     expect(sentPayloads[0]?.account_id).toBe('acct-owner');
+  });
+
+  /**
+   * The two GitHub sources. Before this work `runCreate` had ONE network call
+   * (`/projects/provision`) and the page refused to submit anything else, so
+   * "Create in GitHub" and "Import from GitHub" were rendered `disabled`.
+   * These tests pin the routing — which call each source makes, and what each
+   * one is handed — because getting it wrong means creating a workspace
+   * against the wrong upstream repository, which is not recoverable by a
+   * retry.
+   */
+  test('github-create routes to create-repo, never to provision', async () => {
+    const state = {
+      ...INITIAL_FORM_STATE,
+      name: "Ana's agents",
+      accountId: 'acct-owner',
+      source: 'github-create' as const,
+      installationId: '84',
+    };
+    let provisionCalls = 0;
+    const created: unknown[] = [];
+
+    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      ...noopClient(),
+      runCreateAttempt: async () => {
+        provisionCalls += 1;
+        return fakeProject('should-not-happen');
+      },
+      createGitHubRepoProject: async (payload) => {
+        created.push(payload);
+        return fakeProject('created-in-github');
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(provisionCalls).toBe(0);
+    expect(created).toHaveLength(1);
+    // The slug for GitHub, the typed name for the workspace.
+    expect(created[0]).toMatchObject({
+      name: 'Ana-s-agents',
+      project_name: "Ana's agents",
+      installation_id: '84',
+      account_id: 'acct-owner',
+    });
+  });
+
+  test('github-import routes to link-repository, never to provision', async () => {
+    const state = {
+      ...INITIAL_FORM_STATE,
+      name: 'Portal',
+      accountId: 'acct-owner',
+      source: 'github-import' as const,
+      installationId: '84',
+      repoFullName: 'acme/portal',
+      defaultBranch: 'trunk',
+    };
+    let provisionCalls = 0;
+    const imported: unknown[] = [];
+
+    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      ...noopClient(),
+      runCreateAttempt: async () => {
+        provisionCalls += 1;
+        return fakeProject('should-not-happen');
+      },
+      importGitHubRepoProject: async (payload) => {
+        imported.push(payload);
+        return fakeProject('imported-from-github');
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(provisionCalls).toBe(0);
+    expect(imported[0]).toMatchObject({
+      repo_full_name: 'acme/portal',
+      installation_id: '84',
+      default_branch: 'trunk',
+      account_id: 'acct-owner',
+    });
+  });
+
+  test('a GitHub source mints no idempotency key — neither route accepts one', async () => {
+    // A minted-but-never-sent key would persist for its full TTL and never be
+    // cleared, so a LATER managed create with the same fingerprint would reuse
+    // a key that no request ever carried.
+    const state = {
+      ...INITIAL_FORM_STATE,
+      name: 'suna-web',
+      accountId: 'acct-owner',
+      source: 'github-create' as const,
+      installationId: '84',
+    };
+    const mintCalls: string[] = [];
+
+    await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      ...noopClient(),
+      attemptKeyFor: (fingerprint, now) => {
+        mintCalls.push(fingerprint);
+        return attemptKeyFor(fingerprint, now);
+      },
+    });
+
+    expect(mintCalls).toEqual([]);
+  });
+
+  test('every source runs the SAME success path — cache, invalidate, cookie, onboarding', async () => {
+    // The routing differs; what happens after a project exists must not.
+    for (const state of [
+      { ...INITIAL_FORM_STATE, name: 'a', accountId: 'acct-owner', source: 'managed' as const },
+      {
+        ...INITIAL_FORM_STATE,
+        name: 'b',
+        accountId: 'acct-owner',
+        source: 'github-create' as const,
+        installationId: '84',
+      },
+      {
+        ...INITIAL_FORM_STATE,
+        name: 'c',
+        accountId: 'acct-owner',
+        source: 'github-import' as const,
+        installationId: '84',
+        repoFullName: 'acme/portal',
+      },
+    ]) {
+      const order: string[] = [];
+      const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+        ...noopClient(),
+        primeProjectCache: () => order.push('primeCache'),
+        invalidateProjects: () => order.push('invalidate'),
+        writeLastProjectId: () => order.push('writeCookie'),
+        enterOnboarding: () => order.push('enterOnboarding'),
+      });
+      expect(result.ok).toBe(true);
+      expect(order).toEqual(['primeCache', 'invalidate', 'writeCookie', 'enterOnboarding']);
+    }
+  });
+
+  test('a failed GitHub create surfaces the error like any other source', async () => {
+    const err = new ApiError('Install the Kortix GitHub App before creating GitHub-backed projects', {
+      status: 409,
+    });
+    const result = await runCreate(
+      {
+        ...INITIAL_FORM_STATE,
+        name: 'suna-web',
+        accountId: 'acct-owner',
+        source: 'github-create' as const,
+        installationId: '84',
+      },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient(),
+        createGitHubRepoProject: async () => {
+          throw err;
+        },
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe(err);
   });
 
 });

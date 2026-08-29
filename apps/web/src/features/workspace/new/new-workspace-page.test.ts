@@ -235,8 +235,13 @@ describe('/new page: layout shape (design is a release gate here)', () => {
    * together — a test that fails five times is not a test anyone reads.
    */
   test('Advanced renders, currently without a name gate', () => {
-    expect(code).toContain('<AdvancedFields state={state} onChange={setState} />');
+    expect(code).toContain('<AdvancedFields');
     expect(code).not.toContain('{showIcon ? <AdvancedFields');
+    // `effectiveAccountId`, not `state.accountId`: the GitHub queries inside
+    // are account-scoped and `state.accountId` is legitimately null for a
+    // single-account user, which would leave them disabled for exactly those
+    // users.
+    expect(code).toContain('accountId={effectiveAccountId}');
   });
 
   test('icon and name sit in one field group; submit is a sibling below it', () => {

@@ -195,6 +195,33 @@ describe('web ECS migration', () => {
    * belongs to. Two switches turn it off: removing the `preview` label, and
    * deleting the branch. Nothing else may.
    */
+  /**
+   * A sandbox EXISTING is not its stack SERVING.
+   *
+   * 2026-08-29: `kortix-migrate` exited 1, so nothing bound port 8080 — and the
+   * stable hostname was re-pointed at that box anyway, because the step only
+   * checked that a sandbox origin came back. pi.kortix.com served Cloudflare's
+   * 502 until someone noticed. A failing SUITE still deserves a live
+   * environment to debug in; a failing STACK has nothing to point at, and the
+   * previous sandbox is still serving.
+   */
+  it('only points the stable hostname at a sandbox that answers /v1/health', () => {
+    const workflow = read('.github/workflows/deploy-preview.yml');
+    const step = workflow.slice(workflow.indexOf('Point the stable hostname at this sandbox'));
+    const body = step.slice(0, step.indexOf('\n      - name:'));
+
+    // The probe goes at the sandbox's OWN origin, which is what the public name
+    // is about to be pointed at — not at the public name, which still answers
+    // from the previous sandbox and would pass while this one is dead.
+    expect(body).toContain('"${target%/}/v1/health"');
+    expect(body).toContain(`jq -e '.status == "ok"'`);
+    // A dead stack must FAIL the step, leaving TARGET_ORIGIN where it was.
+    expect(body).toMatch(/is not serving \/v1\/health/);
+    expect(body).toMatch(/exit 1/);
+    // And the re-point must still come after the probe, never before it.
+    expect(body.indexOf('/v1/health')).toBeLessThan(body.indexOf('wrangler@4 deploy'));
+  });
+
   it('keeps a preview environment alive until its branch is deleted', () => {
     const workflow = read('.github/workflows/deploy-preview.yml');
     const jobs = (name: string) => {

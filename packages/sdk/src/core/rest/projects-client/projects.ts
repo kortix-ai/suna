@@ -276,7 +276,19 @@ export interface ProjectInput {
 
 export interface CreateProjectRepoInput {
   account_id?: string;
+  /**
+   * The GitHub REPOSITORY name. Charset-validated server-side against
+   * `/^[a-zA-Z0-9._-]+$/` — no spaces. A workspace name typed by a person
+   * usually has to be slugified before it can go here; `project_name` below is
+   * where the typed name belongs.
+   */
   name: string;
+  /**
+   * The Kortix WORKSPACE name, when it differs from the repository name.
+   * Omitted, the server derives one from the created repo's full name
+   * (`deriveProjectName`), so "Ana's agents" would land as "Ana-s-agents".
+   */
+  project_name?: string;
   installation_id?: string;
   private?: boolean;
   description?: string;
