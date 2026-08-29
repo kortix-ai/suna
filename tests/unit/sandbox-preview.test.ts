@@ -78,6 +78,30 @@ describe('provider-neutral preview lifecycle', () => {
     }
   });
 
+  it('reclaims the images each redeploy supersedes, after the stack is proven', () => {
+    // A branch environment is reused forever, so nothing else ever reclaims
+    // them: ~3 GB per deploy on a 50 GB disk filled it to 100% and the stack
+    // stopped coming up. The prune must run AFTER the health assertion (a
+    // proven stack first, housekeeping second) and must never be able to fail
+    // a deploy that is otherwise healthy.
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://x.example.test',
+      runTests: false,
+    });
+    const prune = script.indexOf('docker image prune');
+    expect(prune).toBeGreaterThan(-1);
+    expect(prune).toBeGreaterThan(script.lastIndexOf('$HEALTH'));
+    // `until=24h` keeps the generation just deployed as a rollback.
+    expect(script).toContain("docker image prune -af --filter 'until=24h'");
+    for (const line of script.split('\n').filter((l) => l.trimStart().startsWith('docker ') && l.includes('prune'))) {
+      expect(line).toContain('|| true');
+    }
+  });
+
   it('health-checks the stack locally, never through the public name', () => {
     // The public name is served by a proxy that is only re-pointed at this
     // sandbox AFTER the deploy returns. Checking through it would deadlock the

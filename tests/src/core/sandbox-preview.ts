@@ -162,6 +162,20 @@ for _ in $(seq 1 60); do
 done
 curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
 
+# A branch environment is REUSED, so nothing ever reclaims the images it
+# replaces: every deploy pulls ~3 GB of new api/frontend/gateway layers and the
+# ones they supersede stay on a 50 GB disk forever. It reached 100% and the
+# stack stopped coming up; 22 GB had to be pruned by hand. Prune here, AFTER the
+# new stack is proven healthy — the running containers hold references to their
+# own images, so this can only take the superseded ones, and until=24h keeps
+# today's generation as a rollback. Never fatal: a healthy deploy must not fail
+# because a prune did.
+df -h / | tail -1 >&2
+docker container prune -f >/dev/null 2>&1 || true
+docker image prune -af --filter 'until=24h' >/dev/null 2>&1 || true
+docker builder prune -af --filter 'until=24h' >/dev/null 2>&1 || true
+df -h / | tail -1 >&2
+
 ${
     input.runTests === false
       ? `printf 'tests-skipped\\n' > "$PHASE"
