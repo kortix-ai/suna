@@ -3645,3 +3645,50 @@ describe("a streamed delta counts as runtime activity", () => {
 		expect(Object.keys(useSyncStore.getState().sessionActivityAt)).toHaveLength(0);
 	});
 });
+
+describe("replayed frames are history, not live output", () => {
+	// The stream replays the `since=` backlog on every connect — a reconnect,
+	// and every page load. Stamping that replay with `Date.now()` made it look
+	// like the runtime producing output NOW: `projectWorking` ranks activity
+	// above everything, so opening a session whose answer had finished long
+	// before pinned the composer on Stop for the full 45s observation window.
+	test("activity is stamped with the frame's own emit time, not now", () => {
+		const sid = "ses_replay";
+		const longAgo = Date.now() - 10 * 60_000;
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			at: longAgo,
+			properties: {
+				sessionID: sid,
+				messageID: "msg_1",
+				partID: "msg_1-p0",
+				field: "text",
+				delta: "old",
+			},
+		} as never);
+
+		const stamped = useSyncStore.getState().sessionActivityAt[sid];
+		expect(stamped).toBe(longAgo);
+		// The point: it must NOT read as fresh.
+		expect(Date.now() - (stamped ?? 0)).toBeGreaterThan(60_000);
+	});
+
+	test("a live frame with no emit time still stamps now", () => {
+		const sid = "ses_live_nostamp";
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+		const before = Date.now();
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: {
+				sessionID: sid,
+				messageID: "msg_1",
+				partID: "msg_1-p0",
+				field: "text",
+				delta: "x",
+			},
+		} as never);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThanOrEqual(before);
+	});
+});

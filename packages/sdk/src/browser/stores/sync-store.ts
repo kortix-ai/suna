@@ -2213,13 +2213,22 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyEvent: (event) => {
 		const store = get();
+		// When the RUNTIME emitted this frame. A replayed frame (the `since=`
+		// backlog a reconnect or a page load asks for) carries an OLD one, and
+		// activity stamped with `Date.now()` instead made that replay look like
+		// live output: `projectWorking` ranks activity first, so opening a
+		// finished session pinned the composer on Stop for the full
+		// `STREAM_OBSERVATION_MAX_MS` (45s). Absent (a fabricated or legacy
+		// frame) falls back to now, which is what every caller did before.
+		const frameAt = (event as { at?: unknown }).at;
+		const emittedAt = typeof frameAt === 'number' && frameAt > 0 ? frameAt : undefined;
 		switch (event.type) {
 			case "message.updated": {
 				{
 					const info = (event.properties as { info?: { sessionID?: string } })?.info;
 					const sid =
 						info?.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid);
+					if (sid) get().noteSessionActivity(sid, emittedAt);
 				}
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
@@ -2392,7 +2401,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				{
 					const sid =
 						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid);
+					if (sid) get().noteSessionActivity(sid, emittedAt);
 				}
 
 				const eventSessionID =
@@ -2473,7 +2482,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				// ledger — the laggy observer, which on pi leaves rows open —
 				// and the composer showed Stop off a poll instead of off the
 				// stream.
-				if (props.sessionID) get().noteSessionActivity(props.sessionID);
+				if (props.sessionID) get().noteSessionActivity(props.sessionID, emittedAt);
 
 				// Ensure the part exists before applying the delta.
 				// message.part.delta can arrive before message.part.updated

@@ -159,7 +159,12 @@ export function runtimeFrameToOpenCodeEvent(
   ) {
     return null;
   }
-  return { type: frame.type, properties: frame.payload ?? {} } as OpenCodeEvent;
+  // `at` rides along: it is the instant the RUNTIME emitted the frame, and a
+  // REPLAYED frame carries an old one. The store stamps "the runtime produced
+  // output" from this, and stamping replay with `Date.now()` made a page load
+  // look like a live turn — the composer sat on Stop for 45s after opening a
+  // session whose answer had finished long before.
+  return { type: frame.type, properties: frame.payload ?? {}, at: frame.at } as unknown as OpenCodeEvent;
 }
 
 export function connectSessionStream(
