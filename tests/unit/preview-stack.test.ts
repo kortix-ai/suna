@@ -39,6 +39,29 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy frontend:3000');
   });
 
+  // 2026-08-30: pi.kortix.com answered 502 through every redeploy. A branch
+  // environment is reused in place, so `compose up -d` recreates `frontend` and
+  // `kortix-api` while `preview-edge` keeps running — and for the ~10-30s the
+  // swap takes, Caddy's dial is refused and the browser gets a raw 502. The
+  // stable hostname is only as stable as its worst upstream window.
+  it('rides out a container swap instead of 502ing through a redeploy', () => {
+    const caddy = buildPreviewCaddyfile('preview.example.test');
+    // A snippet is a TOP-LEVEL form. Declared inside the site block, the
+    // adapter fails outright with `File to import not found: swap_tolerant`.
+    expect(caddy.indexOf('(swap_tolerant) {')).toBeLessThan(caddy.indexOf(':8080 {'));
+    expect(caddy).toContain('lb_try_duration 30s');
+    expect(caddy).toContain('lb_try_interval 250ms');
+    // Every upstream that a deploy recreates, not just the frontend.
+    for (const upstream of ['kortix-api:8008', 'supabase-kong:8000', 'llm-gateway:8090', 'frontend:3000']) {
+      const block = caddy.slice(caddy.indexOf(`reverse_proxy ${upstream}`));
+      expect(block.slice(0, block.indexOf('\n  }'))).toContain('import swap_tolerant');
+    }
+    // And when the budget really is exhausted, a coherent page rather than the
+    // provider's bare 502.
+    expect(caddy).toContain('handle_errors {');
+    expect(caddy).toContain('Retry-After 15');
+  });
+
   it('accepts either a GitHub App or a PAT as managed-git configuration', () => {
     const base = [
       'POSTGRES_PASSWORD=p',
