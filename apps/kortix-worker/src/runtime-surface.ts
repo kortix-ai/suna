@@ -305,6 +305,65 @@ export class RuntimeSurface {
     return minted.id;
   };
 
+  /**
+   * Rebuild the transcript from the durable log after a restart (P1.8).
+   *
+   * One pi instance IS one session, so a box that comes back must come back
+   * with the SAME conversation — otherwise the session answers with no memory
+   * of what was said, and `/messages` reports an empty history for a session
+   * the store knows is three turns deep.
+   *
+   * Restored pi messages carry NO wire id (they are storage entries, not wire
+   * frames), so ids are minted here in restore order. That is safe and it is
+   * why this must run BEFORE any live turn: `mintMessageId` seeds each new id
+   * from `lastMintedTime`, so every reply after the restore sorts above the
+   * whole restored transcript rather than back inside it.
+   *
+   * Applied straight to the transcript, not through `publishWire`: history is
+   * not news. Replaying it onto the bus would hand a reconnecting client a
+   * burst of "new" events for messages it already has.
+   */
+  seedRestoredMessages(
+    messages: Array<{ role?: string; content?: unknown; timestamp?: number | string }>,
+  ): number {
+    let seeded = 0;
+    for (const message of messages) {
+      const role = message.role === 'user' ? 'user' : 'assistant';
+      const parts = Array.isArray(message.content) ? message.content : [];
+      const texts = parts
+        .filter((p): p is { type?: string; text?: string } => typeof p === 'object' && p !== null)
+        .filter((p) => typeof p.text === 'string' && p.text.length > 0);
+      // A message with nothing renderable would show as an empty bubble.
+      if (texts.length === 0) continue;
+      const id = this.mintMessageId();
+      const created = typeof message.timestamp === 'number' ? message.timestamp : Date.now();
+      this.transcript.apply({
+        type: 'message.updated',
+        properties: {
+          sessionID: this.rootId,
+          info: { id, role, sessionID: this.rootId, time: { created } },
+        },
+      });
+      texts.forEach((part, index) => {
+        this.transcript.apply({
+          type: 'message.part.updated',
+          properties: {
+            sessionID: this.rootId,
+            part: {
+              id: `${id}-p${index}`,
+              messageID: id,
+              sessionID: this.rootId,
+              type: 'text',
+              text: part.text,
+            },
+          },
+        });
+      });
+      seeded++;
+    }
+    return seeded;
+  }
+
   /** Sequence one adapter wire event AND fold it into the transcript. */
   publishWire(wire: { type: string; properties: Record<string, unknown> }): void {
     this.updatedAt = Date.now();

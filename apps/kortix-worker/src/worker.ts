@@ -69,6 +69,23 @@ function toDurable<T>(value: T, path = 'message'): T {
 }
 
 /**
+ * The branch's messages, oldest first.
+ *
+ * `findEntriesOnBranch` walks parent links UP from the leaf, so it hands the
+ * branch back NEWEST-FIRST. Both consumers need the opposite: the agent
+ * replays this array as its conversation history, and the runtime surface
+ * mints wire ids in array order. Unsorted, a resumed session came back with
+ * its questions answered backwards. Sort on the entry's own `seq` — the walk
+ * order is pi's business, the ordering contract is ours.
+ */
+export function restoredMessagesFromEntries(entries: readonly any[]): any[] {
+  return entries
+    .filter((e: any) => e.type === 'message')
+    .sort((a: any, b: any) => a.seq - b.seq)
+    .map((e: any) => e.message);
+}
+
+/**
  * True time-to-first-token, measured at the provider stream boundary.
  *
  * NOTE — this file previously claimed that `Agent.subscribe` emits no text
@@ -309,9 +326,7 @@ export async function buildHarness(cfg: WorkerConfig) {
       const leaf = await session.getLeafId();
       if (leaf) {
         const entries = await session.findEntriesOnBranch({ start: leaf } as any);
-        restoredMessages = entries
-          .filter((e: any) => e.type === 'message')
-          .map((e: any) => e.message);
+        restoredMessages = restoredMessagesFromEntries(entries);
       }
     } catch (error) {
       // Durability is a FEATURE, not a precondition for answering. Unguarded,
@@ -374,7 +389,8 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries, storeError } = await buildHarness(cfg);
+  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError } =
+    await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
   agent.subscribe((event: any) => {
@@ -408,6 +424,15 @@ export async function startWorker(cfg = configFromEnv()) {
     defaultModel: cfg.modelId ?? compiledPayload?.agentConfig?.model ?? null,
     workspace: cfg.envCwd,
   });
+  // A resumed box must come back with the SAME conversation: one pi instance is
+  // one session. Seed BEFORE the adapter is wired so every id this turn mints
+  // sorts above the restored transcript instead of back inside it.
+  const seededMessages = surface.seedRestoredMessages(restoredMessages);
+  if (seededMessages > 0) {
+    console.log(
+      JSON.stringify({ msg: 'transcript restored', messages: seededMessages, entries: restoredEntries }),
+    );
+  }
   const wireAdapter = new ChatEventAdapter({
     sessionID: surface.rootId,
     mintMessageId: surface.mintMessageId,
