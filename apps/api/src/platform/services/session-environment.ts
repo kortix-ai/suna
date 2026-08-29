@@ -10,7 +10,8 @@
  * Deliberate shape:
  * - **One environment per session**, enforced by `session_environments`'
  *   primary key. The claim is an INSERT … ON CONFLICT DO NOTHING; the loser
- *   polls the winner's row. No advisory locks.
+ *   does NOT wait — `ensure` answers with the current status and the caller
+ *   polls, because the provision outlives any request. No advisory locks.
  * - **The environment IS the session, credential-wise.** Its KORTIX_TOKEN is
  *   the session's own service key (read from `session_sandboxes.config`), so
  *   its git access, secret handles and callback rights are exactly the
@@ -36,8 +37,8 @@ import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { getProvider } from '../providers';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
-/** How long a losing claimant waits for the winner's provision. */
-const CLAIM_WAIT_MS = 120_000;
+/** A claim whose owner died mid-provision is re-claimable after this. */
+const PROVISION_STALE_MS = 5 * 60_000;
 
 export interface SessionEnvironmentInfo {
   sessionId: string;
@@ -150,30 +151,64 @@ export interface EnsureSessionEnvironmentInput {
 }
 
 /**
- * Idempotent: returns the session's environment, provisioning or resuming it
- * if needed. Every terminal failure marks the row 'error'; a later ensure
- * retries from there.
+ * Idempotent and NON-BLOCKING: reports the session's environment as it stands
+ * right now, and starts the provision or resume out of band when one is owed.
+ *
+ * It used to await the provision inside the request, and nothing could make
+ * that work. The API kills every request at 25 s (`middleware/request-deadline`),
+ * a cold Daytona box takes far longer than that, and the loser of the claim
+ * waited another 120 s on top. So the FIRST compute tool call of every pi
+ * session got 503 after 503 until the worker's 180 s budget ran out: `write`
+ * spun for three minutes and then failed, on a session that was otherwise
+ * healthy. The worker is already a poller — `LazyKortixEnv.attach` re-asks
+ * every 2 s until it sees `active` — so the honest answer to "ensure" is the
+ * current status, immediately, plus the work started.
+ *
+ * Every terminal failure still marks the row 'error'; a later ensure re-claims
+ * it and retries.
  */
 export async function ensureSessionEnvironment(
   input: EnsureSessionEnvironmentInput,
 ): Promise<SessionEnvironmentInfo> {
   const existing = await readRow(input.sessionId);
   if (existing?.status === 'active' && existing.externalId) return withPreview(existing);
-  if (existing?.status === 'stopped' && existing.externalId) {
-    await resumeEnvironment(existing.externalId);
-    const [resumed] = await db
-      .update(sessionEnvironments)
-      .set({ status: 'active', lastUsedAt: new Date(), updatedAt: new Date() })
-      .where(eq(sessionEnvironments.sessionId, input.sessionId))
-      .returning();
-    return withPreview(resumed);
+
+  const claimed = await claimEnvironmentWork(input, existing);
+  if (!claimed) {
+    // Someone else owns the work. Report how far it has got and let the caller
+    // poll — waiting here is what the deadline kills.
+    const row = (await readRow(input.sessionId)) ?? existing;
+    if (!row) throw new SessionEnvironmentError('Environment claim vanished; retry.', 409);
+    return withPreview(row);
   }
 
-  // Claim. A brand-new session inserts; an errored one re-claims by flipping
-  // 'error' → 'provisioning'. Whoever ends up NOT owning the claim polls.
-  let owns = false;
+  // Out of band on purpose (see above). Nothing awaits this; the row is the
+  // only channel, which is why every exit path below writes to it.
+  void runEnvironmentWork(input, claimed.externalId).catch((err) => {
+    console.error('[session-env] environment work failed', {
+      sessionId: input.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+  return withPreview(claimed);
+}
+
+/**
+ * Win the right to provision, or return null so the winner does it.
+ *
+ * Claims a session that has no environment (insert), one whose last attempt
+ * failed ('error'), and a 'stopped' one (which resumes rather than provisions).
+ * It also re-claims a 'provisioning' row whose owner has gone quiet for
+ * `PROVISION_STALE_MS`: with the work no longer pinned to a live request, a
+ * process that dies mid-provision would otherwise wedge that session forever,
+ * because nothing else ever re-claims a 'provisioning' row.
+ */
+async function claimEnvironmentWork(
+  input: EnsureSessionEnvironmentInput,
+  existing: Awaited<ReturnType<typeof readRow>>,
+): Promise<{ sessionId: string; status: string; externalId: string | null } | null> {
   if (!existing) {
-    const inserted = await db
+    const [inserted] = await db
       .insert(sessionEnvironments)
       .values({
         sessionId: input.sessionId,
@@ -184,34 +219,67 @@ export async function ensureSessionEnvironment(
       })
       .onConflictDoNothing()
       .returning();
-    owns = inserted.length > 0;
-  } else if (existing.status === 'error') {
-    const reclaimed = await db
-      .update(sessionEnvironments)
-      .set({ status: 'provisioning', updatedAt: new Date() })
-      .where(
-        and(
-          eq(sessionEnvironments.sessionId, input.sessionId),
-          eq(sessionEnvironments.status, 'error'),
-        ),
-      )
-      .returning();
-    owns = reclaimed.length > 0;
+    return inserted ?? null;
   }
 
-  if (!owns) {
-    const deadline = Date.now() + CLAIM_WAIT_MS;
-    while (Date.now() < deadline) {
-      const row = await readRow(input.sessionId);
-      if (row?.status === 'active' && row.externalId) return withPreview(row);
-      if (row?.status === 'error') {
-        throw new SessionEnvironmentError('Environment provisioning failed; retry.', 502);
-      }
-      await new Promise((r) => setTimeout(r, 500));
+  const startedAt = existing.updatedAt?.getTime() ?? 0;
+  const abandoned =
+    existing.status === 'provisioning' && Date.now() - startedAt > PROVISION_STALE_MS;
+  if (existing.status !== 'error' && existing.status !== 'stopped' && !abandoned) return null;
+
+  // Conditioned on the status we read, so two callers racing the same
+  // transition cannot both win.
+  const [reclaimed] = await db
+    .update(sessionEnvironments)
+    .set({ status: 'provisioning', updatedAt: new Date() })
+    .where(
+      and(
+        eq(sessionEnvironments.sessionId, input.sessionId),
+        eq(sessionEnvironments.status, existing.status),
+      ),
+    )
+    .returning();
+  return reclaimed ?? null;
+}
+
+/**
+ * The claimed work itself: resume the box this session already has, or build
+ * one. Runs detached from any request, so it reports only through the row.
+ */
+async function runEnvironmentWork(
+  input: EnsureSessionEnvironmentInput,
+  externalId: string | null,
+): Promise<void> {
+  if (externalId) {
+    try {
+      await resumeEnvironment(externalId);
+      await db
+        .update(sessionEnvironments)
+        .set({ status: 'active', lastUsedAt: new Date(), updatedAt: new Date() })
+        .where(eq(sessionEnvironments.sessionId, input.sessionId));
+      return;
+    } catch (err) {
+      await markEnvironmentError(input.sessionId, err);
+      return;
     }
-    throw new SessionEnvironmentError('Timed out waiting for the environment claim.', 504);
   }
+  await provisionEnvironment(input);
+}
 
+async function markEnvironmentError(sessionId: string, err: unknown): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  await db
+    .update(sessionEnvironments)
+    .set({
+      status: 'error',
+      metadata: { lastError: message.slice(0, 500) },
+      updatedAt: new Date(),
+    })
+    .where(eq(sessionEnvironments.sessionId, sessionId))
+    .catch(() => {});
+}
+
+async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promise<void> {
   try {
     const [token, image, envVars] = await Promise.all([
       sessionServiceKey(input.sessionId),
@@ -255,7 +323,7 @@ export async function ensureSessionEnvironment(
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
       },
     } as never);
-    const [active] = await db
+    await db
       .update(sessionEnvironments)
       .set({
         externalId: result.externalId,
@@ -269,22 +337,11 @@ export async function ensureSessionEnvironment(
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(sessionEnvironments.sessionId, input.sessionId))
-      .returning();
-    return withPreview(active);
+      .where(eq(sessionEnvironments.sessionId, input.sessionId));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await db
-      .update(sessionEnvironments)
-      .set({
-        status: 'error',
-        metadata: { lastError: message.slice(0, 500) },
-        updatedAt: new Date(),
-      })
-      .where(eq(sessionEnvironments.sessionId, input.sessionId))
-      .catch(() => {});
-    if (err instanceof SessionEnvironmentError) throw err;
-    throw new SessionEnvironmentError(`Environment provisioning failed: ${message}`, 502);
+    // Nothing is waiting on this promise, so the row IS the error channel:
+    // the next ensure re-claims 'error' and tries again.
+    await markEnvironmentError(input.sessionId, err);
   }
 }
 

@@ -96,15 +96,12 @@ projectsApp.openapi(
     },
     responses: {
       204: { description: 'Appended' },
-      400: errors[400],
-      401: errors[401],
-      403: errors[403],
-      404: errors[404],
+      ...errors(400, 401, 403, 404),
       413: { description: 'Item exceeds the per-append size limit' },
     },
   }),
   async (c: any) => {
-    const gate = await authorizeLogCall(c, PROJECT_ACTIONS.SESSION_START);
+    const gate = await authorizeLogCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     if (gate.kind === 'error') return gate.response;
     const item = c.req.valid('json') as Record<string, unknown>;
     if (Buffer.byteLength(JSON.stringify(item), 'utf8') > MAX_ITEM_BYTES) {
@@ -130,14 +127,11 @@ projectsApp.openapi(
     },
     responses: {
       200: json(LogPageSchema, 'The session transcript log'),
-      400: errors[400],
-      401: errors[401],
-      403: errors[403],
-      404: errors[404],
+      ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
-    const gate = await authorizeLogCall(c, PROJECT_ACTIONS.PROJECT_READ);
+    const gate = await authorizeLogCall(c, PROJECT_ACTIONS.PROJECT_SESSION_READ);
     if (gate.kind === 'error') return gate.response;
     const after = c.req.valid('query').after ?? 0;
     const rows = await db

@@ -56,15 +56,42 @@ describe('session environment service', () => {
 
   test('the claim is an ON CONFLICT insert and every terminal failure marks the row error', async () => {
     const source = await serviceSource();
-    const claim = source.indexOf('.onConflictDoNothing()');
-    expect(claim).toBeGreaterThan(-1);
-    // The losing claimant polls the winner instead of double-provisioning.
-    expect(source).toContain('Timed out waiting for the environment claim');
-    // Failure marking enables the error → provisioning re-claim.
-    const failMark = source.indexOf("status: 'error'");
-    const reclaim = source.indexOf("eq(sessionEnvironments.status, 'error')");
-    expect(failMark).toBeGreaterThan(-1);
-    expect(reclaim).toBeGreaterThan(-1);
+    expect(source.indexOf('.onConflictDoNothing()')).toBeGreaterThan(-1);
+    // Failure marking is what enables the error -> provisioning re-claim, and
+    // with the work detached from the request the row is the ONLY channel it
+    // has: `provisionEnvironment` swallows nothing silently.
+    expect(source).toContain("status: 'error'");
+    expect(source).toContain('markEnvironmentError(input.sessionId, err)');
+    // 'error' is a re-claimable state, which is what makes the retry work.
+    expect(source).toContain("existing.status !== 'error'");
+  });
+
+  test('ensure never waits for the provision — the request would be killed at 25s', async () => {
+    const source = await serviceSource();
+    const fn = source.indexOf('export async function ensureSessionEnvironment');
+    const body = source.slice(fn, source.indexOf('\n}', fn));
+    // The work is started, not awaited. Awaiting it is the bug this replaced:
+    // every first compute tool call 503'd until the worker's budget expired.
+    expect(body).toContain('void runEnvironmentWork(');
+    expect(body).not.toContain('await runEnvironmentWork(');
+    expect(body).not.toContain('await provisionEnvironment(');
+    // The loser of the claim reports status instead of polling for the winner.
+    expect(body).toContain('return withPreview(row)');
+    expect(source).not.toContain('CLAIM_WAIT_MS');
+  });
+
+  test('a provision whose owner died is re-claimable, so a crash cannot wedge a session', async () => {
+    const source = await serviceSource();
+    // Nothing else ever re-claims a 'provisioning' row: without this the
+    // session's environment stays stuck at 'provisioning' forever.
+    expect(source).toContain('PROVISION_STALE_MS');
+    const claim = source.indexOf('async function claimEnvironmentWork');
+    const block = source.slice(claim, source.indexOf('\n}', claim));
+    expect(block).toContain("existing.status === 'provisioning'");
+    expect(block).toContain('abandoned');
+    // The re-claim is conditioned on the status that was read, so two racing
+    // callers cannot both win it.
+    expect(block).toContain('eq(sessionEnvironments.status, existing.status)');
   });
 
   test('the worker reaches the environment over the provider edge, not the session proxy', async () => {
