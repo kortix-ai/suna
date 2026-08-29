@@ -38,6 +38,43 @@ class FileErrorLike extends Error {
   }
 }
 
+/**
+ * OS errno -> pi's FileError code.
+ *
+ * The daemon's env-rpc is a thin fs proxy: it reports the real errno
+ * (`ENOENT`), and this client is the adapter that has to speak pi's
+ * vocabulary. Passing the errno through unmapped BROKE EVERY FILE CREATION.
+ * `withFileMutationQueue` canonicalises the target before any mutation and
+ * tolerates a path that does not exist yet — but only for code `not_found`;
+ * anything else it rethrows. So `write` on a new file died on its own
+ * pre-flight with "ENOENT: no such file or directory, lstat '/workspace/x'",
+ * and the agent fell back to `bash` heredocs, ten times in one turn, on
+ * pi.kortix.com.
+ *
+ * Mirrors pi's own mapping in `harness/env/nodejs.js` exactly — including its
+ * spellings `not_directory` / `is_directory` — because pi's tools compare
+ * against those strings.
+ */
+const FILE_ERROR_CODES: Record<string, string> = {
+  ABORT_ERR: 'aborted',
+  ENOENT: 'not_found',
+  EACCES: 'permission_denied',
+  EPERM: 'permission_denied',
+  ENOTDIR: 'not_directory',
+  EISDIR: 'is_directory',
+  EINVAL: 'invalid',
+};
+
+/** Codes pi already understands pass through; unknown errnos become 'unknown'. */
+export function toFileErrorCode(code: unknown): string {
+  if (typeof code !== 'string' || !code) return 'unknown';
+  const mapped = FILE_ERROR_CODES[code];
+  if (mapped) return mapped;
+  // Anything still shaped like an errno is one we have not mapped; do not hand
+  // pi a string it cannot match.
+  return /^E[A-Z]+$/.test(code) ? 'unknown' : code;
+}
+
 class ExecutionErrorLike extends Error {
   code: string;
   constructor(code: string, message: string) {
@@ -112,7 +149,13 @@ export class KortixExecutionEnv {
     try {
       const body: any = await Promise.race([this.transport.call(op, args, this.cwd), timer]);
       if (body?.ok) return ok(body.value as T);
-      return err(new FileErrorLike(body?.error?.code ?? 'unknown', body?.error?.message ?? 'environment error', body?.error?.path));
+      return err(
+        new FileErrorLike(
+          toFileErrorCode(body?.error?.code),
+          body?.error?.message ?? 'environment error',
+          body?.error?.path,
+        ),
+      );
     } catch (e: any) {
       // Never throw. A dead environment is a Result, not an exception.
       return err(new FileErrorLike('unknown', String(e?.message ?? e)));

@@ -95,11 +95,19 @@ describe('provider-neutral preview lifecycle', () => {
     const prune = script.indexOf('docker image prune');
     expect(prune).toBeGreaterThan(-1);
     expect(prune).toBeGreaterThan(script.lastIndexOf('$HEALTH'));
-    // `until=24h` keeps the generation just deployed as a rollback.
-    expect(script).toContain("docker image prune -af --filter 'until=24h'");
-    for (const line of script.split('\n').filter((l) => l.trimStart().startsWith('docker ') && l.includes('prune'))) {
+    // No age filter: `until=24h` reclaimed 0 B on the real box, because a
+    // branch environment redeploys several times a day and every superseded
+    // image is younger than a day. Unfiltered it freed 20.35 GB.
+    const pruneLines = script
+      .split('\n')
+      .filter((l) => l.trimStart().startsWith('docker ') && l.includes('prune'));
+    expect(pruneLines).toHaveLength(3);
+    for (const line of pruneLines) {
+      // Never fatal — a healthy deploy must not fail because a prune did.
       expect(line).toContain('|| true');
+      expect(line).not.toContain('until=');
     }
+    expect(pruneLines.some((l) => l.includes('docker image prune -af'))).toBe(true);
   });
 
   it('health-checks the stack locally, never through the public name', () => {
