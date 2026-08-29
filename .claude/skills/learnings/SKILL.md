@@ -3713,3 +3713,27 @@ pins that the `not-running` 404 throws `SandboxNotReadyError` while a genuine
 fix, no code change beyond two regex patterns. No data loss — messages sent at a
 dead composer were always durable inbox rows; only the transcript READ
 dead-ended.
+
+## Verification output is an exfiltration surface — allowlist fields before printing
+
+**Incident (2026-08-28, PR #7029 dev verification):** three read-only
+verification commands printed live credentials to the tool transcript. A `jq`
+filter redacted only top-level keys, so nested CLI host tokens remained. An
+`agent-browser network requests --json` call printed the request's
+`Authorization` header. A URL-origin filter stopped at `/` and `?`, but not
+`#`, so an OAuth fragment remained in the output. The temporary browser session
+was revoked (`POST /auth/v1/logout` → 204), and both browser profiles were
+cleared. The transcript still retained the printed values until they expired.
+
+**Rule:** treat diagnostic output as an outbound data boundary. Never print a
+complete credential-bearing config, request record, cookie, callback URL, or
+process environment. Select an explicit allowlist of safe scalar fields inside
+the command. For URLs, emit `new URL(value).origin` or remove `/`, `?`, and `#`
+suffixes. For browser network proof, emit only method, sanitized URL, status,
+and resource type. Capture secrets inside one process and print only the final
+assertion. A redaction that depends on key depth or an incomplete delimiter set
+is not a redaction.
+
+**Enforcement:** none automated yet. Candidate: a repository wrapper that
+normalizes browser-network and configuration evidence to the safe allowlist,
+plus tests with nested tokens, `Authorization` headers, and fragment tokens.
