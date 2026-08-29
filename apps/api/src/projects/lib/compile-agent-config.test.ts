@@ -60,6 +60,7 @@ const {
   OpencodeAgentConfigSchema,
   agentMarkdownPath,
   compileAgentConfig,
+  compileSelectedAgentConfig,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
 } = await import('./compile-agent-config');
@@ -692,5 +693,40 @@ describe('resolveSelectedAgentConfigForSession', () => {
     await expect(
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
+  });
+});
+
+describe('an agent block that is only comments', () => {
+  // YAML parses `echo-probe:\n  # comment` as NULL. It is a legitimate
+  // declaration — the agent exists and grants nothing. It used to hit
+  // `block.enabled` and throw, and because the all-agents compile is
+  // all-or-nothing, ONE such agent took the whole project's config down:
+  // every session booted with no compiled agent config, and the per-agent
+  // prebuild fell back to the default agent alone (pi.kortix.com,
+  // 2026-08-29).
+  const manifest = [
+    'kortix_version: 2',
+    'default_agent: kortix',
+    'agents:',
+    '  kortix:',
+    '    skills: all',
+    '  echo-probe:',
+    '    # grants nothing',
+  ].join('\n');
+
+  test('compiles alongside its siblings instead of failing them all', () => {
+    const parsed = parseManifestText(manifest, 'yaml');
+    const compiled = compileAgentConfig(parsed, 'opencode', {}) as OpencodeConfig;
+    expect(Object.keys(compiled.agent).sort()).toEqual(['echo-probe', 'kortix']);
+  });
+
+  test('the single-agent path still rejects one that is NOT declared', () => {
+    const parsed = parseManifestText(manifest, 'yaml');
+    // Key presence, not truthiness: `echo-probe` is declared-but-null and must
+    // compile; `nope` is absent and must not.
+    expect(() => compileSelectedAgentConfig(parsed, 'echo-probe', 'opencode', {})).not.toThrow();
+    expect(() => compileSelectedAgentConfig(parsed, 'nope', 'opencode', {})).toThrow(
+      /not declared/,
+    );
   });
 });
