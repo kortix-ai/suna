@@ -22,6 +22,7 @@ import {
   getProjectSessionScope,
   getSessionAudit,
   getSessionPreviewCandidates,
+  getSessionOpenBundle,
   getSessionTranscript,
   getSessionTurn,
   listProjectSessions,
@@ -1012,4 +1013,35 @@ test('a prompt call throws on a non-2xx instead of returning a half-answer', asy
       parts: [{ type: 'text', text: 'hi' }],
     }),
   ).rejects.toBeTruthy();
+});
+
+// ── The session-open bundle ─────────────────────────────────────────────────
+// ONE round trip for what a session view needs to paint and arm. The client
+// function is deliberately thin: every leg is the SAME shape its own endpoint
+// returns, so a caller can hand a leg straight to the consumer that already
+// reads that endpoint.
+
+test('getSessionOpenBundle hits GET /projects/:id/sessions/:sid/snapshot', async () => {
+  // `/snapshot` is the canonical path since #6987 renamed the route; requesting
+  // the old `/open-bundle` 404'd on every open and silently degraded the paint
+  // to 6-8 serial reads (the API keeps an `/open-bundle` alias for SDKs
+  // published before this change).
+  nextResponse = { status: 200, body: { observed_at: 'now' } };
+  const bundle = await getSessionOpenBundle('P1', 'S1');
+  expect(last().url).toContain('/projects/P1/sessions/S1/snapshot');
+  expect(last().method).toBe('GET');
+  expect(bundle.observed_at).toBe('now');
+});
+
+test('getSessionOpenBundle asks for the transcript window it was given', async () => {
+  nextResponse = { status: 200, body: { observed_at: 'now' } };
+  await getSessionOpenBundle('P1', 'S1', { transcript: 0 });
+  // `transcript=0` is the POINTER-only read a client with a warm store wants.
+  // Omitting the parameter would silently ask for 40 messages it already has.
+  expect(last().url).toContain('snapshot?transcript=0');
+});
+
+test('getSessionOpenBundle throws when the response is unsuccessful', async () => {
+  nextResponse = { status: 500, body: { message: 'boom' } };
+  await expect(getSessionOpenBundle('P1', 'S1')).rejects.toBeTruthy();
 });

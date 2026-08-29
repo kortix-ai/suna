@@ -11,6 +11,16 @@ import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { isDesktop } from '@/lib/desktop';
 
 /**
+ * The route a tab id maps to. Shared by the keystroke handler and the prefetch
+ * effect so both agree on the destination.
+ */
+function hrefForTab(projectId: string, id: string) {
+  return id === CUSTOMIZE_TAB_ID
+    ? `/projects/${projectId}/customize`
+    : `/projects/${projectId}/sessions/${id}`;
+}
+
+/**
  * Project-shell keyboard shortcuts — equivalents to the legacy dashboard's
  * tab-bar shortcuts, scoped to the project's open session tabs.
  *
@@ -47,6 +57,24 @@ export function useProjectShellShortcuts({
   );
   const reopenLastClosed = useProjectSessionTabsStore((s) => s.reopenLastClosed);
   const closeProjectTab = useCloseProjectTab(projectId);
+  const openTabs = useProjectSessionTabsStore((s) => s.tabsByProject[projectId]);
+  const recentlyClosed = useProjectSessionTabsStore(
+    (s) => s.recentlyClosedByProject[projectId],
+  );
+
+  // Warm every tab a shortcut can reach. A keystroke can never be an anchor,
+  // so `goToTab` below runs the RSC fetch itself — and a cold one degrades
+  // into a full document load whenever it comes back non-2xx, redirected, or
+  // from a newer build. The open list is capped at 8 tabs
+  // (MAX_TABS_PER_PROJECT), so warming the whole set costs one prefetch each.
+  //
+  // The last closed tab is warmed too: Mod+Shift+T reopens it and navigates in
+  // the same keystroke, so it is never in `openTabs` when the push runs.
+  useEffect(() => {
+    for (const id of openTabs ?? []) router.prefetch(hrefForTab(projectId, id));
+    const lastClosed = recentlyClosed?.at(-1);
+    if (lastClosed) router.prefetch(hrefForTab(projectId, lastClosed));
+  }, [openTabs, recentlyClosed, projectId, router]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -62,11 +90,9 @@ export function useProjectShellShortcuts({
       const tabs =
         useProjectSessionTabsStore.getState().tabsByProject[projectId] ?? [];
 
-      const hrefForTab = (id: string) =>
-        id === CUSTOMIZE_TAB_ID
-          ? `/projects/${projectId}/customize`
-          : `/projects/${projectId}/sessions/${id}`;
-      const goToTab = (id: string) => router.push(hrefForTab(id));
+      // nav-contract: prefetch-only — the destination is chosen by a keystroke,
+      // which has no anchor. The effect above keeps every tab warm.
+      const goToTab = (id: string) => router.push(hrefForTab(projectId, id));
 
       // New tab — Mod+T
       if (modHeld && !modOther && !e.shiftKey && !e.altKey && e.code === 'KeyT') {

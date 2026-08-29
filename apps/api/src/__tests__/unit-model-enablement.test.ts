@@ -18,10 +18,10 @@ const CATALOG = {
   },
 };
 
-// glm-5.2 is the PLATFORM DEFAULT and, like every managed model, publishes no
+// glm-5.3-flash is the PLATFORM DEFAULT and, like every managed model, publishes no
 // release date or family — see the regression test below.
 mock.module('../llm-gateway/models/managed-models', () => ({
-  isKnownManagedModelId: (id: string) => id === 'glm-5.2' || id === 'claude-opus-4.8',
+  isKnownManagedModelId: (id: string) => id === 'glm-5.3-flash' || id === 'claude-opus-4.8',
 }));
 
 const { defaultEnabledFromCatalog, resolveEnablement } = await import(
@@ -67,10 +67,10 @@ describe('model-enablement', () => {
   it('never prunes a managed model, however thin its catalog metadata', () => {
     // REGRESSION: managed models are hand-curated and publish no `released` or
     // `family`, so the recency rule dropped every one of them — including
-    // glm-5.2, the PLATFORM DEFAULT — and `auto` resolved to a hidden model.
-    const withManaged = { ...CATALOG, 'glm-5.2': {}, 'claude-opus-4.8': {} };
+    // glm-5.3-flash, the PLATFORM DEFAULT — and `auto` resolved to a hidden model.
+    const withManaged = { ...CATALOG, 'glm-5.3-flash': {}, 'claude-opus-4.8': {} };
     const set = defaultEnabledFromCatalog(withManaged);
-    expect(set.has('glm-5.2')).toBe(true);
+    expect(set.has('glm-5.3-flash')).toBe(true);
     expect(set.has('claude-opus-4.8')).toBe(true);
   });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 
@@ -162,7 +162,9 @@ export function useSettingsKeyboardShortcut() {
  *
  * A real `<Link prefetch>`, not `router.push` — same reason as
  * ProjectFilesNavItem: the button form cannot be prefetched, so every click
- * pays for the RSC payload and the route chunk cold.
+ * pays for the RSC payload and the route chunk cold. It is hover-gated
+ * (`HoverPrefetchLink`) because prefetching on mount charged every session open
+ * a full dynamic render of /customize, whether or not anyone went there.
  *
  * Sliders, not a second gear: two identical gear rows in one panel read as a
  * duplicate, not as two ways in. No keycap either — Mod+, is printed on the
@@ -204,7 +206,7 @@ export function ProjectCustomizeNavItem() {
         tooltip="Customize"
         className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
       >
-        <Link href={`/projects/${projectId}/customize`} prefetch onClick={handleClick}>
+        <HoverPrefetchLink href={`/projects/${projectId}/customize`} prefetch onClick={handleClick}>
           <span className="shrink-0">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -224,7 +226,7 @@ export function ProjectCustomizeNavItem() {
             </svg>
           </span>
           Customize
-        </Link>
+        </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

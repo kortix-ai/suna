@@ -135,7 +135,7 @@ describe('admin accounts — Overrides card', () => {
   test('every override row the server accepts has a control', () => {
     const rows = pageSource.match(/OVERRIDE_ENTITLEMENT_ROWS[\s\S]*?=\s*\[([\s\S]*?)\];/)?.[1] ?? '';
     expect(rows).not.toBe('');
-    for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'managedModels']) {
+    for (const key of ['sso', 'scim', 'rbac', 'auditAccess', 'branding', 'managedModels']) {
       expect(rows).toContain(`key: '${key}'`);
     }
     // The two numeric overrides are laid out by hand — an input, not a Select.

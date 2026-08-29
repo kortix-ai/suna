@@ -9,12 +9,13 @@ import {
   PowerIcon as Power,
   WifiSlashIcon as WifiOff,
 } from '@phosphor-icons/react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { STAGE_LABELS, type ProvisioningStageInfo } from '@/lib/provisioning-stages';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
@@ -59,17 +60,23 @@ export function ConnectingScreen({
   const disconnectedAt = useRuntimeConnectionStore((s) => s.disconnectedAt);
   const healthy = useRuntimeConnectionStore((s) => s.healthy);
 
-  const router = useRouter();
-
   const effectiveProvider = provider;
   const resolvedSandboxId = sandboxId || undefined;
 
   const runtimeOnlyDegraded = !forceConnecting && healthy === false && status === 'connected';
   const runtimeSummary = 'Runtime services degraded';
 
-  const handleSwitch = () => {
-    router.push(backHref || appHome);
-  };
+  // `useAppHome` reads document.cookie, which the server pass cannot see, so it
+  // resolves to the landing door there and to the remembered project here. An
+  // href that differs between the two passes desyncs hydration — seed the state
+  // with the door and adopt the real answer after mount.
+  const [resolvedHome, setResolvedHome] = useState(PROJECT_LANDING_PATH);
+  useEffect(() => setResolvedHome(appHome), [appHome]);
+
+  // This screen renders exactly when the runtime is unhealthy, so the escape
+  // hatch is the control most likely to meet a bad RSC response. It is an
+  // anchor: Next prefetches it and the click never runs that fetch.
+  const escapeHref = backHref || resolvedHome;
 
   const serverLabel = labelOverride?.trim() || 'workspace';
 
@@ -83,7 +90,7 @@ export function ConnectingScreen({
           message={error.message}
           location={error.location}
           serverType={error.serverType}
-          onBack={handleSwitch}
+          backHref={escapeHref}
         />
       </FullScreenShell>
     );
@@ -92,7 +99,7 @@ export function ConnectingScreen({
   if (stopped) {
     return (
       <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
-        <StoppedView label={stopped.name || labelOverride || serverLabel} onBack={handleSwitch} />
+        <StoppedView label={stopped.name || labelOverride || serverLabel} backHref={escapeHref} />
       </FullScreenShell>
     );
   }
@@ -108,7 +115,7 @@ export function ConnectingScreen({
           stages={provisioning.stages}
           currentStage={provisioning.currentStage}
           machineInfo={provisioning.machineInfo}
-          onBack={handleSwitch}
+          backHref={escapeHref}
         />
       </FullScreenShell>
     );
@@ -124,7 +131,7 @@ export function ConnectingScreen({
   if (isMidSessionDrop) {
     return (
       <>
-        <ReconnectPill status={status} disconnectedAt={disconnectedAt} onSwitch={handleSwitch} />
+        <ReconnectPill status={status} disconnectedAt={disconnectedAt} backHref={escapeHref} />
       </>
     );
   }
@@ -137,7 +144,7 @@ export function ConnectingScreen({
             'componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded',
           )}
           detail={runtimeSummary}
-          onSwitch={handleSwitch}
+          backHref={escapeHref}
         />
       </>
     );
@@ -152,7 +159,7 @@ export function ConnectingScreen({
             reconnectAttempts={reconnectAttempts}
             provider={effectiveProvider}
             degraded={false}
-            onSwitch={handleSwitch}
+            backHref={escapeHref}
             sandboxId={resolvedSandboxId}
           />
         </FullScreenShell>
@@ -299,7 +306,7 @@ function ProvisioningView({
   stages,
   currentStage,
   machineInfo,
-  onBack,
+  backHref,
 }: {
   label: string;
   title: string;
@@ -312,7 +319,7 @@ function ProvisioningView({
     serverType: string;
     location: string;
   } | null;
-  onBack: () => void;
+  backHref: string;
 }) {
   const pct = Math.max(0, Math.min(100, progress));
   const stageText =
@@ -341,7 +348,7 @@ function ProvisioningView({
         </div>
       )}
 
-      <BackLink onClick={onBack} />
+      <BackLink href={backHref} />
     </>
   );
 }
@@ -370,13 +377,13 @@ function ErrorView({
   message,
   location,
   serverType,
-  onBack,
+  backHref,
 }: {
   label: string;
   message: string;
   location?: string;
   serverType?: string;
-  onBack: () => void;
+  backHref: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -404,14 +411,14 @@ function ErrorView({
         {message}
       </p>
 
-      <button
-        type="button"
-        onClick={onBack}
+      <Link
+        href={backHref}
+        prefetch
         className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
       >
         <ArrowLeft className="h-3 w-3" />
         Back
-      </button>
+      </Link>
     </>
   );
 }
@@ -420,7 +427,7 @@ function ErrorView({
 // Stopped view — workspace exists but is not running
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StoppedView({ label, onBack }: { label: string; onBack: () => void }) {
+function StoppedView({ label, backHref }: { label: string; backHref: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <>
@@ -444,14 +451,14 @@ function StoppedView({ label, onBack }: { label: string; onBack: () => void }) {
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBack}
+        <Link
+          href={backHref}
+          prefetch
           className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeft className="h-3 w-3" />
           Back
-        </button>
+        </Link>
       </div>
     </>
   );
@@ -461,16 +468,16 @@ function StoppedView({ label, onBack }: { label: string; onBack: () => void }) {
 // Shared fragments
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BackLink({ onClick }: { onClick: () => void }) {
+function BackLink({ href }: { href: string }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <Link
+      href={href}
+      prefetch
       className="text-muted-foreground/35 hover:text-foreground/70 fixed top-5 left-5 inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
     >
       <ArrowLeft className="h-3 w-3" />
       Back
-    </button>
+    </Link>
   );
 }
 
@@ -483,14 +490,14 @@ function UnreachableView({
   reconnectAttempts,
   provider,
   degraded,
-  onSwitch,
+  backHref,
   sandboxId,
 }: {
   label: string;
   reconnectAttempts: number;
   provider?: string;
   degraded?: boolean;
-  onSwitch: () => void;
+  backHref: string;
   sandboxId?: string;
 }) {
   return (
@@ -529,14 +536,14 @@ function UnreachableView({
       </div>
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onSwitch}
+        <Link
+          href={backHref}
+          prefetch
           className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeftRight className="h-3 w-3" />
           Projects
-        </button>
+        </Link>
       </div>
     </>
   );
@@ -549,11 +556,11 @@ function UnreachableView({
 function ReconnectPill({
   status,
   disconnectedAt,
-  onSwitch,
+  backHref,
 }: {
   status: SandboxConnectionStatus;
   disconnectedAt: number | null;
-  onSwitch: () => void;
+  backHref: string;
 }) {
   const elapsed = useElapsedTime(disconnectedAt);
   const label = status === 'unreachable' ? 'Unreachable' : 'Reconnecting';
@@ -571,9 +578,11 @@ function ReconnectPill({
           {elapsed ? <span className="text-muted-foreground/40"> · {elapsed}</span> : null}
         </span>
 
-        <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
-          <ArrowLeftRight className="h-2.5 w-2.5" />
-          Projects
+        <Button asChild variant="muted" size="xs" className="rounded-full">
+          <Link href={backHref} prefetch>
+            <ArrowLeftRight className="h-2.5 w-2.5" />
+            Projects
+          </Link>
         </Button>
       </div>
     </div>
@@ -583,11 +592,11 @@ function ReconnectPill({
 function HealthPill({
   title,
   detail,
-  onSwitch,
+  backHref,
 }: {
   title: string;
   detail?: string;
-  onSwitch: () => void;
+  backHref: string;
 }) {
   return (
     <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
@@ -602,9 +611,11 @@ function HealthPill({
           {detail ? <span className="text-muted-foreground/40"> · {detail}</span> : null}
         </span>
 
-        <Button type="button" onClick={onSwitch} variant="muted" size="xs" className="rounded-full">
-          <ArrowLeftRight className="h-2.5 w-2.5" />
-          Projects
+        <Button asChild variant="muted" size="xs" className="rounded-full">
+          <Link href={backHref} prefetch>
+            <ArrowLeftRight className="h-2.5 w-2.5" />
+            Projects
+          </Link>
         </Button>
       </div>
     </div>

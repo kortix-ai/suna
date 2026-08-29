@@ -1,5 +1,10 @@
 import { test, expect, describe } from 'bun:test';
-import { resolveSessionProvider, warmPrebakeProviders } from './provider-precedence';
+import {
+  nextFailoverProvider,
+  resolveSessionProvider,
+  sessionProviderIsLocked,
+  warmPrebakeProviders,
+} from './provider-precedence';
 
 // Per-project sandbox-provider override — precedence unit test. Deterministic:
 // `allowed` + `isEnabled` are injected (they model config.ALLOWED_SANDBOX_PROVIDERS
@@ -139,5 +144,80 @@ describe('warmPrebakeProviders (build-on-push provider parity)', () => {
         fanoutWhenUnpinned: false,
       }),
     ).toEqual(['platinum']);
+  });
+});
+
+// ── Provider failover reachability ──────────────────────────────────────────
+// Regression guard for the 2026-08-26 incident: `provider_fallback` was ON in
+// production, yet 654 sessions died on a provider at capacity and NOT ONE
+// handed off. Cause: createProjectSession passed the weighted balancer's pick
+// down as `provider`, and the provisioner read any provider as "explicitly
+// selected", making its failover branch dead code for every project session.
+describe('sessionProviderIsLocked', () => {
+  test('an explicit request locks the provider — never override the caller', () => {
+    expect(
+      sessionProviderIsLocked(
+        resolveSessionProvider({ requested: 'platinum', projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),
+      ),
+    ).toBe(true);
+  });
+
+  test('an enabled per-project pin locks the provider', () => {
+    expect(
+      sessionProviderIsLocked(
+        resolveSessionProvider({ requested: null, projectPin: 'platinum', allowed: ALLOWED, isEnabled: bothEnabled }),
+      ),
+    ).toBe(true);
+  });
+
+  test('the weighted balancer pick is NOT locked — failover must stay reachable', () => {
+    expect(
+      sessionProviderIsLocked(
+        resolveSessionProvider({ requested: null, projectPin: null, allowed: ALLOWED, isEnabled: bothEnabled }),
+      ),
+    ).toBe(false);
+  });
+
+  test('a stale/disabled pin degrades to the balancer, so it does NOT lock', () => {
+    expect(
+      sessionProviderIsLocked(
+        resolveSessionProvider({
+          requested: null,
+          projectPin: 'e2b',
+          allowed: ALLOWED,
+          isEnabled: (p) => p !== 'e2b',
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('nextFailoverProvider', () => {
+  const base = {
+    providerLocked: false,
+    fallbackAttempted: false,
+    fallbackEnabled: true,
+    current: 'platinum',
+    allowed: ['platinum', 'daytona'] as const,
+  };
+
+  test('an unlocked balancer pick hands off to the other allowed provider', () => {
+    expect(nextFailoverProvider(base)).toBe('daytona');
+  });
+
+  test('a locked provider never fails over', () => {
+    expect(nextFailoverProvider({ ...base, providerLocked: true })).toBeNull();
+  });
+
+  test('failover is one shot per session', () => {
+    expect(nextFailoverProvider({ ...base, fallbackAttempted: true })).toBeNull();
+  });
+
+  test('the admin gate being OFF disables failover', () => {
+    expect(nextFailoverProvider({ ...base, fallbackEnabled: false })).toBeNull();
+  });
+
+  test('a single allowed provider has nowhere to go', () => {
+    expect(nextFailoverProvider({ ...base, allowed: ['platinum'] })).toBeNull();
   });
 });

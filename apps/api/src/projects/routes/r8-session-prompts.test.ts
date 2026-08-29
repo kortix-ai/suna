@@ -24,6 +24,7 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 type CommandRow = {
   commandId: string;
   commandType: string;
+  idempotencyKey: string | null;
   sessionId: string | null;
   status: string;
   attempts: number;
@@ -40,11 +41,14 @@ let enqueued: Array<Record<string, unknown>> = [];
 let drains: Array<Record<string, unknown>> = [];
 let enqueueResult: { deduped: boolean; row: CommandRow } | null = null;
 let billingOk = true;
+let enqueueDelayMs = 0;
+let enqueueSettledAtMs = 0;
 
 function row(overrides: Partial<CommandRow> = {}): CommandRow {
   return {
     commandId: PROMPT_ID,
     commandType: 'continue_session',
+    idempotencyKey: `prompt:${SESSION_ID}:q_1`,
     sessionId: SESSION_ID,
     status: 'queued',
     attempts: 0,
@@ -61,13 +65,20 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
 // re-expressed here as row predicates the mock applies, and its writes mutate
 // `commandTable`, so an UPDATE that forgets its status guard changes an answer
 // below.
+// A settable read delay, so a test can prove WHERE a handler stamps its
+// `observed_at` relative to the read — a stamp taken after a slow read lands
+// measurably later than one taken before it.
+let dbReadDelayMs = 0;
+const afterReadDelay = <T>(value: () => T): Promise<T> =>
+  new Promise((resolve) => setTimeout(() => resolve(value()), dbReadDelayMs));
+
 const databaseMock = {
   select: () => ({
     from: (table: unknown) => ({
       where: (predicate: unknown) => {
         const stage = {
           orderBy: () => stage,
-          limit: (n: number) => stage.rows().slice(0, n),
+          limit: (n: number) => afterReadDelay(() => stage.rows().slice(0, n)),
           rows: () => {
             if (String(table) === 'project_sessions') {
               return [{ metadata: sessionMetadata, accountId: ACCOUNT_ID }];
@@ -75,7 +86,8 @@ const databaseMock = {
             return commandTable.filter((r) => predicateOf(predicate)(r));
           },
           // biome-ignore lint/suspicious/noThenProperty: awaitable query builder.
-          then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(stage.rows()).then(resolve),
+          then: (resolve: (rows: unknown[]) => unknown) =>
+            afterReadDelay(() => stage.rows()).then(resolve),
         };
         return stage;
       },
@@ -221,6 +233,8 @@ mock.module('../../billing/services/billing-gate', () => ({
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
+    if (enqueueDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, enqueueDelayMs));
+    enqueueSettledAtMs = Date.now();
     enqueued.push(input);
     if (enqueueResult) return enqueueResult;
     const created = row({
@@ -328,6 +342,9 @@ beforeEach(() => {
   drains = [];
   enqueueResult = null;
   billingOk = true;
+  dbReadDelayMs = 0;
+  enqueueDelayMs = 0;
+  enqueueSettledAtMs = 0;
   loadProjectCalls = [];
   capabilityCalls = [];
   agentAccessCalls.length = 0;
@@ -345,6 +362,7 @@ describe('POST .../prompts', () => {
       state: 'queued',
       message_id: WIRE_ID,
       deduped: false,
+      observed_at: expect.any(String),
     });
   });
 
@@ -396,7 +414,25 @@ describe('POST .../prompts', () => {
       state: 'delivering',
       message_id: WIRE_ID,
       deduped: true,
+      observed_at: expect.any(String),
     });
+  });
+
+  /**
+   * The queue's freshness protocol (JAY-728): every server answer about the
+   * inbox carries `observed_at` from the SERVER clock — after the write here,
+   * before the read on GET — so a client ranks snapshots on one clock and a
+   * read issued before this POST can never erase the row it confirmed.
+   */
+  test('stamps observed_at AFTER the write, on the server clock', async () => {
+    enqueueDelayMs = 50;
+    const response = await post(validBody);
+    const body = (await response.json()) as Record<string, unknown>;
+    const observed = Date.parse(String(body.observed_at));
+    expect(Number.isFinite(observed)).toBe(true);
+    // A stamp taken at handler entry would predate the (slow) write's settle
+    // instant; the contract is the write's place on the server clock.
+    expect(observed).toBeGreaterThanOrEqual(enqueueSettledAtMs);
   });
 
   test('kicks a targeted drain for the row it just enqueued', async () => {
@@ -467,6 +503,19 @@ describe('GET .../prompts', () => {
     expect(response.status).toBe(200);
     return (await response.json()) as { prompts: Array<Record<string, unknown>> };
   }
+
+  test('stamps observed_at BEFORE the read — an answer is as fresh as when it was asked', async () => {
+    commandTable = [row()];
+    dbReadDelayMs = 50;
+    const response = await app().request(base());
+    const done = Date.now();
+    const body = (await response.json()) as Record<string, unknown>;
+    const observed = Date.parse(String(body.observed_at));
+    expect(Number.isFinite(observed)).toBe(true);
+    // The inbox read alone took 50ms; a stamp taken after it settles would sit
+    // at `done`. Captured before the read, it sits at least the delay earlier.
+    expect(observed).toBeLessThanOrEqual(done - 25);
+  });
 
   test('serves a queued prompt with its wire id and text', async () => {
     commandTable = [row()];
@@ -706,6 +755,7 @@ describe('POST .../prompts/:promptId/retry', () => {
     expect(commandTable[0].result).toEqual({ promoted: true });
     expect(commandTable[0].payload.remintOnDelivery).toBe(true);
     expect(commandTable[0].payload.wireMessageId).toBe(WIRE_ID);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
   });
 
   test('404s a prompt that is not retryable', async () => {

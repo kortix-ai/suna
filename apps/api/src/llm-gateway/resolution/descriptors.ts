@@ -174,20 +174,6 @@ function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor 
   };
 }
 
-function asterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.ASTER_API_KEY) return null;
-  return {
-    provider: 'aster',
-    kind: 'openai-compat',
-    baseUrl: config.ASTER_API_URL,
-    apiKey: config.ASTER_API_KEY,
-    billingMode: 'credits',
-    markup: llmPriceMarkup(),
-    resolvedModel: managed.upstreamModelId,
-    pricing: managedPricing(managed),
-  };
-}
-
 function bedrockManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
   if (!config.AWS_BEDROCK_API_KEY) return null;
   // NOTE — this is the MANAGED (Kortix-credits) Bedrock path, reached only when
@@ -226,7 +212,6 @@ export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
   // reaches this directly.
   if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   const d = {
-    aster: asterManagedDescriptor,
     bedrock: bedrockManagedDescriptor,
     openrouter: openRouterManagedDescriptor,
   }[managed.transport](managed);
@@ -239,16 +224,12 @@ export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | n
 
 /**
  * Whether THIS deployment can actually reach `managed` — i.e. its transport's
- * credential is configured (ASTER_API_KEY / AWS_BEDROCK_API_KEY /
- * OPENROUTER_API_KEY) and the managed provider is on.
+ * credential is configured (AWS_BEDROCK_API_KEY / OPENROUTER_API_KEY) and the
+ * managed provider is on.
  *
  * The served catalog reads this so a model that would fail resolution is never
- * OFFERED. Without it, `/model-picker` advertised `glm-5.2` (the platform
- * default, transport `aster`) on a deployment with no ASTER_API_KEY, and every
- * attempt to select it came back `400 INVALID_SESSION_MODEL` — the picker and
- * request-time resolution disagreed because only resolution checked the
- * credential. Derived from `managedCandidates` rather than re-listing the env
- * vars, so the two can never drift.
+ * OFFERED. Derived from `managedCandidates` rather than re-listing the env
+ * vars, so the catalog and request-time resolution cannot drift.
  */
 export function managedTransportAvailable(managed: ManagedModel): boolean {
   return managedCandidates(managed).length > 0;

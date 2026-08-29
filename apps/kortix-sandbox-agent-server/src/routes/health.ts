@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
@@ -61,6 +62,14 @@ export type SandboxBootState = {
   initialOpenCodeSessionError?: string | null
   /** Fatal local persistence failure in the OpenCode audit relay. */
   auditRelayError?: string | null
+  /**
+   * False ONLY while the early-spawn boot path is still assembling the
+   * workspace (checkout + config-dir deps + injected skills). OpenCode builds
+   * a directory Instance — and caches its local-tool registry, imports
+   * included — on the first directory-scoped request, so nothing may reach it
+   * before this flips. Undefined on every other path: unchanged behaviour.
+   */
+  workspaceReady?: boolean
 }
 
 /**
@@ -220,6 +229,14 @@ export function createHealthRouter(
       repo: repoInfo?.remoteUrl ?? null,
       branch: repoInfo?.branch ?? null,
       commit_sha: repoInfo?.commit ?? null,
+      compiled_boot_mode: cfg.compiledBootMode,
+      compiled_runtime:
+        process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1',
+      compiled_runtime_format: process.env.KORTIX_COMPILED_RUNTIME_FORMAT || null,
+      compiled_runtime_source_sha: process.env.KORTIX_COMPILED_RUNTIME_SOURCE_SHA || null,
+      compiled_checkout: existsSync(
+        join(cfg.projectTarget, '.git', 'kortix-compiled-checkout.json'),
+      ),
       // The content hash of the compiled agent config THIS opencode spawned
       // with. Not derivable from commit_sha: a warm-workspace refresh advances
       // the commit while deliberately skipping the restart, so a box can report

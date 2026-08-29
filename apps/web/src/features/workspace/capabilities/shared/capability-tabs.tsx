@@ -103,7 +103,13 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
          ONLY way that marker gets set, so the panel can rely on there being a
          Customize entry in history to go back to. */
       href={`/accounts/${accountId}?tab=access-projects&project=${projectId}&from=customize`}
-      prefetch={false}
+      /* `prefetch={false}` disabled every prefetch path, not just the viewport
+         one: `next/dist/client/app-dir/link.js:108` derives `prefetchEnabled`
+         from it, and both `onMouseEnter` and `onTouchStart` return early when
+         it is off. The segment cache was therefore empty at click time and the
+         click ran the RSC fetch cold — the fetch that degrades into a full
+         document load on an auth bounce, a build-id skew, or a network blip. */
+      prefetch
       className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
     >
       Members

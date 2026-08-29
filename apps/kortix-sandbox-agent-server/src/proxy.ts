@@ -21,6 +21,7 @@ import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state
 import { OPENCODE_HOME } from './opencode'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
+import { createEnvRpcRouter } from './routes/env-rpc'
 import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
@@ -28,7 +29,10 @@ import { createFindRouter } from './routes/find'
 import { createPresentationRouter } from './routes/presentation'
 import { createWebProxyRouter } from './routes/web-proxy'
 import { createPtyRegistry, createPtyRouter, type PtyAttachHandle, type PtyRegistry } from './routes/pty'
-import { registerAgentSwapBlocker } from './runtime-assets'
+import { createOpencodeRuntimeRouter } from './routes/opencode-runtime'
+import { OpencodeDb } from './opencode-db'
+import { configureRuntimeState, runtimeStateStore } from './runtime-state-projection'
+import { registerAgentSwapBlocker, runtimeConvergenceReport } from './runtime-assets'
 import type { ProjectEnvStore } from './project-env'
 import {
   KORTIX_USER_CONTEXT_HEADER,
@@ -197,6 +201,12 @@ export function buildOpencodeApp(
   kortixRouter.route('/git/', gitRouter)
   kortixRouter.route('/pty', ptyRouter)
   kortixRouter.route('/pty/', ptyRouter)
+  // Harness/worker split (P1.7): the pi worker's ExecutionEnv, one op per POST.
+  // Self-authenticated like /pty (X-Kortix-User-Context signed with this box's
+  // KORTIX_TOKEN — the worker holds the same session credential).
+  const envRpcRouter = createEnvRpcRouter(cfg)
+  kortixRouter.route('/env-rpc', envRpcRouter)
+  kortixRouter.route('/env-rpc/', envRpcRouter)
   // /kortix/part — attachment bytes on demand; see routes/part.ts.
   const partRouter = createPartRouter(opencode, { sidecarDir: defaultSidecarDir(OPENCODE_HOME) })
   kortixRouter.route('/part', partRouter)
@@ -219,6 +229,36 @@ export function buildOpencodeApp(
     kortixRouter.route('/env', envRouter)
     kortixRouter.route('/env/', envRouter)
   }
+
+  // /kortix/opencode/* — the Kortix Runtime API (routes/opencode-runtime.ts).
+  //
+  // ADDITIVE. The `/p/<box>/8000/...` passthrough below still serves every
+  // OpenCode path it serves today; this namespace answers the same questions
+  // in a projected, gzipped, SEQUENCED form so the product never has to speak
+  // OpenCode's wire format or poll for a frame it might have missed.
+  //
+  // The store is a process singleton so `POST /kortix/env` and a verified
+  // reload can invalidate it without threading a handle through the proxy —
+  // `reload()` rebuilds this app on a warm-snapshot restore and must not orphan
+  // the projection it was maintaining.
+  const opencodeDb = new OpencodeDb(opencodeDbPath(OPENCODE_HOME))
+  const runtimeState =
+    runtimeStateStore() ??
+    configureRuntimeState({
+      opencode,
+      cfg,
+      db: opencodeDb,
+      pinnedSessionId: readPinnedSessionId,
+      daemonBuild: async () => (await runtimeConvergenceReport()).build,
+    })
+  const opencodeRuntimeRouter = createOpencodeRuntimeRouter(cfg, {
+    opencode,
+    db: opencodeDb,
+    state: runtimeState,
+    pinnedSessionId: readPinnedSessionId,
+  })
+  kortixRouter.route('/opencode', opencodeRuntimeRouter)
+  kortixRouter.route('/opencode/', opencodeRuntimeRouter)
 
   app.route('/kortix', kortixRouter)
 
@@ -339,6 +379,19 @@ export function buildOpencodeApp(
           reason: 'repo_not_materialized',
         },
         'repo_not_materialized',
+      )
+    }
+    // The checkout can be on disk while its config-dir dependencies are still
+    // installing. A directory-scoped request in that window makes OpenCode
+    // cache a tool registry whose imports failed, for the life of the process
+    // (dev, 2026-08-27). Hold callers off until the workspace is complete.
+    if (bootState.workspaceReady === false) {
+      return notReady(
+        {
+          error: 'sandbox runtime not ready',
+          reason: 'workspace_not_ready',
+        },
+        'workspace_not_ready',
       )
     }
 

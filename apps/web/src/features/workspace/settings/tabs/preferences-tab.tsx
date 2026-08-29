@@ -289,6 +289,7 @@ function shortcutList(modLabel: string): { label: string; keys: string }[] {
     { label: 'Switch to last tab', keys: `${modLabel}+9` },
     { label: 'New session', keys: 'Ctrl+J' },
     { label: 'Command palette', keys: 'Ctrl+K' },
+    { label: 'Switch workspace', keys: 'Ctrl+O' },
     { label: 'Toggle left sidebar', keys: 'Ctrl+B' },
     { label: 'Toggle right sidebar', keys: 'Ctrl+Shift+B' },
     { label: 'Toggle session action panel', keys: `${modLabel}+I` },

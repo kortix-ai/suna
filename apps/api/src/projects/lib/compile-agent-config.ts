@@ -444,6 +444,33 @@ export function agentConfigEtag(compiled: string | null | undefined): string | n
   return createHash('sha256').update(compiled).digest('hex').slice(0, 16);
 }
 
+/**
+ * The manifest's declared session runtime at a ref: 'pi' | 'opencode' | null.
+ *
+ * Null means "could not tell" (no manifest, not v2, read/parse failure) and
+ * always falls back to the OpenCode path — the same fail-open-to-legacy
+ * posture as resolveCompiledAgentConfigForSession below. Only an explicit,
+ * well-formed `runtime: pi` can move a session onto the worker.
+ */
+export async function resolveManifestRuntime(
+  project: GitBackedProject,
+  baseRef?: string | null,
+): Promise<RuntimeV2 | null> {
+  const ref = baseRef?.trim() || project.defaultBranch;
+  try {
+    const candidates = manifestCandidatePaths(project.manifestPath).map((c) => c.path);
+    const found = await readManifestFromRepo(project, candidates, ref);
+    if (!found) return null;
+    const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
+    if (manifestSchemaVersion(raw) !== 2) return null;
+    const runtime = (raw as Record<string, unknown>).runtime;
+    if (runtime === 'pi') return 'pi';
+    return 'opencode';
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveCompiledAgentConfigForSession(
   project: GitBackedProject,
   /**

@@ -364,7 +364,7 @@ describe('kortix channels — email, bindings, voice, teams disconnect', () => {
       [
         'channels', 'bind', 'bind_1',
         '--agent', 'reviewer',
-        '--model', 'glm-5.2',
+        '--model', 'glm-5.3-flash',
         '--policy', 'owner_only',
         '--project', PROJECT,
       ],
@@ -375,7 +375,7 @@ describe('kortix channels — email, bindings, voice, teams disconnect', () => {
       method: 'PATCH',
       path: `/v1/projects/${PROJECT}/channels/bindings/bind_1`,
       query: '',
-      body: { agentName: 'reviewer', opencodeModel: 'glm-5.2', conversationPolicy: 'owner_only' },
+      body: { agentName: 'reviewer', opencodeModel: 'glm-5.3-flash', conversationPolicy: 'owner_only' },
     });
     expect(set.stdout).toContain('agent   reviewer (explicit)');
 

@@ -4,6 +4,8 @@ import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { syncEgressShim } from '../egress-shim'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { invalidateRuntimeState } from '../runtime-state-projection'
+import { scheduleRuntimeProjectionPush } from '../runtime-projection-relay'
 import { llmProxyBaseUrl, setLlmProxyToken } from '../llm-proxy'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
@@ -271,6 +273,15 @@ export function createEnvRouter(
             mustRespawn,
           })
         }
+
+        // The daemon OWNS this write, so the projection is told rather than
+        // left to infer it. `/kortix/opencode/state` serves the agent roster,
+        // command list and config essentials this env change can move; a
+        // client that read it a second ago must not keep the pre-change answer
+        // until an SSE frame happens to hint at it.
+        invalidateRuntimeState('all', 'kortix-env-applied')
+        // ...and the server-side copy is refreshed too (debounced, etag-gated).
+        scheduleRuntimeProjectionPush('kortix-env-applied')
 
         const applied = projectEnv.snapshot()
         const exported = Object.keys(applied.env).length

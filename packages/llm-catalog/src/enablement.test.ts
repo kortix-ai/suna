@@ -46,7 +46,7 @@ describe('defaultEnabledModelIds', () => {
   });
 
   test('treats a bare wire id as managed', () => {
-    expect(ids([{ id: 'glm-5.2', family: 'glm', released: '2026-06-01' }])).toEqual(['glm-5.2']);
+    expect(ids([{ id: 'glm-5.3-flash', family: 'glm', released: '2026-06-01' }])).toEqual(['glm-5.3-flash']);
   });
 
   test('keeps a provider whose models are all stale or undated', () => {

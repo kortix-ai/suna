@@ -294,18 +294,25 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
   const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
 
-  // The grid's column count is the reader's choice now, so the gap belongs to
-  // the page and the columns come from `APP_GRID_DENSITY`. The skeleton takes
-  // the SAME class string so nothing reflows when data lands.
-  const GRID = "cn('grid gap-x-6 gap-y-8', columns)";
+  // One column ladder, used by the grid AND the skeleton, so nothing reflows
+  // when data lands. There is no size control and no stored preference.
+  const GRID = "cn('grid gap-x-4 gap-y-6', APP_GRID_COLUMNS)";
   expect(view.split(GRID)).toHaveLength(3);
-  expect(view).not.toContain('xl:grid-cols-4"');
+  // The picker and everything that persisted it are gone.
+  expect(view).not.toContain('AppGridDensity');
+  expect(view).not.toContain('window.localStorage');
+  expect(view).not.toContain('useSyncExternalStore');
+  // The header is a title and a docs link — no size buttons to hide or show.
+  const header = view.slice(view.indexOf('function AppsHeader('), view.indexOf('export function AppsView('));
+  expect(header).not.toContain('<Button');
 
-  // The gallery column is sized for the default density: two 16:9 tiles inside
-  // a 1280px cap are ~600px wide, which is where a scaled-down desktop layout
-  // is still readable. `max-w-5xl` is what produced 230px tiles.
+  // The gallery column is also the grid's measuring box. A `@lg/apps:` variant
+  // with no `@container/apps` ancestor compiles and then never matches, so the
+  // grid would silently stay one column forever.
   expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20');
   expect(view).not.toContain('max-w-5xl flex-col');
+  expect(view).toContain('APP_GRID_CONTAINER,');
+  expect(view).toContain("export const APP_GRID_CONTAINER = '@container/apps';");
 
   // The thumbnail is the only bordered surface; the caption is page text under
   // it, not the inside of a panel. The old card was one `bg-popover` panel with

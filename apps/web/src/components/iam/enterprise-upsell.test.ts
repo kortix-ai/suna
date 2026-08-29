@@ -24,7 +24,7 @@ describe('EnterpriseUpsell component', () => {
   });
 
   test('covers the gated surfaces, and no longer carries the dead roles variant', () => {
-    for (const feature of ['groups:', 'audit:', 'identity:']) {
+    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:']) {
       expect(upsellSource).toContain(feature);
     }
     // Deleted 2026-08-18: `RolesTab` gates itself with an inline InfoBanner,
@@ -72,6 +72,12 @@ describe('account page gates each IAM surface behind the entitlement', () => {
     // SsoCard renders before ScimCard.
     expect(pageSource).toMatch(/enterpriseIdentityEnabled \? \([\s\S]*?<SsoCard[\s\S]*?<ScimCard/);
     expect(pageSource).toContain('<EnterpriseUpsell feature="identity" />');
+  });
+
+  test('branding pane: branding entitlement or upsell', () => {
+    expect(pageSource).toContain('const brandingEnabled = !!entitlements?.branding');
+    expect(pageSource).toMatch(/brandingEnabled \? \(\s*<BrandingTab/);
+    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" />');
   });
 
   test('no upsell flash while entitlements load', () => {

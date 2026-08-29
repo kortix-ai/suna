@@ -119,6 +119,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       monitors: false,
       warm_sessions: false,
       secrets_egress: false,
+      pi_worker: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -691,6 +692,7 @@ describe('envelopes', () => {
       'monitors',
       'warm_sessions',
       'secrets_egress',
+      'pi_worker',
     ]);
   });
 
@@ -786,7 +788,7 @@ describe('SessionCreateInputSchema runtime_context', () => {
         agentName: 'veyris',
         sandboxSlug: 'default',
         initialPrompt: 'hello',
-        opencodeModel: 'kortix/glm-5.2',
+        opencodeModel: 'kortix/glm-5.3-flash',
         sessionId: '11111111-1111-4111-a111-111111111111',
         branchAlreadyCreated: true,
       }).success,

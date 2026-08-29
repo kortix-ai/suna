@@ -152,6 +152,67 @@ for (;;) {
 Each entry carries `cursor`, `time`, `source` (`app`, `appd`, `caddy`), and
 `line`.
 
+## Your App already knows who is looking
+
+An App hosted by Kortix is opened by someone Kortix **already signed in**. The
+Apps gate authenticates them before your first byte is served, so your App needs
+no login of its own — no second password, no consent screen, no redirect.
+
+In the browser:
+
+```ts
+import { createKortix, kortixAppViewerToken } from '@kortix/sdk';
+import { useKortixAppViewer } from '@kortix/sdk/react';
+
+const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: kortixAppViewerToken(),          // the viewer's own App-scoped token
+});
+
+function Header() {
+  const { status, viewer } = useKortixAppViewer();
+  return <span>{status === 'viewer' ? viewer.email : 'Signed out'}</span>;
+}
+```
+
+On your App's server, the gate signs the identity into every request:
+
+```ts
+import { readAppViewer, createAppViewerKortix } from '@kortix/sdk/server';
+
+const viewer = await readAppViewer(request);
+// { userId, email, groupIds, accountId, appId, accessMode, token }
+if (!viewer) return new Response('Not found', { status: 404 });
+
+// and, for an `api`-scoped App, act as them:
+const kortix = await createAppViewerKortix(request, { backendUrl });
+await kortix.projects.list();               // their projects, their role
+```
+
+`readAppViewer` verifies an HMAC over the header with `KORTIX_APP_VIEWER_SECRET`,
+which Kortix injects into your App at deploy. A forged header never passes: the
+gate deletes any client-supplied copy before forwarding, and the signature is
+made with a secret derived per App.
+
+### How much your App is told
+
+One setting on the App's access policy — **Settings → Access** in Kortix, or
+`viewer_token_scope` on `PATCH /projects/:id/apps/:appId/access`:
+
+| Scope | Your App receives |
+|---|---|
+| `identity` (default) | The viewer's id, email and group ids, plus a `profile email` token. Enough to show each person their own data. |
+| `api` | The above, and a token that acts **as** that person on the Kortix API — bounded by their own role. |
+| `off` | Nothing. |
+
+The token is never the user's Kortix session: it lasts an hour, carries only
+those scopes, and every token an App minted dies when the App is deleted or its
+access policy changes. `public` and `password` Apps have no signed-in Kortix
+viewer, so they receive none of this.
+
+An App served on its **own domain** (not `*.apps.kortix.com`) has no gate in
+front of it — use [Sign in with Kortix](/docs/sdk/sign-in) there instead.
+
 ## Manage access
 
 ```ts

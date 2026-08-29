@@ -44,13 +44,23 @@ describe('the composer reads ONE working answer', () => {
     expect(chat).not.toContain('30_000');
   });
 
-  test('the send receipt is taken before the row is created and dropped if it never lands', () => {
-    const send = between(chat, 'const clientMessageId = overrides?.clientMessageId', 'return messageID;');
-    expect(send).toContain('noteSendReceipt(clientMessageId)');
+  test('the send receipt names the optimistic turn only when the session was idle', () => {
+    const send = between(
+      chat,
+      'const clientMessageId = overrides?.clientMessageId',
+      'return messageID;',
+    );
+    expect(send).toContain(
+      'const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;',
+    );
+    expect(send).toContain('noteSendReceipt(messageID, receiptTurnId)');
     // Acceptance is what lets a `/turn` read answer for the send AT ALL: until
     // `POST .../prompts` returns there is no row for it to see.
-    expect(send).toContain('acceptSendReceipt(clientMessageId)');
-    expect(send).toContain('clearSendReceipt(clientMessageId)');
+    expect(send).toContain('acceptSendReceipt(messageID)');
+    expect(send).toContain('clearSendReceipt(messageID)');
+    expect(send).not.toContain('noteSendReceipt(clientMessageId)');
+    expect(send).not.toContain('acceptSendReceipt(clientMessageId)');
+    expect(send).not.toContain('clearSendReceipt(clientMessageId)');
   });
 
   test('the receipt is dropped on every path where nothing is coming', () => {
@@ -76,7 +86,11 @@ describe('the composer reads ONE working answer', () => {
     // full-prompt stash is POSTed to the inbox rather than dropped.
     expect(chat).not.toContain('replayStartStash');
     expect(chat).not.toContain('optimisticPrompt');
-    const seeding = between(chat, 'const stash = readStartStash(sessionId);', '}, [sessionId, projectId, projectSessionId]);');
+    const seeding = between(
+      chat,
+      'const stash = readStartStash(sessionId);',
+      '}, [sessionId, projectId, projectSessionId]);',
+    );
     expect(seeding).toContain('clearStartStash(sessionId)');
     expect(seeding).toContain('startSessionWithPrompt(projectId, projectSessionId');
   });
@@ -86,7 +100,11 @@ describe('the composer reads ONE working answer', () => {
     // through the inbox — so for a full minute after every `/compact` the
     // control plane's own "no turns" answer was discarded. The old machine this
     // replaced released at 30s; unaccepted, this was twice that.
-    const command = between(chat, 'const handleCommand = useCallback(', 'setTimeout(() => scrollToBottom()');
+    const command = between(
+      chat,
+      'const handleCommand = useCallback(',
+      'setTimeout(() => scrollToBottom()',
+    );
     expect(command).toContain('noteSendReceipt(label)');
     expect(command).toContain('acceptSendReceipt(label)');
     expect(command).toContain('clearSendReceipt(label)');
@@ -96,8 +114,12 @@ describe('the composer reads ONE working answer', () => {
     // `clearSendReceipt` is keyed by session, so an unguarded clear from an
     // older send's failure deleted a NEWER send's receipt while its POST was
     // still on the wire.
-    const send = between(chat, 'const clientMessageId = overrides?.clientMessageId', 'return messageID;');
-    expect(send).toContain('clearSendReceipt(clientMessageId)');
+    const send = between(
+      chat,
+      'const clientMessageId = overrides?.clientMessageId',
+      'return messageID;',
+    );
+    expect(send).toContain('clearSendReceipt(messageID)');
   });
 
   test('the stop is a receipt of its own, settled by the cancel it issues', () => {
@@ -144,8 +166,24 @@ describe('the composer reads ONE working answer', () => {
     // retryable provider error keeps the SAME assistant message being written
     // with no busy frame to show for it. It now feeds the composer's
     // `sessionWorking`, which is what refuses the command.
+    //
+    // REWRITTEN again when the redundant OR was removed (55ee4e2981):
+    // `sessionWorking={effectiveBusy || hasRetryingAssistant}` collapsed to
+    // `sessionWorking={effectiveBusy}` because `effectiveBusy` is now built by
+    // `resolveEffectiveBusy({ isServerBusy, isOptimisticCompacting,
+    // hasRetryingAssistant })` — the retry predicate already folds into it, so
+    // the composer reads one value instead of re-ORing a term it already
+    // contains. Pin BOTH links of the chain so this test can still fail if
+    // either is severed: the retry predicate must flow into the
+    // `resolveEffectiveBusy` call, and the composer must read `effectiveBusy`.
     expect(chat).toContain('hasRetryingAssistantTurn(messages)');
-    expect(chat).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
+    const busyResolution = between(
+      chat,
+      'const effectiveBusy = resolveEffectiveBusy({',
+      '});',
+    );
+    expect(busyResolution).toContain('hasRetryingAssistant');
+    expect(chat).toContain('sessionWorking={effectiveBusy}');
   });
 });
 
@@ -173,7 +211,9 @@ describe('the turn card reads the same working answer', () => {
     expect(chat).toContain('resolveLastTurnWorking({');
     expect(chat).toContain('isChildSession');
     expect(chat).toContain('sessionWorking={lastTurnWorking}');
-    expect(chat).toContain('resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds })');
+    expect(chat).toContain(
+      'resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds })',
+    );
   });
 
   test('retry copy keeps the raw frame — the projection does not carry the reason', () => {
@@ -196,7 +236,11 @@ describe('the turn card reads the same working answer', () => {
     // A deduped re-POST of a clientMessageId whose row already dead-lettered
     // answers 200 with state 'failed'. Discarding the result accepted the
     // receipt, cleared the draft, and told the user nothing.
-    const send = between(chat, 'const created = await promptInbox.enqueue({', 'return { ok: true }');
+    const send = between(
+      chat,
+      'const created = await promptInbox.enqueue({',
+      'return { ok: true }',
+    );
     expect(send).toContain("created.state === 'failed'");
     // No after-the-fact bubble for a prompt sent while a turn is live: the
     // server HOLDS it (one prompt = one turn), so it belongs in the strip

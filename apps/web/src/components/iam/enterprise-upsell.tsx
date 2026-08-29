@@ -26,7 +26,7 @@ import { useRequestDemo } from '@/features/contact/request-demo-provider';
 // that still wants to link out.
 export const ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise';
 
-type UpsellFeature = 'groups' | 'audit' | 'identity';
+type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding';
 
 const FEATURE_COPY: Record<
   UpsellFeature,
@@ -64,6 +64,16 @@ const FEATURE_COPY: Record<
       'Single sign-on with just-in-time member provisioning',
       'IdP groups map to roles on your projects',
       'SCIM keeps users and groups in sync, including offboarding',
+    ],
+  },
+  branding: {
+    title: 'Branding is an Enterprise feature',
+    blurb:
+      'Put your own logo, icon, favicon, and product name on the app for everyone in this account — Kortix becomes your tool.',
+    points: [
+      'Your brandmark in the header and on every loading screen',
+      'Your favicon and product name in the browser tab, with dark-mode variants',
+      'Members see your brand from the moment they sign in',
     ],
   },
 };

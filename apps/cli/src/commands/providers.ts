@@ -386,7 +386,18 @@ async function providersSet(
 
   try {
     for (const [name, value] of Object.entries(values)) {
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, { name, value });
+      // `kortix providers set` is the BYOK model-credential command — it KNOWS
+      // this value is a provider key, so it says so. It used to omit the pair
+      // and lean on the server inferring "model credential" from the secret's
+      // NAME, which is a guess the server has no business making: models.dev
+      // claims `GITHUB_TOKEN` for `github-copilot`, so an ordinary GitHub PAT
+      // was classified as a Copilot key and withheld from the sandbox.
+      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+        name,
+        value,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+      });
     }
   } catch (err) {
     return surfaceApiError(err);

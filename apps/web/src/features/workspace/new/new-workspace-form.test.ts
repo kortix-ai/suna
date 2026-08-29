@@ -24,6 +24,13 @@ describe('INITIAL_FORM_STATE', () => {
       defaultBranch: 'main',
       templateId: null,
       accountId: null,
+      // The two GitHub sources need an installation, and `github-import`
+      // additionally a repository. Null on a `managed` default, where neither
+      // is read — but present in the shape, so `isSubmittable`'s
+      // `githubSourceReady` gate reads a defined field rather than
+      // `undefined`.
+      installationId: null,
+      repoFullName: null,
     });
   });
 });

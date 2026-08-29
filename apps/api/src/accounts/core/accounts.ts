@@ -10,6 +10,7 @@ import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { accountRolesForUser } from '../../iam/read-models';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
+import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
@@ -73,6 +74,7 @@ export function registerAccountRoutes(): void {
             // hide controls the server would in fact allow.
             account_role: 'owner',
             is_primary_owner: true,
+            branding: await effectiveBranding(row.accountId, row.branding),
           },
         ]);
       }
@@ -89,6 +91,7 @@ export function registerAccountRoutes(): void {
             name: accounts.name,
             createdAt: accounts.createdAt,
             updatedAt: accounts.updatedAt,
+            branding: accounts.branding,
           })
           .from(accountMembers)
           .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
@@ -108,16 +111,22 @@ export function registerAccountRoutes(): void {
         // Deterministic order (owned first, oldest first): the web landing
         // door falls back to the FIRST account of this list, so an unordered
         // result made the default landing account nondeterministic.
+        // Branding is resolved per account — `effectiveBranding` only touches
+        // billing for accounts that actually carry a record, so this stays a
+        // no-op for the overwhelming majority of lists.
         return c.json(
-          sortAccountsForListing(memberships).map((m) => ({
-            account_id: m.accountId,
-            name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
-            slug: m.accountId.slice(0, 8),
-            created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
-            updated_at: m.updatedAt?.toISOString() ?? new Date().toISOString(),
-            account_role: m.accountRole || 'owner',
-            is_primary_owner: m.accountRole === 'owner',
-          })),
+          await Promise.all(
+            sortAccountsForListing(memberships).map(async (m) => ({
+              account_id: m.accountId,
+              name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
+              slug: m.accountId.slice(0, 8),
+              created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
+              updated_at: m.updatedAt?.toISOString() ?? new Date().toISOString(),
+              account_role: m.accountRole || 'owner',
+              is_primary_owner: m.accountRole === 'owner',
+              branding: await effectiveBranding(m.accountId, m.branding),
+            })),
+          ),
         );
       }
 
@@ -299,6 +308,7 @@ export function registerAccountRoutes(): void {
         project_count: Number(projectCountRow?.n ?? 0),
         role: membership.accountRole,
         mfa_required: row.mfaRequired ?? false,
+        branding: await effectiveBranding(row.accountId, row.branding),
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
       });

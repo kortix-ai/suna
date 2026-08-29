@@ -3,7 +3,8 @@ title: Feature flags
 description: Turn a Kortix surface on for one project, and read what every flag gates.
 ---
 
-import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Card, Cards } from '@/components/markdown/docs-card';
+import { BrowserIcon } from '@/lib/icons/ssr';
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A feature flag turns one Kortix surface on for one project. Any surface can
@@ -14,7 +15,7 @@ Flags are per project. Turning a flag on in one project changes nothing in
 another project, and nothing for other accounts.
 
 <Cards>
-  <Card title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon={<BrowserIcon />} title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
 </Cards>
 
 ## Turn a flag on

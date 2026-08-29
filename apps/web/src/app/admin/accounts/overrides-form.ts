@@ -40,7 +40,14 @@ export const MAX_COMPUTE_RATE_MULTIPLIER = 10;
 export type OverrideTriState = 'inherit' | 'on' | 'off';
 
 /** The per-entitlement booleans, applied AFTER the enterprise expansion. */
-export const BOOLEAN_OVERRIDE_KEYS = ['sso', 'scim', 'rbac', 'auditAccess', 'managedModels'] as const;
+export const BOOLEAN_OVERRIDE_KEYS = [
+  'sso',
+  'scim',
+  'rbac',
+  'auditAccess',
+  'branding',
+  'managedModels',
+] as const;
 export type BooleanOverrideKey = (typeof BOOLEAN_OVERRIDE_KEYS)[number];
 
 /** The two numeric overrides, edited as text so "" can mean inherit. */

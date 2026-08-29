@@ -24,13 +24,20 @@ const VIRTUAL_PCT = `${100 / THUMB_SCALE}%`;
  * rendered output reads as a zoomed-out thumbnail.
  */
 export function FileThumbnail({ filePath, fileName, className, deferPreview }: FileThumbnailProps) {
-  const isImage = getFileCategory(fileName) === 'image';
   const extLower = fileName.split('.').pop()?.toLowerCase() || '';
+  // An SVG is an `image` by extension but arrives as TEXT, so
+  // `FileContentRenderer` draws its SOURCE — `imageDataUrl` only forms for
+  // base64 bytes with an `image/*` mime (file-content-renderer.tsx:545). The
+  // image branch below deliberately skips the scale, because a picture fills
+  // its box on its own; source does not. An SVG therefore took the picture
+  // sizing and rendered `<svg xmlns="…" width="1600"` at full size inside a
+  // 120px card. It is a code preview, so it is scaled like one.
+  const rendersAsPicture = getFileCategory(fileName) === 'image' && extLower !== 'svg';
   const ext = fileName.includes('.') ? extLower.toUpperCase() : '';
   const extChalk = ext ? chalkColors(ext) : null;
 
   const extBadge =
-    ext && !isImage && extChalk ? (
+    ext && !rendersAsPicture && extChalk ? (
       <Badge
         variant="transparent"
         size="xs"
@@ -61,7 +68,7 @@ export function FileThumbnail({ filePath, fileName, className, deferPreview }: F
       <div
         className="pointer-events-none absolute top-0 left-0 origin-top-left select-none [&_*]:!cursor-default"
         style={
-          isImage
+          rendersAsPicture
             ? { width: '100%', height: '100%' }
             : {
                 transform: `scale(${THUMB_SCALE})`,

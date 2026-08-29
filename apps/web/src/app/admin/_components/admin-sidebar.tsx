@@ -12,7 +12,7 @@ import {
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 import {
   Sidebar,
@@ -35,7 +35,6 @@ interface NavItem {
 
 export function AdminSidebar() {
   const pathname = usePathname();
-  const router = useRouter();
 
   // Only pages that actually exist under app/admin/*. Operations was removed
   // (the /admin overview already carries the health pills); "Sandboxes" is the
@@ -103,14 +102,13 @@ export function AdminSidebar() {
       <SidebarFooter className="border-sidebar-border/60 border-t">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip={'Leave admin console'}
-              onClick={() => router.push(PROJECT_LANDING_PATH)}
-            >
-              <ArrowLeft />
-              <span>
-                {'Back to app'}
-              </span>
+            <SidebarMenuButton asChild tooltip={'Leave admin console'}>
+              <Link href={PROJECT_LANDING_PATH} prefetch>
+                <ArrowLeft />
+                <span>
+                  {'Back to app'}
+                </span>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

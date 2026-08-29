@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { MarkdownCode } from '@/components/markdown/code';
+import { InsideLinkContext } from '@/components/markdown/code/inside-link-context';
 import {
   buildKatexRehypePlugins,
   isKatexClassName,
@@ -133,7 +134,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
                 className={linkClass}
                 {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
               >
-                {children}
+                <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
               </a>
             );
           }
@@ -145,7 +146,7 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(
               className={linkClass}
               {...(isExternal && !isHash ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
             >
-              {children}
+              <InsideLinkContext.Provider value={true}>{children}</InsideLinkContext.Provider>
             </Link>
           );
         },

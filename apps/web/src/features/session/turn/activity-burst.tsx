@@ -9,9 +9,10 @@
  * so the expansion groups the work the same way the summary line counts it.
  *
  * A burst holding exactly ONE call has no summary line at all. It renders as
- * that call and nothing else: no title, no chain rail, no closing step, and no
- * leading glyph on the row (see `bare` below). "Completed 1 step" over a single
- * row is a door in front of a door.
+ * that call and nothing else: no title, no chain rail, no closing step.
+ * "Completed 1 step" over a single row is a door in front of a door. The row
+ * keeps its leading glyph either way — the icon names which tool ran, and a
+ * lone row is where the reader has the least other context (see `ActivityStep`).
  *
  * The trailing burst stays open for the whole working turn (so SSE gaps between
  * tool calls do not blink it shut); earlier bursts auto-collapse once later
@@ -26,7 +27,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import { ToolActivateContext } from '@/features/session/tool/shared/infrastructure';
 import { cn } from '@/lib/utils';
 import type { ConversationDensity } from '@/stores/user-preferences-store';
-import { isReasoningPart, isToolPart, type Part } from '@/ui';
+import { formatDuration, isReasoningPart, isToolPart, type Part } from '@/ui';
 import { CaretRightIcon, CircleDashedIcon } from '@phosphor-icons/react';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { Step } from '../action-panel/shared/group-steps';
@@ -107,6 +108,37 @@ function ThoughtStepBody({ texts, running }: { texts: ReadonlyArray<string>; run
 }
 
 /**
+ * Whole seconds since this row went live, or 0 when it is not.
+ *
+ * Measured from the client, deliberately, rather than from the part's
+ * `time.start`: a transcript restored hours later carries a start timestamp
+ * from the original run, and subtracting it from `Date.now()` would render
+ * "Thinking for 4h". The settled label uses the provider's timestamps, where
+ * the arithmetic is between two values that belong to the same run.
+ *
+ * One second is the resolution the label shows, so that is the tick rate.
+ */
+function useLiveElapsedMs(running: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!running) return;
+    const startedAt = Date.now();
+    const id = setInterval(() => setElapsed(Date.now() - startedAt), 1000);
+    // Reset on the way OUT, not on the way in: a synchronous `setElapsed(0)`
+    // in the effect body is a cascading render, and clearing here means a row
+    // that goes live a second time starts from zero rather than showing the
+    // previous run's count until its first tick.
+    return () => {
+      clearInterval(id);
+      setElapsed(0);
+    };
+  }, [running]);
+
+  return running ? elapsed : 0;
+}
+
+/**
  * The model's reasoning, as a row that says so.
  *
  * The text used to render inline and unlabelled — a paragraph hanging in the
@@ -129,18 +161,29 @@ function ThoughtStepBody({ texts, running }: { texts: ReadonlyArray<string>; run
  * burst-wide flag here made every thought in the turn shimmer at once and
  * unfurl reasoning that closed twenty steps ago. `mergeBurstSteps` decides.
  *
- * `bare` — this thought IS the whole burst — drops the glyph for the reason
- * every bare row does: the icon is the rail's anchor, and one row has no rail.
+ * The label carries the clock. `Thinking` alone answered "the model is doing
+ * something" and nothing else — no sense of whether that was two seconds or
+ * ninety, which is the one question a reader waiting on a thought actually
+ * has. So it counts up live (`Thinking for 12s`, measured from when this row
+ * went live, not from a provider timestamp that a reload would turn into
+ * nonsense) and settles on the run's real total (`Thought for 12s`, first
+ * fragment's start to the last one's end).
+ *
+ * Sub-second thoughts stay plain `Thinking`: `formatDuration` returns '' under
+ * 1000ms on purpose, and a row that says "0s" is worse than one that says
+ * nothing. Same fallback covers a provider that sends no timing at all.
  */
+
 function ThoughtChainStepImpl({
   texts,
   running,
-  bare,
+  durationMs,
   autoOpen = true,
 }: {
   texts: ReadonlyArray<string>;
   running: boolean;
-  bare?: boolean;
+  /** The settled run's total, from `mergeBurstSteps`. */
+  durationMs?: number;
   /**
    * Whether live reasoning may unfurl its paragraph on its own. `false` under
    * minimal density: the row still shimmers `Thinking`, but the streaming
@@ -151,6 +194,13 @@ function ThoughtChainStepImpl({
 }) {
   const [open, setOpen] = useState(autoOpen && running);
   const userToggled = useRef(false);
+  const liveElapsed = useLiveElapsedMs(running);
+  const elapsed = formatDuration(running ? liveElapsed : (durationMs ?? 0));
+  const label = elapsed
+    ? running
+      ? `Thinking for ${elapsed}`
+      : `Thought for ${elapsed}`
+    : 'Thinking';
 
   useEffect(() => {
     if (userToggled.current) return;
@@ -182,11 +232,11 @@ function ThoughtChainStepImpl({
               'text-left text-sm leading-[1.5] transition-colors',
             )}
           >
-            {!bare && <CircleDashedIcon className="text-muted-foreground size-4 flex-none" />}
+            <CircleDashedIcon className="text-muted-foreground size-4 flex-none" />
             {running ? (
-              <TextShimmer className="leading-[1.5] font-medium">Thinking</TextShimmer>
+              <TextShimmer className="leading-[1.5] font-medium tabular-nums">{label}</TextShimmer>
             ) : (
-              <span className="font-medium">Thinking</span>
+              <span className="font-medium tabular-nums">{label}</span>
             )}
             <CaretRightIcon
               className={cn(
@@ -439,8 +489,10 @@ function ActivityBurstImpl({
    * Shared by the chain and by the bare single-step burst, so the two can never
    * draw the same row two different ways.
    *
-   * `bare` is not styling — it says the row is the ONLY thing here, which is
-   * what makes the leading glyph pointless (see `ActivityStep`).
+   * `bare` says the row is the ONLY thing here — which is what lets a file-chip
+   * run with no chips fall back to the plain tool row instead of drawing a
+   * "Read 1 file" door in front of it. It is not styling, and it no longer
+   * touches the leading glyph: every row keeps its icon (see `ActivityStep`).
    */
   const stepBody = (
     step: Exclude<(typeof steps)[number], { kind: 'thought' }>,
@@ -488,7 +540,6 @@ function ActivityBurstImpl({
     return (
       <ActivityStep
         part={step.part}
-        bare={bareRow}
         sessionId={sessionId}
         running={running}
         disableNavigation={disableNavigation}
@@ -514,13 +565,10 @@ function ActivityBurstImpl({
    * prose: unwrapping THAT would have pinned the model's reasoning open with
    * nothing left to close it.
    *
-   * `bare` drops the summary line ONLY. It does not, on its own, decide that a
-   * row has no thread — a lone sub-agent is one row here and a whole nested
-   * list of steps one level down, so `ActivityStep` keeps a delegate row's
-   * leading glyph even when bare. See the `hideIcon` note there; the two rules
-   * are separate on purpose, because "there is nothing to summarise" and "there
-   * is nothing under this row" are different facts and only the first is what
-   * `summary.total === 1` establishes.
+   * `bare` drops the summary line ONLY. Every row keeps its own leading glyph
+   * — "there is nothing to summarise" and "this row needs no icon" are
+   * different facts, and only the first is what `summary.total === 1`
+   * establishes.
    */
   const bare = steps.length === 1 && summary.total === 1;
 
@@ -645,7 +693,7 @@ function ActivityBurstImpl({
                     key={step.key}
                     texts={step.texts}
                     running={running && step.running}
-                    bare={bare}
+                    durationMs={step.durationMs}
                     autoOpen={autoExpand}
                   />
                 ) : (
@@ -741,7 +789,7 @@ const ThoughtChainStep = memo(
   ThoughtChainStepImpl,
   (a, b) =>
     a.running === b.running &&
-    a.bare === b.bare &&
+    a.durationMs === b.durationMs &&
     a.autoOpen === b.autoOpen &&
     samePartsList(a.texts, b.texts),
 );

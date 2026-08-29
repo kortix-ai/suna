@@ -591,7 +591,30 @@ export class SessionSyncController {
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
     const firstPage = await this.loadPage('older', 'manual', before);
-    return this.loadCompleteTurn(firstPage, 'older', 'manual', before);
+    // Commit each page as it lands, including the page that fails. The walk
+    // is up to 11 sequential reads (MAX_TURN_BACKFILL_PAGES + 1) and used to
+    // commit all of them in one `.then`, so a rejection on ANY page —
+    // including the loop's very first, right after `firstPage` — discarded
+    // every successful read and left `nextCursor` unmoved: nothing to resume
+    // from, so the retry replayed the identical walk. `onPage` existed for
+    // exactly this and was never passed.
+    return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (partialPage) => {
+      // `rememberUserMessages` mutates the instance-level `knownUserMessageIds`
+      // Set (below), and `onPage` fires on a rejection too (the catch in
+      // `loadCompleteTurn`, right before it rethrows). So a walk that fails
+      // partway permanently records the user-message ids from every page read
+      // so far. On the retry, `loadCompleteTurn` seeds its local
+      // `knownUserMessageIds` from this now-larger instance Set, which can
+      // already satisfy the termination condition ("some assistant has a
+      // `parentID` not in `knownUserMessageIds`") from `firstPage` alone — the
+      // retry's `while` loop never runs, and `nextCursor` advances by one page
+      // instead of walking the rest of the turn. Accepted: the pages already
+      // landed in the store on the failed attempt via this same callback,
+      // which is the fix this method exists for.
+      this.rememberUserMessages(partialPage.messages);
+      this.options.hydrate(partialPage.messages);
+      this.setCursor(partialPage.nextCursor);
+    });
   }
 
   private async loadCompleteTurn(
@@ -599,7 +622,7 @@ export class SessionSyncController {
     operation: 'tail' | 'older',
     reason: SessionSyncReason,
     initialCursor?: string,
-    onPage?: (messagesSoFar: SessionSyncMessage[]) => void,
+    onPage?: (pageSoFar: SessionSyncPage) => void,
   ): Promise<SessionSyncPage> {
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
@@ -629,7 +652,17 @@ export class SessionSyncController {
         throw new Error(`Session history cursor repeated: ${cursor}`);
       }
       seenCursors.add(cursor);
-      const page = await this.loadPage(operation, reason, cursor);
+      let page: SessionSyncPage;
+      try {
+        page = await this.loadPage(operation, reason, cursor);
+      } catch (error) {
+        // `messages` already holds every page read so far — firstPage
+        // (seeded before the loop) plus every completed iteration. Commit it
+        // before rethrowing so a rejection on THIS read (including the
+        // loop's very first) cannot drop what was already read.
+        onPage?.({ messages: [...messages], nextCursor: cursor });
+        throw error;
+      }
       if (this.destroyed) return { messages, nextCursor: cursor };
       pagesRead += 1;
       messages.unshift(...page.messages);
@@ -642,7 +675,7 @@ export class SessionSyncController {
       cursor = page.nextCursor;
       // Repaint as each page lands, so a long turn fills in front of the user
       // instead of withholding everything until the walk ends.
-      onPage?.([...messages]);
+      onPage?.({ messages: [...messages], nextCursor: cursor });
     }
 
     return { messages, nextCursor: cursor };

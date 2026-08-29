@@ -59,6 +59,14 @@ webrow "stage" "apps/web/.env.staging"
 webrow "prod"  "apps/web/.env.prod"
 echo
 python3 "$ROOT/scripts/secrets-envs-separation.py" "$DX" || fail=1
+# --sm (or SECRETS_SM_CHECK=1): also assert each apps/api/.env.<env> equals its AWS
+# Secrets Manager blob. Needs an MFA session (AWS_PROFILE, default kortix-mfa).
+if [ "${1:-}" = "--sm" ] || [ "${SECRETS_SM_CHECK:-}" = "1" ]; then
+  echo
+  echo "AWS SECRETS MANAGER — file must equal kortix-<env>-env:"
+  echo
+  DOTENVX="$DX" python3 "$ROOT/scripts/secrets-sm-parity.py" check || fail=1
+fi
 echo
 if [ "$fail" = 0 ]; then
   echo "✓ all environments (api + web) decrypt cleanly and are distinctly configured"

@@ -5,7 +5,7 @@ import { parseProjectRoutingPolicyInput } from "./project-policy";
 const valid = {
   defaultModel: "codex/gpt-5.6-sol",
   visionModel: null,
-  defaultFallback: { models: ["glm-5.2"], fallbackOn: "any-error" as const },
+  defaultFallback: { models: ["glm-5.3-flash"], fallbackOn: "any-error" as const },
   rules: [
     {
       model: "anthropic/claude-opus-4.8",
@@ -52,7 +52,7 @@ describe("project gateway routing policy input", () => {
       parseProjectRoutingPolicyInput({
         ...valid,
         defaultFallback: {
-          models: ["glm-5.2", "glm-5.2"],
+          models: ["glm-5.3-flash", "glm-5.3-flash"],
           fallbackOn: "any-error",
         },
       }),

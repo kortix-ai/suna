@@ -48,6 +48,13 @@ in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
     Cloudflare custom-firewall `skip` rule (zone kortix.com) skips CF's free managed ruleset
     for the same API hosts, since CF was independently blocking command-injection-like prompt
     content at the edge. Re-blocking any `*_BODY` rule will break prompts + git push again.
+  - OAuth public and native clients can use HTTP loopback redirect URIs. Scope the
+    CommonRuleSet away from only `GET /v1/oauth/authorize` requests whose
+    `redirect_uri` starts with `http://localhost` or `http://127.0.0.1`.
+    KnownBadInputs and AmazonIpReputationList must still inspect these requests.
+    The API validates the complete redirect URI against the registered client.
+    Keep this scope-down statement identical in the live us-west-2 and eu-west-2
+    WebACLs and the Terraform-managed us-east-2 WebACL.
 
 ## First adoption (resources already exist live)
 ```bash

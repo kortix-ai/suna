@@ -35,8 +35,10 @@ import {
   type SandboxPreviewResult,
   buildPreviewBootstrapScript,
   previewLockfileHash,
+  previewSandboxIdentity,
   previewSandboxName,
   selectStalePreviewSandboxIds,
+  selectTeardownSandboxIds,
 } from './sandbox-preview';
 import type { PreviewRuntimeSecrets } from './preview-stack';
 
@@ -55,6 +57,25 @@ export interface SandboxPreviewDeploymentInput {
   secrets: PreviewRuntimeSecrets;
   platinum: { apiUrl: string; apiKey: string };
   daytona: { apiUrl: string; apiKey: string; target: string };
+  /**
+   * A PERSISTENT per-branch environment instead of an ephemeral per-PR preview.
+   *
+   * When set, the sandbox is named after the BRANCH and reused across deploys
+   * rather than deleted and recreated. That is the whole difference: the
+   * sandbox id — and therefore the public URL — stays put, so the environment
+   * can be bookmarked, registered as a Stripe webhook target, and keep its
+   * Postgres volume (and your signed-in session) across pushes.
+   */
+  branchEnv?: string;
+  /** Run the full suite inside the environment after it comes up. Default true. */
+  runTests?: boolean;
+  /**
+   * The stable origin the environment is reached at, when an operator fronts it
+   * with a proxy. The stack is configured with this rather than with the
+   * provider's own hostname; the provider hostname stays the proxy's target.
+   * Unset for a PR preview, which is reached at its provider origin.
+   */
+  publicOrigin?: string;
 }
 
 interface PlatinumSandboxPage {
@@ -156,8 +177,26 @@ export async function deployPlatinumPreview(
   const api = new PlatinumApi(input.platinum.apiUrl, input.platinum.apiKey);
   let sandboxId = '';
   let launched = false;
+  // Set only when this run adopted an existing branch environment, so the
+  // failure path below can tell "a box I made" from "the standing environment".
+  let reusedSandboxId = '';
   try {
-    await replaceExistingPlatinumPreview(api, input.prNumber);
+    const identity = previewSandboxIdentity(input);
+    // A branch environment reuses its sandbox; only an ephemeral PR preview is
+    // replaced, which is what rotates its URL on every push.
+    const reusable = identity.reuseExisting
+      ? (await allPlatinumPreviewSandboxes(api)).find(
+          (sandbox) => sandbox.name === identity.name && sandbox.metadata?.owner === identity.owner,
+        ) ?? null
+      : null;
+    // A branch environment idles between deploys; Platinum may have stopped it.
+    if (reusable) {
+      reusedSandboxId = reusable.id;
+      await api
+        .json(`/v1/sandboxes/${reusable.id}/start`, { method: 'POST' })
+        .catch(() => undefined);
+    }
+    if (!identity.reuseExisting) await replaceExistingPlatinumPreview(api, input.prNumber);
     const hash = previewLockfileHash(input.lockfileHash);
     const base = await ensureTemplate(
       api,
@@ -169,39 +208,47 @@ export async function deployPlatinumPreview(
     );
     const template = await ensureWarmTemplate(api, base, hash);
     const startedAt = Date.now();
-    const created = await api.json<PlatinumSandbox>(
-      '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
-      {
-        method: 'POST',
-        headers: { 'idempotency-key': platinumPreviewIdempotencyKey(input) },
-        body: JSON.stringify({
-          name: previewSandboxName(input.prNumber),
-          template: template.id,
-          type: 'persistent',
-          auto_stop_minutes: 0,
-          auto_archive_days: 7,
-          auto_delete_days: 7,
-          cpu: 8,
-          ram_mb: 16_384,
-          disk_gb: 50,
-          expose: [{ port: 8080, public: true }],
-          metadata: {
-            owner: 'kortix-preview',
-            repository: input.repository,
-            pr_number: String(input.prNumber),
-            git_sha: input.sha,
-            run_id: input.runId,
-          },
-        }),
-      },
-    );
+    const created =
+      reusable ??
+      (await api.json<PlatinumSandbox>(
+        '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
+        {
+          method: 'POST',
+          headers: { 'idempotency-key': platinumPreviewIdempotencyKey(input) },
+          body: JSON.stringify({
+            name: identity.name,
+            template: template.id,
+            type: 'persistent',
+            auto_stop_minutes: 0,
+            auto_archive_days: identity.autoArchiveDays,
+            auto_delete_days: identity.autoDeleteDays,
+            cpu: 8,
+            ram_mb: 16_384,
+            disk_gb: 50,
+            expose: [{ port: 8080, public: true }],
+            metadata: {
+              owner: identity.owner,
+              repository: input.repository,
+              pr_number: String(input.prNumber),
+              git_sha: input.sha,
+              run_id: input.runId,
+            },
+          }),
+        },
+      ));
     sandboxId = created.id;
     const sandbox = await observePlatinumSandboxStart({
       sandbox: created,
       startedAt,
       readSandbox: () => api.json<PlatinumSandbox>(`/v1/sandboxes/${created.id}`),
     });
-    await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
+    // "Warm" means a template restore has finished and NOTHING is running yet.
+    // A reused branch-environment sandbox is the opposite by construction — it
+    // is still serving the previous deploy — so waiting for warmth there can
+    // only ever time out. Wait for it on a fresh sandbox only.
+    if (!reusable) {
+      await waitForWarmSandbox(api, sandboxId, platinumWarmReadinessTimeoutMs(sandbox.via));
+    }
     let previewUrl = sandbox.exposed?.find((item) => item.port === 8080)?.url;
     if (!previewUrl) {
       const exposed = await api.json<{ url: string }>(`/v1/sandboxes/${sandboxId}/expose`, {
@@ -210,7 +257,12 @@ export async function deployPlatinumPreview(
       });
       previewUrl = exposed.url;
     }
-    const origin = validatedPreviewUrl(previewUrl);
+    const sandboxOrigin = validatedPreviewUrl(previewUrl);
+    // The stack is CONFIGURED with the origin people actually visit: it ends up
+    // in SITE_URL, API_EXTERNAL_URL, CORS_ALLOWED_ORIGINS, the Supabase redirect
+    // allowlist and the frontend's own public URLs. Point those at the sandbox
+    // while the browser is on the stable name and every auth redirect leaves it.
+    const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;
     await execPlatinum(api, sandboxId, ['bash', '-lc', 'mkdir -p /workspace/kortix-preview']);
     await api.write(
       `${sandboxId}:/workspace/kortix-preview/runtime-secrets.json`,
@@ -263,6 +315,7 @@ export async function deployPlatinumPreview(
       exitCode,
       sandboxId,
       previewUrl: origin,
+      sandboxOrigin,
     };
     await downloadPlatinumArtifacts(api, sandboxId, input.root).catch((error) => {
       console.warn(`[sandbox-preview] Platinum result download failed: ${String(error)}`);
@@ -271,7 +324,10 @@ export async function deployPlatinumPreview(
     return result;
   } catch (error) {
     if (launched) throw error;
-    if (sandboxId) await deletePlatinum(api, sandboxId).catch(() => {});
+    // Clean up only a sandbox THIS run created. Deleting a reused branch
+    // environment would throw away the stable origin it exists to hold — and a
+    // failed deploy is a reason to look at it, not to destroy it.
+    if (sandboxId && !reusedSandboxId) await deletePlatinum(api, sandboxId).catch(() => {});
     throw new PreviewInfrastructureError('Platinum preview infrastructure failed', error);
   }
 }
@@ -295,6 +351,15 @@ export async function deployDaytonaPreview(
   input: SandboxPreviewDeploymentInput,
 ): Promise<SandboxPreviewResult> {
   if (!input.daytona.apiKey) throw new PreviewInfrastructureError('DAYTONA_API_KEY is required');
+  // Daytona is the fallback for a Platinum infrastructure failure, and it issues
+  // its own preview URL. Falling back would therefore hand a branch environment
+  // a DIFFERENT origin than the one people bookmarked and Stripe posts webhooks
+  // to — the one property it exists to hold still. Fail loudly instead.
+  if (input.branchEnv) {
+    throw new PreviewInfrastructureError(
+      `branch environment ${input.branchEnv} is pinned to Platinum: a Daytona fallback would change its origin`,
+    );
+  }
   const api = new DaytonaApi(input.daytona.apiUrl, input.daytona.apiKey);
   let sandbox: DaytonaSandbox | null = null;
   let launched = false;
@@ -400,6 +465,9 @@ export async function deployDaytonaPreview(
       exitCode,
       sandboxId: sandbox.id,
       previewUrl: origin,
+      // Daytona serves PR previews only (a branch environment is refused
+      // above), and a PR preview IS its provider origin.
+      sandboxOrigin: origin,
     };
     await downloadDaytonaArtifacts(api, sandbox, input.root).catch((error) => {
       console.warn(`[sandbox-preview] Daytona result download failed: ${String(error)}`);
@@ -413,21 +481,23 @@ export async function deployDaytonaPreview(
   }
 }
 
+/**
+ * Delete this pull request's sandbox, in whichever shape it was deployed.
+ *
+ * `branchEnv` is passed when the pull request runs a persistent environment. Its
+ * sandbox is named after the BRANCH, so looking only for the PR-named one would
+ * leave it running forever — a branch environment has no expiry to fall back on.
+ */
 export async function teardownPlatinumPreview(input: {
   apiUrl: string;
   apiKey: string;
-  prNumber: number;
+  prNumber?: number;
+  branchEnv?: string;
 }): Promise<number> {
   if (!input.apiKey) return 0;
   const api = new PlatinumApi(input.apiUrl, input.apiKey);
-  const name = previewSandboxName(input.prNumber);
-  const owned = (await allPlatinumPreviewSandboxes(api)).filter(
-    (sandbox) =>
-      sandbox.name === name &&
-      sandbox.metadata?.owner === 'kortix-preview' &&
-      Number(sandbox.metadata?.pr_number) === input.prNumber,
-  );
-  for (const sandbox of owned) await deletePlatinum(api, sandbox.id);
+  const owned = selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input);
+  for (const sandboxId of owned) await deletePlatinum(api, sandboxId);
   return owned.length;
 }
 
@@ -454,11 +524,16 @@ export async function reconcilePlatinumPreviews(input: {
   apiUrl: string;
   apiKey: string;
   activePullRequests: ReadonlyMap<number, string>;
+  liveBranchSandboxNames?: ReadonlySet<string>;
 }): Promise<number> {
   if (!input.apiKey) return 0;
   const api = new PlatinumApi(input.apiUrl, input.apiKey);
   const sandboxes = await allPlatinumPreviewSandboxes(api);
-  const stale = selectStalePreviewSandboxIds(sandboxes, input.activePullRequests);
+  const stale = selectStalePreviewSandboxIds(
+    sandboxes,
+    input.activePullRequests,
+    input.liveBranchSandboxNames,
+  );
   for (const sandboxId of stale) await deletePlatinum(api, sandboxId);
   return stale.length;
 }

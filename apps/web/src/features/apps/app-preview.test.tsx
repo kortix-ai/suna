@@ -5,16 +5,13 @@ import { stripTags } from '@/test-utils/strip-tags';
 import type { App } from '@kortix/sdk';
 
 import {
-  APP_GRID_DEFAULT_DENSITY,
-  APP_GRID_DENSITY,
-  APP_GRID_DENSITY_ORDER,
-  APP_GRID_DENSITY_STORAGE_KEY,
+  APP_GRID_COLUMNS,
+  APP_GRID_CONTAINER,
   AppPreview,
   AppPreviewOverlay,
   DEPLOYMENT_COPY,
   appHost,
   deployNotice,
-  parseAppGridDensity,
   PREVIEW_SPINNER_DELAY_MS,
   PREVIEW_TILE_ASPECT,
   PREVIEW_VIEWPORT_HEIGHT,
@@ -206,17 +203,29 @@ describe('previewScale', () => {
     expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(Number(w) / Number(h), 5);
   });
 
-  test('the tile is 16:9 landscape — the shape of the page it is a picture of', () => {
-    // A 4:5 portrait tile shipped for one day. At four columns it is a 230px
-    // strip of a 1600px-tall page: the App's whole layout at 18% scale, where
-    // every card reads as the same grey rectangle. An App is a web page, and a
-    // web page is landscape.
-    expect(PREVIEW_VIEWPORT_WIDTH).toBeGreaterThan(PREVIEW_VIEWPORT_HEIGHT);
-    expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(16 / 9, 5);
-    expect(PREVIEW_TILE_ASPECT).toBe('aspect-[16/9]');
+  test('the tile is 4:5 — FINAL, chosen after five candidates', () => {
+    // Settled by Jay on 2026-08-27 over 16:9, 9:16, 3:4, 1:1 and 2:3. This is a
+    // product decision, not a derived value: it does not move without a new one.
+    expect(PREVIEW_TILE_ASPECT).toBe('aspect-[4/5]');
+    expect(PREVIEW_VIEWPORT_WIDTH).toBe(1080);
+    expect(PREVIEW_VIEWPORT_HEIGHT).toBe(1350);
+    expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(4 / 5, 5);
+  });
+
+  test('4:5 works now only because the tile is no longer 230px', () => {
+    // 4:5 shipped once (e56c580271) and was reverted (e6c4ba0b62) — paired with
+    // a `max-w-5xl` cap and a fixed four-column grid, it produced a 230px tile:
+    // the App at 18% scale, every card the same grey rectangle. The ratio was
+    // never the fault. At the current cap a four-across tile is 300px.
+    const tileAtCap = (1280 - 32 - 3 * 16) / 4;
+    expect(tileAtCap).toBeGreaterThan(230);
+    expect(tileAtCap * (5 / 4)).toBeCloseTo(375, 0);
   });
 
   test('the viewport is a desktop width — a phone width would defeat the point', () => {
+    // The tile is portrait; the VIEWPORT must not be. 1080px is still past
+    // every common desktop breakpoint, so no App answers the thumbnail with
+    // its hamburger-and-one-column layout.
     expect(PREVIEW_VIEWPORT_WIDTH).toBeGreaterThanOrEqual(1024);
   });
 });
@@ -347,54 +356,71 @@ describe('deployNotice — the header speaks only when there is news', () => {
 /**
  * The third defect: the gallery decided tile size for you, and chose wrong.
  *
- * Four columns inside a 1024px cap is a 230px tile. There is now a default that
- * is big — two per row — and a control that trades size for count. The default
- * is the part under test: a preference nobody sets has to land somewhere sane.
+ * It shipped a three-way size picker backed by `localStorage` — a preference
+ * nobody holds until they have seen the page. The grid sizes itself now, and it
+ * does so against its CONTAINER rather than the window: this page sits beside a
+ * sidebar that docks and collapses, so ~256px of the grid's width appears and
+ * disappears without the viewport moving at all.
  */
-describe('APP_GRID_DENSITY — a default size, then a choice', () => {
-  test('the default is two per row, which is what makes a tile big', () => {
-    expect(APP_GRID_DEFAULT_DENSITY).toBe('large');
-    expect(APP_GRID_DENSITY[APP_GRID_DEFAULT_DENSITY].columns).toBe(2);
-    expect(APP_GRID_DENSITY[APP_GRID_DEFAULT_DENSITY].grid).toContain('sm:grid-cols-2');
+describe('APP_GRID_COLUMNS — the grid measures the box it is in', () => {
+  /** The tile width `cols` columns leave inside a container of `width`. */
+  const tile = (width: number, cols: number) => (width - 32 - (cols - 1) * 16) / cols;
+
+  /** Which step the ladder resolves to at a given container width. */
+  const columnsAt = (width: number) =>
+    width >= 1024 ? 4 : width >= 768 ? 3 : width >= 512 ? 2 : 1;
+
+  test('every step is a CONTAINER query, never a viewport breakpoint', () => {
+    // `xl:grid-cols-4` on a 1280px viewport with the sidebar docked fires on a
+    // container that is really ~1024px wide. The window is the wrong question.
+    for (const viewportOnly of ['sm:', 'md:', 'lg:', 'xl:', '2xl:']) {
+      expect(APP_GRID_COLUMNS).not.toContain(viewportOnly);
+    }
+    expect(APP_GRID_COLUMNS.match(/@\w+\/apps:/g)).toHaveLength(3);
   });
 
-  test('the control offers every density exactly once, biggest tile first', () => {
-    expect([...APP_GRID_DENSITY_ORDER].sort()).toEqual(Object.keys(APP_GRID_DENSITY).sort());
-    const counts = APP_GRID_DENSITY_ORDER.map((key) => APP_GRID_DENSITY[key].columns);
-    expect(counts).toEqual([...counts].sort((a, b) => a - b));
-    expect(new Set(counts).size).toBe(counts.length);
-  });
-
-  test('every density starts at one column and writes its classes out in full', () => {
-    for (const key of APP_GRID_DENSITY_ORDER) {
-      const { columns, grid } = APP_GRID_DENSITY[key];
-      // A phone gets one column at every density — a 300px tile is the mobile
-      // layout this whole mechanism exists to avoid.
-      expect(grid).toContain('grid-cols-1');
-      // Tailwind scans source text, so an interpolated class never reaches the
-      // stylesheet. The widest breakpoint has to name the real column count.
-      expect(grid).toContain(`grid-cols-${columns}`);
-      expect(grid).not.toContain('${');
-      expect(APP_GRID_DENSITY[key].label.length).toBeGreaterThan(0);
+  test('the grid and its container name each other, or every step is inert', () => {
+    // A `@lg/apps:` variant with no `@container/apps` ancestor compiles and
+    // then never matches — the grid would silently stay one column forever.
+    expect(APP_GRID_CONTAINER).toBe('@container/apps');
+    const name = APP_GRID_CONTAINER.split('/')[1];
+    for (const step of APP_GRID_COLUMNS.match(/@\w+\/\w+:/g) ?? []) {
+      expect(step.split('/')[1]).toBe(`${name}:`);
     }
   });
-});
 
-describe('parseAppGridDensity — the stored value is untrusted input', () => {
-  test('accepts what this build actually renders', () => {
-    for (const key of APP_GRID_DENSITY_ORDER) expect(parseAppGridDensity(key)).toBe(key);
+  test('a docked desktop lands on four across', () => {
+    // 1440px window minus a docked sidebar is a ~1184px container; the cap is
+    // 1280px. Both are past the last step.
+    expect(columnsAt(1184)).toBe(4);
+    expect(columnsAt(1280)).toBe(4);
+    expect(APP_GRID_COLUMNS).toContain('@5xl/apps:grid-cols-4');
   });
 
-  test('rejects everything else rather than indexing into undefined', () => {
-    // `localStorage` is shared with every other tab and every past version of
-    // this page. A density this build removed, or a prototype key, would land
-    // in APP_GRID_DENSITY[value] as undefined and render a grid with no column
-    // class at all.
-    for (const bad of [null, '', 'comfortable', 'undefined', 'toString', '__proto__', 'constructor'])
-      expect(parseAppGridDensity(bad)).toBeNull();
+  test('a phone gets one column', () => {
+    // Four columns of a 375px page is a 78px tile. One column is the floor and
+    // the base class, so it needs no variant at all.
+    expect(columnsAt(375)).toBe(1);
+    expect(APP_GRID_COLUMNS.startsWith('grid-cols-1 ')).toBe(true);
   });
 
-  test('the storage key is namespaced, so it cannot collide with another page', () => {
-    expect(APP_GRID_DENSITY_STORAGE_KEY).toBe('kortix.apps.grid-density');
+  test('no step ever produces a tile too small to read the App in', () => {
+    // 230px is the width the 4:5 grid shipped at for one day: the App's whole
+    // layout at ~18% scale, where every card is the same grey rectangle.
+    for (const width of [375, 512, 640, 768, 900, 1024, 1184, 1280]) {
+      const cols = columnsAt(width);
+      if (cols === 1) continue;
+      expect(tile(width, cols)).toBeGreaterThan(230);
+    }
+  });
+
+  test('the ladder only ever widens, and names its classes in full', () => {
+    const counts = [...(APP_GRID_COLUMNS.match(/grid-cols-(\d)/g) ?? [])].map((c) =>
+      Number(c.replace('grid-cols-', '')),
+    );
+    expect(counts).toEqual([1, 2, 3, 4]);
+    // Tailwind scans source text, so an interpolated class never reaches the
+    // stylesheet.
+    expect(APP_GRID_COLUMNS).not.toContain('${');
   });
 });

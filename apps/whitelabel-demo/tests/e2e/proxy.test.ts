@@ -122,9 +122,7 @@ describe('BFF SDK transport', () => {
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(events.length).toBeGreaterThan(0);
       expect(
-        mock.requests.some((request) =>
-          request.path.endsWith('/global/event'),
-        ),
+        mock.requests.some((request) => request.path.endsWith('/global/event')),
       ).toBe(true);
     } finally {
       stream.close();

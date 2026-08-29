@@ -673,6 +673,19 @@ export function ReviewCenter({
         el instanceof HTMLTextAreaElement ||
         (el as HTMLElement | null)?.isContentEditable;
 
+      // Every shortcut below is a BARE letter or digit, so a keystroke
+      // carrying a command/control/alt modifier is never one of them — it
+      // belongs to the browser, the OS, or another surface. Without this
+      // guard the single-letter handlers fire alongside the real shortcut:
+      // ⌘K moved the review focus up AND opened the command palette, ⌘J
+      // moved it down AND started a session, and ⌘A — Select All — ran
+      // `quickPrimary` on the focused item, i.e. an ACTION on a review. Added
+      // when ⌘O was given to the palette's workspace switcher, which would
+      // have joined that list by opening the focused review at the same time.
+      //
+      // Not Shift: `?` is Shift+/ and is handled immediately below.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === '?') {
         e.preventDefault();
         setHelpOpen((v) => !v);

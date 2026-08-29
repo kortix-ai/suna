@@ -2,7 +2,7 @@
 
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { CaretRightIcon, TrayIcon } from '@phosphor-icons/react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -102,7 +102,6 @@ function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: str
 function NavItemInner({ projectId }: { projectId: string }) {
   const c = useOpenCrController();
   const isMobile = useIsMobile();
-  const router = useRouter();
   // When the Review Center is enabled for this project, this pill becomes the
   // single entry point into the unified inbox (Customize → Review) — change
   // requests, approvals and agent outputs all live in one place — instead of
@@ -128,18 +127,8 @@ function NavItemInner({ projectId }: { projectId: string }) {
   const countLabel = count > 99 ? '99+' : String(count);
   const hasChooser = !reviewEnabled && c.count > 1;
 
-  const menuButton = (
-    <SidebarMenuButton
-      className="font-medium"
-      onClick={
-        reviewEnabled
-          ? // Review is a section of the Customize bar's Settings tab now.
-            () => router.push(projectSettingsSectionHref(projectId, 'review'))
-          : c.count === 1
-            ? () => c.openCr(c.crs[0].cr_id)
-            : undefined
-      }
-    >
+  const rowContent = (
+    <>
       <TrayIcon className="size-4" />
       {/* `truncate` sits on the label, not on the trailing group: the sidebar's
           base recipe truncates the last child, which used to be the count. */}
@@ -161,6 +150,28 @@ function NavItemInner({ projectId }: { projectId: string }) {
             somewhere would promise a menu that never appears. */}
         {hasChooser ? <CaretRightIcon className="size-3.5 opacity-50" /> : null}
       </span>
+    </>
+  );
+
+  // Review is a section of the Customize bar's Settings tab now, so this branch
+  // NAVIGATES — and it navigates through an anchor, not a handler. This row is
+  // permanently mounted in the sidebar footer, and `router.push` would run the
+  // RSC fetch cold on every click; that fetch degrades into a full document
+  // load whenever it answers wrong — an auth bounce, a build-id skew
+  // mid-deploy, a network blip. The flag-off branch still opens a dialog or a
+  // popover in place and stays a button.
+  const menuButton = reviewEnabled ? (
+    <SidebarMenuButton asChild className="font-medium">
+      <Link href={projectSettingsSectionHref(projectId, 'review')} prefetch>
+        {rowContent}
+      </Link>
+    </SidebarMenuButton>
+  ) : (
+    <SidebarMenuButton
+      className="font-medium"
+      onClick={c.count === 1 ? () => c.openCr(c.crs[0].cr_id) : undefined}
+    >
+      {rowContent}
     </SidebarMenuButton>
   );
 

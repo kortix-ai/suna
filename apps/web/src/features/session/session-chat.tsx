@@ -29,6 +29,7 @@ import {
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -62,6 +63,7 @@ import {
 } from './turn/queued-prompt-bubbles';
 import { segmentTurn } from './turn/segment-turn';
 import { stabilizeTurns } from './turn/stable-turns';
+import { statusElapsedFrame } from './turn/status-elapsed';
 import { ThrottledMarkdown } from './turn/throttled-markdown';
 import { TurnViewport } from './turn/turn-viewport';
 import { UserMessage } from './turn/user-message';
@@ -92,6 +94,7 @@ import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/sessio
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { showTurnBusyIndicator } from '@/features/session/turn-busy-visibility';
 import { SessionBusyIndicator } from './session-busy-indicator';
+import { resolveEffectiveBusy } from './session-chat-busy';
 import { SessionTurnMeta } from './session-turn-meta';
 import {
   sessionTurnDurationMs,
@@ -207,9 +210,7 @@ import {
   startSessionWithPrompt,
   useAbortRuntimeSession,
   useExecuteRuntimeCommand,
-  usePermissionSelfHeal,
   useProjectConfig,
-  useQuestionSelfHeal,
   useRuntimeAgents,
   useRuntimeBootStalled,
   useRuntimeCommands,
@@ -236,14 +237,15 @@ import {
   sessionComposerReadiness,
 } from './session-composer-readiness';
 import { captureTurnScrollAnchor, restoreTurnScrollAnchor } from './session-history-scroll';
-import { useHeldOlderLoading } from './session-older-loading';
 import { resolveSessionContentState } from './session-load-state';
 import {
   nextOlderAutoloadArm,
   olderAutoloadExhausted,
   shouldLoadOlderHistory,
 } from './session-older-autoload';
+import { useHeldOlderLoading } from './session-older-loading';
 import { useReadinessSettling } from './use-readiness-settling';
+import { projectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Reply-to context (select & reply feature)
@@ -664,6 +666,17 @@ interface SessionTurnProps {
    */
   isWorkingTurn: boolean;
   /**
+   * Suppress this turn's live busy indicator even though it is the working
+   * turn. Set only when `resolveWorkingTurn` fell back to a turn whose answer is
+   * already COMPLETE while queued prompts wait below it (every pending prompt
+   * still held in the inbox). Without it, that finished turn's "Thinking" row
+   * rendered ABOVE the just-sent (queued) message and then jumped down when the
+   * prompt started running — the reposition the transcript must never do. A
+   * finished turn shows nothing; the queued turns render as their own dimmed
+   * bubbles until one starts and legitimately becomes the working turn.
+   */
+  suppressBusyIndicator: boolean;
+  /**
    * A user message the agent has not reached yet — after the working turn,
    * with no assistant content. Drawn dimmed, like a queued prompt (it IS one:
    * the server forwarded it and OpenCode holds it until the next step), and
@@ -795,6 +808,7 @@ function SessionTurnImpl({
   isFirstTurn,
   sessionWorking,
   isWorkingTurn,
+  suppressBusyIndicator,
   pending,
   queueRow,
   queueHeld,
@@ -1302,17 +1316,31 @@ function SessionTurnImpl({
   // How long the status has read the same thing. Past STATUS_STALL_AFTER_MS
   // the label carries the elapsed time, so a slow model step or a long tool
   // call reads as "still working, this long" instead of a frozen screen.
-  const [statusSinceMs, setStatusSinceMs] = useState(() => Date.now());
-  const [statusElapsedMs, setStatusElapsedMs] = useState(0);
+  const [statusElapsedState, setStatusElapsedState] = useState(() =>
+    statusElapsedFrame(undefined, {
+      status: throttledStatus,
+      working,
+      nowMs: Date.now(),
+    }),
+  );
+  const statusElapsedMs =
+    statusElapsedState.status === throttledStatus && statusElapsedState.working === working
+      ? statusElapsedState.elapsedMs
+      : 0;
   useEffect(() => {
-    setStatusSinceMs(Date.now());
-    setStatusElapsedMs(0);
-  }, [throttledStatus]);
-  useEffect(() => {
+    const update = () =>
+      setStatusElapsedState((previous) =>
+        statusElapsedFrame(previous, {
+          status: throttledStatus,
+          working,
+          nowMs: Date.now(),
+        }),
+      );
+    update();
     if (!working) return;
-    const timer = setInterval(() => setStatusElapsedMs(Date.now() - statusSinceMs), 1000);
+    const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
-  }, [working, statusSinceMs]);
+  }, [working, throttledStatus]);
   /** The phrase alone — never the elapsed time. Folding the ticking duration in
    *  here changed the busy indicator's animation key once a second, which
    *  replayed its roll-swap forever during any long tool call. */
@@ -1803,7 +1831,11 @@ function SessionTurnImpl({
       )}
 
       {/* ── Working status indicator (always at the end while working) ── */}
-      {showTurnBusyIndicator({ working, hasError: !!turnError, isRetrying: !!retryInfo }) && (
+      {showTurnBusyIndicator({
+        working: working && !suppressBusyIndicator,
+        hasError: !!turnError,
+        isRetrying: !!retryInfo,
+      }) && (
         <div className="space-y-2">
           {retryInfo && retryMessage && (
             <SessionRetryDisplay
@@ -2367,10 +2399,10 @@ export function SessionChat({
    */
   const receiptSessionId = projectSessionId ?? '';
   const noteSendReceipt = useCallback(
-    (messageId: string) =>
+    (messageId: string, turnId: string | null = messageId) =>
       useSessionWorkingStore
         .getState()
-        .noteSendReceipt(receiptSessionId, { messageId, atMs: Date.now() }),
+        .noteSendReceipt(receiptSessionId, { messageId, turnId, atMs: Date.now() }),
     [receiptSessionId],
   );
   const acceptSendReceipt = useCallback(
@@ -2559,7 +2591,11 @@ export function SessionChat({
   // so a lost `session.compacted` frame stops pinning the composer at
   // `OPTIMISTIC_COMPACTION_MAX_MS` instead of for the lifetime of the tab, and
   // a compaction started by a second device is visible here at all.
-  const effectiveBusy = isServerBusy || isOptimisticCompacting;
+  const effectiveBusy = resolveEffectiveBusy({
+    isServerBusy,
+    isOptimisticCompacting,
+    hasRetryingAssistant,
+  });
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
@@ -2781,8 +2817,7 @@ export function SessionChat({
   // user can always see while the queue is stopped. A FAILED row is not paused
   // by the hold, so it does not count.
   const heldQueueCount = useMemo(
-    () =>
-      promptInbox.prompts.filter((p) => p.reason === 'held' && p.state !== 'failed').length,
+    () => promptInbox.prompts.filter((p) => p.reason === 'held' && p.state !== 'failed').length,
     [promptInbox.prompts],
   );
 
@@ -3239,7 +3274,29 @@ export function SessionChat({
     () => resolveWorkingTurn({ turns, hintMessageId: working.turnId, unrunTurnIds }),
     [turns, working.turnId, unrunTurnIds],
   );
+  const workingTurnIdRef = useRef<string | null>(workingTurn.workingTurnId);
+  useEffect(() => {
+    workingTurnIdRef.current = workingTurn.workingTurnId;
+  }, [workingTurn.workingTurnId]);
   const pendingTurnIds = useMemo(() => new Set(workingTurn.pendingTurnIds), [workingTurn]);
+  /**
+   * Does the resolved working turn have a COMPLETED answer while queued prompts
+   * wait below it? `resolveWorkingTurn` falls back to the newest turn WITH
+   * content when every pending prompt is still held in the inbox (rule 4). If
+   * that turn's answer is already complete, its live busy row would render above
+   * the just-sent (queued) message and then jump down when the prompt starts
+   * running. In that one case the working turn shows no indicator — the queued
+   * turns are their own dimmed bubbles until one runs. Only a FINISHED answer
+   * suppresses; a turn streaming between steps has an OPEN assistant message, so
+   * `resolveWorkingTurn` rule 1 picks it and this stays false (no flicker).
+   */
+  const suppressWorkingTurnBusy = useMemo(() => {
+    if (workingTurn.pendingTurnIds.length === 0) return false;
+    const wt = turns.find((t) => t.userMessage.info.id === workingTurn.workingTurnId);
+    if (!wt || wt.assistantMessages.length === 0) return false;
+    const newest = wt.assistantMessages[wt.assistantMessages.length - 1];
+    return !!(newest.info as { time?: { completed?: number } }).time?.completed;
+  }, [turns, workingTurn]);
   /**
    * ONE render key per turn. A turn keeps the id its bubble was FIRST painted
    * under (the optimistic origin), so a re-minted echo re-renders the same
@@ -3325,20 +3382,11 @@ export function SessionChat({
       }
     };
   }, []);
-  // Self-heal a missed `question.asked` SSE event (a `question` tool part
-  // rendering as running with nothing in the pending store for this session) —
-  // see the SDK's `useQuestionSelfHeal` for why this poll is distinct from
-  // `useRuntimeEventStream`'s reconnect-gap hydration.
-  useQuestionSelfHeal(sessionId, messages, {
-    enabled: !sessionState && isActiveSessionTab,
-    isSuppressed: isQuestionSuppressed,
-  });
-  // The permission twin — a missed `permission.asked` frame otherwise leaves
-  // the agent silently blocked with no card to answer (the "have to type
-  // `continue`" wedge).
-  usePermissionSelfHeal(sessionId, messages, {
-    enabled: !sessionState && isActiveSessionTab,
-  });
+  // The 2 s permission/question self-heal polls that used to sit here are
+  // gone: the session stream's runtime channel is SEQUENCED (a lost
+  // `question.asked` frame is a detectable gap, not a silent hole), and the
+  // `kortix.control.runtime_state` snapshots re-seed open asks on every
+  // attach/reconnect — see the SDK's `useSessionRuntimeStream`.
 
   // ---- Permission/question reply handlers ----
   const removePermission = useRuntimePendingStore((s) => s.removePermission);
@@ -3634,6 +3682,7 @@ export function SessionChat({
       // row that no longer had a transcript twin to hide behind.
       markOptimisticSendInboxBacked(sessionId, messageID);
       const sendingIntoRunningTurn = isBusyRef.current;
+      const receiptTurnId = sendingIntoRunningTurn ? workingTurnIdRef.current : messageID;
 
       // A send follows from here: the new bubble lands at the top of the
       // screen the frame it commits (use-auto-scroll.ts, FACT 2 + THE RULE).
@@ -3804,12 +3853,11 @@ export function SessionChat({
       // The WIRE id is minted here, by the SDK, and never by the control plane:
       // OpenCode resolves "has this prompt already been answered?" by id ORDER,
       // and only this process holds the transcript to place one against. It is
-      // NOT `messageID` above — that is `ascendingId`, which encodes the wrong
-      // bits and is optimistic-render-only (see the SDK's warning on it).
+      // `messageID` above. `clientMessageId` is only the inbox idempotency key.
       // The prompt is out of this tab's hands the moment the row lands, so the
       // receipt is taken BEFORE the POST: it is what holds the composer on
       // "working" until `GET .../turn` reports the turn the inbox admitted.
-      noteSendReceipt(clientMessageId);
+      noteSendReceipt(messageID, receiptTurnId);
       const result = await (async () => {
         try {
           if (!projectId || !projectSessionId) {
@@ -3848,7 +3896,7 @@ export function SessionChat({
           // for it. `useSessionPrompts` raises the inbox floor at the same
           // moment, which is what covers the window before the row is
           // delivered and becomes a turn.
-          acceptSendReceipt(clientMessageId);
+          acceptSendReceipt(messageID);
           return { ok: true } as const;
         } catch (cause) {
           // Ask the INBOX, not the runtime. This prompt's home is a durable
@@ -3884,7 +3932,7 @@ export function SessionChat({
         // own. This clear is still right in the moment — as far as this tab
         // knows right now, nothing is coming — and it is NAMED, so it can only
         // ever drop this send's own receipt.
-        clearSendReceipt(clientMessageId);
+        clearSendReceipt(messageID);
         setCommandError(result.error);
         throw result.cause instanceof Error ? result.cause : new Error(result.error.message);
       }
@@ -4416,29 +4464,50 @@ export function SessionChat({
 
   // Thread context for subsessions only (real parentID).
   const { data: parentSessionData } = useRuntimeSession(session?.parentID || '');
+
+  // The "Sub-session of <parent>" back destination, resolved the moment the
+  // parent session loads. It is a route-cache miss on the `?oc=` branch, so it
+  // is warmed below instead of being fetched cold on the click.
+  const backToParentHref = useMemo(() => {
+    if (!session?.parentID || !parentSessionData) return null;
+    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
+    if (!projectRoute) return null;
+    const [, projectId, projectSessionId] = projectRoute;
+    return parentSessionData.parentID
+      ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
+      : `/projects/${projectId}/sessions/${projectSessionId}`;
+  }, [session?.parentID, parentSessionData, pathname]);
+
+  useEffect(() => {
+    if (backToParentHref) router.prefetch(backToParentHref);
+  }, [backToParentHref, router]);
+
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
-    const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
     return {
       parentTitle: parentSessionData.title || 'Parent session',
       onBackToParent: () => {
-        if (projectRoute) {
-          const [, projectId, projectSessionId] = projectRoute;
-          const href = parentSessionData.parentID
-            ? `/projects/${projectId}/sessions/${projectSessionId}?oc=${encodeURIComponent(parentSessionData.id)}`
-            : `/projects/${projectId}/sessions/${projectSessionId}`;
-          router.push(href);
+        if (backToParentHref) {
+          // nav-contract: prefetch-only — the composer's threadContext contract
+          // carries an opaque `onBackToParent: () => void`, so this control
+          // cannot render an anchor until that contract carries the href.
+          router.push(backToParentHref);
           return;
         }
+        // The fallback when the panel contract carries no href. Project-scoped,
+        // because `/sessions/<id>` is not a route: the tab stays mounted so the
+        // click looks fine, but that URL 404s on reload or Back.
         openTabAndNavigate({
           id: parentSessionData.id,
           title: parentSessionData.title || 'Parent session',
           type: 'session',
-          href: `/sessions/${parentSessionData.id}`,
+          href: projectId
+            ? projectSessionHref(projectId, parentSessionData.id)
+            : `/sessions/${parentSessionData.id}`,
         });
       },
     };
-  }, [session?.parentID, parentSessionData, pathname, router]);
+  }, [session?.parentID, parentSessionData, backToParentHref, router, projectId]);
 
   // ---- Stable props for <SessionChatInput> (it's React.memo-wrapped, so every
   // prop below must keep referential identity across renders that don't
@@ -4590,7 +4659,8 @@ export function SessionChat({
             <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
               <PauseIcon weight="fill" className="size-4 shrink-0" />
               <span className="truncate">
-                Queue paused — {heldQueueCount} {heldQueueCount === 1 ? 'prompt' : 'prompts'} waiting
+                Queue paused — {heldQueueCount} {heldQueueCount === 1 ? 'prompt' : 'prompts'}{' '}
+                waiting
               </span>
             </div>
             <Button
@@ -4752,7 +4822,7 @@ export function SessionChat({
   // accepted-but-never-started prompts, and that state is structurally gone —
   // a prompt is a durable inbox row before anything else happens, and an
   // unconfirmed delivery is redelivered by the reaper (see step 7).
-  const { isNotFound, isDataLoading } = resolveSessionContentState({
+  const { isNotFound, isDataLoading: resolvedDataLoading } = resolveSessionContentState({
     runtimeReady,
     sessionFetched,
     hasRuntimeSession: Boolean(session),
@@ -4772,6 +4842,18 @@ export function SessionChat({
     // the user saw an empty conversation instead of a wait.
     transcriptLoaded: !syncMessagesLoading,
   });
+  // MONOTONIC: once this component has painted content, the loader may never
+  // replace it. The resolver holds the FIRST paint for the transcript read
+  // (so a session open paints the whole conversation at once instead of
+  // user-only inbox bubbles with the replies popping in later) — but the same
+  // rule re-evaluated after content is on screen would hide it again: the
+  // home→session hand-off paints the first-prompt preview before the runtime
+  // session resolves, and a bubble typed mid-boot exists before the first
+  // read lands. A loader is a promise about what is coming, not a curtain
+  // over what is already there.
+  const [contentPainted, setContentPainted] = useState(false);
+  if (!resolvedDataLoading && !contentPainted) setContentPainted(true);
+  const isDataLoading = resolvedDataLoading && !contentPainted;
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
@@ -4822,9 +4904,7 @@ export function SessionChat({
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
           >
-            <p className="text-muted-foreground text-sm">
-              Couldn&apos;t load this conversation.
-            </p>
+            <p className="text-muted-foreground text-sm">Couldn&apos;t load this conversation.</p>
             <Button variant="outline" size="sm" onClick={() => retryTranscript()}>
               Retry
             </Button>
@@ -4910,20 +4990,21 @@ export function SessionChat({
                 'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
               )}
             </div>
-            {/* Soft nav, not `window.location.assign` — a full page reload
-                  tore down the whole app to move one route. */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                try {
-                  if (sessionId) useTabStore.getState().closeTab?.(sessionId);
-                } catch {}
-                router.push('/');
-              }}
-            >
-              {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+            {/* An anchor, not a button: home is known at render time, so Next
+                  prefetches it and the click never runs a cold RSC fetch that
+                  could degrade into a full page load. */}
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href="/"
+                prefetch
+                onClick={() => {
+                  try {
+                    if (sessionId) useTabStore.getState().closeTab?.(sessionId);
+                  } catch {}
+                }}
+              >
+                {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+              </Link>
             </Button>
           </div>
         ) : (
@@ -4976,7 +5057,9 @@ export function SessionChat({
                       {/* Sentinel: crossing into view pulls the previous page.
                         Sits above the spinner so it clears the viewport as
                         soon as the prepended turns render. */}
-                      {hasOlder && <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />}
+                      {hasOlder && (
+                        <div ref={olderSentinelRef} aria-hidden className="h-px w-full" />
+                      )}
                       {/* A named state, not a bare spinner: the transcript is
                           about to grow upward and the reader is owed the
                           reason. Held for OLDER_LOADING_MIN_MS so a fast pull
@@ -5059,8 +5142,7 @@ export function SessionChat({
                       const compaction = compactionTurnInfo(turn);
                       const hasCompaction = compaction.isCompaction;
                       const isTurnWorking =
-                        lastTurnWorking &&
-                        turn.userMessage.info.id === workingTurn.workingTurnId;
+                        lastTurnWorking && turn.userMessage.info.id === workingTurn.workingTurnId;
                       // `inFlight` (message state) alongside the projection:
                       // classifying by projection alone flipped a streaming
                       // compaction to "failed" for the frames where the two
@@ -5108,9 +5190,7 @@ export function SessionChat({
                               ? ''
                               : lastTurnWorking &&
                                   pendingTurnIds.has(turn.userMessage.info.id) &&
-                                  pendingTurnIds.has(
-                                    turns[turnIndex - 1].userMessage.info.id,
-                                  )
+                                  pendingTurnIds.has(turns[turnIndex - 1].userMessage.info.id)
                                 ? 'mt-3'
                                 : 'mt-12'
                           }
@@ -5131,6 +5211,7 @@ export function SessionChat({
                             isFirstTurn={turnIndex === 0}
                             sessionWorking={lastTurnWorking}
                             isWorkingTurn={turn.userMessage.info.id === workingTurn.workingTurnId}
+                            suppressBusyIndicator={suppressWorkingTurnBusy}
                             pending={
                               lastTurnWorking && pendingTurnIds.has(turn.userMessage.info.id)
                             }
@@ -5307,20 +5388,21 @@ export function SessionChat({
 
             <div
               className={cn(
-                'absolute bottom-4 left-1/2 z-20 -translate-x-1/2 transition-[opacity,translate,scale] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:transition-opacity',
-                showScrollButton
-                  ? 'translate-y-0 scale-100 opacity-100 duration-150'
-                  : 'pointer-events-none translate-y-1 scale-[0.97] opacity-0 duration-100',
+                'absolute inset-x-0 bottom-4 z-20 flex justify-center',
+                !showScrollButton && 'pointer-events-none',
               )}
             >
               <Button
-                variant="secondary"
+                variant="transparent"
                 size="icon-md"
                 aria-hidden={!showScrollButton}
                 tabIndex={showScrollButton ? undefined : -1}
                 className={cn(
-                  'hit-area-2 hover:bg-secondary border-border border shadow-xs',
-                  'transition-[scale] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96]',
+                  'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
+                  'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
+                  showScrollButton
+                    ? 'scale-100 opacity-100 duration-150'
+                    : 'scale-[0.97] opacity-0 duration-100',
                 )}
                 onClick={smoothScrollToAbsoluteBottom}
               >
@@ -5349,10 +5431,9 @@ export function SessionChat({
               // decides whether a `/` command may be dispatched, and a fade
               // timer that has already lapsed would let one abort a live turn.
               // `effectiveBusy` folds in optimistic compaction (not a turn, so
-              // not in `working`), and `hasRetryingAssistant` covers the
-              // window where a retryable provider error keeps the turn alive
-              // with no busy frame to show for it.
-              sessionWorking={effectiveBusy || hasRetryingAssistant}
+              // not in `working`) and the retrying-turn predicate, so this
+              // site reads one value instead of re-OR-ing a term onto it.
+              sessionWorking={effectiveBusy}
               // Gates `/` COMMANDS only. A prompt typed at a sleeping box is
               // an inbox row and goes out when the box answers; a command has
               // no row, and `runCommand` swallows it silently until the

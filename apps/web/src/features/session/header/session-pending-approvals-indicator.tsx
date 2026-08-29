@@ -95,7 +95,10 @@ export function SessionPendingApprovalsIndicator({ sessionId }: { sessionId: str
                 <div className="mt-2 flex items-center gap-1.5">
                   {a.approval_url ? (
                     <Button size="sm" asChild>
-                      <a href={a.approval_url}>
+                      {/* A new tab, as the ArrowSquareOut icon promises. In the same
+                          tab this is a document load that tears down the live
+                          session — SSE stream, transcript and sandbox panel. */}
+                      <a href={a.approval_url} target="_blank" rel="noopener noreferrer">
                         Review parameters
                         <ArrowSquareOutIcon className="size-3 shrink-0" />
                       </a>

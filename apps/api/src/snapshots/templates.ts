@@ -33,7 +33,7 @@ import {
 } from '@kortix/shared';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
-import { isWarmBuildSlug, templateSlugFromBuildSlug } from './ppwarm-names';
+import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
 import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
 import { readManifest } from '../projects/triggers';
@@ -49,6 +49,7 @@ import {
   SANDBOX_SPEC_LIMITS,
 } from './dockerfile-layer';
 import { computeSnapshotHash } from './hash';
+import { snapshotEmbedsAgentForBootMode } from './compiled-runtime-fingerprint';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
@@ -969,7 +970,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS],
+    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
   })
     .then((value) => {
       runtimeFingerprintCache = { key, value };
@@ -981,6 +982,17 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       throw err;
     });
   return runtimeFingerprintInflight;
+}
+
+export function runtimeArtifactsForBootMode(
+  mode: 'off' | 'shadow' | 'prefer' | 'required',
+): Array<(typeof AGENT_RUNTIME_ARTIFACTS)[number] | (typeof NON_AGENT_RUNTIME_ARTIFACTS)[number]> {
+  // In prefer/required mode server.mjs carries the daemon. Daemon source is no
+  // longer an image input, so changing it must not mint an 8 GB snapshot.
+  // Shadow/off still execute the baked daemon and retain the original identity.
+  return snapshotEmbedsAgentForBootMode(mode)
+    ? [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS]
+    : [...NON_AGENT_RUNTIME_ARTIFACTS];
 }
 
 /**

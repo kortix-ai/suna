@@ -63,6 +63,7 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
+  PaintBrushIcon as PaintBrush,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -372,16 +373,29 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   {
     id: 'nav-projects',
-    label: 'Projects',
+    // "Switch workspace", not "Projects". The product retired the noun
+    // (`features/workspace/workspace-vocabulary.test.ts`) everywhere except
+    // here, so the palette was the one surface still answering a question the
+    // rest of the app had stopped asking — and a bare noun does not say the
+    // row DOES anything, which is why it read as a list rather than as the
+    // switcher it opens.
+    label: 'Switch workspace',
     icon: FolderGit2,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Static registry entry — no user id to resolve the latest project with,
     // so this is the id-free landing door, never the removed `/projects`
-    // list.
+    // list. Selecting the row normally opens the in-palette switcher
+    // (`SUBMENU_PAGE_BY_ID` in command-palette.tsx); this href is the routed
+    // fallback if that map ever loses the id.
     href: PROJECT_LANDING_PATH,
-    keywords: 'projects list all workspaces switch',
+    shortcut: 'Ctrl+O',
+    // `project`/`projects` stay in the bag deliberately. It is the word the
+    // product used until recently, the word the URL still uses
+    // (`/projects/<id>`), and the word anyone arriving from the API or the
+    // CLI will type. Dropping it would make the rename cost users a search.
+    keywords: 'switch workspace workspaces project projects change move open all list',
   },
   {
     id: 'nav-accounts',
@@ -1104,6 +1118,19 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/accounts/{accountId}?tab=identity',
     keywords: 'identity sso saml oidc scim login provider single sign on directory',
+  },
+  {
+    id: 'account-branding',
+    label: 'Account · Branding',
+    icon: PaintBrush,
+    group: 'account',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    // Enterprise `branding` entitlement pane (#6947). The row stays ungated
+    // like its enterprise siblings (roles, identity): the pane itself explains
+    // the entitlement.
+    href: '/accounts/{accountId}?tab=branding',
+    keywords: 'branding logo icon favicon product name app name white label whitelabel theme identity',
   },
   {
     id: 'account-audit',

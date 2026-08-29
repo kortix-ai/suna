@@ -442,16 +442,29 @@ export function FileContentRenderer({
     }
   }, [fileContent?.content]);
 
-  // Reset state when file changes — markdown defaults to rendered preview.
+  // Reset state when the FILE changes — markdown defaults to rendered preview.
+  //
+  // `setIsMarkdownPreview` MUST NOT be a dependency here, and this effect must
+  // not call it. That callback is memoized on the preview flag itself, so
+  // listing it made every toggle re-run this effect and force the flag back to
+  // `true` inside the same commit: the source/preview button flipped and
+  // snapped back, which reads as a dead button. It killed BOTH toggles — this
+  // component's own header button and `file-preview-modal`'s toolbar button,
+  // which drives the same state through `onMarkdownPreviewChange`.
+  //
+  // Only the internal (uncontrolled) flag is reset. A controlling parent owns
+  // its copy and resets it on the same file change — see
+  // `file-preview-modal.tsx`'s own `[selectedFilePath]` effect — so notifying
+  // it from here would be a second writer for one piece of state.
   useEffect(() => {
-    setIsMarkdownPreview(true);
+    setInternalMarkdownPreview(true);
     setIsJsonTreeView(false);
     setHasUnsavedChanges(false);
     setSaveFlash(false);
     // HTML files always default to preview mode
     setIsHtmlPreview(true);
     latestContentRef.current = '';
-  }, [filePath, setIsMarkdownPreview]);
+  }, [filePath]);
 
   // Notify parent of unsaved state changes
   useEffect(() => {

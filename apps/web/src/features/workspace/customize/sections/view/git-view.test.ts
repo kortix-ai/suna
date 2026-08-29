@@ -265,3 +265,69 @@ test('the provider sentence follows the same fallback the value does', () => {
   expect(code).toContain('projectRepoFallback(project.repo_url)?.provider');
   expect(code).toContain('<RepositoryValue connection={connection} repoUrl={project.repo_url} />');
 });
+
+/**
+ * "People with access" — the gate, and what shows when the repository is not
+ * one Kortix can invite into.
+ *
+ * The reported symptom was "some users don't see People with access". Two
+ * independent causes, both fixed here and both pinned below: the section was
+ * gated on the wrong permission leaf, and a non-managed repository made it
+ * vanish with no explanation. Neither had anything to do with billing — there
+ * is no entitlement check anywhere on this path, which is what the last test
+ * in this block asserts.
+ */
+test('the invite gate asks for the leaf the route asserts, not project.write', () => {
+  // `POST /:projectId/git/collaborators` asserts
+  // `PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE` (apps/api/src/projects/routes/
+  // r1.ts). Gating the UI on `project.write` meant a custom role with
+  // write-but-not-members.manage saw the form and got a 403 on submit, and the
+  // reverse role saw nothing though the API would have accepted it.
+  expect(code).toContain('PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE');
+  expect(code).toContain('canManageMembers');
+  expect(code).toContain('canManageMembers={canManageMembers}');
+});
+
+test('both leaves are probed in ONE batch, off a module-level action list', () => {
+  // Action-list identity is part of the SDK's `effective:batch` query key, so
+  // an inline literal would mint a new cache entry per render.
+  expect(code).toContain('const GIT_VIEW_ACTIONS = [');
+  expect(code).toContain('useProjectCans(projectId, GIT_VIEW_ACTIONS)');
+  expect(code).not.toContain('useProjectCan(projectId');
+});
+
+test('a non-managed repository explains itself instead of hiding the section', () => {
+  // This is the reported bug. The old markup was
+  // `{managed ? <RepoCollaboratorInvite .../> : null}` — a workspace on a BYO
+  // repo showed the Git repo panel with nothing under it and no way to find
+  // out why.
+  expect(code).not.toContain('{managed ? <RepoCollaboratorInvite');
+  expect(code).toContain('<RepoAccessSection');
+  expect(code).toContain('function ExternallyManagedRepoAccess');
+  // The header renders on both branches, so the section itself never
+  // disappears for someone who may manage members.
+  const section = code.slice(
+    code.indexOf('function RepoAccessSection'),
+    code.indexOf('function ExternallyManagedRepoAccess'),
+  );
+  expect(section).toContain('title="People with access"');
+  expect(section).toContain('managed ? (');
+});
+
+test('the explanation names the provider, so a code-storage repo is not read as a broken GitHub link', () => {
+  // A workspace provisioned while `MANAGED_GIT_PROVIDER=code-storage` was the
+  // default (#5063 → #6796) is MANAGED but on a backend with no
+  // `inviteCollaborator` at all.
+  expect(code).toContain('providerLabel(provider)');
+  expect(code).toContain("provider === 'github'");
+});
+
+test('nothing on this path is gated on billing', () => {
+  // The support question was "is it because he is not a paid user?". It is
+  // not, and this asserts the answer stays true: no entitlement, plan, or
+  // upgrade gate may appear in this view.
+  expect(code).not.toContain('entitlement');
+  expect(code).not.toContain('Entitlement');
+  expect(code).not.toContain('openUpgrade');
+  expect(code).not.toContain('isBillingEnabled');
+});

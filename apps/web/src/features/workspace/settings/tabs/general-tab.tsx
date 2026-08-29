@@ -147,7 +147,9 @@ import {
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useAuth } from '@/features/providers/auth-provider';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
+import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 
@@ -401,8 +403,14 @@ export async function runProjectArchive(
   remainingProjectCountBeforeArchive: number | null,
   client: RunProjectArchiveClient,
   onSuppress: () => void,
+  /** Forget this project as the remembered landing target (JAY-729). Runs
+   *  only after the archive lands — a failed archive leaves a project that
+   *  still renders, so its cookie must survive. Unlike `onSuppress` it does
+   *  not depend on the remaining count: forgetting is about THIS project. */
+  onForget?: () => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
+  onForget?.();
   if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
     onSuppress();
   }
@@ -539,6 +547,7 @@ function GeneralWorkspaceCard({
  *  returns `null` otherwise), so nothing here fetches on panel open. */
 export function GeneralTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectQuery = useQuery({
@@ -576,6 +585,9 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         accountProjectCountForArchive(accountProjectsQuery.data),
         { archiveProject },
         suppressAutoProjectAfterDelete,
+        // The archived project must stop being where `/` and the settings
+        // exit land (JAY-729) — otherwise they redirect into a 404 gate.
+        () => forgetLastProjectId(user?.id, projectId),
       ),
     onSuccess: () => {
       successToast('Workspace archived');

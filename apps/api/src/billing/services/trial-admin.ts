@@ -117,6 +117,7 @@ export const TEMPORARY_ACCESS_OVERRIDE_KEYS = [
   'scim',
   'rbac',
   'auditAccess',
+  'branding',
   'maxConcurrentSessions',
 ] as const satisfies readonly OverrideKey[];
 
@@ -147,6 +148,7 @@ export function temporaryAccessOverrides(
   if (plan.entitlements.auditAccess) {
     overrides.auditAccess = { value: true, expires_at: endsAtIso };
   }
+  if (plan.entitlements.branding) overrides.branding = { value: true, expires_at: endsAtIso };
   return overrides;
 }
 

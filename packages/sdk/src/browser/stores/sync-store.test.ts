@@ -483,6 +483,54 @@ describe("useSyncStore — applyEvent(session.error) patches the last assistant 
 		const assistant = useSyncStore.getState().messages.ses_4[0] as AssistantMessage;
 		expect((assistant.error as { data: { reason?: string } }).data.reason).toBeUndefined();
 	});
+
+	// A RETRYABLE provider error is not the end of a turn. OpenCode stamps
+	// `data.isRetryable === true` and keeps writing the SAME assistant message;
+	// apps/api reaches the same conclusion from the same event
+	// (`isTerminalTurnEnd`, sandbox-deadline-policy.ts:295). Flipping the status
+	// to idle here handed `endedByRuntime` an unbounded veto over the still-open
+	// ledger row, which is what removed the Stop button mid-turn (S7).
+	test("a retryable error does NOT flip the session to idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_retry", userMessage("msg_a"));
+		store.upsertMessage("ses_retry", assistantMessage("msg_b"));
+		store.setStatus("ses_retry", { type: "busy" } as never, "wire");
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_retry",
+				error: { name: "APIError", data: { message: "429", isRetryable: true } },
+			},
+		} as never);
+
+		// The status slot is untouched — the turn is still open.
+		expect(useSyncStore.getState().sessionStatus.ses_retry).toEqual({ type: "busy" });
+		// The error is still attached, so the UI can show the retry.
+		const assistant = useSyncStore
+			.getState()
+			.messages.ses_retry.find((m) => m.role === "assistant") as AssistantMessage;
+		expect((assistant.error as { data: { isRetryable: boolean } }).data.isRetryable).toBe(true);
+	});
+
+	test("a NON-retryable error still flips the session to idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_term", userMessage("msg_a"));
+		store.upsertMessage("ses_term", assistantMessage("msg_b"));
+		store.setStatus("ses_term", { type: "busy" } as never, "wire");
+
+		store.applyEvent({
+			id: "evt_2",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_term",
+				error: { name: "ProviderAuthError", data: { message: "bad key" } },
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionStatus.ses_term).toEqual({ type: "idle" });
+	});
 });
 
 // T16 — the `session.error` stub's own creation comment claims
@@ -3381,6 +3429,72 @@ describe("useSyncStore — a removed user message the control plane still owns k
 		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_c2"]);
 		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_c2")).toBe("msg_c");
 		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
+	});
+
+	test("a re-minted prompt taken back out by Stop is superseded by ITS OWN re-delivery", () => {
+		// The stop-release path, end to end, for TWO prompts queued mid-turn:
+		//
+		//   opt  -> the id this tab painted (the wire id it minted)
+		//   fwd  -> the drain re-mints above the live turn on the first delivery
+		//   Stop -> the settle deletes the fwd copy (message.removed) and holds
+		//           the row; the bubble goes back to being optimistic under `fwd`
+		//   rel  -> the release re-mints AGAIN, so the echo carries a third id
+		//
+		// The inbox row always names {wire_message_id: opt, message_id: <newest>},
+		// so the alias the host registers is opt -> rel. `opt` stopped being
+		// optimistic at the first supersede, and the bubble on screen is `fwd`:
+		// unless the alias follows that chain, the echo matches nothing, and with
+		// two sends in flight the ordinal fallback refuses to guess — each echo is
+		// inserted BESIDE its own bubble and the user sees every prompt twice.
+		const store = useSyncStore.getState();
+		for (const n of ["1", "2"]) {
+			store.optimisticAdd("ses_1", userMessage(`msg_opt${n}`), [
+				textPart(`prt_${n}`, `msg_opt${n}`, `prompt ${n}`),
+			]);
+			store.markOptimisticDispatched("ses_1", `msg_opt${n}`);
+			store.markOptimisticInboxBacked("ses_1", `msg_opt${n}`);
+			// First delivery: the row names the re-minted id before the echo lands.
+			store.registerOptimisticEcho("ses_1", `msg_opt${n}`, `msg_fwd${n}`);
+			store.applyEvent({
+				type: "message.updated",
+				properties: { info: userMessage(`msg_fwd${n}`) },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_fwd1",
+			"msg_fwd2",
+		]);
+
+		// Stop: the settle takes both copies back out of OpenCode.
+		for (const n of ["1", "2"]) {
+			store.applyEvent({
+				type: "message.removed",
+				properties: { sessionID: "ses_1", messageID: `msg_fwd${n}` },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_fwd1",
+			"msg_fwd2",
+		]);
+
+		// Release: the row re-mints once more and names the new id against the
+		// SAME wire id it has always reported.
+		for (const n of ["1", "2"]) {
+			store.registerOptimisticEcho("ses_1", `msg_opt${n}`, `msg_rel${n}`);
+		}
+		for (const n of ["1", "2"]) {
+			store.applyEvent({
+				type: "message.updated",
+				properties: { info: userMessage(`msg_rel${n}`) },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_rel1",
+			"msg_rel2",
+		]);
+		// And the host's key for each bubble still points at the id it painted.
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_rel1")).toBe("msg_opt1");
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_rel2")).toBe("msg_opt2");
 	});
 
 	test("message.removed for a message nobody owns still removes it", () => {

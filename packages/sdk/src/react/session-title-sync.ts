@@ -64,20 +64,30 @@ function refetchSessionTitleQueries(
   const startFetching =
     queryClient.getQueryState?.(sessionStartKey(projectId, sessionId))?.fetchStatus === 'fetching';
   return Promise.all([
-    // The broad sessions-family prefix, not just the default-scope list: it
-    // reaches the list in EVERY scope plus every session/messages entry
-    // beneath it, so a manager-only 'project'-scope reader picks up the
-    // resolved title too, not only the default 'visible' one.
+    // The LIST family — `[...sessionsScope, 'list']` — so a manager-only
+    // 'project'-scope reader picks up the resolved title too, not only the
+    // default 'visible' one.
+    //
+    // NOT the whole `sessionsScope` prefix, which this used to be. That prefix
+    // also covers `sessionTurn`, `sessionPrompts` and `messages` (see
+    // `query-keys.ts`), so ONE title pass re-issued four endpoints — and the
+    // ladder runs up to seven passes over ~65 s. Measured on a real
+    // deployment: 5.8 `GET /sessions` and 6 `GET .../turn` per session open,
+    // the single largest cumulative cost on the open path. A title ladder
+    // refetches titles.
     ...(startFetching
       ? []
       : [
           queryClient.refetchQueries({
-            queryKey: qk.project.sessionsScope(projectId),
+            queryKey: [...qk.project.sessionsScope(projectId), 'list'],
             type: 'active',
           }),
         ]),
     queryClient.refetchQueries({
+      // EXACT: `qk.project.session(...)` is the PARENT of `prompts` and `turn`,
+      // so a prefix refetch here is the same accident in miniature.
       queryKey: qk.project.session(projectId, sessionId),
+      exact: true,
       type: 'active',
     }),
   ]);

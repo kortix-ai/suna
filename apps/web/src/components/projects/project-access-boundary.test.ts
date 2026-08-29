@@ -6,6 +6,7 @@ import {
   errorStatus,
   gateAction,
   gateCopyKeys,
+  gateEscapePath,
   gateStateForError,
   gateStateForRequestResult,
   isForbiddenState,
@@ -13,6 +14,7 @@ import {
   shouldPollForApproval,
   type AccessGateState,
 } from './project-access-boundary';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const componentSource = readFileSync(
   fileURLToPath(new URL('./project-access-boundary.tsx', import.meta.url)),
@@ -180,6 +182,44 @@ describe('resolveGateState', () => {
 
   test('falls back to the error screen rather than a form it cannot justify', () => {
     expect(resolveGateState(null, null)).toBe('unavailable');
+  });
+});
+
+/**
+ * JAY-729: a failed project surface must never funnel the user back into
+ * itself. The escape links read `useAppHome()`, which reads the last-project
+ * cookie — and the cookie usually names EXACTLY the project that is failing,
+ * so "Back to projects" navigated to the page the user was trying to escape.
+ */
+describe('gateEscapePath', () => {
+  test('the escape from a failing project never targets that project', () => {
+    expect(gateEscapePath('/projects/p-1', 'p-1')).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('an escape to anywhere else is kept as-is', () => {
+    expect(gateEscapePath('/projects/p-2', 'p-1')).toBe('/projects/p-2');
+    expect(gateEscapePath(PROJECT_LANDING_PATH, 'p-1')).toBe(PROJECT_LANDING_PATH);
+  });
+
+  test('the screen routes every escape link through the resolver', () => {
+    // Paired assertions: the resolved value is used, and the raw cookie-backed
+    // value never reaches an href again.
+    expect(componentSource).toContain('const escapeHome = gateEscapePath(appHome, projectId)');
+    expect(componentSource).toContain('href={escapeHome}');
+    expect(componentSource).not.toContain('href={appHome}');
+  });
+});
+
+describe('the last-project cookie self-heal', () => {
+  test('a 404 clears the remembered project exactly like a 403 does', () => {
+    // Only the 403 branch cleared the cookie. A DELETED remembered project
+    // (404) kept its cookie, so `/`, sign-in, and the settings exit all kept
+    // redirecting into this terminal screen — the JAY-729 softlock.
+    expect(componentSource).toContain(
+      "const unrenderable = forbidden || errorState === 'notFound'",
+    );
+    expect(componentSource).toMatch(/if \(!unrenderable\) return;/);
+    expect(componentSource).not.toMatch(/if \(!forbidden\) return;/);
   });
 });
 

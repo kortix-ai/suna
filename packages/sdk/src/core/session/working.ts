@@ -147,9 +147,17 @@ export const OPTIMISTIC_ABORT_MAX_MS = 15_000;
 
 /** This tab's own record that a prompt went out. */
 export interface SendReceipt {
-  /** The submission's tab-local name — never sent anywhere. It exists so a
-   *  `working` state can say WHICH send it is standing on. */
+  /** The submission's tab-local name — never sent anywhere. */
   messageId: string;
+  /**
+   * The user-message turn that owns the working indicator while this receipt
+   * is live. A direct idle send names itself. A send made during an existing
+   * response names that existing turn, so its new bubble remains pending.
+   *
+   * `undefined` preserves the original contract and falls back to
+   * `messageId`. `null` explicitly means the caller cannot identify the turn.
+   */
+  turnId?: string | null;
   /** ms epoch at which the send left this tab. */
   atMs: number;
   /**
@@ -254,7 +262,44 @@ export interface WorkingActivityInput {
  *  still going to run, and when that list was read. */
 export interface WorkingInboxInput {
   pending: number;
+  /** This tab's clock at ISSUE or RECEIVE time. The AGE stamp: it only ever
+   *  meets `nowMs` — the same clock — in `INBOX_OBSERVATION_MAX_MS`. */
   atMs: number;
+  /**
+   * The SERVER's clock at the observation — `observed_at` captured before the
+   * read (GET, bundle, stream frame) or after the write (`POST .../prompts`).
+   * The ORDERING stamp: it only ever meets another `serverAtMs`. Absent when
+   * the server did not supply one.
+   *
+   * Two stamps because one field served both jobs and the jobs need different
+   * clocks. Ranked against a browser stamp, an API clock ±10 minutes off
+   * either rejected every later direct read (skew ahead) or aged the
+   * observation out on arrival (skew behind) — both reproduced in PR #6957's
+   * review as a stale empty snapshot hiding a backend-confirmed queue row.
+   */
+  serverAtMs?: number;
+}
+
+/**
+ * May `candidate` replace `current` as the session's inbox observation?
+ *
+ * ONE clock per comparison. When both observations carry the server's stamp,
+ * the server clock decides — it is the only pair drawn from one clock, and it
+ * orders a read against a write exactly (a read issued before a POST carries an
+ * older `observed_at` than the POST's response, so it can never erase it).
+ * Otherwise the browser stamps decide, as before. Ties stand aside for the
+ * candidate: two reads of the same instant agree, and the newer arrival may
+ * carry a corrected list.
+ */
+export function inboxObservationSupersedes(
+  candidate: WorkingInboxInput,
+  current: WorkingInboxInput | null | undefined,
+): boolean {
+  if (!current) return true;
+  if (current.serverAtMs != null && candidate.serverAtMs != null) {
+    return candidate.serverAtMs >= current.serverAtMs;
+  }
+  return candidate.atMs >= current.atMs;
 }
 
 export interface WorkingInputs {
@@ -334,6 +379,11 @@ function instant(value: string | null | undefined): number | null {
 export function projectWorking(inputs: WorkingInputs): WorkingProjection {
   const { optimistic, abort, inbox, server, stream, activity, nowMs } = inputs;
   const receiptLive = !!optimistic && nowMs - optimistic.atMs < OPTIMISTIC_RECEIPT_MAX_MS;
+  const receiptTurnId = optimistic
+    ? optimistic.turnId === undefined
+      ? optimistic.messageId
+      : optimistic.turnId
+    : null;
   // TWO floors, because the two server-side observers have different knowledge.
   //
   // `GET .../turn` reads the control plane's ledger, and there is NO row in it
@@ -467,11 +517,19 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
       source: 'stream',
       turnId: null,
       since: activity!.atMs,
-      serverOpenTurnToken: serverFresh ? (server!.turns[0]?.turn_token ?? null) : null,
+      serverOpenTurnToken: server?.turns[0]?.turn_token ?? null,
     };
   }
 
-  const ledgerTurn = serverFresh ? server!.turns[0] : undefined;
+  // NOT gated on `serverFresh`. A read going stale is a fact about the READ, not
+  // about the row: the control plane does not release a turn because this tab's
+  // last look got old. Gating it here made being wrong self-sealing — the token
+  // nulls, `serverHoldsTurn` (use-session.ts) goes false, `livenessBusy` goes
+  // false, and the transcript fallback poll clears its own interval. The one
+  // mechanism that could have produced fresh evidence was switched off BY the
+  // staleness it existed to repair, so a false idle could never be discovered.
+  // The token is retired by end-of-turn evidence, never by age.
+  const ledgerTurn = server?.turns[0];
   // `serverOpenTurnToken` deliberately keeps reporting the LEDGER's turn even
   // when the runtime's frame has decided the state above — see its docstring.
   // It answers "is the control plane still holding authority", which is what a
@@ -522,7 +580,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     return {
       state: 'working',
       source: 'server',
-      turnId: null,
+      turnId: receiptLive ? receiptTurnId : null,
       since: inbox!.atMs,
       serverOpenTurnToken,
     };
@@ -555,7 +613,7 @@ export function projectWorking(inputs: WorkingInputs): WorkingProjection {
     return {
       state: 'working',
       source: 'optimistic',
-      turnId: optimistic!.messageId,
+      turnId: receiptTurnId,
       since: optimistic!.atMs,
       serverOpenTurnToken,
     };

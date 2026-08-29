@@ -10,7 +10,9 @@ import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
 import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
+import { BrandingProvider } from '@/features/branding/branding-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
+import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
@@ -357,6 +359,10 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
               <TooltipProvider delayDuration={300}>
                 <AuthProvider>
                   <I18nProvider>
+                    {/* Publishes the App Router to lib/navigation/router-bridge so
+                    stores and error handlers navigate softly instead of
+                    reloading the document. */}
+                    <RouterBridge />
                     <BrowserNoiseGuard />
                     <DesktopChrome />
                     <DesktopUrlPrompt />
@@ -365,14 +371,21 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                       {/* Global "Request a demo" qualifier modal — mounted once here
                       so every enterprise CTA across the app (accounts settings,
                       billing, IAM) can open it via useRequestDemo(). */}
-                      <RequestDemoProvider>
-                        {/* Account-wide MFA: catches the SDK's kortix:mfa-required
-                        event (coded 403) and walks the user through a TOTP
-                        step-up so the retried action passes the IAM gate. */}
-                        <MfaStepUpProvider>
-                          <KortixProjectScope>{children}</KortixProjectScope>
-                        </MfaStepUpProvider>
-                      </RequestDemoProvider>
+                      {/* Organization branding (Enterprise): the active
+                      account's own logo / icon / favicon / product name.
+                      Reads the shared ['accounts'] query, so it sits inside
+                      ReactQueryProvider and above everything that renders a
+                      KortixLogo. */}
+                      <BrandingProvider>
+                        <RequestDemoProvider>
+                          {/* Account-wide MFA: catches the SDK's kortix:mfa-required
+                          event (coded 403) and walks the user through a TOTP
+                          step-up so the retried action passes the IAM gate. */}
+                          <MfaStepUpProvider>
+                            <KortixProjectScope>{children}</KortixProjectScope>
+                          </MfaStepUpProvider>
+                        </RequestDemoProvider>
+                      </BrandingProvider>
                       {/* Global maintenance/incident banner (info/warning/critical).
                       Needs the query client, so it mounts inside ReactQueryProvider. */}
                       <Suspense fallback={null}>

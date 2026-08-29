@@ -1,4 +1,5 @@
 import { stripInlineAttachmentBytes } from '../inline-attachments';
+import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -117,7 +118,8 @@ const preview = new Hono<{
 
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
-// Accept-Encoding is forced to identity (raw byte passthrough).
+// Accept-Encoding is forced to identity (raw byte passthrough) EXCEPT on the
+// paths named by `forwardsClientEncoding` below.
 // Cookies may contain the caller's raw __preview_session credential and must
 // never reach arbitrary user-controlled apps running inside the sandbox.
 // `x-kortix-service-call` marks a DIRECT platform→daemon call. The daemon gates
@@ -137,6 +139,32 @@ export const STRIP_FORWARD_HEADERS = new Set([
   'content-length',
   KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
+
+/**
+ * Which upstream paths get the CLIENT's `Accept-Encoding` instead of `identity`.
+ *
+ * Identity is the right default and stays the default: this proxy REWRITES some
+ * bodies on the way back (`stripInlineAttachmentBytes` does `await
+ * upstream.text()` on a transcript list), and a rewriter handed gzip bytes
+ * produces garbage. Forcing identity is what makes that safe without every
+ * future rewrite having to remember to decompress.
+ *
+ * The daemon's `/kortix/opencode/*` namespace is the exception, and it earns it:
+ *   • nothing on this proxy rewrites those bodies — the projection is already
+ *     the trimmed shape, so there is nothing left to strip;
+ *   • the whole point of the namespace is byte reduction across THIS hop.
+ *     `/kortix/opencode/state` is 8.7 KB raw and 0.9 KB gzipped (WS-Z1 §5);
+ *     forcing identity here would throw away 90% of the saving before the
+ *     response ever reaches the API's own compressor.
+ *
+ * `/events` is excluded even inside that namespace: the daemon never gzips an
+ * event stream, and asking it to would be asking for a buffered one.
+ */
+export function forwardsClientEncoding(port: number, remainingPath: string): boolean {
+  if (port !== 8000) return false;
+  if (!/^\/kortix\/opencode(?:$|\/)/.test(remainingPath)) return false;
+  return !/^\/kortix\/opencode\/events(?:$|[/?#])/.test(remainingPath);
+}
 
 // The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit
 // test can reach it without evaluating this route — importing this file caches
@@ -1148,6 +1176,8 @@ export async function forwardToSandbox(
   // connect its cache entry, so it re-resolves instead of re-dialling the
   // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
   const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
+  /** Set per attempt: did we hand the daemon the CLIENT's Accept-Encoding? */
+  let upstreamEncodingForwarded = false;
   const sseStallKey = `${sandboxId}:${port}`;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -1288,7 +1318,16 @@ export async function forwardToSandbox(
         if (STRIP_FORWARD_HEADERS.has(name)) continue;
         headers.set(key, value);
       }
-      headers.set('Accept-Encoding', 'identity');
+      upstreamEncodingForwarded = forwardsClientEncoding(port, remainingPath);
+      if (upstreamEncodingForwarded) {
+        // Pass the caller's own negotiation through, so the daemon can gzip and
+        // the compressed bytes reach the client untouched (the API's compress
+        // middleware passes a body that already carries `content-encoding`).
+        const clientEncoding = incomingHeaders.get('accept-encoding');
+        headers.set('Accept-Encoding', clientEncoding?.trim() || 'identity');
+      } else {
+        headers.set('Accept-Encoding', 'identity');
+      }
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
@@ -1385,17 +1424,24 @@ export async function forwardToSandbox(
           );
         }
         if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
-        upstream = await fetch(targetUrl, {
-          method,
-          headers,
-          body: requestBody,
-          redirect: 'manual',
-          signal: attemptController.signal,
-          // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
-          // not in the lib RequestInit type.
-          decompress: false,
-          duplex: 'half',
-        } as RequestInit);
+        // Timed, so the response carries `Server-Timing: up;dur=…, api;dur=…`.
+        // A HAR of a session open otherwise shows one opaque number for a
+        // proxied read and no way to tell the sandbox hop from this API's own
+        // work — which is exactly what blocked attributing the ~1.7 s on
+        // `/p/<ext>/8000/agent`. Retries accumulate.
+        upstream = await timeUpstream(() =>
+          fetch(targetUrl, {
+            method,
+            headers,
+            body: requestBody,
+            redirect: 'manual',
+            signal: attemptController.signal,
+            // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+            // not in the lib RequestInit type.
+            decompress: false,
+            duplex: 'half',
+          } as RequestInit),
+        );
       } finally {
         clearTimeout(connectTimer);
       }
@@ -1637,6 +1683,31 @@ export async function forwardToSandbox(
             statusText: upstream.statusText,
             headers: respHeaders,
           },
+        );
+      }
+
+      // When we forwarded the client's `Accept-Encoding` (the
+      // `/kortix/opencode/*` namespace), the daemon answered gzipped and the
+      // ~1.4 s provider hop carried 0.9 KB instead of 8.7 KB — which is the
+      // entire point. But `fetch` DECODES a `Content-Encoding` body per the
+      // WHATWG spec while leaving the header and the compressed
+      // `Content-Length` on the response object. Measured on Bun 1.3:
+      // 55 compressed bytes on the wire, `content-encoding: gzip`,
+      // `content-length: 55`, and 4,012 DECOMPRESSED bytes out of
+      // `arrayBuffer()`. Forwarding those two headers with a decoded body is a
+      // response no client can read, so both go. The API's own compress
+      // middleware then re-compresses for the API->client hop; the two hops
+      // negotiate independently, and the expensive one is the one that shrank.
+      if (upstreamEncodingForwarded && respHeaders.has('content-encoding')) {
+        respHeaders.set('x-kortix-upstream-encoding', respHeaders.get('content-encoding')!);
+        respHeaders.delete('content-encoding');
+        respHeaders.delete('content-length');
+        const exposedEncoding = respHeaders.get('Access-Control-Expose-Headers');
+        respHeaders.set(
+          'Access-Control-Expose-Headers',
+          exposedEncoding
+            ? `${exposedEncoding}, x-kortix-upstream-encoding`
+            : 'x-kortix-upstream-encoding',
         );
       }
 

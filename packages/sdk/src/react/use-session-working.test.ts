@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '../browser/stores/sync-store';
 import {
@@ -7,8 +7,11 @@ import {
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
+import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
+import { configureKortix } from '../core/http/config';
 import {
   WORKING_POLL_ACTIVE_MS,
+  readSessionTurnObservation,
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
   workingPollMs,
@@ -17,6 +20,8 @@ import {
 } from './use-session-working';
 
 const T0 = Date.parse('2026-08-18T10:00:00.000Z');
+
+configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
 
 describe('workingPollMs', () => {
   test('a working session is polled fast — the end of the turn is the news', () => {
@@ -352,5 +357,79 @@ describe('streamTurnPhase', () => {
     // session with no frame yet has to stay distinguishable from an idle one,
     // or the first frame of a turn would not read as a change.
     expect(streamTurnPhase(undefined)).toBe('none');
+  });
+});
+
+// ── The session-open bundle seam ────────────────────────────────────────────
+// `/turn` was read up to 6 times during ONE session open (measured, 20 opens):
+// three hooks mount this query, and the open path reads it before anything else
+// can. The read now claims the open bundle first, so the whole open costs the
+// server ONE answer, and the poll that follows still goes to the endpoint.
+
+describe('readSessionTurnObservation', () => {
+  const BUNDLE_AT = '2026-08-26T12:00:00.000Z';
+
+  function mockFetch(body: (url: string) => unknown) {
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (url: unknown) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify(body(String(url))), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    return urls;
+  }
+
+  test('answers from the open bundle without touching /turn', async () => {
+    resetSessionOpenBundles();
+    const urls = mockFetch(() => ({
+      observed_at: BUNDLE_AT,
+      turn: { known: true, turns: [{ turn_token: 'tt-1', state: 'active' }] },
+      queue: { known: true, prompts: [], held: false },
+      transcript: { known: true, requested: false },
+      config: { known: true },
+      models: { known: false, reason: 'llm_gateway_disabled' },
+      session: { session_id: 'S1' },
+    }));
+    openSessionBundle('P1', 'S1');
+    const observation = await readSessionTurnObservation('P1', 'S1');
+    expect(urls.filter((u) => u.endsWith('/turn'))).toHaveLength(0);
+    expect(observation.turns).toHaveLength(1);
+    // Stamped from the SERVER's clock. Stamping arrival would let a shared
+    // bundle claim to be newer than the read it came from.
+    expect(observation.atMs).toBe(Date.parse(BUNDLE_AT));
+  });
+
+  test('reads /turn when no bundle is in flight — the steady-state poll', async () => {
+    resetSessionOpenBundles();
+    const urls = mockFetch(() => ({ turns: [], last_ended: { turn_token: 'tt-0', end_reason: 'completed', ended_at: null } }));
+    const observation = await readSessionTurnObservation('P1', 'S1');
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toContain('/sessions/S1/turn');
+    expect(observation.turns).toEqual([]);
+    expect(observation.last_ended?.turn_token).toBe('tt-0');
+  });
+
+  test('falls back to /turn when the bundle could not answer that leg', async () => {
+    resetSessionOpenBundles();
+    const urls = mockFetch((url) =>
+      url.includes('/snapshot')
+        ? {
+            observed_at: BUNDLE_AT,
+            turn: { known: false, reason: 'turn read exploded' },
+            queue: { known: true, prompts: [], held: false },
+            transcript: { known: true, requested: false },
+            config: { known: true },
+            models: { known: false, reason: 'x' },
+            session: { session_id: 'S1' },
+          }
+        : { turns: [{ turn_token: 'tt-2', state: 'delivering' }] },
+    );
+    openSessionBundle('P1', 'S1');
+    const observation = await readSessionTurnObservation('P1', 'S1');
+    // UNKNOWN is not idle: the fallback must ASK, not assume.
+    expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
+    expect(observation.turns[0]?.turn_token).toBe('tt-2');
   });
 });

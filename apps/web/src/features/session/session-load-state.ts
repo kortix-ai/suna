@@ -109,14 +109,22 @@ export function resolveSessionContentState(input: {
   const sessionResolved = input.runtimeReady && input.sessionFetched;
   const isNotFound =
     !input.hasRuntimeSession && sessionResolved && !input.hasMessages && !input.hasOptimisticPrompt;
-  // Nothing to paint AND nothing read yet. Either half alone is not enough:
-  // a session with zero messages that HAS been read is genuinely empty and must
-  // render its composer, and a session whose read has not landed must wait
-  // however complete the rest of its metadata looks.
-  const nothingToPaint = !input.hasMessages && !input.hasOptimisticPrompt;
   const readOutstanding = input.transcriptLoaded === false;
+  // On an EXISTING session (a runtime session is known), the transcript read
+  // decides — not the inbox. The prompt-inbox rows are one fast DB read off
+  // the open bundle, and letting them count as "content" dismissed the loader
+  // onto a page of user-only bubbles; the assistant replies then popped in
+  // seconds later when the mirror/runtime read landed (Jay, 2026-08-28). The
+  // paint is atomic: hold the loader until the first read lands, then paint
+  // the whole conversation at once. Messages already on screen are never
+  // hidden, and a caller that does not track the read keeps the old rule.
+  //
+  // On a BRAND-NEW session there is no transcript to wait for, so the
+  // optimistic first prompt is the page — the Enter-paints-now contract.
   const isDataLoading =
-    !isNotFound && nothingToPaint && (!input.hasRuntimeSession || readOutstanding);
+    !isNotFound &&
+    !input.hasMessages &&
+    (input.hasRuntimeSession ? readOutstanding : !input.hasOptimisticPrompt);
 
   return { isNotFound, isDataLoading };
 }

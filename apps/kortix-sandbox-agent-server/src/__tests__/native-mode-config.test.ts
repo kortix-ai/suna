@@ -49,7 +49,7 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
     // needs no scrub — so there is nothing to inject at all. The pin is also
     // ignored at prompt time (resolveOpencodeModel returns undefined for it).
     const content = await buildOpencodeConfigContent({
-      KORTIX_OPENCODE_MODEL: 'kortix/glm-5.2',
+      KORTIX_OPENCODE_MODEL: 'kortix/glm-5.3-flash',
       OPENCODE_CONFIG_CONTENT: JSON.stringify({ small_model: 'anthropic/claude-haiku-4-5' }),
     })
     const parsed = JSON.parse(content!)
@@ -69,7 +69,7 @@ describe('buildOpencodeConfigContent — native mode (no gateway env)', () => {
   test('scrubs stale kortix refs from the merged base config', async () => {
     const content = await buildOpencodeConfigContent({
       KORTIX_COMPILED_AGENT_CONFIG: JSON.stringify({
-        model: 'kortix/glm-5.2',
+        model: 'kortix/glm-5.3-flash',
         small_model: 'kortix/anthropic/claude-haiku-4-5',
         agent: {
           support: { model: 'kortix/codex/gpt-5.6-sol' },

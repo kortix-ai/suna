@@ -25,6 +25,7 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import { DotsThreeIcon, ShieldIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 /** The entity-row dialect the customize section views established. */
@@ -37,7 +38,14 @@ export const ACCESS_ROW_CLASS = 'bg-popover flex items-center gap-3 rounded-md b
 export interface KebabItem {
   label: string;
   icon?: ReactNode;
-  onSelect: () => void;
+  /** Runs on activation. Optional when the item only navigates — pass `href`. */
+  onSelect?: () => void;
+  /**
+   * Destination known at render. The item becomes a real `<Link>`, so Next
+   * prefetches the payload and the click stays a client navigation instead of
+   * running a cold RSC fetch that can degrade into a full page load.
+   */
+  href?: string;
   variant?: 'default' | 'destructive';
   disabled?: boolean;
   /** Tooltip on the item, e.g. why it is disabled. */
@@ -79,6 +87,13 @@ export interface AccessRowProps {
   kebabLabel?: string;
   /** Row click target. The row becomes keyboard-activatable. */
   onClick?: () => void;
+  /**
+   * Row destination, when it is known at render. The row gets a stretched
+   * `<Link>` overlay instead of a click handler, so the payload prefetches and
+   * the click never runs a cold RSC fetch. Same pattern as a clickable `Card`
+   * (`components/ui/card.tsx`).
+   */
+  href?: string;
   selectable?: AccessRowSelectable;
   /** Swaps the kebab for a spinner while a mutation on this row is in flight. */
   pending?: boolean;
@@ -104,13 +119,15 @@ export function AccessRow({
   kebab,
   kebabLabel = 'Actions',
   onClick,
+  href,
   selectable,
   pending = false,
   dashed = false,
   notEditable,
   className,
 }: AccessRowProps) {
-  const interactive = !!onClick;
+  const linked = !!href;
+  const interactive = linked || !!onClick;
   const items = kebab?.filter(Boolean) ?? [];
   const hasTrailingSlot = !!trailing || !!actions || items.length > 0 || pending || !!notEditable;
 
@@ -119,11 +136,12 @@ export function AccessRow({
       className={cn(
         ACCESS_ROW_CLASS,
         'transition-colors',
+        linked && 'relative',
         dashed && 'border-dashed',
         interactive && 'hover:bg-primary/[0.04] cursor-pointer',
         className,
       )}
-      {...(interactive
+      {...(interactive && !linked
         ? {
             role: 'button',
             tabIndex: 0,
@@ -136,6 +154,17 @@ export function AccessRow({
           }
         : {})}
     >
+      {href ? (
+        // Stretched overlay: the anchor covers the whole row, so the row is one
+        // click target and one tab stop, while the checkbox and the trailing
+        // actions sit above it and stay independently clickable.
+        <Link
+          href={href}
+          onClick={onClick}
+          aria-label={typeof title === 'string' ? title : undefined}
+          className="absolute inset-0 z-10 rounded-[inherit] outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]"
+        />
+      ) : null}
       {selectable ? (
         selectable.reserveSpace ? (
           // This row is not selectable (it's you) but a sibling is — reserve
@@ -149,7 +178,10 @@ export function AccessRow({
             onChange={selectable.onCheckedChange}
             onClick={(event) => event.stopPropagation()}
             aria-label={selectable.label}
-            className="border-border accent-primary size-3.5 shrink-0 cursor-pointer rounded"
+            className={cn(
+              'border-border accent-primary size-3.5 shrink-0 cursor-pointer rounded',
+              linked && 'relative z-20',
+            )}
           />
         )
       ) : null}
@@ -171,7 +203,7 @@ export function AccessRow({
       </div>
       {hasTrailingSlot ? (
         <div
-          className="flex shrink-0 items-center gap-1.5"
+          className={cn('flex shrink-0 items-center gap-1.5', linked && 'relative z-20')}
           onClick={(event) => event.stopPropagation()}
           onKeyDown={(event) => event.stopPropagation()}
           role="presentation"
@@ -214,16 +246,24 @@ function RowKebab({ items, label }: { items: KebabItem[]; label: string }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         {items.map((item, index) => {
+          const content = (
+            <>
+              {item.icon}
+              {item.label}
+            </>
+          );
           const node = (
             <DropdownMenuItem
               key={item.label}
+              // A destination known at render is an anchor, never a handler —
+              // `onSelect` keeps the side effects and the anchor navigates.
+              asChild={!!item.href}
               variant={item.variant}
               disabled={item.disabled}
               onSelect={item.onSelect}
               className="gap-2"
             >
-              {item.icon}
-              {item.label}
+              {item.href ? <Link href={item.href}>{content}</Link> : content}
             </DropdownMenuItem>
           );
           // A disabled item carries its reason as `hint` — a plain disabled

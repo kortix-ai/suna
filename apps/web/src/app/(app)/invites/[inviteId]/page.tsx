@@ -5,8 +5,9 @@ import { useLocale, useTranslations } from 'next-intl';
 import { ClockIcon as Clock } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { m } from 'motion/react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
@@ -26,6 +27,9 @@ import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 
+/** Nothing to subscribe to — the cookie is read fresh on every render. */
+const subscribeToNothing = () => () => {};
+
 async function getUnifiedInvite(inviteId: string): Promise<UnifiedInvite> {
   return { kind: 'account', invite: await describeAccountInvite(inviteId) };
 }
@@ -37,6 +41,15 @@ export default function InvitePage() {
   const { inviteId } = useParams<{ inviteId: string }>();
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
+  // `appHome` comes from a cookie, so the server cannot know it. The third
+  // argument is the *server* snapshot, so the first render matches the server's
+  // and the anchor picks up the remembered project right after hydration —
+  // putting `appHome` straight into an `href` would desync the two renders.
+  const homeHref = useSyncExternalStore(
+    subscribeToNothing,
+    () => appHome,
+    () => PROJECT_LANDING_PATH,
+  );
 
   // Not logged in → send through /auth with a return-to so they come back
   // here after sign-in/up. New users can have account/workspace invites
@@ -112,7 +125,7 @@ export default function InvitePage() {
             {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
           </StateHeading>
           <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}</StateBody>
-          <GhostAction onClick={() => router.replace(appHome)}>
+          <GhostAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -145,7 +158,7 @@ export default function InvitePage() {
           <p className="text-foreground/30 mt-4 text-xs">
             {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
           </p>
-          <GhostAction onClick={() => router.replace(appHome)}>
+          <GhostAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -167,7 +180,7 @@ export default function InvitePage() {
               'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
             )}
           </StateBody>
-          <GhostAction onClick={() => router.replace(appHome)}>
+          <GhostAction href={homeHref}>
             {tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}
           </GhostAction>
         </InviteCard>
@@ -311,14 +324,17 @@ function StateBody({ children }: { children: React.ReactNode }) {
   return <p className="text-foreground/50 mt-3 text-sm leading-relaxed">{children}</p>;
 }
 
-function GhostAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function GhostAction({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Button
+      asChild
       variant="ghost"
       className="text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05] mt-6 h-10 px-4 text-sm"
-      onClick={onClick}
     >
-      {children}
+      {/* `replace` keeps the history behaviour the old `router.replace` had. */}
+      <Link href={href} replace prefetch>
+        {children}
+      </Link>
     </Button>
   );
 }

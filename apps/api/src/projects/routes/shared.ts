@@ -4,7 +4,7 @@ import type {
   SessionStartResult,
 } from '@kortix/api-contract';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { type SQL, and, eq, sql } from 'drizzle-orm';
 import {
   markComputeSessionAlive,
   reopenComputeForSandbox,
@@ -71,6 +71,54 @@ import {
 } from '../session-lifecycle/runtime-wake-fence';
 
 /**
+ * `metadata - 'a' - 'b' - …`, generated from a key list.
+ *
+ * Hand-written `-` chains are how the readiness clocks drifted apart: the wake
+ * claim stripped four of the ten, `clearRuntimeReadinessClocks` stripped eight
+ * by hardcoded index, and `opencodeBootWaitFirstSeenAt` was therefore cleared
+ * by nothing except a human Restart. That immortal clock parked session
+ * 29861dfa's second attempt 14 ms before its daemon claimed its first turn
+ * (2026-08-26). One generator, one list, no drift.
+ */
+function stripMetadataKeys(keys: readonly string[]): SQL {
+  return keys.reduce<SQL>((acc, key) => {
+    // A LITERAL, not a bind parameter. `jsonb - $1` leaves the parameter type
+    // unknown and Postgres cannot choose between `jsonb - text` and
+    // `jsonb - integer`. Every key here is a compile-time constant from a
+    // frozen list, and this guard keeps it that way.
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)) {
+      throw new Error(`refusing to strip a non-identifier metadata key: ${key}`);
+    }
+    return sql`${acc} - ${sql.raw(`'${key}'`)}`;
+  }, sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)`);
+}
+
+/**
+ * Keys a WAKE CLAIM drops. The readiness clocks are appended, so a re-attempt
+ * boots against a clean budget.
+ *
+ * Deliberately ABSENT: `runtimeStartFailureCount` and `runtimeStartFailedAt`.
+ * They drive the escalating cooldown between automatic rungs and must survive
+ * one — unlike an explicit human Restart, which resets the whole episode
+ * (`prepareInPlaceRestartMetadata`).
+ */
+export const RUNTIME_WAKE_CLAIM_CLEARED_KEYS = [
+  'runtimeIdentityState',
+  'runtimeUnavailableReason',
+  'runtimeUnavailableAt',
+  'preservedExternalId',
+  'needsReprovision',
+  'runtimeWakeError',
+  'runtimeWakeFailedAt',
+  'runtimeWakeRetryAfterAt',
+  'runtimeStartRetryAfterAt',
+  'runtimeWakeCleanupUntilAt',
+  'runtimeWakeLateStartStoppedAt',
+  'runtimeWakeProgressAt',
+  ...RUNTIME_READINESS_CLOCK_KEYS,
+] as const;
+
+/**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
  * destroying it and cold-reprovisioning a fresh one. A stopped row whose
  * `externalId` is still set is a powered-down VM whose disk — the repo clone,
@@ -123,25 +171,7 @@ export async function resumeStoppedSandbox(
     .update(sessionSandboxes)
     .set({
       updatedAt: now,
-      metadata: sql`(
-        coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-          - 'runtimeIdentityState'
-          - 'runtimeUnavailableReason'
-          - 'runtimeUnavailableAt'
-          - 'preservedExternalId'
-          - 'needsReprovision'
-          - 'runtimeWakeError'
-          - 'runtimeWakeFailedAt'
-          - 'runtimeWakeRetryAfterAt'
-          - 'runtimeStartRetryAfterAt'
-          - 'runtimeWakeCleanupUntilAt'
-          - 'runtimeWakeLateStartStoppedAt'
-          - 'runtimeWakeProgressAt'
-          - 'opencodeReadyWaitStartedAt'
-          - 'opencodeReadyWaitReason'
-          - 'opencodeUnreachableWaitStartedAt'
-          - 'opencodeNotReadyWaitStartedAt'
-        ) || ${JSON.stringify(wakePatch)}::jsonb`,
+      metadata: sql`(${stripMetadataKeys(RUNTIME_WAKE_CLAIM_CLEARED_KEYS)}) || ${JSON.stringify(wakePatch)}::jsonb`,
     })
     .where(
       and(
@@ -639,15 +669,11 @@ async function clearRuntimeReadinessClocks(
     await db
       .update(sessionSandboxes)
       .set({
-        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
-          - ${RUNTIME_READINESS_CLOCK_KEYS[0]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[1]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[2]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[3]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[4]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[5]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[6]}
-          - ${RUNTIME_READINESS_CLOCK_KEYS[7]}`,
+        // EVERY key. This used to strip the first eight by index, leaving
+        // `opencodeBootPhase` and `opencodeBootWaitFirstSeenAt` on a row whose
+        // daemon had just reported READY — so the next boot wait on that row
+        // inherited a spent hard cap.
+        metadata: stripMetadataKeys(RUNTIME_READINESS_CLOCK_KEYS),
         updatedAt: new Date(),
       })
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId));

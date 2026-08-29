@@ -1,0 +1,14 @@
+# A stand-in "environment": a real shell and a real filesystem behind the
+# ExecutionEnv RPC protocol. In production this role is the Kortix sandbox
+# daemon; the protocol and the transport are identical, only the address moves.
+FROM node:22-alpine
+WORKDIR /opt/kortix
+COPY dist/environment.mjs /opt/kortix/environment.mjs
+# Non-root (strix review): the stub executes agent commands by design, so at
+# least the blast radius inside the container is an unprivileged user's.
+RUN addgroup -S kortix && adduser -S -G kortix kortix \
+    && mkdir -p /env-root/workspace && chown -R kortix:kortix /env-root
+USER kortix
+ENV PORT=8100 ENV_ROOT=/env-root
+EXPOSE 8100
+ENTRYPOINT ["node", "/opt/kortix/environment.mjs"]

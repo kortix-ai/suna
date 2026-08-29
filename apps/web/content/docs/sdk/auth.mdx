@@ -62,6 +62,14 @@ role to an agent. See
   instead.
 </Callout>
 
+## OAuth access tokens (Sign in with Kortix)
+
+A third-party app that signs users in through Kortix receives a `kortix_oat_`
+token per user. With the `kortix` scope it acts as that user on the whole API,
+exactly like a personal access token, but it expires after an hour and rotates
+through a refresh token. `createKortixAuth` in `@kortix/sdk/server` owns the
+whole lifecycle — see [Sign in with Kortix](/docs/sdk/sign-in).
+
 ## Supabase JWT
 
 If your app uses Kortix's own sign-in, return the live session token instead
@@ -75,11 +83,50 @@ getToken: async () =>
 The SDK calls `getToken` on every request, so a refreshed token takes effect
 automatically.
 
+## Headless sign-in (email, password, magic link, social)
+
+Every ordinary sign-in flow is available through the Kortix API, so a CLI, a
+native app, a script, or your own backend signs users up and in without a
+Supabase URL or key — on kortix.com and on a self-host alike.
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const session = createKortix({ backendUrl, getToken: async () => null }).auth.session({
+  storage: {                                    // optional: any get/set/remove
+    get: () => localStorage.getItem('kortix'),
+    set: (v) => localStorage.setItem('kortix', v),
+    remove: () => localStorage.removeItem('kortix'),
+  },
+});
+const kortix = createKortix({ backendUrl, getToken: session.getToken });   // refreshes itself
+
+const { session: s, user } = await kortix.auth.signInWithPassword({ email, password });
+await session.set(s, user);
+await kortix.projects.list();                   // as that user
+```
+
+| Call | Route | Notes |
+|---|---|---|
+| `auth.signUp({ email, password, redirect_to? })` | `POST /v1/auth/signup` | `requires_email_confirmation: true` → no session until the emailed link/code is used. |
+| `auth.signInWithPassword({ email, password })` | `POST /v1/auth/sign-in/password` | |
+| `auth.sendMagicLink({ email, redirect_to? })` → `auth.verifyOtp({ email, token, type: 'magiclink' })` | `/sign-in/magic-link`, `/verify-otp` | The email carries a link and a 6-digit code. |
+| `auth.signInWithProvider({ provider, redirect_to })` → `auth.exchangeCode({ code, code_verifier })` | `/sign-in/oauth`, `/oauth/exchange` | PKCE: keep `code_verifier` until the provider redirects back with `?code=`. `redirect_to` must be on the instance's redirect allow-list. |
+| `auth.refresh({ refresh_token })` | `POST /v1/auth/refresh` | `createKortixSession` calls it for you. |
+| `auth.resetPassword({ email, redirect_to? })` → `auth.verifyOtp({ type: 'recovery' })` → `auth.updatePassword({ password }, token)` | `/password/reset`, `/verify-otp`, `/password/update` | |
+| `auth.user(token)` / `auth.signOut(token)` | `GET /v1/auth/user`, `POST /v1/auth/sign-out` | Sign-out revokes at Supabase and in the Kortix session gate. |
+
+Errors throw `HeadlessAuthError` with `code`, `message` and the upstream `status`
+(`invalid_credentials`, `over_request_rate_limit`, …). Each route is limited to
+30 attempts per minute per IP. Multi-factor enrolment/challenge is not on the
+API yet — it stays on the Kortix web app.
+
 ## Choose a credential
 
 | You are building | Use |
 |---|---|
 | A backend, script, or CI job | A personal access token, account-wide or project-scoped |
 | The Kortix CLI | `kortix login` (mints a personal access token) |
-| A web app on Kortix sign-in | A Supabase JWT |
+| A web app, CLI, or native app signing users in itself | `kortix.auth.*` + `createKortixSession` (headless sign-in, above) |
 | An automated caller with its own project assignment | A service account |
+| Your own app, signed in by its users with their Kortix account | [Sign in with Kortix](/docs/sdk/sign-in) — an OAuth access token the SDK manages for you |

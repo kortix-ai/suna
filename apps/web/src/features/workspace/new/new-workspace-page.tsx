@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
+import { readSourceParam } from '@/features/workspace/new/source-param';
 
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
@@ -124,9 +125,16 @@ export function NewWorkspacePage() {
     new URLSearchParams(searchParams?.toString() ?? ''),
   );
 
+  // `?source=` is how the picked repository source survives the real
+  // navigation to `/github/setup` and back (`readSourceParam`). Read into the
+  // INITIAL state only — a lazy `useState` initializer, so a later param
+  // change never fights the user's own Select.
+  const initialSource = readSourceParam(new URLSearchParams(searchParams?.toString() ?? ''));
+
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
     templateId: cloneItemId,
+    ...(initialSource ? { source: initialSource } : {}),
   }));
   const [touched, setTouched] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -198,16 +206,17 @@ export function NewWorkspacePage() {
   // wrong account — is exactly what a stale reading of that count during the
   // loading window would let through.
   //
-  // `state.source === 'managed'` is gated here, not in the shared
-  // `isSubmittable`: `POST /provision` (the only wired submit path —
-  // `useCreateWorkspace`) has no installation-id or repo fields, so a
-  // `github-create` / `github-import` source can never be submittable through
-  // it. `AdvancedFields` explains this inline and links to the real GitHub
-  // connect flow instead of shipping a form that would 400.
+  // The source-specific part of the gate lives in `isSubmittable`
+  // (`githubSourceReady`), not here. It used to be a flat
+  // `state.source === 'managed'` on this line, because `useCreateWorkspace`
+  // only knew how to POST `/projects/provision` — so the two GitHub sources
+  // were unreachable and their Select options were rendered `disabled`. Both
+  // now have their own route (`/projects/create-repo`,
+  // `/projects/link-repository`) and their own inputs, so what blocks submit
+  // is a MISSING input, the same as an empty name — never the choice itself.
   const canSubmit =
     isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
-    state.source === 'managed' &&
     !submitting;
 
   return (
@@ -428,7 +437,17 @@ export function NewWorkspacePage() {
                   </p>
                 ) : null}
 
-                <AdvancedFields state={state} onChange={setState} />
+                {/* `effectiveAccountId`, not `state.accountId`: the GitHub
+                      queries inside are account-scoped, and `state.accountId`
+                      is legitimately null for a single-account user (the
+                      picker hides itself below two accounts). Passing the raw
+                      value would leave those queries permanently disabled for
+                      exactly the users who have nothing to pick. */}
+                <AdvancedFields
+                  state={state}
+                  accountId={effectiveAccountId}
+                  onChange={setState}
+                />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">

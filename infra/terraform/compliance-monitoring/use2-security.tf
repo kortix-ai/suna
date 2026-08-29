@@ -211,6 +211,64 @@ resource "aws_wafv2_web_acl" "use2" {
             }
           }
         }
+
+        # OAuth 2.0 public clients use loopback redirect URIs. Exclude only this
+        # protocol-defined query value from the common managed rule group. The
+        # API still validates the complete registered redirect URI.
+        scope_down_statement {
+          not_statement {
+            statement {
+              and_statement {
+                statement {
+                  byte_match_statement {
+                    field_to_match {
+                      method {}
+                    }
+                    positional_constraint = "EXACTLY"
+                    search_string         = "GET"
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+
+                statement {
+                  byte_match_statement {
+                    field_to_match {
+                      uri_path {}
+                    }
+                    positional_constraint = "EXACTLY"
+                    search_string         = "/v1/oauth/authorize"
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+
+                statement {
+                  regex_match_statement {
+                    field_to_match {
+                      single_query_argument {
+                        name = "redirect_uri"
+                      }
+                    }
+                    regex_string = "^http://(localhost|127\\.0\\.0\\.1)"
+                    text_transformation {
+                      priority = 0
+                      type     = "URL_DECODE"
+                    }
+                    text_transformation {
+                      priority = 1
+                      type     = "LOWERCASE"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
     visibility_config {
@@ -353,23 +411,11 @@ resource "aws_wafv2_web_acl_logging_configuration" "use2" {
   log_destination_configs = [aws_cloudwatch_log_group.use2_waf.arn]
 }
 
-resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
-  provider            = aws.use2
-  for_each            = local.use2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-target-response-time"
-  alarm_description   = "SOC2 DCF-86: ALB target response time is elevated"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "TargetResponseTime"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 2
-  datapoints_to_alarm = 2
-  threshold           = 2
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.use2_alerts.arn]
-  tags                = local.alarm_tags
+removed {
+  from = aws_cloudwatch_metric_alarm.use2_target_response_time
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "use2_elb_5xx" {

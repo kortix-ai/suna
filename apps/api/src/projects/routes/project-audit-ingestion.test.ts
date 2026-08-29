@@ -181,6 +181,54 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
 });
 
 /**
+ * The relay's default batch size is this route's own ceiling
+ * (`MAX_RELAY_BATCH_SIZE` in
+ * apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts). Pin both ends
+ * of the boundary so raising one without the other cannot ship a 400 into the
+ * emission hot path.
+ */
+describe('relay batch ceiling', () => {
+  function plainEvent(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `rev-${n}`,
+      type: 'file.edited',
+      occurred_at: '2026-08-08T12:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'c'.repeat(64),
+    };
+  }
+
+  async function post(count: number) {
+    const response = await projectsApp.request(
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ events: Array.from({ length: count }, (_, i) => plainEvent(i)) }),
+      },
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  test('accepts a full 200-event relay batch and writes it in 25-row chunks', async () => {
+    insertStatements.length = 0;
+    const accepted = await post(200);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({ accepted: 200, inserted: 200 });
+    // Eight bounded statements, never one 200-row lock hold.
+    expect(insertStatements.map((batch) => batch.length)).toEqual([25, 25, 25, 25, 25, 25, 25, 25]);
+  });
+
+  test('rejects one event past the ceiling', async () => {
+    const rejected = await post(201);
+    expect(rejected.status).toBe(400);
+    expect(String(rejected.body.error)).toContain('1 to 200');
+  });
+});
+
+/**
  * The runaway guard, exercised through the real route rather than the pure
  * function — this is the layer that decides what actually reaches the INSERT.
  */

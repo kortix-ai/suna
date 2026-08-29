@@ -34,7 +34,11 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // cold. `prefetch={false}` also contains "prefetch", hence the two asserts.
     const navItem = fnSource('ProjectCustomizeNavItem');
 
-    expect(navItem).toContain('<Link');
+    // `HoverPrefetchLink` is a `next/link` whose prefetch starts on
+    // hover/focus/touch instead of on mount — see
+    // sidebar-prefetch-contract.test.ts. Still a prefetched link, still not
+    // router.push, which is what this test exists to pin.
+    expect(navItem).toContain('<HoverPrefetchLink');
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
     // The href is the Customize INDEX now, not `capabilityTabHref(projectId,

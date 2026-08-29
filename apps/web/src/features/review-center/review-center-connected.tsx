@@ -27,7 +27,7 @@ import { type ReviewVerdict, listProjectSessions } from '@kortix/sdk';
 import { clearStartStash, contract, qk } from '@kortix/sdk/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   useActReviewItem,
   useBulkActReviewItems,
@@ -37,6 +37,13 @@ import {
 import { mapApiReviewItem } from './map';
 import { crChangeRequestId, connectorCallId, itemDeepLink, planBulkAction } from './review-actions';
 import { ReviewCenter } from './review-center';
+
+/**
+ * How many session deep links the inbox warms up front. The inbox is unbounded
+ * — a busy project can hold dozens — and each prefetch is a real dynamic RSC
+ * render. Eight covers the rows a user can see and click without scrolling.
+ */
+const PREFETCH_LIMIT = 8;
 
 export function ReviewCenterConnected({
   projectName,
@@ -83,6 +90,36 @@ export function ReviewCenterConnected({
       (data?.review_items ?? []).map((row) => mapApiReviewItem(row, projectName, sessionLabels)),
     [data, projectName, sessionLabels],
   );
+
+  // The inbox's "Open session" and "See it in the session" controls are buttons
+  // inside the presentational inbox, which is shared with the mock prototype and
+  // takes an opaque `onOpenSession`. They therefore cannot be anchors from here.
+  // Warm the sessions they can reach so the click is served from the segment
+  // cache instead of running the RSC fetch cold.
+  //
+  // Capped, and keyed by the hrefs rather than by `items`. Two reasons, both
+  // measured against how this screen actually behaves:
+  //  - `/projects/[id]/sessions/[sessionId]` has a `loading.tsx`, so each
+  //    prefetch is a real dynamic RSC render on the server, not a no-op.
+  //  - `useReviewItems` polls on an 8s `refetchInterval`, so `items` takes a new
+  //    identity on every material change. Depending on it re-fired the whole
+  //    batch every poll; an inbox with dozens of reviewed sessions turned that
+  //    into a standing background load.
+  // The join key changes only when the actual destination set changes, and the
+  // cap keeps the burst bounded to what a user can plausibly click next.
+  const warmHrefs = useMemo(() => {
+    const seen = new Set<string>();
+    for (const item of items) {
+      const href = itemDeepLink(projectId, item.sessionId);
+      if (href) seen.add(href);
+      if (seen.size >= PREFETCH_LIMIT) break;
+    }
+    return [...seen];
+  }, [items, projectId]);
+  const warmKey = warmHrefs.join('|');
+  useEffect(() => {
+    for (const href of warmKey ? warmKey.split('|') : []) router.prefetch(href);
+  }, [warmKey, router]);
 
   const refreshInbox = () => qc.invalidateQueries({ queryKey: ['review-center', projectId] });
 
@@ -238,6 +275,9 @@ export function ReviewCenterConnected({
         if (!href) return;
         clearStartStash(sessionId);
         closeCustomize();
+        // nav-contract: prefetch-only — the shared inbox hands back only a
+        // sessionId through `onOpenSession`, so the control is a button there.
+        // The effect above has already warmed this href.
         router.push(href);
       }}
     />

@@ -1,4 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigint,
   boolean,
@@ -182,9 +183,31 @@ export const accounts = kortixSchema.table('accounts', {
   /** When set, PATs not used in this many days are auto-revoked on
    *  next validate. NULL = no idle gate. Units: days. */
   patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  /** Organization branding (enterprise `branding` entitlement): the product
+   *  name plus the Storage URLs of the logo / icon / favicon (light + optional
+   *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
+   *  API owns every URL here (uploads go through
+   *  `POST /accounts/:id/branding/assets/:kind`); clients never write one. */
+  branding: jsonb('branding').default({}).notNull().$type<AccountBrandingRecord>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Shape of `accounts.branding`. Every key optional; absent == default Kortix. */
+export interface AccountBrandingRecord {
+  /** Product name shown in place of "Kortix" (document title). */
+  app_name?: string | null;
+  /** Wide brandmark (symbol + wordmark). Replaces the `brandmark` logo variant. */
+  logo_url?: string | null;
+  /** Square mark. Replaces the `icon` logo variant and the apple-touch icon. */
+  icon_url?: string | null;
+  /** Browser-tab icon. Falls back to `icon_url` when absent. */
+  favicon_url?: string | null;
+  /** Dark-scheme variants. Each falls back to its light counterpart. */
+  logo_dark_url?: string | null;
+  icon_dark_url?: string | null;
+  favicon_dark_url?: string | null;
+}
 
 export const accountMembers = kortixSchema.table(
   'account_members',
@@ -952,7 +975,7 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
 // per-agent default (scope='agent', scope_key=agent_name) → the account default
 // (scope='account', scope_key='') → the platform default. The stored `model` is a
-// gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
+// gateway wire model (a bare managed id like 'glm-5.3-flash', a BYOK 'provider/model',
 // or 'codex/<id>') — never the synthetic `auto`.
 //
 // `project_id` (added 2026-07-18, see 20260718*_account_model_preferences_project_id.sql)
@@ -1817,6 +1840,46 @@ export const sessionSandboxes = kortixSchema.table(
   ],
 );
 
+/**
+ * Harness/worker split (P1.7): the lazily-provisioned COMPUTE ENVIRONMENT of a
+ * pi worker session — the full daemon box (repo checkout, secrets, /file,
+ * /find, /pty) the worker's tools act on, provisioned on the FIRST compute
+ * tool call and never before.
+ *
+ * A separate table, not a second row in `session_sandboxes`: that table is
+ * one-row-per-session by DB constraint + anchor-guard trigger, and everything
+ * around it (turn lifecycle, prompt dedupe, compute metering, the reaper's
+ * deadline math) assumes the row IS the session runtime. For a pi session the
+ * session runtime is the WORKER; this environment is an auxiliary box the
+ * worker reaches directly over the provider edge — the session proxy is not in
+ * its data path.
+ *
+ * One environment per session, enforced by the primary key.
+ */
+export const sessionEnvironments = kortixSchema.table(
+  'session_environments',
+  {
+    sessionId: text('session_id').primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    externalId: text('external_id'),
+    baseUrl: text('base_url'),
+    status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
+    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_session_environments_project').on(table.projectId),
+    index('idx_session_environments_account').on(table.accountId),
+    index('idx_session_environments_status').on(table.status),
+    index('idx_session_environments_external_id').on(table.externalId),
+  ],
+);
+
 
 /**
  * Durable per-turn ledger.
@@ -2002,6 +2065,74 @@ export const sessionTranscriptMessages = kortixSchema.table(
       table.messageCreatedAt,
       table.messageId,
     ),
+  ],
+);
+
+/**
+ * The RUNTIME PROJECTION — the daemon's `/kortix/opencode/state` document,
+ * stored server-side so a session open answers "which agents, which commands,
+ * what config, what is pending" from Postgres instead of from the box.
+ *
+ * WHY. WS-V measured the seven proxied reads this replaces at ~3.3 MB and
+ * ~1.4 s EACH across the edge hop — ~9.8 s serial on a session open, paid
+ * before the composer can arm. The daemon already projects all seven into one
+ * ~8.7 KB document (0.9 KB gzipped). Storing it here takes the box off the
+ * read path entirely: a STOPPED session answers from this row with zero
+ * sandbox hops, which is the whole point.
+ *
+ * IT IS A CACHE OF A FACT, NOT A FACT. One row per Kortix session, no history,
+ * last write wins. Nothing may be *decided* from this row that the live
+ * runtime would answer differently — which is why every identity the live read
+ * would produce travels WITH the projection (`opencode_session_id`,
+ * `opencode_version`, `agent_config_etag`) and the serving side refuses to
+ * present a projection whose identity no longer matches. That is
+ * `session-transcript-mirror.ts`'s ghost rule (a cached record whose id the
+ * live read will not also produce is a ghost) applied to config state.
+ *
+ * `epoch` + `seq` are the daemon's stream cursor AT CAPTURE TIME. A client
+ * seeded from this row opens `/stream?epoch=&since=` at exactly that point, so
+ * seeding and streaming cannot disagree about what has already been applied.
+ */
+export const sessionRuntimeProjections = kortixSchema.table(
+  'session_runtime_projections',
+  {
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    /** The sandbox that produced it. Names the winner when a warm fork adopts. */
+    externalId: text('external_id').notNull(),
+    // ── identity (the freshness check reads these, never the jsonb) ──────────
+    opencodeSessionId: text('opencode_session_id'),
+    opencodeVersion: text('opencode_version'),
+    agentConfigEtag: text('agent_config_etag'),
+    daemonBuild: bigint('daemon_build', { mode: 'number' }),
+    /** Daemon boot id. `seq` is meaningless outside it. */
+    epoch: text('epoch'),
+    /** Daemon stream watermark at capture — the client's starting cursor. */
+    seq: bigint('seq', { mode: 'number' }),
+    /** OpenCode's OWN durable cursor per aggregate (`event_sequence.seq`). */
+    headSeq: jsonb('head_seq').$type<Record<string, number>>(),
+    /** sha256 of the canonically serialized projection. A repeat push is a no-op. */
+    projectionEtag: text('projection_etag').notNull(),
+    /** The `/kortix/opencode/state` document, verbatim. */
+    projection: jsonb('projection').$type<Record<string, unknown>>().notNull(),
+    /** Who wrote this row: the daemon pushed it, or the API pulled it through. */
+    source: text('source').notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Named explicitly: the drizzle-derived name
+    // (`..._session_id_project_sessions_session_id_fk`) exceeds Postgres's
+    // 63-byte identifier limit and would be silently truncated. Same trap the
+    // transcript-mirror tables document.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_runtime_projections_session_fk',
+    }).onDelete('cascade'),
+    index('session_runtime_projections_project_idx').on(table.projectId),
   ],
 );
 
@@ -2500,15 +2631,96 @@ export const accountTokens = kortixSchema.table(
 
 // ─── OAuth2 Provider ──────────────────────────────────────────────────────
 
-export const oauthClients = kortixSchema.table('oauth_clients', {
-  clientId: uuid('client_id').defaultRandom().primaryKey(),
-  clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
-  scopes: jsonb('scopes').default([]).$type<string[]>(),
-  active: boolean('active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const oauthClients = kortixSchema.table(
+  'oauth_clients',
+  {
+    clientId: uuid('client_id').defaultRandom().primaryKey(),
+    clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
+    scopes: jsonb('scopes').default([]).$type<string[]>(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Sign in with Kortix (2026-08-26): a client is registered by an account
+    // (self-serve, `/accounts/{id}/iam/oauth-clients`). Null = a legacy
+    // platform-level row inserted by hand before registration existed.
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /**
+     * Set for the IMPLICIT client of a Kortix App (2026-08-27). A Kortix-hosted
+     * App never runs the redirect flow — the Apps gate already authenticated
+     * the viewer, so it mints tokens through this row directly. One row per
+     * App; deleting the App revokes every token it ever minted (cascade).
+     */
+    appId: uuid('app_id').references((): AnyPgColumn => apps.appId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    description: text('description'),
+    // `confidential` presents client_secret at /token; `public` (a browser /
+    // native app that cannot keep a secret) relies on PKCE alone.
+    clientType: varchar('client_type', { length: 16 }).default('confidential').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_oauth_clients_account').on(table.accountId),
+    uniqueIndex('idx_oauth_clients_app').on(table.appId),
+  ],
+);
+
+/**
+ * A pending `/oauth/authorize` request, between the redirect to the consent
+ * screen and the user's decision. Was an in-process Map: lost on restart and
+ * invisible to a sibling replica. The request id is a capability, so only its
+ * hash is stored.
+ */
+export const oauthAuthorizationRequests = kortixSchema.table(
+  'oauth_authorization_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    requestIdHash: varchar('request_id_hash', { length: 128 }).notNull(),
+    clientId: uuid('client_id').notNull(),
+    redirectUri: text('redirect_uri').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>().notNull(),
+    state: text('state').default('').notNull(),
+    codeChallenge: text('code_challenge').notNull(),
+    codeChallengeMethod: varchar('code_challenge_method', { length: 10 }).default('S256').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_oauth_auth_requests_hash').on(table.requestIdHash),
+    index('idx_oauth_auth_requests_expires').on(table.expiresAt),
+    // Explicit name: drizzle's default exceeds Postgres's 63-byte identifier cap.
+    foreignKey({
+      columns: [table.clientId],
+      foreignColumns: [oauthClients.clientId],
+      name: 'oauth_auth_requests_client_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * Remembered consent: the user approved this client for these scopes once, so
+ * a later `/oauth/authorize` for a subset of them completes without the Allow
+ * screen. Deleting the row (or the client) asks again.
+ */
+export const oauthConsents = kortixSchema.table(
+  'oauth_consents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(),
+    clientId: uuid('client_id').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>().notNull(),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_oauth_consents_user_client').on(table.userId, table.clientId),
+    foreignKey({
+      columns: [table.clientId],
+      foreignColumns: [oauthClients.clientId],
+      name: 'oauth_consents_client_fk',
+    }).onDelete('cascade'),
+  ],
+);
 
 export const oauthAuthorizationCodes = kortixSchema.table(
   'oauth_authorization_codes',
@@ -3356,6 +3568,21 @@ export const apps = kortixSchema.table(
     memoryGb: integer('memory_gb').default(2).notNull(),
     diskGb: integer('disk_gb').default(10).notNull(),
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
+    /**
+     * What the Apps gate hands this App about the person looking at it.
+     *
+     * `identity` (default) — a signed viewer header on every request plus a
+     * `profile email` token from `/_kortix/viewer`: the App knows WHO the
+     * viewer is and can authorize its own data on that, but the token opens
+     * nothing else on the Kortix API.
+     * `api` — the same, with the `kortix` scope: the App acts AS the viewer on
+     * the Kortix API (their projects, their sessions, their role). Opt in per
+     * App; the viewer's own IAM role is still the ceiling.
+     * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
+     */
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
+      .default('identity')
+      .notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3376,6 +3603,10 @@ export const apps = kortixSchema.table(
     check('apps_memory_check', sql`${table.memoryGb} BETWEEN 1 AND 512`),
     check('apps_disk_check', sql`${table.diskGb} BETWEEN 1 AND 2048`),
     check('apps_idle_timeout_check', sql`${table.idleTimeoutSeconds} BETWEEN 120 AND 86400`),
+    check(
+      'apps_viewer_token_scope_check',
+      sql`${table.viewerTokenScope} IN ('off', 'identity', 'api')`,
+    ),
     check('apps_budget_check', sql`${table.monthlyBudgetUsd} >= 0`),
     uniqueIndex('apps_project_slug_live_unique')
       .on(table.projectId, table.slug)

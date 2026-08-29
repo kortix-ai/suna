@@ -16,6 +16,7 @@ import {
 	isWithinRewindWindow,
 	stageSessionRewind,
 } from "../../core/session/rewind";
+import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { writeStreamCache } from "./sync-store/stream-cache";
@@ -1492,9 +1493,25 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	registerOptimisticEcho: (sessionID, optimisticID, echoID) => {
-		if (!isOptimistic(sessionID, optimisticID)) return;
 		if (optimisticID === echoID) return;
-		recordOptimisticEcho(sessionID, optimisticID, echoID);
+		// The caller always names the id the ROW reports as this prompt's origin
+		// — its `wire_message_id`, the id this tab minted and painted. That id
+		// stops being optimistic the moment the FIRST echo supersedes it, and
+		// after a Stop takes the prompt back out of the runtime the bubble on
+		// screen is that echo (`reclaimRemovedMessage` re-marks it optimistic),
+		// not the wire id. Registering against the wire id alone therefore did
+		// nothing on every second and later re-mint, and the drain re-mints on
+		// every one of them: the re-delivery's echo then matched no alias, and
+		// with more than one send in flight the ordinal fallback correctly
+		// refuses to guess — so the echo was dropped and the prompt stayed on
+		// screen as a bubble nothing would ever confirm.
+		//
+		// Follow the chain to the id that IS on screen and register from there.
+		const live = isOptimistic(sessionID, optimisticID)
+			? optimisticID
+			: optimisticEchoes.get(sessionID)?.get(optimisticID);
+		if (!live || live === echoID || !isOptimistic(sessionID, live)) return;
+		recordOptimisticEcho(sessionID, live, echoID);
 	},
 
 	reclaimRemovedMessage: (sessionID, messageID) => {
@@ -1716,7 +1733,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// server's own page order, which is not an id order, so `incoming[0].id`
 			// is no longer the smallest id in the page. (That this comparison is an
 			// id comparison at all is a separate open question — see B-note in
-			// PROGRESS.md — deliberately left as-is here.)
+			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
@@ -2545,8 +2562,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			if (!props.sessionID || !props.error) return;
 			const sid = props.sessionID;
 			const error = props.error;
-			// Mark session idle — errors terminate the response.
-			store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
+			// Most errors terminate the response. A RETRYABLE one does not:
+			// OpenCode stamps `data.isRetryable === true` and keeps writing the
+			// SAME assistant message, and apps/api reaches the same conclusion
+			// from this same event (`isTerminalTurnEnd`,
+			// apps/api/src/projects/sandbox-deadline-policy.ts:295). Writing
+			// `idle` here made a live turn byte-identical to a finished one, and
+			// `endedByRuntime` (core/session/working.ts) then vetoed the still-open
+			// ledger row with no time bound — the Stop button disappeared mid-turn
+			// and the partial answer read as complete.
+			//
+			// The status slot is LEFT ALONE rather than set to `retry`: the frame
+			// already there is the runtime's own last word, and overwriting it
+			// would re-stamp its arrival time and restart every freshness window
+			// that depends on it.
+			if (!isRetryableTurnError(error)) {
+				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
+			}
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);

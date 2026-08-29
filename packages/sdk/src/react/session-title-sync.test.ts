@@ -47,17 +47,28 @@ describe('reconcileHydratedSessionTitle', () => {
     expect(resolved).toBe(true);
     expect(refetched).toEqual([
       {
-        // The broad sessions-family prefix (list, every scope, every
-        // session/messages entry) — NOT the exact list key `getQueryData`
-        // reads above. See `qk.project.sessionsScope`'s doc comment.
-        queryKey: qk.project.sessionsScope('project-1'),
+        // The LIST family — every scope ('visible' and the manager-only
+        // 'project'), and nothing else. It used to be the whole
+        // `sessionsScope` prefix, which ALSO covers `sessionTurn`,
+        // `sessionPrompts` and `messages`: seven ladder passes therefore
+        // re-issued four endpoints each, and a title refresh became a
+        // session-state refetch storm. A title ladder must refetch titles.
+        queryKey: [...qk.project.sessionsScope('project-1'), 'list'],
         type: 'active',
       },
       {
+        // EXACT: `qk.project.session(...)` is the parent of `prompts` and
+        // `turn`, so a prefix refetch here is the same accident again.
         queryKey: qk.project.session('project-1', 'session-1'),
+        exact: true,
         type: 'active',
       },
     ]);
+    // Stated as its own assertion because it is the whole point of the two
+    // keys above: a title pass must never touch the turn or the queue.
+    const touched = JSON.stringify(refetched);
+    expect(touched).not.toContain('"turn"');
+    expect(touched).not.toContain('"prompts"');
   });
 
   test("keeps refetching Veyris's historical New agent placeholder", async () => {
@@ -121,7 +132,7 @@ describe('the sessions-list refetch defers to an in-flight /start', () => {
     await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
 
     expect(refetched).toEqual([
-      { queryKey: qk.project.session('project-1', 'session-1'), type: 'active' },
+      { queryKey: qk.project.session('project-1', 'session-1'), exact: true, type: 'active' },
     ]);
   });
 
@@ -131,8 +142,8 @@ describe('the sessions-list refetch defers to an in-flight /start', () => {
     await reconcileHydratedSessionTitle(client, 'project-1', 'session-1', 1, { delaysMs: [0] });
 
     expect(refetched).toEqual([
-      { queryKey: qk.project.sessionsScope('project-1'), type: 'active' },
-      { queryKey: qk.project.session('project-1', 'session-1'), type: 'active' },
+      { queryKey: [...qk.project.sessionsScope('project-1'), 'list'], type: 'active' },
+      { queryKey: qk.project.session('project-1', 'session-1'), exact: true, type: 'active' },
     ]);
   });
 

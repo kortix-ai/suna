@@ -30,12 +30,13 @@ resource "aws_iam_role" "ec2_cpu_reconciler" {
 }
 
 data "aws_iam_policy_document" "ec2_cpu_reconciler" {
-  # checkov:skip=CKV_AWS_356: DescribeInstances, DescribeLoadBalancers, DescribeAlarms, and X-Ray telemetry APIs do not support resource-level permissions; alarm writes remain ARN-scoped below.
+  # checkov:skip=CKV_AWS_356: DescribeInstances, DescribeLoadBalancers, DescribeTargetGroups, DescribeAlarms, and X-Ray telemetry APIs do not support resource-level permissions; alarm writes remain ARN-scoped below.
   statement {
     sid = "DiscoverInfrastructureAndAlarms"
     actions = [
       "ec2:DescribeInstances",
       "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeTargetGroups",
       "cloudwatch:DescribeAlarms",
     ]
     resources = ["*"]
@@ -51,12 +52,29 @@ data "aws_iam_policy_document" "ec2_cpu_reconciler" {
   }
 
   statement {
-    sid     = "ReconcileDcf86AlbAlarms"
-    actions = ["cloudwatch:PutMetricAlarm", "cloudwatch:TagResource"]
+    sid = "ReconcileDcf86AlbAlarms"
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:TagResource",
+      "cloudwatch:DeleteAlarms",
+    ]
     resources = [
       "arn:aws:cloudwatch:us-west-2:${local.account_id}:alarm:kortix-alb-*",
       "arn:aws:cloudwatch:eu-west-2:${local.account_id}:alarm:kortix-alb-*",
       "arn:aws:cloudwatch:us-east-2:${local.account_id}:alarm:kortix-alb-*",
+    ]
+  }
+
+  # Hand-made compliance-* ALB alarms from the 2026-07-27 evidence pass
+  # duplicate the kortix-alb-* set. The ALB reconciler deletes the ones in the
+  # AWS/ApplicationELB namespace; it never touches compliance-*-cpu-high.
+  statement {
+    sid     = "RetireLegacyComplianceAlbAlarms"
+    actions = ["cloudwatch:DeleteAlarms"]
+    resources = [
+      "arn:aws:cloudwatch:us-west-2:${local.account_id}:alarm:compliance-*",
+      "arn:aws:cloudwatch:eu-west-2:${local.account_id}:alarm:compliance-*",
+      "arn:aws:cloudwatch:us-east-2:${local.account_id}:alarm:compliance-*",
     ]
   }
 

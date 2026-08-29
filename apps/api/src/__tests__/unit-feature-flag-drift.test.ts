@@ -16,7 +16,7 @@
  * It lives in apps/api because apps/api is the only package that already
  * depends on BOTH `@kortix/api-contract` (runtime dep) and `@kortix/sdk`
  * (devDependency, test-only — see e2e-connector-faces.test.ts) AND owns the
- * registry. Putting it in packages/sdk is not an option: `packages/sdk/AGENTS.md`
+ * registry. Putting it in packages/sdk is not an option: the **sdk** skill
  * keeps the core framework-free and import-graph-checked, and it has no
  * dependency on the API's registry at all.
  */

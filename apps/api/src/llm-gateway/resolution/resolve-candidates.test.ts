@@ -480,40 +480,40 @@ describe('resolveCandidates — BYOK billingMode / free-tier / managed-fallback'
 
 describe('resolveCandidates — managed model tier gating', () => {
   test('freeModelsOnly principal throws plan_upgrade_required before any tier lookup', async () => {
-    runtimeManagedModel = { id: 'glm-5.2' };
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
 
     await expect(
-      resolveCandidates(principal({ freeModelsOnly: true }), 'glm-5.2'),
+      resolveCandidates(principal({ freeModelsOnly: true }), 'glm-5.3-flash'),
     ).rejects.toMatchObject({ code: 'plan_upgrade_required' });
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
   test('free-tier account throws plan_upgrade_required for a managed model', async () => {
-    runtimeManagedModel = { id: 'glm-5.2' };
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
     const p = principal();
     tierByAccount[p.accountId] = 'free';
 
-    await expect(resolveCandidates(p, 'glm-5.2')).rejects.toMatchObject({
+    await expect(resolveCandidates(p, 'glm-5.3-flash')).rejects.toMatchObject({
       code: 'plan_upgrade_required',
     });
   });
 
   test('paid-tier account gets the managed candidates', async () => {
-    runtimeManagedModel = { id: 'glm-5.2' };
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
     const p = principal();
     tierByAccount[p.accountId] = 'pro';
 
-    const candidates = await resolveCandidates(p, 'glm-5.2');
+    const candidates = await resolveCandidates(p, 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({ provider: 'kortix-managed' });
   });
 
   test('a known managed model with the provider disabled throws model_disabled_on_deployment', async () => {
     config.KORTIX_MANAGED_PROVIDER_ENABLED = false;
-    runtimeManagedModel = { id: 'glm-5.2' };
-    knownManagedModelId = 'glm-5.2';
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+    knownManagedModelId = 'glm-5.3-flash';
 
-    await expect(resolveCandidates(principal(), 'glm-5.2')).rejects.toMatchObject({
+    await expect(resolveCandidates(principal(), 'glm-5.3-flash')).rejects.toMatchObject({
       code: 'model_disabled_on_deployment',
     });
   });

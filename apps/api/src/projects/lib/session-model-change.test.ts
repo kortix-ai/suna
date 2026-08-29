@@ -100,7 +100,7 @@ describe('modelChangeResult — a half-applied change must never read as done', 
 
   test('a failed push with no reason still flags the failure', () => {
     const result = modelChangeResult({
-      model: 'kortix/glm-5.2',
+      model: 'kortix/glm-5.3-flash',
       needsPush: true,
       push: { applied: false },
     });

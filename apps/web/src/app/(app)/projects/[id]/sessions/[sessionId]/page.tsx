@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 
@@ -56,6 +57,7 @@ import {
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
 } from '@/features/session/session-terminal-state';
+import { shouldPaintFatalCard, shouldPaintTerminalCard } from '@/features/session/terminal-card-gate';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { useAccountState } from '@/hooks/billing';
@@ -552,7 +554,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     !authLoading &&
     !!user &&
     !!sandbox &&
-    (sandbox.status === 'error' || sandbox.status === 'stopped');
+    (sandbox.status === 'error' || sandbox.status === 'stopped') &&
+    // See `shouldPaintFatalCard`: gates on `stage` ALONE -- neither `retriable`
+    // (a stale-wake PARK answers `stage:'failed', retriable:true` and must
+    // still paint) nor `activelyStarting` (`stage:'failed'` is reachable with
+    // `actively_starting:true` via a detached wake-fence race, and nothing
+    // else polls or re-invalidates a `failed` session to recover the user).
+    shouldPaintFatalCard({ stage: session.stage });
   // A preserved-unavailable identity is `status: 'stopped'` + an `external_id`,
   // so it satisfies `fatal` above and used to render the ordinary "restart it"
   // card. It needs its own terminal branch — see the render below.
@@ -662,7 +670,21 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const recoverableFailure = (() => {
     if (sessionMissing) return null;
     const metadata = (sandbox?.metadata as Record<string, unknown>) ?? {};
-    if (session.failure) {
+    // `session.failure` is the ONE branch here the server can answer while
+    // still retrying — e.g. `{stage:'starting', retriable:true,
+    // failure:{...}}` for a wake cooldown. Gate it on `retriable`/
+    // `activelyStarting`; the other branches below (`sandbox.status ===
+    // 'error'`, `unmaterializedFailure`, `session.startError`) are already
+    // hard-terminal signals (`isUnmaterializedSessionFailure` already reads
+    // `retriable` itself) and stay as they are.
+    if (
+      session.failure &&
+      shouldPaintTerminalCard({
+        hasFailure: true,
+        retriable: session.retriable,
+        activelyStarting: session.activelyStarting,
+      })
+    ) {
       return provisioningFailurePresentation(
         {
           ...metadata,
@@ -746,12 +768,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           title="Couldn't start session"
           message="This session is no longer available, or you do not have access to it."
           action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push(`/projects/${projectId}`)}
-            >
-              Back to project
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                Back to project
+              </Link>
             </Button>
           }
         />
@@ -1167,7 +1187,6 @@ function ActiveSessionChat({
   const rawRuntimeBootError = useRuntimeConnectionStore((s) => s.runtimeError);
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const router = useRouter();
 
   const rootSessionId = sessionState.opencodeSessionId;
   const runtimeSessions = sessionState.runtimeSessions;
@@ -1287,18 +1306,26 @@ function ActiveSessionChat({
     const params = new URLSearchParams(searchParams.toString());
     params.delete('oc');
     const query = params.toString();
-    router.replace(
+    // `history.replaceState`, not `router.replace`: this only drops an `oc` key
+    // the page has already resolved to nothing, so there is no server data to
+    // fetch. Dropping a param changes the router cache key, so `router.replace`
+    // would run a cold RSC fetch mid-boot — the worst moment on the hottest
+    // route. Next patches `replaceState` and updates its own canonical URL, so
+    // `useSearchParams` still reports the stripped URL and this effect settles
+    // on its next run. Same mechanism as `openTabAndNavigate` in
+    // `stores/tab-store.ts`.
+    window.history.replaceState(
+      null,
+      '',
       query
         ? `/projects/${projectId}/sessions/${sessionId}?${query}`
         : `/projects/${projectId}/sessions/${sessionId}`,
-      { scroll: false },
     );
   }, [
     selectedOpenCodeSessionId,
     selectedSession,
     sessionsLoading,
     searchParams,
-    router,
     projectId,
     sessionId,
   ]);
