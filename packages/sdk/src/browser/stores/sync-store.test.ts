@@ -3608,3 +3608,40 @@ describe("a committed revert deletes the captured set, not a string range", () =
 		expect(state.parts.msg_b).toBeUndefined();
 	});
 });
+
+describe("a streamed delta counts as runtime activity", () => {
+	// `projectWorking` ranks "the runtime produced output"
+	// (`sessionActivityAt`) FIRST — above the `/turn` ledger, which lags and,
+	// on pi, leaves rows open. Only `message.part.updated` used to stamp it.
+	// That was harmless while every runtime streamed snapshots; it stopped
+	// being harmless when pi began sending real deltas (~280 deltas and ~6
+	// snapshots per answer), because the stamp then went stale mid-generation
+	// and the composer showed Stop off a poll instead of off the stream.
+	test("message.part.delta stamps sessionActivityAt", () => {
+		const sid = "ses_delta_activity";
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: {
+				sessionID: sid,
+				messageID: "msg_1",
+				partID: "msg_1-p0",
+				field: "text",
+				delta: "Hello",
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+	});
+
+	test("a delta with no sessionID cannot stamp anything", () => {
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: { messageID: "msg_1", partID: "msg_1-p0", field: "text", delta: "x" },
+		} as never);
+		expect(Object.keys(useSyncStore.getState().sessionActivityAt)).toHaveLength(0);
+	});
+});
