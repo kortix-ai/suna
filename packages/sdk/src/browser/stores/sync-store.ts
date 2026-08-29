@@ -2461,6 +2461,20 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				};
 				if (!props.messageID || !props.partID || !props.field) return;
 
+				// A delta IS runtime output — the same evidence
+				// `message.part.updated` stamps above, and the input
+				// `projectWorking` ranks first ("CONTENT FIRST" in
+				// core/session/working.ts). Only the snapshot path stamped it,
+				// which was harmless while every runtime streamed snapshots.
+				// It stopped being harmless when pi started sending real
+				// deltas: its text then arrived as ~280 deltas and ~6
+				// snapshots per answer, so `sessionActivityAt` went stale
+				// mid-generation and the projection fell back to the `/turn`
+				// ledger — the laggy observer, which on pi leaves rows open —
+				// and the composer showed Stop off a poll instead of off the
+				// stream.
+				if (props.sessionID) get().noteSessionActivity(props.sessionID);
+
 				// Ensure the part exists before applying the delta.
 				// message.part.delta can arrive before message.part.updated
 				// (which normally creates the message + part). Without a
