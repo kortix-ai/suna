@@ -2,65 +2,50 @@
  * Whether the GENERATING indicator ("Gathering thoughts…", the shimmer) may
  * paint right now.
  *
- * This is a narrower question than `projectWorking`'s `state`, and the split is
- * the point. `state` answers "should the composer hold, should commands wait" —
- * questions where acting on a stale-but-plausible open turn is the SAFE
- * direction. The indicator answers "tell the user the agent is thinking", where
- * the same stale read is simply a lie on screen.
+ * ## The rule, in one line
  *
- * ## The defect this closes
+ * The agent is generating when the RUNTIME says so. A poll never says so.
  *
- * Entering a session painted the generating shimmer for ~30-45s over a
- * transcript that was already fully rendered, with nothing running, and then
- * cleared on its own (reported 2026-08-29 on `pi-worker`).
+ * `projectWorking` answers a broader question — "is a turn open" — from three
+ * kinds of evidence, and only one of them is the runtime's own voice:
  *
- * The only evidence behind that claim is a `GET .../turn` read — the control
- * plane still holding a row open for a turn nobody is running. The session
- * stream is attached and has PROMISED to carry turn state
- * (`kortix.control.turn`), but those frames are pushed ON CHANGE: a session
- * resumed with a row already open produces no frame, so nothing contradicts the
- * stale read until the observation ages out (`SERVER_OBSERVATION_MAX_MS`).
+ *  - `stream`  — SSE frames from the runtime, including the content-first
+ *                activity rule. This IS the agent generating. Show it.
+ *  - `optimistic` — this tab just sent a prompt and holds the receipt. The user
+ *                pressed send a moment ago and the stream takes over within
+ *                milliseconds; withholding here would put a visible dead gap
+ *                between the click and any feedback.
+ *  - `server`  — a `GET .../turn` read. This says a ROW IS OPEN in the control
+ *                plane's ledger, which is a different fact and is routinely
+ *                stale: rows are closed by a separate relay, so one can outlive
+ *                its turn by minutes or hours. It must NEVER paint the shimmer.
  *
- * `workingRefetchInterval` already applies exactly this rule to the POLL — it
- * refuses to stand down on a connected-but-uncorroborated stream, for the same
- * reason and citing the same symptom. This applies the rule to what the user
- * SEES, which is the half that was missing.
+ * ## What this replaces
  *
- * ## Why it cannot hide a real turn
+ * The first version of this gate withheld a server-sourced claim only while the
+ * stream had not yet corroborated it, and let it through once a
+ * `kortix.control.turn` frame arrived. That frame carries the same ledger rows,
+ * so a stale row corroborated itself and the shimmer came back — observed on
+ * pi.kortix.com over a fully rendered transcript with the composer on Stop.
+ * Corroboration was answering "has the stream spoken", when the question is
+ * "is the RUNTIME producing output". Only the source can answer that.
  *
- * The gate is deliberately as small as it can be, and withholds only where all
- * three hold at once:
+ * ## What still uses the broader answer
  *
- *  - the claim rests on the SERVER read alone. A runtime that is actually
- *    producing output reaches the projection as `stream` (its own voice, or the
- *    content-first activity rule), and this tab's own send reaches it as
- *    `optimistic`. Neither is ever withheld.
- *  - a stream is CONNECTED. With no stream there is no promise outstanding, the
- *    server read is all there is, and it decides — a surface with no stream
- *    must never go quiet over a running turn.
- *  - that stream has NOT yet answered about turns. The moment it does, the
- *    indicator paints.
- *
- * So the worst case is a real turn whose indicator waits for the first control
- * frame on an attached stream, which is the same instant the transcript starts
- * moving.
+ * The composer keeps `projectWorking`'s ungated `state`. Holding `/` commands
+ * over a turn that MIGHT be open is the safe direction — a command goes
+ * straight at the runtime with no admission gate. Telling the user the agent is
+ * thinking when it is not is simply false. Two questions, two answers.
  */
 
 import type { WorkingProjection } from './working';
 
 export function showsGeneratingIndicator(input: {
   projection: Pick<WorkingProjection, 'state' | 'source'>;
-  /** A session stream is attached for this scope — it has promised an answer. */
-  streamConnected: boolean;
-  /**
-   * A `kortix.control.turn` frame has arrived since the CURRENT attach.
-   * Absent means the caller does not track it, and is treated as corroborated
-   * so this can only ever withhold on a positive "not answered yet".
-   */
-  streamCorroborated?: boolean;
 }): boolean {
   if (input.projection.state !== 'working') return false;
-  if (input.projection.source !== 'server') return true;
-  if (!input.streamConnected) return true;
-  return input.streamCorroborated ?? true;
+  // The allowlist is the point: a source this does not name cannot paint the
+  // shimmer, so a new observer added later is silent until someone decides it
+  // represents the runtime actually generating.
+  return input.projection.source === 'stream' || input.projection.source === 'optimistic';
 }
