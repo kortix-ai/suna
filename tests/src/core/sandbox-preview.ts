@@ -127,6 +127,34 @@ bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
 ${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
+
+# Restart anything RUNNING-BUT-UNHEALTHY before waiting on it.
+#
+# \`compose up -d\` recreates a container for a new image, env or port (see the
+# Caddyfile note below) and for NOTHING else — so a long-running container that
+# has gone unhealthy is left exactly as it is, forever. Every dependent then
+# fails \`depends_on: service_healthy\`, \`--wait\` times out, and the deploy dies
+# without ever touching the thing that is actually broken. The retry below does
+# not help either: attempt 2 runs the same comparison and reaches the same
+# no-op.
+#
+# Cost of that gap, measured 2026-08-29 on the pi-worker environment:
+# supabase-kong sat \`Up 27 hours (unhealthy)\` while still routing traffic, so
+# nothing looked wrong from outside. The next deploy — an unrelated one-line
+# Mailpit change — could not start a single dependent, and FOUR consecutive
+# deploys across two different commits died on it. The whole origin was down
+# until the container was restarted by hand.
+#
+# A restart, never a recreate: the container keeps its volumes and its config,
+# so this is safe for stateful services too (postgres included) and cannot lose
+# data. Best-effort — a box with nothing unhealthy prints nothing and moves on.
+unhealthy="$(docker ps --filter health=unhealthy --format '{{.Names}}' | grep "^kortix-${instance}-" || true)"
+if [ -n "$unhealthy" ]; then
+  printf 'restarting unhealthy containers before wait: %s\n' "$(printf '%s' "$unhealthy" | tr '\n' ' ')"
+  printf '%s\n' "$unhealthy" | xargs -r docker restart
+  sleep 5
+fi
+
 for stack_attempt in 1 2; do
   if ${compose} up -d --wait --wait-timeout 300; then
     break

@@ -268,3 +268,42 @@ describe('provider-neutral preview lifecycle', () => {
     expect(selectStalePreviewSandboxIds(sandboxes, active)).toEqual(['stale', 'closed']);
   });
 });
+
+describe('unhealthy-container recovery', () => {
+  /**
+   * pi-worker environment, 2026-08-29: supabase-kong sat `Up 27 hours
+   * (unhealthy)` while still routing traffic, so nothing looked wrong from
+   * outside. `compose up -d` only recreates for a new image, env or port, so
+   * the unhealthy container was never touched; every dependent then failed
+   * `depends_on: service_healthy`, and FOUR consecutive deploys across two
+   * different commits died without the origin ever coming back.
+   */
+  const script = () =>
+    buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://x.example.test',
+      runTests: false,
+    });
+
+  it('restarts running-but-unhealthy containers BEFORE waiting on them', () => {
+    const s = script();
+    expect(s).toContain('docker ps --filter health=unhealthy');
+    expect(s).toContain('docker restart');
+    // Before the wait, not after: the retry loop reruns the same comparison
+    // and reaches the same no-op, so recovering on failure would never fire.
+    expect(s.indexOf('health=unhealthy')).toBeLessThan(s.indexOf('up -d --wait'));
+  });
+
+  it('scopes the restart to this instance, never a co-tenant container', () => {
+    expect(script()).toContain('grep "^kortix-');
+  });
+
+  it('is a restart, never a recreate — volumes and data must survive', () => {
+    const s = script();
+    expect(s).not.toContain('docker rm ');
+    expect(s).not.toContain('--force-recreate');
+  });
+});
