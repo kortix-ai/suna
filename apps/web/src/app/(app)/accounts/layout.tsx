@@ -4,14 +4,12 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { AppHeader } from '@/features/layout/app-header';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useRouter } from 'next/navigation';
 import React from 'react';
 
 type LayoutProps = { children: React.ReactNode };
 
 const Layout = ({ children }: LayoutProps) => {
   const { user, isLoading } = useAuth();
-  const router = useRouter();
 
   useSignedOutRedirect();
 

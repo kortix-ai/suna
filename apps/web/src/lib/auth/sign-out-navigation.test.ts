@@ -174,10 +174,18 @@ describe('nothing on an identity change can wait forever', () => {
     expect(sequence).toContain("from '@/lib/utils/time-budget'");
 
     // All FOUR pre-navigation awaits, enumerated: a new unbounded `await
-    // steps.` added beside them fails here.
-    const budgeted = sequence.match(/withTimeBudget\(steps\./g) ?? [];
+    // steps.` added beside them fails here. Four, not three, because
+    // `endSession` appears twice — once for the attempt and once for the retry.
+    const budgeted = sequence.match(/withTimeBudget\(\s*steps\./g) ?? [];
     expect(budgeted.length).toBe(4);
     expect(sequence).not.toContain('await steps.');
+
+    // Each one spends its OWN budget, not a shared number: the server revoke
+    // must not be bounded tighter than its own `AbortSignal.timeout(3_000)`,
+    // and the reset needs far less than either.
+    for (const budget of ['budgets.finalizeServerSession', 'budgets.endSession', 'budgets.resetClientState']) {
+      expect(sequence).toContain(budget);
+    }
   });
 
   test('resetClientState bounds its one async step, for EVERY caller', () => {
@@ -266,19 +274,17 @@ describe('the signed-out route guards do not race the exit', () => {
     }
   });
 
-  test('the latch is set before performSignOut can throw, and refuses re-entry', () => {
-    const body = slice(
-      code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
-      '\n}\n',
-    );
-    const reentry = body.indexOf('if (isSigningOut()) return;');
-    const mark = body.indexOf('markSignOutStarted();');
-    const firstRisk = body.indexOf('createClient()');
+  test('the latch is set before anything can fire SIGNED_OUT', () => {
+    // It lives in `runSignOut` now, set before the first await, so that a
+    // `createClient()` throw cannot latch it and lock the user out — and so
+    // that the refusal branch and the latch cannot drift apart.
+    const sequence = code('lib/auth/sign-out-sequence.ts');
+    const latch = sequence.indexOf('signOutStarted = true;');
+    const firstStep = sequence.indexOf('steps.finalizeServerSession()');
 
-    expect(reentry).toBeGreaterThan(-1);
-    expect(mark).toBeGreaterThan(reentry);
-    expect(firstRisk).toBeGreaterThan(mark);
+    expect(latch).toBeGreaterThan(-1);
+    expect(firstStep).toBeGreaterThan(latch);
+    expect(code('lib/auth/perform-sign-out.ts')).not.toContain('markSignOutStarted');
   });
 
   test('a sign-out leaves even if the wiring throws before the sequence runs', () => {
@@ -306,21 +312,72 @@ describe('a sign-out that the server refuses still signs the user out', () => {
 
   test('the sequence expires the cookie whenever the session is not PROVEN gone', () => {
     const sequence = code('lib/auth/sign-out-sequence.ts');
+    // Twice: once as soon as it is known, and again immediately before leaving,
+    // because auth-js keeps refreshing an in-memory session it never removed.
+    const drops = sequence.match(/steps\.dropAuthCookie\(\);/g) ?? [];
+    expect(drops.length).toBe(2);
     expect(sequence).toContain('if (!sessionRemoved) {');
-    expect(sequence).toContain('steps.dropAuthCookie();');
   });
 
   test('the wiring expires the REAL cookie, chunk variants included', () => {
-    expect(wiring).toContain("from '@/lib/supabase/constants'");
-    expect(wiring).toContain('KORTIX_SUPABASE_AUTH_COOKIE');
+    // SLICED to the function. Asserting against the whole file made
+    // `KORTIX_SUPABASE_AUTH_COOKIE` satisfiable by the import line alone and
+    // `path=/` a generic substring with no anchor to the cookie write — the
+    // same false-green shape this file has already produced three times.
+    const expire = slice(wiring, 'function expireSupabaseAuthCookie', '\n}\n');
+
+    expect(expire).toContain('KORTIX_SUPABASE_AUTH_COOKIE');
     // `@supabase/ssr` splits an oversized session across `<name>.0`, `<name>.1`,
     // … so clearing only the base name leaves a signed-in browser whenever the
     // JWT is large.
-    expect(wiring).toContain('`${KORTIX_SUPABASE_AUTH_COOKIE}.${index}`');
-    expect(wiring).toContain('Max-Age=0');
+    expect(expire).toContain('`${KORTIX_SUPABASE_AUTH_COOKIE}.${index}`');
+    expect(expire).toContain('Max-Age=0');
     // Same path the client writes it with; a mismatched path expires nothing.
-    expect(wiring).toContain('path=/');
+    expect(expire).toContain('path=/');
+
+    expect(wiring).toContain("from '@/lib/supabase/constants'");
     expect(wiring).toContain('dropAuthCookie: expireSupabaseAuthCookie');
+  });
+
+  test('the fallback exit expires the cookie too', () => {
+    // The `createClient()`-throws path never reaches `runSignOut`, so
+    // `dropAuthCookie` was never called — landing on `/auth` with a live
+    // session is the exact bounce-back-in symptom the step exists to prevent.
+    const fallback = slice(wiring, '  } finally {', '\n}\n');
+    const expire = fallback.indexOf('expireSupabaseAuthCookie();');
+    const leave = fallback.indexOf('window.location.assign(SIGN_OUT_DESTINATION);');
+
+    expect(expire).toBeGreaterThan(-1);
+    expect(leave).toBeGreaterThan(expire);
+  });
+
+  test('a network-class failure skips the pointless retry', () => {
+    const sequence = code('lib/auth/sign-out-sequence.ts');
+    expect(sequence).toContain("outcome.value.error?.name === 'AuthRetryableFetchError'");
+    expect(sequence).toContain("if (outcome.status === 'timeout') return true;");
+    expect(sequence).toContain('!isNetworkClassFailure(ended)');
+  });
+});
+
+describe('a second press always leaves', () => {
+  // Pressing Log out with unsaved file edits open raises the `beforeunload`
+  // prompt (`file-viewer/file-content-renderer.tsx`); pressing Stay cancels the
+  // navigation and leaves the user inside the app with the latch set. Refusing
+  // silently made that permanent — the pending flags are never cleared, so the
+  // control stayed disabled, and the route guard had already stood down.
+  test('the refusal branch navigates instead of returning silently', () => {
+    const sequence = code('lib/auth/sign-out-sequence.ts');
+    const refusal = slice(sequence, 'if (signOutStarted) {', '\n  }');
+
+    expect(refusal).toContain('steps.leave(SIGN_OUT_DESTINATION);');
+    expect(refusal).toContain('return;');
+  });
+
+  test('the test-only latch reset is never called from product code', () => {
+    const callers = sourceFilesForBan().filter((file) =>
+      code(file).includes('__resetSignOutLatchForTests'),
+    );
+    expect(callers).toEqual(['lib/auth/sign-out-sequence.ts']);
   });
 });
 
@@ -392,6 +449,17 @@ describe('the sign-out path stays importable from the browser', () => {
     expect(typeof signOutModule.performSignOut).toBe('function');
   });
 });
+
+/** Every `.ts`/`.tsx` under `src`, excluding tests. */
+function sourceFilesForBan(dir = ''): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(resolve(WEB_SRC, dir), { withFileTypes: true })) {
+    const rel = dir ? `${dir}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...sourceFilesForBan(rel));
+    else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) out.push(rel);
+  }
+  return out;
+}
 
 /** The local modules an import specifier can name, in resolution order. */
 function resolveLocal(specifier: string, fromFile: string): string | null {

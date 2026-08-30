@@ -1,15 +1,23 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 
 import {
+  __resetSignOutLatchForTests,
   isSigningOut,
-  markSignOutStarted,
   runSignOut,
+  SIGN_OUT_BUDGETS_MS,
   SIGN_OUT_DESTINATION,
   type SignOutSteps,
 } from './sign-out-sequence';
 
 /** Small enough that a "this step hangs" test finishes instantly. */
-const FAST = { stepTimeoutMs: 5 };
+const FAST = {
+  budgets: { finalizeServerSession: 5, endSession: 5, resetClientState: 5 },
+};
+
+// The latch is module state that production never clears, because the only
+// thing that ends a sign-out is the document being replaced. Every test here
+// runs a fresh sign-out, so every test starts from a fresh latch.
+beforeEach(() => __resetSignOutLatchForTests());
 
 /**
  * The sign-out ORDER and its failure handling, on injected steps.
@@ -136,6 +144,10 @@ describe('runSignOut, the signOut ERROR path', () => {
       'endSession:local',
       'dropAuthCookie',
       'resetClientState',
+      // AGAIN, immediately before leaving: with the session never removed,
+      // auth-js still holds it in memory with `autoRefreshToken` ticking, and a
+      // refresh in the reset window writes it straight back into the cookie.
+      'dropAuthCookie',
       'leave',
     ]);
   });
@@ -279,20 +291,54 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
     expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
   });
 
-  test('a hung sign-out is retried locally, then resets and leaves', async () => {
-    const r = recorder({
-      endSession: (scope) => (scope === 'local' ? Promise.resolve({ error: null }) : hang()),
-    });
+  test('a hung sign-out is NOT retried — it expires the cookie instead', async () => {
+    // A timeout carries no error to classify and the request is still in
+    // flight; `scope: 'local'` posts to the same host and can only fail the
+    // same way, one budget later. Skipping it is what keeps the worst case at
+    // 6.0s instead of 8.0s, and the cookie is what makes skipping it safe.
+    const r = recorder({ endSession: hang });
 
     await runSignOut(r.steps, FAST);
 
     expect(r.calls).toEqual([
       'finalizeServerSession',
       'endSession',
-      'endSession:local',
+      'dropAuthCookie',
       'resetClientState',
+      'dropAuthCookie',
       'leave',
     ]);
+  });
+
+  test('a settled AuthRetryableFetchError is not retried either', async () => {
+    // auth-js's own tag for "the fetch did not complete" — offline, DNS. Same
+    // reasoning as the timeout above, but with an error object to read.
+    const r = recorder({
+      endSession: async () => ({ error: { name: 'AuthRetryableFetchError', message: 'offline' } }),
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).not.toContain('endSession:local');
+    expect(r.calls).toContain('dropAuthCookie');
+  });
+
+  test('a settled HTTP error IS retried — global and local are different writes', async () => {
+    // The paired positive. `scope: 'global'` revokes every refresh token for
+    // the user and is a heavier server write than `scope: 'local'`, so a global
+    // 500 beside a local 200 is a real outcome. Collapsing "any failure" into
+    // "never retry" would throw that away.
+    const r = recorder({
+      endSession: async (scope) =>
+        scope === 'local'
+          ? { error: null }
+          : { error: { name: 'AuthApiError', status: 500, message: 'boom' } },
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toContain('endSession:local');
+    expect(r.calls).not.toContain('dropAuthCookie');
   });
 
   test('a hung reset — the real IndexedDB case — still leaves', async () => {
@@ -316,9 +362,9 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
     expect(r.calls).toEqual([
       'finalizeServerSession',
       'endSession',
-      'endSession:local',
       'dropAuthCookie',
       'resetClientState',
+      'dropAuthCookie',
       'leave',
     ]);
     expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
@@ -332,7 +378,7 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
     });
 
     const started = Date.now();
-    await runSignOut(r.steps, { stepTimeoutMs: 20 });
+    await runSignOut(r.steps, { budgets: { finalizeServerSession: 20, endSession: 20, resetClientState: 20 } });
     const elapsed = Date.now() - started;
 
     // Four bounded steps at 20ms. Generous ceiling so a loaded CI box does not
@@ -343,15 +389,74 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
 });
 
 /**
- * The in-flight latch. Placed LAST in this file on purpose: it is module state
- * that never resets, so marking it earlier would leak into the tests above.
- * Nothing before this point calls `markSignOutStarted` — only `performSignOut`
- * does, and that lives in the other module.
+ * The in-flight latch, and what a SECOND press does.
+ *
+ * The product path is real: press Log out with unsaved file edits open, and the
+ * `beforeunload` handler in `file-viewer/file-content-renderer.tsx` raises the
+ * browser's "Leave site?" prompt. Pressing Stay cancels the navigation and
+ * leaves the user inside the app — signed out, with the latch set.
+ *
+ * Refusing silently, as an earlier revision did, made that state PERMANENT:
+ * every later press was a no-op, the control stayed `disabled` (the pending
+ * flags are never cleared, by design), and `useSignedOutRedirect` had already
+ * stood down. The user had no working way to leave.
  */
-describe('the sign-out in-flight latch', () => {
-  test('is false until a sign-out starts, then latches', () => {
-    expect(isSigningOut()).toBe(false);
-    markSignOutStarted();
+describe('a second press never runs a second sequence, but always leaves', () => {
+  test('the first run latches; the second only navigates', async () => {
+    const first = recorder();
+    await runSignOut(first.steps, FAST);
     expect(isSigningOut()).toBe(true);
+
+    const second = recorder();
+    await runSignOut(second.steps, FAST);
+
+    // Nothing re-issued: no server revoke, no sign-out, no reset.
+    expect(second.calls).toEqual(['leave']);
+    expect(second.destinations).toEqual([SIGN_OUT_DESTINATION]);
+  });
+
+  test('the latch is set before the first step can fire SIGNED_OUT', async () => {
+    // `useSignedOutRedirect` reads it. If `endSession` fires `SIGNED_OUT` before
+    // the latch is set, the guard's soft `router.replace('/auth')` wins the race
+    // and the route cache survives the identity change.
+    let latchedDuringFirstStep = false;
+    const r = recorder({
+      finalizeServerSession: async () => {
+        latchedDuringFirstStep = isSigningOut();
+      },
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(latchedDuringFirstStep).toBe(true);
+  });
+
+  test('it starts unlatched', () => {
+    // `beforeEach` resets it; this pins that the reset works, so every other
+    // test in this file is running a genuine first sign-out.
+    expect(isSigningOut()).toBe(false);
+  });
+});
+
+describe('the budgets', () => {
+  test('are 3s / 2s / 1s, summing to the 6.0s worst case', () => {
+    expect(SIGN_OUT_BUDGETS_MS).toEqual({
+      finalizeServerSession: 3_000,
+      endSession: 2_000,
+      resetClientState: 1_000,
+    });
+    const worstCase =
+      SIGN_OUT_BUDGETS_MS.finalizeServerSession +
+      SIGN_OUT_BUDGETS_MS.endSession +
+      SIGN_OUT_BUDGETS_MS.resetClientState;
+    expect(worstCase).toBe(6_000);
+  });
+
+  test('the server revoke is not tighter than its own AbortSignal', () => {
+    // `finalizeServerSignOut` uses `AbortSignal.timeout(3_000)`. A tighter outer
+    // bound would mean that abort could never fire while anyone waits, and the
+    // request would only land because later steps happen to keep the document
+    // alive — accidental coupling that every future latency cut would erode.
+    expect(SIGN_OUT_BUDGETS_MS.finalizeServerSession).toBeGreaterThanOrEqual(3_000);
   });
 });

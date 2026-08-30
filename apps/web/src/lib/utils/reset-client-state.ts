@@ -52,7 +52,17 @@ export async function resetClientState({
     console.error('Failed to clear current-account store:', error);
   }
 
-  clearUserLocalStorage();
+  try {
+    clearUserLocalStorage();
+  } catch (error) {
+    // The only unguarded call in this function, and the one that reaches
+    // `localStorage` directly. Reading that accessor THROWS in a storage-blocked
+    // context (Safari private mode, a partitioned iframe). `runSignOut` absorbs
+    // a rejection through `withTimeBudget`, but `AuthProvider.adoptUser` awaits
+    // this bare — so an unguarded throw here rejects a SIGN-IN, before
+    // `setIsLoading(false)`.
+    console.error('Failed to clear per-user localStorage:', error);
+  }
 
   const purged = await withTimeBudget(clearSessionIDBCache(), idbTimeoutMs);
   if (purged.status !== 'settled') {
