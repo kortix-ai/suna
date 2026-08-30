@@ -6,6 +6,7 @@ import {
   isInviteReturnUrl,
   resolveNewAccountReturnUrl,
   sanitizeAuthReturnUrl,
+  shouldDemoteReturnUrl,
 } from '@/lib/auth/return-url';
 import {
   type EmailFlowMode,
@@ -21,9 +22,33 @@ import {
   recordPlatformLogout,
   submitAccessRequest,
 } from '@kortix/sdk';
-import { LAST_PROJECT_COOKIE } from '@/lib/onboarding/landing-destination';
+import {
+  AUTH_BOUNCE_COOKIE,
+  LAST_PROJECT_COOKIE,
+  parseAuthBounceOwner,
+} from '@/lib/onboarding/landing-destination';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+
+/**
+ * Who the middleware bounced to `/auth` on this browser, or `''` when the
+ * bounce was unattributed (or there was no bounce at all — a visitor who typed
+ * the address, or a link opened on a different device).
+ */
+async function readBouncedOwnerId(): Promise<string> {
+  return parseAuthBounceOwner((await cookies()).get(AUTH_BOUNCE_COOKIE)?.value);
+}
+
+/**
+ * The bounce is spent the moment authentication resolves a destination. Leaving
+ * it behind would let one sign-in's attribution demote the NEXT one, and it has
+ * to be cleared on every successful path — password, OTP and signup all return
+ * a destination to the client without ever touching `/auth/callback`, so the
+ * clear beside that route's `ACTIVE_INSTANCE_COOKIE` reaches none of them.
+ */
+async function clearAuthBounce(): Promise<void> {
+  (await cookies()).delete(AUTH_BOUNCE_COOKIE);
+}
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
   if (!value) return null;
@@ -162,14 +187,27 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     return { code: 'sso_required', message: SSO_REQUIRED_MESSAGE };
   }
 
-  // `flowMode === 'signup'` means the API just confirmed this address has no
-  // account, so resolve the return URL against the signup rule HERE — before it
-  // is baked into the email link. That link can be opened minutes or days
-  // later, long after the "created in the last 60s?" heuristic the callback
-  // uses stops being true, and a stale link is precisely how a fresh account
-  // ends up staring at a stranger's "Request access" page.
-  const returnUrl =
-    flowMode === 'signup' ? resolveNewAccountReturnUrl(requestedReturnUrl) : requestedReturnUrl;
+  // Resolve the return URL HERE — before it is baked into the email link. That
+  // link can be opened minutes or days later, on a device that never held the
+  // bounced session, so this is the LAST point at which either rule can still
+  // reach it:
+  //  - `flowMode === 'signup'` means the API just confirmed this address has no
+  //    account. The link outlives the callback's "created in the last 60s?"
+  //    heuristic, and a stale link is precisely how a fresh account ends up
+  //    staring at a stranger's "Request access" page.
+  //  - an ATTRIBUTED bounce cannot be matched against a signer here, because no
+  //    identity exists yet — the address has not been proven. Fail closed: a
+  //    path bounced from a named session does not get minted into an email.
+  //    Nothing is lost in the common case; the same-browser code-entry path
+  //    (`verifyOtp`) still carries the full return URL from the form, and it
+  //    CAN compare identities.
+  const returnUrl = shouldDemoteReturnUrl({
+    bouncedOwnerId: await readBouncedOwnerId(),
+    signedInUserId: null,
+    isNewUser: flowMode === 'signup',
+  })
+    ? resolveNewAccountReturnUrl(requestedReturnUrl)
+    : requestedReturnUrl;
 
   const supabase = await createClient();
   const emailRedirectTo = emailRedirectUrl({
@@ -334,8 +372,17 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   // Return success — let the client redirect after auth state hydrates. An
   // account this young signed up moments ago (the sign-up form ends in a
   // password sign-in), so it gets the signup destination rule, not a return URL
-  // pointing at a resource that predates it.
-  const finalReturnUrl = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
+  // pointing at a resource that predates it. The same rule applies when the
+  // return URL was bounced here from somebody ELSE's session — an existing
+  // account is exactly the case `isNewUser` alone never covered.
+  const finalReturnUrl = shouldDemoteReturnUrl({
+    bouncedOwnerId: await readBouncedOwnerId(),
+    signedInUserId: data.user?.id ?? null,
+    isNewUser,
+  })
+    ? resolveNewAccountReturnUrl(returnUrl)
+    : returnUrl;
+  await clearAuthBounce();
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
@@ -461,8 +508,19 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   // could return a redirect, which blocked the sign-up form itself.
   //
   // `alreadyExists` means the address had an account and the password was
-  // right — that is a sign-IN, so the visitor's own return URL still stands.
-  const redirectTo = alreadyExists ? requestedReturnUrl : newAccountReturnUrl;
+  // right — that is a sign-IN, so the visitor's own return URL still stands…
+  // unless the path was bounced here from a DIFFERENT account's session. This
+  // form is a real sign-in door for anyone who already has an account, which is
+  // the second-paid-account case, so it needs the same identity gate the
+  // sign-in action has.
+  const redirectTo = shouldDemoteReturnUrl({
+    bouncedOwnerId: await readBouncedOwnerId(),
+    signedInUserId: signInData.user?.id ?? null,
+    isNewUser: !alreadyExists,
+  })
+    ? newAccountReturnUrl
+    : requestedReturnUrl;
+  await clearAuthBounce();
 
   return {
     success: true,
@@ -555,8 +613,17 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   // `sendEmailCode` already applied this rule when the API could tell us the
   // address was new. Re-applying it here covers the case where it could not
   // (a fail-open 'unknown' flow mode), so a fresh account never rides a
-  // pre-signup return URL into a project it cannot open.
-  let finalDestination = isNewUser ? resolveNewAccountReturnUrl(returnUrl) : returnUrl;
+  // pre-signup return URL into a project it cannot open. This is also the one
+  // place the bounce owner CAN be matched against a real identity: the code was
+  // entered in the same browser that was bounced, and the account is now known.
+  let finalDestination = shouldDemoteReturnUrl({
+    bouncedOwnerId: await readBouncedOwnerId(),
+    signedInUserId: data.user?.id ?? null,
+    isNewUser,
+  })
+    ? resolveNewAccountReturnUrl(returnUrl)
+    : returnUrl;
+  await clearAuthBounce();
 
   // Invited users (returnUrl → /invites/:id) must land on the accept/decline
   // dialog verbatim — skip the billing-aware landing (account page or a freshly

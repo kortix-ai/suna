@@ -8,9 +8,13 @@ import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
 import {
+  AUTH_BOUNCE_COOKIE,
+  AUTH_BOUNCE_MAX_AGE,
   LAST_PROJECT_COOKIE,
   PROJECT_LANDING_PATH,
+  parseLastProjectOwner,
   resolveDefaultLandingPath,
+  serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import {
@@ -499,6 +503,22 @@ export async function middleware(request: NextRequest) {
     authError = identity.authError;
   }
 
+  // Who is being bounced. Captured HERE, before the self-heal below can null
+  // `user`: `getUser()` is allowed to hand back a user AND an error together,
+  // and the self-heal drops that user on the floor a few lines down. Reading
+  // after it would throw away the one identity the request still had.
+  //
+  // The remembered project's owner is the fallback, and it is what actually
+  // carries attribution in the common failure: a rotated refresh token already
+  // resolves to `user: null` before the self-heal runs, so there is no session
+  // id left to read. That cookie outlives the token, and it is the same
+  // browser-written value `resolveDefaultLandingPath` already trusts.
+  //
+  // Empty is an allowed answer. It means UNATTRIBUTED, which never demotes a
+  // return URL — see `shouldDemoteReturnUrl`.
+  const bounceOwnerId =
+    user?.id || parseLastProjectOwner(request.cookies.get(LAST_PROJECT_COOKIE)?.value);
+
   // Self-heal a stale/rotated session. A refresh token that's invalid or
   // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
   // erroring on every request and dead-ends the user on /auth. Drop the Supabase
@@ -598,7 +618,21 @@ export async function middleware(request: NextRequest) {
       // browser bounces to /auth still carrying the poisoned cookie, and the
       // auth page's own client-side session check has to rediscover the same
       // invalidity from scratch before it can show a usable form.
-      return finalizeEnvironmentAccess(redirectPreservingSession(url));
+      const bounceResponse = redirectPreservingSession(url);
+      // Attach WHO was bounced. `redirect` alone says where, and the auth flows
+      // downstream cannot tell an expired session returning to its own project
+      // from a different account picking up the previous one's path.
+      bounceResponse.cookies.set(
+        AUTH_BOUNCE_COOKIE,
+        serializeAuthBounce(bounceOwnerId, redirectTarget),
+        {
+          httpOnly: true,
+          maxAge: AUTH_BOUNCE_MAX_AGE,
+          path: '/',
+          sameSite: 'lax',
+        },
+      );
+      return finalizeEnvironmentAccess(bounceResponse);
     }
 
     return finalizeEnvironmentAccess(supabaseResponse);

@@ -137,6 +137,41 @@ export function resolveNewAccountReturnUrl(
 }
 
 /**
+ * Whether the visitor's return URL must be resolved through the new-account
+ * rule instead of replayed verbatim.
+ *
+ * Two cases, one answer:
+ *  - `isNewUser` — the account is seconds old and cannot own anything that
+ *    predates it. This is the rule that already shipped.
+ *  - an ATTRIBUTED bounce whose owner is not the user who just signed in. The
+ *    middleware wrote `/auth?redirect=<path>` for somebody else's session, and
+ *    replaying it drops this user on a stranger's "Request access" page. An
+ *    existing account is exactly the population the `isNewUser` rule excludes,
+ *    which is why a second account on the same browser kept landing there.
+ *
+ * An UNATTRIBUTED bounce (`bouncedOwnerId` empty) NEVER demotes. Middleware
+ * cannot always name an owner, and a pasted or bookmarked
+ * `/auth?redirect=<path>` link carries no bounce cookie at all — treating
+ * "unknown" as "foreign" would break both.
+ *
+ * A named owner with no known signer DOES demote: that is the fail-closed half.
+ */
+export function shouldDemoteReturnUrl({
+  bouncedOwnerId,
+  signedInUserId,
+  isNewUser,
+}: {
+  bouncedOwnerId?: string | null;
+  signedInUserId?: string | null;
+  isNewUser?: boolean | null;
+}): boolean {
+  if (isNewUser) return true;
+  const owner = typeof bouncedOwnerId === 'string' ? bouncedOwnerId : '';
+  if (owner.length === 0) return false;
+  return owner !== (typeof signedInUserId === 'string' ? signedInUserId : '');
+}
+
+/**
  * True when a (already-sanitized) return URL points at an invite acceptance
  * page. Invited users must land here verbatim after sign-up so they see the
  * accept/decline dialog — they must NOT be bounced to a freshly-provisioned
