@@ -6,7 +6,7 @@
  * firing, so a parse failure has to be reportable, not fatal.
  */
 import { describe, expect, test } from 'bun:test';
-import { extractCrafts, setCraftTriggersEnabled } from './crafts';
+import { craftTriggerActivation, extractCrafts, setCraftTriggersEnabled } from './crafts';
 import type { ParsedManifest } from './triggers';
 
 function manifest(raw: Record<string, unknown>, format: 'yaml' | 'toml' = 'yaml'): ParsedManifest {
@@ -242,5 +242,87 @@ describe('setCraftTriggersEnabled', () => {
     expect(result.manifest.raw.kortix_version).toBe(2);
     // And the input is not mutated — the route may retry on a git conflict.
     expect((input.raw.triggers as Record<string, unknown>[])[0].enabled).toBe(false);
+  });
+});
+
+/**
+ * `craftTriggerActivation` — the derived "is this craft running" the installed
+ * list serves and the UI switch renders.
+ *
+ * There is no stored flag on purpose: a craft is on exactly when its triggers
+ * are, and a second copy is how a switch and a trigger list end up disagreeing.
+ * The interesting case is MIXED — some on, some off — which must be `null`, not
+ * rounded to on or off, because a two-state switch that picks one hides the
+ * other half.
+ */
+describe('craftTriggerActivation', () => {
+  const withTriggers = (triggers: Record<string, unknown>[]) => manifest({ triggers });
+
+  test('all on → true', () => {
+    const result = craftTriggerActivation(
+      withTriggers([
+        { slug: 'a', craft: 'seo', enabled: true },
+        { slug: 'b', craft: 'seo', enabled: true },
+      ]),
+      'seo',
+    );
+    expect(result).toEqual({ enabled: true, triggerCount: 2, enabledCount: 2 });
+  });
+
+  test('all off → false', () => {
+    const result = craftTriggerActivation(
+      withTriggers([
+        { slug: 'a', craft: 'seo', enabled: false },
+        { slug: 'b', craft: 'seo', enabled: false },
+      ]),
+      'seo',
+    );
+    expect(result).toEqual({ enabled: false, triggerCount: 2, enabledCount: 0 });
+  });
+
+  test('MIXED → null, and the counts say which half', () => {
+    const result = craftTriggerActivation(
+      withTriggers([
+        { slug: 'a', craft: 'seo', enabled: true },
+        { slug: 'b', craft: 'seo', enabled: false },
+      ]),
+      'seo',
+    );
+    expect(result).toEqual({ enabled: null, triggerCount: 2, enabledCount: 1 });
+  });
+
+  test('a craft with no triggers → null, not false', () => {
+    // `false` would render an off switch for a craft that has nothing to switch,
+    // implying a state it does not have.
+    expect(craftTriggerActivation(withTriggers([{ slug: 'a' }]), 'seo')).toEqual({
+      enabled: null,
+      triggerCount: 0,
+      enabledCount: 0,
+    });
+  });
+
+  test('an absent enabled key counts as ON', () => {
+    // Same default `parseTriggerEntry` applies. Reading absent as off would show
+    // a running craft as stopped.
+    expect(craftTriggerActivation(withTriggers([{ slug: 'a', craft: 'seo' }]), 'seo').enabled).toBe(
+      true,
+    );
+  });
+
+  test("another craft's and hand-authored triggers do not count", () => {
+    const result = craftTriggerActivation(
+      withTriggers([
+        { slug: 'a', craft: 'seo', enabled: false },
+        { slug: 'b', craft: 'triage', enabled: true },
+        { slug: 'c', enabled: true },
+      ]),
+      'seo',
+    );
+    expect(result).toEqual({ enabled: false, triggerCount: 1, enabledCount: 0 });
+  });
+
+  test('a manifest with no triggers section is null, not a throw', () => {
+    expect(craftTriggerActivation(manifest({}), 'seo').enabled).toBeNull();
+    expect(craftTriggerActivation(manifest({ triggers: 'oops' }), 'seo').enabled).toBeNull();
   });
 });

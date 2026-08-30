@@ -195,6 +195,20 @@ export interface InstalledCraft {
   installed_at: string | null;
   /** What this craft contributed, by entity kind — what an uninstall removes. */
   owns: Partial<Record<'agents' | 'skills' | 'connectors' | 'triggers', string[]>>;
+  /**
+   * Whether its triggers are firing, DERIVED from the manifest's trigger
+   * entries — there is no stored flag, because a craft is on exactly when its
+   * triggers are.
+   *
+   * `null` means the question has no single answer: SOME of its triggers are on,
+   * or it owns none at all. Render that as indeterminate; a switch that picked
+   * on or off would claim a state the manifest does not have.
+   */
+  enabled: boolean | null;
+  /** How many triggers this craft owns. `0` means nothing to activate. */
+  trigger_count: number;
+  /** How many of those are currently enabled. */
+  enabled_trigger_count: number;
 }
 
 export interface InstalledCraftListing {

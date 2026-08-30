@@ -128,7 +128,19 @@ describe('groupRunsByCraft / craftReportGroups', () => {
 
   test('titles come from the installed manifest entry', () => {
     const groups = craftReportGroups(runs, [
-      { slug: 'seo-watch', repo: 'acme/seo', git_ref: null, sha: null, version: null, title: 'SEO watch', installed_at: null, owns: {} },
+      {
+        slug: 'seo-watch',
+        repo: 'acme/seo',
+        git_ref: null,
+        sha: null,
+        version: null,
+        title: 'SEO watch',
+        installed_at: null,
+        owns: {},
+        enabled: null,
+        trigger_count: 0,
+        enabled_trigger_count: 0,
+      },
     ]);
     expect(groups.map((g) => g.title)).toEqual(['SEO watch', 'error-triage']);
   });

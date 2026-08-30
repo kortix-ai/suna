@@ -1,6 +1,12 @@
 'use client';
 
-import { CheckIcon, DownloadSimpleIcon, PlusIcon, StarIcon } from '@phosphor-icons/react';
+import {
+  CheckIcon,
+  DownloadSimpleIcon,
+  GithubLogoIcon,
+  SparkleIcon,
+  StarIcon,
+} from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
@@ -131,19 +137,28 @@ export function CraftCard({
 }
 
 /**
- * The dashed end-of-row card. On the project home it is a LINK into the store;
- * in the store it is a BUTTON that opens the add-a-craft modal.
+ * The dashed card. Two jobs, one shape:
+ *
+ *  - `grow` (default) — describe a craft and have one built.
+ *  - `add` — index a craft that already exists, from a repo or a `.zip`.
+ *
+ * They are siblings, not a mode switch: one creates, the other imports. On the
+ * project home the card is a LINK into the store; in the store it is a BUTTON
+ * that opens the matching modal.
  */
 export function CraftBuildCard({
   glass = false,
+  variant = 'grow',
   href,
   onClick,
 }: {
   glass?: boolean;
+  variant?: 'grow' | 'add';
   /** When set, the card renders as a link to that destination. */
   href?: string;
   onClick?: () => void;
 }) {
+  const add = variant === 'add';
   const body = (
     <>
       <span
@@ -152,11 +167,17 @@ export function CraftBuildCard({
           'bg-muted text-muted-foreground',
         )}
       >
-        <PlusIcon className="size-4" aria-hidden />
+        {add ? (
+          <GithubLogoIcon className="size-4" aria-hidden />
+        ) : (
+          <SparkleIcon className="size-4" aria-hidden />
+        )}
       </span>
-      <span className="text-sm font-medium">Grow your crafts</span>
+      <span className="text-sm font-medium">{add ? 'Add a craft' : 'Grow your crafts'}</span>
       <span className="text-muted-foreground text-center text-xs leading-relaxed text-pretty">
-        Describe a craft and Kortix builds it.
+        {add
+          ? 'Point at a GitHub repo, or upload a .zip.'
+          : 'Describe a craft and Kortix builds it.'}
       </span>
     </>
   );

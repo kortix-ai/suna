@@ -227,3 +227,33 @@ export function setCraftTriggersEnabled(
   if (changed.length === 0) return { manifest, changed };
   return { manifest: { ...manifest, raw: { ...manifest.raw, triggers: next } }, changed };
 }
+
+/**
+ * Per-craft activation state, read from the manifest's trigger entries.
+ *
+ * There is no stored "this craft is on" flag, and there should not be: a craft
+ * is on exactly when its triggers are, and the triggers live in the manifest.
+ * Storing a second copy is how the switch and the trigger list end up
+ * disagreeing.
+ *
+ * Three states, because two would lie:
+ *   - `true`  — every trigger it owns is enabled.
+ *   - `false` — none are.
+ *   - `null`  — SOME are, or it owns no triggers at all. A switch cannot honestly
+ *     render either as on or off, and collapsing "mixed" to one of them would
+ *     make the UI claim a state the manifest does not have.
+ */
+export function craftTriggerActivation(
+  manifest: ParsedManifest,
+  craftSlug: string,
+): { enabled: boolean | null; triggerCount: number; enabledCount: number } {
+  const entries = Array.isArray(manifest.raw.triggers)
+    ? (manifest.raw.triggers as Record<string, unknown>[])
+    : [];
+  const owned = entries.filter((entry) => entry?.craft === craftSlug);
+  // Absent `enabled` is TRUE — the same default `parseTriggerEntry` applies.
+  const enabledCount = owned.filter((entry) => entry.enabled !== false).length;
+  const enabled =
+    owned.length === 0 ? null : enabledCount === owned.length ? true : enabledCount === 0 ? false : null;
+  return { enabled, triggerCount: owned.length, enabledCount };
+}

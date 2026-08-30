@@ -39,7 +39,7 @@ import {
   getCraftFiles,
   getCraftManifest,
 } from '../craft-store';
-import { extractCrafts, setCraftTriggersEnabled } from '../crafts';
+import { craftTriggerActivation, extractCrafts, setCraftTriggersEnabled } from '../crafts';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { readManifestFromRepo } from '../git/files';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -155,16 +155,29 @@ projectsApp.openapi(
     if (manifest) await ensureProjectCrafts(projectId, specs);
 
     return c.json({
-      crafts: specs.map((spec) => ({
-        slug: spec.slug,
-        repo: `${spec.repoOwner}/${spec.repoName}`,
-        git_ref: spec.gitRef,
-        sha: spec.resolvedSha,
-        version: spec.version,
-        title: spec.title,
-        installed_at: spec.installedAt,
-        owns: spec.owns,
-      })),
+      crafts: specs.map((spec) => {
+        // Activation is DERIVED from the craft's trigger entries in this same
+        // manifest — there is no stored "this craft is on" flag, and a second
+        // copy is how the switch and the trigger list end up disagreeing.
+        // `enabled: null` means mixed, or no triggers at all; a UI must render
+        // that as indeterminate rather than guessing on or off.
+        const activation = manifest
+          ? craftTriggerActivation(manifest, spec.slug)
+          : { enabled: null, triggerCount: 0, enabledCount: 0 };
+        return {
+          slug: spec.slug,
+          repo: `${spec.repoOwner}/${spec.repoName}`,
+          git_ref: spec.gitRef,
+          sha: spec.resolvedSha,
+          version: spec.version,
+          title: spec.title,
+          installed_at: spec.installedAt,
+          owns: spec.owns,
+          enabled: activation.enabled,
+          trigger_count: activation.triggerCount,
+          enabled_trigger_count: activation.enabledCount,
+        };
+      }),
       errors: errorsOut,
     });
   },

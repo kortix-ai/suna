@@ -21,7 +21,9 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import { AddCraftModal } from './add-craft-modal';
+import { AuthorCraftModal } from './author-craft-modal';
 import { CraftBuildCard, CraftCard } from './crafts-card';
+import { InstalledCrafts } from './installed-crafts';
 import { craftMatchesQuery } from './crafts-catalog';
 import { CraftInstallModal } from './install-modal';
 
@@ -42,6 +44,7 @@ export function CraftsStore({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [authoring, setAuthoring] = useState(false);
 
   const store = useCrafts();
   const installedQuery = useProjectCrafts(projectId);
@@ -101,6 +104,10 @@ export function CraftsStore({ projectId }: { projectId: string }) {
           </p>
         )}
       </header>
+
+      {/* What this project already has, above the catalog: someone arriving here
+          is far more often checking on their own crafts than shopping. */}
+      <InstalledCrafts projectId={projectId} />
 
       <div className="space-y-4">
         <InputGroupSearch className="sm:max-w-xs">
@@ -167,10 +174,20 @@ export function CraftsStore({ projectId }: { projectId: string }) {
 
       <section className="space-y-3">
         <h2 className="text-foreground text-sm font-medium">Make your own</h2>
-        <CraftBuildCard onClick={() => setAdding(true)} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Two doors, and they are genuinely different: one indexes a craft
+              that EXISTS, the other has one built. Collapsing them into one
+              button would put a mode switch in front of both. */}
+          <CraftBuildCard onClick={() => setAuthoring(true)} />
+          <CraftBuildCard
+            variant="add"
+            onClick={() => setAdding(true)}
+          />
+        </div>
       </section>
 
       <AddCraftModal open={adding} onOpenChange={setAdding} />
+      <AuthorCraftModal projectId={projectId} open={authoring} onOpenChange={setAuthoring} />
 
       {open ? (
         <CraftInstallModal

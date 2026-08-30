@@ -7,7 +7,7 @@ import { useCrafts, useProjectCrafts } from '@kortix/sdk/react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { errorToast } from '@/components/ui/toast';
-import { AddCraftModal } from './add-craft-modal';
+import { AuthorCraftModal } from './author-craft-modal';
 import { CraftBuildCard, CraftCard } from './crafts-card';
 import { CraftInstallModal } from './install-modal';
 
@@ -35,7 +35,7 @@ import { CraftInstallModal } from './install-modal';
  */
 export function CraftsHomePreview({ projectId }: { projectId: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [authoring, setAuthoring] = useState(false);
   const store = useCrafts();
   const installedQuery = useProjectCrafts(projectId);
 
@@ -80,12 +80,13 @@ export function CraftsHomePreview({ projectId }: { projectId: string }) {
             compact
           />
         ))}
-        {/* The add affordance, not a browse link — "View all crafts" above
-            already goes to the store. */}
-        <CraftBuildCard glass onClick={() => setAdding(true)} />
+        {/* Grow, not add: the home grid has room for one door, and describing
+            a craft is the one that needs no repo. "Add a craft" lives in the
+            store, which "View all crafts" above already reaches. */}
+        <CraftBuildCard glass onClick={() => setAuthoring(true)} />
       </div>
 
-      <AddCraftModal open={adding} onOpenChange={setAdding} />
+      <AuthorCraftModal projectId={projectId} open={authoring} onOpenChange={setAuthoring} />
 
       {open ? (
         <CraftInstallModal
