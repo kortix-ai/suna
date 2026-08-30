@@ -1,5 +1,3 @@
-SDK React package import fix
+SDK React import and release reliability
 
-- Fixed `@kortix/sdk/react` for fresh npm consumers with its documented React peers installed.
-- Added packed-artifact coverage for the React public entry point.
-- Preserved framework-free root and server imports.
+Fix the @kortix/sdk React entry point in fresh npm consumers. Declare the llm-catalog publish tool directly so isolated npm publishing succeeds. Refresh a stale trigger manifest once on a cache miss, with a per-project cooldown, so trigger fire converges across API replicas.
