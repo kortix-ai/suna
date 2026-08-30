@@ -87,9 +87,28 @@ const { craft } = await kortix.crafts.submitArchive({
 });
 ```
 
-Bounded server-side: text files only, ~1 MB per archive, 256 KB per file, 200
-files. Over any of those and the route answers `400` with
-`code: "archive_refused"`.
+Bounded server-side on two axes, because they answer different questions:
+
+| Bound | Value | Checked |
+|---|---|---|
+| Archive envelope | 10 MB | On the declared size, before anything is read |
+| Extracted text | 5 MB | While unzipping; non-text entries are skipped, not rejected |
+| Per file | 256 KB | Per entry |
+| File count | 200 | Per archive |
+
+Over any of them and the route answers `400 archive_refused` with a message
+naming which one. A compressed archive under the envelope can still exceed the
+text total, so a client cannot pre-validate the second from `File.size` — render
+the server's message rather than guessing.
+
+<Callout type="warn" title="An install embeds an upload's files in the prompt">
+An uploaded craft has no repository, so its files reach the install agent inside
+the prompt — a tighter bound than the archive cap, at 400 KB of text. A craft
+over that budget is still indexed, and `submitCraftArchive` returns a `warnings`
+entry saying so; its install embeds what fits, names the files it omitted, and
+instructs the agent to stop and report the craft incomplete rather than invent
+them. Publish from a GitHub repo to install a craft that large.
+</Callout>
 
 ### Rejections worth handling
 

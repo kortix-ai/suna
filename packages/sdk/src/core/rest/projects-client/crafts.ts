@@ -117,7 +117,11 @@ export interface SubmitCraftInput {
 }
 
 export interface SubmitCraftArchiveInput {
-  /** A `.zip` of the craft. Bounded server-side to text files under ~1 MB. */
+  /**
+   * A `.zip` of the craft. Bounded server-side on TWO axes: the archive itself
+   * up to 10 MB, and the text extracted from it up to 5 MB (256 KB per file,
+   * 200 files). Non-text entries are skipped, not rejected.
+   */
   file: File | Blob;
   visibility?: CraftVisibility;
   account_id?: string;

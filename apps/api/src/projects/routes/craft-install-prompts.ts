@@ -21,6 +21,29 @@
 
 import { serializeManifestObject } from '@kortix/manifest-schema';
 
+/**
+ * How much of an UPLOAD's file content the install prompt may embed.
+ *
+ * An upload has no repository, so its files travel to the agent inside the
+ * prompt — there is nowhere else for them to come from. That makes the prompt
+ * the real constraint, and it is much tighter than the archive cap: 400 KB of
+ * text is roughly 100k tokens, which leaves an agent room to actually work.
+ * The archive cap is 5 MB (`CRAFT_ZIP_LIMITS`), so the two are deliberately
+ * different numbers — a craft may be STORED larger than one install can carry.
+ *
+ * Past the budget the prompt names the files it omitted instead of silently
+ * truncating. An agent told "here are 40 of 60 files" can stop and say so; an
+ * agent handed a quietly-cut file set writes a broken craft and reports success.
+ */
+export const CRAFT_INSTALL_EMBED_BUDGET = 400_000;
+
+/** True when this upload carries more text than one install prompt can embed. */
+export function craftExceedsEmbedBudget(
+  files: ReadonlyArray<{ path: string; content: string }>,
+): boolean {
+  return files.reduce((total, file) => total + file.content.length, 0) > CRAFT_INSTALL_EMBED_BUDGET;
+}
+
 /** One craft, as the install prompt needs to see it. */
 export interface CraftInstallSubject {
   slug: string;
@@ -140,12 +163,40 @@ export function buildCraftInstallPrompt(
     const files = (craft.files ?? []).filter(
       (f) => f.path !== (craft.manifestPath ?? 'kortix.yaml'),
     );
+    // Smallest first, so a budget that runs out sacrifices the biggest files
+    // rather than whatever happened to sort last — and a craft whose real
+    // content is small still arrives complete even when one fixture is huge.
+    const ordered = [...files].sort((a, b) => a.content.length - b.content.length);
+    const embedded: typeof ordered = [];
+    const omitted: typeof ordered = [];
+    let used = 0;
+    for (const file of ordered) {
+      if (used + file.content.length > CRAFT_INSTALL_EMBED_BUDGET) {
+        omitted.push(file);
+        continue;
+      }
+      embedded.push(file);
+      used += file.content.length;
+    }
+
     lines.push(
-      `Its ${files.length} file${files.length === 1 ? '' : 's'}, verbatim. These ARE the craft — copy from here, not from anywhere else:`,
+      `Its ${embedded.length} file${embedded.length === 1 ? '' : 's'}, verbatim. These ARE the craft — copy from here, not from anywhere else:`,
       '',
     );
-    for (const file of files) {
+    for (const file of embedded) {
       lines.push(`--- ${file.path} ---`, '```', file.content, '```', '');
+    }
+
+    if (omitted.length > 0) {
+      // Named, not silently dropped. The agent must be able to tell the user
+      // the craft is incomplete rather than write a broken one and report done.
+      lines.push(
+        `NOT INCLUDED — ${omitted.length} file${omitted.length === 1 ? '' : 's'} exceeded this prompt's size budget:`,
+        ...omitted.map((file) => `  - ${file.path} (${Math.round(file.content.length / 1024)} KB)`),
+        '',
+        'This craft was uploaded as an archive, so there is no repository to read those from. Install everything above, then STOP and tell me exactly which files are missing and that the craft is incomplete. Do not invent their contents, and do not report the install as complete.',
+        '',
+      );
     }
   }
 

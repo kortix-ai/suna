@@ -26,6 +26,10 @@ import { combinedAuth } from '../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { CraftCrawlError, crawlCraftRepo, crawlCraftZip } from '../projects/craft-index';
 import {
+  CRAFT_INSTALL_EMBED_BUDGET,
+  craftExceedsEmbedBudget,
+} from '../projects/routes/craft-install-prompts';
+import {
   craftVisibleTo,
   deleteCraft,
   getCraftById,
@@ -47,7 +51,7 @@ craftsApp.use('/*', combinedAuth);
 
 /**
  * Largest archive accepted, checked on the DECLARED size before any read.
- * Generous next to `CRAFT_ZIP_LIMITS` (1 MB of text): a real repo zip carries
+ * Generous next to `CRAFT_ZIP_LIMITS` (5 MB of text): a real repo zip carries
  * lockfiles and images we skip, so the compressed envelope is legitimately
  * bigger than the text we keep.
  */
@@ -254,7 +258,19 @@ craftsApp.openapi(
     // Warnings are advisory and never block: a craft whose manifest carries a
     // deprecation notice is still installable, and the submitter should see why
     // it was flagged rather than have it silently swallowed.
-    return c.json({ craft, warnings: crawl.warnings }, 201);
+    const warnings = [...crawl.warnings];
+    // An upload's files travel to the install agent inside the prompt, which is
+    // a tighter bound than the archive cap. Say so HERE, at submit, rather than
+    // letting the author discover it when an install reports the craft
+    // incomplete.
+    if (crawl.sourceKind === 'upload' && craftExceedsEmbedBudget(crawl.files ?? [])) {
+      warnings.push(
+        `This craft carries more than ${Math.round(CRAFT_INSTALL_EMBED_BUDGET / 1000)} KB of text. ` +
+          'It is indexed, but an install can only embed part of it — an uploaded craft has no ' +
+          'repository to read the rest from. Publish it from a GitHub repo, or trim it, to install it whole.',
+      );
+    }
+    return c.json({ craft, warnings }, 201);
   },
 );
 

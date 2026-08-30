@@ -62,8 +62,26 @@ const VISIBILITY: Array<{
   },
 ];
 
-/** What the server accepts. Mirrors `CRAFT_ZIP_LIMITS.maxArchiveBytes`. */
-const MAX_ARCHIVE_BYTES = 1_000_000;
+/**
+ * The server enforces TWO different bounds, and this field can only check one.
+ *
+ * `MAX_ARCHIVE_BYTES` is the ENVELOPE — `MAX_UPLOAD_BYTES` in the submit route,
+ * checked on the declared size before anything is read. That is what
+ * `File.size` actually is, so it is the only one checkable here.
+ *
+ * The other is the extracted TEXT total (`CRAFT_ZIP_LIMITS.maxTotalBytes`, 5 MB),
+ * which cannot be known without unzipping. A compressed archive under the
+ * envelope can still exceed it, and the server answers `archive_refused` with
+ * the reason — which is why the field describes both and the error path renders
+ * the server's own message.
+ *
+ * This used to be 1_000_000 — the TEXT cap — compared against the archive size.
+ * It rejected a 2 MB zip that would have extracted to 300 KB of text and
+ * indexed fine.
+ */
+const MAX_ARCHIVE_BYTES = 10 * 1024 * 1024;
+/** The extracted-text cap, for the field's description only. Not checkable here. */
+const MAX_TEXT_BYTES = 5_000_000;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -96,9 +114,11 @@ function submitErrorMessage(error: unknown): string {
     case 'invalid_archive':
       return 'That file is not a readable .zip archive.';
     case 'archive_refused':
+      // Prefer the server's own message: it knows WHICH bound was hit (total
+      // text, one oversized file, or the file count) and this UI does not.
       return (
         detail.message ??
-        `The archive is over the limit — ${formatBytes(MAX_ARCHIVE_BYTES)} of text files, 200 files.`
+        `The archive is over the limits — ${formatBytes(MAX_TEXT_BYTES)} of text, 256 KB per file, 200 files.`
       );
     default:
       return detail?.message ?? 'Could not add that craft.';
@@ -333,13 +353,13 @@ export function AddCraftModal({
                   )}
                   {oversize ? (
                     <FieldDescription className="text-kortix-red">
-                      Over the {formatBytes(MAX_ARCHIVE_BYTES)} limit. Text files only — drop build
-                      output and node_modules.
+                      Over the {formatBytes(MAX_ARCHIVE_BYTES)} archive limit. Drop build output and
+                      node_modules — only text files are kept anyway.
                     </FieldDescription>
                   ) : (
                     <FieldDescription>
                       Zip the folder holding <span className="font-mono">kortix.yaml</span>. Text
-                      files only, up to {formatBytes(MAX_ARCHIVE_BYTES)}.
+                      files only, up to {formatBytes(MAX_TEXT_BYTES)} of text.
                     </FieldDescription>
                   )}
                   {/* Said here, at the moment of choosing, not discovered later:

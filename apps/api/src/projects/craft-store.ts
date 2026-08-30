@@ -52,10 +52,52 @@ export interface CraftRecord {
 
 type CraftRow = typeof crafts.$inferSelect;
 
+/**
+ * The columns a CARD needs — deliberately not `select()`.
+ *
+ * `files` and `manifest` are the two heavy jsonb columns, and a listing needs
+ * neither: `serializeCraft` only ever wanted `files.length`, which Postgres can
+ * compute without shipping the array. With the archive cap at 5 MB, a 50-row
+ * `SELECT *` page could otherwise transfer a quarter of a gigabyte to throw all
+ * of it away.
+ */
+const CRAFT_CARD_COLUMNS = {
+  craftId: crafts.craftId,
+  slug: crafts.slug,
+  sourceKind: crafts.sourceKind,
+  repoOwner: crafts.repoOwner,
+  repoName: crafts.repoName,
+  uploadName: crafts.uploadName,
+  gitRef: crafts.gitRef,
+  resolvedSha: crafts.resolvedSha,
+  title: crafts.title,
+  description: crafts.description,
+  agents: crafts.agents,
+  triggers: crafts.triggers,
+  connectors: crafts.connectors,
+  skills: crafts.skills,
+  envRequired: crafts.envRequired,
+  stars: crafts.stars,
+  installCount: crafts.installCount,
+  visibility: crafts.visibility,
+  status: crafts.status,
+  accountId: crafts.accountId,
+  submittedBy: crafts.submittedBy,
+  lastCrawledAt: crafts.lastCrawledAt,
+  lastError: crafts.lastError,
+  createdAt: crafts.createdAt,
+  updatedAt: crafts.updatedAt,
+  // Counted in SQL. `jsonb_array_length` on a non-array would error, so guard on
+  // the type — a row written before `files` existed holds `null`.
+  fileCount: sql<number>`case when jsonb_typeof(${crafts.files}) = 'array'
+    then jsonb_array_length(${crafts.files}) else 0 end`,
+} as const;
+
+
 /** Serialize a row for the wire. `manifest` is deliberately NOT included: it is
  *  a whole kortix.yaml per row, and the list view has no use for it. The detail
  *  view reads it through {@link getCraftManifest} when it needs it. */
-export function serializeCraft(row: CraftRow): CraftRecord {
+export function serializeCraft(row: CraftRow & { fileCount?: number }): CraftRecord {
   return {
     craft_id: row.craftId,
     slug: row.slug,
@@ -70,8 +112,16 @@ export function serializeCraft(row: CraftRow): CraftRecord {
     repo_name: row.repoName,
     upload_name: row.uploadName,
     // The files themselves are NOT serialized: a craft's whole file set per row
-    // would bloat every list response. The install path reads them directly.
-    file_count: Array.isArray(row.files) ? row.files.length : 0,
+    // would bloat every list response. The install path reads them directly via
+    // `getCraftFiles`. `fileCount` is Postgres's own count when the caller
+    // selected the card columns; the array length is the fallback for a caller
+    // that really did read the whole row (the upsert's RETURNING *).
+    file_count:
+      typeof row.fileCount === 'number'
+        ? row.fileCount
+        : Array.isArray(row.files)
+          ? row.files.length
+          : 0,
     git_ref: row.gitRef,
     resolved_sha: row.resolvedSha,
     title: row.title,
@@ -136,7 +186,7 @@ export async function listCrafts(
 
   const [rows, counted] = await Promise.all([
     db
-      .select()
+      .select(CRAFT_CARD_COLUMNS)
       .from(crafts)
       .where(where)
       // Most-installed first, then newest. `install_count` is the only signal
@@ -146,13 +196,23 @@ export async function listCrafts(
       .offset(input.offset),
     db.select({ n: sql<number>`count(*)::int` }).from(crafts).where(where),
   ]);
-  return { items: rows.map(serializeCraft), total: counted[0]?.n ?? 0 };
+  return {
+    items: rows.map((row) => serializeCraft(row as unknown as CraftRow & { fileCount: number })),
+    total: counted[0]?.n ?? 0,
+  };
 }
 
 /** One craft by id, or null. Visibility is the caller's to enforce. */
 export async function getCraftById(craftId: string): Promise<CraftRecord | null> {
-  const [row] = await db.select().from(crafts).where(eq(crafts.craftId, craftId)).limit(1);
-  return row ? serializeCraft(row) : null;
+  // Card columns here too: the detail view renders the same card, and the two
+  // routes that DO need the heavy columns read them directly
+  // (`getCraftManifest`, `getCraftFiles`).
+  const [row] = await db
+    .select(CRAFT_CARD_COLUMNS)
+    .from(crafts)
+    .where(eq(crafts.craftId, craftId))
+    .limit(1);
+  return row ? serializeCraft(row as unknown as CraftRow & { fileCount: number }) : null;
 }
 
 /** The cached manifest for one craft — read only where it is actually needed. */

@@ -35,9 +35,21 @@ export interface ZipReadLimits {
 }
 
 export const CRAFT_ZIP_LIMITS: ZipReadLimits = {
-  // A craft is a manifest plus a few agent `.md` files and skill folders. A
-  // megabyte of text is already generous; anything larger is not a craft.
-  maxTotalBytes: 1_000_000,
+  // Total EXTRACTED TEXT we keep, not the archive envelope — that is
+  // `MAX_UPLOAD_BYTES` in `crafts/index.ts`, checked on the declared size
+  // before any read.
+  //
+  // Raised 1 MB → 5 MB on 2026-08-30. A craft is a manifest plus agent `.md`
+  // files and skill folders, so a real one is tens of KB; the old cap was
+  // rejecting people who zipped a whole repo folder with docs and fixtures in
+  // it, which is the obvious thing to do and was never the failure we wanted to
+  // catch. 5 MB still refuses "someone zipped their node_modules".
+  //
+  // Note what this does NOT change: `maxEntryBytes` stays at 256 KB, because a
+  // single 5 MB text file is not craft content, and the install prompt has its
+  // own tighter budget (`CRAFT_INSTALL_EMBED_BUDGET`) since an upload's files
+  // travel to the agent inside the prompt.
+  maxTotalBytes: 5_000_000,
   maxEntryBytes: 256_000,
   maxEntries: 200,
 };

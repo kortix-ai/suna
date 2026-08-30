@@ -11,9 +11,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  CRAFT_INSTALL_EMBED_BUDGET,
   type CraftInstallSubject,
   buildCraftInstallPrompt,
   buildCraftUninstallPrompt,
+  craftExceedsEmbedBudget,
   craftFetchRef,
   craftRawBase,
 } from './craft-install-prompts';
@@ -354,5 +356,97 @@ describe('buildCraftInstallPrompt — an UPLOADED craft', () => {
     );
     expect(p).toContain('Its 0 files');
     expect(p).toContain('Open a change request');
+  });
+});
+
+/**
+ * The embed budget — the one place raising the archive cap to 5 MB could have
+ * produced a SILENTLY broken craft.
+ *
+ * An upload has no repository, so its files reach the agent only through the
+ * prompt. Truncating that quietly is the worst possible failure: the agent
+ * writes a partial craft and reports success, and the person finds out when it
+ * does not work. So the contract is that omitted files are NAMED and the agent
+ * is told to stop.
+ */
+describe('upload embed budget', () => {
+  const file = (path: string, bytes: number) => ({ path, content: 'x'.repeat(bytes) });
+
+  function upload(files: Array<{ path: string; content: string }>): CraftInstallSubject {
+    return subject({
+      sourceKind: 'upload',
+      repoOwner: null,
+      repoName: null,
+      uploadName: 'seo-watch.zip',
+      files,
+    });
+  }
+
+  test('craftExceedsEmbedBudget is measured on total content, not file count', () => {
+    expect(craftExceedsEmbedBudget([file('a.md', 10)])).toBe(false);
+    expect(craftExceedsEmbedBudget([file('a.md', CRAFT_INSTALL_EMBED_BUDGET + 1)])).toBe(true);
+    // Two files that individually fit but together do not.
+    const half = Math.ceil(CRAFT_INSTALL_EMBED_BUDGET / 2) + 1;
+    expect(craftExceedsEmbedBudget([file('a.md', half), file('b.md', half)])).toBe(true);
+  });
+
+  test('a normal craft is embedded whole, with no omission notice', () => {
+    const prompt = buildCraftInstallPrompt(
+      upload([file('.kortix/opencode/agents/seo-writer.md', 2_000), file('README.md', 500)]),
+      null,
+    );
+    expect(prompt).toContain('.kortix/opencode/agents/seo-writer.md');
+    expect(prompt).toContain('README.md');
+    expect(prompt).not.toContain('NOT INCLUDED');
+    expect(prompt).toContain('Its 2 files, verbatim');
+  });
+
+  test('over budget: the omitted files are NAMED and the agent is told to stop', () => {
+    const prompt = buildCraftInstallPrompt(
+      upload([file('small.md', 100), file('huge.md', CRAFT_INSTALL_EMBED_BUDGET)]),
+      null,
+    );
+    // The small file still arrives...
+    expect(prompt).toContain('small.md');
+    // ...and the big one is reported, not silently dropped.
+    expect(prompt).toContain('NOT INCLUDED');
+    expect(prompt).toContain('huge.md');
+    expect(prompt).toContain('tell me exactly which files are missing');
+    expect(prompt).toContain('Do not invent their contents');
+    // The header must count what was EMBEDDED, or the agent is told it has
+    // files it does not have.
+    expect(prompt).toContain('Its 1 file, verbatim');
+  });
+
+  test('smallest first — one huge fixture never starves the real craft content', () => {
+    const prompt = buildCraftInstallPrompt(
+      upload([
+        file('huge-fixture.json', CRAFT_INSTALL_EMBED_BUDGET - 100),
+        file('agent.md', 200),
+        file('skill.md', 200),
+      ]),
+      null,
+    );
+    // Both small files fit; the fixture is what gets dropped.
+    expect(prompt).toContain('agent.md');
+    expect(prompt).toContain('skill.md');
+    expect(prompt).toContain('NOT INCLUDED');
+    expect(prompt).toContain('huge-fixture.json');
+  });
+
+  test('the manifest is never double-embedded, budget or not', () => {
+    const prompt = buildCraftInstallPrompt(
+      upload([file('kortix.yaml', 50), file('agent.md', 50)]),
+      null,
+    );
+    // `kortix.yaml` is rendered from the parsed manifest above; the file list
+    // filters it out so it does not appear twice with possibly different text.
+    expect(prompt).not.toContain('--- kortix.yaml ---');
+  });
+
+  test('an upload with no extra files still renders', () => {
+    const prompt = buildCraftInstallPrompt(upload([]), null);
+    expect(prompt).toContain('Its 0 files, verbatim');
+    expect(prompt).not.toContain('NOT INCLUDED');
   });
 });
