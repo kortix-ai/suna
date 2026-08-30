@@ -12,6 +12,8 @@ import {
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
+import type { CraftConnector } from './connectors-catalog';
+
 /**
  * The Crafts catalog — STATIC MOCK DATA for the UI/UX phase.
  *
@@ -41,6 +43,15 @@ export interface Craft {
   /** Social proof, MOCKED. The registry carries no install counts yet. */
   installs: number;
   /**
+   * The third-party apps this craft plugs into, in the order it touches them:
+   * what it reads first, what it writes last. Ids key into `CONNECTORS`.
+   *
+   * This is the craft's REQUIREMENT list, not the viewer's connection state —
+   * see the header note in `connectors-catalog.ts`. Keep it to 2-4 entries;
+   * a longer list stops being a decision aid and becomes a wall.
+   */
+  connectors: CraftConnector[];
+  /**
    * MOCK for the UI phase: the craft is already installed into this project.
    * The real flow reads installed state from the API. Installed cards render a
    * green status pill and a disabled modal button instead of the install affordance.
@@ -64,6 +75,12 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-blue/15',
     repo: { owner: 'kortix-ai', repo: 'error-triage', stars: 2431 },
     installs: 4218,
+    connectors: [
+      { id: 'sentry', role: 'Reads new errors' },
+      { id: 'datadog', role: 'Reads error logs' },
+      { id: 'newrelic', role: 'Reads traces' },
+      { id: 'github', role: 'Opens issues and PRs' },
+    ],
   },
   {
     id: 'standup',
@@ -75,6 +92,11 @@ export const CRAFTS: Craft[] = [
     repo: { owner: 'kortix-ai', repo: 'standup-scribe', stars: 1876 },
     installs: 5112,
     installed: true,
+    connectors: [
+      { id: 'linear', role: 'Reads issue moves' },
+      { id: 'github', role: 'Reads merged PRs' },
+      { id: 'slack', role: 'Posts the standup' },
+    ],
   },
   {
     id: 'seo',
@@ -85,6 +107,11 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-orange/15',
     repo: { owner: 'kortix-ai', repo: 'seo-tuneup', stars: 1120 },
     installs: 3057,
+    connectors: [
+      { id: 'googlesearchconsole', role: 'Reads weekly queries' },
+      { id: 'googleanalytics', role: 'Reads page traffic' },
+      { id: 'github', role: 'PRs the fixes' },
+    ],
   },
   {
     id: 'pentest',
@@ -95,6 +122,11 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-red/15',
     repo: { owner: 'kortix-ai', repo: 'daily-pentest', stars: 3242 },
     installs: 1904,
+    connectors: [
+      { id: 'snyk', role: 'Reads known CVEs' },
+      { id: 'github', role: 'Files a finding issue' },
+      { id: 'slack', role: 'Posts the summary' },
+    ],
   },
   {
     id: 'concierge',
@@ -106,6 +138,11 @@ export const CRAFTS: Craft[] = [
     repo: { owner: 'kortix-ai', repo: 'welcome-concierge', stars: 1544 },
     installs: 2733,
     installed: true,
+    connectors: [
+      { id: 'stripe', role: 'Reads new customers' },
+      { id: 'resend', role: 'Sends the welcome' },
+      { id: 'hubspot', role: 'Writes the contact' },
+    ],
   },
   {
     id: 'invoices',
@@ -116,6 +153,11 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-green/15',
     repo: { owner: 'kortix-ai', repo: 'invoice-chaser', stars: 892 },
     installs: 1488,
+    connectors: [
+      { id: 'stripe', role: 'Reads overdue invoices' },
+      { id: 'quickbooks', role: 'Reads the ledger' },
+      { id: 'gmail', role: 'Sends the reminders' },
+    ],
   },
   {
     id: 'support',
@@ -126,6 +168,12 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-purple/15',
     repo: { owner: 'kortix-ai', repo: 'support-triage', stars: 2210 },
     installs: 2240,
+    connectors: [
+      { id: 'intercom', role: 'Reads conversations' },
+      { id: 'zendesk', role: 'Reads tickets' },
+      { id: 'linear', role: 'Files bug issues' },
+      { id: 'slack', role: 'Escalates blockers' },
+    ],
   },
   {
     id: 'competitors',
@@ -136,6 +184,10 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-orange/15',
     repo: { owner: 'kortix-ai', repo: 'competitor-watch', stars: 745 },
     installs: 1371,
+    connectors: [
+      { id: 'notion', role: 'Writes the brief' },
+      { id: 'slack', role: 'Posts it weekly' },
+    ],
   },
   {
     id: 'deps',
@@ -146,6 +198,10 @@ export const CRAFTS: Craft[] = [
     bgColor: 'bg-kortix-blue/15',
     repo: { owner: 'kortix-ai', repo: 'dependency-watch', stars: 1963 },
     installs: 986,
+    connectors: [
+      { id: 'github', role: 'Opens the upgrade PR' },
+      { id: 'slack', role: 'Posts the digest' },
+    ],
   },
 ];
 

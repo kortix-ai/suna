@@ -14,13 +14,18 @@ import {
 } from '@/components/ui/modal';
 import { successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { CraftConnectors } from './craft-connectors';
 import { craftRepoSlug, craftRepoUrl, formatCount, type Craft } from './crafts-catalog';
 
 /**
  * The install modal — minimal trust surface for the GitHub craft: what it is,
- * where its source lives (linked out to the repo), how proven it is. UI PHASE:
- * `Install` is client-side only — it closes the modal and toasts. No API call
- * exists behind it yet.
+ * WHICH THIRD-PARTY APPS IT TOUCHES, where its source lives (linked out to the
+ * repo), how proven it is. UI PHASE: `Install` is client-side only — it closes
+ * the modal and toasts. No API call exists behind it yet.
+ *
+ * The connector list sits above the source row because it answers the question
+ * that actually gates the install ("what does this reach into?"), while the
+ * repo row answers provenance. Both are read-only in this phase.
  */
 export function CraftInstallModal({
   craft,
@@ -66,6 +71,7 @@ export function CraftInstallModal({
           <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
             {craft.description}
           </p>
+          <CraftConnectors connectors={craft.connectors} />
           {/* The source row — links out to GitHub so the craft's provenance is
               one click away. Meta numbers stay tabular so they never shift. */}
           <a
