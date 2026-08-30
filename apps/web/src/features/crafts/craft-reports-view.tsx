@@ -14,6 +14,7 @@ import { ErrorState } from '@/features/layout/section/error-state';
 import { CraftReportRow } from './craft-report-row';
 import { CraftRunLegend } from './craft-run-legend';
 import { craftReportGroups } from './craft-report-groups';
+import { countLabel } from './crafts-catalog';
 
 /** The index shows a wider window than the home panel — this page exists to
  *  look back, so it trades the hero box's width limit for run history. */
@@ -103,8 +104,8 @@ export function CraftReportsView({ projectId }: { projectId: string }) {
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
             <CraftRunLegend />
             <p className="text-muted-foreground shrink-0 text-xs tabular-nums">
-              {groups.length} craft{groups.length === 1 ? '' : 's'} &middot; {totals.runs} run
-              {totals.runs === 1 ? '' : 's'} &middot;{' '}
+              {countLabel(groups.length, 'craft')} &middot; {countLabel(totals.runs, 'run')}{' '}
+              &middot;{' '}
               <span className={totals.failed > 0 ? 'text-kortix-red' : undefined}>
                 {totals.failed} failed
               </span>

@@ -33,6 +33,7 @@ import {
 import { Tabs, TabsContent, TabsListCompact, TabsTrigger } from '@/components/ui/tabs';
 import { successToast, warningToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
+import { countLabel } from './crafts-catalog';
 
 /*
  * `parseCraftRepo` comes from `@kortix/manifest-schema`, not from a copy in
@@ -134,9 +135,7 @@ function reportWarnings(result: CraftSubmitResult): void {
   // One toast, not one per finding: three warnings would otherwise stack three
   // toasts over the grid the user is trying to look at.
   warningToast(
-    `${result.craft.title} added with ${result.warnings.length} warning${
-      result.warnings.length === 1 ? '' : 's'
-    }: ${result.warnings[0]}`,
+    `${result.craft.title} added with ${countLabel(result.warnings.length, 'warning')}: ${result.warnings[0]}`,
   );
 }
 

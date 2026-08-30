@@ -13,6 +13,7 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +25,7 @@ import { AddCraftModal } from './add-craft-modal';
 import { AuthorCraftModal } from './author-craft-modal';
 import { CraftBuildCard, CraftCard } from './crafts-card';
 import { InstalledCrafts } from './installed-crafts';
-import { craftMatchesQuery } from './crafts-catalog';
+import { countLabel, craftMatchesQuery } from './crafts-catalog';
 import { CraftInstallModal } from './install-modal';
 
 /**
@@ -40,8 +41,12 @@ import { CraftInstallModal } from './install-modal';
  * when it is not, and a debounced round trip per character buys nothing at this
  * size while costing the instant feel.
  */
+/** Which slice of the catalog the grid shows. */
+type CraftFilter = 'all' | 'installed' | 'available';
+
 export function CraftsStore({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<CraftFilter>('all');
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [authoring, setAuthoring] = useState(false);
@@ -83,10 +88,45 @@ export function CraftsStore({ projectId }: { projectId: string }) {
   }, [connectors.data]);
 
   const open = crafts.find((craft) => craft.craft_id === openId) ?? null;
+
+  /**
+   * Search and the installed filter compose — both narrow the same list.
+   *
+   * `installedSlugs` is the join, not a field on the craft: the index row is
+   * account-global, so the same craft is installed in one project and not
+   * another.
+   */
   const filtered = useMemo(
-    () => crafts.filter((craft) => craftMatchesQuery(craft, query)),
-    [crafts, query],
+    () =>
+      crafts.filter((craft) => {
+        if (!craftMatchesQuery(craft, query)) return false;
+        if (filter === 'installed') return installedSlugs.has(craft.slug);
+        if (filter === 'available') return !installedSlugs.has(craft.slug);
+        return true;
+      }),
+    [crafts, query, filter, installedSlugs],
   );
+
+  /** Counts for the tab labels, over the whole catalog rather than the search. */
+  const counts = useMemo(() => {
+    const installed = crafts.filter((craft) => installedSlugs.has(craft.slug)).length;
+    return { all: crafts.length, installed, available: crafts.length - installed };
+  }, [crafts, installedSlugs]);
+
+  /**
+   * The filter appears only once something IS installed.
+   *
+   * With nothing installed the three tabs read `All 9 / Installed 0 /
+   * Available 9` — two of them identical and one dead, which is chrome that
+   * teaches nothing. `installedQuery.isLoading` keeps it from flickering in
+   * after the grid has already painted.
+   */
+  const showFilter = !installedQuery.isLoading && counts.installed > 0;
+  const FILTERS: ReadonlyArray<{ key: CraftFilter; label: string }> = [
+    { key: 'all', label: `All ${counts.all}` },
+    { key: 'installed', label: `Installed ${counts.installed}` },
+    { key: 'available', label: `Available ${counts.available}` },
+  ];
 
   return (
     <div data-crafts-store className="mx-auto w-full max-w-6xl space-y-8 px-4 pt-8 pb-16 sm:px-6">
@@ -100,7 +140,7 @@ export function CraftsStore({ projectId }: { projectId: string }) {
         </div>
         {store.isLoading ? null : (
           <p className="text-muted-foreground shrink-0 text-sm tabular-nums">
-            {filtered.length} of {crafts.length} craft{crafts.length === 1 ? '' : 's'}
+            {filtered.length} of {countLabel(crafts.length, 'craft')}
           </p>
         )}
       </header>
@@ -110,21 +150,35 @@ export function CraftsStore({ projectId }: { projectId: string }) {
       <InstalledCrafts projectId={projectId} />
 
       <div className="space-y-4">
-        <InputGroupSearch className="sm:max-w-xs">
-          <InputGroupSearchIcon>
-            <MagnifyingGlassIcon />
-          </InputGroupSearchIcon>
-          <InputGroupSearchInput
-            variant="popover"
-            placeholder="Search crafts"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          <InputGroupSearchClear
-            onClick={() => setQuery('')}
-            className={cn(!query && 'pointer-events-none opacity-0')}
-          />
-        </InputGroupSearch>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <InputGroupSearch className="sm:max-w-xs">
+            <InputGroupSearchIcon>
+              <MagnifyingGlassIcon />
+            </InputGroupSearchIcon>
+            <InputGroupSearchInput
+              variant="popover"
+              placeholder="Search crafts"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <InputGroupSearchClear
+              onClick={() => setQuery('')}
+              className={cn(!query && 'pointer-events-none opacity-0')}
+            />
+          </InputGroupSearch>
+
+          {showFilter ? (
+            <Tabs value={filter} onValueChange={(next) => setFilter(next as CraftFilter)}>
+              <TabsListCompact aria-label="Filter crafts by whether this project has them">
+                {FILTERS.map((entry) => (
+                  <TabsTriggerCompact key={entry.key} value={entry.key}>
+                    {entry.label}
+                  </TabsTriggerCompact>
+                ))}
+              </TabsListCompact>
+            </Tabs>
+          ) : null}
+        </div>
 
         {store.isLoading ? (
           // Six skeletons at the card's own height, so the grid does not jump
@@ -148,13 +202,28 @@ export function CraftsStore({ projectId }: { projectId: string }) {
             }
           />
         ) : filtered.length === 0 ? (
+          // The description has to name the reason, or "No crafts match" on a
+          // full catalog reads as "the store is broken" when the real cause is
+          // an Installed filter with a search on top of it.
           <EmptyState
             size="sm"
-            title={query ? 'No crafts match' : 'No crafts yet'}
+            title={
+              filter === 'installed'
+                ? 'No installed craft matches'
+                : filter === 'available'
+                  ? 'No available craft matches'
+                  : query
+                    ? 'No crafts match'
+                    : 'No crafts yet'
+            }
             description={
-              query
-                ? 'Clear the search to see every craft.'
-                : 'Add one from a GitHub repo or a .zip, or describe what you want built.'
+              filter !== 'all'
+                ? query
+                  ? 'Clear the search, or switch to All.'
+                  : 'Switch to All to see the whole catalog.'
+                : query
+                  ? 'Clear the search to see every craft.'
+                  : 'Add one from a GitHub repo or a .zip, or describe what you want built.'
             }
           />
         ) : (

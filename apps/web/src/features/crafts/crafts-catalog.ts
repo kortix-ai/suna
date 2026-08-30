@@ -1,4 +1,4 @@
-import type { Craft as SdkCraft, CraftConnectorSummary } from '@kortix/sdk';
+import type { Craft as SdkCraft, CraftConnectorSummary, InstalledCraft } from '@kortix/sdk';
 
 /**
  * The craft view model — a thin adapter over the SDK's `Craft`.
@@ -91,4 +91,44 @@ export function craftMatchesQuery(craft: Craft, query: string): boolean {
     craft.repo.toLowerCase().includes(q) ||
     craft.slug.toLowerCase().includes(q)
   );
+}
+
+// ── counting things ─────────────────────────────────────────────────────────
+
+/**
+ * `3 agents` / `1 agent`. Takes the SINGULAR and adds the `s`.
+ *
+ * There were eight hand-rolled `count === 1 ? '' : 's'` ternaries across this
+ * feature and one place that forgot — the installed row rendered "1 agents",
+ * because it printed the `owns` KEY, which is already plural.
+ */
+export function countLabel(count: number, singular: string, plural?: string): string {
+  return `${count} ${count === 1 ? singular : (plural ?? `${singular}s`)}`;
+}
+
+/** What one `owns` kind is called in the singular. */
+type OwnedKind = keyof NonNullable<InstalledCraft['owns']>;
+
+/**
+ * Singular label per `owns` key.
+ *
+ * Explicit rather than trimming a trailing `s`: the keys come from
+ * `CRAFT_OWNED_KINDS`, and a future kind like `policies` would have to read
+ * "policy" — a trim would say "policie". Typed as a total `Record`, so adding a
+ * kind to the manifest schema fails the build here instead of shipping a wrong
+ * label.
+ */
+const OWNED_KIND_SINGULAR: Record<OwnedKind, string> = {
+  agents: 'agent',
+  skills: 'skill',
+  connectors: 'connector',
+  triggers: 'trigger',
+};
+
+/** `1 agent`, `3 skills` — for the installed row's contribution summary. */
+export function craftOwnsLabel(kind: string, count: number): string {
+  const singular = OWNED_KIND_SINGULAR[kind as OwnedKind];
+  // An unknown key is possible: `owns` comes from a committed manifest, which a
+  // person can hand-edit. Print it as-is rather than guessing at English.
+  return singular ? countLabel(count, singular) : `${count} ${kind}`;
 }

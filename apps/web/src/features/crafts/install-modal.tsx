@@ -28,6 +28,7 @@ import { prepareInstallSessionNavigation } from '../session/install-session-navi
 import { CraftConnectors } from './craft-connectors';
 import { craftVisual } from './craft-visual';
 import {
+  countLabel,
   craftConnectorRows,
   craftIsUpload,
   craftRepoSlug,
@@ -166,7 +167,7 @@ export function CraftInstallModal({
                 {craft.upload_name ?? craft.slug}
               </span>
               <span className="ml-auto shrink-0 tabular-nums">
-                {craft.file_count} file{craft.file_count === 1 ? '' : 's'}
+                {countLabel(craft.file_count, 'file')}
               </span>
             </div>
           )}

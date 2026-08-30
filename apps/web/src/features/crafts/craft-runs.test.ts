@@ -2,6 +2,7 @@ import type { CraftRun } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import { craftReportGroups } from './craft-report-groups';
+import { countLabel, craftMatchesQuery, craftOwnsLabel } from './crafts-catalog';
 import {
   agoLabel,
   avgDurationLabel,
@@ -234,5 +235,94 @@ describe('craftVisual', () => {
 
   test('an empty slug still returns a tile rather than crashing the card', () => {
     expect(craftVisual('').Icon).toBeDefined();
+  });
+});
+
+/**
+ * Labels. The reported bug was "1 agents" on the installed row — it printed the
+ * `owns` KEY, which is already plural. Cheap to get wrong, visible on every row.
+ */
+describe('countLabel', () => {
+  test('1 is singular, everything else is not', () => {
+    expect(countLabel(1, 'agent')).toBe('1 agent');
+    expect(countLabel(0, 'agent')).toBe('0 agents');
+    expect(countLabel(2, 'agent')).toBe('2 agents');
+  });
+
+  test('an irregular plural can be given explicitly', () => {
+    expect(countLabel(1, 'policy', 'policies')).toBe('1 policy');
+    expect(countLabel(3, 'policy', 'policies')).toBe('3 policies');
+  });
+});
+
+describe('craftOwnsLabel', () => {
+  test('singularizes every owns key — the reported bug', () => {
+    expect(craftOwnsLabel('agents', 1)).toBe('1 agent');
+    expect(craftOwnsLabel('skills', 1)).toBe('1 skill');
+    expect(craftOwnsLabel('connectors', 1)).toBe('1 connector');
+    expect(craftOwnsLabel('triggers', 1)).toBe('1 trigger');
+  });
+
+  test('and still pluralizes above one', () => {
+    expect(craftOwnsLabel('agents', 3)).toBe('3 agents');
+    expect(craftOwnsLabel('triggers', 0)).toBe('0 triggers');
+  });
+
+  test('an unknown key is printed as-is, never guessed at', () => {
+    // `owns` comes from a committed manifest a person can hand-edit. Inventing
+    // a singular for an unknown word would be worse than echoing it.
+    expect(craftOwnsLabel('widgets', 1)).toBe('1 widgets');
+  });
+});
+
+/**
+ * The installed/available filter. Its predicate is the one piece of real logic
+ * — search and the installed set compose, and getting the composition wrong
+ * shows an empty grid on a full catalog.
+ */
+describe('the installed filter predicate', () => {
+  const craft = (slug: string, title: string) =>
+    ({ slug, title, description: null, repo: `acme/${slug}` }) as never;
+
+  /** Mirrors `CraftsStore`'s predicate exactly. */
+  const visible = (
+    crafts: ReadonlyArray<ReturnType<typeof craft>>,
+    installed: ReadonlySet<string>,
+    query: string,
+    filter: 'all' | 'installed' | 'available',
+  ) =>
+    crafts.filter((c) => {
+      if (!craftMatchesQuery(c, query)) return false;
+      if (filter === 'installed') return installed.has((c as unknown as { slug: string }).slug);
+      if (filter === 'available') return !installed.has((c as unknown as { slug: string }).slug);
+      return true;
+    });
+
+  const catalog = [craft('seo-watch', 'SEO watch'), craft('error-triage', 'Error triage')];
+  const installed = new Set(['seo-watch']);
+
+  test('all shows everything', () => {
+    expect(visible(catalog, installed, '', 'all')).toHaveLength(2);
+  });
+
+  test('installed and available partition the catalog', () => {
+    const a = visible(catalog, installed, '', 'installed');
+    const b = visible(catalog, installed, '', 'available');
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    // No craft may appear in both, and none may be lost between them.
+    expect(a.length + b.length).toBe(catalog.length);
+  });
+
+  test('search composes with the filter rather than replacing it', () => {
+    // "error" matches a craft that is NOT installed, so Installed + that search
+    // is legitimately empty — the case whose empty state must explain itself.
+    expect(visible(catalog, installed, 'error', 'installed')).toHaveLength(0);
+    expect(visible(catalog, installed, 'error', 'available')).toHaveLength(1);
+  });
+
+  test('with nothing installed, available is the whole catalog', () => {
+    expect(visible(catalog, new Set(), '', 'available')).toHaveLength(2);
+    expect(visible(catalog, new Set(), '', 'installed')).toHaveLength(0);
   });
 });

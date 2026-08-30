@@ -30,6 +30,7 @@ import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { prepareInstallSessionNavigation } from '../session/install-session-navigation';
 import { craftReportHref } from './craft-runs';
+import { countLabel, craftOwnsLabel } from './crafts-catalog';
 import { craftVisual } from './craft-visual';
 
 /**
@@ -44,9 +45,9 @@ import { craftVisual } from './craft-visual';
 function activationLabel(craft: InstalledCraft): string {
   const { trigger_count: total, enabled_trigger_count: on } = craft;
   if (total === 0) return 'No triggers to run';
-  if (on === 0) return `Off — ${total} trigger${total === 1 ? '' : 's'} ready`;
-  if (on === total) return `On — ${total} trigger${total === 1 ? '' : 's'} firing`;
-  return `${on} of ${total} triggers on`;
+  if (on === 0) return `Off — ${countLabel(total, 'trigger')} ready`;
+  if (on === total) return `On — ${countLabel(total, 'trigger')} firing`;
+  return `${on} of ${countLabel(total, 'trigger')} on`;
 }
 
 /**
@@ -110,9 +111,9 @@ function InstalledCraftRow({
             </span>
           ) : null}
           {owns.map(([kind, list]) => (
-            <span key={kind}>
-              {(list ?? []).length} {kind}
-            </span>
+            // `craftOwnsLabel`, not `{length} {kind}`: the `owns` keys are
+            // already plural, so printing one raw rendered "1 agents".
+            <span key={kind}>{craftOwnsLabel(kind, (list ?? []).length)}</span>
           ))}
           {mixed ? (
             // The surprising state, so it is on the row rather than only in the
@@ -232,9 +233,7 @@ export function InstalledCrafts({ projectId }: { projectId: string }) {
         successToast(`${craft.title} was already ${enabled ? 'on' : 'off'}`);
       } else {
         successToast(
-          `${enabled ? 'Enabled' : 'Disabled'} ${craft.title} — ${result.triggers.length} trigger${
-            result.triggers.length === 1 ? '' : 's'
-          }`,
+          `${enabled ? 'Enabled' : 'Disabled'} ${craft.title} — ${countLabel(result.triggers.length, 'trigger')}`,
         );
       }
     } catch (error) {

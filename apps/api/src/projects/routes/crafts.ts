@@ -270,7 +270,10 @@ projectsApp.openapi(
         c.get('authType') === 'service_account' ? 'service_account' : 'human',
       body: {
         initial_prompt: buildCraftInstallPrompt(subject, await manifestRawOrNull(project)),
-        name: `Install ${craft.title}`,
+        // "Install craft <title>", not "Install <title>": the session list mixes
+        // craft installs with marketplace imports and ordinary work, and the
+        // noun is what makes a row scannable.
+        name: `Install craft ${craft.title}`,
         // `craft_slug` is server-managed (see project-sessions.ts): a client
         // must not be able to attribute its own session to a craft and inherit
         // that craft's run report.
@@ -363,7 +366,8 @@ projectsApp.openapi(
           },
           manifestRaw,
         ),
-        name: `Remove ${installed.title}`,
+        // Mirrors the install title's shape — same reason.
+        name: `Uninstall craft ${installed.title}`,
         metadata: {
           kind: 'craft-uninstall',
           craft_slug: installed.slug,
