@@ -31,6 +31,7 @@ export type FeatureFlagKey =
   | 'teams'
   | 'llm_gateway'
   | 'review_center'
+  | 'crafts'
   | 'meta_agent'
   | 'apps'
   | 'monitors'
@@ -51,6 +52,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'teams',
   'llm_gateway',
   'review_center',
+  'crafts',
   'meta_agent',
   'apps',
   'monitors',

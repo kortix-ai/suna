@@ -45,6 +45,14 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'source',
   'trigger_kind',
   'trigger_slug',
+  // Craft attribution, for the same reason `trigger_slug` is server-managed: a
+  // craft's run report is a join over sessions attributed to it, so a client
+  // able to stamp these could attribute its own session to someone else's
+  // craft and appear in that craft's history.
+  'craft_slug',
+  'craft_id',
+  'craft_repo',
+  'craft_sha',
   'name',
   'title_source',
 ] as const;

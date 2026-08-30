@@ -125,6 +125,7 @@ Registry order — the same order **Settings → Experimental** shows.
 | `voice` | Voice | Experimental | Off | `behavioral` |
 | `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `review_center` | Review Center | Experimental | Off | `routes` |
+| `crafts` | Crafts | Experimental | Off | `routes` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
 | `monitors` | Monitors | Experimental | Off | `routes` |
@@ -155,6 +156,9 @@ refs). An explicit project choice always wins.
   gateway. See [Models](/docs/project/models).
 - **`review_center`** — one inbox for change requests, approvals, and agent
   output.
+- **`crafts`** — install a craft (a GitHub repo whose `kortix.yaml` declares
+  agents, skills, connectors and triggers) into a project, and read the run
+  history of the triggers it owns.
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to

@@ -829,49 +829,14 @@ async function externalRefs(): Promise<ExternalRef[]> {
   return out;
 }
 
-// Authenticate GitHub API/raw calls when a token is configured — lifts the
-// unauthenticated 60 req/hr scan ceiling to 5,000/hr so many marketplaces can be
-// browsed + installed without rate-limiting. Kept out of @kortix/registry (which
-// stays pure) — injected here as a fetch wrapper via the loader's fetchImpl.
-const GITHUB_TOKEN =
-  process.env.GITHUB_TOKEN || process.env.MANAGED_GIT_GITHUB_TOKEN || "";
-const GITHUB_HOSTS = new Set(["api.github.com", "raw.githubusercontent.com"]);
-const githubFetch: typeof fetch = !GITHUB_TOKEN
-  ? fetch
-  : (((
-      input: Parameters<typeof fetch>[0],
-      init?: Parameters<typeof fetch>[1],
-    ) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : (input as Request).url;
-      // Exact hostname match — NOT substring — so the token is never sent to a
-      // look-alike host like `api.github.com.evil.com` or `evil.com?x=api.github.com`.
-      let host = "";
-      try {
-        host = new URL(url).hostname;
-      } catch {
-        // unparseable URL → no auth
-      }
-      if (GITHUB_HOSTS.has(host)) {
-        const headers = new Headers(init?.headers);
-        if (!headers.has("authorization"))
-          headers.set("authorization", `Bearer ${GITHUB_TOKEN}`);
-        return fetch(input, { ...init, headers });
-      }
-      // Non-GitHub host (url-kind registry source) — route through the
-      // DNS-resolving SSRF guard so a public domain that resolves to a
-      // private/metadata IP is blocked at fetch time. See F-1.
-      return safeEgressFetch(url, init);
-    }) as typeof fetch);
-
-/** Loader options that authenticate GitHub calls (shared by catalog + install). */
-export const githubLoaderOptions: { fetchImpl: typeof fetch } = {
-  fetchImpl: githubFetch,
-};
+// The authenticated GitHub fetch moved to `shared/github-fetch.ts` — a LEAF
+// module. Importing this 2,200-line file for that one function dragged its
+// whole config/db graph into every suite that touched the projects app (250
+// failures across billing/accounts/connectors, from hand-written `db` mocks
+// losing exports the real modules then needed). Re-exported here so existing
+// importers of `githubFetch` / `githubLoaderOptions` are unaffected.
+export { githubFetch, githubLoaderOptions } from "../shared/github-fetch";
+import { githubFetch, githubLoaderOptions } from "../shared/github-fetch";
 
 // ── source safety (LFI / SSRF) ──────────────────────────────────────────────
 // A source address is user-supplied + global, so in the hosted API it must not

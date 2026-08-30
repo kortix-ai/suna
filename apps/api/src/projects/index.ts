@@ -44,6 +44,7 @@ import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';
 import './routes/r10';
+import './routes/crafts';
 import './routes/r11';
 import './routes/agent-scope';
 import './routes/agent-config';

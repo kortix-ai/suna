@@ -30,7 +30,7 @@ import {
   validateManifest,
 } from '@kortix/manifest-schema';
 import { assertFetchableUrl, rawGithubUrl } from '@kortix/registry';
-import { githubLoaderOptions } from '../marketplace/catalog';
+import { githubLoaderOptions } from '../shared/github-fetch';
 import { extractAgents } from './agents';
 import { extractConnectors } from './connectors';
 import { extractCrafts } from './crafts';
@@ -117,8 +117,8 @@ const GITHUB_API = 'https://api.github.com';
 /**
  * Everything the crawl touches from outside, injectable.
  *
- * `fetchImpl` defaults to the marketplace's token-attaching, exact-hostname-
- * matched fetch. It is injectable for the same reason `@kortix/registry`'s
+ * `fetchImpl` defaults to the shared token-attaching, exact-hostname-matched
+ * GitHub fetch (`shared/github-fetch.ts`). It is injectable for the same reason `@kortix/registry`'s
  * loader is: the crawl's semantics — candidate-path precedence, sha pinning,
  * the manifest gate, card derivation — are testable without the network, and a
  * flow test needs a deterministic repo rather than a live third party.
