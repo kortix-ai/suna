@@ -163,12 +163,6 @@ export function InstantSessionShell({
     submission ?? previewSubmission ?? pendingRowSubmission ?? stashedSubmission;
   const submitted = effectiveSubmission?.text ?? null;
 
-  // Starter-prompt → composer prefill, identical to the project-home composer.
-  const [prefill, setPrefill] = useState<{ text: string; id: number } | null>(null);
-  const applySuggestion = useCallback((text: string) => {
-    setPrefill({ text, id: Date.now() });
-  }, []);
-
   const handleSend = useCallback(
     async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if (!text.trim() && !files?.length) return;
@@ -232,14 +226,18 @@ export function InstantSessionShell({
 
   // Defined once and slotted into either the hero position (pre-submit, inside
   // the welcome body) or the regular bottom position (post-submit thread view).
-  const composerEl = (
+  // `hero` strips the composer shell's side gutter (`px-4 md:pr-1`) so the
+  // pre-submit card spans the welcome container — the project home does the
+  // same, keeping the two empty-state surfaces identical. The docked composer
+  // keeps the gutter; it aligns with the conversation column.
+  const composerEl = (hero = false) => (
     <ComposerChatInput
       onSend={handleSend}
       onCommand={handleCommand}
       sessionId={sessionId}
       projectId={projectId}
       draftScope={draftScope}
-      prefill={prefill}
+      parentClassName={hero ? 'max-w-none px-0 md:pr-0' : undefined}
       boundAgentName={boundAgentName}
       // While the computer boots after the first send the input stays fully
       // normal (typeable) — only the send button flips to a stop button. The
@@ -292,7 +290,7 @@ export function InstantSessionShell({
           below is what `SessionChat` replaces. */}
       <SessionBodyRow actionPanel={!!submitted} transient>
         {/* Empty new session → the identical project-home empty state (centered
-            heading + hero composer + starter chips, setup pills at the bottom),
+            heading + hero composer + crafts preview, setup pills at the bottom),
             so a fresh session opens onto the same surface as the project index
             page. Swapped out for the optimistic turn the moment a first message
             is sent (the crossfade is unchanged); the composer moves to its
@@ -301,8 +299,7 @@ export function InstantSessionShell({
           <div className="flex min-h-0 flex-1 flex-col px-4.5">
             <ProjectHomeWelcomeBody
               projectId={projectId}
-              onPickSuggestion={applySuggestion}
-              composer={composerEl}
+              composer={composerEl(true)}
             />
           </div>
         )}
@@ -351,7 +348,7 @@ export function InstantSessionShell({
             makes when a search becomes a thread). INSIDE the body column, where
             `SessionChat` docks its own: outside it, it centered against the full
             width while the chat's centered against width-minus-panel. */}
-        {submitted ? composerEl : null}
+        {submitted ? composerEl() : null}
       </SessionBodyRow>
     </div>
   );

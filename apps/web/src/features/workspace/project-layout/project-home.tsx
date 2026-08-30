@@ -46,7 +46,7 @@ import {
   type ProjectSettingsSectionKey,
 } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { STARTER_PROMPTS } from '@/lib/starter-prompts';
+import { CraftsHomePreview } from '@/features/crafts/crafts-home-preview';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
@@ -57,7 +57,7 @@ import {
   listProjectSandboxes,
 } from '@kortix/sdk';
 import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
-import { META_SANDBOX_SLUG, chalkColors, isMetaAgentName } from '@kortix/shared';
+import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { SquaresFourIcon as HiOutlineViewGrid } from '@phosphor-icons/react';
 
 export interface ProjectHomeSendOptions extends ComposerOptions {
@@ -191,10 +191,6 @@ export function ProjectHome({
     [handleSend],
   );
 
-  const applySuggestion = (s: string) => {
-    setPrefill({ text: s, id: Date.now() });
-  };
-
   // The home composer has no session yet, so its unsent draft is keyed by the
   // project. Memoized because it crosses into a `React.memo`-wrapped composer.
   const draftScope = useMemo<DraftScope>(() => ({ kind: 'project', projectId }), [projectId]);
@@ -243,13 +239,17 @@ export function ProjectHome({
 
       <ProjectHomeWelcomeBody
         projectId={projectId}
-        onPickSuggestion={applySuggestion}
         composer={
           <ComposerChatInput
             onSend={handleSend}
             onCommand={handleCommand}
             projectId={projectId}
             draftScope={draftScope}
+            // Home hero: strip the shell's side gutter (`px-4 md:pr-1`) AND its
+            // `max-w-210` cap so the card spans the welcome container exactly,
+            // and the crafts preview below shares its edges 1:1. Scoped to this
+            // hero instance — session pages keep the shell defaults.
+            parentClassName="max-w-none px-0 md:pr-0"
             // `busy` here means "create in flight" — spinner in the send slot,
             // input locked. NOT isBusy (that renders agent-running stop-button
             // semantics, which leave the composer with no button at all here).
@@ -318,22 +318,19 @@ function MetaRuntimeIndicator() {
 
 /**
  * The project-home empty-state body, laid out like Perplexity's home: the
- * centered welcome heading with the composer directly beneath it and the
- * starter-prompt chips right under the input — all vertically centered — while
- * the quiet "set up your project" pills sit at the bottom of the viewport.
- * Shared by the project index page AND the instant session shell's empty state
- * so a brand-new session opens onto the identical surface.
+ * centered welcome heading with the composer directly beneath it and the crafts
+ * preview right under the input — all vertically centered — while the quiet
+ * "set up your project" pills sit at the bottom of the viewport. Shared by the
+ * project index page AND the instant session shell's empty state so a
+ * brand-new session opens onto the identical surface.
  */
 export function ProjectHomeWelcomeBody({
   projectId,
   composer,
-  onPickSuggestion,
 }: {
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
   composer?: ReactNode;
-  /** When provided, starter-prompt chips render directly below the composer. */
-  onPickSuggestion?: (text: string) => void;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // One source for the project name — see `useProjectName`'s doc comment.
@@ -351,10 +348,10 @@ export function ProjectHomeWelcomeBody({
             )}
           </h1>
 
-          {composer || onPickSuggestion ? (
+          {composer ? (
             <div className="flex w-full flex-col items-center space-y-4">
               {composer}
-              {onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}
+              <CraftsHomePreview projectId={projectId} />
             </div>
           ) : null}
         </div>
@@ -363,41 +360,6 @@ export function ProjectHomeWelcomeBody({
       <div className="flex shrink-0 justify-center px-4 pb-6">
         <ProjectHomeSections projectId={projectId} />
       </div>
-    </div>
-  );
-}
-
-/**
- * Starter prompt suggestions rendered as a centered, wrapping row of quiet
- * pills directly above the composer (Perplexity-style). All prompts are
- * visible at once — no scroll machinery; small screens show the first four.
- */
-export function StarterPromptChips({ onPick }: { onPick: (text: string) => void }) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
-      {STARTER_PROMPTS.map((p, i) => {
-        const ChipIcon = p.icon;
-        const chalk = chalkColors(p.label);
-        return (
-          <Button
-            key={p.id}
-            onClick={() => onPick(p.prompt)}
-            variant="outline"
-            size="sm"
-            className={cn(
-              'bg-background/60 shrink-0 gap-1.5 rounded-md backdrop-blur-sm',
-              i >= 4 && 'max-sm:hidden',
-            )}
-          >
-            <ChipIcon
-              className="size-3.5 shrink-0"
-              style={{ color: chalk.foreground }}
-              aria-hidden
-            />
-            {p.label}
-          </Button>
-        );
-      })}
     </div>
   );
 }
