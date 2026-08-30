@@ -46,12 +46,32 @@ function statusDotLabel(status: StatusDotStatus): string {
  *  `glyph` is what separates the two muted states. Both used to be rings that
  *  differed only by a dash pattern, and at 16px that is not a difference a user
  *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
- *  The check stays muted — a check is not a licence to go green. */
+ *  The check stays muted — a check is not a licence to go green.
+ *
+ *  `fill` carries the same job inside one colour. Green: FILLED is `running`
+ *  (working now), HOLLOW is `needs-you` (waiting on you). Both had a fill and
+ *  differed only by inner radius, which was invisible — so the two states that
+ *  most need telling apart were the hardest to. Muted: hollow `stopped` vs the
+ *  `done` check. Red has only `failed`, so it keeps its fill unopposed. */
 const STATUS_DOT_STYLE: Record<
   StatusDotStatus,
-  { color: string; glyph: 'ring' | 'check' | 'dash'; fill: boolean }
+  { color: string; glyph: 'ring' | 'check' | 'dash'; fill: boolean; ringWidth?: number }
 > = {
-  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
+  // HOLLOW green, deliberately — `running` is the filled one. These two used to
+  // differ only by inner radius (3.2 vs 4), which is not a difference anybody
+  // can see at 16px: a session waiting on you looked like a session working.
+  // Hollow-vs-filled is the same distinction `stopped` and `failed` already use,
+  // so it needs no new vocabulary.
+  //
+  // The HEAVIER ring is not decoration. Dropping the fill left `needs-you` the
+  // same shape as `stopped`, separated only by hue — and in light mode the two
+  // tokens are `oklch(0.581 0.165 …)` green against `oklch(0.5103 0 0)` grey:
+  // almost the same lightness, differing almost entirely in chroma. Desaturate
+  // that (deuteranopia, a greyscale print, a bad display) and the only
+  // actionable state in the list becomes indistinguishable from a dead one.
+  // Weight survives desaturation, and giving the most actionable state the
+  // heaviest hollow ring is the right way round anyway.
+  'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: false, ringWidth: 2.25 },
   // `starting` renders <Loading /> instead and never reads glyph/fill.
   starting: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
   running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
@@ -145,7 +165,14 @@ export function SessionStatusDot({
             />
           ) : (
             <>
-              <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+              <circle
+                cx="8"
+                cy="8"
+                r="6.3"
+                stroke="currentColor"
+                fill="none"
+                strokeWidth={style.ringWidth ?? 1.5}
+              />
               {style.glyph === 'dash' && (
                 // Inset from the ring by the same 1.5 stroke, so the bar reads
                 // as struck through the circle rather than touching it.
@@ -156,9 +183,10 @@ export function SessionStatusDot({
                   strokeLinecap="round"
                 />
               )}
-              {style.fill && (
-                <circle cx="8" cy="8" r={status === 'needs-you' ? 3.2 : 4} fill="currentColor" />
-              )}
+              {/* One radius: `running` and `failed` are the only filled states
+                  and both use it. The `needs-you ? 3.2 : 4` ternary this
+                  replaces was the invisible distinction described above. */}
+              {style.fill && <circle cx="8" cy="8" r="4" fill="currentColor" />}
             </>
           )}
         </svg>

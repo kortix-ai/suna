@@ -74,6 +74,57 @@ describe('session status dot is the only paint table', () => {
     expect(source).toContain("done: { color: 'var(--muted-foreground)', glyph: 'check'");
   });
 
+  test('needs-you is HOLLOW and running is FILLED — the same green, told apart', () => {
+    // These two shared a colour AND a fill, differing only by inner radius
+    // (3.2 vs 4), which nobody can see at 16px. A session waiting on you looked
+    // identical to one working. Hollow-vs-filled is the distinction.
+    const source = read(DOT);
+    expect(source).toContain(
+      "'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: false, ringWidth: 2.25 }",
+    );
+    expect(source).toContain("running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true }");
+    // And the radius ternary that encoded the invisible difference is gone.
+    expect(source).not.toContain("'needs-you' ? 3.2");
+  });
+
+  test('needs-you carries a heavier ring, so it survives desaturation', () => {
+    // Removing the fill left it the same SHAPE as `stopped`, separated only by
+    // hue — and green vs muted are nearly the same lightness, differing almost
+    // entirely in chroma. Desaturated they collapse, and the only actionable
+    // state in the list becomes indistinguishable from a dead one. Weight is
+    // what survives, so this is not decoration and must not be "tidied away".
+    const source = read(DOT);
+    expect(source).toContain('ringWidth: 2.25');
+    // It must actually reach the SVG, not just sit in the table.
+    expect(source).toContain('strokeWidth={style.ringWidth ?? 1.5}');
+    // And `stopped` must NOT have one, or the distinction disappears again.
+    expect(source).toContain(
+      "stopped: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false }",
+    );
+  });
+
+  test('no two states share the same colour + glyph + fill', () => {
+    // The real invariant behind both of the tests above: a state a reader cannot
+    // distinguish from another is a state that carries no information. Parsed
+    // from the table so a NEW row cannot quietly collide with an existing one.
+    const source = read(DOT);
+    const table = source.slice(source.indexOf('const STATUS_DOT_STYLE'));
+    const body = table.slice(table.indexOf('= {') + 3, table.indexOf('\n};'));
+    const rows = [...body.matchAll(/^\s*'?([\w-]+)'?:\s*\{\s*color:\s*'([^']+)',\s*glyph:\s*'(\w+)',\s*fill:\s*(true|false)/gm)];
+    // Every status must be matched, or this test is silently checking nothing.
+    expect(rows.length).toBe(9);
+    const seen = new Map<string, string>();
+    for (const [, status, color, glyph, fill] of rows) {
+      // `starting`, `legacy` and `retrying` render their own icon and never read
+      // glyph/fill, so identical rows there are not a collision.
+      if (status === 'starting' || status === 'legacy' || status === 'retrying') continue;
+      const key = `${color}|${glyph}|${fill}`;
+      const clash = seen.get(key);
+      expect(clash, `${status} is indistinguishable from ${clash}`).toBeUndefined();
+      seen.set(key, status);
+    }
+  });
+
   test('the sidebar resolves display status instead of re-deriving paint', () => {
     const source = read(SIDEBAR);
     expect(source).toContain('status={sessionDisplayStatus(session, reviewCount)}');
