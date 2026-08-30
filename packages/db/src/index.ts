@@ -50,6 +50,11 @@ export {
   projectTriggerRuntime,
   projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
+  // Crafts — the store index and its per-project projection.
+  craftVisibilityEnum,
+  craftStatusEnum,
+  crafts,
+  projectCrafts,
   projectMonitorEvents,
   projectMonitorBoxes,
   sessionLifecycleCommands,

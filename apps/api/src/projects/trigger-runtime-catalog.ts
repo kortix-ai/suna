@@ -14,6 +14,7 @@ const databaseStore: TriggerRuntimeCatalogStore = {
       .select({
         slug: projectTriggerRuntime.slug,
         sessionId: projectTriggerRuntime.sessionId,
+        craftSlug: projectTriggerRuntime.craftSlug,
         scheduleRevision: projectTriggerRuntime.scheduleRevision,
       })
       .from(projectTriggerRuntime)
@@ -38,6 +39,7 @@ const databaseStore: TriggerRuntimeCatalogStore = {
         projectId,
         slug: spec.slug,
         sessionId: spec.pinnedSessionId,
+        craftSlug: spec.craftSlug,
         triggerType: spec.type,
         enabled: spec.enabled,
         scheduleCron: spec.cron,
@@ -53,6 +55,10 @@ const databaseStore: TriggerRuntimeCatalogStore = {
         target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
         set: {
           sessionId: spec.pinnedSessionId,
+          // Re-materialized on every reconcile, so removing `craft:` from the
+          // manifest clears the column and the craft's run history stops
+          // claiming the trigger. Ownership can only be changed in git.
+          craftSlug: spec.craftSlug,
           triggerType: spec.type,
           enabled: spec.enabled,
           scheduleCron: spec.cron,

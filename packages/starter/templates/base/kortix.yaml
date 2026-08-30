@@ -199,8 +199,9 @@ triggers:
 # crafts:
 #   - slug: seo-watch
 #     repo: acme/seo-craft           # owner/repo — where it came from
-#     ref: 9f3c1a7e…                 # commit sha resolved at install
-#     version: v1.2.0                # display only; `ref` is the real version
+#     ref: main                      # the branch/tag asked for; absent = default
+#     sha: 9f3c1a7e…                 # the commit `ref` resolved to. The real version.
+#     version: v1.2.0                # display only; `sha` is the integrity source
 #     title: SEO watch
 #     installed_at: "2026-08-30T09:14:02Z"
 #     owns:

@@ -762,7 +762,8 @@ default_agent: w
 crafts:
   - slug: seo-watch
     repo: acme/seo-craft
-    ref: 9f3c1a7ecb4d21f0a8b3c5d7e9f1a2b3c4d5e6f7
+    ref: main
+    sha: 9f3c1a7ecb4d21f0a8b3c5d7e9f1a2b3c4d5e6f7
     version: v1.2.0
     title: SEO watch
     installed_at: "2026-08-30T09:14:02Z"

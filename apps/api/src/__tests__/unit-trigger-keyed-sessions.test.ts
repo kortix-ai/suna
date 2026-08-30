@@ -20,6 +20,7 @@ function spec(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
     slug: 'whatsapp',
     path: 'kortix.yaml#triggers.whatsapp',
     name: 'WhatsApp',
+    craftSlug: null,
     type: 'webhook',
     agent: 'default',
     model: null,

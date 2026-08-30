@@ -344,9 +344,17 @@ function craftSchema(): JsonSchemaFragment {
     properties: {
       slug: SLUG_SCHEMA,
       repo: { type: 'string', pattern: CRAFT_REPO_RE.source },
-      /** Commit sha resolved at install — what "this version" actually means. */
+      /**
+       * The git ref the install ASKED for — a branch or tag. Absent means the
+       * repo's default branch. This is what an update re-resolves against.
+       */
       ref: NON_EMPTY_STRING,
-      /** Display-only tag (`v1.2.0`). NEVER the integrity source; `ref` is. */
+      /**
+       * The commit sha `ref` resolved to at install. THE integrity source, and
+       * what "this version" actually means — a branch moves, a sha does not.
+       */
+      sha: NON_EMPTY_STRING,
+      /** Display-only tag (`v1.2.0`). Never the integrity source; `sha` is. */
       version: NON_EMPTY_STRING,
       title: { type: 'string' },
       installed_at: NON_EMPTY_STRING,

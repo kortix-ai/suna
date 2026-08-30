@@ -186,9 +186,17 @@ export interface CraftEntryV2 {
   slug: string;
   /** Source repository as `owner/repo` — see `CRAFT_REPO_RE`. */
   repo: string;
-  /** Commit sha resolved at install. The integrity source. */
+  /**
+   * The git ref the install ASKED for — a branch or tag. Absent means the
+   * repo's default branch. This is what an update re-resolves against.
+   */
   ref?: string;
-  /** Display-only tag (`v1.2.0`). NEVER the integrity source; `ref` is. */
+  /**
+   * The commit sha `ref` resolved to at install. THE integrity source: a
+   * branch moves, a sha does not.
+   */
+  sha?: string;
+  /** Display-only tag (`v1.2.0`). Never the integrity source; `sha` is. */
   version?: string;
   title?: string;
   installed_at?: string;
@@ -786,10 +794,11 @@ export function validateCraftsV2(node: unknown, path: string, issues: ManifestIs
     }
 
     expectStringOrAbsent(entry.ref, `${where}.ref`, issues);
+    expectStringOrAbsent(entry.sha, `${where}.sha`, issues);
     expectStringOrAbsent(entry.version, `${where}.version`, issues);
     expectStringOrAbsent(entry.title, `${where}.title`, issues);
     expectStringOrAbsent(entry.installed_at, `${where}.installed_at`, issues);
-    for (const field of ['ref', 'version', 'installed_at'] as const) {
+    for (const field of ['ref', 'sha', 'version', 'installed_at'] as const) {
       if (typeof entry[field] === 'string' && !entry[field].trim()) {
         issues.push({
           path: `${where}.${field}`,

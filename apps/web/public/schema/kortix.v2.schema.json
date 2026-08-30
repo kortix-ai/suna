@@ -1130,6 +1130,10 @@
             "type": "string",
             "minLength": 1
           },
+          "sha": {
+            "type": "string",
+            "minLength": 1
+          },
           "version": {
             "type": "string",
             "minLength": 1

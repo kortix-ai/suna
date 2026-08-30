@@ -1,10 +1,10 @@
 import {
-  connectorConnections,
   connectorActions,
+  connectorConnections,
   connectorPolicies,
-  connectors,
   connectorProjectPolicies,
   connectorProjectSettings,
+  connectors,
   projectSessionConnectorBindings,
   projects,
 } from '@kortix/db';
@@ -20,35 +20,45 @@ import {
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
+import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
-import { safeEgressFetch } from '../shared/ssrf-guard';
-import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
-import { config } from '../config';
 import {
   type ConnectorSpec,
   extractConnectors,
   manifestHashForConnector,
 } from '../projects/connectors';
+import { reconcileProjectCrafts } from '../projects/craft-catalog';
+import { extractCrafts } from '../projects/crafts';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
+import type { ProjectPolicySpec } from '../projects/policies';
 import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
 } from '../projects/secrets';
-import { extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
+import { extractTriggers, readManifest } from '../projects/triggers';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
+import { safeEgressFetch } from '../shared/ssrf-guard';
+import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
+import {
+  type ConnectorAuthDiscovery,
+  discoverHttpAuthChallenge,
+  discoverOpenApiAuth,
+  discoverPostmanAuth,
+  mergeAuthDiscoveries,
+} from './auth-discovery';
+import { type FetchImpl, listMcpTools } from './call';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
+import { composioCatalogTools, composioConfigured } from './composio';
 import { synthesizeComputerConnectors } from './computer-materialize';
 import { COMPUTER_SLUG, computerCatalog } from './computers';
 import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
-import { listMcpTools, type FetchImpl } from './call';
-import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
   normalizeComposio,
@@ -59,18 +69,10 @@ import {
   normalizePipedream,
   normalizePostmanCollection,
 } from './normalize';
-import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
-import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
+import { type PostmanSourceDocument, resolvePostmanSource } from './postman-source';
 import { parseSpecDocument } from './spec-doc';
-import {
-  type ConnectorAuthDiscovery,
-  discoverHttpAuthChallenge,
-  discoverOpenApiAuth,
-  discoverPostmanAuth,
-  mergeAuthDiscoveries,
-} from './auth-discovery';
 import type { HttpRouteSpec, NormalizedAction } from './types';
 
 export interface SyncResult {
@@ -454,6 +456,14 @@ export async function syncProjectConnectors(
     const triggers = extractTriggers(manifest);
     await reconcileProjectTriggerRuntime(projectId, triggers.specs);
     errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
+
+    // Installed crafts are a projection of the same manifest read, reconciled in
+    // the same pass and under the same "only when the manifest is readable"
+    // guard above. This sweep is what heals a hand-edited kortix.yaml or a raw
+    // git push that added or removed a craft outside the install flow.
+    const craftEntries = extractCrafts(manifest);
+    await reconcileProjectCrafts(projectId, craftEntries.specs);
+    errors.push(...craftEntries.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
     const parsed = extractConnectors(manifest);
     declaredSpecs = parsed.specs;
