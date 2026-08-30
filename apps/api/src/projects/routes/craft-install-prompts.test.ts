@@ -25,6 +25,7 @@ function subject(overrides: Partial<CraftInstallSubject> = {}): CraftInstallSubj
     slug: 'seo-watch',
     title: 'SEO watch',
     description: 'Audits the site weekly and opens a change request.',
+    sourceKind: 'github',
     repoOwner: 'acme',
     repoName: 'seo-craft',
     gitRef: 'main',
@@ -281,5 +282,77 @@ describe('buildCraftUninstallPrompt', () => {
     const p = buildCraftUninstallPrompt({ ...craft, owns: {} }, TARGET);
     expect(p).toContain('lists nothing');
     expect(p).toContain('Confirm that by searching');
+  });
+});
+
+describe('buildCraftInstallPrompt — an UPLOADED craft', () => {
+  const uploaded = () =>
+    subject({
+      sourceKind: 'upload',
+      repoOwner: null,
+      repoName: null,
+      uploadName: 'seo-craft.zip',
+      gitRef: null,
+      resolvedSha: null,
+      manifestPath: 'kortix.yaml',
+      files: [
+        { path: 'kortix.yaml', content: 'kortix_version: 2\n' },
+        {
+          path: '.kortix/opencode/agents/seo-writer.md',
+          content: '---\ndescription: X\n---\nBody.\n',
+        },
+        { path: '.kortix/opencode/skills/seo-audit/SKILL.md', content: '# SEO audit\n' },
+      ],
+    });
+
+  test('says there is no repository, rather than implying one', () => {
+    const p = buildCraftInstallPrompt(uploaded(), TARGET);
+    expect(p).toContain('was UPLOADED as seo-craft.zip');
+    expect(p).toContain('there is no repository behind it');
+    // The agent must not be sent hunting for a raw URL that cannot exist.
+    expect(p).not.toContain('raw.githubusercontent.com');
+  });
+
+  test('embeds every file verbatim except the manifest, which is already shown', () => {
+    const p = buildCraftInstallPrompt(uploaded(), TARGET);
+    expect(p).toContain('--- .kortix/opencode/agents/seo-writer.md ---');
+    expect(p).toContain('--- .kortix/opencode/skills/seo-audit/SKILL.md ---');
+    expect(p).toContain('Body.');
+    expect(p).toContain('# SEO audit');
+    // Embedding kortix.yaml twice would waste context and invite the agent to
+    // pick the wrong copy.
+    expect(p).not.toContain('--- kortix.yaml ---');
+    expect(p).toContain('These ARE the craft');
+  });
+
+  test('points the copy steps at the embedded blocks, not at a URL', () => {
+    const p = buildCraftInstallPrompt(uploaded(), TARGET);
+    expect(p).toContain('the embedded `.kortix/opencode/agents/<name>.md` blocks above');
+    expect(p).toContain('the embedded `.kortix/opencode/skills/<name>/` blocks above');
+  });
+
+  test('records the upload in `crafts:` WITHOUT inventing a repo or sha', () => {
+    const p = buildCraftInstallPrompt(uploaded(), TARGET);
+    expect(p).toContain('uploaded archive: seo-craft.zip');
+    // The manifest schema requires `repo` to be `owner/repo`; an upload has
+    // none, so the entry must not claim one.
+    expect(p).not.toContain('    repo: seo-craft.zip');
+    expect(p).not.toContain('    sha:');
+  });
+
+  test('still ships triggers disabled and still opens a CR', () => {
+    const p = buildCraftInstallPrompt(uploaded(), TARGET);
+    expect(p).toContain('`enabled: false`');
+    expect(p).toContain('Open a change request');
+    expect(p).toContain('craft: seo-watch');
+  });
+
+  test('an upload carrying only a manifest embeds nothing but still works', () => {
+    const p = buildCraftInstallPrompt(
+      { ...uploaded(), files: [{ path: 'kortix.yaml', content: 'kortix_version: 2\n' }] },
+      TARGET,
+    );
+    expect(p).toContain('Its 0 files');
+    expect(p).toContain('Open a change request');
   });
 });

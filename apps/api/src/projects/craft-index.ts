@@ -31,6 +31,7 @@ import {
 } from '@kortix/manifest-schema';
 import { assertFetchableUrl, rawGithubUrl } from '@kortix/registry';
 import { githubLoaderOptions } from '../shared/github-fetch';
+import { ZipReadError, readZipTextFiles } from '../shared/zip-read';
 import { extractAgents } from './agents';
 import { extractConnectors } from './connectors';
 import { extractCrafts } from './crafts';
@@ -44,7 +45,11 @@ export type CraftCrawlErrorCode =
   | 'manifest_not_found'
   | 'manifest_invalid'
   | 'manifest_unsupported'
-  | 'upstream_unavailable';
+  | 'upstream_unavailable'
+  /** The upload is not a readable ZIP archive. */
+  | 'invalid_archive'
+  /** The archive is readable but refused: hostile path, zip bomb, encrypted. */
+  | 'archive_refused';
 
 export class CraftCrawlError extends Error {
   constructor(
@@ -81,15 +86,20 @@ export interface CraftCardConnector {
   app: string | null;
 }
 
+export type CraftSourceKind = 'github' | 'upload';
+
 export interface CraftCrawlResult {
   slug: string;
-  repoOwner: string;
-  repoName: string;
+  sourceKind: CraftSourceKind;
+  /** Null for an upload — there is no repo. */
+  repoOwner: string | null;
+  repoName: string | null;
   /** The branch/tag requested, or null when the default branch was used. */
   gitRef: string | null;
-  /** The branch actually read, resolved for display when `gitRef` is null. */
-  resolvedRef: string;
-  resolvedSha: string;
+  /** The branch actually read. Null for an upload. */
+  resolvedRef: string | null;
+  /** Null for an upload — there is no commit to pin. */
+  resolvedSha: string | null;
   title: string;
   description: string | null;
   stars: number | null;
@@ -102,6 +112,13 @@ export interface CraftCrawlResult {
   envRequired: string[];
   /** The manifest path the craft's own repo uses (`kortix.yaml` etc.). */
   manifestPath: string;
+  /**
+   * For an upload: the craft's text files, which the install prompt embeds
+   * because there is no repo to fetch from. Empty for a github craft.
+   */
+  files: Array<{ path: string; content: string }>;
+  /** The uploaded archive's original filename, for display. Null for github. */
+  uploadName: string | null;
   /** Non-blocking findings: warnings, plus any per-entry parse errors. */
   warnings: string[];
 }
@@ -284,6 +301,194 @@ export function craftSlugFromRepo(repoName: string): string {
 }
 
 /**
+ * Everything both sources compute the same way: validate the manifest, then
+ * derive the card from it with the runtime's own parsers.
+ *
+ * Extracted so a zip and a repo can never disagree about what a craft IS. The
+ * only difference between the two paths is where the bytes came from.
+ */
+function deriveCardFromManifest(
+  raw: string,
+  format: 'yaml' | 'toml',
+  manifestPath: string,
+  sha: string | null,
+  label: string,
+): {
+  manifest: ReturnType<typeof parseManifestString>;
+  warnings: string[];
+  agents: CraftCardAgent[];
+  triggers: CraftCardTrigger[];
+  connectors: CraftCardConnector[];
+  skills: string[];
+  envRequired: string[];
+  title: string | null;
+  description: string | null;
+} {
+  const validation = validateManifest(raw, format);
+  if (!validation.valid || !validation.parsed) {
+    throw new CraftCrawlError(
+      'manifest_invalid',
+      `${manifestPath} in ${label} is not a valid Kortix manifest`,
+      validation.issues,
+    );
+  }
+
+  let manifest: ReturnType<typeof parseManifestString>;
+  try {
+    manifest = parseManifestString(raw, format, manifestPath, sha);
+  } catch (error) {
+    // `validateManifest` passed, so this is a version the READER refuses (a
+    // `kortix_version` above MAX_SCHEMA_VERSION) rather than a shape problem.
+    throw new CraftCrawlError(
+      'manifest_unsupported',
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  const warnings = validation.issues
+    .filter((i) => i.severity === 'warning')
+    .map((i) => `${i.path}: ${i.message}`);
+
+  const agents = extractAgents(manifest);
+  const triggers = extractTriggers(manifest);
+  const connectors = extractConnectors(manifest);
+  // A craft's OWN manifest should not declare installed crafts. If it does, say
+  // so rather than indexing a nested install nobody will honor.
+  const nested = extractCrafts(manifest);
+  if (nested.specs.length > 0) {
+    warnings.push(
+      `crafts: ${nested.specs.length} installed-craft entr${nested.specs.length === 1 ? 'y' : 'ies'} in the source manifest are ignored — a craft does not install other crafts`,
+    );
+  }
+  for (const e of agents.errors) warnings.push(`${e.name}: ${e.error}`);
+  for (const list of [triggers.errors, connectors.errors, nested.errors]) {
+    for (const e of list) warnings.push(`${e.slug}: ${e.error}`);
+  }
+
+  const project =
+    manifest.raw.project && typeof manifest.raw.project === 'object'
+      ? (manifest.raw.project as Record<string, unknown>)
+      : {};
+  const projectName = project.name;
+  const projectDescription = project.description;
+
+  return {
+    manifest,
+    warnings,
+    agents: agents.specs.map((a) => ({ name: a.name, description: null })),
+    triggers: triggers.specs.map((t) => ({
+      slug: t.slug,
+      name: t.name,
+      type: t.type,
+      cron: t.cron,
+      agent: t.agent,
+      enabled: t.enabled,
+    })),
+    connectors: connectors.specs.map((c) => ({ slug: c.slug, provider: c.provider, app: c.app })),
+    skills: deriveSkills(manifest.raw),
+    envRequired: deriveEnvRequired(manifest.raw),
+    // An un-rendered `{{projectName}}` placeholder must never become a title —
+    // a craft submitted straight from the starter template would otherwise be
+    // listed in the store as literally "{{projectName}}".
+    title:
+      typeof projectName === 'string' && projectName.trim() && !projectName.includes('{{')
+        ? projectName.trim()
+        : null,
+    description:
+      typeof projectDescription === 'string' && projectDescription.trim()
+        ? projectDescription.trim()
+        : null,
+  };
+}
+
+/**
+ * Read a craft out of an uploaded ZIP archive.
+ *
+ * The zip is somebody's repo with no git behind it, so there is no sha to pin
+ * and no raw URL to fetch from later. The craft's text files therefore travel
+ * WITH the index row and get embedded in the install prompt — the same shape
+ * `buildRegistryProjectInstallPrompt` already uses for a base registry item.
+ * Bounded by `CRAFT_ZIP_LIMITS`: this is an installable craft, not a file host.
+ */
+export function crawlCraftZip(
+  archive: ArrayBuffer | Uint8Array,
+  uploadName: string,
+): CraftCrawlResult {
+  let read: ReturnType<typeof readZipTextFiles>;
+  try {
+    read = readZipTextFiles(archive);
+  } catch (err) {
+    if (err instanceof ZipReadError) {
+      throw new CraftCrawlError(
+        err.code === 'not_a_zip' || err.code === 'truncated'
+          ? 'invalid_archive'
+          : 'archive_refused',
+        err.message,
+      );
+    }
+    throw err;
+  }
+
+  const byPath = new Map(read.files.map((f) => [f.path, f.content]));
+  const candidate = manifestCandidatePaths(null).find((c) => byPath.has(c.path));
+  if (!candidate) {
+    throw new CraftCrawlError(
+      'manifest_not_found',
+      `${uploadName} has no kortix.yaml at its root — a craft archive must declare one (${manifestCandidatePaths(
+        null,
+      )
+        .map((c) => c.path)
+        .join(', ')})`,
+    );
+  }
+
+  const card = deriveCardFromManifest(
+    byPath.get(candidate.path) as string,
+    candidate.format,
+    candidate.path,
+    null,
+    uploadName,
+  );
+  if (read.skipped.length > 0) {
+    card.warnings.push(
+      `${read.skipped.length} non-text or over-sized file(s) in the archive were not carried: ${read.skipped
+        .slice(0, 8)
+        .join(', ')}${read.skipped.length > 8 ? ', …' : ''}`,
+    );
+  }
+
+  // The archive name is the only identity an upload has. Strip the extension
+  // and any GitHub `-main` / `-<sha>` suffix its wrapper directory implies.
+  const base = (read.root ?? uploadName.replace(/\.zip$/i, '')).replace(
+    /-(?:main|master|[0-9a-f]{7,40})$/i,
+    '',
+  );
+
+  return {
+    slug: craftSlugFromRepo(base),
+    sourceKind: 'upload',
+    repoOwner: null,
+    repoName: null,
+    gitRef: null,
+    resolvedRef: null,
+    resolvedSha: null,
+    title: card.title ?? craftSlugFromRepo(base),
+    description: card.description,
+    stars: null,
+    manifest: card.manifest.raw,
+    agents: card.agents,
+    triggers: card.triggers,
+    connectors: card.connectors,
+    skills: card.skills,
+    envRequired: card.envRequired,
+    manifestPath: candidate.path,
+    files: read.files.map((f) => ({ path: f.path, content: f.content })),
+    uploadName,
+    warnings: card.warnings,
+  };
+}
+
+/**
  * Crawl one repo into a craft card. Throws {@link CraftCrawlError} for every
  * expected user-input failure — a bad address, a repo with no manifest, an
  * invalid manifest — so the route can answer 400 with the reason rather than
@@ -309,96 +514,41 @@ export async function crawlCraftRepo(
   const file = await readManifestAtSha(owner, repo, resolvedSha, fetchImpl);
 
   // The gate the CR-merge path applies, applied at submit: the store must not
-  // list a craft whose manifest the platform would refuse.
-  const validation = validateManifest(file.raw, file.format);
-  if (!validation.valid || !validation.parsed) {
-    throw new CraftCrawlError(
-      'manifest_invalid',
-      `${file.path} in ${owner}/${repo} is not a valid Kortix manifest`,
-      validation.issues,
-    );
-  }
-
-  let manifest: ReturnType<typeof parseManifestString>;
-  try {
-    manifest = parseManifestString(file.raw, file.format, file.path, resolvedSha);
-  } catch (error) {
-    // `validateManifest` passed, so this is a version the READER refuses (a
-    // `kortix_version` above MAX_SCHEMA_VERSION) rather than a shape problem.
-    throw new CraftCrawlError(
-      'manifest_unsupported',
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-
-  const warnings = validation.issues
-    .filter((i) => i.severity === 'warning')
-    .map((i) => `${i.path}: ${i.message}`);
-
-  const agents = extractAgents(manifest);
-  const triggers = extractTriggers(manifest);
-  const connectors = extractConnectors(manifest);
-  // A craft repo's OWN manifest should not declare installed crafts. If it
-  // does, say so rather than indexing a nested install nobody will honor.
-  const nested = extractCrafts(manifest);
-  if (nested.specs.length > 0) {
-    warnings.push(
-      `crafts: ${nested.specs.length} installed-craft entr${nested.specs.length === 1 ? 'y' : 'ies'} in the source manifest are ignored — a craft does not install other crafts`,
-    );
-  }
-  for (const e of agents.errors) warnings.push(`${e.name}: ${e.error}`);
-  for (const list of [triggers.errors, connectors.errors, nested.errors]) {
-    for (const e of list) warnings.push(`${e.slug}: ${e.error}`);
-  }
-
-  const projectName =
-    manifest.raw.project && typeof manifest.raw.project === 'object'
-      ? (manifest.raw.project as Record<string, unknown>).name
-      : undefined;
-  const projectDescription =
-    manifest.raw.project && typeof manifest.raw.project === 'object'
-      ? (manifest.raw.project as Record<string, unknown>).description
-      : undefined;
+  // list a craft whose manifest the platform would refuse. Shared with the zip
+  // path so a repo and an archive can never disagree about what a craft IS.
+  const card = deriveCardFromManifest(
+    file.raw,
+    file.format,
+    file.path,
+    resolvedSha,
+    `${owner}/${repo}`,
+  );
 
   return {
     slug: craftSlugFromRepo(repo),
+    sourceKind: 'github',
     repoOwner: owner,
     repoName: repo,
     gitRef: ref,
     resolvedRef,
     resolvedSha,
-    // The repo name is the fallback, not the manifest's `{{projectName}}`
-    // placeholder — an un-rendered starter template would otherwise become the
-    // craft's title verbatim.
-    title:
-      typeof projectName === 'string' && projectName.trim() && !projectName.includes('{{')
-        ? projectName.trim()
-        : repo,
+    // The repo name is the fallback when the manifest names no project.
+    title: card.title ?? repo,
     // The manifest's own description wins over GitHub's: it describes the
     // craft, while the repo blurb describes the repository.
-    description:
-      typeof projectDescription === 'string' && projectDescription.trim()
-        ? projectDescription.trim()
-        : meta.description,
+    description: card.description ?? meta.description,
     stars: meta.stars,
-    manifest: manifest.raw,
-    agents: agents.specs.map((a) => ({ name: a.name, description: null })),
-    triggers: triggers.specs.map((t) => ({
-      slug: t.slug,
-      name: t.name,
-      type: t.type,
-      cron: t.cron,
-      agent: t.agent,
-      enabled: t.enabled,
-    })),
-    connectors: connectors.specs.map((c) => ({
-      slug: c.slug,
-      provider: c.provider,
-      app: c.app,
-    })),
-    skills: deriveSkills(manifest.raw),
-    envRequired: deriveEnvRequired(manifest.raw),
+    manifest: card.manifest.raw,
+    agents: card.agents,
+    triggers: card.triggers,
+    connectors: card.connectors,
+    skills: card.skills,
+    envRequired: card.envRequired,
     manifestPath: file.path,
-    warnings,
+    // A github craft's files are fetched at `resolvedSha` when it installs, so
+    // the index stores a manifest and nothing else. Kortix indexes; git hosts.
+    files: [],
+    uploadName: null,
+    warnings: card.warnings,
   };
 }

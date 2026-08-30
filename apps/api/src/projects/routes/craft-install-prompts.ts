@@ -26,14 +26,27 @@ export interface CraftInstallSubject {
   slug: string;
   title: string;
   description: string | null;
-  repoOwner: string;
-  repoName: string;
+  /**
+   * `github` — the files live in a repo and the agent fetches them at
+   * `resolvedSha`. `upload` — there is no repo, so `files` carries them and the
+   * prompt embeds them verbatim (the shape
+   * `buildRegistryProjectInstallPrompt` already uses for a base registry item).
+   */
+  sourceKind: 'github' | 'upload';
+  repoOwner: string | null;
+  repoName: string | null;
   /** The branch/tag asked for, or null for the default branch. */
   gitRef: string | null;
   /** The commit the install pins. Null only for a row crawled before shas. */
   resolvedSha: string | null;
   /** The craft's own kortix.yaml, as cached by the index crawl. */
   manifest: Record<string, unknown>;
+  /** For an upload: the craft's text files, embedded below. Empty for github. */
+  files?: Array<{ path: string; content: string }>;
+  /** For an upload: the archive's original filename, for provenance. */
+  uploadName?: string | null;
+  /** The manifest's path inside the craft, so it is not embedded twice. */
+  manifestPath?: string;
   /** Derived lists from the crawl, for the summary the agent opens with. */
   agents: Array<{ name: string }>;
   triggers: Array<{ slug: string; name?: string; type?: string; cron?: string | null }>;
@@ -44,9 +57,12 @@ export interface CraftInstallSubject {
 
 const RAW_BASE = 'https://raw.githubusercontent.com';
 
-/** `owner/repo`. */
-export function craftRepoSlug(craft: Pick<CraftInstallSubject, 'repoOwner' | 'repoName'>): string {
-  return `${craft.repoOwner}/${craft.repoName}`;
+/** `owner/repo`, or the archive name for an upload. */
+export function craftRepoSlug(
+  craft: Pick<CraftInstallSubject, 'repoOwner' | 'repoName'> & { uploadName?: string | null },
+): string {
+  if (craft.repoOwner && craft.repoName) return `${craft.repoOwner}/${craft.repoName}`;
+  return craft.uploadName ?? '(uploaded archive)';
 }
 
 /**
@@ -104,7 +120,9 @@ export function buildCraftInstallPrompt(
     '',
     craft.description ?? '',
     '',
-    `The craft lives at ${repo}, pinned to \`${ref}\`. Read its files at that exact ref (\`${rawBase}/<path>\`) — a branch moves, and the manifest below is what that commit actually declares.`,
+    craft.sourceKind === 'upload'
+      ? `This craft was UPLOADED as ${repo} — there is no repository behind it. Every file it contains is embedded below; do not go looking for a repo or a raw URL, there is none.`
+      : `The craft lives at ${repo}, pinned to \`${ref}\`. Read its files at that exact ref (\`${rawBase}/<path>\`) — a branch moves, and the manifest below is what that commit actually declares.`,
     '',
     "The craft's own kortix.yaml:",
     '```yaml',
@@ -116,8 +134,22 @@ export function buildCraftInstallPrompt(
     targetManifestRaw ?? '(no manifest yet — this project has none, so you are creating it)',
     '```',
     '',
-    'What it contributes:',
   ];
+
+  if (craft.sourceKind === 'upload') {
+    const files = (craft.files ?? []).filter(
+      (f) => f.path !== (craft.manifestPath ?? 'kortix.yaml'),
+    );
+    lines.push(
+      `Its ${files.length} file${files.length === 1 ? '' : 's'}, verbatim. These ARE the craft — copy from here, not from anywhere else:`,
+      '',
+    );
+    for (const file of files) {
+      lines.push(`--- ${file.path} ---`, '```', file.content, '```', '');
+    }
+  }
+
+  lines.push('What it contributes:');
 
   const contributes: string[] = [];
   if (agentNames.length) contributes.push(`agents: ${agentNames.join(', ')}`);
@@ -132,13 +164,21 @@ export function buildCraftInstallPrompt(
   ];
 
   if (agentNames.length) {
+    const agentSource =
+      craft.sourceKind === 'upload'
+        ? 'the embedded `.kortix/opencode/agents/<name>.md` blocks above'
+        : `\`${rawBase}/.kortix/opencode/agents/<name>.md\``;
     steps.push(
-      `Copy the craft's agent files from \`${rawBase}/.kortix/opencode/agents/<name>.md\` into this project's \`.kortix/opencode/agents/\`. **Rename on collision** — if this project already has an agent by that name, install the craft's under a suffixed name and use the new name everywhere below. Never remove or overwrite an existing agent, and never change \`default_agent\`.`,
+      `Copy the craft's agent files from ${agentSource} into this project's \`.kortix/opencode/agents/\`. **Rename on collision** — if this project already has an agent by that name, install the craft's under a suffixed name and use the new name everywhere below. Never remove or overwrite an existing agent, and never change \`default_agent\`.`,
     );
   }
   if (craft.skills.length) {
+    const skillSource =
+      craft.sourceKind === 'upload'
+        ? 'the embedded `.kortix/opencode/skills/<name>/` blocks above'
+        : `\`${rawBase}/.kortix/opencode/skills/<name>/\``;
     steps.push(
-      `Copy the skills it grants (${craft.skills.join(', ')}) from \`${rawBase}/.kortix/opencode/skills/<name>/\` into this project's \`.kortix/opencode/skills/\`. A skill this project already has by the same name: leave the existing one alone and say so.`,
+      `Copy the skills it grants (${craft.skills.join(', ')}) from ${skillSource} into this project's \`.kortix/opencode/skills/\`. A skill this project already has by the same name: leave the existing one alone and say so.`,
     );
   }
   steps.push(
@@ -165,7 +205,14 @@ export function buildCraftInstallPrompt(
       '```yaml',
       'crafts:',
       `  - slug: ${craft.slug}`,
-      `    repo: ${repo}`,
+      ...(craft.sourceKind === 'upload'
+        ? [
+            // An upload has no `owner/repo`, and the manifest schema requires
+            // `repo` to BE one — so record the provenance in `title` and leave
+            // `repo` off rather than inventing a repository that does not exist.
+            `    # uploaded archive: ${repo} — no repo, so no \`repo:\`/\`sha:\` to record`,
+          ]
+        : [`    repo: ${repo}`]),
       ...(craft.gitRef ? [`    ref: ${craft.gitRef}`] : []),
       ...(craft.resolvedSha ? [`    sha: ${craft.resolvedSha}`] : []),
       `    title: ${craft.title}`,

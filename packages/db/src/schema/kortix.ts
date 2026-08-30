@@ -57,6 +57,20 @@ export const craftStatusEnum = kortixSchema.enum('craft_status', [
 ]);
 
 /**
+ * Where a craft's files come from.
+ *
+ *   github  the repo is the source of truth. Files are fetched from
+ *           raw.githubusercontent.com at `resolved_sha`, so the index stores a
+ *           manifest and nothing else — Kortix indexes, git hosts.
+ *   upload  someone uploaded a .zip. There is no repo to fetch from, so the
+ *           craft's text files are stored on the row and EMBEDDED in the
+ *           install prompt (the same shape `buildRegistryProjectInstallPrompt`
+ *           already uses for a base registry item). Bounded to text under
+ *           `CRAFT_ZIP_LIMITS`; this is not a file host.
+ */
+export const craftSourceKindEnum = kortixSchema.enum('craft_source_kind', ['github', 'upload']);
+
+/**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
  * below. Where `scope` says which subsystem OWNS a row, `strategy` says how (and
  * whether) the value reaches the wire:
@@ -1275,7 +1289,7 @@ export const projectTriggerRuntime = kortixSchema.table(
     // same reason as `idx_project_sessions_account_active` below: this table
     // already exists, so the index must be built CONCURRENTLY, and re-adding it
     // here would make `db:generate` emit a conflicting plain `CREATE INDEX`.
-    // Manage it via migrations/20260830140400000_project_trigger_runtime_craft_index.concurrent.ts.
+    // Manage it via migrations/20260830162046763_project_trigger_runtime_craft_index.concurrent.ts.
   ],
 );
 
@@ -1346,10 +1360,7 @@ export const projectMonitorEvents = kortixSchema.table(
     firedAt: timestamp('fired_at', { withTimezone: true }),
   },
   (table) => [
-    check(
-      'project_monitor_events_kind_check',
-      sql`${table.kind} IN ('event', 'lifecycle')`,
-    ),
+    check('project_monitor_events_kind_check', sql`${table.kind} IN ('event', 'lifecycle')`),
     check(
       'project_monitor_events_status_check',
       sql`${table.status} IN ('pending', 'fired', 'skipped', 'suppressed', 'failed')`,
@@ -1502,10 +1513,13 @@ export const crafts = kortixSchema.table(
   'crafts',
   {
     craftId: uuid('craft_id').defaultRandom().primaryKey(),
-    /** Derived from the repo name; the identity a project's manifest records. */
+    /** Derived from the repo name (or the archive name); the identity a
+     *  project's manifest records. */
     slug: varchar('slug', { length: 128 }).notNull(),
-    repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
-    repoName: varchar('repo_name', { length: 255 }).notNull(),
+    sourceKind: craftSourceKindEnum('source_kind').default('github').notNull(),
+    /** NULL for an uploaded craft — there is no repo. */
+    repoOwner: varchar('repo_owner', { length: 255 }),
+    repoName: varchar('repo_name', { length: 255 }),
     /** Branch or tag crawled. NULL = the repo's default branch. */
     gitRef: varchar('git_ref', { length: 255 }),
     /** Commit sha the cached manifest below was read at. */
@@ -1525,6 +1539,16 @@ export const crafts = kortixSchema.table(
     connectors: jsonb('connectors').default([]).$type<unknown[]>().notNull(),
     skills: jsonb('skills').default([]).$type<string[]>().notNull(),
     envRequired: jsonb('env_required').default([]).$type<string[]>().notNull(),
+    /**
+     * For `source_kind = 'upload'`: the craft's text files, `[{path, content}]`.
+     * Empty for a github craft, whose files are fetched at `resolved_sha`
+     * instead. Bounded by `CRAFT_ZIP_LIMITS` (1 MB, 200 files, text only) —
+     * this column exists so an upload is installable, not so Kortix becomes a
+     * file host.
+     */
+    files: jsonb('files').default([]).$type<Array<{ path: string; content: string }>>().notNull(),
+    /** The uploaded archive's original filename, for display. */
+    uploadName: varchar('upload_name', { length: 255 }),
     /** GitHub stargazers at the last crawl. NULL when the host did not report it. */
     stars: integer('stars'),
     installCount: integer('install_count').default(0).notNull(),
@@ -1552,6 +1576,14 @@ export const crafts = kortixSchema.table(
     index('idx_crafts_listing').on(table.visibility, table.status),
     index('idx_crafts_account').on(table.accountId),
     index('idx_crafts_slug').on(table.slug),
+    // NOTE: a partial unique index `idx_crafts_upload_identity`
+    // ((account_id, slug) WHERE source_kind = 'upload') ALSO exists — it gives an
+    // uploaded craft an identity, so re-uploading a fixed archive REPLACES the
+    // craft instead of adding a duplicate row. `idx_crafts_repo_ref` cannot do
+    // that job: an upload has NULL repo columns, and a btree unique treats every
+    // NULL as distinct. Declared in
+    // migrations/20260830162048440_crafts_upload_identity_index.concurrent.ts,
+    // not here, because it must be built CONCURRENTLY on an existing table.
   ],
 );
 
@@ -2047,7 +2079,6 @@ export const sessionEnvironments = kortixSchema.table(
     index('idx_session_environments_external_id').on(table.externalId),
   ],
 );
-
 
 /**
  * Durable per-turn ledger.
@@ -2588,7 +2619,6 @@ export const sandboxes = kortixSchema.table(
     index('idx_sandboxes_status').on(table.status),
   ],
 );
-
 
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
@@ -3748,9 +3778,7 @@ export const apps = kortixSchema.table(
      * App; the viewer's own IAM role is still the ceiling.
      * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
      */
-    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
-      .default('identity')
-      .notNull(),
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 }).default('identity').notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3798,11 +3826,7 @@ export const appAccessGrants = kortixSchema.table(
   },
   (table) => [
     index('app_access_grants_app_idx').on(table.appId),
-    uniqueIndex('app_access_grants_unique').on(
-      table.appId,
-      table.principalType,
-      table.principalId,
-    ),
+    uniqueIndex('app_access_grants_unique').on(table.appId, table.principalType, table.principalId),
   ],
 );
 

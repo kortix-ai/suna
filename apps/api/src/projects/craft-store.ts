@@ -16,12 +16,20 @@ export type CraftVisibility = 'public' | 'private';
 export type CraftStatus = 'active' | 'unavailable' | 'yanked';
 
 /** One craft as the store's list and detail views render it. */
+export type CraftSourceKind = 'github' | 'upload';
+
 export interface CraftRecord {
   craft_id: string;
   slug: string;
+  source_kind: CraftSourceKind;
+  /** `owner/repo` for a github craft; the archive name for an upload. */
   repo: string;
-  repo_owner: string;
-  repo_name: string;
+  repo_owner: string | null;
+  repo_name: string | null;
+  /** The uploaded archive's original filename. Null for a github craft. */
+  upload_name: string | null;
+  /** How many text files an upload carries. 0 for a github craft. */
+  file_count: number;
   git_ref: string | null;
   resolved_sha: string | null;
   title: string;
@@ -51,9 +59,19 @@ export function serializeCraft(row: CraftRow): CraftRecord {
   return {
     craft_id: row.craftId,
     slug: row.slug,
-    repo: `${row.repoOwner}/${row.repoName}`,
+    source_kind: row.sourceKind as CraftSourceKind,
+    // An upload has no repo; showing the archive name keeps the card's
+    // provenance row honest instead of rendering "null/null".
+    repo:
+      row.repoOwner && row.repoName
+        ? `${row.repoOwner}/${row.repoName}`
+        : (row.uploadName ?? row.slug),
     repo_owner: row.repoOwner,
     repo_name: row.repoName,
+    upload_name: row.uploadName,
+    // The files themselves are NOT serialized: a craft's whole file set per row
+    // would bloat every list response. The install path reads them directly.
+    file_count: Array.isArray(row.files) ? row.files.length : 0,
     git_ref: row.gitRef,
     resolved_sha: row.resolvedSha,
     title: row.title,
@@ -105,7 +123,13 @@ export async function listCrafts(
     ? (or(
         ilike(crafts.title, `%${term}%`),
         ilike(crafts.description, `%${term}%`),
-        ilike(sql`${crafts.repoOwner} || '/' || ${crafts.repoName}`, `%${term}%`),
+        // `coalesce` because an upload has NULL repo columns, and `a || NULL`
+        // is NULL in SQL — without it, searching would silently never match an
+        // uploaded craft.
+        ilike(
+          sql`coalesce(${crafts.repoOwner} || '/' || ${crafts.repoName}, ${crafts.uploadName}, '')`,
+          `%${term}%`,
+        ),
       ) as SQL)
     : undefined;
   const where = search ? and(visible, notYanked, search) : and(visible, notYanked);
@@ -139,6 +163,18 @@ export async function getCraftManifest(craftId: string): Promise<Record<string, 
     .where(eq(crafts.craftId, craftId))
     .limit(1);
   return row?.manifest ?? null;
+}
+
+/** An upload's text files. Empty for a github craft, whose files live in git. */
+export async function getCraftFiles(
+  craftId: string,
+): Promise<Array<{ path: string; content: string }>> {
+  const [row] = await db
+    .select({ files: crafts.files })
+    .from(crafts)
+    .where(eq(crafts.craftId, craftId))
+    .limit(1);
+  return Array.isArray(row?.files) ? row.files : [];
 }
 
 /** True when the caller may see this craft. */
@@ -180,14 +216,30 @@ export async function upsertCraftFromCrawl(input: UpsertCraftInput): Promise<Cra
   // locale `toString()`, which Postgres cannot parse (the 2026-08-27
   // runtime-projection incident).
   const nowIso = new Date().toISOString();
+  // Which unique index arbitrates a re-submit depends on the source, because
+  // the two have different identities:
+  //   github → (repo_owner, repo_name, coalesce(git_ref,'')), so the same repo
+  //            at a moved sha updates in place and a pinned @v1 is its own craft.
+  //   upload → (account_id, slug) WHERE source_kind = 'upload', so re-uploading
+  //            a fixed archive REPLACES it. The github arbiter cannot serve an
+  //            upload: its repo columns are NULL, and a btree unique treats
+  //            every NULL as distinct, so every upload would be a new row.
+  // `sql.raw` is safe here: the string is chosen from two literals below, never
+  // built from input.
+  const arbiter =
+    crawl.sourceKind === 'upload'
+      ? "(account_id, slug) where source_kind = 'upload'"
+      : "(repo_owner, repo_name, coalesce(git_ref, ''))";
   const rows = await db.execute(sql`
     insert into kortix.crafts (
-      slug, repo_owner, repo_name, git_ref, resolved_sha, title, description,
-      manifest, agents, triggers, connectors, skills, env_required, stars,
+      slug, source_kind, repo_owner, repo_name, git_ref, resolved_sha, title,
+      description, manifest, agents, triggers, connectors, skills, env_required,
+      files, upload_name, stars,
       visibility, account_id, submitted_by, status, last_crawled_at, last_error,
       updated_at
     ) values (
-      ${crawl.slug}, ${crawl.repoOwner}, ${crawl.repoName}, ${crawl.gitRef},
+      ${crawl.slug}, ${crawl.sourceKind}::kortix.craft_source_kind,
+      ${crawl.repoOwner}, ${crawl.repoName}, ${crawl.gitRef},
       ${crawl.resolvedSha}, ${crawl.title}, ${crawl.description},
       ${JSON.stringify(crawl.manifest)}::jsonb,
       ${JSON.stringify(crawl.agents)}::jsonb,
@@ -195,14 +247,17 @@ export async function upsertCraftFromCrawl(input: UpsertCraftInput): Promise<Cra
       ${JSON.stringify(crawl.connectors)}::jsonb,
       ${JSON.stringify(crawl.skills)}::jsonb,
       ${JSON.stringify(crawl.envRequired)}::jsonb,
+      ${JSON.stringify(crawl.files)}::jsonb,
+      ${crawl.uploadName},
       ${crawl.stars},
       ${input.visibility}::kortix.craft_visibility,
       ${input.accountId}::uuid, ${input.submittedBy}::uuid,
       'active'::kortix.craft_status,
       ${nowIso}::timestamptz, null, ${nowIso}::timestamptz
     )
-    on conflict (repo_owner, repo_name, coalesce(git_ref, '')) do update set
+    on conflict ${sql.raw(arbiter)} do update set
       slug = excluded.slug,
+      source_kind = excluded.source_kind,
       resolved_sha = excluded.resolved_sha,
       title = excluded.title,
       description = excluded.description,
@@ -212,6 +267,8 @@ export async function upsertCraftFromCrawl(input: UpsertCraftInput): Promise<Cra
       connectors = excluded.connectors,
       skills = excluded.skills,
       env_required = excluded.env_required,
+      files = excluded.files,
+      upload_name = excluded.upload_name,
       stars = excluded.stars,
       visibility = excluded.visibility,
       submitted_by = excluded.submitted_by,
@@ -265,8 +322,15 @@ function normalizeRawCraftRow(raw: Record<string, unknown>): CraftRow {
   return {
     craftId: text('craft_id', 'craftId'),
     slug: text('slug', 'slug'),
-    repoOwner: text('repo_owner', 'repoOwner'),
-    repoName: text('repo_name', 'repoName'),
+    sourceKind: text('source_kind', 'sourceKind'),
+    // Nullable since uploads: `text()` would coerce a NULL repo to `''`, and
+    // `serializeCraft` reads `repoOwner && repoName` to decide whether to render
+    // `owner/repo` — `''` is falsy so it would still pick the archive name, but
+    // `repo_owner: ""` on the wire is a lie. Keep the NULL.
+    repoOwner: maybeText('repo_owner', 'repoOwner'),
+    repoName: maybeText('repo_name', 'repoName'),
+    files: pick('files', 'files') ?? [],
+    uploadName: maybeText('upload_name', 'uploadName'),
     gitRef: maybeText('git_ref', 'gitRef'),
     resolvedSha: maybeText('resolved_sha', 'resolvedSha'),
     title: text('title', 'title'),

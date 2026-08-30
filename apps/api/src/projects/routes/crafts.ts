@@ -31,6 +31,7 @@ import {
   bumpCraftInstallCount,
   craftVisibleTo,
   getCraftById,
+  getCraftFiles,
   getCraftManifest,
 } from '../craft-store';
 import { extractCrafts } from '../crafts';
@@ -221,10 +222,16 @@ projectsApp.openapi(
       slug: craft.slug,
       title: craft.title,
       description: craft.description,
+      sourceKind: craft.source_kind,
       repoOwner: craft.repo_owner,
       repoName: craft.repo_name,
+      uploadName: craft.upload_name,
       gitRef: craft.git_ref,
       resolvedSha: craft.resolved_sha,
+      // An upload has no repo to fetch from, so its files travel in the prompt.
+      // Read only for that source: a github craft's `files` column is empty and
+      // the query would be pure waste on every install.
+      files: craft.source_kind === 'upload' ? await getCraftFiles(craftId) : [],
       // The cached manifest, so the agent reads one authoritative copy rather
       // than fetching and possibly disagreeing with the card it was shown.
       manifest: (await getCraftManifest(craftId)) ?? {},

@@ -21,13 +21,15 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
+CREATE TYPE "kortix"."craft_source_kind" AS ENUM('github', 'upload');--> statement-breakpoint
 CREATE TYPE "kortix"."craft_status" AS ENUM('active', 'unavailable', 'yanked');--> statement-breakpoint
 CREATE TYPE "kortix"."craft_visibility" AS ENUM('public', 'private');--> statement-breakpoint
 CREATE TABLE "kortix"."crafts" (
 	"craft_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"slug" varchar(128) NOT NULL,
-	"repo_owner" varchar(255) NOT NULL,
-	"repo_name" varchar(255) NOT NULL,
+	"source_kind" "kortix"."craft_source_kind" DEFAULT 'github' NOT NULL,
+	"repo_owner" varchar(255),
+	"repo_name" varchar(255),
 	"git_ref" varchar(255),
 	"resolved_sha" varchar(64),
 	"title" varchar(255) NOT NULL,
@@ -38,6 +40,8 @@ CREATE TABLE "kortix"."crafts" (
 	"connectors" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"skills" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"env_required" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"files" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"upload_name" varchar(255),
 	"stars" integer,
 	"install_count" integer DEFAULT 0 NOT NULL,
 	"visibility" "kortix"."craft_visibility" DEFAULT 'private' NOT NULL,

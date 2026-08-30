@@ -24,7 +24,7 @@ import { actorOf, authorize } from '../iam';
 import { ACCOUNT_ACTIONS } from '../iam/actions';
 import { combinedAuth } from '../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { CraftCrawlError, crawlCraftRepo } from '../projects/craft-index';
+import { CraftCrawlError, crawlCraftRepo, crawlCraftZip } from '../projects/craft-index';
 import {
   craftVisibleTo,
   deleteCraft,
@@ -44,6 +44,14 @@ export const craftsApp = makeOpenApiApp<AppEnv>();
 // does not whitelist this surface — a session-bound sandbox credential has no
 // business writing its account's catalogue.
 craftsApp.use('/*', combinedAuth);
+
+/**
+ * Largest archive accepted, checked on the DECLARED size before any read.
+ * Generous next to `CRAFT_ZIP_LIMITS` (1 MB of text): a real repo zip carries
+ * lockfiles and images we skip, so the compressed envelope is legitimately
+ * bigger than the text we keep.
+ */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /** Page size. Bounded so one call can never ask for the whole catalogue. */
 const DEFAULT_LIMIT = 50;
@@ -130,8 +138,23 @@ craftsApp.openapi(
         content: {
           'application/json': {
             schema: z.object({
-              /** `owner/repo`, optionally `@branch-or-tag`; a browser or clone URL also works. */
-              repo: z.string().min(1),
+              /**
+               * `owner/repo`, optionally `@branch-or-tag`; a browser or clone
+               * URL also works. OPTIONAL at the schema level because the same
+               * route also accepts a multipart .zip — if it were required here
+               * the validator would reject an upload before the handler ran,
+               * and answer "repo: Required" instead of explaining both shapes.
+               */
+              repo: z.string().min(1).optional(),
+              visibility: z.enum(['public', 'private']).optional(),
+              account_id: z.string().optional(),
+            }),
+          },
+          // A .zip upload takes the same route. Declared so the published spec
+          // shows both shapes rather than implying JSON is the only one.
+          'multipart/form-data': {
+            schema: z.object({
+              file: z.any().openapi({ type: 'string', format: 'binary' }),
               visibility: z.enum(['public', 'private']).optional(),
               account_id: z.string().optional(),
             }),
@@ -145,7 +168,50 @@ craftsApp.openapi(
     },
   }),
   async (c: any) => {
-    const body = await readBody(c);
+    // Two shapes on one route: JSON `{ repo }` for a GitHub craft, and
+    // multipart with a `file` part for an uploaded .zip. One route because it is
+    // one action — "add this craft to my catalogue" — and the caller should not
+    // have to know which storage model Kortix uses underneath.
+    const contentType = c.req.header('content-type') ?? '';
+    const isMultipart = contentType.includes('multipart/form-data');
+
+    let body: Record<string, unknown> = {};
+    let upload: { bytes: ArrayBuffer; name: string } | null = null;
+
+    if (isMultipart) {
+      let form: FormData;
+      try {
+        form = await c.req.formData();
+      } catch {
+        return c.json({ error: 'Malformed multipart body', code: 'invalid_archive' }, 400);
+      }
+      const file = form.get('file');
+      if (!file || typeof file === 'string') {
+        return c.json(
+          { error: 'Attach the archive as the `file` part', code: 'invalid_archive' },
+          400,
+        );
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        // Refused on the DECLARED size before reading, so a hostile upload
+        // never gets to allocate. The zip reader bounds the uncompressed side.
+        return c.json(
+          {
+            error: `Archive is ${file.size} bytes; the limit is ${MAX_UPLOAD_BYTES}`,
+            code: 'archive_refused',
+          },
+          400,
+        );
+      }
+      upload = { bytes: await file.arrayBuffer(), name: file.name || 'craft.zip' };
+      for (const key of ['visibility', 'account_id']) {
+        const value = form.get(key);
+        if (typeof value === 'string') body[key] = value;
+      }
+    } else {
+      body = await readBody(c);
+    }
+
     const scope = await resolveProjectAccount(c, body);
     if (
       !(await authorize(await actorOf(c, scope.accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed
@@ -153,15 +219,27 @@ craftsApp.openapi(
       return c.json({ error: 'Owner or admin role required' }, 403);
     }
 
-    const repo = typeof body?.repo === 'string' ? body.repo.trim() : '';
-    if (!repo) return c.json({ error: 'repo is required', code: 'invalid_address' }, 400);
     // Private by default. A craft becomes public because someone chose to
     // publish it, never because they forgot to say otherwise.
     const visibility = body?.visibility === 'public' ? 'public' : 'private';
 
     let crawl: Awaited<ReturnType<typeof crawlCraftRepo>>;
     try {
-      crawl = await crawlCraftRepo(repo);
+      if (upload) {
+        crawl = crawlCraftZip(upload.bytes, upload.name);
+      } else {
+        const repo = typeof body?.repo === 'string' ? body.repo.trim() : '';
+        if (!repo) {
+          return c.json(
+            {
+              error: 'Send a `repo`, or upload an archive as the `file` part',
+              code: 'invalid_address',
+            },
+            400,
+          );
+        }
+        crawl = await crawlCraftRepo(repo);
+      }
     } catch (err) {
       if (err instanceof CraftCrawlError) return crawlErrorResponse(c, err);
       throw err;

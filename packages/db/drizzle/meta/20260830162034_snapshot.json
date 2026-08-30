@@ -1,5 +1,5 @@
 {
-  "id": "8f983c7c-1a2f-4028-86c2-905db4f4166b",
+  "id": "f9be11a8-6733-4681-ad95-ea044b07770c",
   "prevId": "0405819a-1a99-4063-a899-028e0eb7dca1",
   "version": "7",
   "dialect": "postgresql",
@@ -7505,17 +7505,25 @@
           "primaryKey": false,
           "notNull": true
         },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "craft_source_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'github'"
+        },
         "repo_owner": {
           "name": "repo_owner",
           "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "repo_name": {
           "name": "repo_name",
           "type": "varchar(255)",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "git_ref": {
           "name": "git_ref",
@@ -7582,6 +7590,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "files": {
+          "name": "files",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "upload_name": {
+          "name": "upload_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
         },
         "stars": {
           "name": "stars",
@@ -20782,6 +20803,14 @@
         "disabled",
         "needs_auth",
         "error"
+      ]
+    },
+    "kortix.craft_source_kind": {
+      "name": "craft_source_kind",
+      "schema": "kortix",
+      "values": [
+        "github",
+        "upload"
       ]
     },
     "kortix.craft_status": {
