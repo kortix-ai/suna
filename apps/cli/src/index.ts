@@ -8,6 +8,7 @@ import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
+import { runCrafts } from './commands/crafts.ts';
 import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -265,6 +266,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'apps',
             args: '<subcommand>',
             blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
+          },
+          {
+            name: 'crafts',
+            args: '<subcommand>',
+            blurb: 'Publish, install and operate crafts (a Kortix project you install)',
           },
           {
             name: 'marketplace',
@@ -591,6 +597,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
   }
+  if (argv[0] === 'crafts' || argv[0] === 'craft') {
+    return runCrafts(argv.slice(1));
+  }
   if (argv[0] === 'marketplace') {
     return runMarketplace(argv.slice(1));
   }
@@ -687,6 +696,8 @@ const KNOWN_COMMANDS = [
   'apps',
   'channels',
   'sandboxes',
+  'crafts',
+  'craft',
   'marketplace',
   'system-skills',
   'skills',

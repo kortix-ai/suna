@@ -6,7 +6,7 @@
  * firing, so a parse failure has to be reportable, not fatal.
  */
 import { describe, expect, test } from 'bun:test';
-import { extractCrafts } from './crafts';
+import { extractCrafts, setCraftTriggersEnabled } from './crafts';
 import type { ParsedManifest } from './triggers';
 
 function manifest(raw: Record<string, unknown>, format: 'yaml' | 'toml' = 'yaml'): ParsedManifest {
@@ -157,5 +157,90 @@ describe('extractCrafts', () => {
     const m = manifest({ crafts: [{ slug: 'c', repo: 'a/b' }] }, 'toml');
     m.path = 'kortix.toml';
     expect(extractCrafts(m).specs[0].path).toBe('kortix.toml#crafts.c');
+  });
+});
+
+/**
+ * `setCraftTriggersEnabled` — what actually starts a craft working.
+ *
+ * A craft installs with every trigger `enabled: false`, so this transform is
+ * the entire lifecycle step between "installed" and "running". Three ways it
+ * could go silently wrong, all covered below: touching a trigger it does not
+ * own, missing a trigger it does (an absent `enabled` key is TRUE by default),
+ * and reporting a change when it made none — which would land an empty commit
+ * on the project's default branch every time someone clicked Enable twice.
+ */
+describe('setCraftTriggersEnabled', () => {
+  const triggers = [
+    { slug: 'seo-weekly', craft: 'seo-watch', enabled: false },
+    { slug: 'seo-daily', craft: 'seo-watch', enabled: false },
+    { slug: 'hand-authored', enabled: true },
+    { slug: 'other-craft-trigger', craft: 'error-triage', enabled: false },
+  ];
+
+  test('enables only the triggers this craft owns', () => {
+    const result = setCraftTriggersEnabled(manifest({ triggers }), 'seo-watch', true);
+    expect(result.changed).toEqual(['seo-weekly', 'seo-daily']);
+    const out = result.manifest.raw.triggers as Record<string, unknown>[];
+    expect(out.map((t) => t.enabled)).toEqual([true, true, true, false]);
+  });
+
+  test("leaves a hand-authored trigger and another craft's triggers alone", () => {
+    const result = setCraftTriggersEnabled(manifest({ triggers }), 'seo-watch', false);
+    // Already false, so nothing moves — and critically the OTHER craft's
+    // trigger is not swept in.
+    expect(result.changed).toEqual([]);
+    const out = result.manifest.raw.triggers as Record<string, unknown>[];
+    expect(out[2].enabled).toBe(true);
+    expect(out[3].enabled).toBe(false);
+  });
+
+  test('a trigger with NO enabled key counts as enabled', () => {
+    // `parseTriggerEntry` treats absent as enabled. Reading absent as `false`
+    // would rewrite every such entry on an enable and produce a commit that
+    // changes nothing semantically.
+    const result = setCraftTriggersEnabled(
+      manifest({ triggers: [{ slug: 'a', craft: 'seo-watch' }] }),
+      'seo-watch',
+      true,
+    );
+    expect(result.changed).toEqual([]);
+  });
+
+  test('an absent enabled key IS changed when disabling', () => {
+    const result = setCraftTriggersEnabled(
+      manifest({ triggers: [{ slug: 'a', craft: 'seo-watch' }] }),
+      'seo-watch',
+      false,
+    );
+    expect(result.changed).toEqual(['a']);
+    expect((result.manifest.raw.triggers as Record<string, unknown>[])[0].enabled).toBe(false);
+  });
+
+  test('no change returns the SAME manifest object, so the route skips the commit', () => {
+    const input = manifest({ triggers });
+    const result = setCraftTriggersEnabled(input, 'seo-watch', false);
+    expect(result.manifest).toBe(input);
+  });
+
+  test('a manifest with no triggers at all is a no-op, not a throw', () => {
+    expect(setCraftTriggersEnabled(manifest({}), 'seo-watch', true).changed).toEqual([]);
+    expect(setCraftTriggersEnabled(manifest({ triggers: 'oops' }), 'x', true).changed).toEqual([]);
+  });
+
+  test('an unknown craft slug matches nothing', () => {
+    expect(setCraftTriggersEnabled(manifest({ triggers }), 'no-such-craft', true).changed).toEqual(
+      [],
+    );
+  });
+
+  test('every other manifest section survives the rewrite', () => {
+    const input = manifest({ triggers, kortix_version: 2, agents: { writer: {} }, crafts: [{ slug: 'seo-watch', repo: 'a/b' }] });
+    const result = setCraftTriggersEnabled(input, 'seo-watch', true);
+    expect(result.manifest.raw.agents).toEqual({ writer: {} });
+    expect(result.manifest.raw.crafts).toEqual([{ slug: 'seo-watch', repo: 'a/b' }]);
+    expect(result.manifest.raw.kortix_version).toBe(2);
+    // And the input is not mutated — the route may retry on a git conflict.
+    expect((input.raw.triggers as Record<string, unknown>[])[0].enabled).toBe(false);
   });
 });

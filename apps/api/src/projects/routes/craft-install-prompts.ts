@@ -330,3 +330,66 @@ export function buildCraftUninstallPrompt(
 
   return lines.join('\n');
 }
+
+// ── authoring ───────────────────────────────────────────────────────────────
+
+/** What the author prompt needs to know about where the craft will live. */
+export interface CraftAuthorSubject {
+  /** What the person asked for, verbatim. */
+  description: string;
+  /** The project the authoring session runs in — the craft is BUILT here. */
+  projectName: string;
+  /** How to publish when it is done. `owner/repo` once the repo exists. */
+  accountSlug?: string | null;
+}
+
+/**
+ * Prompt for "grow your crafts" — describe a craft, Kortix builds it.
+ *
+ * This is the inverse of the install prompt: install merges an existing craft
+ * INTO a project, authoring produces a new craft FROM a description. Both are
+ * agent-driven, and for the same reason — deciding which agent, which skills,
+ * and what cadence a described job needs is judgment, not a template.
+ *
+ * The prompt is deliberately opinionated about ORDER: repo first, manifest
+ * second, `kortix validate` third, publish last. Publishing an unvalidated
+ * craft puts a broken card in the store, and the store's own crawl would then
+ * mark it `unavailable` — which the author sees as "my craft broke" rather
+ * than "I skipped validate".
+ *
+ * It never asks the person to paste a secret. `request_secret` and `connect`
+ * exist precisely so a credential goes into the project's secret store and not
+ * into a chat transcript, and every other prompt in this file holds that line.
+ */
+export function buildCraftAuthorPrompt(subject: CraftAuthorSubject): string {
+  const lines: string[] = [
+    'Build a new Kortix CRAFT from this description, then publish it to the craft store.',
+    '',
+    'What I asked for:',
+    '```',
+    subject.description.trim(),
+    '```',
+    '',
+    'A craft is a Kortix project you can install into another project. It is a repository whose `kortix.yaml` declares the agents, skills, connectors and triggers that do the job. Installing it merges those declarations into the target project.',
+    '',
+    'Do this, in order:',
+    '',
+    '1. **Restate the job in one sentence, then say what it needs.** Which agent does the work, which skills it needs, which third-party apps it must reach, and how often it should run. If the description is ambiguous on any of those four, ask me BEFORE writing files — one round of questions is far cheaper than a craft that does the wrong job.',
+    '2. **Create the repository.** Use the managed repo flow (`POST /projects/create-repo` through the tooling available to you). Name it for the job, kebab-case.',
+    "3. **Scaffold it** with `kortix init` so it starts from the current manifest version, then write the craft's own content:",
+    '   - `kortix.yaml` — the agents, skills, connectors and triggers.',
+    '   - `.kortix/opencode/agents/<name>.md` — one file per agent, with its instructions.',
+    '   - `.kortix/opencode/skills/<name>/SKILL.md` — one directory per skill.',
+    '   - `README.md` — what it does, what it needs connected, and what it will do on its first run. Someone deciding whether to install this reads the README, not the manifest.',
+    '4. **Ship every trigger `enabled: false`.** A craft that starts firing the moment it is installed is a craft nobody trusts. The person installing it turns it on when they are ready.',
+    '5. **Declare what it needs, do not embed it.** List required connectors in `connectors:` and required env in the manifest. Never write a credential, token, or API key into any file. If YOU need one to test, mint a link with `request_secret` or `connect` — never ask me to paste a key into the chat.',
+    '6. **`kortix validate`.** Fix everything it reports. Do not go on until it passes: a craft that fails validate cannot be installed, and publishing it puts a broken card in the store.',
+    '7. **Commit and push** to the default branch of the new repo.',
+    '8. **Publish it** with `kortix crafts publish <owner>/<repo>`. It defaults to private — pass `--public` only if I said the craft should be public.',
+    '',
+    `You are working in the "${subject.projectName}" project. Build the craft in its own repository, NOT by editing this project's kortix.yaml — this project is where you work, not what you are shipping.`,
+    '',
+    'When it is published, show me: the repo, what the manifest declares, what a person has to connect before the first run, and the `kortix crafts publish` output. Then tell me how to install it.',
+  ];
+  return lines.join('\n');
+}

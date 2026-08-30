@@ -1,11 +1,26 @@
 'use client';
 
-import { GithubLogoIcon, GlobeIcon, LockIcon } from '@phosphor-icons/react';
-import { useMemo, useState } from 'react';
+import {
+  ArrowClockwiseIcon,
+  FileZipIcon,
+  GithubLogoIcon,
+  GlobeIcon,
+  LockIcon,
+  UploadSimpleIcon,
+  WarningIcon,
+  XIcon,
+} from '@phosphor-icons/react';
+import { useMemo, useRef, useState } from 'react';
+
+import { parseCraftRepo } from '@kortix/manifest-schema';
+import type { CraftSubmitResult, CraftVisibility } from '@kortix/sdk';
+import { useCrafts } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -15,11 +30,17 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
-import { infoToast } from '@/components/ui/toast';
+import { Tabs, TabsContent, TabsListCompact, TabsTrigger } from '@/components/ui/tabs';
+import { successToast, warningToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
-/** Craft visibility. Mirrors the two states the real create flow will persist. */
-type CraftVisibility = 'public' | 'private';
+/*
+ * `parseCraftRepo` comes from `@kortix/manifest-schema`, not from a copy in
+ * this file. It is the SAME function the API's submit route runs, so the modal
+ * cannot accept an address the server would reject, or vice versa. It has its
+ * own test corpus there (`__tests__/craft-repo.test.ts`); the local
+ * `parseRepoInput` this file used to export is gone.
+ */
 
 const VISIBILITY: Array<{
   id: CraftVisibility;
@@ -37,41 +58,84 @@ const VISIBILITY: Array<{
     id: 'private',
     label: 'Private',
     icon: LockIcon,
-    hint: 'Only this project can install it. It stays out of the catalog.',
+    hint: 'Only you can install it. It stays out of the catalog.',
   },
 ];
 
-/**
- * Parses `owner/repo` out of whatever a person pastes — a browser URL, an
- * `.git` clone URL, an `ssh://` remote, or a bare `owner/repo`. Returns null
- * until the value identifies one repository, which is what gates Continue.
- */
-export function parseRepoInput(value: string): { owner: string; repo: string } | null {
-  const raw = value.trim();
-  if (!raw) return null;
-  const cleaned = raw
-    .replace(/^git@github\.com:/i, '')
-    .replace(/^(?:https?:\/\/|ssh:\/\/git@|git:\/\/)?(?:www\.)?github\.com\//i, '')
-    .replace(/\.git$/i, '')
-    .replace(/[?#].*$/, '')
-    .replace(/\/+$/, '');
-  // Reject anything still carrying a scheme or host — a non-GitHub URL must not
-  // pass as `owner/repo`.
-  if (/[:\s]/.test(cleaned)) return null;
-  const parts = cleaned.split('/').filter(Boolean);
-  if (parts.length !== 2) return null;
-  const [owner, repo] = parts;
-  const ok = /^[\w.-]+$/;
-  if (!ok.test(owner) || !ok.test(repo)) return null;
-  return { owner, repo };
+/** What the server accepts. Mirrors `CRAFT_ZIP_LIMITS.maxArchiveBytes`. */
+const MAX_ARCHIVE_BYTES = 1_000_000;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_000_000) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
 /**
- * The add-a-craft modal — paste a GitHub repository, pick visibility, continue.
+ * Turn whatever the API returned into one sentence a person can act on.
  *
- * UI PHASE: `Continue` performs no work. The real flow hands off to a chat
- * session that builds the craft from the repo; here it closes and toasts what
- * will happen, so the interaction reads complete without faking a session.
+ * The submit route answers `400` with a machine `code` for every rejection it
+ * can name — no manifest, invalid manifest, unreachable repo, bad ref, refused
+ * archive. Rendering the raw code would be honest but useless; rendering a
+ * generic "something went wrong" would be useless AND vague. So each code gets
+ * the sentence that says what to do next.
+ */
+function submitErrorMessage(error: unknown): string {
+  const detail = error as { code?: string; message?: string } | null;
+  switch (detail?.code) {
+    case 'manifest_not_found':
+      return 'No kortix.yaml in that repository. A craft is a Kortix project — run `kortix init` in it first.';
+    case 'manifest_invalid':
+      return detail.message ?? 'That kortix.yaml did not validate. Run `kortix validate` against it.';
+    case 'ref_not_found':
+      return 'That branch or tag does not exist in the repository.';
+    case 'repo_not_found':
+      return 'Repository not found. A private repo has to be reachable by this account.';
+    case 'upstream_unavailable':
+      return 'GitHub did not answer. Try again in a moment.';
+    case 'invalid_archive':
+      return 'That file is not a readable .zip archive.';
+    case 'archive_refused':
+      return (
+        detail.message ??
+        `The archive is over the limit — ${formatBytes(MAX_ARCHIVE_BYTES)} of text files, 200 files.`
+      );
+    default:
+      return detail?.message ?? 'Could not add that craft.';
+  }
+}
+
+/** Report the crawl's advisory findings. The craft IS indexed — never block. */
+function reportWarnings(result: CraftSubmitResult): void {
+  if (result.warnings.length === 0) {
+    successToast(`${result.craft.title} added to your crafts`);
+    return;
+  }
+  // One toast, not one per finding: three warnings would otherwise stack three
+  // toasts over the grid the user is trying to look at.
+  warningToast(
+    `${result.craft.title} added with ${result.warnings.length} warning${
+      result.warnings.length === 1 ? '' : 's'
+    }: ${result.warnings[0]}`,
+  );
+}
+
+/**
+ * The add-a-craft modal — two ways in, one result.
+ *
+ * **Repository** points the index at a public or reachable GitHub repo. The
+ * server crawls it at a resolved commit, so the craft tracks that repo.
+ *
+ * **Upload** takes a `.zip` of the same thing. This exists because the common
+ * case for a first craft is a folder on someone's laptop that is not a repo
+ * yet, and "go create a GitHub repo first" is a wall in front of the one action
+ * this modal is for. An uploaded craft is a SNAPSHOT — its files are stored as
+ * submitted, and re-uploading replaces it. The tab says so rather than letting
+ * someone discover it later.
+ *
+ * `Add` performs the real submission. It does not close on failure: the error
+ * belongs beside the field that caused it, and a modal that vanished would take
+ * the pasted URL with it.
  */
 export function AddCraftModal({
   open,
@@ -80,30 +144,58 @@ export function AddCraftModal({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { submit, submitArchive } = useCrafts();
+  const [mode, setMode] = useState<'repo' | 'upload'>('repo');
   const [url, setUrl] = useState('');
-  const [visibility, setVisibility] = useState<CraftVisibility>('public');
+  const [file, setFile] = useState<File | null>(null);
+  const [visibility, setVisibility] = useState<CraftVisibility>('private');
+  const [error, setError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
   // Only complain once there is something to complain about — an empty field on
   // first open is not an error.
-  const parsed = useMemo(() => parseRepoInput(url), [url]);
+  const parsed = useMemo(() => parseCraftRepo(url), [url]);
   const invalid = url.trim().length > 0 && !parsed;
-  // Echo the parsed slug only when it tells the user something the field does
-  // not already show — a pasted URL resolves to `owner/repo`, a typed
+  // Echo the parsed address only when it tells the user something the field
+  // does not already show — a pasted URL resolves to `owner/repo`, a typed
   // `owner/repo` would just repeat itself.
-  const echo = parsed && url.trim() !== `${parsed.owner}/${parsed.repo}` ? parsed : null;
+  const normalized = parsed ? `${parsed.owner}/${parsed.repo}${parsed.ref ? `@${parsed.ref}` : ''}` : null;
+  const echo = normalized && url.trim() !== normalized ? normalized : null;
+
+  const oversize = !!file && file.size > MAX_ARCHIVE_BYTES;
+  const pending = submit.isPending || submitArchive.isPending;
+  const ready = mode === 'repo' ? !!parsed : !!file && !oversize;
 
   const reset = () => {
     setUrl('');
-    setVisibility('public');
+    setFile(null);
+    setVisibility('private');
+    setError(null);
+    setMode('repo');
   };
 
-  const submit = (event: React.FormEvent) => {
+  const chooseFile = (next: File | null) => {
+    setFile(next);
+    setError(null);
+  };
+
+  const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!parsed) return;
-    onOpenChange(false);
-    reset();
-    infoToast(
-      `Setting up ${parsed.owner}/${parsed.repo} (${visibility}) — this continues in a chat session.`,
-    );
+    if (!ready || pending) return;
+    setError(null);
+    try {
+      const result =
+        mode === 'repo'
+          ? await submit.mutateAsync({ repo: normalized as string, visibility })
+          : await submitArchive.mutateAsync({ file: file as File, visibility });
+      reportWarnings(result);
+      onOpenChange(false);
+      reset();
+    } catch (caught) {
+      // Stay open. The message belongs beside the input that caused it, and
+      // closing would discard what the user pasted.
+      setError(submitErrorMessage(caught));
+    }
   };
 
   return (
@@ -118,45 +210,151 @@ export function AddCraftModal({
         <ModalHeader>
           <ModalTitle>Add a craft</ModalTitle>
           <ModalDescription>
-            Point Kortix at a GitHub repository. It builds the craft from the source.
+            A craft is a Kortix project — a <span className="font-mono">kortix.yaml</span> with its
+            agents, skills, connectors and triggers.
           </ModalDescription>
         </ModalHeader>
-        <form onSubmit={submit}>
+        <form onSubmit={onSubmit}>
           <ModalBody className="space-y-5">
-            <Field>
-              <FieldLabel htmlFor="craft-repo-url">Repository</FieldLabel>
-              <div className="relative">
-                <GithubLogoIcon
-                  className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
-                  aria-hidden
-                />
-                <Input
-                  id="craft-repo-url"
-                  variant="popover"
-                  className="pl-9 font-mono"
-                  placeholder="https://github.com/owner/repo"
-                  value={url}
-                  onChange={(event) => setUrl(event.target.value)}
-                  autoFocus
-                  aria-invalid={invalid || undefined}
-                />
-              </div>
-              {/* One line, three states: the parsed slug on success, the reason
-                  on failure, the accepted forms before anything is typed. */}
-              {echo ? (
-                <FieldDescription className="text-foreground font-mono">
-                  {echo.owner}/{echo.repo}
-                </FieldDescription>
-              ) : invalid ? (
-                <FieldDescription className="text-kortix-red">
-                  Paste a GitHub repository link, like github.com/owner/repo.
-                </FieldDescription>
-              ) : (
-                <FieldDescription>
-                  A URL, a clone link, or just <span className="font-mono">owner/repo</span>.
-                </FieldDescription>
-              )}
-            </Field>
+            <Tabs
+              value={mode}
+              onValueChange={(next) => {
+                setMode(next as 'repo' | 'upload');
+                setError(null);
+              }}
+            >
+              <TabsListCompact>
+                <TabsTrigger value="repo" className="gap-1.5">
+                  <GithubLogoIcon className="size-3.5 shrink-0" aria-hidden />
+                  Repository
+                </TabsTrigger>
+                <TabsTrigger value="upload" className="gap-1.5">
+                  <FileZipIcon className="size-3.5 shrink-0" aria-hidden />
+                  Upload .zip
+                </TabsTrigger>
+              </TabsListCompact>
+
+              <TabsContent value="repo" className="mt-4">
+                <Field>
+                  <FieldLabel htmlFor="craft-repo-url">Repository</FieldLabel>
+                  <div className="relative">
+                    <GithubLogoIcon
+                      className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2"
+                      aria-hidden
+                    />
+                    <Input
+                      id="craft-repo-url"
+                      variant="popover"
+                      className="pl-9 font-mono"
+                      placeholder="https://github.com/owner/repo"
+                      value={url}
+                      onChange={(event) => {
+                        setUrl(event.target.value);
+                        setError(null);
+                      }}
+                      autoFocus
+                      aria-invalid={invalid || undefined}
+                    />
+                  </div>
+                  {/* One line, three states: the normalized address on success,
+                      the reason on failure, the accepted forms before anything
+                      is typed. */}
+                  {echo ? (
+                    <FieldDescription className="text-foreground font-mono">{echo}</FieldDescription>
+                  ) : invalid ? (
+                    <FieldDescription className="text-kortix-red">
+                      Paste a GitHub repository link, like github.com/owner/repo.
+                    </FieldDescription>
+                  ) : (
+                    <FieldDescription>
+                      A URL, a clone link, or <span className="font-mono">owner/repo</span> — add{' '}
+                      <span className="font-mono">@branch</span> to pin one.
+                    </FieldDescription>
+                  )}
+                </Field>
+              </TabsContent>
+
+              <TabsContent value="upload" className="mt-4">
+                <Field>
+                  <FieldLabel htmlFor="craft-archive">Archive</FieldLabel>
+                  {/* A hidden input behind a real button, not a bare file input:
+                      the native control cannot be styled and reads nothing like
+                      the rest of this modal. */}
+                  <input
+                    ref={fileInput}
+                    id="craft-archive"
+                    type="file"
+                    accept=".zip,application/zip"
+                    className="hidden"
+                    onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
+                  />
+                  {file ? (
+                    <div
+                      className={cn(
+                        'bg-popover flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs',
+                        oversize && 'border-kortix-red/40',
+                      )}
+                    >
+                      <FileZipIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
+                      <span className="text-foreground min-w-0 flex-1 truncate font-mono">
+                        {file.name}
+                      </span>
+                      <span
+                        className={cn(
+                          'shrink-0 tabular-nums',
+                          oversize ? 'text-kortix-red' : 'text-muted-foreground',
+                        )}
+                      >
+                        {formatBytes(file.size)}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Remove file"
+                        onClick={() => {
+                          chooseFile(null);
+                          if (fileInput.current) fileInput.current.value = '';
+                        }}
+                        className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer transition-colors duration-150"
+                      >
+                        <XIcon className="size-3.5" aria-hidden />
+                      </button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-1.5"
+                      onClick={() => fileInput.current?.click()}
+                    >
+                      <UploadSimpleIcon className="size-3.5 shrink-0" aria-hidden />
+                      Choose a .zip
+                    </Button>
+                  )}
+                  {oversize ? (
+                    <FieldDescription className="text-kortix-red">
+                      Over the {formatBytes(MAX_ARCHIVE_BYTES)} limit. Text files only — drop build
+                      output and node_modules.
+                    </FieldDescription>
+                  ) : (
+                    <FieldDescription>
+                      Zip the folder holding <span className="font-mono">kortix.yaml</span>. Text
+                      files only, up to {formatBytes(MAX_ARCHIVE_BYTES)}.
+                    </FieldDescription>
+                  )}
+                  {/* Said here, at the moment of choosing, not discovered later:
+                      an upload has no repo to re-crawl, so it never updates on
+                      its own. */}
+                  <InfoBanner
+                    tone="neutral"
+                    icon={<ArrowClockwiseIcon className="size-3.5" aria-hidden />}
+                    title="An uploaded craft is a snapshot"
+                  >
+                    It does not track a repository. Upload again to replace it.
+                  </InfoBanner>
+                </Field>
+              </TabsContent>
+            </Tabs>
 
             <Field>
               <FieldLabel htmlFor="craft-visibility-public">Visibility</FieldLabel>
@@ -195,13 +393,24 @@ export function AddCraftModal({
                 {VISIBILITY.find((option) => option.id === visibility)?.hint}
               </FieldDescription>
             </Field>
+
+            {error ? (
+              <InfoBanner
+                tone="destructive"
+                icon={<WarningIcon className="size-3.5" aria-hidden />}
+                title="Could not add this craft"
+              >
+                {error}
+              </InfoBanner>
+            ) : null}
           </ModalBody>
           <ModalFooter className="sm:justify-between">
             <Button type="button" variant="outline-ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!parsed}>
-              Continue
+            <Button type="submit" disabled={!ready || pending}>
+              {pending ? <Loading className="size-4 shrink-0" /> : null}
+              {pending ? 'Adding' : 'Add craft'}
             </Button>
           </ModalFooter>
         </form>

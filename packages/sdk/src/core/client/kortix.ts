@@ -669,6 +669,15 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         list: () => P.listProjectCrafts(projectId),
         install: (craftId: string) => P.createCraftInstallSession(projectId, craftId),
         uninstall: (slug: string) => P.createCraftUninstallSession(projectId, slug),
+        /** Describe a craft and have one built. Returns the session to open. */
+        author: (description: string) => P.createCraftAuthorSession(projectId, description),
+        /**
+         * Enable or disable ONE craft's triggers. A craft installs with every
+         * trigger off, so this is what starts it working. Not the project-wide
+         * pause — that is `triggers.setActivation`.
+         */
+        setActivation: (slug: string, enabled: boolean) =>
+          P.setCraftActivation(projectId, slug, enabled),
         /** Runs across every installed craft, newest first. */
         runs: (options?: Parameters<typeof P.listProjectCraftRuns>[1]) =>
           P.listProjectCraftRuns(projectId, options),

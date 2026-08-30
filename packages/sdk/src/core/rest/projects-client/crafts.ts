@@ -249,6 +249,64 @@ export async function createCraftUninstallSession(
   );
 }
 
+/**
+ * Start the agent-driven AUTHORING session — describe a craft, get one built.
+ *
+ * The inverse of install: install merges an existing craft into a project,
+ * authoring produces a new craft from a description. The agent creates the
+ * repository, writes the manifest, validates it, and publishes it to the index.
+ * Nothing exists when this call resolves except the session.
+ */
+export async function createCraftAuthorSession(
+  projectId: string,
+  description: string,
+): Promise<{ session_id: string }> {
+  return unwrap(
+    await backendApi.post<{ session_id: string }>(
+      `/projects/${encodeURIComponent(projectId)}/crafts/author-session`,
+      { description },
+    ),
+  );
+}
+
+/** The result of flipping one craft's triggers. */
+export interface CraftActivationResult {
+  ok: boolean;
+  craft_slug: string;
+  title: string;
+  enabled: boolean;
+  /**
+   * The trigger slugs that actually moved.
+   *
+   * EMPTY means the craft was already in the requested state — a different
+   * answer from "it worked", and the reason this is not just `{ ok: true }`.
+   * The route skips the commit entirely in that case.
+   */
+  triggers: string[];
+}
+
+/**
+ * Enable or disable one craft's triggers.
+ *
+ * A craft installs with every trigger `enabled: false`, so this is what starts
+ * it working. It is NOT the project-wide pause: `setProjectTriggersActivation`
+ * stops every trigger in the project at once and is a kill switch. This writes
+ * the manifest, so a craft's activation is committed configuration that
+ * survives a redeploy and appears in `git log`.
+ */
+export async function setCraftActivation(
+  projectId: string,
+  slug: string,
+  enabled: boolean,
+): Promise<CraftActivationResult> {
+  return unwrap(
+    await backendApi.patch<CraftActivationResult>(
+      `/projects/${encodeURIComponent(projectId)}/crafts/${encodeURIComponent(slug)}/activation`,
+      { enabled },
+    ),
+  );
+}
+
 // ── runs ───────────────────────────────────────────────────────────────────
 
 /**

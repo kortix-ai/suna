@@ -178,3 +178,52 @@ export function extractCrafts(manifest: ParsedManifest): LoadedCrafts {
 
   return { specs, errors };
 }
+
+// ── per-craft trigger activation ────────────────────────────────────────────
+
+/**
+ * Flip `enabled` on every trigger this craft owns, in the manifest.
+ *
+ * PURE — takes a manifest, returns a new one. The route wraps it in
+ * `mutateManifestWithRetry`, so one call produces one commit no matter how
+ * many triggers the craft contributed.
+ *
+ * Why this and not `setProjectTriggersActivation`: that switch is the
+ * PROJECT-WIDE pause (`projects.metadata.triggers.paused`) — it stops
+ * everything at once and is a kill switch, not an enable. A craft owns a subset
+ * of the project's triggers, and turning that subset on must not disturb a
+ * hand-authored trigger sitting beside it.
+ *
+ * The join is the manifest's own `craft:` field, not `owns.triggers`. Both are
+ * written at install, and when they disagree `craft:` on the entry is the one
+ * that decides — it is what the runtime reconciler materializes into
+ * `project_trigger_runtime.craft_slug`, which is what attributes a RUN. Reading
+ * `owns` here would let a hand-edit enable a trigger whose runs report under a
+ * different craft.
+ *
+ * Returns the slugs it actually changed. An empty list means the manifest was
+ * already in the requested state, which the route reports as a no-op rather
+ * than an empty commit.
+ */
+export function setCraftTriggersEnabled(
+  manifest: ParsedManifest,
+  craftSlug: string,
+  enabled: boolean,
+): { manifest: ParsedManifest; changed: string[] } {
+  const current = Array.isArray(manifest.raw.triggers)
+    ? (manifest.raw.triggers as Record<string, unknown>[])
+    : [];
+  const changed: string[] = [];
+  const next = current.map((entry) => {
+    if (entry?.craft !== craftSlug) return entry;
+    // An entry with no `enabled` key is enabled by default (see
+    // `parseTriggerEntry`), so "already enabled" must treat absent as true or
+    // enabling would rewrite every entry and produce a no-change commit.
+    const currentlyEnabled = entry.enabled !== false;
+    if (currentlyEnabled === enabled) return entry;
+    changed.push(String(entry.slug ?? ''));
+    return { ...entry, enabled };
+  });
+  if (changed.length === 0) return { manifest, changed };
+  return { manifest: { ...manifest, raw: { ...manifest.raw, triggers: next } }, changed };
+}

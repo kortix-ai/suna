@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  createCraftAuthorSession,
   createCraftInstallSession,
   createCraftUninstallSession,
   deleteCraft,
@@ -9,6 +10,7 @@ import {
   listCrafts,
   listProjectCraftRuns,
   listProjectCrafts,
+  setCraftActivation,
   submitCraft,
   submitCraftArchive,
 } from './crafts';
@@ -159,6 +161,42 @@ test('createCraftUninstallSession targets the installed SLUG, not a craft id', a
   await createCraftUninstallSession('p1', 'seo-watch');
   expect(last().method).toBe('POST');
   expect(last().url).toBe('http://test.local/projects/p1/crafts/seo-watch/uninstall-session');
+});
+
+test('createCraftAuthorSession POSTs the description and returns the session', async () => {
+  nextResponse = { status: 201, body: { session_id: 's3' } };
+  const res = await createCraftAuthorSession('p1', 'watch my competitors weekly');
+  expect(last().method).toBe('POST');
+  expect(last().url).toBe('http://test.local/projects/p1/crafts/author-session');
+  expect(last().body).toEqual({ description: 'watch my competitors weekly' });
+  expect(res.session_id).toBe('s3');
+});
+
+test('setCraftActivation PATCHes the craft slug with the boolean', async () => {
+  // The project-wide pause is a different route entirely
+  // (`/triggers/activation`). This one is scoped to one craft's own triggers.
+  nextResponse = {
+    status: 200,
+    body: { ok: true, craft_slug: 'seo-watch', title: 'SEO watch', enabled: true, triggers: ['weekly'] },
+  };
+  const res = await setCraftActivation('p1', 'seo-watch', true);
+  expect(last().method).toBe('PATCH');
+  expect(last().url).toBe('http://test.local/projects/p1/crafts/seo-watch/activation');
+  expect(last().body).toEqual({ enabled: true });
+  expect(res.triggers).toEqual(['weekly']);
+});
+
+test('setCraftActivation can disable, and reports an empty trigger list as a no-op', async () => {
+  // An empty `triggers` array means the craft was ALREADY in this state — a
+  // different answer from "it worked", and callers need to be able to tell.
+  nextResponse = {
+    status: 200,
+    body: { ok: true, craft_slug: 'seo-watch', title: 'SEO watch', enabled: false, triggers: [] },
+  };
+  const res = await setCraftActivation('p1', 'seo-watch', false);
+  expect(last().body).toEqual({ enabled: false });
+  expect(res.enabled).toBe(false);
+  expect(res.triggers).toEqual([]);
 });
 
 // ── runs ───────────────────────────────────────────────────────────────────

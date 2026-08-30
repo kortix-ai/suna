@@ -1,9 +1,13 @@
 /**
  * Project-scoped craft routes.
  *
- *   GET  /:projectId/crafts                      → what is installed here
- *   POST /:projectId/crafts/install-session      → start the agent-driven install
- *   POST /:projectId/crafts/:slug/uninstall-session → start the agent-driven removal
+ *   GET   /:projectId/crafts                      → what is installed here
+ *   POST  /:projectId/crafts/install-session      → start the agent-driven install
+ *   POST  /:projectId/crafts/author-session       → start the agent-driven authoring
+ *   POST  /:projectId/crafts/:slug/uninstall-session → start the agent-driven removal
+ *   PATCH /:projectId/crafts/:slug/activation     → enable/disable its triggers
+ *   GET   /:projectId/crafts/runs                 → every craft's runs
+ *   GET   /:projectId/crafts/:slug/runs           → one craft's runs
  *
  * Installing is agent-driven for the same reason a `registry:project` import is
  * (see `./marketplace-install-prompts.ts`): merging a craft into a LIVE project
@@ -21,6 +25,7 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
+import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
@@ -34,7 +39,8 @@ import {
   getCraftFiles,
   getCraftManifest,
 } from '../craft-store';
-import { extractCrafts } from '../crafts';
+import { extractCrafts, setCraftTriggersEnabled } from '../crafts';
+import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { readManifestFromRepo } from '../git/files';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -42,9 +48,10 @@ import { loadGitProject } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
-import { readManifest } from '../triggers';
+import { extractTriggers, readManifest } from '../triggers';
 import {
   type CraftInstallSubject,
+  buildCraftAuthorPrompt,
   buildCraftInstallPrompt,
   buildCraftUninstallPrompt,
 } from './craft-install-prompts';
@@ -438,6 +445,196 @@ projectsApp.openapi(
       limit,
       offset,
       stats: summarizeCraftRuns(runs),
+    });
+  },
+);
+
+// ── POST /:projectId/crafts/author-session ──────────────────────────────────
+//
+// No ordering hazard here, unlike `crafts/runs`: `author-session` is a
+// two-segment path (`crafts/author-session`) and every `{slug}` route has three
+// (`crafts/{slug}/runs`), so no pattern can capture it. `crafts/runs` needed the
+// explicit ordering because `crafts/{slug}` would have matched it at the same
+// depth.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/crafts/author-session',
+    tags: ['crafts'],
+    summary: 'POST /:projectId/crafts/author-session — build a new craft',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      201: json(z.any(), 'Authoring session started'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'crafts');
+    if (gate) return gate;
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_WRITE,
+    );
+
+    const body = await readBody(c);
+    const description = typeof body?.description === 'string' ? body.description.trim() : '';
+    if (!description) return c.json({ error: 'description is required' }, 400);
+    // Bounded because it lands verbatim in a prompt. 4000 chars is far more
+    // than a craft description needs and far less than a context problem.
+    if (description.length > 4000) {
+      return c.json({ error: 'description must be 4000 characters or fewer' }, 400);
+    }
+
+    const result = await createSession({
+      source: 'ui',
+      project: loaded.row,
+      userId: loaded.userId,
+      requestingPrincipalType:
+        c.get('authType') === 'service_account' ? 'service_account' : 'human',
+      body: {
+        initial_prompt: buildCraftAuthorPrompt({
+          description,
+          projectName: loaded.row.name,
+        }),
+        // The description, not "New craft": the session list is how someone
+        // finds this again, and five sessions all called "New craft" is how it
+        // becomes unfindable. Trimmed to a title length; the titling hook
+        // replaces it with a real one once the session has a turn.
+        name: `Craft: ${description.slice(0, 60)}${description.length > 60 ? '…' : ''}`,
+        // No `craft_slug`: the craft does not exist yet, so there is nothing to
+        // attribute. `kind` is NOT in SERVER_MANAGED_SESSION_METADATA_KEYS and
+        // does not need to be — nothing authorizes on it. Run attribution goes
+        // through `project_trigger_runtime.craft_slug`, which is materialized
+        // from the committed manifest and unreachable from a session's own
+        // metadata; the four `craft_*` keys are the guarded ones.
+        metadata: { kind: 'craft-author' },
+      },
+      visibility: 'project',
+      authType: c.get('authType') as string | undefined,
+      apiKeyType: c.get('apiKeyType') as string | undefined,
+      inSession: isProjectSessionPrincipal(c),
+      request: requestAuditContext(c),
+      queuePolicy: 'never',
+    });
+    if (result.error) return sendSessionCreateError(c, result.error);
+    if (!result.row) return c.json({ error: 'Session creation returned no row' }, 500);
+
+    return c.json({ session_id: result.row.sessionId }, 201);
+  },
+);
+
+// ── PATCH /:projectId/crafts/:slug/activation ───────────────────────────────
+//
+// Turn one craft's triggers on or off. NOT `setProjectTriggersActivation`: that
+// is the project-wide pause kill switch, and a craft owns a subset. This writes
+// the manifest — a craft's activation is part of the project's committed
+// configuration, so it survives a redeploy and shows up in `git log` like every
+// other config change.
+//
+// A craft installs with every trigger `enabled: false` (see
+// `buildCraftInstallPrompt`), so this is the route that actually starts a
+// craft working.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/crafts/{slug}/activation',
+    tags: ['crafts'],
+    summary: "PATCH /:projectId/crafts/:slug/activation — enable a craft's triggers",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'OK'),
+      ...errors(400, 401, 403, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const slug = c.req.param('slug');
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'crafts');
+    if (gate) return gate;
+    // `project.trigger.update`, not `project.write`: this changes whether
+    // triggers fire, which is exactly what that leaf governs. The per-trigger
+    // PATCH asserts the same one.
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
+    );
+
+    const body = await readBody(c);
+    if (typeof body?.enabled !== 'boolean') {
+      return c.json({ error: 'enabled must be a boolean' }, 400);
+    }
+    const enabled = body.enabled as boolean;
+
+    let changed: string[] = [];
+    let installedTitle = slug;
+    const result = await mutateManifestWithRetry(
+      loaded.row,
+      `craft ${slug} was being updated`,
+      (manifest) => {
+        const installed = extractCrafts(manifest).specs.find((entry) => entry.slug === slug);
+        if (!installed) {
+          return { ok: false, error: `No craft "${slug}" is installed in this project`, status: 404 };
+        }
+        installedTitle = installed.title;
+        const applied = setCraftTriggersEnabled(manifest, slug, enabled);
+        changed = applied.changed;
+        if (changed.length === 0) {
+          // Already in the requested state. `commitMessage: null` skips git
+          // entirely rather than landing an empty commit.
+          return { ok: true, commitMessage: null };
+        }
+        manifest.raw = applied.manifest.raw;
+        return {
+          ok: true,
+          commitMessage: `chore: ${enabled ? 'enable' : 'disable'} ${slug} craft triggers`,
+        };
+      },
+    );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    }
+
+    // The manifest is truth; the runtime catalog is the projection the cron
+    // sweep reads. Re-materialize it now so an enable takes effect on the next
+    // sweep rather than waiting for the leader's periodic reconcile.
+    const project = await loadGitProject(loaded);
+    const manifest = await readManifest(project).catch(() => null);
+    if (manifest) {
+      const triggers = extractTriggers(manifest);
+      await reconcileProjectTriggerRuntime(projectId, triggers.specs).catch((err) =>
+        console.warn('[crafts] trigger runtime reconcile failed', projectId, slug, err),
+      );
+    }
+
+    return c.json({
+      ok: true,
+      craft_slug: slug,
+      title: installedTitle,
+      enabled,
+      // Which triggers actually moved — an empty array means it was already in
+      // this state, which is a different answer from "it worked".
+      triggers: changed,
     });
   },
 );

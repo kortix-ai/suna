@@ -9,6 +9,7 @@ import {
   type InstalledCraftListing,
   type ListCraftRunsOptions,
   type ListCraftsOptions,
+  createCraftAuthorSession,
   createCraftInstallSession,
   createCraftUninstallSession,
   deleteCraft,
@@ -17,6 +18,7 @@ import {
   listCrafts,
   listProjectCraftRuns,
   listProjectCrafts,
+  setCraftActivation,
   submitCraft,
   submitCraftArchive,
 } from '../core/rest/projects-client';
@@ -122,7 +124,36 @@ export function useProjectCrafts(projectId: string | null | undefined) {
     },
   });
 
-  return { ...query, install, uninstall };
+  /**
+   * Describe a craft and have one built. Returns a SESSION like the other two —
+   * nothing is published when this resolves.
+   *
+   * It does NOT invalidate the installed list: an authoring session produces a
+   * craft in the STORE, and installing it into a project is a separate step the
+   * person takes afterwards.
+   */
+  const author = useMutation({
+    mutationFn: (description: string) =>
+      createCraftAuthorSession(projectId as string, description),
+  });
+
+  /**
+   * Enable or disable one craft's triggers.
+   *
+   * Invalidates the project's TRIGGERS as well as its crafts: this writes the
+   * manifest, so the triggers page is showing stale `enabled` values the moment
+   * it resolves. That is the one thing a caller cannot be expected to know.
+   */
+  const setActivation = useMutation({
+    mutationFn: (input: { slug: string; enabled: boolean }) =>
+      setCraftActivation(projectId as string, input.slug, input.enabled),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
+    },
+  });
+
+  return { ...query, install, uninstall, author, setActivation };
 }
 
 /** Runs across every installed craft, newest first. */
