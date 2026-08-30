@@ -2,6 +2,7 @@
 
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
+import { clearAuthBounceCookie } from '@/lib/auth/sign-out-actions';
 import {
   isInviteReturnUrl,
   resolveNewAccountReturnUrl,
@@ -19,16 +20,10 @@ import { createClient } from '@/lib/supabase/server';
 import {
   checkAccessEmail,
   fetchAccountStateWithToken,
-  recordPlatformLogout,
   submitAccessRequest,
 } from '@kortix/sdk';
-import {
-  AUTH_BOUNCE_COOKIE,
-  LAST_PROJECT_COOKIE,
-  parseAuthBounceOwner,
-} from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
 import { cookies, headers } from 'next/headers';
-import { redirect } from 'next/navigation';
 
 /**
  * Who the middleware bounced to `/auth` on this browser, or `''` when the
@@ -37,17 +32,6 @@ import { redirect } from 'next/navigation';
  */
 async function readBouncedOwnerId(): Promise<string> {
   return parseAuthBounceOwner((await cookies()).get(AUTH_BOUNCE_COOKIE)?.value);
-}
-
-/**
- * The bounce is spent the moment authentication resolves a destination. Leaving
- * it behind would let one sign-in's attribution demote the NEXT one, and it has
- * to be cleared on every successful path — password, OTP and signup all return
- * a destination to the client without ever touching `/auth/callback`, so the
- * clear beside that route's `ACTIVE_INSTANCE_COOKIE` reaches none of them.
- */
-async function clearAuthBounce(): Promise<void> {
-  (await cookies()).delete(AUTH_BOUNCE_COOKIE);
 }
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -382,7 +366,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   })
     ? resolveNewAccountReturnUrl(returnUrl)
     : returnUrl;
-  await clearAuthBounce();
+  await clearAuthBounceCookie();
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
   redirectUrl.searchParams.set('auth_event', authEvent);
   redirectUrl.searchParams.set('auth_method', 'email');
@@ -520,7 +504,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   })
     ? newAccountReturnUrl
     : requestedReturnUrl;
-  await clearAuthBounce();
+  await clearAuthBounceCookie();
 
   return {
     success: true,
@@ -536,44 +520,17 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   };
 }
 
-export async function signOut() {
-  const supabase = await createClient();
-
-  // Tell our backend first so it can audit the logout + mark the
-  // session revoked in account_session_activity. The Supabase token
-  // is still valid here; the call falls through cleanly if BACKEND_URL
-  // isn't configured. We DON'T fail the signOut on backend errors —
-  // the user should always be able to sign out client-side.
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
-      await recordPlatformLogout({
-        backendUrl,
-        accessToken: session.access_token,
-        signal: AbortSignal.timeout(3_000),
-      });
-    }
-  } catch {
-    /* swallow — backend logout is best-effort for audit; client
-       signOut() below is the authoritative session end */
-  }
-
-  const { error } = await supabase.auth.signOut();
-
-  if (error) {
-    return { message: error.message || 'Could not sign out' };
-  }
-
-  // Forget the remembered project. Ownership binding already stops the next
-  // account from following it, but leaving one user's project id sitting in a
-  // shared browser after they sign out is needless.
-  (await cookies()).delete(LAST_PROJECT_COOKIE);
-
-  return redirect('/');
-}
+// `signOut()` used to live here. It moved to `lib/auth/sign-out-actions.ts` as
+// `finalizeServerSignOut()`, which every logout control now reaches through
+// `performSignOut()`. Two behaviours changed on the way, both deliberate:
+//
+//  - the server-side revoke + audit ran on ONE of six controls; it runs on all
+//    six now;
+//  - it no longer deletes `kortix_last_project`. That cookie is owner-bound, so
+//    the next account cannot follow it, and the middleware reads its owner half
+//    to attribute a bounce once identity resolution has returned `user: null` —
+//    which is what happens after a logout. Deleting it un-attributed every
+//    post-logout bounce.
 
 export async function verifyOtp(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
@@ -623,7 +580,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   })
     ? resolveNewAccountReturnUrl(returnUrl)
     : returnUrl;
-  await clearAuthBounce();
+  await clearAuthBounceCookie();
 
   // Invited users (returnUrl → /invites/:id) must land on the accept/decline
   // dialog verbatim — skip the billing-aware landing (account page or a freshly

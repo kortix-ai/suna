@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
@@ -33,6 +33,7 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { listAccounts } from '@kortix/sdk';
@@ -116,10 +117,21 @@ const ICON_WIDTH = '2.5rem';
  * top-right, independent of the form below.
  */
 export function NewWorkspacePage() {
-  const { user, signOut } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
+
+  // The same guard `/projects/start` has. `/new` is a create surface behind the
+  // middleware, but the middleware only gates the REQUEST: a session that dies
+  // while this page is mounted (an expired token, a sign-out in another tab)
+  // leaves a signed-out user looking at a form whose submit can only 401. A
+  // soft replace is right here and a document load is not — there is no
+  // identity to flush, only a screen to leave.
+  useEffect(() => {
+    if (!authLoading && !user) router.replace('/auth');
+  }, [authLoading, user, router]);
+
   // Same `useSearchParams()` result the clone param reads — one subscription,
   // two params. Non-null only between "the workspace was created" and "the
   // user finished or skipped onboarding for it".
@@ -206,11 +218,12 @@ export function NewWorkspacePage() {
   const showAccountLine = shouldShowAccountLine(creatableAccounts, userId);
 
   // Pre-select the personal / identity-matching account when the user has not
-  // picked yet. Derived, not Effect-written — this page forbids useEffect
-  // (no eager side effects on mount). `isSubmittable` and submit both read
-  // the effective id so multi-account users are not blocked on "Choose an
-  // account" when a clear default exists. `null` outright for a FOREIGN
-  // list — nothing in it can be trusted enough to pre-fill or submit.
+  // picked yet. Derived, not Effect-written — the signed-out guard above is the
+  // only Effect this page is allowed, and no Effect here may perform a WRITE.
+  // `isSubmittable` and submit both read the effective id so multi-account users
+  // are not blocked on "Choose an account" when a clear default exists. `null`
+  // outright for a FOREIGN list — nothing in it can be trusted enough to
+  // pre-fill or submit.
   const defaultAccountId = foreignAccountList
     ? null
     : resolveDefaultCreatableAccountId(creatableAccounts, userId);
@@ -278,13 +291,17 @@ export function NewWorkspacePage() {
             treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
             otherwise it sits at full-contrast `text-foreground` beside the
             identity's dim muted text and reads louder than the page's actual
-            primary action. */}
+            primary action.
+
+            `performSignOut`, not the old bare `void signOut()`: that neither
+            awaited the sign-out nor navigated, so pressing Log out here signed
+            the user out and left them sitting on the create form. */}
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground shrink-0"
-          onClick={() => void signOut()}
+          onClick={() => void performSignOut()}
         >
           Log out
         </Button>

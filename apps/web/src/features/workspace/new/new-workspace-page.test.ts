@@ -47,13 +47,30 @@ describe('/new page: no invented constraints', () => {
   });
 
   test('issues no MUTATING request on mount — only reads, and only submit ever writes', () => {
-    // Task 12 wires an accounts READ on mount (below), so "zero requests" is
-    // no longer the right bar. The bar this page must hold is "zero WRITES":
-    // no effect, and no mutation, can fire without the user pressing submit.
-    expect(code).not.toContain('useEffect(');
+    // Task 12 wires an accounts READ on mount, so "zero requests" is no longer
+    // the right bar. The bar this page must hold is "zero WRITES": nothing can
+    // fire without the user pressing submit.
     expect(code).not.toContain('useMutation(');
+
+    // ONE effect is allowed, and it is the signed-out guard. Counted, not
+    // spot-checked: "no useEffect" was the old bar and it is exactly the kind
+    // of assertion a second effect slips past when it is relaxed to a
+    // `toContain`. The body is pinned too, so this stays a WRITE ban rather
+    // than an effect budget.
+    const effects = code.match(/useEffect\(/g) ?? [];
+    expect(effects.length).toBe(1);
+    expect(code).toContain("if (!authLoading && !user) router.replace('/auth');");
+
     // Paired presence check: there IS a submit path, just not an eager one.
     expect(code).toContain('onSubmit');
+  });
+
+  test('a session that dies while the page is mounted does not leave a dead form up', () => {
+    // The same guard `/projects/start` carries. Middleware gates the REQUEST,
+    // not the mounted document: a token that expires here, or a sign-out in
+    // another tab, otherwise leaves a signed-out user on a create form whose
+    // submit can only 401.
+    expect(code).toContain('const { user, isLoading: authLoading } = useAuth();');
   });
 
   test('reads the account list on mount through the shared ["accounts"] cache key, not a page-local one', () => {
@@ -72,7 +89,12 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(code).toContain('<AccountPicker');
     expect(code).toContain('fallbackLabel={user?.email}');
     expect(code).toContain('Log out');
-    expect(code).toContain('signOut()');
+    // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
+    // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
+    // assertion could not tell the fixed control from the broken one — which
+    // neither awaited the sign-out nor navigated, and so signed the user out
+    // and left them sitting on this form.
+    expect(code).toContain('onClick={() => void performSignOut()}');
 
     // Rendered ahead of the <form>, not gated behind form state — a user
     // blocked by an invalid/incomplete form must still be able to leave.

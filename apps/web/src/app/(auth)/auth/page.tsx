@@ -924,7 +924,7 @@ const STALE_SESSION_FALLBACK_MS = 2500;
 function AuthContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, session, isLoading, signOut } = useAuth();
+  const { supabase, user, session, isLoading } = useAuth();
   const returnUrl = sanitizeAuthReturnUrl(
     searchParams.get('returnUrl') || searchParams.get('redirect'),
   );
@@ -955,8 +955,16 @@ function AuthContent() {
     if (user && sessionExpired) {
       // Dead session, proven locally — clear it now and fall through to the
       // real form on this same render pass rather than the placeholder.
+      //
+      // NOT `performSignOut()`, which every logout CONTROL goes through. This
+      // is session repair, not a logout: the user is already on `/auth`, and
+      // the document navigation a logout performs would reload this page
+      // without its `redirect`/`returnUrl` query — discarding the destination
+      // the middleware bounce carried here. `scope: 'local'` is the whole job,
+      // because the session is already dead server-side and there is nothing
+      // left to revoke.
       setForceForm(true);
-      void signOut();
+      void supabase.auth.signOut({ scope: 'local' });
       return;
     }
 
@@ -990,7 +998,7 @@ function AuthContent() {
     router,
     session,
     sessionExpired,
-    signOut,
+    supabase,
     trustedUser,
     user,
   ]);

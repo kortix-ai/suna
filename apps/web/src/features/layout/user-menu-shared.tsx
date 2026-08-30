@@ -33,9 +33,8 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { openExternalRoute } from '@/lib/desktop';
-import { createClient } from '@/lib/supabase/client';
-import { resetClientState } from '@/lib/utils/reset-client-state';
 import {
   ArticleIcon,
   BookOpenIcon,
@@ -52,9 +51,8 @@ import {
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import * as React from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export type MenuLink = {
   label: string;
@@ -210,30 +208,18 @@ export function HelpSubmenu({ onClose }: { onClose: () => void }) {
  * "Log out".
  */
 export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
-  const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   const openConfirm = () => deferAfterClose(() => setConfirmOpen(true));
 
-  // `/auth` cannot be an anchor here: the navigation must run AFTER
-  // `signOut()` and `resetClientState()` resolve, and an anchor would leave on
-  // the click instead. Warm the destination while the confirmation is up, so
-  // the push reads the segment cache rather than running the RSC fetch cold —
-  // the fetch that degrades into a full document load when it answers wrong.
-  // Middleware skips identity resolution on `/auth` entirely
-  // (`middleware.ts:494-500`), so prefetching it from a live session is
-  // answered normally.
-  useEffect(() => {
-    if (confirmOpen) router.prefetch('/auth');
-  }, [confirmOpen, router]);
-
-  const performLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    await resetClientState();
-    // nav-contract: prefetch-only — the navigation must follow signOut(), so it
-    // stays a push; the effect above puts /auth in the cache first.
-    router.push('/auth');
+  // `/auth` cannot be an anchor here: the navigation must run AFTER the session
+  // is actually gone, and an anchor would leave on the click instead. It is not
+  // a `router.push` either — `performSignOut` ends on a DOCUMENT load, which is
+  // the only thing that discards the App Router caches across an identity
+  // change. There is nothing to prefetch: a document load does not read the
+  // segment cache.
+  const performLogout = () => {
+    void performSignOut();
   };
 
   const dialog = (

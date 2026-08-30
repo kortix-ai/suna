@@ -6,15 +6,17 @@ import React, {
   useState,
   useEffect,
   useMemo,
-  useCallback,
+  useRef,
   ReactNode,
 } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { User, Session } from '@supabase/supabase-js';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { setBootstrapAuthToken, setCachedAuthToken } from '@/lib/auth-token';
+import { IDENTITY_MARKER_KEY, shouldResetClientState } from '@/lib/auth/identity-marker';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { resetClientState } from '@/lib/utils/reset-client-state';
-import { safeGetItem, safeRemoveItem, safeSetItem } from '@/lib/storage/managed-storage';
+import { safeGetItem, safeSetItem } from '@/lib/storage/managed-storage';
 // Auth tracking moved to AuthEventTracker component (handles OAuth redirects)
 
 type AuthContextType = {
@@ -32,8 +34,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  /**
+   * The last user THIS document published. The localStorage marker cannot do
+   * this job: it is one origin-wide value, so two tabs signed into two accounts
+   * overwrite each other's while each keeps its own React Query cache. See
+   * `lib/auth/identity-marker.ts` for what each marker is allowed to mean.
+   */
+  const lastUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    /**
+     * Make the client state safe to hand to `nextUserId`, then record that it
+     * belongs to them. Resolves only once any wipe has finished, so callers can
+     * publish the new user immediately after awaiting it.
+     */
+    const adoptUser = async (nextUserId: string) => {
+      const mustReset = shouldResetClientState({
+        inDocumentUserId: lastUserIdRef.current,
+        persistedUserId: safeGetItem(IDENTITY_MARKER_KEY),
+        nextUserId,
+      });
+
+      if (mustReset) {
+        try {
+          await resetClientState();
+        } catch (error) {
+          // Swallowed on purpose. This runs BEFORE the user is published and
+          // before `isLoading` is cleared; an escaping rejection would leave
+          // the whole app parked on the loading frame forever.
+          console.error('[AuthProvider] Failed to clear state for the incoming user:', error);
+        }
+      }
+
+      lastUserIdRef.current = nextUserId;
+      safeSetItem(IDENTITY_MARKER_KEY, nextUserId);
+    };
+
     const getInitialSession = async () => {
       try {
         const {
@@ -56,21 +92,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
         }
 
+        // Before the publish, not after: the state on screen belongs to
+        // whoever the markers name, and handing it to a different account —
+        // even for the length of one render — is the bug this guard exists for.
+        if (currentSession?.user?.id) {
+          await adoptUser(currentSession.user.id);
+        }
+
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
         if (currentSession?.access_token) {
           setCachedAuthToken(currentSession.access_token);
           setBootstrapAuthToken(null);
-        }
-
-        // Track user ID for cross-account localStorage cleanup
-        if (currentSession?.user?.id) {
-          const prevUserId = safeGetItem('kortix-last-user-id');
-          if (prevUserId && prevUserId !== currentSession.user.id) {
-            console.log('[Auth] Initial session: user changed, clearing stale client state');
-            await resetClientState();
-          }
-          safeSetItem('kortix-last-user-id', currentSession.user.id);
         }
       } catch (error) {
         console.warn('[AuthProvider] Failed to bootstrap initial session:', error);
@@ -83,6 +116,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
+        const nextUserId = newSession?.user?.id;
+
+        // INITIAL_SESSION is here, and not only in the switch below, for one
+        // reason: a cross-user COLD LOAD arrives as INITIAL_SESSION, and it
+        // arrives before `getInitialSession()` has finished its `getUser()`
+        // round trip. Publishing first would hand the previous account's
+        // mounted caches to the new user for the whole length of the reset,
+        // which is long enough for every consumer that reads on mount to fetch
+        // against them.
+        if (nextUserId && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN')) {
+          await adoptUser(nextUserId);
+        }
+
         setSession(newSession);
         setUser(newSession?.user ?? null);
 
@@ -97,24 +143,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               setCachedAuthToken(newSession.access_token);
               setBootstrapAuthToken(null);
             }
-            // Clear stale sandbox/server state if a different user signs in
-            // (e.g. signup in same browser without explicit logout first)
-            const prevUserId = safeGetItem('kortix-last-user-id');
-            const newUserId = newSession?.user?.id;
-            if (newUserId && prevUserId && prevUserId !== newUserId) {
-              console.log('[Auth] User changed, clearing stale client state');
-              await resetClientState();
-            }
-            if (newUserId) {
-              safeSetItem('kortix-last-user-id', newUserId);
-            }
             break;
           }
           case 'SIGNED_OUT':
             setBootstrapAuthToken(null);
             setCachedAuthToken(null);
             await resetClientState();
-            safeRemoveItem('kortix-last-user-id');
+            // The identity marker is deliberately LEFT IN PLACE. Removing it
+            // here deleted the exact value the next `SIGNED_IN` compares
+            // against, so after an explicit logout the cross-user reset could
+            // never fire — the one moment two accounts are most likely to share
+            // a browser. It is a user id, not a credential, and it is already
+            // rewritten on every sign-in.
             break;
           case 'TOKEN_REFRESHED':
             if (newSession?.access_token) {
@@ -138,20 +178,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [supabase]);
 
-  const signOut = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-      await resetClientState();
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  }, [supabase]);
-
   // Memoize the context value to prevent cascading re-renders of the entire
   // component tree on every auth state change (e.g. silent token refreshes).
+  //
+  // `signOut` is the shared `performSignOut` itself, not a provider-local
+  // wrapper: it is a module constant, so it is stable across renders, and
+  // routing it through here is what keeps every consumer of `useAuth()` on the
+  // one sign-out path instead of hand-rolling a fifth cleanup.
   const value = useMemo<AuthContextType>(
-    () => ({ supabase, session, user, isLoading, signOut }),
-    [supabase, session, user, isLoading, signOut],
+    () => ({ supabase, session, user, isLoading, signOut: performSignOut }),
+    [supabase, session, user, isLoading],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/features/providers/auth-provider';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { SignOutIcon } from '@phosphor-icons/react';
 import {
   clearAutoProjectSuppression,
@@ -204,22 +205,16 @@ export default function ProjectStartPage() {
 /**
  * Both stuck states on this route (terminal and error) used to be dead ends:
  * no app chrome renders here, so a user parked on "No workspace yet" had no
- * way to sign out and try another account. `signOut` (auth-provider) already
- * clears every piece of persisted client state — including the stale account
- * selection that used to cause the false terminal.
+ * way to sign out and try another account. `performSignOut` clears every piece
+ * of persisted client state — including the stale account selection that used
+ * to cause the false terminal — and then leaves on a document load.
  *
  * Deliberately OUTSIDE `ProjectStartEmpty`: the no-permission case pins "no
  * <a>/<button> in the empty surface" (landing-terminal.test.tsx), and that
  * contract is about create controls that would 403 — not about this exit.
  */
 function StartSignOutButton() {
-  const router = useRouter();
-  const { signOut } = useAuth();
   const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    router.prefetch('/auth');
-  }, [router]);
 
   return (
     <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
@@ -228,13 +223,14 @@ function StartSignOutButton() {
         size="sm"
         className="gap-1.5 rounded-full"
         disabled={pending}
-        onClick={async () => {
+        onClick={() => {
           setPending(true);
-          await signOut();
-          // nav-contract: prefetch-only — the navigation must follow `signOut`,
-          // so an anchor would race the sign-out it is meant to complete. The
-          // effect above warms `/auth`.
-          router.replace('/auth');
+          // `performSignOut` owns the navigation and ends it on a DOCUMENT
+          // load, so there is nothing to prefetch and nothing to push: a soft
+          // transition would carry this account's route cache into the next
+          // one's session. `pending` is never cleared because the document is
+          // replaced, not re-rendered.
+          void performSignOut();
         }}
       >
         {pending ? (
