@@ -1,6 +1,10 @@
 'use client';
 
-import { runSignOut, SIGN_OUT_DESTINATION } from '@/lib/auth/sign-out-sequence';
+import {
+  markSignOutStarted,
+  runSignOut,
+  SIGN_OUT_DESTINATION,
+} from '@/lib/auth/sign-out-sequence';
 import { finalizeServerSignOut } from '@/lib/auth/sign-out-actions';
 import { createClient } from '@/lib/supabase/client';
 import { resetClientState } from '@/lib/utils/reset-client-state';
@@ -30,6 +34,12 @@ export { SIGN_OUT_DESTINATION };
  * `sign-out-sequence.ts`.
  */
 export async function performSignOut(): Promise<void> {
+  // Before the first await. Signed-out route guards read `isSigningOut()` so a
+  // `SIGNED_OUT` event cannot fire their soft `router.replace('/auth')` while
+  // this document load is still being set up — a soft navigation there would
+  // reach `/auth` with the App Router route cache intact, which is the exact
+  // defect this whole path exists to remove.
+  markSignOutStarted();
   const supabase = createClient();
   await runSignOut({
     finalizeServerSession: finalizeServerSignOut,

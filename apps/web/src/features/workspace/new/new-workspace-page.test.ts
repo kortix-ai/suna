@@ -60,6 +60,10 @@ describe('/new page: no invented constraints', () => {
     const effects = code.match(/useEffect\(/g) ?? [];
     expect(effects.length).toBe(1);
     expect(code).toContain("if (!authLoading && !user) router.replace('/auth');");
+    // ...and it stands down during our OWN sign-out, so the soft replace cannot
+    // beat `performSignOut`'s document load to `/auth` and carry the route
+    // cache across the identity change.
+    expect(code).toContain('if (isSigningOut()) return;');
 
     // Paired presence check: there IS a submit path, just not an eager one.
     expect(code).toContain('onSubmit');

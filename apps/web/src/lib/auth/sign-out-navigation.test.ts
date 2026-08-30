@@ -17,8 +17,8 @@
 // this file names `router.push` / `router.replace` only inside string
 // constants — never in prose that a future slice could pick up.
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
 
@@ -157,6 +157,90 @@ describe('the server half of the sign-out', () => {
   });
 });
 
+describe('nothing on an identity change can wait forever', () => {
+  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` `openDB()` registers
+  // `onupgradeneeded`/`onsuccess`/`onerror` and NO `onblocked`, and the file has
+  // no `onversionchange` either. A version upgrade blocked by a tab still
+  // holding the old version settles neither `success` nor `error`, and
+  // `dbPromise` is memoized so every later caller parks behind it. That is not
+  // hypothetical: `DB_VERSION` has been bumped twice in this repo's history.
+  //
+  // Unbounded, that single promise could (a) stop a user signing out at all,
+  // and (b) park the whole app on its loading frame at SIGN-IN, because
+  // `adoptUser` awaits the same reset before `setIsLoading(false)`.
+
+  test('the sign-out bounds every step, not just guards it', () => {
+    const sequence = code('lib/auth/sign-out-sequence.ts');
+    expect(sequence).toContain("from '@/lib/utils/time-budget'");
+
+    // All FOUR pre-navigation awaits, enumerated: a new unbounded `await
+    // steps.` added beside them fails here.
+    const budgeted = sequence.match(/withTimeBudget\(steps\./g) ?? [];
+    expect(budgeted.length).toBe(4);
+    expect(sequence).not.toContain('await steps.');
+  });
+
+  test('resetClientState bounds its one async step, for EVERY caller', () => {
+    // In `runSignOut` and in `AuthProvider.adoptUser` alike — the sign-in side
+    // is where this widened, because an absent marker now runs the reset ahead
+    // of the first paint.
+    const reset = code('lib/utils/reset-client-state.ts');
+    expect(reset).toContain("from '@/lib/utils/time-budget'");
+    expect(reset).toContain('withTimeBudget(clearSessionIDBCache())');
+    expect(reset).not.toContain('await clearSessionIDBCache()');
+  });
+
+  test('the identity-critical clears stay SYNCHRONOUS, which is what makes the bound safe', () => {
+    // Outrunning the IDB purge is only safe while everything that could leak
+    // across identities has already completed. If any of these three grows an
+    // `await`, the bound above starts skipping real work.
+    const reset = code('lib/utils/reset-client-state.ts');
+    for (const call of [
+      'getSharedQueryClient()?.clear();',
+      'useCurrentAccountStore.getState().clear();',
+      'clearUserLocalStorage();',
+    ]) {
+      expect(reset).toContain(call);
+      expect(reset).not.toContain(`await ${call}`);
+    }
+  });
+});
+
+describe('the signed-out route guards do not race the exit', () => {
+  // `performSignOut` fires `SIGNED_OUT` before its document load starts, so a
+  // guard that only checks `!user` reaches `/auth` by SOFT navigation first —
+  // carrying the App Router route cache across the identity change, which is
+  // the exact defect the hard navigation exists to remove.
+  const GUARDED = [
+    'features/workspace/new/new-workspace-page.tsx',
+    'app/(app)/projects/start/page.tsx',
+  ];
+
+  test('every signed-out guard checks isSigningOut() FIRST', () => {
+    for (const file of GUARDED) {
+      const body = code(file);
+      expect(body).toContain("from '@/lib/auth/sign-out-sequence'");
+
+      const bail = body.indexOf('if (isSigningOut()) return;');
+      const guard = body.indexOf("if (!authLoading && !user) router.replace('/auth');");
+      expect(bail).toBeGreaterThan(-1);
+      expect(guard).toBeGreaterThan(bail);
+    }
+  });
+
+  test('the latch is set before performSignOut awaits anything', () => {
+    const body = slice(
+      code('lib/auth/perform-sign-out.ts'),
+      'export async function performSignOut()',
+      '\n}\n',
+    );
+    const mark = body.indexOf('markSignOutStarted();');
+    const firstAwait = body.indexOf('await ');
+    expect(mark).toBeGreaterThan(-1);
+    expect(firstAwait).toBeGreaterThan(mark);
+  });
+});
+
 describe('the sign-out path stays importable from the browser', () => {
   test('nothing in its graph pulls in `server-only`', async () => {
     // `AuthProvider` imports `performSignOut`, and `AuthProvider` is mounted by
@@ -169,6 +253,58 @@ describe('the sign-out path stays importable from the browser', () => {
   });
 });
 
+/** The local modules an import specifier can name, in resolution order. */
+function resolveLocal(specifier: string, fromFile: string): string | null {
+  const base = specifier.startsWith('@/')
+    ? resolve(WEB_SRC, specifier.slice(2))
+    : specifier.startsWith('.')
+      ? resolve(dirname(resolve(WEB_SRC, fromFile)), specifier)
+      : null;
+  if (!base) return null; // a package, not our source
+
+  for (const candidate of [
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}/index.ts`,
+    `${base}/index.tsx`,
+    base,
+  ]) {
+    if (existsSync(candidate) && statSync(candidate).isFile()) {
+      return relative(WEB_SRC, candidate);
+    }
+  }
+  return null;
+}
+
+/**
+ * Every first-party module reachable from `entries`, transitively.
+ *
+ * A fixed list of file paths is the wrong shape for this ban: it holds only for
+ * the exact files somebody thought of. `resetClientState()` already calls into
+ * `clear-local-storage.ts` and `current-account-store.ts`, and
+ * `clear-local-storage.ts` is arguably the MORE natural home for "forget this
+ * browser's user state" — so a fixed list would pass while the cookie died.
+ * Walking the graph means a module cannot slip in behind the check.
+ */
+function importGraph(entries: string[]): string[] {
+  const seen = new Set<string>();
+  const queue = [...entries];
+
+  while (queue.length) {
+    const file = queue.shift()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+
+    const source = readFileSync(resolve(WEB_SRC, file), 'utf8');
+    for (const match of source.matchAll(/(?:from|import)\s*['"]([^'"]+)['"]/g)) {
+      const next = resolveLocal(match[1], file);
+      if (next && !seen.has(next)) queue.push(next);
+    }
+  }
+
+  return [...seen];
+}
+
 describe('the sign-out path leaves `kortix_last_project` alone', () => {
   // Load-bearing, not an oversight. The cookie is owner-bound
   // (`serializeLastProject`), so the next account cannot follow it, and the
@@ -177,19 +313,72 @@ describe('the sign-out path leaves `kortix_last_project` alone', () => {
   // a logout and on the dominant session-expiry path. Deleting it on sign-out
   // un-attributes every post-logout bounce and re-opens the hole the
   // return-URL gate closes.
-  test('neither the shared sign-out nor any control names the cookie', () => {
-    const files = [
+  // Two different bans, because they are two different mistakes.
+  //
+  // A module may NAME the cookie — `landing-destination.ts` declares the
+  // constant and parses it — as long as it has no way to WRITE one. That is
+  // checked as a capability, not as a hard-coded exemption, so the moment
+  // somebody gives that module `cookies()` or `document.cookie` the ban applies
+  // to it too.
+  const COOKIE_NAMES = ['LAST_PROJECT_COOKIE', 'kortix_last_project'];
+  // Task 5's symbol. A deleter by name — no module on this path may reach it,
+  // capability argument or not.
+  const DELETERS = ['clearLastProjectId'];
+
+  /** Whether a module has any means of writing or deleting a cookie at all. */
+  function canWriteCookies(file: string): boolean {
+    const body = code(file);
+    return (
+      body.includes('next/headers') ||
+      body.includes('document.cookie') ||
+      body.includes('cookies()') ||
+      body.includes('.cookies.set') ||
+      body.includes('.cookies.delete')
+    );
+  }
+
+  test('no module in the sign-out import GRAPH can delete the cookie', () => {
+    const graph = importGraph([
       'lib/auth/perform-sign-out.ts',
       'lib/auth/sign-out-sequence.ts',
       'lib/auth/sign-out-actions.ts',
       'lib/utils/reset-client-state.ts',
-    ].concat(CONTROLS.map((control) => control.file));
+    ]);
 
-    for (const file of files) {
-      const body = code(file);
-      expect(body).not.toContain('LAST_PROJECT_COOKIE');
-      expect(body).not.toContain('kortix_last_project');
-      expect(body).not.toContain('clearLastProjectId');
+    // The walk has to actually reach past the entry points, or this test is a
+    // fixed list wearing a graph's clothes. These two are the modules a future
+    // "forget this browser's user state" change would most naturally land in,
+    // and neither was covered by the path list this replaced.
+    expect(graph).toContain('lib/utils/clear-local-storage.ts');
+    expect(graph).toContain('stores/current-account-store.ts');
+    expect(graph.length).toBeGreaterThan(6);
+
+    for (const file of graph) {
+      for (const deleter of DELETERS) {
+        expect({ file, symbol: deleter, present: code(file).includes(deleter) }).toEqual({
+          file,
+          symbol: deleter,
+          present: false,
+        });
+      }
+
+      const named = COOKIE_NAMES.filter((name) => code(file).includes(name));
+      if (named.length === 0) continue;
+      expect({ file, named, writesCookies: canWriteCookies(file) }).toEqual({
+        file,
+        named,
+        writesCookies: false,
+      });
+    }
+  });
+
+  test('no logout control names the cookie either', () => {
+    // Direct, not transitive: these files import half the app, so their graphs
+    // reach modules that legitimately own the cookie (the middleware's helpers).
+    for (const control of CONTROLS) {
+      for (const banned of [...COOKIE_NAMES, ...DELETERS]) {
+        expect(code(control.file)).not.toContain(banned);
+      }
     }
   });
 });

@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 
-import { SIGN_OUT_DESTINATION, runSignOut, type SignOutSteps } from './sign-out-sequence';
+import {
+  isSigningOut,
+  markSignOutStarted,
+  runSignOut,
+  SIGN_OUT_DESTINATION,
+  type SignOutSteps,
+} from './sign-out-sequence';
+
+/** Small enough that a "this step hangs" test finishes instantly. */
+const FAST = { stepTimeoutMs: 5 };
 
 /**
  * The sign-out ORDER and its failure handling, on injected steps.
@@ -57,7 +66,7 @@ function recorder(
 describe('runSignOut, happy path', () => {
   test('ends the session once, clears the bounce, resets, then leaves', async () => {
     const r = recorder();
-    await runSignOut(r.steps);
+    await runSignOut(r.steps, FAST);
 
     expect(r.calls).toEqual(['finalizeServerSession', 'endSession', 'resetClientState', 'leave']);
     expect(r.scopes).toEqual([undefined]);
@@ -73,7 +82,7 @@ describe('runSignOut, happy path', () => {
     // access token that `supabase.auth.signOut()` is about to throw away, so
     // running it second would silently stop revoking anything.
     const r = recorder();
-    return runSignOut(r.steps).then(() => {
+    return runSignOut(r.steps, FAST).then(() => {
       expect(r.calls.indexOf('finalizeServerSession')).toBeLessThan(
         r.calls.indexOf('endSession'),
       );
@@ -94,7 +103,7 @@ describe('runSignOut, the signOut ERROR path', () => {
       },
     });
 
-    await runSignOut(r.steps);
+    await runSignOut(r.steps, FAST);
 
     expect(attempt).toBe(2);
     expect(r.calls).toEqual([
@@ -110,7 +119,7 @@ describe('runSignOut, the signOut ERROR path', () => {
   test('a local retry that ALSO fails still resets and still leaves', async () => {
     const r = recorder({ endSession: async () => ({ error: { message: 'nope' } }) });
 
-    await runSignOut(r.steps);
+    await runSignOut(r.steps, FAST);
 
     expect(r.calls).toEqual([
       'finalizeServerSession',
@@ -121,16 +130,26 @@ describe('runSignOut, the signOut ERROR path', () => {
     ]);
   });
 
-  test('a THROWN sign-out is not retried, but still resets and still leaves', async () => {
+  test('a THROWN sign-out is retried locally too', async () => {
+    // A thrown fetch is the archetypal "the server was unreachable", which is
+    // exactly when a local sign-out is the right answer. Treating a throw as
+    // terminal left the session in the browser.
     const r = recorder({
-      endSession: async () => {
+      endSession: async (scope) => {
+        if (scope === 'local') return { error: null };
         throw new Error('boom');
       },
     });
 
-    await runSignOut(r.steps);
+    await runSignOut(r.steps, FAST);
 
-    expect(r.calls).toEqual(['finalizeServerSession', 'endSession', 'resetClientState', 'leave']);
+    expect(r.calls).toEqual([
+      'finalizeServerSession',
+      'endSession',
+      'endSession:local',
+      'resetClientState',
+      'leave',
+    ]);
   });
 });
 
@@ -144,7 +163,7 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
       },
     });
 
-    await runSignOut(r.steps);
+    await runSignOut(r.steps, FAST);
 
     expect(r.calls).toEqual(['finalizeServerSession', 'endSession', 'resetClientState', 'leave']);
   });
@@ -156,7 +175,7 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
       },
     });
 
-    await runSignOut(r.steps);
+    await runSignOut(r.steps, FAST);
 
     expect(r.calls).toEqual(['finalizeServerSession', 'endSession', 'resetClientState', 'leave']);
     expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
@@ -181,7 +200,7 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
       leave: () => order.push('left'),
     };
 
-    const running = runSignOut(steps);
+    const running = runSignOut(steps, FAST);
     // Drain the microtasks the two awaited steps ahead of the reset queue, so
     // the assertion below is about the reset gate and not about scheduling.
     for (let i = 0; i < 20; i += 1) await Promise.resolve();
@@ -191,5 +210,104 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
     await running;
 
     expect(order).toEqual(['reset-finished', 'left']);
+  });
+});
+
+/**
+ * The blocker this round fixed. Each of these steps could hang FOREVER, and one
+ * of them demonstrably can: `resetClientState()` awaits `clearSessionIDBCache()`,
+ * whose `openDB()` registers no `onblocked` handler, so an upgrade blocked by a
+ * stale tab settles neither `success` nor `error`. Unbounded, `leave()` was
+ * never reached — the user could not sign out and saw no error.
+ *
+ * A `try`/`catch` cannot catch a promise that never settles. Only a clock can,
+ * which is why every one of these uses a hanging promise rather than a
+ * rejecting one.
+ */
+describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
+  const hang = () => new Promise<never>(() => {});
+
+  test('a hung server half still ends the session, resets and leaves', async () => {
+    const r = recorder({ finalizeServerSession: hang });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toEqual(['finalizeServerSession', 'endSession', 'resetClientState', 'leave']);
+    expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
+  });
+
+  test('a hung sign-out is retried locally, then resets and leaves', async () => {
+    const r = recorder({
+      endSession: (scope) => (scope === 'local' ? Promise.resolve({ error: null }) : hang()),
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toEqual([
+      'finalizeServerSession',
+      'endSession',
+      'endSession:local',
+      'resetClientState',
+      'leave',
+    ]);
+  });
+
+  test('a hung reset — the real IndexedDB case — still leaves', async () => {
+    const r = recorder({ resetClientState: hang });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toEqual(['finalizeServerSession', 'endSession', 'resetClientState', 'leave']);
+    expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
+  });
+
+  test('EVERY step hanging at once still leaves', async () => {
+    const r = recorder({
+      finalizeServerSession: hang,
+      endSession: hang,
+      resetClientState: hang,
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).toEqual([
+      'finalizeServerSession',
+      'endSession',
+      'endSession:local',
+      'resetClientState',
+      'leave',
+    ]);
+    expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
+  });
+
+  test('the whole sequence finishes in roughly the sum of its budgets', async () => {
+    const r = recorder({
+      finalizeServerSession: hang,
+      endSession: hang,
+      resetClientState: hang,
+    });
+
+    const started = Date.now();
+    await runSignOut(r.steps, { stepTimeoutMs: 20 });
+    const elapsed = Date.now() - started;
+
+    // Four bounded steps at 20ms. Generous ceiling so a loaded CI box does not
+    // flake; the point is that it is BOUNDED, not that it is exact.
+    expect(elapsed).toBeGreaterThanOrEqual(60);
+    expect(elapsed).toBeLessThan(2_000);
+  });
+});
+
+/**
+ * The in-flight latch. Placed LAST in this file on purpose: it is module state
+ * that never resets, so marking it earlier would leak into the tests above.
+ * Nothing before this point calls `markSignOutStarted` — only `performSignOut`
+ * does, and that lives in the other module.
+ */
+describe('the sign-out in-flight latch', () => {
+  test('is false until a sign-out starts, then latches', () => {
+    expect(isSigningOut()).toBe(false);
+    markSignOutStarted();
+    expect(isSigningOut()).toBe(true);
   });
 });

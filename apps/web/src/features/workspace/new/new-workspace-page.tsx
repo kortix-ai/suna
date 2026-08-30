@@ -34,6 +34,7 @@ import {
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
+import { isSigningOut } from '@/lib/auth/sign-out-sequence';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { listAccounts } from '@kortix/sdk';
@@ -128,7 +129,14 @@ export function NewWorkspacePage() {
   // leaves a signed-out user looking at a form whose submit can only 401. A
   // soft replace is right here and a document load is not — there is no
   // identity to flush, only a screen to leave.
+  //
+  // EXCEPT during our own sign-out, which is why `isSigningOut()` is checked
+  // first. `performSignOut` fires `SIGNED_OUT` before its document load starts,
+  // so without this the guard wins the race and the user reaches `/auth` by
+  // SOFT navigation with the App Router route cache intact — reintroducing on
+  // this one control the exact defect the hard navigation exists to remove.
   useEffect(() => {
+    if (isSigningOut()) return;
     if (!authLoading && !user) router.replace('/auth');
   }, [authLoading, user, router]);
 

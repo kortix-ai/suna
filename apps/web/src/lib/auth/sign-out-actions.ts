@@ -42,14 +42,19 @@ export async function clearAuthBounceCookie(): Promise<void> {
  * ACCESS token that is already minted, and it emits no audit event. This does
  * both, through `POST /v1/auth/logout`:
  *
- *  - marks every `account_session_activity` row for the session revoked, so the
- *    API's session gate denies the rest of the current access-token window
- *    instead of waiting for Supabase to refuse the next refresh;
- *  - emits the `auth.logout` audit event with the actor and session id.
+ *  - marks every `account_session_activity` row for the session revoked. Be
+ *    exact about the reach: `accountSessionGate()` is mounted on the ACCOUNTS
+ *    router only (`apps/api/src/accounts/index.ts`), so the `revokedAt` 401
+ *    covers `/v1/accounts/*` for the rest of the current access-token window.
+ *    It is not a whole-API kill switch. Without it that window is only closed
+ *    when Supabase refuses the next refresh;
+ *  - emits the `auth.logout` audit event with the actor and session id. This
+ *    half IS universal — the audit record is written regardless of which routes
+ *    the gate protects.
  *
  * It ran on exactly ONE of the six sign-out controls before this was unified
- * (`auth/phone-verification`), so five of six logouts left the session usable
- * server-side until the access token expired on its own. It runs on all six now.
+ * (`auth/phone-verification`), so five of six logouts emitted no audit event
+ * and revoked nothing. It runs on all six now.
  *
  * FIRST in the sequence, deliberately: it authenticates with the access token
  * that `supabase.auth.signOut()` is about to throw away.
