@@ -46,6 +46,7 @@ import {
   type ProjectSettingsSectionKey,
 } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { CraftReportsPreview } from '@/features/crafts/craft-reports-preview';
 import { CraftsHomePreview } from '@/features/crafts/crafts-home-preview';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -318,11 +319,15 @@ function MetaRuntimeIndicator() {
 
 /**
  * The project-home empty-state body, laid out like Perplexity's home: the
- * centered welcome heading with the composer directly beneath it and the crafts
- * preview right under the input — all vertically centered — while the quiet
- * "set up your project" pills sit at the bottom of the viewport. Shared by the
- * project index page AND the instant session shell's empty state so a
- * brand-new session opens onto the identical surface.
+ * centered welcome heading with the composer directly beneath it, then the
+ * craft-run report and the installable crafts grid — all vertically centered —
+ * while the quiet "set up your project" pills sit at the bottom of the
+ * viewport. Shared by the project index page AND the instant session shell's
+ * empty state so a brand-new session opens onto the identical surface.
+ *
+ * Runs come BEFORE the store: on a project that already has crafts, "did they
+ * run and did anything break" is the live question, and browsing more crafts
+ * is the follow-up.
  */
 export function ProjectHomeWelcomeBody({
   projectId,
@@ -351,6 +356,7 @@ export function ProjectHomeWelcomeBody({
           {composer ? (
             <div className="flex w-full flex-col items-center space-y-4">
               {composer}
+              <CraftReportsPreview projectId={projectId} />
               <CraftsHomePreview projectId={projectId} />
             </div>
           ) : null}

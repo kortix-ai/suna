@@ -45,8 +45,8 @@ export function CraftsStore({ projectId }: { projectId: string }) {
         <div className="space-y-1">
           <h1 className="text-foreground text-2xl font-semibold tracking-tight">Crafts</h1>
           <p className="text-muted-foreground text-sm text-balance">
-            Open-source crafts you can install into this project — pick one, install it, review
-            what it delivers.
+            Open-source crafts you can install into this project — pick one, install it, review what
+            it delivers.
           </p>
         </div>
         <p className="text-muted-foreground shrink-0 text-sm tabular-nums">
@@ -74,7 +74,9 @@ export function CraftsStore({ projectId }: { projectId: string }) {
         {filtered.length === 0 ? (
           <div className="bg-popover flex flex-col items-center rounded-md border px-4 py-10 text-center">
             <p className="text-foreground text-sm font-medium">No crafts match</p>
-            <p className="text-muted-foreground mt-1 text-xs">Clear the search to see all crafts.</p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Clear the search to see all crafts.
+            </p>
           </div>
         ) : (
           <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">

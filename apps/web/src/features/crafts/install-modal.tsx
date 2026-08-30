@@ -47,7 +47,7 @@ export function CraftInstallModal({
           <div className="flex items-center gap-3">
             <span
               className={cn(
-                'bg-background border-border shadow-2xs flex size-10 shrink-0 items-center justify-center rounded-md border',
+                'bg-background border-border flex size-10 shrink-0 items-center justify-center rounded-md border shadow-2xs',
                 craft.bgColor,
                 craft.color,
               )}
@@ -56,7 +56,9 @@ export function CraftInstallModal({
             </span>
             <div className="min-w-0">
               <ModalTitle>{craft.title}</ModalTitle>
-              <ModalDescription className="truncate font-mono">{craftRepoSlug(craft)}</ModalDescription>
+              <ModalDescription className="truncate font-mono">
+                {craftRepoSlug(craft)}
+              </ModalDescription>
             </div>
           </div>
         </ModalHeader>
@@ -93,7 +95,11 @@ export function CraftInstallModal({
           </span>
           {/* UI phase: an installed craft renders the state, not an action —
               management (pause/remove) arrives with the real install flow. */}
-          {craft.installed ? <Button disabled>Installed</Button> : <Button onClick={install}>Install</Button>}
+          {craft.installed ? (
+            <Button disabled>Installed</Button>
+          ) : (
+            <Button onClick={install}>Install</Button>
+          )}
         </ModalFooter>
       </ModalContent>
     </Modal>

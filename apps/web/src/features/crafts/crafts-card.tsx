@@ -79,7 +79,7 @@ export function CraftCard({
             className={cn(
               'bg-background text-foreground ml-auto inline-flex shrink-0 items-center rounded-full border py-0.5 text-xs font-medium',
               compact ? 'px-2' : 'px-2.5',
-              'transition-colors duration-150 group-hover:bg-foreground group-hover:text-background',
+              'group-hover:bg-foreground group-hover:text-background transition-colors duration-150',
             )}
           >
             Install

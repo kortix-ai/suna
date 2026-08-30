@@ -10,17 +10,22 @@ import { CRAFTS } from './crafts-catalog';
 import { CraftInstallModal } from './install-modal';
 
 /**
- * The project-home crafts preview — the card grid under the composer, plus
- * the dashed "Grow your crafts" card and the "View all crafts" link. `glass`
- * cards over the wallpaper keep the row quiet. Five crafts + the build card
- * fill a 3x2 grid.
+ * The project-home crafts preview — the installable card grid, plus the dashed
+ * "Grow your crafts" card and the "View all crafts" link. `glass` cards over
+ * the wallpaper keep the row quiet. Five crafts + the build card fill a 3x2
+ * grid.
+ *
+ * The label is "Install a craft", an instruction rather than an introduction:
+ * this grid sits under the craft-run report, so by the time a reader reaches
+ * it they have already met their crafts and the only open question is what
+ * they can add. Cards already installed keep their green Installed pill.
  *
  * Layout shares the composer card's box edge-for-edge: the hero container is
  * `max-w-[52rem]`, and both children here are `w-full` with no side insets —
  * the hero composer strips its shell's gutter and `max-w-210` cap via
  * `parentClassName` (see the call sites), so card and grid fill the same
- * 52rem box exactly. `mt-10` on top of the parent's `space-y-4` keeps clear
- * air below the input.
+ * 52rem box exactly. `mt-8` is the tighter sibling gap; the run report above
+ * carries the `mt-10` that keeps clear air below the input.
  */
 export function CraftsHomePreview({ projectId }: { projectId: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -29,10 +34,10 @@ export function CraftsHomePreview({ projectId }: { projectId: string }) {
   const storeHref = `/projects/${projectId}/crafts`;
 
   return (
-    <div data-crafts-preview className="mt-10 w-full space-y-2.5">
+    <div data-crafts-preview className="mt-8 w-full space-y-2.5">
       <div className="flex items-center justify-between">
         <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-          Meet your crafts
+          Install a craft
         </p>
         <HoverPrefetchLink
           href={storeHref}
