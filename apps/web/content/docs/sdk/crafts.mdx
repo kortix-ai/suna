@@ -94,12 +94,34 @@ Bounded server-side on two axes, because they answer different questions:
 | Archive envelope | 10 MB | On the declared size, before anything is read |
 | Extracted text | 5 MB | While unzipping; non-text entries are skipped, not rejected |
 | Per file | 256 KB | Per entry |
-| File count | 200 | Per archive |
+| Craft files | 1000 | Counted **after** the content filter below |
 
 Over any of them and the route answers `400 archive_refused` with a message
 naming which one. A compressed archive under the envelope can still exceed the
 text total, so a client cannot pre-validate the second from `File.size` — render
 the server's message rather than guessing.
+
+### Only the craft is kept
+
+You can zip a whole project folder. The crawl keeps the craft and leaves the
+repository around it behind:
+
+| Kept | Left behind |
+|---|---|
+| `kortix.yaml` / `.yml` / `.toml`, at the archive root | `src/**`, tests, build scripts |
+| Anything under a `.kortix/` directory — agents, skills, and files a skill bundles | `package.json`, `tsconfig.json`, lockfiles |
+| `README.md` at the root | `docs/**` |
+| `.env.example` at the root | everything else |
+
+This is not only about size. The install prompt tells the agent *"these files
+ARE the craft — copy from here"*, so a stored `src/server.ts` would become a file
+the agent writes into **someone else's** repository. Filtering is what keeps an
+install an install rather than a repo copy.
+
+The response's `warnings` reports how many files were left behind, with a
+sample, so you can tell whether the filter did what you expected. A GitHub-style
+`<repo>-<ref>/` wrapper directory is stripped before the filter runs, so
+"Download ZIP" archives work unchanged.
 
 <Callout type="warn" title="An install embeds an upload's files in the prompt">
 An uploaded craft has no repository, so its files reach the install agent inside

@@ -13,11 +13,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   CRAFT_ZIP_LIMITS,
-  type ZipReadError,
   detectSingleRoot,
+  isCraftContentPath,
   isCraftTextPath,
   normalizeZipPath,
   readZipTextFiles,
+  type ZipReadError,
 } from './zip-read';
 
 const roots: string[] = [];
@@ -177,9 +178,14 @@ describe('readZipTextFiles — hostile input', () => {
     expect(err?.code).toBe('encrypted');
   });
 
-  test('too many text files is refused', () => {
-    const many: Record<string, string> = {};
-    for (let i = 0; i < 12; i += 1) many[`f${i}.md`] = 'x';
+  test('too many CRAFT files is refused', () => {
+    // Two things matter in this fixture. The skills live under `.kortix/` so
+    // `isCraftContentPath` keeps them and the CAP is what fires. And the root
+    // `kortix.yaml` is required, not decoration: with `.kortix/` as the only
+    // top-level entry `detectSingleRoot` would strip it, and the paths would
+    // stop being craft content — see the dedicated test below.
+    const many: Record<string, string> = { 'kortix.yaml': 'kortix_version: 2\n' };
+    for (let i = 0; i < 12; i += 1) many[`.kortix/opencode/skills/s${i}/SKILL.md`] = 'x';
     let err: ZipReadError | null = null;
     try {
       readZipTextFiles(makeZip(many), { ...CRAFT_ZIP_LIMITS, maxEntries: 5 });
@@ -192,10 +198,13 @@ describe('readZipTextFiles — hostile input', () => {
   test('exceeding the total byte budget is refused', () => {
     let err: ZipReadError | null = null;
     try {
-      readZipTextFiles(makeZip({ 'a.md': 'x'.repeat(5_000) }), {
-        ...CRAFT_ZIP_LIMITS,
-        maxTotalBytes: 100,
-      });
+      readZipTextFiles(
+        makeZip({
+          'kortix.yaml': 'kortix_version: 2\n',
+          '.kortix/opencode/agents/a.md': 'x'.repeat(5_000),
+        }),
+        { ...CRAFT_ZIP_LIMITS, maxTotalBytes: 100 },
+      );
     } catch (e) {
       err = e as ZipReadError;
     }
@@ -205,10 +214,10 @@ describe('readZipTextFiles — hostile input', () => {
   test('an over-sized single entry is SKIPPED, not fatal', () => {
     // One huge file in somebody's repo should not block the craft.
     const { files, skipped } = readZipTextFiles(
-      makeZip({ ...CRAFT, 'huge.md': 'x'.repeat(5_000) }),
+      makeZip({ ...CRAFT, '.kortix/opencode/agents/huge.md': 'x'.repeat(5_000) }),
       { ...CRAFT_ZIP_LIMITS, maxEntryBytes: 1_000 },
     );
-    expect(skipped).toContain('huge.md');
+    expect(skipped).toContain('.kortix/opencode/agents/huge.md');
     expect(files.some((f) => f.path === 'kortix.yaml')).toBe(true);
   });
 });
@@ -234,5 +243,138 @@ describe('isCraftTextPath', () => {
     for (const p of ['logo.png', 'a.zip', 'bin/kortix', 'x.so', 'y.lock', 'noext']) {
       expect(isCraftTextPath(p)).toBe(false);
     }
+  });
+});
+
+/**
+ * `isCraftContentPath` — the filter that makes "zip your project folder" work.
+ *
+ * It is load-bearing in a way a size cap is not. The install prompt tells the
+ * agent "these files ARE the craft — copy from here", so anything this function
+ * lets through becomes a file written into SOMEONE ELSE'S repository at install
+ * time. A stored `src/server.ts` is not a bloat problem, it is the install
+ * dumping your application into their project.
+ */
+describe('isCraftContentPath', () => {
+  test('keeps the manifest, at the root only', () => {
+    expect(isCraftContentPath('kortix.yaml')).toBe(true);
+    expect(isCraftContentPath('kortix.yml')).toBe(true);
+    expect(isCraftContentPath('kortix.toml')).toBe(true);
+    // `crawlCraftZip` looks for the manifest at the root and nowhere else, so a
+    // nested one belongs to a different project, not to this craft.
+    expect(isCraftContentPath('packages/thing/kortix.yaml')).toBe(false);
+  });
+
+  test('keeps everything under .kortix/, at any depth', () => {
+    expect(isCraftContentPath('.kortix/opencode/agents/seo-writer.md')).toBe(true);
+    expect(isCraftContentPath('.kortix/opencode/skills/seo-audit/SKILL.md')).toBe(true);
+    // A skill's bundled helper script — the documented place for one.
+    expect(isCraftContentPath('.kortix/opencode/skills/seo-audit/run.py')).toBe(true);
+    // Monorepo layout.
+    expect(isCraftContentPath('apps/web/.kortix/opencode/agents/a.md')).toBe(true);
+  });
+
+  test('keeps the root README and .env.example', () => {
+    expect(isCraftContentPath('README.md')).toBe(true);
+    expect(isCraftContentPath('readme.mdx')).toBe(true);
+    expect(isCraftContentPath('.env.example')).toBe(true);
+    // Not a nested one — that documents a subpackage, not the craft.
+    expect(isCraftContentPath('docs/README.md')).toBe(false);
+  });
+
+  test('LEAVES BEHIND application source — the whole point', () => {
+    for (const path of [
+      'src/server.ts',
+      'src/components/Button.tsx',
+      'lib/util.js',
+      'scripts/deploy.sh',
+      'main.py',
+      'package.json',
+      'tsconfig.json',
+      'docs/architecture.md',
+      'test/server.test.ts',
+    ]) {
+      expect(isCraftContentPath(path)).toBe(false);
+    }
+  });
+
+  test('a non-text path is never craft content, wherever it sits', () => {
+    expect(isCraftContentPath('.kortix/opencode/agents/logo.png')).toBe(false);
+    expect(isCraftContentPath('kortix.yaml.bak')).toBe(false);
+  });
+});
+
+describe('root stripping vs the content filter', () => {
+  test('a real craft zip keeps its .kortix/ paths', () => {
+    // `kortix.yaml` and `.kortix/` are two top-level entries, so there is no
+    // single root to strip and the paths survive intact.
+    const read = readZipTextFiles(makeZip(CRAFT));
+    expect(read.files.map((f) => f.path)).toContain('.kortix/opencode/agents/scribe.md');
+    expect(read.root).toBeNull();
+  });
+
+  test('a GitHub-style wrapper directory is stripped, and paths still match', () => {
+    // "Download ZIP" wraps everything in `<repo>-<ref>/`. Stripping that is the
+    // reason `detectSingleRoot` exists, and the filter must run on the STRIPPED
+    // path or every craft file would read as nested and be ignored.
+    const wrapped: Record<string, string> = {};
+    for (const [path, body] of Object.entries(CRAFT)) wrapped[`my-craft-main/${path}`] = body;
+    const read = readZipTextFiles(makeZip(wrapped));
+    expect(read.root).toBe('my-craft-main');
+    expect(read.files.map((f) => f.path).sort()).toEqual([
+      '.kortix/opencode/agents/scribe.md',
+      '.kortix/opencode/skills/notes/SKILL.md',
+      'README.md',
+      'kortix.yaml',
+    ]);
+  });
+
+  test('an archive of ONLY .kortix/ has it stripped as the root, and carries nothing', () => {
+    // Documented consequence rather than a defect: with no root manifest such an
+    // archive is not an installable craft anyway — `crawlCraftZip` rejects it
+    // with `manifest_not_found`, which is the honest error.
+    const read = readZipTextFiles(
+      makeZip({ '.kortix/opencode/agents/a.md': '---\ndescription: a\n---\n' }),
+    );
+    expect(read.root).toBe('.kortix');
+    expect(read.files).toHaveLength(0);
+  });
+});
+
+describe('readZipTextFiles — a whole-repo archive', () => {
+  test('application source does not consume the craft-file budget', () => {
+    // The reported failure: "archive holds more than 200 text files" on a real
+    // project zip. The craft itself was tiny; the repo around it was not.
+    const files: Record<string, string> = {
+      'my-app/kortix.yaml': 'kortix_version: 2\n',
+      'my-app/README.md': '# my app\n',
+      'my-app/.kortix/opencode/agents/w.md': '---\ndescription: w\n---\n',
+    };
+    for (let i = 0; i < 600; i += 1) {
+      files[`my-app/src/module-${i}.ts`] = `export const x${i} = ${i};\n`;
+    }
+    const read = readZipTextFiles(makeZip(files), { ...CRAFT_ZIP_LIMITS, maxEntries: 10 });
+    // Three craft files kept, under a cap of TEN, despite 600 source files.
+    expect(read.files.map((f) => f.path).sort()).toEqual([
+      '.kortix/opencode/agents/w.md',
+      'README.md',
+      'kortix.yaml',
+    ]);
+    expect(read.ignored).toHaveLength(600);
+    expect(read.root).toBe('my-app');
+  });
+
+  test('the entry cap still fires on genuinely many craft files', () => {
+    const files: Record<string, string> = { 'c/kortix.yaml': 'kortix_version: 2\n' };
+    for (let i = 0; i < 40; i += 1) {
+      files[`c/.kortix/opencode/skills/s${i}/SKILL.md`] = '# s\n';
+    }
+    let err: unknown;
+    try {
+      readZipTextFiles(makeZip(files), { ...CRAFT_ZIP_LIMITS, maxEntries: 10 });
+    } catch (caught) {
+      err = caught;
+    }
+    expect((err as ZipReadError)?.code).toBe('too_many_entries');
   });
 });

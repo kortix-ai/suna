@@ -358,8 +358,9 @@ export function AddCraftModal({
                     </FieldDescription>
                   ) : (
                     <FieldDescription>
-                      Zip the folder holding <span className="font-mono">kortix.yaml</span>. Text
-                      files only, up to {formatBytes(MAX_TEXT_BYTES)} of text.
+                      Zip the folder holding <span className="font-mono">kortix.yaml</span> — the
+                      whole project is fine. Only the craft is kept: the manifest and{' '}
+                      <span className="font-mono">.kortix/</span> (agents and skills).
                     </FieldDescription>
                   )}
                   {/* Said here, at the moment of choosing, not discovered later:

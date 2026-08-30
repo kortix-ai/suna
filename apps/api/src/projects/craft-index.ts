@@ -456,6 +456,19 @@ export function crawlCraftZip(
         .join(', ')}${read.skipped.length > 8 ? ', …' : ''}`,
     );
   }
+  // Not a failure, and the common case for a whole-repo zip: a craft is its
+  // manifest plus `.kortix/`, so application source is left behind on purpose.
+  // Summarized rather than listed — a 900-path warning is unreadable, and the
+  // number plus a sample is what tells someone whether the filter did what they
+  // expected.
+  if (read.ignored.length > 0) {
+    card.warnings.push(
+      `${read.ignored.length} file(s) are not part of a craft and were left behind — a craft is its ` +
+        `kortix.yaml plus .kortix/ (agents and skills). Ignored, for example: ${read.ignored
+          .slice(0, 5)
+          .join(', ')}${read.ignored.length > 5 ? ', …' : ''}`,
+    );
+  }
 
   // The archive name is the only identity an upload has. Strip the extension
   // and any GitHub `-main` / `-<sha>` suffix its wrapper directory implies.

@@ -51,7 +51,11 @@ export const CRAFT_ZIP_LIMITS: ZipReadLimits = {
   // travel to the agent inside the prompt.
   maxTotalBytes: 5_000_000,
   maxEntryBytes: 256_000,
-  maxEntries: 200,
+  // Counted AFTER `isCraftContentPath`, so this bounds craft files — agent
+  // `.md`s and skill folders — not the size of the repo someone zipped.
+  // Raised 200 → 1000 on 2026-08-30: a craft with many skills is legitimate,
+  // and 200 was low enough that a real one could hit it.
+  maxEntries: 1000,
 };
 
 export type ZipReadErrorCode =
@@ -113,6 +117,40 @@ function extensionOf(path: string): string {
 export function isCraftTextPath(path: string): boolean {
   if (path.endsWith('.env.example')) return true;
   return TEXT_EXTENSIONS.has(extensionOf(path));
+}
+
+/**
+ * Whether a path is part of the CRAFT, as opposed to part of the repo the craft
+ * happens to live in.
+ *
+ * This is the filter that lets someone zip a whole project folder. A craft IS
+ * its manifest plus `.kortix/` — the agent `.md`s and skill directories the
+ * install copies. Application source (`src/**.ts`, tests, configs) has no role
+ * in installing a craft INTO another project, and keeping it would be actively
+ * wrong: the install prompt says "these ARE the craft — copy from here", so a
+ * stored `src/server.ts` becomes a file the agent writes into someone else's
+ * repo.
+ *
+ * Deliberately narrow, and anchored:
+ *   - the manifest, at the ROOT only — `crawlCraftZip` looks for it exactly
+ *     there (`manifestCandidatePaths(null)`), so a nested `kortix.yaml` is a
+ *     different project's manifest, not this craft's.
+ *   - anything under a `.kortix/` directory at any depth — agents, skills,
+ *     opencode config. A skill's bundled helper script lives here too, which is
+ *     the documented convention and why no extra allowance is needed for it.
+ *   - `README.md` at the root, which is what a person reads before installing.
+ *   - `.env.example` at the root, which declares what the craft needs.
+ */
+export function isCraftContentPath(path: string): boolean {
+  if (!isCraftTextPath(path)) return false;
+  // `.kortix/` at any depth (a monorepo may hold `apps/foo/.kortix/`).
+  if (path === '.kortix' || path.startsWith('.kortix/') || path.includes('/.kortix/')) return true;
+  // Root-anchored: no '/' left in the path means it sits at the archive root.
+  if (path.includes('/')) return false;
+  const base = path.toLowerCase();
+  if (/^kortix\.(ya?ml|toml)$/.test(base)) return true;
+  if (/^readme\.mdx?$/.test(base)) return true;
+  return base === '.env.example';
 }
 
 /**
@@ -244,7 +282,7 @@ function entryBody(view: DataView, bytes: Uint8Array, entry: CentralEntry): Uint
 export function readZipTextFiles(
   input: ArrayBuffer | Uint8Array,
   limits: ZipReadLimits = CRAFT_ZIP_LIMITS,
-): { files: ZipEntry[]; skipped: string[]; root: string | null } {
+): { files: ZipEntry[]; skipped: string[]; ignored: string[]; root: string | null } {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength < EOCD_MIN_SIZE) {
     throw new ZipReadError('not_a_zip', 'file is too small to be a ZIP archive');
@@ -255,6 +293,10 @@ export function readZipTextFiles(
   const root = detectSingleRoot(central.map((e) => e.name));
   const files: ZipEntry[] = [];
   const skipped: string[] = [];
+  // Text files that are simply not craft content — the bulk of a repo zip.
+  // Reported separately from `skipped` so a warning can distinguish "we could
+  // not carry this" from "this is not part of a craft".
+  const ignored: string[] = [];
   let total = 0;
 
   for (const entry of central) {
@@ -274,6 +316,12 @@ export function readZipTextFiles(
     }
     if (!isCraftTextPath(path)) {
       skipped.push(path);
+      continue;
+    }
+    // Checked BEFORE maxEntries, which is the whole point: a 900-file
+    // application source tree must not consume the craft-file budget.
+    if (!isCraftContentPath(path)) {
+      ignored.push(path);
       continue;
     }
     if (entry.uncompressedSize > limits.maxEntryBytes) {
@@ -317,5 +365,5 @@ export function readZipTextFiles(
     files.push({ path, content: new TextDecoder().decode(raw), bytes: raw.byteLength });
   }
 
-  return { files, skipped, root };
+  return { files, skipped, ignored, root };
 }
