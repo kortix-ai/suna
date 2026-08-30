@@ -52,6 +52,32 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 export const qk = {
+  /** The craft STORE — account-scoped, not per-project. */
+  crafts: {
+    /** Invalidation prefix over every store listing, whatever it searched for. */
+    scope: () => ['kx', 'crafts'] as const,
+
+    /**
+     * One store listing. The search terms are part of the key because
+     * `listCrafts({ q })` is a different SERVER request per term, not a
+     * client-side filter of one response — sharing a key would let whichever
+     * fetch resolved last overwrite what the other search's readers see.
+     * `'all'` stands in for "no search", so an absent option and an explicit
+     * `undefined` land on the same entry rather than flickering between two.
+     */
+    list: (options?: { q?: string; limit?: number; offset?: number }) =>
+      [
+        ...qk.crafts.scope(),
+        'list',
+        options?.q?.trim() || 'all',
+        options?.limit ?? 'default',
+        options?.offset ?? 0,
+      ] as const,
+
+    /** One craft's detail. */
+    detail: (craftId: string) => [...qk.crafts.scope(), 'detail', craftId] as const,
+  },
+
   projects: {
     /** Invalidation prefix covering every account's list AND the accountless
      *  slot. Never pass this as a `queryKey` — `list(accountId)` and
@@ -197,8 +223,7 @@ export const qk = {
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
-    connectorConfig: (id: string, slug: string) =>
-      [...qk.project.connectors(id), slug] as const,
+    connectorConfig: (id: string, slug: string) => [...qk.project.connectors(id), slug] as const,
     /** One connector's OAuth2 authorization discovery —
      *  `discoverConnectionOAuth2Resource(id, connectionId)`. Keyed by connector
      *  slug, not connection id: the probe reads the connector's server, and the
@@ -235,6 +260,31 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+    /** What this project has installed, read from its own manifest. */
+    crafts: (id: string) => [...qk.project.scope(id), 'crafts'] as const,
+
+    /**
+     * Prefix over EVERY craft-runs entry in this project — the all-crafts list
+     * and each per-craft report. Siblings, not parent and child, for the same
+     * reason `sessionsScope` exists: uninstalling a craft or firing a trigger
+     * must reach both in one invalidation, and invalidating only one would
+     * leave the other silently showing history that no longer matches.
+     */
+    craftRunsScope: (id: string) => [...qk.project.scope(id), 'craft-runs'] as const,
+
+    /**
+     * Runs across every installed craft. The literal `'all'` segment keeps this
+     * from ever colliding with `craftRuns(id, slug)` below — without it a craft
+     * whose slug happened to be the string this key ends in would produce the
+     * identical array. Same standard the `sessions` key applies: make the
+     * collision unrepresentable rather than rely on slugs staying tame.
+     */
+    craftRunsAll: (id: string) => [...qk.project.craftRunsScope(id), 'all'] as const,
+
+    /** One craft's runs. */
+    craftRuns: (id: string, slug: string) =>
+      [...qk.project.craftRunsScope(id), 'craft', slug] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

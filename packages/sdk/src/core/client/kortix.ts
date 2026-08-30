@@ -1,4 +1,5 @@
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { createKortixSession } from '../auth/session';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -17,28 +18,27 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
-import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
-import * as P from '../rest/projects-client';
 import * as A from '../rest/platform-client/auth';
 import type { HeadlessAuthApi } from '../rest/platform-client/auth';
-import { createKortixSession } from '../auth/session';
-import { getSessionHealth } from '../session/health';
-import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
-import { loadPreviewUrlTemplate } from '../session/preview-config';
-import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../session/preview-options';
+import * as P from '../rest/projects-client';
+import { getClient, getClientForUrl } from '../runtime/client';
 import { setCurrentRuntime } from '../session/current-runtime';
-import {
-  clearSessionRuntime,
-  getSessionRuntime,
-  type SessionRuntimeEntry,
-} from '../session/session-runtime-registry';
+import { getSessionHealth } from '../session/health';
+import { loadPreviewUrlTemplate } from '../session/preview-config';
+import { type ResolvedPreviewOptions, resolvePreviewOptions } from '../session/preview-options';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 import {
-  openEventStream,
+  type SessionRuntimeEntry,
+  clearSessionRuntime,
+  getSessionRuntime,
+} from '../session/session-runtime-registry';
+import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
+import {
   type EventStreamHandle,
   type OpenCodeEvent,
+  openEventStream,
 } from '../stream/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -395,6 +395,25 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     },
   };
 
+  /**
+   * The craft store (`/v1/crafts/*`) — top-level and account-scoped, distinct
+   * from `project(id).crafts`, which is what a specific project has installed.
+   *
+   * A craft comes from a GitHub repo or an uploaded `.zip`. Submitting indexes
+   * it; installing is project-scoped and returns a session to open.
+   */
+  const crafts = {
+    list: (options?: Parameters<typeof P.listCrafts>[0]) => P.listCrafts(options),
+    get: (craftId: string) => P.getCraft(craftId),
+    /** Index a craft from `owner/repo`, optionally `@branch-or-tag`. */
+    submit: (input: Parameters<typeof P.submitCraft>[0]) => P.submitCraft(input),
+    /** Index a craft from an uploaded `.zip`. */
+    submitArchive: (input: Parameters<typeof P.submitCraftArchive>[0]) =>
+      P.submitCraftArchive(input),
+    /** Remove from the catalogue. Does NOT uninstall it from any project. */
+    remove: (craftId: string) => P.deleteCraft(craftId),
+  };
+
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
   function connectorDataPlane(projectId?: string) {
     return {
@@ -639,6 +658,23 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.fireProjectTrigger(projectId, ...a),
         setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
           P.setProjectTriggersActivation(projectId, ...a),
+      },
+
+      /**
+       * Crafts installed in this project, and the runs of the triggers they own.
+       * Install and uninstall return a SESSION to open — the agent inside it
+       * does the merge and lands a change request; neither call commits.
+       */
+      crafts: {
+        list: () => P.listProjectCrafts(projectId),
+        install: (craftId: string) => P.createCraftInstallSession(projectId, craftId),
+        uninstall: (slug: string) => P.createCraftUninstallSession(projectId, slug),
+        /** Runs across every installed craft, newest first. */
+        runs: (options?: Parameters<typeof P.listProjectCraftRuns>[1]) =>
+          P.listProjectCraftRuns(projectId, options),
+        /** Runs for one craft, with aggregate stats. */
+        runsFor: (slug: string, options?: Parameters<typeof P.listCraftRuns>[2]) =>
+          P.listCraftRuns(projectId, slug, options),
       },
 
       files: {
@@ -1335,6 +1371,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
+    /** The craft store (`/v1/crafts/*`, account-scoped). Installing is per-project. */
+    crafts,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */
