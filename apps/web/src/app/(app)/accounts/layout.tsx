@@ -1,10 +1,11 @@
 'use client';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { AppHeader } from '@/features/layout/app-header';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useRouter } from 'next/navigation';
-import React, { useEffect } from 'react';
+import React from 'react';
 
 type LayoutProps = { children: React.ReactNode };
 
@@ -12,9 +13,7 @@ const Layout = ({ children }: LayoutProps) => {
   const { user, isLoading } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!isLoading && !user) router.replace('/auth');
-  }, [isLoading, user, router]);
+  useSignedOutRedirect();
 
   if (isLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;

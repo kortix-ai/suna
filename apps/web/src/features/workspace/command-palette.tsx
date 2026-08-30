@@ -850,6 +850,9 @@ export function CommandPalette() {
   /** The change request whose detail dialog is open, picked on the 'changes' page. */
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  // Never cleared: `performSignOut` ends on a document load, so this component
+  // is discarded rather than re-rendered.
+  const [loggingOut, setLoggingOut] = useState(false);
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1918,8 +1921,14 @@ export function CommandPalette() {
   // logout control makes, and it leaves on a DOCUMENT load rather than a
   // `router.push`: nothing else discards the App Router route cache across an
   // identity change.
-  const performLogout = useCallback(() => {
+  const performLogout = useCallback((event: React.MouseEvent) => {
+    // `preventDefault` keeps the confirm dialog UP. Radix closes it on click,
+    // which left the palette gone, the dialog gone, and the unchanged app on
+    // screen for as long as the sign-out took — up to the full step budget when
+    // the network is broken — with nothing saying anything was happening.
+    event.preventDefault();
     reopenPaletteRef.current = false;
+    setLoggingOut(true);
     void performSignOut();
   }, []);
 
@@ -3198,8 +3207,9 @@ export function CommandPalette() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={performLogout}>
+            <AlertDialogCancel disabled={loggingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={loggingOut} onClick={performLogout}>
+              {loggingOut ? <Loading className="size-4 shrink-0" /> : null}
               {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
             </AlertDialogAction>
           </AlertDialogFooter>

@@ -67,6 +67,7 @@ import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { useBrandingScope } from '@/features/branding/branding-provider';
@@ -305,9 +306,7 @@ export default function AccountSettingsPage() {
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading

@@ -33,6 +33,7 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import Loading from '@/components/ui/loading';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { openExternalRoute } from '@/lib/desktop';
 import {
@@ -209,6 +210,7 @@ export function HelpSubmenu({ onClose }: { onClose: () => void }) {
  */
 export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pending, setPending] = useState(false);
 
   const openConfirm = () => deferAfterClose(() => setConfirmOpen(true));
 
@@ -218,7 +220,16 @@ export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
   // the only thing that discards the App Router caches across an identity
   // change. There is nothing to prefetch: a document load does not read the
   // segment cache.
-  const performLogout = () => {
+  //
+  // `preventDefault` keeps the dialog UP. Radix closes it on click, which used
+  // to leave the user staring at the unchanged app for as long as the sign-out
+  // took — up to the full step budget on a broken network — with nothing on
+  // screen saying anything was happening. The predictable response is a second
+  // click. `performSignOut` refuses re-entry, but the dialog is the honest
+  // place to say so. The document load is what actually closes this.
+  const performLogout = (event: React.MouseEvent) => {
+    event.preventDefault();
+    setPending(true);
     void performSignOut();
   };
 
@@ -232,9 +243,10 @@ export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={performLogout}>
-            Log out
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={pending} onClick={performLogout}>
+            {pending ? <Loading className="size-4 shrink-0" /> : null}
+            {pending ? 'Signing out' : 'Log out'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

@@ -3,14 +3,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-
+import { useMemo, useState } from 'react';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
 
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
@@ -34,7 +35,6 @@ import {
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { isSigningOut } from '@/lib/auth/sign-out-sequence';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
 import { listAccounts } from '@kortix/sdk';
@@ -123,22 +123,7 @@ export function NewWorkspacePage() {
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
 
-  // The same guard `/projects/start` has. `/new` is a create surface behind the
-  // middleware, but the middleware only gates the REQUEST: a session that dies
-  // while this page is mounted (an expired token, a sign-out in another tab)
-  // leaves a signed-out user looking at a form whose submit can only 401. A
-  // soft replace is right here and a document load is not — there is no
-  // identity to flush, only a screen to leave.
-  //
-  // EXCEPT during our own sign-out, which is why `isSigningOut()` is checked
-  // first. `performSignOut` fires `SIGNED_OUT` before its document load starts,
-  // so without this the guard wins the race and the user reaches `/auth` by
-  // SOFT navigation with the App Router route cache intact — reintroducing on
-  // this one control the exact defect the hard navigation exists to remove.
-  useEffect(() => {
-    if (isSigningOut()) return;
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // Same `useSearchParams()` result the clone param reads — one subscription,
   // two params. Non-null only between "the workspace was created" and "the
@@ -159,6 +144,8 @@ export function NewWorkspacePage() {
     ...(initialSource ? { source: initialSource } : {}),
   }));
   const [touched, setTouched] = useState(false);
+  // Never cleared: the document is replaced, not re-rendered.
+  const [signingOut, setSigningOut] = useState(false);
   const reduceMotion = useReducedMotion();
   // One source for "is the icon column open" — the animation, the a11y
   // attributes and the inert gate all read the same value.
@@ -309,9 +296,14 @@ export function NewWorkspacePage() {
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground shrink-0"
-          onClick={() => void performSignOut()}
+          disabled={signingOut}
+          onClick={() => {
+            setSigningOut(true);
+            void performSignOut();
+          }}
         >
-          Log out
+          {signingOut ? <Loading className="size-4 shrink-0" /> : null}
+          {signingOut ? 'Signing out' : 'Log out'}
         </Button>
       </div>
 

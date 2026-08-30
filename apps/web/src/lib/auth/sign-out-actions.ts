@@ -29,6 +29,13 @@ import { cookies } from 'next/headers';
  * Deleting it is always SAFE: an absent cookie reads as UNATTRIBUTED, which
  * never demotes (`shouldDemoteReturnUrl`). Clearing it too eagerly costs
  * nothing; leaving it costs a wrong destination.
+ *
+ * On the sign-out path the clear is BEST EFFORT, not a guarantee. It arrives as
+ * a `Set-Cookie` on this action's response, and `runSignOut` bounds the call —
+ * so if the server is slow enough to blow the budget, `leave()` starts a
+ * document load that aborts the in-flight fetch and the deletion never applies.
+ * Acceptable precisely because the failure direction is benign: a surviving
+ * bounce cookie can only demote a return URL to the landing door.
  */
 export async function clearAuthBounceCookie(): Promise<void> {
   (await cookies()).delete(AUTH_BOUNCE_COOKIE);

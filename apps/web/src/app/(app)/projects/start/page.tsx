@@ -3,9 +3,9 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { useAuth } from '@/features/providers/auth-provider';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
-import { isSigningOut } from '@/lib/auth/sign-out-sequence';
 import { SignOutIcon } from '@phosphor-icons/react';
 import {
   clearAutoProjectSuppression,
@@ -69,15 +69,7 @@ export default function ProjectStartPage() {
     null,
   );
 
-  // `isSigningOut()` first: `StartSignOutButton` below is rendered by this same
-  // page, and `performSignOut` fires `SIGNED_OUT` before its document load
-  // starts. Without this the guard wins that race and the user reaches `/auth`
-  // by SOFT navigation, carrying the App Router route cache across the identity
-  // change — the defect the hard navigation exists to remove.
-  useEffect(() => {
-    if (isSigningOut()) return;
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // The guard has done its one job the moment this surface renders: the user
   // has now been TOLD their last workspace is gone and offered a way back

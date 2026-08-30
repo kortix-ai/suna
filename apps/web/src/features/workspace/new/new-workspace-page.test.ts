@@ -57,24 +57,24 @@ describe('/new page: no invented constraints', () => {
     // of assertion a second effect slips past when it is relaxed to a
     // `toContain`. The body is pinned too, so this stays a WRITE ban rather
     // than an effect budget.
-    const effects = code.match(/useEffect\(/g) ?? [];
-    expect(effects.length).toBe(1);
-    expect(code).toContain("if (!authLoading && !user) router.replace('/auth');");
-    // ...and it stands down during our OWN sign-out, so the soft replace cannot
-    // beat `performSignOut`'s document load to `/auth` and carry the route
-    // cache across the identity change.
-    expect(code).toContain('if (isSigningOut()) return;');
+    // Back to ZERO effects. The signed-out guard this page needs is the shared
+    // `useSignedOutRedirect()` hook — one copy for all eight surfaces that had
+    // hand-rolled it, and the only place the `isSigningOut()` stand-down has to
+    // be written.
+    expect(code).not.toContain('useEffect(');
+    expect(code).toContain('useSignedOutRedirect();');
 
     // Paired presence check: there IS a submit path, just not an eager one.
     expect(code).toContain('onSubmit');
   });
 
   test('a session that dies while the page is mounted does not leave a dead form up', () => {
-    // The same guard `/projects/start` carries. Middleware gates the REQUEST,
-    // not the mounted document: a token that expires here, or a sign-out in
-    // another tab, otherwise leaves a signed-out user on a create form whose
-    // submit can only 401.
-    expect(code).toContain('const { user, isLoading: authLoading } = useAuth();');
+    // Middleware gates the REQUEST, not the mounted document: a token that
+    // expires here, or a sign-out in another tab, otherwise leaves a signed-out
+    // user on a create form whose submit can only 401. The hook owns the
+    // redirect; this page only has to call it.
+    expect(code).toContain("from '@/lib/auth/use-signed-out-redirect'");
+    expect(code).toContain('useSignedOutRedirect();');
   });
 
   test('reads the account list on mount through the shared ["accounts"] cache key, not a page-local one', () => {
@@ -98,7 +98,12 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     // assertion could not tell the fixed control from the broken one — which
     // neither awaited the sign-out nor navigated, and so signed the user out
     // and left them sitting on this form.
-    expect(code).toContain('onClick={() => void performSignOut()}');
+    expect(code).toContain('void performSignOut();');
+    // ...and it now says so while it works. The sign-out makes a server round
+    // trip this control never made before and is bounded at four steps, which
+    // is long enough that a silent button reads as a dead one.
+    expect(code).toContain('disabled={signingOut}');
+    expect(code).toContain("{signingOut ? 'Signing out' : 'Log out'}");
 
     // Rendered ahead of the <form>, not gated behind form state — a user
     // blocked by an invalid/incomplete form must still be able to leave.

@@ -17,7 +17,7 @@
 // this file names `router.push` / `router.replace` only inside string
 // constants — never in prose that a future slice could pick up.
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
@@ -186,7 +186,7 @@ describe('nothing on an identity change can wait forever', () => {
     // of the first paint.
     const reset = code('lib/utils/reset-client-state.ts');
     expect(reset).toContain("from '@/lib/utils/time-budget'");
-    expect(reset).toContain('withTimeBudget(clearSessionIDBCache())');
+    expect(reset).toContain('withTimeBudget(clearSessionIDBCache(), idbTimeoutMs)');
     expect(reset).not.toContain('await clearSessionIDBCache()');
   });
 
@@ -211,34 +211,174 @@ describe('the signed-out route guards do not race the exit', () => {
   // guard that only checks `!user` reaches `/auth` by SOFT navigation first —
   // carrying the App Router route cache across the identity change, which is
   // the exact defect the hard navigation exists to remove.
-  const GUARDED = [
-    'features/workspace/new/new-workspace-page.tsx',
-    'app/(app)/projects/start/page.tsx',
-  ];
+  //
+  // GREP-DERIVED, never a fixed list. An earlier version of this test named two
+  // files, which is the shape condemned three describes above: the guard existed
+  // at EIGHT sites, and the six that were missed included the two where the
+  // logout controls actually render (`project-shell.tsx`, and
+  // `accounts/layout.tsx`, which mounts `AppHeader`).
 
-  test('every signed-out guard checks isSigningOut() FIRST', () => {
-    for (const file of GUARDED) {
-      const body = code(file);
-      expect(body).toContain("from '@/lib/auth/sign-out-sequence'");
+  /** Every `.ts`/`.tsx` under `src`, excluding tests. */
+  function sourceFiles(dir = ''): string[] {
+    const out: string[] = [];
+    for (const entry of readdirSync(resolve(WEB_SRC, dir), { withFileTypes: true })) {
+      const rel = dir ? `${dir}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) out.push(...sourceFiles(rel));
+      else if (/\.tsx?$/.test(entry.name) && !/\.test\./.test(entry.name)) out.push(rel);
+    }
+    return out;
+  }
 
-      const bail = body.indexOf('if (isSigningOut()) return;');
-      const guard = body.indexOf("if (!authLoading && !user) router.replace('/auth');");
-      expect(bail).toBeGreaterThan(-1);
-      expect(guard).toBeGreaterThan(bail);
+  test('the guard exists in exactly ONE place', () => {
+    // The shape, spelled either way it was spelled across the eight copies.
+    const shape = /if \(!(?:authLoading|isLoading) && !user\) router\.replace\('\/auth'\)/;
+    const holders = sourceFiles().filter((file) => shape.test(code(file)));
+
+    expect(holders).toEqual(['lib/auth/use-signed-out-redirect.ts']);
+  });
+
+  test('the one guard stands down while a sign-out is in flight', () => {
+    const hook = code('lib/auth/use-signed-out-redirect.ts');
+    const bail = hook.indexOf('if (isSigningOut()) return;');
+    const guard = hook.search(/if \(!isLoading && !user\) router\.replace\('\/auth'\)/);
+
+    expect(bail).toBeGreaterThan(-1);
+    expect(guard).toBeGreaterThan(bail);
+  });
+
+  test('every surface that used to hand-roll it now calls the hook', () => {
+    // The six that were missed plus the two that were not. Named so a silent
+    // deletion of a guard reads as a failure rather than as a passing regex.
+    for (const file of [
+      'features/workspace/project-layout/project-shell.tsx',
+      'app/(app)/accounts/layout.tsx',
+      'app/(app)/accounts/page.tsx',
+      'app/(app)/accounts/[id]/page.tsx',
+      'app/(app)/accounts/[id]/scim-setup/page.tsx',
+      'app/(app)/accounts/[id]/sso-setup/page.tsx',
+      'app/(app)/projects/start/page.tsx',
+      'features/workspace/new/new-workspace-page.tsx',
+    ]) {
+      expect({ file, calls: code(file).includes('useSignedOutRedirect();') }).toEqual({
+        file,
+        calls: true,
+      });
     }
   });
 
-  test('the latch is set before performSignOut awaits anything', () => {
+  test('the latch is set before performSignOut can throw, and refuses re-entry', () => {
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
       'export async function performSignOut()',
       '\n}\n',
     );
+    const reentry = body.indexOf('if (isSigningOut()) return;');
     const mark = body.indexOf('markSignOutStarted();');
-    const firstAwait = body.indexOf('await ');
-    expect(mark).toBeGreaterThan(-1);
-    expect(firstAwait).toBeGreaterThan(mark);
+    const firstRisk = body.indexOf('createClient()');
+
+    expect(reentry).toBeGreaterThan(-1);
+    expect(mark).toBeGreaterThan(reentry);
+    expect(firstRisk).toBeGreaterThan(mark);
   });
+
+  test('a sign-out leaves even if the wiring throws before the sequence runs', () => {
+    // `createClient()` throws synchronously on unparseable env, and callers say
+    // `void performSignOut()` — so without the `finally` that throw strands a
+    // user who has already tripped the in-flight latch, on a page whose guard
+    // now stands down for them.
+    const body = slice(
+      code('lib/auth/perform-sign-out.ts'),
+      'export async function performSignOut()',
+      '\n}\n',
+    );
+    expect(body).toContain('} finally {');
+    expect(body).toContain('if (!left) {');
+    expect(body).toContain('window.location.assign(SIGN_OUT_DESTINATION);');
+  });
+});
+
+describe('a sign-out that the server refuses still signs the user out', () => {
+  // `@supabase/auth-js@2.110.0` `GoTrueClient._signOut()` POSTs to `/logout` for
+  // EVERY scope, `'local'` included, and returns before `_removeSession()` on
+  // any error that is not 404/401/403. Offline and 5xx defeat both attempts,
+  // and nothing else on this path touches the auth cookie.
+  const wiring = code('lib/auth/perform-sign-out.ts');
+
+  test('the sequence expires the cookie whenever the session is not PROVEN gone', () => {
+    const sequence = code('lib/auth/sign-out-sequence.ts');
+    expect(sequence).toContain('if (!sessionRemoved) {');
+    expect(sequence).toContain('steps.dropAuthCookie();');
+  });
+
+  test('the wiring expires the REAL cookie, chunk variants included', () => {
+    expect(wiring).toContain("from '@/lib/supabase/constants'");
+    expect(wiring).toContain('KORTIX_SUPABASE_AUTH_COOKIE');
+    // `@supabase/ssr` splits an oversized session across `<name>.0`, `<name>.1`,
+    // … so clearing only the base name leaves a signed-in browser whenever the
+    // JWT is large.
+    expect(wiring).toContain('`${KORTIX_SUPABASE_AUTH_COOKIE}.${index}`');
+    expect(wiring).toContain('Max-Age=0');
+    // Same path the client writes it with; a mismatched path expires nothing.
+    expect(wiring).toContain('path=/');
+    expect(wiring).toContain('dropAuthCookie: expireSupabaseAuthCookie');
+  });
+});
+
+describe('the three bare logout controls now say something is happening', () => {
+  // Five of six controls make a server round trip they never made before, and
+  // the sequence is bounded at four steps — long enough that a dialog closing
+  // onto an unchanged app reads as "nothing happened" and invites a second
+  // click. Uniform treatment: disable, the shared spinner, and a label change
+  // where the label is a literal.
+  //
+  // Every assertion here is SLICED to the control. `preventDefault` appears 3
+  // times in `user-menu-shared.tsx` and 7 in `command-palette.tsx`, so a
+  // whole-file `toContain` would pass on an unrelated dropdown handler — a
+  // false green of exactly the shape this file exists to avoid.
+  const PENDING = [
+    {
+      name: 'the user menu',
+      file: 'features/layout/user-menu-shared.tsx',
+      handler: ['const performLogout = (', 'const dialog = ('],
+      control: ['<AlertDialogAction', '</AlertDialogAction>'],
+      holdsDialog: true,
+    },
+    {
+      name: 'the command palette',
+      file: 'features/workspace/command-palette.tsx',
+      handler: ['const performLogout = useCallback(', 'const handleSetTheme = useCallback('],
+      control: ['<AlertDialogAction', '</AlertDialogAction>'],
+      holdsDialog: true,
+    },
+    {
+      name: "/new's Log out",
+      file: 'features/workspace/new/new-workspace-page.tsx',
+      handler: ['<AccountPicker', 'Log out'],
+      control: ['<AccountPicker', 'Log out'],
+      holdsDialog: false,
+    },
+  ];
+
+  for (const entry of PENDING) {
+    test(`${entry.name} disables its control and shows the shared spinner`, () => {
+      // Sliced to the ACTION element, not the dialog: `AlertDialogCancel` also
+      // takes `disabled`, so a dialog-wide match was satisfied by the Cancel
+      // button and passed with the action left enabled.
+      const control = slice(code(entry.file), entry.control[0], entry.control[1]);
+      expect(control).toContain('<Loading className="size-4 shrink-0" />');
+      expect(control).toMatch(/disabled=\{(?:pending|loggingOut|signingOut)\}/);
+    });
+  }
+
+  for (const entry of PENDING.filter((candidate) => candidate.holdsDialog)) {
+    test(`${entry.name} keeps its dialog up instead of closing onto nothing`, () => {
+      // Radix closes an `AlertDialogAction` on click. Without this the user sees
+      // the dialog vanish and the unchanged app sit there for the whole budget.
+      const handler = slice(code(entry.file), entry.handler[0], entry.handler[1]);
+      expect(handler).toContain('event.preventDefault();');
+      expect(handler).toContain('performSignOut()');
+    });
+  }
 });
 
 describe('the sign-out path stays importable from the browser', () => {

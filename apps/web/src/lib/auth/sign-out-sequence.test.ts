@@ -46,6 +46,9 @@ function recorder(
         calls.push('finalizeServerSession');
         if (overrides.finalizeServerSession) await overrides.finalizeServerSession();
       },
+      dropAuthCookie: () => {
+        calls.push('dropAuthCookie');
+      },
       endSession: async (scope) => {
         calls.push(scope ? `endSession:${scope}` : 'endSession');
         scopes.push(scope);
@@ -116,7 +119,13 @@ describe('runSignOut, the signOut ERROR path', () => {
     expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
   });
 
-  test('a local retry that ALSO fails still resets and still leaves', async () => {
+  test('a local retry that ALSO fails EXPIRES THE AUTH COOKIE, then resets and leaves', async () => {
+    // The security defect this closes. `scope: 'local'` is not local: in
+    // `@supabase/auth-js@2.110.0` it still POSTs to `/logout` and, on anything
+    // that is not 404/401/403, returns BEFORE `_removeSession()`. Offline and
+    // 5xx defeat both calls, and nothing else on this path touches the auth
+    // cookie — so without this step the user waits the full budget, lands on
+    // `/auth` with a live session, and is bounced straight back into the app.
     const r = recorder({ endSession: async () => ({ error: { message: 'nope' } }) });
 
     await runSignOut(r.steps, FAST);
@@ -125,9 +134,42 @@ describe('runSignOut, the signOut ERROR path', () => {
       'finalizeServerSession',
       'endSession',
       'endSession:local',
+      'dropAuthCookie',
       'resetClientState',
       'leave',
     ]);
+  });
+
+  test('the cookie is expired BEFORE the navigation, not after', async () => {
+    // After `leave()` the document is being replaced; a write racing a document
+    // load is not a guarantee of anything.
+    const r = recorder({ endSession: async () => ({ error: { message: 'nope' } }) });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls.indexOf('dropAuthCookie')).toBeLessThan(r.calls.indexOf('leave'));
+  });
+
+  test('a clean sign-out does NOT touch the cookie', async () => {
+    // The paired negative. Without it, an unconditional `dropAuthCookie()`
+    // passes every assertion above while doing work on the happy path that
+    // Supabase has already done correctly.
+    const r = recorder();
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).not.toContain('dropAuthCookie');
+  });
+
+  test('a retry that SUCCEEDS does not touch the cookie either', async () => {
+    const r = recorder({
+      endSession: async (scope) =>
+        scope === 'local' ? { error: null } : { error: { message: 'network down' } },
+    });
+
+    await runSignOut(r.steps, FAST);
+
+    expect(r.calls).not.toContain('dropAuthCookie');
   });
 
   test('a THROWN sign-out is retried locally too', async () => {
@@ -190,6 +232,7 @@ describe('runSignOut, nothing can strand a signed-out user', () => {
     const steps: SignOutSteps = {
       finalizeServerSession: async () => {},
       endSession: async () => ({ error: null }),
+      dropAuthCookie: () => {},
       resetClientState: () =>
         new Promise<void>((resolve) => {
           resolveReset = () => {
@@ -261,7 +304,7 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
     expect(r.destinations).toEqual([SIGN_OUT_DESTINATION]);
   });
 
-  test('EVERY step hanging at once still leaves', async () => {
+  test('EVERY step hanging at once still expires the cookie and still leaves', async () => {
     const r = recorder({
       finalizeServerSession: hang,
       endSession: hang,
@@ -274,6 +317,7 @@ describe('runSignOut, a step that NEVER settles cannot trap the user', () => {
       'finalizeServerSession',
       'endSession',
       'endSession:local',
+      'dropAuthCookie',
       'resetClientState',
       'leave',
     ]);

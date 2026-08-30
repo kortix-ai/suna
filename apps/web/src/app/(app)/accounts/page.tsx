@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
@@ -22,7 +23,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export default function AccountsPage() {
@@ -39,9 +40,7 @@ export default function AccountsPage() {
   // this only avoids showing an affordance a non-admin can't use.
   const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],

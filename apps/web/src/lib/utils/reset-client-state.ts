@@ -35,7 +35,11 @@ import { useCurrentAccountStore } from '@/stores/current-account-store';
  * them even if the purge never lands. Everything that would actually leak
  * across identities is already gone by then.
  */
-export async function resetClientState(): Promise<void> {
+export async function resetClientState({
+  // Injectable ONLY so the "a hung IndexedDB purge still settles" test does not
+  // have to wait two real seconds. No caller passes it.
+  idbTimeoutMs,
+}: { idbTimeoutMs?: number } = {}): Promise<void> {
   try {
     getSharedQueryClient()?.clear();
   } catch (error) {
@@ -50,7 +54,7 @@ export async function resetClientState(): Promise<void> {
 
   clearUserLocalStorage();
 
-  const purged = await withTimeBudget(clearSessionIDBCache());
+  const purged = await withTimeBudget(clearSessionIDBCache(), idbTimeoutMs);
   if (purged.status !== 'settled') {
     console.error('[resetClientState] session IDB purge did not complete:', purged);
   }
