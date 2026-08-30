@@ -37,6 +37,25 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
+/** Who may see a craft in the store. `private` = the submitting account only. */
+export const craftVisibilityEnum = kortixSchema.enum('craft_visibility', ['public', 'private']);
+
+/**
+ * Index health for one craft.
+ *
+ *   active       the last crawl succeeded; the store lists it.
+ *   unavailable  the last crawl failed (repo gone, manifest broken). Listed to
+ *                its owner with the error, never offered for install.
+ *   yanked       withdrawn. Because the files live in the author's repo, a yank
+ *                is advisory at the source and enforced at the index — the same
+ *                stance MARKETPLACE.md takes for registry items.
+ */
+export const craftStatusEnum = kortixSchema.enum('craft_status', [
+  'active',
+  'unavailable',
+  'yanked',
+]);
+
 /**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
  * below. Where `scope` says which subsystem OWNS a row, `strategy` says how (and
@@ -1216,6 +1235,12 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
+    // The craft that contributed this trigger, materialized from the manifest
+    // entry's `craft:` field by `reconcileProjectTriggerRuntime`. This is the
+    // join that makes a craft's run history one indexed query over
+    // `project_trigger_executions` instead of a git read per row. NULL for every
+    // hand-authored trigger, which is the overwhelming majority.
+    craftSlug: varchar('craft_slug', { length: 128 }),
     // Materialized schedule catalog. The repo manifest remains the source of
     // truth, but the timing path reads only these indexed columns. Nullable
     // columns keep mixed-version deploys safe while existing rows are cataloged.
@@ -1244,6 +1269,13 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+    // NOTE: a partial index `idx_project_trigger_runtime_craft`
+    // ((project_id, craft_slug) WHERE craft_slug IS NOT NULL) ALSO exists — it
+    // serves the craft-runs join. It is deliberately NOT declared here, for the
+    // same reason as `idx_project_sessions_account_active` below: this table
+    // already exists, so the index must be built CONCURRENTLY, and re-adding it
+    // here would make `db:generate` emit a conflicting plain `CREATE INDEX`.
+    // Manage it via migrations/20260830140400000_project_trigger_runtime_craft_index.concurrent.ts.
   ],
 );
 
@@ -1448,6 +1480,142 @@ export const projectTriggerExecutions = kortixSchema.table(
       table.lockedUntil,
     ),
     index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
+  ],
+);
+
+/**
+ * The craft index — the catalogue the Crafts store renders.
+ *
+ * A craft is a GitHub repo whose own `kortix.yaml` declares agents, triggers and
+ * connectors. Kortix indexes that manifest; it never hosts the files. This is
+ * the same index-not-host stance `packages/registry/MARKETPLACE.md` sets for
+ * registry items, and the reason a row is a projection of public git state
+ * rather than a source of truth: every derived column below is re-derivable by
+ * re-crawling `(repo_owner, repo_name, git_ref)`.
+ *
+ * A craft repo needs ONLY a `kortix.yaml` — no `registry.json`. The submit path
+ * fetches the manifest, validates it with `@kortix/manifest-schema`, and derives
+ * the card with the same `extractTriggers` / `extractConnectors` parsers the
+ * runtime uses, so the store can never show a craft the runtime would reject.
+ */
+export const crafts = kortixSchema.table(
+  'crafts',
+  {
+    craftId: uuid('craft_id').defaultRandom().primaryKey(),
+    /** Derived from the repo name; the identity a project's manifest records. */
+    slug: varchar('slug', { length: 128 }).notNull(),
+    repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
+    repoName: varchar('repo_name', { length: 255 }).notNull(),
+    /** Branch or tag crawled. NULL = the repo's default branch. */
+    gitRef: varchar('git_ref', { length: 255 }),
+    /** Commit sha the cached manifest below was read at. */
+    resolvedSha: varchar('resolved_sha', { length: 64 }),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    /**
+     * The parsed `kortix.yaml` at `resolved_sha`. Cached so the store, the
+     * detail view and the install-prompt builder all read one crawl instead of
+     * re-fetching from GitHub per request.
+     */
+    manifest: jsonb('manifest').default({}).$type<Record<string, unknown>>().notNull(),
+    // Derived from `manifest` at crawl time. Denormalized so the store can
+    // filter and render a card without parsing YAML per row.
+    agents: jsonb('agents').default([]).$type<unknown[]>().notNull(),
+    triggers: jsonb('triggers').default([]).$type<unknown[]>().notNull(),
+    connectors: jsonb('connectors').default([]).$type<unknown[]>().notNull(),
+    skills: jsonb('skills').default([]).$type<string[]>().notNull(),
+    envRequired: jsonb('env_required').default([]).$type<string[]>().notNull(),
+    /** GitHub stargazers at the last crawl. NULL when the host did not report it. */
+    stars: integer('stars'),
+    installCount: integer('install_count').default(0).notNull(),
+    visibility: craftVisibilityEnum('visibility').default('private').notNull(),
+    /** Submitting account. NULL for a craft Kortix publishes itself. */
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    submittedBy: uuid('submitted_by'),
+    status: craftStatusEnum('status').default('active').notNull(),
+    lastCrawledAt: timestamp('last_crawled_at', { withTimezone: true }),
+    /** Why the last crawl failed. Set with `status = 'unavailable'`. */
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // One row per crawled ref. `git_ref` is nullable ("the default branch"), and
+    // a plain unique index treats every NULL as distinct — which would let the
+    // same repo be submitted unbounded times. COALESCE collapses them; '' is
+    // safe as the sentinel because a git ref is never empty.
+    uniqueIndex('idx_crafts_repo_ref').on(
+      table.repoOwner,
+      table.repoName,
+      sql`coalesce(${table.gitRef}, '')`,
+    ),
+    index('idx_crafts_listing').on(table.visibility, table.status),
+    index('idx_crafts_account').on(table.accountId),
+    index('idx_crafts_slug').on(table.slug),
+  ],
+);
+
+/**
+ * Which crafts one project has installed — a projection of that project's own
+ * `kortix.yaml` `crafts:` block, reconciled by `reconcileProjectCrafts` exactly
+ * as `project_trigger_runtime` is reconciled from `triggers:`.
+ *
+ * The manifest is the source of truth. This table exists so "what is installed
+ * here" and "whose runs are these" are indexed lookups instead of a git read,
+ * and so the periodic sweep heals a hand-edited manifest or a raw git push.
+ * Never write a field here that the manifest cannot express.
+ */
+export const projectCrafts = kortixSchema.table(
+  'project_crafts',
+  {
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** `crafts[].slug` from the project's manifest. */
+    slug: varchar('slug', { length: 128 }).notNull(),
+    /**
+     * The index row this was installed from. NULL when the manifest names a
+     * repo the index does not carry — a craft installed by hand, or one whose
+     * index row was deleted. The install stays valid either way, which is why
+     * this is `set null` and not `cascade`: the project's manifest, not this
+     * row, is what makes the craft installed.
+     */
+    craftId: uuid('craft_id').references(() => crafts.craftId, { onDelete: 'set null' }),
+    repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
+    repoName: varchar('repo_name', { length: 255 }).notNull(),
+    gitRef: varchar('git_ref', { length: 255 }),
+    /** The commit sha recorded at install — what "this version" means here. */
+    resolvedSha: varchar('resolved_sha', { length: 64 }),
+    title: varchar('title', { length: 255 }).notNull(),
+    /**
+     * Whether this craft's triggers are armed. Mirrors the manifest `enabled`
+     * of the triggers it owns; NULL while no trigger has been cataloged yet.
+     */
+    enabled: boolean('enabled'),
+    /**
+     * The session that performed the install, for the "how did this get here"
+     * trail. Its FK is named explicitly below — the name drizzle derives from
+     * the column path is 66 bytes, past Postgres's 63-byte identifier limit,
+     * and would be silently truncated.
+     */
+    installSessionId: text('install_session_id'),
+    /** Mirror of the manifest `owns` map — what uninstall must remove. */
+    owns: jsonb('owns').default({}).$type<Record<string, string[]>>().notNull(),
+    installedAt: timestamp('installed_at', { withTimezone: true }),
+    /** Why the last reconcile could not fully resolve this entry. */
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.projectId, table.slug] }),
+    foreignKey({
+      columns: [table.installSessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'project_crafts_install_session_fk',
+    }).onDelete('set null'),
+    index('idx_project_crafts_craft').on(table.craftId),
+    index('idx_project_crafts_install_session').on(table.installSessionId),
   ],
 );
 
