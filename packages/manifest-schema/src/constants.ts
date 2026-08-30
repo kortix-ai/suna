@@ -11,8 +11,24 @@
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
-/** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors). */
+/** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors, crafts). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
+
+/**
+ * A craft's source repository, as `owner/repo`. Deliberately NOT a URL: the
+ * manifest records provenance in the shortest form that still resolves, and
+ * the host is implied (GitHub). The submit API normalizes every URL/SSH/clone
+ * form down to this before it is ever written here.
+ */
+export const CRAFT_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * The four entity kinds a craft can contribute, and therefore the only keys
+ * `crafts[].owns` may carry. Uninstall reads this map to know what to remove,
+ * so an unknown key here would silently strand files in the project.
+ */
+export const CRAFT_OWNED_KINDS = ['agents', 'skills', 'connectors', 'triggers'] as const;
+export type CraftOwnedKind = (typeof CRAFT_OWNED_KINDS)[number];
 
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;

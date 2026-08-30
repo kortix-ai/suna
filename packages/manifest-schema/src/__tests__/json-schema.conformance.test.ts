@@ -750,6 +750,123 @@ connectors:
     input:
       'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  site:\n    path: .\n    type: static\n    readiness_path: /\n',
   },
+
+  // ─── crafts (v2-only) ────────────────────────────────────────────────
+  {
+    name: 'v2: installed craft with owned agent, trigger and connector is accepted',
+    format: 'yaml',
+    valid: true,
+    input: `
+kortix_version: 2
+default_agent: w
+crafts:
+  - slug: seo-watch
+    repo: acme/seo-craft
+    ref: 9f3c1a7ecb4d21f0a8b3c5d7e9f1a2b3c4d5e6f7
+    version: v1.2.0
+    title: SEO watch
+    installed_at: "2026-08-30T09:14:02Z"
+    owns:
+      agents: [seo-writer]
+      skills: [seo-audit]
+      connectors: [search-console]
+      triggers: [seo-weekly]
+agents:
+  w: {}
+  seo-writer:
+    craft: seo-watch
+    skills: [seo-audit]
+connectors:
+  - slug: search-console
+    craft: seo-watch
+    provider: composio
+    app: google_search_console
+triggers:
+  - slug: seo-weekly
+    name: Weekly SEO sweep
+    type: cron
+    craft: seo-watch
+    agent: seo-writer
+    enabled: false
+    cron: "0 0 9 * * 1"
+    prompt: Audit the site and open a CR with the findings.
+`,
+  },
+  {
+    name: 'v2: minimal craft entry (slug + repo only) is accepted',
+    format: 'yaml',
+    valid: true,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: kortix-ai/standup\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: craft repo that is not owner/repo rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: https://github.com/kortix-ai/standup\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: craft entry missing repo rejected',
+    format: 'yaml',
+    valid: false,
+    input: 'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: craft slug that is not a slug rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: Stand Up\n    repo: kortix-ai/standup\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: crafts as a map rather than a list rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  standup:\n    repo: kortix-ai/standup\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: unknown owns kind rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: kortix-ai/standup\n    owns:\n      secrets: [SLACK_TOKEN]\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: owns entry that is not a slug rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: kortix-ai/standup\n    owns:\n      triggers: ["Not A Slug"]\nagents:\n  w: {}\n',
+  },
+  {
+    name: 'v2: malformed craft ref on a trigger rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: kortix-ai/standup\nagents:\n  w: {}\ntriggers:\n  - slug: t\n    type: cron\n    craft: "Stand Up"\n    cron: "0 0 9 * * 1"\n    prompt: go\n',
+  },
+  {
+    name: 'v2: malformed craft ref on a connector rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: kortix-ai/standup\nagents:\n  w: {}\nconnectors:\n  - slug: c\n    provider: mcp\n    url: https://mcp.example.com\n    craft: "Stand Up"\n',
+  },
+  {
+    name: 'v2: malformed craft ref on an agent block rejected',
+    format: 'yaml',
+    valid: false,
+    input:
+      'kortix_version: 2\ndefault_agent: w\ncrafts:\n  - slug: standup\n    repo: kortix-ai/standup\nagents:\n  w:\n    craft: "Stand Up"\n',
+  },
+  {
+    name: 'v1: crafts section rejected (v2-only concept)',
+    format: 'toml',
+    valid: false,
+    input: 'kortix_version = 1\n\n[[crafts]]\nslug = "standup"\nrepo = "kortix-ai/standup"\n',
+  },
 ];
 
 describe('JSON Schema vs. imperative validator — accept/reject conformance', () => {
@@ -885,6 +1002,40 @@ describe('Known divergence: cross-field rules only the imperative validator enfo
     const toml =
       'kortix_version = 1\n[[connectors]]\nslug = "g"\nprovider = "graphql"\nendpoint = "https://x/graphql"\n[connectors.auth]\ntype = "oauth1"\n';
     expect(validateManifest(toml, 'toml').valid).toBe(false);
+    expect(validateCombined(parseToml(toml))).toBe(true);
+  });
+
+  // A `craft:` back-reference must name an entry in `crafts` — the same
+  // dynamic-set shape as `triggers[].agent` vs `agents`, and unencodable for
+  // the same reason. The SHAPE of `craft:` (a slug) IS encoded, so only the
+  // "does it resolve" half diverges.
+  test('a trigger craft naming an undeclared craft: imperative rejects, schema accepts', () => {
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * 1"\n    prompt: go\n    craft: ghost\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('a connector craft naming an undeclared craft: imperative rejects, schema accepts', () => {
+    const yaml =
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nconnectors:\n  - slug: c\n    provider: mcp\n    url: https://mcp.example.com\n    craft: ghost\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  test('an agent craft naming an undeclared craft: imperative rejects, schema accepts', () => {
+    const yaml = 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    craft: ghost\n';
+    expect(validateManifest(yaml, 'yaml').valid).toBe(false);
+    expect(validateCombined(parseYaml(yaml))).toBe(true);
+  });
+
+  // v1 has no `crafts:` section, so a `craft:` key there can never resolve —
+  // it is inert metadata rather than an error. Pinned so a future change that
+  // starts rejecting it is a deliberate diff.
+  test('a craft ref in a v1 manifest is inert: both validators accept it', () => {
+    const toml =
+      'kortix_version = 1\n[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 0 9 * * 1"\nprompt = "go"\ncraft = "ghost"\n';
+    expect(validateManifest(toml, 'toml').valid).toBe(true);
     expect(validateCombined(parseToml(toml))).toBe(true);
   });
 });

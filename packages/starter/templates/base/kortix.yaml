@@ -181,3 +181,30 @@ triggers:
 # (Customize → Channels), not committed to git. The channel connection
 # itself still shows up here as a `connectors` entry with
 # `provider: channel` once you connect one — that part is unchanged.
+
+# ─── Crafts ──────────────────────────────────────────────────────────────
+# A craft is a GitHub repo whose own kortix.yaml declares agents, triggers and
+# connectors. Installing one MERGES that declaration into this project, so a
+# project can hold several crafts side by side.
+#
+# You do not write this section by hand — the install flow writes it, in the
+# same commit that adds the agents/skills/triggers the craft contributes. That
+# is what makes `git revert` a working uninstall.
+#
+# Each contributed entity ALSO carries `craft: <slug>` on its own entry above
+# (a trigger, a connector, an `agents:` block). The trigger side is load-
+# bearing: the platform materializes it so "which runs belong to this craft"
+# is one indexed lookup. `owns` is the summary uninstall reads.
+#
+# crafts:
+#   - slug: seo-watch
+#     repo: acme/seo-craft           # owner/repo — where it came from
+#     ref: 9f3c1a7e…                 # commit sha resolved at install
+#     version: v1.2.0                # display only; `ref` is the real version
+#     title: SEO watch
+#     installed_at: "2026-08-30T09:14:02Z"
+#     owns:
+#       agents: [seo-writer]
+#       skills: [seo-audit]
+#       connectors: [search-console]
+#       triggers: [seo-weekly]

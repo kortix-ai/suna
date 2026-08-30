@@ -199,6 +199,10 @@
                 "name": {
                   "type": "string"
                 },
+                "craft": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
                 "agent": {
                   "type": "string",
                   "minLength": 1
@@ -470,6 +474,10 @@
                 "name": {
                   "type": "string",
                   "minLength": 1
+                },
+                "craft": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
                 "provider": {
                   "type": "string",
@@ -761,6 +769,7 @@
             }
           },
           "apps": false,
+          "crafts": false,
           "agents": {
             "type": "array",
             "items": {
@@ -974,6 +983,10 @@
                   "type": "boolean"
                 },
                 "sandbox": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "craft": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
@@ -1294,6 +1307,10 @@
                 "name": {
                   "type": "string"
                 },
+                "craft": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
                 "agent": {
                   "type": "string",
                   "minLength": 1
@@ -1565,6 +1582,10 @@
                 "name": {
                   "type": "string",
                   "minLength": 1
+                },
+                "craft": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
                 "provider": {
                   "type": "string",
@@ -2032,6 +2053,76 @@
                   }
                 }
               ]
+            }
+          },
+          "crafts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "slug",
+                "repo"
+              ],
+              "properties": {
+                "slug": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                },
+                "repo": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\/[A-Za-z0-9][A-Za-z0-9._-]*$"
+                },
+                "ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                },
+                "installed_at": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "owns": {
+                  "type": "object",
+                  "properties": {
+                    "agents": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      }
+                    },
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      }
+                    },
+                    "connectors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      }
+                    },
+                    "triggers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": true
             }
           },
           "channels": false

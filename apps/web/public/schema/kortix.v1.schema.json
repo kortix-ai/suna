@@ -176,6 +176,10 @@
           "name": {
             "type": "string"
           },
+          "craft": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+          },
           "agent": {
             "type": "string",
             "minLength": 1
@@ -447,6 +451,10 @@
           "name": {
             "type": "string",
             "minLength": 1
+          },
+          "craft": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
           "provider": {
             "type": "string",
@@ -738,6 +746,7 @@
       }
     },
     "apps": false,
+    "crafts": false,
     "agents": {
       "type": "array",
       "items": {
