@@ -4,7 +4,8 @@ import { CheckIcon, DownloadSimpleIcon, PlusIcon, StarIcon } from '@phosphor-ico
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
-import { craftRepoSlug, formatCount, type Craft } from './crafts-catalog';
+import { craftVisual } from './craft-visual';
+import { craftIsUpload, craftRepoSlug, formatCount, type Craft } from './crafts-catalog';
 
 /**
  * The craft card — minimal on purpose: tile + title + install affordance on
@@ -18,11 +19,18 @@ import { craftRepoSlug, formatCount, type Craft } from './crafts-catalog';
  */
 export function CraftCard({
   craft,
+  installed = false,
   onOpen,
   glass = false,
   compact = false,
 }: {
   craft: Craft;
+  /**
+   * Whether THIS project has it. Passed in rather than read off the craft: the
+   * index row is account-global, and the same craft is installed in one project
+   * and not another. `useProjectCrafts` is the only source of this answer.
+   */
+  installed?: boolean;
   onOpen: () => void;
   /** Translucent fill for surfaces painted over the wallpaper (project home). */
   glass?: boolean;
@@ -34,12 +42,13 @@ export function CraftCard({
    */
   compact?: boolean;
 }) {
-  const Icon = craft.icon;
+  const { Icon, color, bgColor } = craftVisual(craft.slug);
+  const upload = craftIsUpload(craft);
   return (
     <button
       type="button"
       onClick={onOpen}
-      aria-label={craft.installed ? `${craft.title} — installed` : `Install ${craft.title}`}
+      aria-label={installed ? `${craft.title} — installed` : `Install ${craft.title}`}
       className={cn(
         'group hover:border-foreground/20 flex w-full cursor-pointer flex-col gap-2.5 rounded-md border p-4 text-left',
         'transition-[border-color,transform] duration-150 hover:-translate-y-0.5 active:scale-[0.99]',
@@ -47,13 +56,13 @@ export function CraftCard({
       )}
     >
       <div className="flex items-center gap-2.5">
-        {/* Tinted status tile — the sanctioned tinted-tile + fill-icon pattern,
-            colored by the craft's own `color`/`bgColor` pair. */}
+        {/* Tinted status tile — the sanctioned tinted-tile + fill-icon pattern.
+            The pair is derived from the slug (see `craftVisual`), never stored. */}
         <span
           className={cn(
             'flex size-8 shrink-0 items-center justify-center rounded-sm',
-            craft.bgColor,
-            craft.color,
+            bgColor,
+            color,
           )}
         >
           <Icon weight="fill" className="size-5" aria-hidden />
@@ -62,7 +71,7 @@ export function CraftCard({
         {/* Installed crafts carry the status pill (earned green, like the
             connect dots); open ones carry the install affordance — a styled
             span, not a button, so the card stays the one control. */}
-        {craft.installed ? (
+        {installed ? (
           <span
             aria-label="Installed"
             className={cn(
@@ -87,17 +96,24 @@ export function CraftCard({
         )}
       </div>
       <p className="text-muted-foreground line-clamp-2 min-h-9 text-xs leading-relaxed text-pretty">
-        {craft.description}
+        {craft.description ?? 'No description in its kortix.yaml.'}
       </p>
       <div className="text-muted-foreground mt-auto flex items-center gap-1.5 pt-0.5 text-xs">
         <span className="min-w-0 truncate font-mono">{craftRepoSlug(craft)}</span>
-        <span aria-hidden className="text-muted-foreground/40 shrink-0">
-          &bull;
-        </span>
-        <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
-          <StarIcon weight="fill" className="size-3" aria-hidden />
-          {formatCount(craft.repo.stars)}
-        </span>
+        {/* Stars are a GitHub fact. An upload has none, and `0` would read as
+            "nobody starred it" rather than "the question does not apply", so the
+            metric is omitted instead of zeroed. */}
+        {upload || craft.stars === null ? null : (
+          <>
+            <span aria-hidden className="text-muted-foreground/40 shrink-0">
+              &bull;
+            </span>
+            <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
+              <StarIcon weight="fill" className="size-3" aria-hidden />
+              {formatCount(craft.stars)}
+            </span>
+          </>
+        )}
         {compact ? null : (
           <>
             <span aria-hidden className="text-muted-foreground/40 shrink-0">
@@ -105,7 +121,7 @@ export function CraftCard({
             </span>
             <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
               <DownloadSimpleIcon className="size-3" aria-hidden />
-              {formatCount(craft.installs)}
+              {formatCount(craft.install_count)}
             </span>
           </>
         )}
@@ -116,9 +132,7 @@ export function CraftCard({
 
 /**
  * The dashed end-of-row card. On the project home it is a LINK into the store;
- * in the store it is a BUTTON that reports the builder is not here yet — a
- * dead click is never acceptable, and an honest one-line answer beats a fake
- * flow in this UI phase.
+ * in the store it is a BUTTON that opens the add-a-craft modal.
  */
 export function CraftBuildCard({
   glass = false,

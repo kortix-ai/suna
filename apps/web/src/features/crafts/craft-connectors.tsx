@@ -1,14 +1,11 @@
 'use client';
 
+import { CheckCircleIcon } from '@phosphor-icons/react';
 import Image from 'next/image';
 
 import { cn } from '@/lib/utils';
-import {
-  connectorFor,
-  connectorInitials,
-  type Connector,
-  type CraftConnector,
-} from './connectors-catalog';
+import { connectorFor, connectorInitials, type Connector } from './connectors-catalog';
+import type { CraftConnectorRow } from './crafts-catalog';
 
 /**
  * A connector's mark in a tile — the `ProviderLogo` pattern at the dense size
@@ -50,20 +47,32 @@ function ConnectorMark({ connector }: { connector: Connector }) {
 }
 
 /**
- * What a craft plugs into, and what it does through each app.
+ * What a craft plugs into, and whether THIS project already has it.
  *
- * Titled "Connectors it uses" rather than "available connectors" on purpose:
- * this list is the craft's REQUIREMENTS, and it says nothing about whether the
- * viewer has connected them. In the UI phase there is no connection state to
- * read, and a row that merely LOOKS like a status would claim one — so the
- * heading carries the meaning and no row paints a connected/disconnected mark.
- * When the real flow lands, per-connector state slots into the row's trailing
- * edge and the roles move left.
+ * The list is the craft's REQUIREMENTS, read from its `kortix.yaml`. The
+ * trailing edge is the project's answer: `connected` marks an app the project
+ * already has a working connector for, so the person installing can see what
+ * the install will have to ask them for.
+ *
+ * `connected` is deliberately optional and defaults to nothing rendered. A row
+ * that showed "not connected" while the project's connector list was still
+ * loading would claim a fact it does not have, and "you must connect this"
+ * is the most alarming thing this panel can say — it must never be a flicker.
  *
  * One bordered panel with flush rows: padding sits on the rows, never on the
  * bordered element, so the `border-t` seams run edge to edge.
  */
-export function CraftConnectors({ connectors }: { connectors: CraftConnector[] }) {
+export function CraftConnectors({
+  connectors,
+  connected,
+}: {
+  connectors: CraftConnectorRow[];
+  /**
+   * App ids the project already has connected. `undefined` while unknown (not
+   * yet loaded, or the caller has no project) — no row is marked either way.
+   */
+  connected?: ReadonlySet<string>;
+}) {
   if (connectors.length === 0) return null;
 
   return (
@@ -71,17 +80,32 @@ export function CraftConnectors({ connectors }: { connectors: CraftConnector[] }
       <h3 className="text-foreground text-sm font-medium">Connectors it uses</h3>
       <ul className="bg-popover overflow-hidden rounded-md border">
         {connectors.map((use, index) => {
-          const connector = connectorFor(use);
+          const connector = connectorFor(use.id);
+          // The manifest slug is the name the project's connector carries, so
+          // it is checked first; the toolkit id catches a connector a human
+          // named after its app rather than after the craft's alias.
+          const isConnected = connected ? connected.has(use.slug) || connected.has(use.id) : undefined;
           return (
             <li
-              key={use.id}
+              key={use.slug || use.id}
               className={cn('flex items-center gap-2.5 px-3 py-2', index > 0 && 'border-t')}
             >
               <ConnectorMark connector={connector} />
               <span className="text-foreground min-w-0 truncate text-xs font-medium">
                 {connector.name}
               </span>
-              <span className="text-muted-foreground ml-auto shrink-0 text-xs">{use.role}</span>
+              {isConnected ? (
+                <span className="text-kortix-green ml-auto inline-flex shrink-0 items-center gap-1 text-xs">
+                  <CheckCircleIcon weight="fill" className="size-3.5" aria-hidden />
+                  Connected
+                </span>
+              ) : (
+                // Not "Not connected": with `connected` undefined we do not
+                // know, and even when we do, the install session is what asks.
+                <span className="text-muted-foreground ml-auto shrink-0 text-xs">
+                  {connected ? 'Setup during install' : ''}
+                </span>
+              )}
             </li>
           );
         })}

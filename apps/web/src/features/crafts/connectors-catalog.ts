@@ -1,21 +1,19 @@
 /**
- * The connectors a craft plugs into — STATIC MOCK DATA for the UI/UX phase.
+ * Display names and marks for the third-party apps a craft plugs into.
  *
- * Nothing here is fetched and nothing reflects the viewer's account: this
- * module answers "what does this craft touch?", never "have I connected it?".
- * The real flow reads the project's connectors through the SDK
- * (`AdminConnector`, `ConnectorAppIcon`) and can then show per-connector state.
- * Until it does, the UI must not imply a connection that does not exist.
+ * This is a PRESENTATION table, not data: the craft's requirement list comes
+ * from its `kortix.yaml` through `Craft.connectors`, and this module only
+ * answers "what is this app called, and what is its logo". An app with no row
+ * here still renders — {@link connectorFor} falls back to initials — so a craft
+ * may require anything without a code change.
  *
- * Two tables, deliberately normalized:
- *   - {@link CONNECTORS} — one entry per third-party app: display name + mark.
- *   - `Craft.connectors` — per-craft ids paired with what THAT craft does
- *     through the app. The role is per-pairing, not per-app: GitHub is
- *     "opens issues and PRs" for Error Triage and "opens the upgrade PR" for
- *     Dependency Watch.
+ * Whether the VIEWER has connected an app is a different question, answered by
+ * the project's own connector list (`listConnectors`) at the render site. The
+ * two are deliberately not merged: a craft's requirements are global, a
+ * connection is per-project.
  *
  * String-only on purpose — no icon component imports — so this stays safe to
- * read from a server component, unlike `crafts-catalog.ts`.
+ * read from a server component.
  */
 
 export interface Connector {
@@ -55,7 +53,7 @@ const mark = (id: string, name: string): Connector => ({
   logo: `/connector-logos/${id}.svg`,
 });
 
-/** Every app the mock catalog references, keyed by id. */
+/** The apps we ship a mark for, keyed by the Composio toolkit slug. */
 export const CONNECTORS: Record<string, Connector> = {
   sentry: mark('sentry', 'Sentry'),
   datadog: mark('datadog', 'Datadog'),
@@ -76,24 +74,15 @@ export const CONNECTORS: Record<string, Connector> = {
   notion: mark('notion', 'Notion'),
 };
 
-/** One app a craft uses, and what the craft does through it. */
-export interface CraftConnector {
-  /** Key into {@link CONNECTORS}. */
-  id: string;
-  /**
-   * What this craft does through this app — one clause, imperative, ≤ 24 chars
-   * so the row never wraps at the modal's width.
-   */
-  role: string;
-}
-
 /**
- * Resolves a craft's connector to its registry entry. Falls back to a
- * name-from-id entry with no mark so an id that outlives its registry row
- * renders initials instead of crashing the modal.
+ * Resolves an app id to its registry entry. Falls back to a name-from-id entry
+ * with no mark, so an app we ship no logo for renders initials instead of
+ * crashing the modal. Called with whatever the craft's manifest declared, which
+ * is why the fallback is the normal case rather than the error case.
  */
-export function connectorFor(use: CraftConnector): Connector {
-  return CONNECTORS[use.id] ?? { id: use.id, name: use.id };
+export function connectorFor(id: string): Connector {
+  const key = id.trim().toLowerCase();
+  return CONNECTORS[key] ?? { id: key, name: id };
 }
 
 /** Two-letter monogram for a connector with no mark — the `ProviderLogo` fallback. */

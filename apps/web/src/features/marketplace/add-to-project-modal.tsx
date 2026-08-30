@@ -48,7 +48,7 @@ import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk
 import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
 import { useProjectPicker } from './marketplace-project-picker';
-import { prepareMarketplaceInstallSessionNavigation } from './marketplace-session-navigation';
+import { prepareInstallSessionNavigation } from '../session/install-session-navigation';
 
 /** Sentinel `Select` value for "create a new project" (real project ids are
  *  UUIDs, so this can never collide). */
@@ -166,7 +166,7 @@ export function AddToProjectModal({
           ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
           : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
               .session_id;
-        const sessionHref = prepareMarketplaceInstallSessionNavigation(
+        const sessionHref = prepareInstallSessionNavigation(
           queryClient,
           router,
           project.project_id,
@@ -180,7 +180,7 @@ export function AddToProjectModal({
 
       const projectId = target;
       const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
-      const sessionHref = prepareMarketplaceInstallSessionNavigation(
+      const sessionHref = prepareInstallSessionNavigation(
         queryClient,
         router,
         projectId,

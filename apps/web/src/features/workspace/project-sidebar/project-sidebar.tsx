@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sidebar';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
+import { ProjectCraftsNavItem } from '@/features/workspace/project-sidebar/footer/project-crafts-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
@@ -230,6 +231,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   is a project surface you configure and operate, not a
                   late-arriving alert. Self-hides until the `apps` flag is on. */}
               <ProjectAppsNavItem />
+              {/* Crafts sits with Apps for the same reason: a project surface
+                  you configure and operate. Before this row the store had no
+                  entry point outside the project home's preview grid.
+                  Self-hides until the `crafts` flag is on. */}
+              <ProjectCraftsNavItem />
             </SidebarMenu>
           </SidebarGroup>
 

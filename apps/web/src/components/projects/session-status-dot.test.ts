@@ -7,9 +7,15 @@ const read = (relative: string) => readFileSync(join(root, relative), 'utf8');
 
 const DOT = 'src/components/projects/session-status-dot.tsx';
 const SIDEBAR = 'src/features/workspace/project-sidebar/project-session-list.tsx';
+const DOT_WRAPPER = 'src/features/crafts/craft-run-dot.tsx';
 const ROW = 'src/features/crafts/craft-report-row.tsx';
 const LEGEND = 'src/features/crafts/craft-run-legend.tsx';
 const DETAIL = 'src/features/crafts/craft-report-detail.tsx';
+
+/** Every craft surface that paints a run's state, directly or through the
+ *  run-dot wrapper. `craft-run-dot.tsx` is the wrapper the strips share; it adds
+ *  the link and the tooltip and owns no paint of its own. */
+const CRAFT_SURFACES = [DOT_WRAPPER, ROW, LEGEND, DETAIL];
 
 /**
  * The status circle's paint table is a SINGLE source of truth. It lived inside
@@ -24,17 +30,35 @@ const DETAIL = 'src/features/crafts/craft-report-detail.tsx';
 describe('session status dot is the only paint table', () => {
   test('only session-status-dot.tsx defines STATUS_DOT_STYLE', () => {
     expect(read(DOT)).toContain('const STATUS_DOT_STYLE');
-    for (const file of [SIDEBAR, ROW, LEGEND, DETAIL]) {
+    for (const file of [SIDEBAR, ...CRAFT_SURFACES]) {
       expect(read(file)).not.toContain('STATUS_DOT_STYLE');
     }
   });
 
   test('every consumer imports the dot rather than drawing its own circle', () => {
-    for (const file of [SIDEBAR, ROW, LEGEND, DETAIL]) {
+    // ROW reaches the glyph through `craft-run-dot`, not directly — the link
+    // and tooltip wrapper is shared, so only the wrapper and the surfaces that
+    // render a bare glyph import the dot itself.
+    for (const file of [SIDEBAR, DOT_WRAPPER, LEGEND, DETAIL]) {
       expect(read(file)).toContain("from '@/components/projects/session-status-dot'");
+    }
+    expect(read(ROW)).toContain("from './craft-run-dot'");
+    for (const file of [SIDEBAR, ...CRAFT_SURFACES]) {
       // A hand-rolled <circle> here would be a second glyph by another name.
       expect(read(file)).not.toContain('<circle');
     }
+  });
+
+  test('the two run-only states live in the same paint table, not a fork', () => {
+    // A craft run is `retrying` or `skipped` and a session never is. Forking
+    // the table for two rows is how `done` ends up green on one screen.
+    const source = read(DOT);
+    expect(source).toContain("retrying: { color: 'var(--kortix-yellow)'");
+    expect(source).toContain("skipped: { color: 'var(--muted-foreground)', glyph: 'dash'");
+    // And they must NOT have been added to the session union: no session can be
+    // either, so every session surface would gain two dead cases.
+    expect(read('src/components/projects/session-label.ts')).not.toContain('retrying');
+    expect(read('src/components/projects/session-label.ts')).not.toContain("skipped");
   });
 
   test('green is spent on exactly the two live/actionable states', () => {

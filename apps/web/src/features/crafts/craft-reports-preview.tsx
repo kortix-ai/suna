@@ -1,15 +1,19 @@
 'use client';
 
 import { ArrowRightIcon } from '@phosphor-icons/react';
+import { useMemo } from 'react';
+
+import { useProjectCraftRuns, useProjectCrafts } from '@kortix/sdk/react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { craftReportEntries } from './craft-report-entries';
+import { useNow } from '@/hooks/use-now';
+import { craftReportGroups } from './craft-report-groups';
 import { CraftReportRow } from './craft-report-row';
 import { craftReportsHref } from './craft-runs';
 
 /** Five rows is the whole point of the home panel: enough to answer "did my
  *  crafts run, and did anything break" without turning the home page into a
- *  dashboard. Everything else is one click away at `/craft-reports`. */
+ *  dashboard. Everything else is one click away at `/crafts/runs`. */
 const HOME_REPORT_LIMIT = 5;
 /** Six circles fit the 52rem hero box beside the longest craft title without
  *  the strip ever pushing the name into a truncation. */
@@ -17,18 +21,32 @@ const HOME_RUN_LIMIT = 6;
 
 /**
  * The project-home craft-run panel — the five most recently run crafts, each
- * with its recent runs as session status circles, plus the link to the full
- * report index. First panel under the composer, in the same 52rem hero box,
- * with the installable-crafts grid below it; shares that grid's `glass`
- * treatment over the wallpaper. `mt-10` is the clear air below the input.
+ * with its recent runs as status circles, plus the link to the full report
+ * index. First panel under the composer, in the same 52rem hero box, with the
+ * installable-crafts grid below it; shares that grid's `glass` treatment over
+ * the wallpaper. `mt-10` is the clear air below the input.
  *
- * Renders nothing when no craft has run: an empty panel on the project home
- * is noise, and the crafts grid above already carries the "install something"
- * call to action.
+ * Renders nothing while loading, on error, or when no craft has run. On the
+ * project home that is deliberate three times over: a skeleton row under the
+ * composer draws the eye to furniture, an error panel here reports a failure
+ * the reader did not ask about, and an empty panel is noise — the crafts grid
+ * below already carries the "install something" call to action.
  */
 export function CraftReportsPreview({ projectId }: { projectId: string }) {
-  const entries = craftReportEntries().slice(0, HOME_REPORT_LIMIT);
-  if (entries.length === 0) return null;
+  const runsQuery = useProjectCraftRuns(projectId);
+  const installed = useProjectCrafts(projectId);
+
+  const groups = useMemo(
+    () =>
+      craftReportGroups(runsQuery.data?.runs ?? [], installed.data?.crafts ?? []).slice(
+        0,
+        HOME_REPORT_LIMIT,
+      ),
+    [runsQuery.data, installed.data],
+  );
+  const now = useNow();
+
+  if (groups.length === 0) return null;
 
   return (
     <div data-craft-reports-preview className="mt-10 w-full space-y-2.5">
@@ -49,13 +67,15 @@ export function CraftReportsPreview({ projectId }: { projectId: string }) {
       </div>
 
       <ul className="space-y-1.5">
-        {entries.map(({ craft, report }) => (
+        {groups.map((group) => (
           <CraftReportRow
-            key={craft.id}
+            key={group.slug}
             projectId={projectId}
-            craft={craft}
-            report={report}
+            slug={group.slug}
+            title={group.title}
+            runs={group.runs}
             runLimit={HOME_RUN_LIMIT}
+            now={now}
             glass
           />
         ))}

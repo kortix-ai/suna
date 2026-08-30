@@ -1,12 +1,14 @@
 'use client';
 
 import { ArrowRightIcon } from '@phosphor-icons/react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+
+import { useCrafts, useProjectCrafts } from '@kortix/sdk/react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { errorToast } from '@/components/ui/toast';
 import { AddCraftModal } from './add-craft-modal';
 import { CraftBuildCard, CraftCard } from './crafts-card';
-import { CRAFTS } from './crafts-catalog';
 import { CraftInstallModal } from './install-modal';
 
 /**
@@ -20,6 +22,10 @@ import { CraftInstallModal } from './install-modal';
  * it they have already met their crafts and the only open question is what
  * they can add. Cards already installed keep their green Installed pill.
  *
+ * Renders nothing until the store has loaded. A skeleton grid directly under
+ * the composer would draw the eye to furniture on the one screen whose job is
+ * to get out of the way.
+ *
  * Layout shares the composer card's box edge-for-edge: the hero container is
  * `max-w-[52rem]`, and both children here are `w-full` with no side insets —
  * the hero composer strips its shell's gutter and `max-w-210` cap via
@@ -30,8 +36,20 @@ import { CraftInstallModal } from './install-modal';
 export function CraftsHomePreview({ projectId }: { projectId: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const open = CRAFTS.find((craft) => craft.id === openId) ?? null;
+  const store = useCrafts();
+  const installedQuery = useProjectCrafts(projectId);
+
+  const crafts = useMemo(() => store.data?.crafts ?? [], [store.data]);
+  const installedSlugs = useMemo(
+    () => new Set((installedQuery.data?.crafts ?? []).map((entry) => entry.slug)),
+    [installedQuery.data],
+  );
+  const open = crafts.find((craft) => craft.craft_id === openId) ?? null;
   const storeHref = `/projects/${projectId}/crafts`;
+
+  // Nothing to install and nothing loaded — the panel would be a heading over
+  // one dashed card. The store page is still one click away from the sidebar.
+  if (crafts.length === 0) return null;
 
   return (
     <div data-crafts-preview className="mt-8 w-full space-y-2.5">
@@ -52,11 +70,12 @@ export function CraftsHomePreview({ projectId }: { projectId: string }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        {CRAFTS.slice(0, 5).map((craft) => (
+        {crafts.slice(0, 5).map((craft) => (
           <CraftCard
-            key={craft.id}
+            key={craft.craft_id}
             craft={craft}
-            onOpen={() => setOpenId(craft.id)}
+            installed={installedSlugs.has(craft.slug)}
+            onOpen={() => setOpenId(craft.craft_id)}
             glass
             compact
           />
@@ -71,6 +90,20 @@ export function CraftsHomePreview({ projectId }: { projectId: string }) {
       {open ? (
         <CraftInstallModal
           craft={open}
+          projectId={projectId}
+          installed={installedSlugs.has(open.slug)}
+          installing={installedQuery.install.isPending}
+          onInstall={async (craftId) => {
+            try {
+              const result = await installedQuery.install.mutateAsync(craftId);
+              return result.session_id;
+            } catch (error) {
+              errorToast(
+                error instanceof Error ? error.message : 'Could not start the install session',
+              );
+              return null;
+            }
+          }}
           open
           onOpenChange={(next) => {
             if (!next) setOpenId(null);

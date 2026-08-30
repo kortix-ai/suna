@@ -3,13 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { qk } from '@kortix/sdk/react';
 import {
-  marketplaceInstallSessionHref,
-  prepareMarketplaceInstallSessionNavigation,
-} from './marketplace-session-navigation';
+  installSessionHref,
+  prepareInstallSessionNavigation,
+} from './install-session-navigation';
 
 describe('marketplace install session navigation', () => {
   test('builds the project-scoped session href', () => {
-    expect(marketplaceInstallSessionHref('proj_123', 'sess_456')).toBe(
+    expect(installSessionHref('proj_123', 'sess_456')).toBe(
       '/projects/proj_123/sessions/sess_456',
     );
   });
@@ -31,7 +31,7 @@ describe('marketplace install session navigation', () => {
     const sessionId = 'session-123';
     clearSessionFresh(sessionId);
 
-    const href = prepareMarketplaceInstallSessionNavigation(
+    const href = prepareInstallSessionNavigation(
       queryClient as never,
       { prefetch: (route) => prefetchedRoutes.push(route) },
       'project-123',
@@ -58,7 +58,7 @@ describe('marketplace install session navigation', () => {
       },
     };
 
-    const href = prepareMarketplaceInstallSessionNavigation(
+    const href = prepareInstallSessionNavigation(
       queryClient as never,
       {
         prefetch: () => {

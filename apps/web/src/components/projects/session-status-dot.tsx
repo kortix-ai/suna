@@ -7,8 +7,37 @@ import {
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
-import { ClockCounterClockwiseIcon } from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, ClockCounterClockwiseIcon } from '@phosphor-icons/react';
 import type { ReactNode } from 'react';
+
+/**
+ * What this dot can paint: every session display status, plus the two states a
+ * CRAFT RUN has that a session does not.
+ *
+ * The two extras are here rather than in a second component because forking the
+ * paint table is exactly how a `done` check ends up green on one screen and
+ * muted on another (see the note on {@link SessionStatusDot}). They are also
+ * NOT added to `SessionDisplayStatus`: no session is ever `retrying` or
+ * `skipped`, and widening that union would force every session surface to
+ * handle two cases it can never receive.
+ *
+ *  - `retrying` — a trigger fire that failed and will be attempted again.
+ *  - `skipped` — a fire a filter or the pause switch declined. Nothing ran, and
+ *    nothing is wrong, so it spends no color.
+ */
+export type StatusDotStatus = SessionDisplayStatus | 'retrying' | 'skipped';
+
+/** Labels for the two run-only states. Session labels come from `session-label`. */
+const RUN_ONLY_LABELS: Record<'retrying' | 'skipped', string> = {
+  retrying: 'Retrying',
+  skipped: 'Skipped',
+};
+
+function statusDotLabel(status: StatusDotStatus): string {
+  return status === 'retrying' || status === 'skipped'
+    ? RUN_ONLY_LABELS[status]
+    : SESSION_DISPLAY_STATUS_LABELS[status];
+}
 
 /** Per-display-status paint. Green appears in exactly two rows — the two that
  *  mean live or actionable. `done` is muted on purpose: it is the change that
@@ -19,8 +48,8 @@ import type { ReactNode } from 'react';
  *  can see. Per spec §4 `done` is a check and `stopped` is a plain hollow ring.
  *  The check stays muted — a check is not a licence to go green. */
 const STATUS_DOT_STYLE: Record<
-  SessionDisplayStatus,
-  { color: string; glyph: 'ring' | 'check'; fill: boolean }
+  StatusDotStatus,
+  { color: string; glyph: 'ring' | 'check' | 'dash'; fill: boolean }
 > = {
   'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: true },
   // `starting` renders <Loading /> instead and never reads glyph/fill.
@@ -33,6 +62,14 @@ const STATUS_DOT_STYLE: Record<
   // glyph/fill — a dormant migrated chat is neither done nor merely stopped;
   // the history glyph says "restorable" without spending any color.
   legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
+  // `retrying` renders <ArrowClockwiseIcon /> and never reads glyph/fill. It
+  // shares `starting`'s yellow — both mean "not settled yet" — but the arrow
+  // says the last attempt FAILED, which a spinner cannot.
+  retrying: { color: 'var(--kortix-yellow)', glyph: 'ring', fill: false },
+  // A barred ring: the shape of the family, struck through. At 16px this is the
+  // only muted variant that cannot be confused with `stopped`'s hollow ring or
+  // `done`'s check.
+  skipped: { color: 'var(--muted-foreground)', glyph: 'dash', fill: false },
 };
 
 /**
@@ -43,9 +80,10 @@ const STATUS_DOT_STYLE: Record<
  * two copies of this paint table is exactly how a `done` check ends up green
  * on one screen and muted on another.
  *
- * It takes a resolved `SessionDisplayStatus`, not a `ProjectSession`, so a
- * surface with no session payload (a craft run summary) renders the identical
- * dot. Callers holding a session resolve it with `sessionDisplayStatus`.
+ * It takes a resolved {@link StatusDotStatus}, not a `ProjectSession`, so a
+ * surface with no session payload (a craft run) renders the identical dot.
+ * Callers holding a session resolve it with `sessionDisplayStatus`; a craft run
+ * passes its own status, which is that union plus `retrying` and `skipped`.
  */
 export function SessionStatusDot({
   status,
@@ -54,7 +92,7 @@ export function SessionStatusDot({
   hint = true,
   className,
 }: {
-  status: SessionDisplayStatus;
+  status: StatusDotStatus;
   /** Overrides the default status label in the tooltip (e.g. a review count,
    *  or a run's status + time + summary). */
   label?: ReactNode;
@@ -75,6 +113,12 @@ export function SessionStatusDot({
         <Loading className="text-kortix-yellow size-3.5" />
       ) : status === 'legacy' ? (
         <ClockCounterClockwiseIcon
+          className="size-3.5 shrink-0"
+          style={{ color: style.color }}
+          aria-hidden
+        />
+      ) : status === 'retrying' ? (
+        <ArrowClockwiseIcon
           className="size-3.5 shrink-0"
           style={{ color: style.color }}
           aria-hidden
@@ -102,6 +146,16 @@ export function SessionStatusDot({
           ) : (
             <>
               <circle cx="8" cy="8" r="6.3" stroke="currentColor" fill="none" strokeWidth="1.5" />
+              {style.glyph === 'dash' && (
+                // Inset from the ring by the same 1.5 stroke, so the bar reads
+                // as struck through the circle rather than touching it.
+                <path
+                  d="M5 8 H11"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              )}
               {style.fill && (
                 <circle cx="8" cy="8" r={status === 'needs-you' ? 3.2 : 4} fill="currentColor" />
               )}
@@ -116,7 +170,7 @@ export function SessionStatusDot({
   return (
     <Hint
       side={hintSide}
-      label={label ?? <span className="text-xs">{SESSION_DISPLAY_STATUS_LABELS[status]}</span>}
+      label={label ?? <span className="text-xs">{statusDotLabel(status)}</span>}
     >
       {glyph}
     </Hint>

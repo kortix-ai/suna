@@ -2,24 +2,18 @@
 
 import { CaretRightIcon } from '@phosphor-icons/react';
 
+import type { CraftRun } from '@kortix/sdk';
+
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { SESSION_DISPLAY_STATUS_LABELS } from '@/components/projects/session-label';
-import { SessionStatusDot } from '@/components/projects/session-status-dot';
 import { cn } from '@/lib/utils';
-import {
-  agoLabel,
-  craftReportHref,
-  craftRunHref,
-  craftRunStrip,
-  type CraftReport,
-  type CraftRun,
-} from './craft-runs';
-import type { Craft } from './crafts-catalog';
+import { CraftRunDot } from './craft-run-dot';
+import { agoLabel, craftReportHref, craftRunStrip, latestRun } from './craft-runs';
+import { craftVisual } from './craft-visual';
 
 /** Fixed-width relative-time column, so the strip's right edge never reflows
  *  row to row. Same idea and same `tabular-nums` as the sidebar's session
  *  time column. */
-const AGO_COLUMN_CLASS = 'text-muted-foreground/60 w-8 shrink-0 text-right text-xs tabular-nums';
+const AGO_COLUMN_CLASS = 'text-muted-foreground/60 w-12 shrink-0 text-right text-xs tabular-nums';
 
 /** How many circles survive at each breakpoint. The strip is `shrink-0` — it
  *  has to be, or the circles would squash into ellipses — so without this a
@@ -41,70 +35,49 @@ function stripVisibilityClass(distanceFromNewest: number): string | undefined {
 }
 
 /**
- * One status circle in a run strip. The circle IS the link to the run's
- * session — the whole point of the report surface. Its 24px box, not the 16px
- * glyph, is the hit area: a 16px target is under the 24px minimum and the
- * circles sit 6px apart.
- *
- * The tooltip carries the three things the glyph cannot: which state it is,
- * how long ago, and what the run delivered. Tooltip ground is `bg-foreground`,
- * so the secondary line is `text-background/60` — `text-muted-foreground`
- * would be muted against the WRONG ground and read as invisible.
- */
-function CraftRunDot({ projectId, run }: { projectId: string; run: CraftRun }) {
-  return (
-    <HoverPrefetchLink
-      href={craftRunHref(projectId, run)}
-      aria-label={`${SESSION_DISPLAY_STATUS_LABELS[run.status]} — ${agoLabel(run.minutesAgo)} ago — ${run.summary}`}
-      className="hover:bg-muted flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors duration-150 active:scale-95"
-    >
-      <SessionStatusDot
-        status={run.status}
-        hintSide="top"
-        label={
-          <span className="block max-w-52 text-xs">
-            <span className="font-medium">{SESSION_DISPLAY_STATUS_LABELS[run.status]}</span>
-            <span className="text-background/60"> · {agoLabel(run.minutesAgo)} ago</span>
-            <span className="text-background/60 mt-0.5 block text-pretty">{run.summary}</span>
-          </span>
-        }
-      />
-    </HoverPrefetchLink>
-  );
-}
-
-/**
- * One craft's run report as a single row: the craft on the left, its recent
- * runs as session status circles on the right, the newest run's age last.
+ * One craft's runs as a single row: the craft on the left, its recent runs as
+ * status circles on the right, the newest run's age last.
  *
  * TWO links, never one nested inside the other: the craft name opens that
  * craft's report page, each circle opens its own session. A row-wide link
  * wrapping the circles would be invalid HTML and would swallow every circle
  * click, which is the only interaction this surface exists for.
  *
- * The craft's icon renders MUTED here, not in its tinted `bgColor` tile. On
- * this surface the status circles are the only thing that may spend color —
- * nine tinted tiles down the left edge would compete with the green and red
- * that carry the actual information.
+ * Keyed on the craft SLUG, and given its `title` directly, because a run report
+ * must render for a craft the store index no longer carries: an install is
+ * recorded in the project's manifest and outlives its catalogue entry
+ * (`project_crafts.craft_id` is `ON DELETE SET NULL` for exactly that reason).
+ * Reading the title from the index would blank the row.
+ *
+ * The craft's icon renders MUTED here, not in its tinted tile. On this surface
+ * the status circles are the only thing that may spend color — a column of
+ * tinted tiles down the left edge would compete with the green and red that
+ * carry the actual information.
  */
 export function CraftReportRow({
   projectId,
-  craft,
-  report,
+  slug,
+  title,
+  runs,
   runLimit,
+  now,
   glass = false,
 }: {
   projectId: string;
-  craft: Craft;
-  report: CraftReport;
+  slug: string;
+  title: string;
+  /** This craft's runs, newest first, as the API returns them. */
+  runs: readonly CraftRun[];
   /** How many of the most recent runs the strip shows. */
   runLimit: number;
+  /** One clock for the whole list, so no two rows disagree by a minute. */
+  now?: number;
   /** Translucent fill for surfaces painted over the wallpaper (project home). */
   glass?: boolean;
 }) {
-  const Icon = craft.icon;
-  const strip = craftRunStrip(report, runLimit);
-  const latest = report.runs[0];
+  const { Icon } = craftVisual(slug);
+  const strip = craftRunStrip(runs, runLimit);
+  const latest = latestRun(runs);
 
   return (
     <li
@@ -114,11 +87,11 @@ export function CraftReportRow({
       )}
     >
       <HoverPrefetchLink
-        href={craftReportHref(projectId, craft.id)}
+        href={craftReportHref(projectId, slug)}
         className="group/name text-foreground flex min-w-0 flex-1 items-center gap-2"
       >
         <Icon weight="fill" className="text-muted-foreground size-4 shrink-0" aria-hidden />
-        <span className="truncate text-sm font-medium">{craft.title}</span>
+        <span className="truncate text-sm font-medium">{title}</span>
         <CaretRightIcon
           className="text-muted-foreground size-3 shrink-0 -translate-x-0.5 opacity-0 transition-[opacity,transform] duration-150 group-hover/name:translate-x-0 group-hover/name:opacity-100"
           aria-hidden
@@ -130,13 +103,13 @@ export function CraftReportRow({
           circle's 24px hit box back to the row's optical right edge. */}
       <ul className="-mr-1 flex shrink-0 items-center gap-1.5">
         {strip.map((run, index) => (
-          <li key={run.sessionId} className={stripVisibilityClass(strip.length - 1 - index)}>
-            <CraftRunDot projectId={projectId} run={run} />
+          <li key={run.execution_id} className={stripVisibilityClass(strip.length - 1 - index)}>
+            <CraftRunDot projectId={projectId} run={run} now={now} />
           </li>
         ))}
       </ul>
 
-      <span className={AGO_COLUMN_CLASS}>{latest ? agoLabel(latest.minutesAgo) : '—'}</span>
+      <span className={AGO_COLUMN_CLASS}>{agoLabel(latest?.created_at ?? null, now)}</span>
     </li>
   );
 }
