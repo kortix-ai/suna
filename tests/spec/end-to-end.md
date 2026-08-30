@@ -889,7 +889,83 @@ servable — the same fact the hostname's own DNS record already states.
 
 ---
 
-## 29. Additional executable product contracts
+## 29. Crafts
+
+A craft is a Kortix project you install into another project: a repository, or
+an uploaded `.zip`, whose `kortix.yaml` declares agents, skills, connectors and
+triggers. Installing one MERGES that declaration into a target project through
+an agent session that opens a change request — the route itself commits nothing.
+A craft "run" is one trigger fire, read out of the project's own execution
+history and joined through `project_trigger_runtime.craft_slug`.
+
+Two boundaries the flows respect, both stated so nobody reads a pass as more
+than it is:
+
+- Indexing from GitHub needs a reachable public repository, which the local
+  profile excludes. The flows submit ARCHIVES instead, which exercise the same
+  crawl — manifest parse, card derivation, upsert — against bytes the flow
+  builds itself.
+- Install, uninstall and author each spawn a real session past validation, and
+  a session needs a cloud sandbox with a reachable callback origin, excluded
+  locally. So those flows assert every 4xx boundary exactly and accept
+  `201` or `503 KORTIX_URL_UNREACHABLE` past the gate — the same convention
+  `MKTP-11` documents.
+
+`CRAFT-1` Catalog CRUD — `POST /crafts` indexes an uploaded archive and derives
+the card by PARSING the manifest (its triggers and agents come back named, not
+inferred from the filename); visibility defaults to `private`; re-uploading the
+same slug REPLACES the row rather than creating a second craft. An archive with
+no `kortix.yaml` → `400 manifest_not_found`; an invalid manifest →
+`400 manifest_invalid` carrying `issues[].path`; a non-zip body →
+`400 invalid_archive`; a non-GitHub or path-traversal repo address → `400`. A
+private craft is listed and readable by its owner and INVISIBLE to another
+account — `GET /crafts/:id` answers `404`, never `403`, because a `403` would
+confirm the id exists. Only the submitting account may `DELETE` it.
+
+`CRAFT-2` Installed list — `GET /projects/:projectId/crafts` reads the project's
+own manifest, so it answers `200 {crafts, errors}` with an empty list for a
+project that has installed nothing, `401` anonymous, `404` unknown project, and
+`403/404` for a non-member. Per-entry parse errors are reported in `errors`
+rather than dropping the craft silently.
+
+`CRAFT-3` The feature gate — every project-scoped craft route fails CLOSED:
+with the `crafts` flag off a project member gets
+`403 {code:'feature_disabled', feature:'crafts'}`, not an empty `200`.
+Membership is checked BEFORE the flag, so a stranger gets `404` and never
+learns whether the project has crafts enabled.
+
+`CRAFT-4` Install, author and uninstall sessions — each validates fully before
+spawning anything. `install-session` without `craft_id` → `400 'craft_id is
+required'`; an unknown `craft_id` → `404`; another account's private craft →
+`403/404`. `author-session` with an empty or 4001-character description →
+`400`. `uninstall-session` for a craft the project does not have → `404`. Past
+the gates each answers `201 {session_id}` where a sandbox is reachable.
+Separately, `POST /projects/:projectId/sessions` carrying
+`metadata.craft_slug` → `400` naming the key: craft attribution is
+server-managed, or a client could put its own session in someone else's run
+history.
+
+`CRAFT-5` Activation — `PATCH /projects/:projectId/crafts/:slug/activation`
+turns ONE craft's triggers on or off by committing the project's manifest, so a
+craft's activation is configuration visible in `git log`. It is not the
+project-wide pause. A non-boolean `enabled` → `400` before any manifest read; a
+craft the project does not have → `404`; a non-member → `403/404`. The result's
+`triggers` array names each trigger that MOVED — an empty array means the craft
+was already in that state and no commit was made, which is a different answer
+from "it worked". A craft installs with every trigger disabled, so this is the
+call that starts one working.
+
+`CRAFT-6` Runs — `GET /projects/:projectId/crafts/runs` and
+`GET …/crafts/:slug/runs` are pure reads over the project's trigger-execution
+history, scoped to triggers carrying a `craft:` field, so a hand-authored
+trigger's executions never appear in a craft report. A project where nothing has
+run answers `200` with an empty list rather than an error. The per-craft route
+returns `craft_slug` and aggregate `stats`, which proves the router does not eat
+`runs` as a craft slug — the two paths sit at the same depth and the wrong
+registration order would resolve every all-crafts request as a craft named
+"runs". Both paginate under a bounded limit and reject a non-member.
+
+## 30. Additional executable product contracts
 
 These contracts use product IDs. They replace the old route-coverage bucket IDs.
 

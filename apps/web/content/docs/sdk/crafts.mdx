@@ -1,0 +1,264 @@
+---
+title: Crafts
+description: Publish, install, and operate crafts from the SDK and from React.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **craft** is a Kortix project you install into another project: a repository
+whose `kortix.yaml` declares agents, skills, connectors and triggers. Installing
+one merges that declaration into the target project. Its triggers then fire on
+their own schedule, and each fire is a **run**.
+
+There are two surfaces, and they are deliberately separate:
+
+- `kortix.crafts` — the **catalog**, account-scoped. What exists to install.
+- `kortix.project(projectId).crafts` — what **one project** has installed, plus
+  install, uninstall, activation, and runs.
+
+```ts
+const catalog = kortix.crafts;
+const installed = kortix.project(projectId).crafts;
+```
+
+<Callout type="info" title="Crafts is a feature flag">
+Every project-scoped craft route answers `403` with
+`{ error, code: "feature_disabled", feature: "crafts" }` until the project turns
+Crafts on. Use `isFeatureDisabledError(error)` to branch on it. See
+[Feature flags](/docs/feature-flags).
+</Callout>
+
+<Callout type="warn" title="Install and uninstall return a SESSION, not a result">
+Neither call changes the project. Each starts an agent session that reads both
+manifests, resolves name collisions, and opens a **change request** a human
+reviews. The craft is not installed until that CR merges. A UI that closes with
+"Installed" after the call resolves is claiming a merge nobody approved.
+</Callout>
+
+## The catalog
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `crafts.list(options?)` | `GET /crafts` | Every public craft, plus your own private ones. `options.q` filters over title, description and the repo or archive name |
+| `crafts.get(craftId)` | `GET /crafts/:id` | One craft |
+| `crafts.submit(input)` | `POST /crafts` | Indexes a craft from a GitHub repo |
+| `crafts.submitArchive(input)` | `POST /crafts` | Indexes a craft from an uploaded `.zip` |
+| `crafts.remove(craftId)` | `DELETE /crafts/:id` | Withdraws it from the catalog |
+
+### Submitting from a repo
+
+`repo` accepts a browser URL, a clone URL, an `ssh://` or `git@` remote, a
+`github:` scheme, or a bare `owner/repo` — optionally suffixed `@<ref>` to pin a
+branch or tag. The server resolves it to a commit and derives the card from the
+manifest at that commit.
+
+```ts
+const { craft, warnings } = await kortix.crafts.submit({
+  repo: 'acme/seo-craft@v1.2.0',
+  visibility: 'public', // defaults to `private` — a craft goes public on purpose
+});
+```
+
+`warnings` never blocks. It carries advisory findings from the crawl — a manifest
+deprecation, a per-entry parse error, files an archive carried that were not
+text. The craft **is** indexed. Show them; do not treat them as a failure.
+
+The same parser the server runs is exported, so a form can validate before it
+submits:
+
+```ts
+import { parseCraftRepo } from '@kortix/manifest-schema';
+
+parseCraftRepo('https://github.com/acme/seo-craft.git@v1');
+// → { owner: 'acme', repo: 'seo-craft', ref: 'v1' }
+parseCraftRepo('https://gitlab.com/acme/x'); // → null
+```
+
+### Submitting an archive
+
+For a craft that is not a repository yet. An uploaded craft is a **snapshot**:
+its files are stored as submitted, it does not track a repo, and it never
+re-crawls. Uploading again with the same slug replaces it.
+
+```ts
+const { craft } = await kortix.crafts.submitArchive({
+  file: zipFile, // File or Blob
+  visibility: 'private',
+});
+```
+
+Bounded server-side: text files only, ~1 MB per archive, 256 KB per file, 200
+files. Over any of those and the route answers `400` with
+`code: "archive_refused"`.
+
+### Rejections worth handling
+
+Each carries a machine `code`, so a UI can say what to do next rather than
+printing a generic failure.
+
+| `code` | What happened |
+|---|---|
+| `manifest_not_found` | No `kortix.yaml` in the repo or archive |
+| `manifest_invalid` | It did not validate. `issues[]` carries the offending `path` |
+| `ref_not_found` | That branch or tag does not exist |
+| `repo_not_found` | Not reachable by this account |
+| `upstream_unavailable` | GitHub did not answer |
+| `invalid_archive` | Not a readable `.zip` |
+| `archive_refused` | Over the size or file-count limits |
+
+## What a project has installed
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `crafts.list()` | `GET /projects/:pid/crafts` | The project's installed crafts, read from its manifest |
+| `crafts.install(craftId)` | `POST …/crafts/install-session` | Starts the install session |
+| `crafts.uninstall(slug)` | `POST …/crafts/:slug/uninstall-session` | Starts the uninstall session |
+| `crafts.author(description)` | `POST …/crafts/author-session` | Describe a craft; the agent builds and publishes it |
+| `crafts.setActivation(slug, enabled)` | `PATCH …/crafts/:slug/activation` | Turns this craft's triggers on or off |
+
+The installed list comes from the project's **manifest**, not the catalog. That
+matters: an install outlives its catalog entry, so a craft withdrawn from the
+store still appears here with its own recorded title and pinned sha.
+
+`uninstall` and `setActivation` are keyed on the **slug**, not a craft id, for
+the same reason — the slug is what the manifest records.
+
+### Activation is derived, not stored
+
+There is no "this craft is on" flag. A craft is on exactly when its triggers
+are, and the triggers live in the manifest. `InstalledCraft.enabled` is
+therefore three-valued:
+
+| Value | Meaning |
+|---|---|
+| `true` | Every trigger it owns is enabled |
+| `false` | None are |
+| `null` | **Some** are, or it owns no triggers at all |
+
+`trigger_count` and `enabled_trigger_count` say which half. Render `null` as
+indeterminate — a two-state switch that rounds it to on or off hides the other
+half.
+
+<Callout type="warn" title="A craft installs with every trigger OFF">
+That is deliberate: a craft that starts firing the moment it lands is a craft
+nobody trusts. `setActivation(slug, true)` is what starts it working, and it
+**commits to the manifest** — a craft's activation is configuration, visible in
+`git log`. It is not the project-wide pause, which is
+`project(id).triggers.setActivation`.
+</Callout>
+
+An empty `triggers` array in the result means the craft was **already** in that
+state; the route landed no commit. That is a different answer from "it worked".
+
+```ts
+const result = await kortix.project(projectId).crafts.setActivation('seo-watch', true);
+if (result.triggers.length === 0) {
+  // already on — nothing was committed
+} else {
+  // result.triggers names each trigger that moved
+}
+```
+
+## Runs
+
+A run is **one trigger fire**: one row of the project's own execution history.
+Nothing here writes a run; both calls are pure reads.
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `crafts.runs(options?)` | `GET …/crafts/runs` | Runs across every installed craft, newest first |
+| `crafts.runsFor(slug, options?)` | `GET …/crafts/:slug/runs` | One craft's runs, plus aggregate `stats` |
+
+The join is `project_trigger_runtime.craft_slug`, materialized from each
+trigger's manifest `craft:` field. A hand-authored trigger has no `craft:`, so
+its executions never appear in a craft report.
+
+### Run status is derived
+
+`CraftRunStatus` is `starting | retrying | running | done | failed | stopped |
+skipped`. There is no stored success flag, and the two obvious candidates both
+lie: the execution's own status is the **dispatch** outcome ("did we manage to
+start a session"), and `project_sessions.status = 'completed'` is only ever
+written by a migration backfill. The verdict comes from the session's last ended
+turn.
+
+Two statuses have no session equivalent and are the reason a run report needs
+its own legend:
+
+- **`retrying`** — the fire failed and will be attempted again. There is no
+  `failed` dispatch state; a failed attempt returns to the queue and only becomes
+  terminal after five tries. Collapsing this into `starting` would show a craft
+  failing every attempt as perpetually starting.
+- **`skipped`** — a filter or the pause switch declined the fire. Nothing ran,
+  and nothing is wrong.
+
+`stats.successRate` is `done / (done + failed)`, or `null` with no settled
+verdict. `stopped` and `skipped` count on **neither** side: a reaped sandbox is
+not the craft failing, and `0%` would read as "everything failed".
+
+`session_id` is nullable. A queued fire has not created one, a skipped fire never
+will, and the FK is `ON DELETE SET NULL` — so a cleaned-up session leaves the run
+behind. Do not render a link for a run without one.
+
+## React
+
+```tsx
+import { useCraft, useCrafts, useCraftRuns, useProjectCraftRuns, useProjectCrafts } from '@kortix/sdk/react';
+```
+
+| Hook | Returns |
+|---|---|
+| `useCrafts(options?)` | The catalog, plus `submit`, `submitArchive`, `remove` mutations |
+| `useCraft(craftId)` | One craft |
+| `useProjectCrafts(projectId)` | The installed list, plus `install`, `uninstall`, `author`, `setActivation` |
+| `useProjectCraftRuns(projectId, options?)` | Runs across every craft |
+| `useCraftRuns(projectId, slug, options?)` | One craft's runs and stats |
+
+`install`, `uninstall` and `author` invalidate rather than writing optimistically:
+each resolves to a session id, and the installed list changes when that session's
+change request merges — not when the call returns.
+
+```tsx
+function CraftCard({ projectId, craft }: { projectId: string; craft: Craft }) {
+  const router = useRouter();
+  const { install } = useProjectCrafts(projectId);
+
+  return (
+    <button
+      disabled={install.isPending}
+      onClick={async () => {
+        const { session_id } = await install.mutateAsync(craft.craft_id);
+        // Open the session. The agent does the merge there.
+        router.push(`/projects/${projectId}/sessions/${session_id}`);
+      }}
+    >
+      Install {craft.title}
+    </button>
+  );
+}
+```
+
+## Session attribution is server-managed
+
+`craft_slug`, `craft_id`, `craft_repo` and `craft_sha` are in
+`SERVER_MANAGED_SESSION_METADATA_KEYS`. Sending any of them on
+`POST /projects/:id/sessions` answers `400`. Without that, a client could
+attribute its own session to someone else's craft and appear in that craft's run
+history.
+
+## CLI
+
+The same surface from a terminal:
+
+```bash
+kortix crafts publish acme/seo-craft --ref v1.2.0 --public
+kortix crafts list --query seo
+kortix crafts show seo-watch
+kortix crafts install seo-watch
+kortix crafts enable seo-watch
+kortix crafts runs seo-watch
+kortix crafts uninstall seo-watch
+```
+
+`kortix crafts` does not upload an archive: by the time you are at a terminal you
+have a repository, and a craft that tracks one gets re-crawled when it moves.
