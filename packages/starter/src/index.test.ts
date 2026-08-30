@@ -455,6 +455,32 @@ describe('marketplace registry — first-party use-case templates', () => {
       for (const key of Object.keys(envVars)) expect(optional).toContain(key);
     }
   });
+
+  test('brand monitor installs its optional read-only X search tool', () => {
+    const agent = items.find((item) => item.name === 'brand-monitor-agent');
+    const template = items.find((item) => item.name === 'brand-monitor');
+    const files = agent?.files as Array<Record<string, string>> | undefined;
+    const meta = template?.meta as
+      | {
+          template?: {
+            agents?: Record<string, { secrets?: string[] }>;
+            env_optional?: string[];
+          };
+        }
+      | undefined;
+
+    expect(files).toContainEqual({
+      path: 'runtime/tools/x_search.ts',
+      type: 'registry:file',
+      target: '@tools/x_search.ts',
+    });
+    expect(template?.envVars).toEqual({
+      XQUIK_API_KEY: 'Optional Xquik API key for current public X post search',
+    });
+    expect(meta?.template?.agents?.['brand-monitor']?.secrets).toContain('XQUIK_API_KEY');
+    expect(meta?.template?.env_optional).toContain('XQUIK_API_KEY');
+    expect(template?.docs).toContain('published Xquik Search Tweets API');
+  });
 });
 
 

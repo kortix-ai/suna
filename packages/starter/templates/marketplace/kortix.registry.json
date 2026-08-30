@@ -5400,6 +5400,11 @@
           "path": "runtime/agents/brand-monitor.md",
           "type": "registry:file",
           "target": "@agents/brand-monitor.md"
+        },
+        {
+          "path": "runtime/tools/x_search.ts",
+          "type": "registry:file",
+          "target": "@tools/x_search.ts"
         }
       ],
       "meta": {
@@ -5438,6 +5443,10 @@
         "brand-monitor-agent",
         "brand-mention-monitor-skill"
       ],
+      "envVars": {
+        "XQUIK_API_KEY": "Optional Xquik API key for current public X post search"
+      },
+      "docs": "Set XQUIK_API_KEY to add read-only X search through the published Xquik Search Tweets API: https://docs.xquik.com/api-reference/x/search-tweets. Without it, the agent continues with generic web search.",
       "inputs": [
         {
           "key": "brand_terms",
@@ -5467,10 +5476,15 @@
         "source": "kortix",
         "icon": "brand-monitor",
         "template": {
+          "env_optional": [
+            "XQUIK_API_KEY"
+          ],
           "agents": {
             "brand-monitor": {
               "connectors": [],
-              "secrets": [],
+              "secrets": [
+                "XQUIK_API_KEY"
+              ],
               "skills": [
                 "brand-mention-monitor"
               ]
