@@ -46,24 +46,24 @@ export interface FileVerb {
  * Keyed by action rather than by tool name because the two consumers key
  * differently: the trigger rows come in as `write` / `edit` / `morph_edit`,
  * while `patch-summary.ts` comes in as an `add` / `update` / `delete` / `move`
- * patch op. Both map onto the same six English verbs, and mapping onto a shared
- * vocabulary is the point — it is what stops `apply_patch` from inventing a
- * seventh word for something `write` already has a word for.
+ * patch op. Both map onto the same short list of English verbs, and mapping onto
+ * a shared vocabulary is the point — it is what stops `apply_patch` from
+ * inventing a second word for something `write` already has a word for.
+ *
+ * There is deliberately NO `create`. Producing a file that was not there is a
+ * WRITE, and the reader has already met that word on every `write` row in the
+ * session; a patch that adds four files saying `Created 4 files` beside a
+ * `write` row saying `Wrote app.py` is one product speaking two vocabularies
+ * about one act. `narration.ts` reached this conclusion already — it reports a
+ * write-family patch as `Wrote`, never as `Created`. `patch-summary.ts` maps
+ * its `add` op onto `write` for the same reason. `delete` and `rename` keep
+ * their own verbs because no write-family word covers them.
  */
-export type FileAction =
-  | 'write'
-  | 'edit'
-  | 'create'
-  | 'delete'
-  | 'rename'
-  | 'change'
-  | 'read'
-  | 'list';
+export type FileAction = 'write' | 'edit' | 'delete' | 'rename' | 'change' | 'read' | 'list';
 
 export const FILE_VERBS: Record<FileAction, FileVerb> = {
   write: { verb: 'Wrote', running: 'Writing', failed: "Couldn't write" },
   edit: { verb: 'Edited', running: 'Editing', failed: "Couldn't update" },
-  create: { verb: 'Created', running: 'Creating', failed: "Couldn't create" },
   delete: { verb: 'Deleted', running: 'Deleting', failed: "Couldn't delete" },
   rename: { verb: 'Renamed', running: 'Renaming', failed: "Couldn't rename" },
   // The weakest word here, deliberately — see `patchVerb`. A patch that creates

@@ -2,15 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { patchVerb } from './patch-summary';
 
 describe('patchVerb', () => {
-  test('four new files read as Created, not as Apply Patch', () => {
+  test('four new files read as Wrote, not as Apply Patch', () => {
     // The exact regression: `apply_patch` creating four .txt files rendered
     // "Apply Patch 4 files · +4" under a code-file glyph.
+    //
+    // The verb is the WRITE verb, not a `create` of its own: producing a file
+    // that was not there is a write, and `Created 4 files` here beside
+    // `Wrote app.py` on a `write` row is one product using two words for one
+    // act. The `create` ICON stays — the glyph still says the files are new.
     expect(patchVerb(['add', 'add', 'add', 'add'])).toEqual({
-      verb: 'Created',
-      running: 'Creating',
+      verb: 'Wrote',
+      running: 'Writing',
       // The third tense, shared with every other file row: a patch that failed
       // must not be reported in the wording of one that landed.
-      failed: "Couldn't create",
+      failed: "Couldn't write",
       icon: 'create',
     });
   });

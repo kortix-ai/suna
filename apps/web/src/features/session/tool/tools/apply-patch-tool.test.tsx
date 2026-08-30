@@ -43,8 +43,11 @@ describe('ApplyPatchTool trigger', () => {
     // The regression this replaced: "Apply Patch 4 files · +4" under a
     // code-file glyph, over four plain .txt files that had just been created.
     const text = rowText(render(part(ADDS)));
-    expect(text).toContain('Created 4 files');
+    // `Wrote`, not `Created` — the row uses the same word a `write` row uses for
+    // the same act. See the op table in `patch-summary.ts`.
+    expect(text).toContain('Wrote 4 files');
     expect(text).not.toContain('Apply Patch');
+    expect(text).not.toContain('Created');
   });
 
   test('a closed row still carries a size signal', () => {
@@ -56,14 +59,14 @@ describe('ApplyPatchTool trigger', () => {
   });
 
   test('one file names itself', () => {
-    expect(rowText(render(part([ADDS[0]])))).toContain('Created random-aurora.txt');
+    expect(rowText(render(part([ADDS[0]])))).toContain('Wrote random-aurora.txt');
   });
 
   test('a mixed patch claims no shape it does not have', () => {
     const mixed = [ADDS[0], { relativePath: 'gone.ts', type: 'delete', deletions: 3 }];
     const text = rowText(render(part(mixed)));
     expect(text).toContain('Changed 2 files');
-    expect(text).not.toContain('Created');
+    expect(text).not.toContain('Wrote');
   });
 
   test('an edit reads as an edit', () => {
@@ -91,7 +94,7 @@ describe('ApplyPatchTool, when the patch did not land', () => {
 
     // Entity, not a raw apostrophe: `rowText` strips tags but not escapes, and
     // asserting the raw string would be an assertion that can never fail.
-    expect(text).toContain('Couldn&#x27;t create');
-    expect(text).not.toContain('Created 4 files');
+    expect(text).toContain('Couldn&#x27;t write');
+    expect(text).not.toContain('Wrote 4 files');
   });
 });

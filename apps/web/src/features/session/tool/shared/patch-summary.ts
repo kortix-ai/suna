@@ -11,11 +11,18 @@
  * can create, edit, delete and rename in one call, and each of those is an
  * ordinary English verb:
  *
- *   all add     → Created
+ *   all add     → Wrote
  *   all delete  → Deleted
  *   all move    → Renamed
  *   all update  → Edited
  *   mixed       → Changed
+ *
+ * `add` reports as `Wrote`, not `Created`. Producing a file that was not there
+ * is a write, and that is the word the reader has already met on every `write`
+ * row in the session — `Created 4 files` here beside `Wrote app.py` there is one
+ * product speaking two vocabularies about one act. `narration.ts` settled this
+ * the same way. The `create` GLYPH stays (`FilePlusIcon`): the mark still says
+ * these files are new, which is the part the verb no longer has to carry.
  *
  * "Changed" for a mixed patch is deliberately the weakest word here. A patch
  * that creates one file and deletes another has no honest single verb, and
@@ -40,13 +47,14 @@ export interface PatchVerb extends FileVerb {
 
 /**
  * The words come from `file-verb.ts`, the table every file row shares; only the
- * glyph is this module's own. A patch that creates a file and a `write` that
- * creates a file did the same thing to the user's disk, so they must not reach
- * for two different words for it — and before this they each owned a private
- * copy of the vocabulary that could drift apart one edit at a time.
+ * glyph is this module's own. A patch that adds a file and a `write` that adds a
+ * file did the same thing to the user's disk, so they must not reach for two
+ * different words for it — and before this they each owned a private copy of the
+ * vocabulary that could drift apart one edit at a time.
  */
 const VERBS: Record<PatchOp, PatchVerb> = {
-  add: { ...FILE_VERBS.create, icon: 'create' },
+  // `write`, not a `create` of its own — see the note above the op table.
+  add: { ...FILE_VERBS.write, icon: 'create' },
   delete: { ...FILE_VERBS.delete, icon: 'delete' },
   move: { ...FILE_VERBS.rename, icon: 'edit' },
   update: { ...FILE_VERBS.edit, icon: 'edit' },
