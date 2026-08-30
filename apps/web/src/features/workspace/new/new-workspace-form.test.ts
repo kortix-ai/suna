@@ -85,7 +85,14 @@ describe('resolveDefaultCreatableAccountId', () => {
   };
   const personal: KortixAccount = {
     account_id: 'a-personal',
-    name: 'jay@kortix.ai',
+    // REAL post-`filterCreatableAccounts` shape as of Task 1: the API always
+    // stores a personal account as `"<email>'s Account"`
+    // (`defaultAccountName`, apps/api/src/accounts/core/app.ts), and Task 1
+    // stopped stripping that possessive. This fixture used to be the bare
+    // email `'jay@kortix.ai'` — a shape `filterCreatableAccounts` can no
+    // longer produce — which let the test below silently stop testing what
+    // its name claimed. See that test for what actually resolves this now.
+    name: "jay@kortix.ai's Account",
     slug: 'jay',
     account_role: 'owner',
     is_primary_owner: true,
@@ -95,7 +102,16 @@ describe('resolveDefaultCreatableAccountId', () => {
     expect(resolveDefaultCreatableAccountId([], 'jay@kortix.ai')).toBeNull();
   });
 
-  test('prefers the account whose name matches the signed-in email (case-insensitive)', () => {
+  test('a personal account no longer matches by name (its name always carries the possessive) — this case still resolves correctly, but only because slug ALSO happens to match', () => {
+    // `byName` (`account.name.trim().toLowerCase() === normalized`) cannot
+    // match `personal.name` any more — it is `"jay@kortix.ai's account"`,
+    // never the bare email. This assertion is UNCHANGED from before Task 1,
+    // because `personal.slug` ('jay') independently matches the email's
+    // local part, so `bySlug` produces the same answer. That is a
+    // coincidence of this fixture, not a guarantee: the `test.todo` below
+    // demonstrates the case where no tier reliably distinguishes a personal
+    // account from an owned team account, and the result depends on list
+    // order instead.
     expect(resolveDefaultCreatableAccountId([team, personal], 'Jay@Kortix.ai')).toBe(
       'a-personal',
     );
@@ -138,6 +154,58 @@ describe('resolveDefaultCreatableAccountId', () => {
   test('returns the sole creatable account even with no email', () => {
     expect(resolveDefaultCreatableAccountId([personal], null)).toBe('a-personal');
   });
+});
+
+describe('resolveDefaultCreatableAccountId: order-dependent default when a user owns both a personal and a team account', () => {
+  // TODO(Task 2): fix ownership. Task 2 deletes this whole name/slug email-
+  // matching approach and replaces it with an identity match on
+  // `account_id === userId`, which is the only thing that can distinguish
+  // "the account that IS the user" from "an account the user happens to
+  // own" — this test cannot be made to pass with the current function
+  // signature (it takes `email`, not `userId`).
+  //
+  // `is_primary_owner` is `accountRole === 'owner'`
+  // (apps/api/src/accounts/core/accounts.ts:126) — true for the user's
+  // bootstrapped personal account AND for any team account the user owns
+  // outright. `resolveDefaultCreatableAccountId`'s `is_primary_owner` tier
+  // (new-workspace-form.ts) returns `accounts.find(a => a.is_primary_owner)`
+  // — the FIRST match in array order. Neither `byName` nor `bySlug` can
+  // break the tie here (see the `personal` fixture's comment above: `byName`
+  // no longer matches a personal account's possessive-suffixed name at all,
+  // now that Task 1 stopped stripping it). So today, run through the REAL
+  // composed pipeline (`filterCreatableAccounts` then
+  // `resolveDefaultCreatableAccountId`), the default silently flips between
+  // the personal and the team account depending on which order the API
+  // happened to list them in.
+  test.todo(
+    'personal account wins regardless of list order',
+    () => {
+      const email = 'jay@kortix.ai';
+      const personalAccount: KortixAccount = {
+        account_id: 'a-personal-order',
+        name: "jay@kortix.ai's Account",
+        account_role: 'owner',
+        is_primary_owner: true,
+      };
+      // A team the SAME user also owns outright — not their personal
+      // account, but `is_primary_owner` cannot tell the two apart.
+      const teamAccountUserOwns: KortixAccount = {
+        account_id: 'a-team-order',
+        name: 'Acme Inc',
+        account_role: 'owner',
+        is_primary_owner: true,
+      };
+
+      const personalFirst = filterCreatableAccounts([personalAccount, teamAccountUserOwns]);
+      const teamFirst = filterCreatableAccounts([teamAccountUserOwns, personalAccount]);
+
+      // Desired behavior once Task 2 lands: the personal account wins
+      // either way. Today, `personalFirst` resolves to 'a-personal-order'
+      // and `teamFirst` resolves to 'a-team-order' — the bug.
+      expect(resolveDefaultCreatableAccountId(personalFirst, email)).toBe('a-personal-order');
+      expect(resolveDefaultCreatableAccountId(teamFirst, email)).toBe('a-personal-order');
+    },
+  );
 });
 
 describe('isSubmittable', () => {
