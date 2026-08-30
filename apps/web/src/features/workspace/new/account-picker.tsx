@@ -6,13 +6,53 @@ import { cn } from '@/lib/utils';
 import type { KortixAccount } from '@kortix/sdk';
 
 /**
+ * What `AccountPicker` paints below two creatable accounts: the caller's own
+ * identity, and — only once there is a creatable account to name — which one
+ * a workspace would be created in.
+ *
+ * `identityLabel` is ALWAYS `fallbackLabel` (the signed-in user's own email)
+ * and NEVER an account's `name`. An account name can belong to someone else:
+ * `bootstrap-personal-account.ts` stores every personal account as
+ * `"<owner-email>'s Account"`, and an invited admin's only creatable account
+ * can be that owner's personal account. Painting `name` into the identity
+ * slot discloses the owner's email to the admin as if it were their own.
+ * `accountLabel` carries that name instead, for the caller to render as a
+ * separate, explicitly labelled "Create in" value — never merged into one
+ * string with the identity line.
+ *
+ * Pure so the split can be asserted directly, without rendering DOM.
+ */
+export function resolveAccountPickerIdentity({
+  accounts,
+  value,
+  fallbackLabel,
+}: {
+  accounts: KortixAccount[];
+  value: string | null;
+  fallbackLabel?: string | null;
+}): { identityLabel: string | null; accountLabel: string | null } {
+  const selectedByValue = accounts.find((account) => account.account_id === value) ?? null;
+  // Only a SOLE account is implicit enough to name without a pick — with two
+  // or more, naming one before the user has chosen would assert a decision
+  // nobody made yet.
+  const soleAccount = accounts.length === 1 ? accounts[0]! : null;
+  const account = selectedByValue ?? soleAccount;
+  return {
+    identityLabel: fallbackLabel ?? null,
+    accountLabel: account?.name ?? null,
+  };
+}
+
+/**
  * Which account owns the new workspace.
  *
  * Lives in the `/new` top bar — a quiet clickable identity row, not a labeled
- * form field. One account is not a decision: the trigger collapses to static
- * muted text (or `null` when there is nothing to show). Two or more opens a
- * Select on click, same interaction shape as `AccountSwitcher` in the app
- * header, toned down to match the bar's secondary chrome.
+ * form field. One account is not a decision: the trigger collapses to two
+ * static muted lines — the signed-in identity, and (when there is one) the
+ * account it will create into — or `null` when there is nothing to show at
+ * all. Two or more opens a Select on click, same interaction shape as
+ * `AccountSwitcher` in the app header, toned down to match the bar's
+ * secondary chrome.
  *
  * Takes `accounts` as-is and offers every one of them — it does NOT filter by
  * role. The caller (`new-workspace-page.tsx`) is responsible for passing only
@@ -34,20 +74,28 @@ export function AccountPicker({
   fallbackLabel?: string | null;
   className?: string;
 }) {
-  const selectedByValue = accounts.find((account) => account.account_id === value) ?? null;
-  // One account is not a pick — show it as identity. Two or more: only paint
-  // a name once the user (or an explicit value) has actually chosen.
-  const identityAccount = selectedByValue ?? (accounts.length === 1 ? accounts[0]! : null);
-  const label = identityAccount?.name || fallbackLabel || null;
-
   if (accounts.length < 2) {
-    if (!label) return null;
+    const { identityLabel, accountLabel } = resolveAccountPickerIdentity({
+      accounts,
+      value,
+      fallbackLabel,
+    });
+    if (!identityLabel && !accountLabel) return null;
     return (
-      <span className={cn('text-muted-foreground min-w-0 truncate text-sm', className)}>
-        {label}
+      <span className={cn('flex min-w-0 flex-col', className)}>
+        {identityLabel ? (
+          <span className="text-muted-foreground min-w-0 truncate text-sm">{identityLabel}</span>
+        ) : null}
+        {accountLabel ? (
+          <span className="text-muted-foreground/70 min-w-0 truncate text-xs">
+            Create in {accountLabel}
+          </span>
+        ) : null}
       </span>
     );
   }
+
+  const selectedByValue = accounts.find((account) => account.account_id === value) ?? null;
 
   return (
     <Select value={value ?? undefined} onValueChange={onChange}>

@@ -58,6 +58,23 @@ describe('filterCreatableAccounts', () => {
   test('one owner + one member account leaves exactly one creatable — AccountPicker (accounts.length < 2) renders nothing', () => {
     expect(filterCreatableAccounts([owner, member])).toHaveLength(1);
   });
+
+  test('keeps the possessive suffix — never returns the bare email', () => {
+    // Regression guard: this used to `.replaceAll("'s Account", '')`, which
+    // turned the API's stored `"a@x.com's Account"` into a bare `a@x.com` —
+    // indistinguishable from `user.email` once it reached `AccountPicker`.
+    // The possessive is the only thing marking this as an account name
+    // belonging to someone else, so it must survive this function untouched.
+    const personalAccount: KortixAccount = {
+      account_id: 'a5',
+      name: "a@x.com's Account",
+      account_role: 'owner',
+    };
+    const [result] = filterCreatableAccounts([personalAccount]);
+    expect(result?.name).toContain("'s Account");
+    expect(result?.name).not.toBe('a@x.com');
+    expect(result?.name).toBe("a@x.com's Account");
+  });
 });
 
 describe('resolveDefaultCreatableAccountId', () => {

@@ -2,6 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { resolveAccountPickerIdentity } from './account-picker';
+import type { KortixAccount } from '@kortix/sdk';
+
 const source = readFileSync(join(import.meta.dir, 'account-picker.tsx'), 'utf8');
 
 /**
@@ -25,12 +28,26 @@ describe('AccountPicker: collapses below two accounts', () => {
     expect(selectAt).toBeGreaterThan(guardAt);
   });
 
-  test('returns null only when there is nothing to show as identity', () => {
-    // One early return: label missing. The <2 branch itself does not always
-    // null out — it paints fallbackLabel / the sole account name.
+  test('returns null only when there is nothing to show at all', () => {
+    // One early return: both the identity line and the account line are
+    // empty. The <2 branch itself does not always null out — it paints
+    // fallbackLabel and/or the sole account's name as two separate lines.
     const returnNullMatches = code.match(/return null/g) ?? [];
     expect(returnNullMatches).toHaveLength(1);
-    expect(code).toContain('if (!label) return null');
+    expect(code).toContain('if (!identityLabel && !accountLabel) return null');
+  });
+
+  test('identity and account render as two separate elements, never concatenated into one string', () => {
+    // Regression guard for the disclosure this split exists to close: an
+    // account name (which can belong to someone else) must never be
+    // interpolated into the same string as the identity label.
+    expect(code).not.toMatch(/identityLabel\s*\+/);
+    expect(code).not.toMatch(/\$\{identityLabel\}.*\$\{accountLabel\}/);
+    expect(code).toContain('Create in');
+    // Two independently-conditioned spans, not one branch painting either
+    // value into a shared slot.
+    expect(code).toContain('{identityLabel ? (');
+    expect(code).toContain('{accountLabel ? (');
   });
 });
 
@@ -77,6 +94,51 @@ describe('AccountPicker: every account is selectable and reported verbatim', () 
 
   test('passes the raw account id straight through to onChange — no wrapping, no derived object', () => {
     expect(code).toContain('onValueChange={onChange}');
+  });
+});
+
+describe('resolveAccountPickerIdentity: the identity slot never carries an account name', () => {
+  // The exact shape of the disclosure this fix closes: an invited admin's
+  // only creatable account is the OWNER's personal account, stored by
+  // `bootstrap-personal-account.ts` as `"<owner-email>'s Account"`.
+  const ownersPersonalAccount: KortixAccount = {
+    account_id: 'a1',
+    name: "owner@x.com's Account",
+    account_role: 'admin',
+  };
+
+  test('accounts.length < 2 with a non-null fallbackLabel: identityLabel is fallbackLabel, never accounts[0].name', () => {
+    const result = resolveAccountPickerIdentity({
+      accounts: [ownersPersonalAccount],
+      value: null,
+      fallbackLabel: 'admin@invited.com',
+    });
+    expect(result.identityLabel).toBe('admin@invited.com');
+    expect(result.identityLabel).not.toBe(ownersPersonalAccount.name);
+    // The account name is still surfaced — as the SEPARATE "Create in" value.
+    expect(result.accountLabel).toBe(ownersPersonalAccount.name);
+  });
+
+  test('a selected value does not change which field the identity comes from', () => {
+    const result = resolveAccountPickerIdentity({
+      accounts: [ownersPersonalAccount],
+      value: 'a1',
+      fallbackLabel: 'admin@invited.com',
+    });
+    expect(result.identityLabel).toBe('admin@invited.com');
+    expect(result.identityLabel).not.toBe(ownersPersonalAccount.name);
+  });
+
+  test('zero accounts: identityLabel still resolves from fallbackLabel; accountLabel is null', () => {
+    expect(
+      resolveAccountPickerIdentity({ accounts: [], value: null, fallbackLabel: 'me@x.com' }),
+    ).toEqual({ identityLabel: 'me@x.com', accountLabel: null });
+  });
+
+  test('no fallbackLabel and no accounts: both fields are null', () => {
+    expect(
+      resolveAccountPickerIdentity({ accounts: [], value: null, fallbackLabel: null }),
+    ).toEqual({ identityLabel: null, accountLabel: null });
   });
 });
 

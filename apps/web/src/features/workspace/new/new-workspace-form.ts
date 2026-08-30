@@ -60,6 +60,16 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
  * feeds both `AccountPicker` and `isSubmittable` below — never the raw list
  * to one and this to the other, which would let "what the user can pick" and
  * "what gates submit" disagree.
+ *
+ * Does NOT strip the `'s Account` possessive `bootstrap-personal-account.ts`
+ * stores on every personal account's `name`. That possessive is the only
+ * thing that marks the string as an account name rather than a bare email —
+ * stripping it here used to hand `AccountPicker` a value indistinguishable
+ * from `user.email`, which it then painted straight into the identity slot.
+ * An invited admin whose one creatable account is the owner's personal
+ * account saw the account owner's address labelled as their own identity.
+ * `AccountPicker` now renders `fallbackLabel` in that slot and this `name`
+ * only in the separate, explicitly labelled "Create in" line — never merged.
  */
 export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
   const creatable: KortixAccount[] = [];
@@ -67,7 +77,7 @@ export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccoun
     if (account.account_role === 'owner' || account.account_role === 'admin') {
       creatable.push({
         ...account,
-        name: account.name.trim().replaceAll("'s Account", ''),
+        name: account.name.trim(),
       });
     }
   }
