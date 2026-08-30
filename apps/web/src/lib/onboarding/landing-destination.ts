@@ -51,6 +51,12 @@ export const POST_AUTH_INTENT_MAX_AGE = 60 * 5;
  * pasted or bookmarked `/auth?redirect=…` link arrives with no cookie at all.
  * An empty owner means UNATTRIBUTED, which never demotes — see
  * `shouldDemoteReturnUrl`.
+ *
+ * Accepted cost of the window: a bounce can outlive the navigation that caused
+ * it, so a genuinely shared deep link opened within 300s of somebody else's
+ * bounce is demoted once. Every successful sign-in clears the cookie, so
+ * re-opening the link works immediately — it self-corrects, and erring toward
+ * the landing door is the right direction to be wrong in.
  */
 export const AUTH_BOUNCE_COOKIE = 'kortix_auth_bounce';
 

@@ -119,7 +119,6 @@ function AuthCardForm({
   returnUrl: string;
   mobileCallbackState: string | null;
 }) {
-  const router = useRouter();
   const prefersReducedMotion = useReducedMotion();
   const enabledMethods = useMemo(() => parseAuthMethods(getEnv().AUTH_METHODS), []);
   const magicLinkEnabled = enabledMethods.includes('magic');
@@ -237,13 +236,28 @@ function AuthCardForm({
       }
     }
 
-    // Client-side navigation keeps the referrer /auth itself loaded with —
+    // The referrer /auth carries is whatever /auth itself was loaded with —
     // often a search engine — so the landing door cannot read intent from it.
     // The marker is what proves "this user just signed in" to the door.
     markPostAuthIntent();
+
+    // A HARD navigation, deliberately, NOT `router.push`.
+    //
+    // `dest` is the destination the server action resolved, which is the only
+    // one that has been through the identity gate: it drops a return URL the
+    // middleware bounced here for a DIFFERENT account (see
+    // `shouldDemoteReturnUrl`). `setSession` above fires `onAuthStateChange`,
+    // which re-renders `AuthContent` with `trustedUser === true` and runs its
+    // redirect effect — `router.replace(returnUrl)` on the RAW query param,
+    // ungated. A soft push loses that race: the later `replace` supersedes it
+    // and lands this user on the previous one's project. A document navigation
+    // is already in flight by the time that effect runs and a history swap
+    // cannot supersede it.
+    //
+    // It also discards the Next client cache, which an identity change must
+    // never carry across.
     const dest = result?.redirectTo || returnUrl;
-    router.push(dest);
-    router.refresh();
+    window.location.assign(dest);
   };
 
   const buildBaseFormData = (target: string) => {
