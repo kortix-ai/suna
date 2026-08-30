@@ -88,41 +88,111 @@ export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccoun
  * Which creatable account `/new` should pre-select.
  *
  * Preference order:
- * 1. Account `name` equals the signed-in email (case-insensitive) — the
- *    personal / bootstrapped account is often titled with the email.
- * 2. Account `slug` equals the email or its local-part.
- * 3. `is_primary_owner` — same proxy marketplace/install dialogs use when
- *    there is no `personal_account` flag on the API.
- * 4. The first creatable account.
+ * 1. Identity — `account_id === userId`. Personal accounts are created with
+ *    `accountId === userId` by construction
+ *    (`apps/api/src/accounts/core/bootstrap-personal-account.ts`: "Personal
+ *    accounts use `accountId === userId`"), so this is the only tier that can
+ *    distinguish the account that IS the user from an account the user
+ *    merely owns or administers. Replaces two tiers that were permanently
+ *    dead against the real `GET /v1/accounts` shape: `name` always carries
+ *    the `'s Account` possessive (`filterCreatableAccounts` stopped
+ *    stripping it, Task 1), and `slug` is `accountId.slice(0, 8)`
+ *    (`apps/api/src/accounts/core/accounts.ts:122`) — never an email or its
+ *    local part.
+ * 2. `is_primary_owner` — true for any account this user owns outright
+ *    (`accountRole === 'owner'`, `apps/api/src/accounts/core/accounts.ts:126`),
+ *    including a team account that is NOT their personal one. Kept as a
+ *    fallback for when identity does not resolve (`userId` not loaded yet,
+ *    or the sole owned account is a team account) — the same proxy
+ *    marketplace/install dialogs use when there is no `personal_account`
+ *    flag on the API.
+ * 3. The first creatable account — no signal at all to prefer one over
+ *    another.
  *
  * Pure and Effect-free so `/new` can derive the default without writing to
  * state on mount (the page forbids `useEffect`).
  */
 export function resolveDefaultCreatableAccountId(
   accounts: KortixAccount[],
-  email?: string | null,
+  userId?: string | null,
 ): string | null {
   if (accounts.length === 0) return null;
   if (accounts.length === 1) return accounts[0]!.account_id;
 
-  const normalized = email?.trim().toLowerCase() ?? '';
-  if (normalized) {
-    const byName = accounts.find((account) => account.name.trim().toLowerCase() === normalized);
-    if (byName) return byName.account_id;
-
-    const localPart = normalized.split('@')[0] ?? '';
-    const bySlug = accounts.find((account) => {
-      const slug = account.slug?.trim().toLowerCase() ?? '';
-      if (!slug) return false;
-      return slug === normalized || (localPart.length > 0 && slug === localPart);
-    });
-    if (bySlug) return bySlug.account_id;
+  if (userId) {
+    const own = accounts.find((account) => account.account_id === userId);
+    if (own) return own.account_id;
   }
 
   const primary = accounts.find((account) => account.is_primary_owner);
   if (primary) return primary.account_id;
 
   return accounts[0]!.account_id;
+}
+
+/**
+ * A creatable-accounts list the viewer's identity cannot be anchored to: two
+ * or more accounts, none of them the viewer's own (`account_id === userId`).
+ *
+ * Deliberately excludes a SOLE foreign account. `GET /v1/accounts` only ever
+ * returns accounts this specific signed-in user is a genuine member of
+ * (`accountMembers.userId = userId`, `apps/api/src/accounts/core/accounts.ts`),
+ * and `filterCreatableAccounts` further narrows that to owner/admin roles —
+ * so a SOLE creatable account that is not the viewer's own is the ordinary
+ * invited-admin shape: someone added as admin on an account before ever
+ * having their own personal account bootstrapped (`bootstrapPersonalAccount`
+ * only fires when the caller has ZERO existing memberships,
+ * `apps/api/src/accounts/core/accounts.ts`). That is legitimate and common,
+ * not a leak — it is exactly the scenario Task 1's fix protects (Task 2
+ * controller addendum A2.2), so it is never FOREIGN on its own.
+ *
+ * A MULTI-account list with no anchor to the viewer at all has no such
+ * legitimate shape: once the viewer's own personal account exists it is
+ * always one of their membership rows, and therefore always present. Two or
+ * more accounts with zero anchor to the viewer is the signature a stale or
+ * wrong `['accounts']` cache entry would produce (a leftover list from a
+ * DIFFERENT signed-in user), not a genuine response for this identity — so
+ * this is the fail-closed branch (G2): treat it as untrustworthy rather than
+ * guess which entry, if any, is safe to default into.
+ */
+export function isForeignAccountList(
+  creatableAccounts: KortixAccount[],
+  userId?: string | null,
+): boolean {
+  if (creatableAccounts.length < 2) return false;
+  return !creatableAccounts.some((account) => account.account_id === userId);
+}
+
+/**
+ * Accounts to hand `AccountPicker`'s `accounts` prop — identical to
+ * `creatableAccounts` except the two cases that must render LESS than the
+ * real list.
+ *
+ * `AccountPicker`'s `accounts.length === 1` branch
+ * (`resolveAccountPickerIdentity`, `account-picker.tsx`) always paints a
+ * "Create in {name}" line for a sole account — there is no prop that
+ * suppresses just that line while leaving the account in the list. So:
+ *
+ * - A SOLE account that IS the viewer's own (`account_id === userId`): an
+ *   empty array, so `AccountPicker` falls into its zero-account shape and
+ *   renders the identity line alone (Task 2 controller addendum A2.2) — a
+ *   user's own email directly above "Create in jay@kortix.ai's Account" is
+ *   redundant, not informative.
+ * - A FOREIGN list (`isForeignAccountList`): also an empty array — no
+ *   account name renders at all (Task 2 item 2, G2 fail-closed).
+ * - Everything else, INCLUDING a sole foreign account (the invited-admin
+ *   case): `creatableAccounts`, unmodified. That account's name must still
+ *   render — suppressing it here would re-open the exact disclosure Task 1
+ *   closed.
+ */
+export function resolveAccountsForPicker(
+  creatableAccounts: KortixAccount[],
+  userId?: string | null,
+): KortixAccount[] {
+  if (isForeignAccountList(creatableAccounts, userId)) return [];
+  const sole = creatableAccounts.length === 1 ? creatableAccounts[0]! : null;
+  if (sole && userId && sole.account_id === userId) return [];
+  return creatableAccounts;
 }
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {

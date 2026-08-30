@@ -282,15 +282,23 @@ describe('/new page: AccountPicker wiring', () => {
     expect(pickerIndex).toBeGreaterThan(0);
     expect(pickerIndex).toBeLessThan(formIndex);
 
-    expect(picker).toContain('accounts={creatableAccounts}');
+    // `pickerAccounts` (`resolveAccountsForPicker(creatableAccounts, user?.id)`,
+    // asserted below), not `creatableAccounts` directly — Task 2 needs the
+    // page to hand AccountPicker LESS than the real list for a sole own
+    // account (A2.2) and for a FOREIGN list (item 2), and `pickerAccounts` is
+    // the one place both collapse to before the picker ever sees them.
+    expect(picker).toContain('accounts={pickerAccounts}');
     expect(picker).not.toContain('accounts={accounts}');
-    // Effective id = explicit pick OR email-matched / primary default.
+    expect(picker).not.toContain('accounts={creatableAccounts}');
+    // Effective id = explicit pick OR identity-matched / primary default —
+    // null outright for a FOREIGN list (Task 2 item 2).
     expect(picker).toContain('value={effectiveAccountId}');
     expect(picker).toContain(
       "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
     );
     expect(picker).toContain('fallbackLabel={user?.email}');
-    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.email)');
+    expect(code).toContain('resolveAccountsForPicker(creatableAccounts, user?.id)');
+    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.id)');
     expect(code).toContain('void create(effectiveState)');
   });
 
@@ -298,16 +306,28 @@ describe('/new page: AccountPicker wiring', () => {
     expect(code).toContain("from '@/features/workspace/new/account-picker'");
   });
 
-  test('the SAME creatableAccounts value feeds both the picker and the submit gate — no count mismatch', () => {
-    // "What the user can pick" and "what gates submit" must be the exact same
-    // list. Counting references to the shared variable, rather than checking
-    // each site in isolation, is what catches a future edit that reintroduces
-    // two different lists (e.g. a second, slightly different filter for one
-    // of the two call sites).
+  test('the SAME creatableAccounts value feeds the picker (via pickerAccounts), the default resolver, the foreign-list check, and the submit gate — no count mismatch', () => {
+    // "What the user can pick" and "what gates submit" must be derived from
+    // the exact same list. Counting references to the shared variable, rather
+    // than checking each site in isolation, is what catches a future edit
+    // that reintroduces two different lists (e.g. a second, slightly
+    // different filter for one of the call sites).
     const creatableRefs = code.match(/creatableAccounts/g) ?? [];
-    // Declaration + default resolver + AccountPicker accounts= +
-    // isSubmittable length + zero-state note length === 0 = 5.
-    expect(creatableRefs).toHaveLength(5);
+    // Declaration + isForeignAccountList + resolveAccountsForPicker +
+    // default resolver + isSubmittable length + zero-state note length === 0
+    // = 6.
+    expect(creatableRefs).toHaveLength(6);
+  });
+
+  test('a FOREIGN accounts list (item 2, G2 fail closed) nulls the effective account id and blocks submit', () => {
+    expect(code).toContain(
+      'const foreignAccountList = isForeignAccountList(creatableAccounts, user?.id);',
+    );
+    expect(code).toContain('const defaultAccountId = foreignAccountList');
+    expect(code).toContain(
+      'const effectiveAccountId = foreignAccountList ? null : (state.accountId ?? defaultAccountId);',
+    );
+    expect(code).toContain('!foreignAccountList');
   });
 });
 

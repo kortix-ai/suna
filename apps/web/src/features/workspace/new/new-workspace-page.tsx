@@ -21,7 +21,9 @@ import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
   filterCreatableAccounts,
+  isForeignAccountList,
   isSubmittable,
+  resolveAccountsForPicker,
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
@@ -180,13 +182,29 @@ export function NewWorkspacePage() {
   // the user can pick" and "what gates submit" disagree.
   const creatableAccounts = filterCreatableAccounts(accounts);
 
-  // Pre-select the personal / email-matching account when the user has not
+  // A creatableAccounts list the signed-in user's identity cannot be
+  // anchored to (Task 2, G2 fail-closed) — see `isForeignAccountList`'s own
+  // doc comment for exactly which shape this is, and why a SOLE foreign
+  // account (the ordinary invited-admin case) is deliberately excluded.
+  const foreignAccountList = isForeignAccountList(creatableAccounts, user?.id);
+
+  // Accounts to hand `AccountPicker` — `creatableAccounts` with the two cases
+  // that must render less than the real list already collapsed
+  // (`resolveAccountsForPicker`): a sole account that is the viewer's own
+  // (redundant "Create in" line, Task 2 controller addendum A2.2) and a
+  // FOREIGN list (no account name at all, Task 2 item 2).
+  const pickerAccounts = resolveAccountsForPicker(creatableAccounts, user?.id);
+
+  // Pre-select the personal / identity-matching account when the user has not
   // picked yet. Derived, not Effect-written — this page forbids useEffect
   // (no eager side effects on mount). `isSubmittable` and submit both read
   // the effective id so multi-account users are not blocked on "Choose an
-  // account" when a clear default exists.
-  const defaultAccountId = resolveDefaultCreatableAccountId(creatableAccounts, user?.email);
-  const effectiveAccountId = state.accountId ?? defaultAccountId;
+  // account" when a clear default exists. `null` outright for a FOREIGN
+  // list — nothing in it can be trusted enough to pre-fill or submit.
+  const defaultAccountId = foreignAccountList
+    ? null
+    : resolveDefaultCreatableAccountId(creatableAccounts, user?.id);
+  const effectiveAccountId = foreignAccountList ? null : (state.accountId ?? defaultAccountId);
   const effectiveState: NewWorkspaceFormState = {
     ...state,
     accountId: effectiveAccountId,
@@ -217,7 +235,13 @@ export function NewWorkspacePage() {
   const canSubmit =
     isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
-    !submitting;
+    !submitting &&
+    // Belt and braces on top of `effectiveAccountId` already being forced
+    // null above for a FOREIGN list — `isSubmittable`'s own
+    // `accountCount > 1 && !accountId` check already fails on that null, but
+    // naming the condition here directly means a future edit to either
+    // function cannot silently reopen the disclosure by accident.
+    !foreignAccountList;
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
@@ -232,7 +256,7 @@ export function NewWorkspacePage() {
             collapses to muted identity text (email when none); two or more
             opens the Select on click. */}
         <AccountPicker
-          accounts={creatableAccounts}
+          accounts={pickerAccounts}
           value={effectiveAccountId}
           onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
           fallbackLabel={user?.email}

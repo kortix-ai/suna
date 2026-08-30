@@ -12,6 +12,7 @@ import {
 import {
   buildProvisionPayload,
   filterCreatableAccounts,
+  isForeignAccountList,
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
@@ -93,9 +94,29 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  * the server and 403 "Owner or admin role required" — precisely the failure
  * the picker's owner/admin filter (Task 12) exists to prevent, reopened
  * through the server's default path. So the fallback is
- * `resolveDefaultCreatableAccountId` (email match → primary owner → first
+ * `resolveDefaultCreatableAccountId` (identity match → primary owner → first
  * creatable) against the SAME filtered list the picker itself renders from —
  * never the raw, unfiltered account list.
+ *
+ * Two independent fail-closed checks (Task 2 item 3, G2), both of which
+ * throw rather than let a create proceed:
+ *
+ * 1. `creatableAccounts` itself must not be FOREIGN
+ *    (`isForeignAccountList` — two or more accounts, none of them
+ *    `userId`'s own). Checked BEFORE looking at `state.accountId` at all: a
+ *    poisoned list taints every id it could produce, including one an
+ *    explicit (but stale) pick already carried, not only the default tier.
+ *    `new-workspace-page.tsx` already disables submit and hides the account
+ *    name for this case (item 2) — this is the second, independent layer
+ *    for any caller that resolves a target id without going through that
+ *    page-level gate, e.g. a future host of `useCreateWorkspace`.
+ * 2. The resolved id — from an explicit `state.accountId` or from the
+ *    default below — must actually be one of `creatableAccounts`.
+ *    `state.accountId` is normally only ever set from an `AccountPicker`
+ *    selection, itself built from this exact list, so this should never fire
+ *    in ordinary use; it is the last line of defense against a resolved id
+ *    that is stale, or a caller that skipped the page's own gating, ever
+ *    reaching the network with the signed-in user's JWT.
  *
  * Extracted out of `buildCreatePayload` (below) as its own function so the
  * account a create actually targets is resolved in exactly one place.
@@ -103,13 +124,19 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
-  email?: string | null,
+  userId?: string | null,
 ): string | undefined {
-  return (
-    state.accountId ??
-    resolveDefaultCreatableAccountId(creatableAccounts, email) ??
-    undefined
-  );
+  if (isForeignAccountList(creatableAccounts, userId)) {
+    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+  }
+  const resolved =
+    state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, userId) ?? undefined;
+  if (resolved === undefined) return undefined;
+  const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
+  if (!isCreatable) {
+    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+  }
+  return resolved;
 }
 
 /** The exact `POST /projects/provision` request body for one create attempt. */
@@ -117,10 +144,11 @@ export function buildCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string,
+  userId?: string | null,
 ): Record<string, unknown> {
   return {
     ...buildProvisionPayload(state),
-    account_id: resolveTargetAccountId(state, creatableAccounts),
+    account_id: resolveTargetAccountId(state, creatableAccounts, userId),
     idempotency_key: idempotencyKey,
   };
 }
@@ -139,16 +167,18 @@ export function buildCreatePayload(
 export function buildGitHubCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
+  userId?: string | null,
 ): CreateProjectRepoInput {
-  return buildCreateRepoPayload(state, resolveTargetAccountId(state, creatableAccounts));
+  return buildCreateRepoPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
 
 /** The `POST /projects/link-repository` body. Same account resolution. */
 export function buildGitHubImportPayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
+  userId?: string | null,
 ): LinkRepositoryInput {
-  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts));
+  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
 
 /**
@@ -512,19 +542,24 @@ async function runSourceAttempt(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string | null,
+  userId: string | null | undefined,
   client: CreateOrchestrationClient,
 ): Promise<KortixProject> {
   if (state.source === 'github-create') {
-    return client.createGitHubRepoProject(buildGitHubCreatePayload(state, creatableAccounts));
+    return client.createGitHubRepoProject(
+      buildGitHubCreatePayload(state, creatableAccounts, userId),
+    );
   }
   if (state.source === 'github-import') {
-    return client.importGitHubRepoProject(buildGitHubImportPayload(state, creatableAccounts));
+    return client.importGitHubRepoProject(
+      buildGitHubImportPayload(state, creatableAccounts, userId),
+    );
   }
   if (!idempotencyKey) {
     throw new Error('runCreate: the managed source requires an idempotency key');
   }
   return client.runCreateAttempt(
-    buildCreatePayload(state, creatableAccounts, idempotencyKey) as unknown as ProvisionProjectInput,
+    buildCreatePayload(state, creatableAccounts, idempotencyKey, userId) as unknown as ProvisionProjectInput,
   );
 }
 
@@ -578,7 +613,7 @@ export async function runCreate(
     : null;
 
   try {
-    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, client);
+    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId, client);
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
