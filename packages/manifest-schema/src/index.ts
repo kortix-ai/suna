@@ -101,6 +101,8 @@ export {
   CRAFT_OWNED_KINDS,
   type CraftOwnedKind,
   CRAFT_REPO_RE,
+  type CraftRepoAddress,
+  parseCraftRepo,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,

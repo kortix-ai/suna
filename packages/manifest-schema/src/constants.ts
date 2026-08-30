@@ -30,6 +30,76 @@ export const CRAFT_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9
 export const CRAFT_OWNED_KINDS = ['agents', 'skills', 'connectors', 'triggers'] as const;
 export type CraftOwnedKind = (typeof CRAFT_OWNED_KINDS)[number];
 
+/** A craft's source address, normalized. `ref` is a branch or tag, never a sha. */
+export interface CraftRepoAddress {
+  owner: string;
+  repo: string;
+  /** The branch/tag the caller pinned, or null for the repo's default branch. */
+  ref: string | null;
+}
+
+/**
+ * Normalize whatever a person pastes into one craft source address.
+ *
+ * Accepts a browser URL, an `.git` clone URL, an `ssh://` or `git@` remote, a
+ * `github:` scheme, or a bare `owner/repo` — optionally suffixed `@<ref>` to
+ * pin a branch or tag. Returns null when the value does not identify exactly
+ * one GitHub repository, which is what gates the submit form's Continue.
+ *
+ * Deliberately GitHub-only and deliberately strict: this value ends up in a
+ * committed manifest and in a URL the server fetches, so anything still
+ * carrying a scheme, a host, a query, or a path beyond `owner/repo` is
+ * rejected rather than coerced. A non-GitHub URL must never pass as
+ * `owner/repo`.
+ *
+ * Shared by the API's submit route and the web submit modal so the two can
+ * never disagree about what a person typed.
+ */
+export function parseCraftRepo(value: string): CraftRepoAddress | null {
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const cleaned = raw
+    .replace(/^git@github\.com:/i, '')
+    .replace(/^github:/i, '')
+    .replace(/^(?:https?:\/\/|ssh:\/\/git@|git:\/\/)?(?:www\.)?github\.com\//i, '')
+    .replace(/[?#].*$/, '')
+    .replace(/\/+$/, '');
+
+  // Split a trailing `@ref` BEFORE the `.git` strip, so `owner/repo.git@v1`
+  // and `owner/repo@v1` both work. An `@` in the owner position (a scp-style
+  // remote we failed to clean) leaves a colon or slash behind and is rejected
+  // by the checks further down.
+  const at = cleaned.lastIndexOf('@');
+  const hasRef = at > 0 && !cleaned.slice(at + 1).includes('/');
+  const refRaw = hasRef ? cleaned.slice(at + 1).trim() : '';
+  const withoutRef = (hasRef ? cleaned.slice(0, at) : cleaned).replace(/\.git$/i, '');
+
+  // Anything still holding a scheme separator or whitespace is not `owner/repo`.
+  if (/[:\s]/.test(withoutRef) || /[:\s]/.test(refRaw)) return null;
+  // An absolute path must not survive as `owner/repo`: `/etc/passwd` splits to
+  // a leading EMPTY segment that `filter(Boolean)` would silently drop, leaving
+  // a plausible-looking `etc/passwd`. Reject the shape before splitting.
+  if (withoutRef.startsWith('/')) return null;
+
+  const parts = withoutRef.split('/').filter(Boolean);
+  if (parts.length !== 2) return null;
+  // Reject a doubled separator (`acme//repo`) for the same reason — the empty
+  // middle segment vanishes in the filter and two forms would map to one repo.
+  if (parts.join('/') !== withoutRef) return null;
+  const [owner, repo] = parts;
+
+  const NAME_RE = /^[\w.-]+$/;
+  if (!NAME_RE.test(owner) || !NAME_RE.test(repo)) return null;
+  // `.` and `..` are legal against NAME_RE but are not repository names.
+  if (owner === '.' || owner === '..' || repo === '.' || repo === '..') return null;
+  // A ref may contain slashes upstream (`release/1.x`), but this form cannot
+  // express one unambiguously against `owner/repo`, so only simple refs pass.
+  if (hasRef && (!refRaw || !NAME_RE.test(refRaw))) return null;
+
+  return { owner, repo, ref: hasRef ? refRaw : null };
+}
+
 /** Regex matching every legal env-var name. */
 export const ENV_NAME_RE = /^[A-Z_][A-Z0-9_]*$/;
 

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 639,
   "routes": [
     {
       "method": "GET",
@@ -1033,6 +1033,22 @@
     {
       "method": "POST",
       "path": "/v1/connectors/webhook/pipedream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crafts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/crafts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/crafts/:craftId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/crafts/:craftId"
     },
     {
       "method": "GET",
