@@ -26,6 +26,7 @@ import { PROJECT_ACTIONS } from '../../iam/actions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { ensureProjectCrafts } from '../craft-catalog';
+import { listCraftRuns, summarizeCraftRuns } from '../craft-runs';
 import {
   bumpCraftInstallCount,
   craftVisibleTo,
@@ -59,6 +60,52 @@ async function manifestRawOrNull(
   return found?.content ?? null;
 }
 
+/** Runs paging. Bounded so one call can never ask for a whole history. */
+const RUNS_DEFAULT_LIMIT = 50;
+const RUNS_MAX_LIMIT = 200;
+
+function runPaging(c: any): { limit: number; offset: number } {
+  const rawLimit = Number(c.req.query('limit'));
+  const rawOffset = Number(c.req.query('offset'));
+  return {
+    limit:
+      Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(Math.floor(rawLimit), RUNS_MAX_LIMIT)
+        : RUNS_DEFAULT_LIMIT,
+    offset: Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0,
+  };
+}
+
+/**
+ * Membership + flag + capability for a craft READ, in the one order that does
+ * not leak: membership first (a stranger gets 404 and learns nothing), then the
+ * flag, then the capability.
+ *
+ * Returns either the resolved scope or the response to send. A discriminated
+ * result rather than a throw, so each route's control flow stays readable and
+ * the 404/403 bodies stay identical across all of them.
+ */
+async function requireCraftReadScope(
+  c: any,
+): Promise<
+  | { projectId: string; loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>> }
+  | { response: Response }
+> {
+  const projectId = c.req.param('projectId');
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
+  const gate = requireFeatureFlag(c, loaded.row.metadata, 'crafts');
+  if (gate) return { response: gate };
+  await assertProjectCapability(
+    c,
+    loaded.userId,
+    loaded.row.accountId,
+    projectId,
+    PROJECT_ACTIONS.PROJECT_READ,
+  );
+  return { projectId, loaded };
+}
+
 // ── GET /:projectId/crafts ──────────────────────────────────────────────────
 
 projectsApp.openapi(
@@ -75,18 +122,9 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'crafts');
-    if (gate) return gate;
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_READ,
-    );
+    const scoped = await requireCraftReadScope(c);
+    if ('response' in scoped) return scoped.response;
+    const { projectId, loaded } = scoped;
 
     const project = await loadGitProject(loaded);
     let manifest: Awaited<ReturnType<typeof readManifest>> = null;
@@ -316,5 +354,83 @@ projectsApp.openapi(
     if (!result.row) return c.json({ error: 'Session creation returned no row' }, 500);
 
     return c.json({ session_id: result.row.sessionId }, 201);
+  },
+);
+
+// ── GET /:projectId/crafts/runs ─────────────────────────────────────────────
+//
+// Registered BEFORE `/{projectId}/crafts/{slug}/runs` so `runs` is never eaten
+// as a craft slug. (`activation` vs `{slug}` in r4.ts is the same ordering
+// hazard, and carries the same note.)
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/crafts/runs',
+    tags: ['crafts'],
+    summary: "GET /:projectId/crafts/runs — every craft's runs",
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ limit: z.string().optional(), offset: z.string().optional() }),
+    },
+    responses: {
+      200: json(z.any(), 'Runs across every installed craft'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const scoped = await requireCraftReadScope(c);
+    if ('response' in scoped) return scoped.response;
+    const { limit, offset } = runPaging(c);
+    const { runs, total } = await listCraftRuns({
+      projectId: scoped.projectId,
+      limit,
+      offset,
+    });
+    return c.json({ runs, total, limit, offset });
+  },
+);
+
+// ── GET /:projectId/crafts/{slug}/runs ──────────────────────────────────────
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/crafts/{slug}/runs',
+    tags: ['crafts'],
+    summary: 'GET /:projectId/crafts/:slug/runs',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), slug: z.string() }),
+      query: z.object({ limit: z.string().optional(), offset: z.string().optional() }),
+    },
+    responses: {
+      200: json(z.any(), 'Runs for one craft, with aggregate stats'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const scoped = await requireCraftReadScope(c);
+    if ('response' in scoped) return scoped.response;
+    const slug = c.req.param('slug');
+    const { limit, offset } = runPaging(c);
+    const { runs, total } = await listCraftRuns({
+      projectId: scoped.projectId,
+      craftSlug: slug,
+      limit,
+      offset,
+    });
+    // Stats are over the RETURNED page, not the whole history, and the response
+    // says so via `total`. Aggregating every execution ever would be a second
+    // full scan for a number the report shows beside a 12-run strip.
+    return c.json({
+      craft_slug: slug,
+      runs,
+      total,
+      limit,
+      offset,
+      stats: summarizeCraftRuns(runs),
+    });
   },
 );

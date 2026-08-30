@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 642,
+  "count": 644,
   "routes": [
     {
       "method": "GET",
@@ -1667,12 +1667,20 @@
       "path": "/v1/projects/:projectId/crafts"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/crafts/:slug/runs"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/crafts/:slug/uninstall-session"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/crafts/install-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/crafts/runs"
     },
     {
       "method": "PUT",
