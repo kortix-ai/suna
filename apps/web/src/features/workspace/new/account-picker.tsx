@@ -20,17 +20,30 @@ import type { KortixAccount } from '@kortix/sdk';
  * separate, explicitly labelled "Create in" value — never merged into one
  * string with the identity line.
  *
+ * `showAccountLine` (default `true`) is the caller's explicit request to
+ * suppress `accountLabel` entirely — used by `/new`
+ * (`shouldShowAccountLine`, `new-workspace-form.ts`) for a sole account that
+ * is the viewer's own (redundant "Create in" line) and for a FOREIGN
+ * creatable-accounts list (no account name at all). `accounts` is always the
+ * REAL, unmodified list either way — the caller must never shrink or empty
+ * it to hide something; this parameter is the honest way to ask for that.
+ *
  * Pure so the split can be asserted directly, without rendering DOM.
  */
 export function resolveAccountPickerIdentity({
   accounts,
   value,
   fallbackLabel,
+  showAccountLine = true,
 }: {
   accounts: KortixAccount[];
   value: string | null;
   fallbackLabel?: string | null;
+  showAccountLine?: boolean;
 }): { identityLabel: string | null; accountLabel: string | null } {
+  if (!showAccountLine) {
+    return { identityLabel: fallbackLabel ?? null, accountLabel: null };
+  }
   const selectedByValue = accounts.find((account) => account.account_id === value) ?? null;
   // Only a SOLE account is implicit enough to name without a pick — with two
   // or more, naming one before the user has chosen would assert a decision
@@ -59,6 +72,14 @@ export function resolveAccountPickerIdentity({
  * accounts the user may actually create a workspace in
  * (`filterCreatableAccounts`, `new-workspace-form.ts`); this component has no
  * opinion on permissions and must not duplicate that filter.
+ *
+ * `accounts` ALWAYS means the real, unfiltered-for-display creatable-
+ * accounts list — never a stand-in shrunk or emptied to hide something from
+ * the caller's side. `showAccountLine` (default `true`) is the explicit way
+ * a caller asks this component to reveal nothing beyond bare identity: when
+ * `false`, the component renders ONLY `fallbackLabel`, ignoring `accounts`
+ * and its length entirely — including bypassing the interactive Select for
+ * two or more accounts, not just the single "Create in" line below one.
  */
 export function AccountPicker({
   accounts,
@@ -66,6 +87,7 @@ export function AccountPicker({
   onChange,
   fallbackLabel,
   className,
+  showAccountLine = true,
 }: {
   accounts: KortixAccount[];
   value: string | null;
@@ -73,12 +95,16 @@ export function AccountPicker({
   /** Shown when there is no selected/sole account (typically the signed-in email). */
   fallbackLabel?: string | null;
   className?: string;
+  /** See the component doc comment above — `false` suppresses ALL account-
+   *  specific rendering, regardless of `accounts.length`. */
+  showAccountLine?: boolean;
 }) {
-  if (accounts.length < 2) {
+  if (!showAccountLine || accounts.length < 2) {
     const { identityLabel, accountLabel } = resolveAccountPickerIdentity({
       accounts,
       value,
       fallbackLabel,
+      showAccountLine,
     });
     if (!identityLabel && !accountLabel) return null;
     return (

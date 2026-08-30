@@ -93,6 +93,7 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: null },
       [OWNER_ACCOUNT],
       'key-1',
+      'user-1',
     );
     expect(payload.account_id).toBe('acct-owner');
   });
@@ -125,12 +126,18 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
         { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
         [OWNER_ACCOUNT],
         'key-1',
+        'user-1',
       ),
     ).toThrow();
   });
 
   test('always carries the passed idempotency_key', () => {
-    const payload = buildCreatePayload({ ...INITIAL_FORM_STATE, name: 'x' }, [OWNER_ACCOUNT], 'the-key');
+    const payload = buildCreatePayload(
+      { ...INITIAL_FORM_STATE, name: 'x' },
+      [OWNER_ACCOUNT],
+      'the-key',
+      'user-1',
+    );
     expect(payload.idempotency_key).toBe('the-key');
   });
 
@@ -139,6 +146,7 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
       { ...INITIAL_FORM_STATE, name: '  suna-web  ' },
       [OWNER_ACCOUNT],
       'key-1',
+      'user-1',
     );
     expect(payload.name).toBe('suna-web');
     expect(payload.seed_starter).toBe(true);

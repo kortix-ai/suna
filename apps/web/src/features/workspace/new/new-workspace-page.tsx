@@ -23,8 +23,8 @@ import {
   filterCreatableAccounts,
   isForeignAccountList,
   isSubmittable,
-  resolveAccountsForPicker,
   resolveDefaultCreatableAccountId,
+  shouldShowAccountLine,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
@@ -182,18 +182,28 @@ export function NewWorkspacePage() {
   // the user can pick" and "what gates submit" disagree.
   const creatableAccounts = filterCreatableAccounts(accounts);
 
+  // `user?.id` is `string | undefined`; the identity helpers below require an
+  // explicit `string | null` — an omitted/undefined argument used to compile
+  // clean and silently degrade to "cannot establish identity", which failed
+  // closed for the wrong reason (an accident, not a decision, G4). Normalized
+  // once here and reused for every identity-aware call on this page.
+  const userId = user?.id ?? null;
+
   // A creatableAccounts list the signed-in user's identity cannot be
   // anchored to (Task 2, G2 fail-closed) — see `isForeignAccountList`'s own
-  // doc comment for exactly which shape this is, and why a SOLE foreign
-  // account (the ordinary invited-admin case) is deliberately excluded.
-  const foreignAccountList = isForeignAccountList(creatableAccounts, user?.id);
+  // doc comment for exactly which shape this is, why a SOLE foreign account
+  // (the ordinary invited-admin case) is deliberately excluded, and why that
+  // exclusion does NOT cover a stale single-account `['accounts']` cache
+  // entry belonging to a different user — that instance of symptom 3 is
+  // closed by Task 10's user-scoped query key, not here.
+  const foreignAccountList = isForeignAccountList(creatableAccounts, userId);
 
-  // Accounts to hand `AccountPicker` — `creatableAccounts` with the two cases
-  // that must render less than the real list already collapsed
-  // (`resolveAccountsForPicker`): a sole account that is the viewer's own
-  // (redundant "Create in" line, Task 2 controller addendum A2.2) and a
-  // FOREIGN list (no account name at all, Task 2 item 2).
-  const pickerAccounts = resolveAccountsForPicker(creatableAccounts, user?.id);
+  // Whether `AccountPicker` should reveal any account-specific info beyond
+  // bare identity (Task 2 controller addendum A2.2 / item 2). `AccountPicker`
+  // always gets the REAL `creatableAccounts` below — never a shrunk stand-in
+  // — so `accounts` keeps meaning "the accounts the user can create in" and
+  // this flag is the sole, explicit place suppression is decided.
+  const showAccountLine = shouldShowAccountLine(creatableAccounts, userId);
 
   // Pre-select the personal / identity-matching account when the user has not
   // picked yet. Derived, not Effect-written — this page forbids useEffect
@@ -203,7 +213,7 @@ export function NewWorkspacePage() {
   // list — nothing in it can be trusted enough to pre-fill or submit.
   const defaultAccountId = foreignAccountList
     ? null
-    : resolveDefaultCreatableAccountId(creatableAccounts, user?.id);
+    : resolveDefaultCreatableAccountId(creatableAccounts, userId);
   const effectiveAccountId = foreignAccountList ? null : (state.accountId ?? defaultAccountId);
   const effectiveState: NewWorkspaceFormState = {
     ...state,
@@ -256,10 +266,11 @@ export function NewWorkspacePage() {
             collapses to muted identity text (email when none); two or more
             opens the Select on click. */}
         <AccountPicker
-          accounts={pickerAccounts}
+          accounts={creatableAccounts}
           value={effectiveAccountId}
           onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
           fallbackLabel={user?.email}
+          showAccountLine={showAccountLine}
           className="min-w-0"
         />
         {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`

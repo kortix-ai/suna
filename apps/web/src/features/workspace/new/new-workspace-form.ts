@@ -154,45 +154,68 @@ export function resolveDefaultCreatableAccountId(
  * DIFFERENT signed-in user), not a genuine response for this identity — so
  * this is the fail-closed branch (G2): treat it as untrustworthy rather than
  * guess which entry, if any, is safe to default into.
+ *
+ * RESIDUAL RISK, stated plainly rather than assumed away: a SOLE foreign
+ * account (the branch above that returns `false`) is INDISTINGUISHABLE, from
+ * this function's inputs alone, from a stale `['accounts']` cache entry that
+ * still holds a DIFFERENT, previously-signed-in user's single-account list.
+ * Both shapes are exactly one account, `account_id !== userId`. If
+ * `['accounts']` is not scoped per signed-in user, that instance of symptom 3
+ * reaches this function looking identical to the legitimate invited-admin
+ * case and is NOT caught here. Closing that gap is Task 10's job (a
+ * user-scoped `['accounts']` query key), not this function's — do not
+ * de-scope Task 10 on the belief that Task 2 already covers the N=1 case.
+ *
+ * `userId` is required, not optional: an omitted argument used to compile
+ * clean and silently degrade to `undefined`, which made every 2+-account
+ * list FOREIGN by accident (a functional break for real multi-account users,
+ * not a security hole, but one no single-account test could catch). The type
+ * also does not accept `undefined` at all — only `string | null` — so a
+ * caller that cannot yet establish identity must say so explicitly with
+ * `null` rather than by omission. `null` already fails closed correctly: no
+ * real `account_id` is ever `null`, so `!some(...)` is `true` for any 2+
+ * list, exactly the G2 fail-closed direction this function exists for.
  */
 export function isForeignAccountList(
   creatableAccounts: KortixAccount[],
-  userId?: string | null,
+  userId: string | null,
 ): boolean {
   if (creatableAccounts.length < 2) return false;
   return !creatableAccounts.some((account) => account.account_id === userId);
 }
 
 /**
- * Accounts to hand `AccountPicker`'s `accounts` prop — identical to
- * `creatableAccounts` except the two cases that must render LESS than the
- * real list.
+ * Whether `AccountPicker` should reveal any account-specific info beyond
+ * bare identity — the caller-side half of A2.2 / item 2's suppression rules.
  *
- * `AccountPicker`'s `accounts.length === 1` branch
- * (`resolveAccountPickerIdentity`, `account-picker.tsx`) always paints a
- * "Create in {name}" line for a sole account — there is no prop that
- * suppresses just that line while leaving the account in the list. So:
+ * `AccountPicker` always receives the REAL, unmodified `creatableAccounts` —
+ * this function returns a boolean, never a shrunk stand-in list, precisely
+ * because handing the component a falsified `accounts` array (this used to
+ * return `[]` to suppress) makes `accounts` stop meaning "the accounts the
+ * user can create in" while `value` still names one of them, a standing trap
+ * for anyone who later changes `AccountPicker`'s own length thresholds or
+ * adds a second consumer of `accounts`. `AccountPicker`'s own
+ * `showAccountLine` prop is what actually acts on this.
  *
- * - A SOLE account that IS the viewer's own (`account_id === userId`): an
- *   empty array, so `AccountPicker` falls into its zero-account shape and
- *   renders the identity line alone (Task 2 controller addendum A2.2) — a
+ * `false` (suppress) for:
+ * - A SOLE account that IS the viewer's own (`account_id === userId`): a
  *   user's own email directly above "Create in jay@kortix.ai's Account" is
- *   redundant, not informative.
- * - A FOREIGN list (`isForeignAccountList`): also an empty array — no
- *   account name renders at all (Task 2 item 2, G2 fail-closed).
- * - Everything else, INCLUDING a sole foreign account (the invited-admin
- *   case): `creatableAccounts`, unmodified. That account's name must still
- *   render — suppressing it here would re-open the exact disclosure Task 1
- *   closed.
+ *   redundant, not informative (Task 2 controller addendum A2.2).
+ * - A FOREIGN list (`isForeignAccountList`): no account name renders at all
+ *   (Task 2 item 2, G2 fail-closed).
+ *
+ * `true` (reveal) for everything else, INCLUDING a sole foreign account (the
+ * invited-admin case) — that account's name must still render; suppressing
+ * it would re-open the exact disclosure Task 1 closed.
  */
-export function resolveAccountsForPicker(
+export function shouldShowAccountLine(
   creatableAccounts: KortixAccount[],
-  userId?: string | null,
-): KortixAccount[] {
-  if (isForeignAccountList(creatableAccounts, userId)) return [];
+  userId: string | null,
+): boolean {
+  if (isForeignAccountList(creatableAccounts, userId)) return false;
   const sole = creatableAccounts.length === 1 ? creatableAccounts[0]! : null;
-  if (sole && userId && sole.account_id === userId) return [];
-  return creatableAccounts;
+  if (sole && sole.account_id === userId) return false;
+  return true;
 }
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {

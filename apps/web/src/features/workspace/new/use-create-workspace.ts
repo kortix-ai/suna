@@ -120,11 +120,20 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  *
  * Extracted out of `buildCreatePayload` (below) as its own function so the
  * account a create actually targets is resolved in exactly one place.
+ *
+ * `userId` is required, not optional (G4): an omitted argument used to
+ * compile clean and silently degrade to `undefined`, which made
+ * `isForeignAccountList` treat ANY 2+-account list as foreign and throw —
+ * a functional break for real multi-account users that every single-
+ * account test passed straight through. The type is `string | null`, not
+ * `| undefined`: a caller that genuinely cannot establish identity yet must
+ * say so explicitly with `null`, which already fails closed correctly (see
+ * `isForeignAccountList`'s doc comment) rather than by accidental omission.
  */
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
-  userId?: string | null,
+  userId: string | null,
 ): string | undefined {
   if (isForeignAccountList(creatableAccounts, userId)) {
     throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
@@ -144,7 +153,7 @@ export function buildCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string,
-  userId?: string | null,
+  userId: string | null,
 ): Record<string, unknown> {
   return {
     ...buildProvisionPayload(state),
@@ -167,7 +176,7 @@ export function buildCreatePayload(
 export function buildGitHubCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
-  userId?: string | null,
+  userId: string | null,
 ): CreateProjectRepoInput {
   return buildCreateRepoPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
@@ -176,7 +185,7 @@ export function buildGitHubCreatePayload(
 export function buildGitHubImportPayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
-  userId?: string | null,
+  userId: string | null,
 ): LinkRepositoryInput {
   return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
@@ -542,7 +551,10 @@ async function runSourceAttempt(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string | null,
-  userId: string | null | undefined,
+  // `string | null`, not `| undefined`: normalized once at the `runCreate`
+  // call site below so every `build*Payload` this function calls receives
+  // the same required, non-omittable identity argument they now require.
+  userId: string | null,
   client: CreateOrchestrationClient,
 ): Promise<KortixProject> {
   if (state.source === 'github-create') {
@@ -613,7 +625,7 @@ export async function runCreate(
     : null;
 
   try {
-    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId, client);
+    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId ?? null, client);
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();

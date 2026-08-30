@@ -6,8 +6,8 @@ import {
   filterCreatableAccounts,
   isForeignAccountList,
   isSubmittable,
-  resolveAccountsForPicker,
   resolveDefaultCreatableAccountId,
+  shouldShowAccountLine,
 } from './new-workspace-form';
 import type { KortixAccount } from '@kortix/sdk';
 
@@ -193,35 +193,40 @@ describe('isForeignAccountList', () => {
     expect(isForeignAccountList([foreign1, foreign2], 'me')).toBe(true);
   });
 
-  test('true for two or more accounts when the viewer id is not known at all', () => {
+  // `userId` is required and typed `string | null` (no `| undefined`) —
+  // review round 1, Important 2. A caller that genuinely cannot establish
+  // identity must say so explicitly with `null`; `undefined` is no longer a
+  // representable value at the type level, so there is no longer a separate
+  // "omitted" case to test here. `null` already fails closed correctly: no
+  // real `account_id` is ever `null`.
+  test('true for two or more accounts when the viewer id is explicitly unknown (null)', () => {
     expect(isForeignAccountList([foreign1, foreign2], null)).toBe(true);
-    expect(isForeignAccountList([foreign1, foreign2], undefined)).toBe(true);
   });
 });
 
-describe('resolveAccountsForPicker', () => {
+describe('shouldShowAccountLine', () => {
   const ownSole: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
   const foreignSole: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
   const foreignSecond: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
 
-  test('sole OWN account: suppressed to an empty array — AccountPicker renders the identity line alone (A2.2)', () => {
-    expect(resolveAccountsForPicker([ownSole], 'me')).toEqual([]);
+  test('sole OWN account: false — AccountPicker renders the identity line alone (A2.2)', () => {
+    expect(shouldShowAccountLine([ownSole], 'me')).toBe(false);
   });
 
-  test('sole FOREIGN account: NOT suppressed — the invited-admin scenario must still name the account (A2.2, do not re-open Task 1s disclosure fix)', () => {
-    expect(resolveAccountsForPicker([foreignSole], 'me')).toEqual([foreignSole]);
+  test('sole FOREIGN account: true — the invited-admin scenario must still name the account (A2.2, do not re-open Task 1s disclosure fix)', () => {
+    expect(shouldShowAccountLine([foreignSole], 'me')).toBe(true);
   });
 
-  test('a FOREIGN list (two or more, none owned): suppressed to an empty array — no account name renders at all', () => {
-    expect(resolveAccountsForPicker([foreignSole, foreignSecond], 'me')).toEqual([]);
+  test('a FOREIGN list (two or more, none owned): false — no account name renders at all', () => {
+    expect(shouldShowAccountLine([foreignSole, foreignSecond], 'me')).toBe(false);
   });
 
-  test("a normal multi-account list that includes the viewer's own: passed through unmodified", () => {
-    expect(resolveAccountsForPicker([ownSole, foreignSole], 'me')).toEqual([ownSole, foreignSole]);
+  test("a normal multi-account list that includes the viewer's own: true — the real list reaches the interactive Select unmodified", () => {
+    expect(shouldShowAccountLine([ownSole, foreignSole], 'me')).toBe(true);
   });
 
-  test('zero accounts: passed through as empty, trivially', () => {
-    expect(resolveAccountsForPicker([], 'me')).toEqual([]);
+  test('zero accounts: true, trivially (AccountPicker itself renders nothing at zero accounts and no fallback label)', () => {
+    expect(shouldShowAccountLine([], 'me')).toBe(true);
   });
 });
 

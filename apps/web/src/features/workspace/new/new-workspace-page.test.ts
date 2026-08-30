@@ -282,14 +282,16 @@ describe('/new page: AccountPicker wiring', () => {
     expect(pickerIndex).toBeGreaterThan(0);
     expect(pickerIndex).toBeLessThan(formIndex);
 
-    // `pickerAccounts` (`resolveAccountsForPicker(creatableAccounts, user?.id)`,
-    // asserted below), not `creatableAccounts` directly — Task 2 needs the
-    // page to hand AccountPicker LESS than the real list for a sole own
-    // account (A2.2) and for a FOREIGN list (item 2), and `pickerAccounts` is
-    // the one place both collapse to before the picker ever sees them.
-    expect(picker).toContain('accounts={pickerAccounts}');
+    // Review round 1, Important 3: `accounts` is ALWAYS the REAL
+    // `creatableAccounts` list — the page used to hand AccountPicker a
+    // falsified, sometimes-emptied stand-in (`pickerAccounts`,
+    // `resolveAccountsForPicker`) to suppress rendering, which made
+    // `accounts` stop meaning "the accounts the user can create in" while
+    // `value` still named one of them. Suppression is now the EXPLICIT
+    // `showAccountLine` prop below, decided once by `shouldShowAccountLine`.
+    expect(picker).toContain('accounts={creatableAccounts}');
     expect(picker).not.toContain('accounts={accounts}');
-    expect(picker).not.toContain('accounts={creatableAccounts}');
+    expect(picker).not.toContain('accounts={pickerAccounts}');
     // Effective id = explicit pick OR identity-matched / primary default —
     // null outright for a FOREIGN list (Task 2 item 2).
     expect(picker).toContain('value={effectiveAccountId}');
@@ -297,8 +299,9 @@ describe('/new page: AccountPicker wiring', () => {
       "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
     );
     expect(picker).toContain('fallbackLabel={user?.email}');
-    expect(code).toContain('resolveAccountsForPicker(creatableAccounts, user?.id)');
-    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.id)');
+    expect(picker).toContain('showAccountLine={showAccountLine}');
+    expect(code).toContain('shouldShowAccountLine(creatableAccounts, userId)');
+    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, userId)');
     expect(code).toContain('void create(effectiveState)');
   });
 
@@ -306,22 +309,34 @@ describe('/new page: AccountPicker wiring', () => {
     expect(code).toContain("from '@/features/workspace/new/account-picker'");
   });
 
-  test('the SAME creatableAccounts value feeds the picker (via pickerAccounts), the default resolver, the foreign-list check, and the submit gate — no count mismatch', () => {
+  // Review round 1, Important 2: `user?.id` (`string | undefined`) is
+  // normalized to `string | null` exactly once, so every identity-aware call
+  // below shares one coercion instead of each caller silently omitting it.
+  test('user?.id is normalized to a required, non-omittable userId exactly once, and every identity-aware call uses it', () => {
+    expect(code).toContain('const userId = user?.id ?? null;');
+    expect(code).not.toContain('isForeignAccountList(creatableAccounts, user?.id)');
+    expect(code).not.toContain('shouldShowAccountLine(creatableAccounts, user?.id)');
+    expect(code).not.toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.id)');
+  });
+
+  test('the SAME creatableAccounts value feeds AccountPicker directly, the default resolver, the foreign-list check, the show-line decision, and the submit gate — no count mismatch', () => {
     // "What the user can pick" and "what gates submit" must be derived from
     // the exact same list. Counting references to the shared variable, rather
     // than checking each site in isolation, is what catches a future edit
     // that reintroduces two different lists (e.g. a second, slightly
     // different filter for one of the call sites).
     const creatableRefs = code.match(/creatableAccounts/g) ?? [];
-    // Declaration + isForeignAccountList + resolveAccountsForPicker +
-    // default resolver + isSubmittable length + zero-state note length === 0
-    // = 6.
-    expect(creatableRefs).toHaveLength(6);
+    // Declaration + isForeignAccountList + shouldShowAccountLine +
+    // default resolver + AccountPicker's own accounts= (review round 1,
+    // Important 3 — reverted from the falsified `pickerAccounts` stand-in
+    // back to the real list) + isSubmittable length + zero-state note
+    // length === 0 = 7.
+    expect(creatableRefs).toHaveLength(7);
   });
 
   test('a FOREIGN accounts list (item 2, G2 fail closed) nulls the effective account id and blocks submit', () => {
     expect(code).toContain(
-      'const foreignAccountList = isForeignAccountList(creatableAccounts, user?.id);',
+      'const foreignAccountList = isForeignAccountList(creatableAccounts, userId);',
     );
     expect(code).toContain('const defaultAccountId = foreignAccountList');
     expect(code).toContain(
