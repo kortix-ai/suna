@@ -8,6 +8,9 @@ describe('patchVerb', () => {
     expect(patchVerb(['add', 'add', 'add', 'add'])).toEqual({
       verb: 'Created',
       running: 'Creating',
+      // The third tense, shared with every other file row: a patch that failed
+      // must not be reported in the wording of one that landed.
+      failed: "Couldn't create",
       icon: 'create',
     });
   });

@@ -5,13 +5,13 @@ import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ApplyPatchTool } from './apply-patch-tool';
 
-const part = (files: unknown[], status = 'completed'): ToolPart =>
+const part = (files: unknown[], status = 'completed', output = 'ok'): ToolPart =>
   ({
     id: '1',
     type: 'tool',
     tool: 'apply_patch',
     callID: 'c1',
-    state: { status, output: 'ok', metadata: { files }, time: { start: 1, end: 2 } },
+    state: { status, output, metadata: { files }, time: { start: 1, end: 2 } },
   }) as unknown as ToolPart;
 
 const render = (p: ToolPart, open = false) =>
@@ -78,5 +78,20 @@ describe('ApplyPatchTool trigger', () => {
     expect(markup).toContain('Add');
     expect(markup).not.toContain('uppercase');
     expect(markup).toContain('random-aurora.txt');
+  });
+});
+
+describe('ApplyPatchTool, when the patch did not land', () => {
+  // The row already flipped its icon to a warning through `ToolOutcomeContext`,
+  // then kept saying "Created 4 files" underneath it — glyph and words
+  // disagreeing about one call. `group-steps.ts` forbids exactly this on the
+  // panel (W7); the trigger had no such route until now.
+  test('a failed patch does not wear the wording of one that succeeded', () => {
+    const text = rowText(render(part(ADDS, 'completed', 'Error: patch does not apply')));
+
+    // Entity, not a raw apostrophe: `rowText` strips tags but not escapes, and
+    // asserting the raw string would be an assertion that can never fail.
+    expect(text).toContain('Couldn&#x27;t create');
+    expect(text).not.toContain('Created 4 files');
   });
 });

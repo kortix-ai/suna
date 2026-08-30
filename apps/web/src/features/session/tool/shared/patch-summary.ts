@@ -25,13 +25,11 @@
  * No React import: this is a pure function, and it is unit-tested as one.
  */
 
+import { FILE_VERBS, type FileVerb } from '@/features/session/tool/shared/file-verb';
+
 export type PatchOp = 'add' | 'update' | 'delete' | 'move';
 
-export interface PatchVerb {
-  /** Past tense, shown once the call has settled. */
-  verb: string;
-  /** Present participle, shown while it runs. */
-  running: string;
+export interface PatchVerb extends FileVerb {
   /**
    * Which glyph the row leads with. `FileCode` was wrong twice over — it says
    * "code" about files that are usually not code, and it says nothing about the
@@ -40,14 +38,21 @@ export interface PatchVerb {
   icon: 'create' | 'delete' | 'edit';
 }
 
+/**
+ * The words come from `file-verb.ts`, the table every file row shares; only the
+ * glyph is this module's own. A patch that creates a file and a `write` that
+ * creates a file did the same thing to the user's disk, so they must not reach
+ * for two different words for it — and before this they each owned a private
+ * copy of the vocabulary that could drift apart one edit at a time.
+ */
 const VERBS: Record<PatchOp, PatchVerb> = {
-  add: { verb: 'Created', running: 'Creating', icon: 'create' },
-  delete: { verb: 'Deleted', running: 'Deleting', icon: 'delete' },
-  move: { verb: 'Renamed', running: 'Renaming', icon: 'edit' },
-  update: { verb: 'Edited', running: 'Editing', icon: 'edit' },
+  add: { ...FILE_VERBS.create, icon: 'create' },
+  delete: { ...FILE_VERBS.delete, icon: 'delete' },
+  move: { ...FILE_VERBS.rename, icon: 'edit' },
+  update: { ...FILE_VERBS.edit, icon: 'edit' },
 };
 
-const MIXED: PatchVerb = { verb: 'Changed', running: 'Changing', icon: 'edit' };
+const MIXED: PatchVerb = { ...FILE_VERBS.change, icon: 'edit' };
 
 /**
  * The one verb that covers every file in the patch.
