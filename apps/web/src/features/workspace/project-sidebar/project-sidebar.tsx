@@ -202,7 +202,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
-        <div className="flex h-full min-h-0 flex-col space-y-4">
+        <div className="flex h-full min-h-0 flex-col space-y-2">
           <SidebarGroup className="py-0">
             <SidebarMenu>
               <SidebarMenuItem>

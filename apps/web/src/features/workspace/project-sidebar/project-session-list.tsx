@@ -154,7 +154,7 @@ const SKELETON_ROW_WIDTHS = ['w-40', 'w-28', 'w-44', 'w-32', 'w-48', 'w-24', 'w-
 /** Loading placeholder mirroring the session-row layout: status dot · title · time. */
 function ProjectSessionListSkeleton() {
   return (
-    <div className="space-y-1" aria-hidden>
+    <div className="space-y-px" aria-hidden>
       {SKELETON_ROW_WIDTHS.map((width) => (
         <div key={width} className="flex h-8 items-center gap-2 px-2">
           <Skeleton className="size-2 shrink-0 rounded-full py-0" />
@@ -346,7 +346,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
       const isSwitchTarget = switchingToSessionId === session.session_id;
       const children = directSubsessions(session);
       return (
-        <div key={session.session_id} className="space-y-1">
+        <div key={session.session_id} className="space-y-px">
           <ProjectSessionRow
             nested={nested}
             session={session}
@@ -402,7 +402,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     };
 
     return (
-      <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-1">
+      <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -419,7 +419,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
                 `groupSessionsByCoordinator` nests spawned sessions under the
                 coordinator that started them. */}
             {groupSessionsByCoordinator(section.sessions).map((group) => (
-              <div key={group.session.session_id} className="space-y-1">
+              <div key={group.session.session_id} className="space-y-px">
                 {renderSessionNode(group.session, false)}
                 {group.children.length > 0 && (
                   <div className="border-border ml-3.5 space-y-1 border-l-2 pl-1">
@@ -435,7 +435,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col space-y-2">
+    <div className="flex h-full min-h-0 flex-col space-y-px">
       <SessionListHeader
         projectId={projectId}
         sessions={sessions}
@@ -561,7 +561,7 @@ function SessionListSection({
   children,
 }: SessionListSectionProps) {
   if (!showHeader) {
-    return <div className="space-y-1">{children}</div>;
+    return <div className="space-y-px">{children}</div>;
   }
 
   return (
@@ -590,7 +590,7 @@ function SessionListSection({
           />
         </div>
       </DisclosureTrigger>
-      <DisclosureContent contentClassName="space-y-1">{children}</DisclosureContent>
+      <DisclosureContent contentClassName="space-y-px">{children}</DisclosureContent>
     </Disclosure>
   );
 }
@@ -724,7 +724,7 @@ function ProjectSessionRow({
           // fill ease for 150ms while the fade snapped, which read as a flicker.
           // Paint with the variable (not bg-card + a different surface token) so
           // the end fade can never disagree with the row fill.
-          'relative flex h-7.5 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
           isActive
             ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--card)]'
             : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--card)]',
@@ -851,14 +851,14 @@ function ProjectSessionRow({
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
-              size="icon-xs"
+              size="icon"
               type="button"
               aria-label={tHardcodedUi.raw(
                 'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
               )}
               className={cn(
                 SESSION_MENU_TRIGGER_CLASS,
-                'absolute top-1/2 right-2 z-10 -translate-y-1/2',
+                'absolute top-1/2 right-1 z-10 -translate-y-1/2',
                 'bg-(--session-row-surface)',
                 'pointer-events-none opacity-0',
                 'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',

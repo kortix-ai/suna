@@ -66,7 +66,6 @@ export function SidebarUpgradeButton({ accountId, className }: SidebarUpgradeBut
     <SidebarMenuItem>
       <SidebarMenuButton
         type="button"
-        size="md"
         variant="primary"
         className={cn(className)}
         onClick={handleClick}
