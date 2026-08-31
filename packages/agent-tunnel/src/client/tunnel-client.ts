@@ -67,7 +67,15 @@ export class TunnelClient {
       body: JSON.stringify({ method, params }),
     });
 
-    const data = (await res.json()) as Record<string, unknown>;
+    let data: Record<string, unknown>;
+    try {
+      data = (await res.json()) as Record<string, unknown>;
+    } catch {
+      if (!res.ok) {
+        throw new TunnelClientError(-1, `HTTP ${res.status} ${res.statusText}`, undefined, false);
+      }
+      throw new Error(`Failed to parse response for ${method}: unexpected non-JSON body`);
+    }
 
     if (!res.ok) {
       if (res.status === 404) this.cachedTunnelId = null;
@@ -105,7 +113,11 @@ export class TunnelClient {
       throw new TunnelClientError(-1, `Failed to list connections: HTTP ${res.status}`);
     }
 
-    return (await res.json()) as Array<Record<string, unknown>>;
+    try {
+      return (await res.json()) as Array<Record<string, unknown>>;
+    } catch {
+      throw new Error(`Failed to parse connections response: unexpected non-JSON body`);
+    }
   }
 
   async resolveTunnelId(): Promise<string> {
