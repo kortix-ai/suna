@@ -99,7 +99,12 @@ export default function ProjectStartPage() {
     resolving.current = true;
     attempts.current += 1;
 
-    const suppressed = isAutoProjectSuppressed();
+    // Bound per-account (ensure-first-project.ts): a flag left over from a
+    // DIFFERENT account (a sign-out path that skipped the client-state sweep)
+    // must never suppress provisioning here. Checked against every account
+    // this SIGNED-IN session actually owns — never against a persisted
+    // selection, which can itself be stale left over from a previous account.
+    const suppressed = accounts.some((account) => isAutoProjectSuppressed(account.account_id));
 
     try {
       // Every membership is a candidate, not just the remembered/first one: a

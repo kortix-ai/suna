@@ -60,6 +60,26 @@ function signOutButton(): string {
  * escape hatch; the transient skeleton must not (it is a loading frame, not
  * a destination).
  */
+/**
+ * JAY: symptom 5. `isAutoProjectSuppressed()` used to be called with no
+ * argument — a process-wide flag with no owner. It now takes an account id
+ * and this route must never call it with a bare, unbound check: the
+ * suppression must be evaluated against the accounts this signed-in session
+ * actually owns, never against a persisted (and possibly stale) single
+ * selection.
+ */
+describe('/projects/start binds the suppression check to real accounts', () => {
+  test('never calls isAutoProjectSuppressed() with zero arguments', () => {
+    expect(source).not.toContain('isAutoProjectSuppressed()');
+  });
+
+  test('the suppressed flag is derived from the fetched account list', () => {
+    expect(source).toContain(
+      'accounts.some((account) => isAutoProjectSuppressed(account.account_id))',
+    );
+  });
+});
+
 describe('/projects/start stuck states offer a sign-out escape hatch', () => {
   test('terminal AND error branches mount StartSignOutButton', () => {
     const mounts = source.split('<StartSignOutButton />').length - 1;

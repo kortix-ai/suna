@@ -2,6 +2,7 @@ import { type KortixProject, listProjectsForAccount, provisionProject } from '@k
 
 import { isValidProjectId } from '@/lib/onboarding/landing-destination';
 import { hasPostAuthIntent } from '@/lib/onboarding/post-auth-intent';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 export type FirstProjectAutoCreateState = {
   activeAccountId: string | null;
@@ -30,8 +31,25 @@ export const FIRST_PROJECT_TEMPLATE = 'general-knowledge-worker';
  * immediately recreate it — the app undoing the action the user just took.
  * Tab-scoped on purpose: the suppression is about *this* deliberate delete, so a
  * later sign-in or a fresh tab provisions again like any other empty account.
+ *
+ * BOUND TO THE ACCOUNT THAT TRIGGERED IT. The stored value used to be a bare
+ * `'1'` — process-wide within the tab, with no owner. Signing out never runs
+ * through this module, so a sign-out path that skips the client-state sweep
+ * (`resetClientState`) left the flag set; the NEXT account to sign in on that
+ * tab inherited someone else's "you just archived your last workspace"
+ * terminal instead of the first-run auto-provision flow it was actually
+ * entitled to. `isAutoProjectSuppressed` now requires the caller's account id
+ * to match the account recorded at write time — mirroring how
+ * `last-project-cookie.ts` binds its cookie to `userId` — so a stale flag
+ * from a previous account can never suppress provisioning for a different
+ * one, sweep or no sweep.
  */
 const SUPPRESS_AUTO_PROJECT_KEY = 'kortix:suppress-auto-project';
+
+interface SuppressAutoProjectRecord {
+  accountId: string;
+  at: number;
+}
 
 function safeSessionStorage(): Storage | null {
   try {
@@ -42,12 +60,53 @@ function safeSessionStorage(): Storage | null {
   }
 }
 
-export function suppressAutoProjectAfterDelete(): void {
-  safeSessionStorage()?.setItem(SUPPRESS_AUTO_PROJECT_KEY, '1');
+/**
+ * The stored record, or `null` for anything that is not a live one: absent,
+ * unparseable, the pre-binding bare `'1'` format, or missing/malformed
+ * `accountId`. `null` reads as "not suppressed" everywhere this is used —
+ * failing closed on identity rather than ever suppressing for an unknown
+ * owner.
+ */
+function parseSuppressAutoProjectRecord(raw: string | null): SuppressAutoProjectRecord | null {
+  if (!raw) return null;
+  let parsed: Partial<SuppressAutoProjectRecord>;
+  try {
+    parsed = JSON.parse(raw) as Partial<SuppressAutoProjectRecord>;
+  } catch {
+    return null;
+  }
+  if (typeof parsed?.accountId !== 'string' || parsed.accountId.length === 0) return null;
+  if (typeof parsed.at !== 'number' || !Number.isFinite(parsed.at)) return null;
+  return { accountId: parsed.accountId, at: parsed.at };
 }
 
-export function isAutoProjectSuppressed(): boolean {
-  return safeSessionStorage()?.getItem(SUPPRESS_AUTO_PROJECT_KEY) === '1';
+/**
+ * Record the suppression for `accountId`.
+ *
+ * The one real caller (`general-tab.tsx`'s archive mutation) passes this
+ * function straight through as a zero-arg `() => void` callback, so the
+ * default below — the globally-selected account at the moment archiving
+ * completes — is what actually runs in production. Every project navigation
+ * calls `setSelectedAccountId` to heal this exact value to the account just
+ * landed in (`/projects/start`), so by the time a user reaches a project's
+ * settings tab it already names that project's account. Tests exercise the
+ * explicit parameter directly instead of relying on the global.
+ */
+export function suppressAutoProjectAfterDelete(
+  accountId: string | null | undefined = useCurrentAccountStore.getState().selectedAccountId,
+): void {
+  if (!accountId) return;
+  const record: SuppressAutoProjectRecord = { accountId, at: Date.now() };
+  safeSessionStorage()?.setItem(SUPPRESS_AUTO_PROJECT_KEY, JSON.stringify(record));
+}
+
+/** True only when the stored suppression names THIS account. */
+export function isAutoProjectSuppressed(accountId: string | null | undefined): boolean {
+  if (!accountId) return false;
+  const record = parseSuppressAutoProjectRecord(
+    safeSessionStorage()?.getItem(SUPPRESS_AUTO_PROJECT_KEY) ?? null,
+  );
+  return record?.accountId === accountId;
 }
 
 export function clearAutoProjectSuppression(): void {
