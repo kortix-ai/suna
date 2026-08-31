@@ -48,10 +48,13 @@ mock.module('@kortix/sdk/idb-sync-cache', () => ({
  * would reject a SIGN-IN and park the app on its loading frame, in exactly
  * the browsers least able to report it.
  *
- * Stubs a throwing GLOBAL `localStorage`, the same technique
- * `clear-local-storage.test.ts` uses for its own "a throwing localStorage
- * does not stop the sessionStorage sweep" case — not `mock.module` on
- * `@/lib/utils/clear-local-storage`. `mock.module` is PROCESS-WIDE in this
+ * Stubs throwing GLOBAL storage accessors (`window`, `localStorage`,
+ * `sessionStorage`) — the same STUBBING TECHNIQUE `clear-local-storage.test.ts`
+ * uses throughout its own file, though that file throws only one storage at
+ * a time to prove the two sweeps are independent; this file throws both,
+ * standing in for a fully storage-blocked browser (Safari private mode) —
+ * not `mock.module` on `@/lib/utils/clear-local-storage`. `mock.module` is
+ * PROCESS-WIDE in this
  * repo: it replaced `clearUserLocalStorage` for every test that shares this
  * process, so `bun test src/lib/utils` outside `--isolate` broke
  * `clear-local-storage.test.ts`'s own tests of the real function with an
@@ -61,13 +64,23 @@ mock.module('@kortix/sdk/idb-sync-cache', () => ({
  */
 const originalWindow = globalThis.window;
 const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage;
+const originalSessionStorage = (globalThis as { sessionStorage?: Storage }).sessionStorage;
 
 /**
  * `clearUserLocalStorage()` early-returns on `typeof window === 'undefined'`
  * — true by default in this Bun test environment (`test-setup.ts` registers
  * no DOM), so the throwing `localStorage` below would never even be reached
- * without also stubbing `window`. Same two-global shape
- * `clear-local-storage.test.ts` stubs for its own throwing-storage case.
+ * without also stubbing `window`. THREE globals stubbed, matching
+ * `clear-local-storage.test.ts`'s own `defineGlobal` calls exactly (`window`,
+ * bare `localStorage`, bare `sessionStorage`) — not two. Bun provides no
+ * default global `sessionStorage` in this test environment (only
+ * `localStorage` is a real Bun global here), so leaving it unstubbed does
+ * not silently pass through to a working implementation; it throws a
+ * `ReferenceError` instead of the deliberate `SecurityError` this function
+ * constructs for `localStorage` — an accident of this environment, not a
+ * guarantee. Stubbing it explicitly means the sessionStorage branch is
+ * proven on purpose and stays proven even if Bun ever adds a default
+ * `sessionStorage` global.
  */
 function stubThrowingLocalStorage(): void {
   const throwing = {
@@ -85,6 +98,11 @@ function stubThrowingLocalStorage(): void {
     writable: true,
     value: throwing,
   });
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    writable: true,
+    value: throwing,
+  });
 }
 
 function restoreLocalStorage(): void {
@@ -97,6 +115,11 @@ function restoreLocalStorage(): void {
     configurable: true,
     writable: true,
     value: originalLocalStorage,
+  });
+  Object.defineProperty(globalThis, 'sessionStorage', {
+    configurable: true,
+    writable: true,
+    value: originalSessionStorage,
   });
 }
 

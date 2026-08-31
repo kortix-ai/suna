@@ -78,6 +78,12 @@ export async function resetClientState({
   // `kortix-computer-store.ts` → the shiki-backed markdown renderer) into
   // every route's initial JS chunk. `connectors-page.chunk.test.ts` is the
   // regression this avoids; it was tripped once already during this change.
+  //
+  // NOT wrapped in try/catch, unlike every other step in this function — a
+  // throw here propagates and skips everything below it, including the
+  // localStorage sweep and the IndexedDB purge. Known gap, not closed here:
+  // closing it is a behaviour change (deciding what "reset" means when one
+  // store's reset throws), out of scope for a documentation-only pass.
   resetAllRegisteredPersistedStores();
 
   try {
@@ -95,12 +101,14 @@ export async function resetClientState({
   try {
     clearUserLocalStorage();
   } catch (error) {
-    // The only unguarded call in this function, and the one that reaches
-    // `localStorage` directly. Reading that accessor THROWS in a storage-blocked
-    // context (Safari private mode, a partitioned iframe). `runSignOut` absorbs
-    // a rejection through `withTimeBudget`, but `AuthProvider.adoptUser` awaits
-    // this bare — so an unguarded throw here rejects a SIGN-IN, before
-    // `setIsLoading(false)`.
+    // Guarded, because it reaches `localStorage` directly, and reading that
+    // accessor THROWS in a storage-blocked context (Safari private mode, a
+    // partitioned iframe). `runSignOut` absorbs a rejection through
+    // `withTimeBudget`, but `AuthProvider.adoptUser` awaits this bare — so an
+    // UNGUARDED throw here would reject a SIGN-IN, before
+    // `setIsLoading(false)`. (`resetAllRegisteredPersistedStores()` above is
+    // the one call in this function that is NOT guarded this way — see its
+    // own comment.)
     console.error('Failed to clear per-user localStorage:', error);
   }
 
