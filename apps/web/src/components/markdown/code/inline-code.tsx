@@ -109,7 +109,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
     return (
       <code
         title={`${text} — not available in this session`}
-        className={cn(INLINE_CODE, 'text-muted-foreground')}
+        className={cn(INLINE_CODE)}
       >
         {children}
       </code>

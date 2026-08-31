@@ -138,8 +138,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <SidebarMenuButton
                 aria-label="Switch workspace"
                 className={cn(
-                  'group/workspace relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2',
-                  'transition-colors duration-150',
+                  'group/workspace relative hover:bg-card flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
@@ -156,7 +155,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   {project?.name ?? null}
                 </span>
 
-                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 transition-colors duration-150 group-data-[collapsible=icon]:hidden" />
+                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
 

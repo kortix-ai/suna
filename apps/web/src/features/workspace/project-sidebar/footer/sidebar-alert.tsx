@@ -106,6 +106,7 @@ export function SidebarAlert({
         onOpenChange={onOpenChange}
         className={cn('group w-full overflow-hidden rounded-md', open && 'bg-primary/[0.06]')}
       >
+        <DisclosureContent>{children}</DisclosureContent>
         <DisclosureTrigger>
           <SidebarMenuButton className={cn(ROW_CLASS, TONE_TEXT[tone])}>
             {icon}
@@ -113,7 +114,6 @@ export function SidebarAlert({
             <CaretDownIcon className="ml-auto size-3.5 shrink-0 opacity-50 transition-transform duration-200 ease-out group-data-[state=open]:rotate-180" />
           </SidebarMenuButton>
         </DisclosureTrigger>
-        <DisclosureContent>{children}</DisclosureContent>
       </Disclosure>
     </SidebarMenuItem>
   );

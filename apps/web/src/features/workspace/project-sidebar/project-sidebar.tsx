@@ -77,7 +77,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <span>
         {tI18nHardcoded.raw('autoFeaturesCoWorkerProjectSidebarProjectSidebarJsxTextNew55d0b491')}
       </span>
-      <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
+      <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/menu-button:opacity-100">
         <Kbd>{modSymbol}</Kbd>
         <Kbd>J</Kbd>
       </KbdGroup>
@@ -138,7 +138,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             menu, behind "Switch Workspace", which is why there is no footer
             control below any more. */}
         <div className="flex w-full items-center gap-1">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0">
             <WorkspaceSwitcher projectId={projectId} />
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-0.5">
@@ -163,7 +163,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="icon"
                 onClick={handleOpenSearch}
-                className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-transform duration-100 ease-out active:scale-[0.96]"
               >
                 <MagnifyingGlassIcon className="size-4" />
               </Button>
@@ -192,7 +192,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   variant="ghost"
                   size="icon"
                   onClick={toggleSidebar}
-                  className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
+                  className="text-muted-foreground hover:text-foreground size-8 shrink-0 cursor-pointer rounded-md transition-transform duration-100 ease-out active:scale-[0.96]"
                 >
                   <PanelLeft className="cn-rtl-flip" />
                 </Button>
