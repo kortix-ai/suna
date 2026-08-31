@@ -189,9 +189,6 @@ function chipClass(html: string): string {
     expect(markup).not.toContain('size-3');
   });
 
-  /** Visible text only — attributes carry ids a reader never sees. */
-  const textContent = (markup: string) => markup.replace(/<[^>]*>/g, '');
-
   test('a non-colour token keeps the plain chip — no swatch', () => {
     const markup = render({ children: '#hashtag' });
 
@@ -210,10 +207,15 @@ function chipClass(html: string): string {
     // Waiting on the reader, so it carries the transcript's warning tone.
     expect(markup).toContain('Waiting for you');
     // The card replaces the token entirely; a wall of token characters in the
-    // transcript is the thing this interception exists to prevent. Asserted on
-    // VISIBLE text: the token still rides `data-outcome-id`, which is the
-    // card's identity and never reaches a screen.
-    expect(textContent(markup)).not.toContain('ksl_7f3a91c2b4');
+    // transcript is the thing this interception exists to prevent. The token
+    // survives ONLY as the card's identity attribute, which never reaches a
+    // screen — so the assertion is that it never appears as element TEXT, i.e.
+    // straight after a `>`. Deliberately not a tag-stripping helper: a
+    // single-pass `replace(/<[^>]*>/g, '')` is an incomplete sanitizer (CodeQL
+    // flags it, correctly — one pass cannot neutralise nested markup), and this
+    // assertion needs no sanitizer semantics at all.
+    expect(markup).toContain('data-outcome-id="setup:ksl_7f3a91c2b4"');
+    expect(markup).not.toContain('>ksl_7f3a91c2b4');
   });
 
   test('a connector setup link gets the connector card', () => {

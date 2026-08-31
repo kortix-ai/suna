@@ -1,22 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { Outcome } from './outcome-types';
 import { OUTCOME_TITLE_MAX, outcomeTint, truncateOutcomeTitle } from './outcome-vocabulary';
-
-function outcome(over: Partial<Outcome> = {}): Outcome {
-  return {
-    id: 'cr:1',
-    kind: 'change_request',
-    title: 'Change request #1',
-    description: 'Adds rate limiting to the public API.',
-    status: { label: 'Waiting for you', tone: 'warning' },
-    at: 1_700_000_000_000,
-    meta: [],
-    action: { label: 'Open', intent: 'open' },
-    resourceHref: null,
-    ...over,
-  };
-}
 
 describe('outcomeTint', () => {
   // The tinted tile is where an outcome's colour lives — the status chip stays
