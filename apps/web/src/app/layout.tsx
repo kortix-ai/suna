@@ -21,7 +21,7 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
-import { featureFlags } from '@kortix/sdk/feature-flags';
+import { featureFlags } from '@kortix/sdk';
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';

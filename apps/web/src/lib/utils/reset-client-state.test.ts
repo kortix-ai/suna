@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import * as idb from '@kortix/sdk/idb-sync-cache';
+// Mirrors the sanctioned internal import in reset-client-state.ts (see the
+// comment there). `mock.module` is keyed by the specifier STRING, so this
+// must stay byte-identical to the one the module under test uses — a
+// mismatch silently detaches the mock and lets the real IndexedDB run.
+// eslint-disable-next-line no-restricted-imports
+import * as idb from '@kortix/sdk/internal/idb-sync-cache';
 import {
   clearImpersonationSession,
   getImpersonationSession,
@@ -32,7 +37,7 @@ import { useUserPreferencesStore } from '@/stores/user-preferences-store';
  * `bun test --isolate` (package.json) — one process per file. This file mocks
  * exactly one export and spreads the rest of the real module.
  */
-mock.module('@kortix/sdk/idb-sync-cache', () => ({
+mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
   ...idb,
   clearSessionIDBCache: () => new Promise<void>(() => {}),
 }));

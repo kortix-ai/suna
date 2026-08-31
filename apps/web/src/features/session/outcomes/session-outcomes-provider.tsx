@@ -67,10 +67,6 @@ export function SessionOutcomesProvider({
   /** The git session id a change request records as `origin_session_id`. */
   projectSessionId: string | undefined;
   turnSpans: TurnSpan[];
-  /** Schedule / file / background-task outcomes, already derived by the
-   *  caller from the turns' tool parts (`deriveOutcomes`). Merged with the
-   *  change-request outcomes below and re-sorted, so a turn's footer shows
-   *  every kind in one chronological list. */
   onOpen: (outcome: Outcome) => void;
   children: ReactNode;
 }) {

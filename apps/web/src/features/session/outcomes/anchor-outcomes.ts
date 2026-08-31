@@ -57,19 +57,15 @@ export function anchorOutcomes(outcomes: Outcome[], spans: TurnSpan[]): Map<stri
 }
 
 /**
- * Do two derived-outcome lists carry the same content?
+ * Do two outcome lists carry the same content?
  *
- * Compares `(id, at)` per entry, NOT id alone. The same id legitimately recurs
- * with different content between settled turns — a document rewritten in a
- * later turn keeps `file:<path>` and gains a new `at`, and `deriveOutcomes`
- * deliberately keeps that later occurrence so the card anchors to the turn that
- * actually produced it. An id-only comparison reports "unchanged", hands back
- * the previous array, and silently pins the card to the earlier turn — undoing
- * that at the render layer.
+ * Compares `(id, at)` per entry, NOT id alone. An id alone is not a sound
+ * identity: a change request keeps `cr:<id>` while its status moves open →
+ * merged, so an id-only comparison would report "unchanged", hand back the
+ * previous array, and freeze a stale status on screen.
  *
- * Used to hold the provider's context value flat across a stream: outcomes are
- * only produced by COMPLETED tool parts, so nothing here changes mid-turn, but
- * everything here can change between turns.
+ * Used to hold the provider's context value flat across a stream, so a turn
+ * that is merely re-rendering does not re-render every card beneath it.
  */
 export function sameOutcomes(prev: Outcome[], next: Outcome[]): boolean {
   if (prev.length !== next.length) return false;
