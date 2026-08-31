@@ -81,7 +81,8 @@ export type SignOutSteps = {
    * `_removeSession()`. Offline and 5xx produce `AuthRetryableFetchError` and
    * `AuthApiError(500)`, neither of which is in that list, so the session
    * survives, no `SIGNED_OUT` fires, and `resetClientState()` does not touch it
-   * either (`clearUserLocalStorage` clears only enumerated app keys).
+   * either (`clearUserLocalStorage` only sweeps this app's own storage-key
+   * prefixes, never a cookie).
    *
    * `leave('/auth')` then loads `/auth`, where `AuthContent` reads the still
    * valid session, computes `trustedUser`, and redirects straight back into the
