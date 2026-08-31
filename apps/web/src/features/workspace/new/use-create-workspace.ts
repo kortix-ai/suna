@@ -22,11 +22,11 @@ import {
   isManagedGitUnavailableError,
   isProjectLimitError,
 } from '@/lib/onboarding/ensure-first-project';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
   linkRepository,
-  listAccounts,
   provisionProject,
   provisionProjectStream,
   PROVISION_IN_FLIGHT_CODE,
@@ -286,7 +286,7 @@ export function messageFor(error: unknown): string {
  * - `403` (wrong account / insufficient role) — retryable. Role and account
  *   membership are external state that CAN genuinely change between the
  *   failure and a later click, and `retry` re-closes over `creatableAccounts`
- *   (`useCreateWorkspace`'s own `['accounts']` query), which is refetched —
+ *   (`useCreateWorkspace`'s own `useAccountsList()` query), which is refetched —
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
@@ -645,7 +645,8 @@ export async function runCreate(
  * only wires it to the live `queryClient`/`router`/`user` and to component
  * state.
  *
- * Fetches `['accounts']` itself — the same cache entry `new-workspace-page.tsx`,
+ * Reads the account list itself — the same user-scoped cache entry
+ * `new-workspace-page.tsx`,
  * `WorkspaceSwitcher` and `AccountSwitcher` already read — rather than taking
  * `creatableAccounts` as a parameter, so this hook can resolve the create's
  * target account (`resolveTargetAccountId`) without a second, page-specific
@@ -670,7 +671,7 @@ export function useCreateWorkspace(): {
   const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
-  const accountsQuery = useQuery({ queryKey: ['accounts'], queryFn: listAccounts, staleTime: 60_000 });
+  const accountsQuery = useAccountsList();
   const creatableAccounts = filterCreatableAccounts(accountsQuery.data ?? []);
 
   const create = useCallback(

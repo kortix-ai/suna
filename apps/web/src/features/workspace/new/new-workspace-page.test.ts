@@ -77,14 +77,26 @@ describe('/new page: no invented constraints', () => {
     expect(code).toContain('useSignedOutRedirect();');
   });
 
-  test('reads the account list on mount through the shared ["accounts"] cache key, not a page-local one', () => {
+  test('reads the account list through the shared user-scoped hook, not a page-local query', () => {
     // Regression pin: an idempotent GET is allowed and expected here — it is
-    // what makes AccountPicker and the real submit-gate count possible. A
-    // page-local query key would duplicate the request WorkspaceSwitcher /
-    // AccountSwitcher already make instead of sharing their cache entry.
-    expect(code).toContain('useQuery({');
-    expect(code).toContain("queryKey: ['accounts']");
-    expect(code).toContain('queryFn: listAccounts');
+    // what makes AccountPicker and the real submit-gate count possible.
+    //
+    // The bar CHANGED, and not for style. This page used to hand-type
+    // `useQuery({ queryKey: ['accounts'], queryFn: listAccounts })`. That key
+    // carries no signed-in user, so a leftover single-account list belonging
+    // to the PREVIOUS user was readable here byte-for-byte — and this page
+    // resolves its create target out of that list, so the create went out
+    // with a foreign `account_id` under the new user's JWT (403). A
+    // page-local `useQuery` is now banned on both counts: it duplicates the
+    // request WorkspaceSwitcher / AccountSwitcher already make, AND it
+    // re-opens that hole. `useAccountsList()` is the only reader.
+    expect(code).toContain('const accountsQuery = useAccountsList();');
+    expect(code).toContain("from '@/hooks/account/use-accounts-list'");
+
+    // The ban, asserted as an absence AND paired with the presence above, so
+    // deleting the read outright cannot make this test pass.
+    expect(code).not.toContain('useQuery(');
+    expect(code).not.toContain('listAccounts');
   });
 });
 

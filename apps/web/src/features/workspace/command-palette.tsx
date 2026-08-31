@@ -72,6 +72,7 @@ import {
   resolveSettingsOverlayHref,
 } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
@@ -111,7 +112,6 @@ import {
   type ProjectSession,
   getProject,
   getProjectDetail,
-  listAccounts,
   listProjectSessions,
   listProjectsForAccount,
   systemReload,
@@ -890,12 +890,7 @@ export function CommandPalette() {
   const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
-  const { data: accountsList } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: open,
-    staleTime: 60_000,
-  });
+  const { data: accountsList } = useAccountsList({ enabled: open });
   const activeAccount =
     accountsList?.find((account) => account.account_id === selectedAccountId) ??
     accountsList?.[0] ??

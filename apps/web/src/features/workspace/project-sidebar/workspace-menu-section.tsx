@@ -24,7 +24,7 @@
  */
 
 import { GearSixIcon as CogOne, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, usePathname } from 'next/navigation';
 import { useMemo, useState, type MouseEvent } from 'react';
@@ -47,6 +47,7 @@ import {
   resolveWorkspaceRowNavigation,
   type WorkspaceRowNavigation,
 } from '@/features/workspace/project-sidebar/workspace-grouping';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { isModifiedClick } from '@/lib/navigation/modified-click';
 import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -54,7 +55,7 @@ import {
   shouldShowProjectSwitchLoading,
   useProjectSwitchStore,
 } from '@/stores/project-switch-store';
-import { listAccounts, listProjectsForAccount, type KortixProject } from '@kortix/sdk';
+import { listProjectsForAccount, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { CheckCircleIcon as CheckCircleSolid } from '@phosphor-icons/react';
 
@@ -68,11 +69,7 @@ export function WorkspaceMenuSection() {
 
   const activeProjectId = pathname?.startsWith('/projects/') ? params?.id : undefined;
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
 
   // Every account the user belongs to, and every workspace in each. This menu is
   // the ONLY complete workspace directory now that the /projects index is gone,

@@ -1,6 +1,5 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -17,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
@@ -37,7 +37,6 @@ import {
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
-import { listAccounts } from '@kortix/sdk';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
@@ -82,11 +81,11 @@ const ICON_WIDTH = '2.5rem';
  * that creates something because you looked at it is a page nobody can link
  * to safely.
  *
- * It DOES read the account list on mount (`useQuery(['accounts'],
- * listAccounts)`) — an idempotent GET, needed to know whether there is
- * anything to disambiguate (`AccountPicker`) and to gate submission on the
- * REAL account count instead of a placeholder. `['accounts']` is the exact
- * cache key `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
+ * It DOES read the account list on mount (`useAccountsList()`) — an
+ * idempotent GET, needed to know whether there is anything to disambiguate
+ * (`AccountPicker`) and to gate submission on the REAL account count instead
+ * of a placeholder. That hook is the exact
+ * cache entry `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
  * who reaches `/new` from either menu (the common path) hits a warm cache,
  * not a second request. That list is filtered to `creatableAccounts` (owner
  * or admin — `POST /provision` 403s on anything else, same predicate as
@@ -172,13 +171,12 @@ export function NewWorkspacePage() {
     return result.ok ? null : result.error;
   }, [state.name, touched]);
 
-  // Same `['accounts']` cache entry `WorkspaceSwitcher`/`AccountSwitcher` read
-  // — one shared query, not a page-local duplicate.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  // Same user-scoped cache entry `WorkspaceSwitcher`/`AccountSwitcher` read —
+  // one shared query, not a page-local duplicate. `useAccountsList` is also
+  // what makes the stale-list instance of symptom 3 unreachable here: the key
+  // carries the signed-in user, so a previous user's list is not addressable
+  // from this page at all.
+  const accountsQuery = useAccountsList();
   const accounts = accountsQuery.data ?? [];
 
   // `filterCreatableAccounts` (`new-workspace-form.ts`) matches
@@ -199,10 +197,11 @@ export function NewWorkspacePage() {
   // A creatableAccounts list the signed-in user's identity cannot be
   // anchored to (Task 2, G2 fail-closed) — see `isForeignAccountList`'s own
   // doc comment for exactly which shape this is, why a SOLE foreign account
-  // (the ordinary invited-admin case) is deliberately excluded, and why that
-  // exclusion does NOT cover a stale single-account `['accounts']` cache
-  // entry belonging to a different user — that instance of symptom 3 is
-  // closed by Task 10's user-scoped query key, not here.
+  // (the ordinary invited-admin case) is deliberately excluded, and why the
+  // stale single-account instance of symptom 3 is closed by the user-scoped
+  // `qk.accounts.list(userId)` key above rather than here. This check is
+  // still live and still required: it covers a 2+-account list with no anchor
+  // to the viewer, a shape the key cannot rule out.
   const foreignAccountList = isForeignAccountList(creatableAccounts, userId);
 
   // Whether `AccountPicker` should reveal any account-specific info beyond
@@ -317,8 +316,8 @@ export function NewWorkspacePage() {
           RELOAD the create hook restarts at `status: 'idle'`, so `submitting`
           alone would paint the live form (Name input, `autoFocus`, fully
           interactive) in the window before `getProjectDetail` settles. A user
-          who reloaded mid-onboarding could type into it, and if `['accounts']`
-          resolved first, Enter fired a SECOND `runCreate`.
+          who reloaded mid-onboarding could type into it, and if the account
+          list resolved first, Enter fired a SECOND `runCreate`.
 
           The header lives INSIDE the form branch, not above the swap. It is
           the form's title — "Create a workspace" above a screen that is already

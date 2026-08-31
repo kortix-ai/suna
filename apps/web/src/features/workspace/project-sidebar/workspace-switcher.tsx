@@ -91,8 +91,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // than being silently dropped: without it, every account-scoped settings tab
   // opened on a project whose detail query has not resolved yet has no account
   // id to probe with, and renders as though the permission were denied. Same
-  // `['accounts']` key and `staleTime` as every other caller, so React Query
-  // serves them all from one fetch.
+  // `useAccountsList()` hook as every other caller, so React Query serves them
+  // all from one user-scoped fetch.
   useEnsureSelectedAccount();
 
   // For the rows that OPEN something in place — the settings panel, the log-out

@@ -150,21 +150,31 @@ export function resolveDefaultCreatableAccountId(
  * legitimate shape: once the viewer's own personal account exists it is
  * always one of their membership rows, and therefore always present. Two or
  * more accounts with zero anchor to the viewer is the signature a stale or
- * wrong `['accounts']` cache entry would produce (a leftover list from a
+ * wrong account-list cache entry would produce (a leftover list from a
  * DIFFERENT signed-in user), not a genuine response for this identity — so
  * this is the fail-closed branch (G2): treat it as untrustworthy rather than
  * guess which entry, if any, is safe to default into.
  *
- * RESIDUAL RISK, stated plainly rather than assumed away: a SOLE foreign
- * account (the branch above that returns `false`) is INDISTINGUISHABLE, from
- * this function's inputs alone, from a stale `['accounts']` cache entry that
- * still holds a DIFFERENT, previously-signed-in user's single-account list.
- * Both shapes are exactly one account, `account_id !== userId`. If
- * `['accounts']` is not scoped per signed-in user, that instance of symptom 3
- * reaches this function looking identical to the legitimate invited-admin
- * case and is NOT caught here. Closing that gap is Task 10's job (a
- * user-scoped `['accounts']` query key), not this function's — do not
- * de-scope Task 10 on the belief that Task 2 already covers the N=1 case.
+ * The N=1 case this function CANNOT catch, and no longer has to: a SOLE
+ * foreign account (the branch above that returns `false`) is
+ * INDISTINGUISHABLE, from this function's inputs alone, from a stale account
+ * list still holding a DIFFERENT, previously-signed-in user's single-account
+ * list. Both shapes are exactly one account, `account_id !== userId`, so
+ * rejecting one would permanently lock legitimate invited admins out of
+ * creating any workspace.
+ *
+ * That gap is now closed one layer up instead, structurally: the account list
+ * is cached under `qk.accounts.list(userId)` (`packages/sdk/src/react/
+ * query-keys.ts`), read only through `useAccountsList()`
+ * (`hooks/account/use-accounts-list.ts`), and every reader is gated
+ * `enabled: !!user`. A previous user's list is not ADDRESSABLE from this
+ * user's session, so it can no longer reach this function at all.
+ *
+ * This check still earns its place and must NOT be deleted: it is the
+ * fail-closed guard for a 2+-account list with no anchor to the viewer, which
+ * the key cannot rule out (a genuine response can legitimately contain
+ * accounts the viewer does not own). Key scoping and this check cover
+ * different shapes.
  *
  * `userId` is required, not optional: an omitted argument used to compile
  * clean and silently degrade to `undefined`, which made every 2+-account

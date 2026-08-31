@@ -31,26 +31,21 @@
  * - `UserMenu`, for the accounts pages.
  *
  * Idempotent and safe to call from more than one mounted component: the
- * `['accounts']` query key and `staleTime` match every caller's, so React Query
- * serves them all from one fetch, and the write is skipped once the stored id
- * is valid.
+ * shared `useAccountsList()` hook is the same query every other caller reads,
+ * so React Query serves them all from one fetch, and the write is skipped once
+ * the stored id is valid.
  */
 
 import { useEffect } from 'react';
 
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts } from '@kortix/sdk';
-import { useQuery } from '@tanstack/react-query';
 
 export function useEnsureSelectedAccount(): void {
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
 
   useEffect(() => {
     const accounts = accountsQuery.data;

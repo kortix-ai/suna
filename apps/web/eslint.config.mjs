@@ -168,9 +168,24 @@ const eslintConfig = [
           //
           // The pattern matches the whole family rather than an allowlist,
           // so a NEW literal (`['project-widgets', id]`) is caught too.
+          //
+          // `accounts` joined the family for a DIFFERENT reason from the
+          // project literals, and a stronger one. `['accounts']` carried no
+          // signed-in user, so one document that saw two users held ONE cache
+          // entry for both — and `/new` resolves its create target out of
+          // that list, so a leftover single-account list belonging to the
+          // previous user made `POST /projects/provision` go out with a
+          // foreign `account_id` under the new user's JWT (403). The list
+          // CONTENTS cannot tell that apart from a legitimate invited admin;
+          // only `qk.accounts.list(userId)` can. This rule is what keeps that
+          // fix from being undone by the next person who types the obvious
+          // four-line `useQuery`.
+          //
+          // Singular `account` is deliberately NOT matched: `['account', id]`
+          // is a different, still-live family already scoped by account id.
           selector:
             "Property[key.name='queryKey'] > ArrayExpression > " +
-            "Literal:first-child[value=/^projects?(-[a-z-]+)?$/]",
+            "Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -186,7 +201,7 @@ const eslintConfig = [
           // selectors below.
           selector:
             "Property[key.name='queryKey'] > TSAsExpression > ArrayExpression > " +
-            "Literal:first-child[value=/^projects?(-[a-z-]+)?$/]",
+            "Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -227,7 +242,7 @@ const eslintConfig = [
           // Covers every TanStack QueryClient method whose first positional
           // argument is (or can be) a query key.
           selector:
-            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$|^kx$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -238,7 +253,7 @@ const eslintConfig = [
           // and its first-argument ArrayExpression instead of between a
           // Property and its value.
           selector:
-            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > TSAsExpression:first-child > ArrayExpression > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > TSAsExpression:first-child > ArrayExpression > Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$|^kx$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },

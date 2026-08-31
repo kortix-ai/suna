@@ -833,7 +833,7 @@ export function ProfileTab() {
   };
 
   // --- Organizations ----------------------------------------------------
-  // Same `['accounts']` entry `WorkspaceSwitcher` already primed on mount, so
+  // Same account-list entry `WorkspaceSwitcher` already primed on mount, so
   // this costs no extra request inside a project shell.
   const { accounts, isLoading: accountsLoading } = useAccountMemberships();
 

@@ -25,17 +25,16 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import { listAccounts } from '@kortix/sdk';
 import {
   GearSixIcon as CogOne,
   CreditCardIcon as CreditCard,
   DownloadSimple,
   SignOutIcon as LogOut,
 } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import * as React from 'react';
@@ -69,16 +68,12 @@ export function UserMenu({
 
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
   // Extracted verbatim to `hooks/account/use-ensure-selected-account.ts` so the
   // standalone `/settings` route — which mounts `SettingsPanel` with no sidebar
   // and therefore no `UserMenu` — can run the same seeding instead of copying
-  // it. Same `['accounts']` key and `staleTime` as the query above, so the two
-  // callers share one fetch.
+  // it. It reads through the same `useAccountsList()` hook as the query above,
+  // so the two callers share one user-scoped cache entry and one fetch.
   useEnsureSelectedAccount();
 
   // In the collapsed sidebar's hover flyout, the menu content portals outside
