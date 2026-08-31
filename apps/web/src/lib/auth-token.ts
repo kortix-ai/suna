@@ -54,6 +54,11 @@ let authEpoch = 0;
 
 // ── Inflight deduplication ──
 let inflight: Promise<string | null> | null = null;
+/** The epoch that was current when `inflight` was started. Captured once, by
+ *  whichever caller starts the fetch, and read by every caller that dedupes
+ *  onto it (see `getSupabaseAccessToken`) — a piggybacker must run the same
+ *  epoch check as the caller that started the fetch, not skip it. */
+let inflightEpoch = 0;
 
 /**
  * Test-only seam for the real Supabase fetch (`fetchToken`, defined below).
@@ -88,29 +93,50 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
 		return cachedToken;
 	}
 
-	// Deduplicate: if another call is already fetching, piggyback on it
-	if (inflight) return inflight;
+	// Deduplicate: if another call is already fetching, piggyback on the
+	// SAME promise. CRITICAL: piggybacking is the NORMAL case here, not an
+	// edge case (see the dedup note in the module doc comment — "5+
+	// parallel Supabase auth roundtrips" collapsed to one). The old code
+	// returned the raw in-flight promise directly to a piggybacker
+	// (`if (inflight) return inflight;`), which bypassed the epoch check
+	// below entirely for every caller except whichever one happened to
+	// start the fetch: a piggybacker awaiting that raw promise got the
+	// stale token STRING even when an invalidation landed while it waited.
+	// Every caller — starter and piggybacker alike — now runs the same
+	// epoch check against the SAME captured `inflightEpoch`.
+	if (!inflight) {
+		// Captured BEFORE the fetch starts: if an authoritative write
+		// (setCachedAuthToken / setBootstrapAuthToken) lands while this
+		// fetch is still in flight, the epoch below will have moved by the
+		// time it resolves, and this call's result is stale relative to
+		// whatever that write established.
+		inflightEpoch = authEpoch;
+		inflight = fetchTokenImpl();
+	}
+	const epochAtStart = inflightEpoch;
+	const pending = inflight;
 
-	// Captured BEFORE the fetch starts: if an authoritative write
-	// (setCachedAuthToken / setBootstrapAuthToken) lands while this fetch is
-	// still in flight, the epoch below will have moved by the time it
-	// resolves, and this call's result is stale relative to whatever that
-	// write established.
-	const epochAtStart = authEpoch;
-	inflight = fetchTokenImpl();
 	try {
-		const token = await inflight;
+		const token = await pending;
 		if (authEpoch !== epochAtStart) {
 			// Invalidated (or reseeded) mid-flight. This result's provenance
 			// can't be trusted against whichever identity is current now —
 			// never commit it to the cache, and never hand it back either.
+			// Applies to EVERY caller waiting on this fetch, not just the
+			// one that started it.
 			return null;
 		}
 		cachedToken = token;
 		cachedAt = Date.now();
 		return token;
 	} finally {
-		inflight = null;
+		// Guarded, not unconditional: if a LATER caller already started a
+		// NEW fetch (its own `if (!inflight)` branch, after an
+		// invalidation) while this one was still resolving, clearing
+		// `inflight` unconditionally here would clobber that newer
+		// in-flight promise and make the next caller after THIS one start
+		// a redundant third fetch instead of joining the newer one.
+		if (inflight === pending) inflight = null;
 	}
 }
 
@@ -200,6 +226,7 @@ export function __resetAuthTokenCacheForTests(): void {
 	bootstrapToken = null;
 	authEpoch = 0;
 	inflight = null;
+	inflightEpoch = 0;
 	fetchTokenImpl = () => fetchToken();
 }
 

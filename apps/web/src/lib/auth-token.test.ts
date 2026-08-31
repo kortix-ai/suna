@@ -96,6 +96,31 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
     await expect(pending).resolves.toBeNull();
   });
 
+  // JAY: CRITICAL regression found by review round 1. `if (inflight) return
+  // inflight;` returned the RAW in-flight promise to a piggybacking caller,
+  // bypassing the epoch check entirely — only the caller that STARTED the
+  // fetch ever ran it. Piggybacking is the module's NORMAL case (the doc
+  // comment's "5+ parallel Supabase auth roundtrips" collapsed to one), so
+  // this was the common path, not an edge case.
+  test('a piggybacking (deduped) caller also gets null on a mid-flight invalidation — not the raw stale token', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const callerA = getSupabaseAccessToken(); // starts the fetch
+    const callerB = getSupabaseAccessToken(); // dedupes onto the SAME in-flight fetch
+
+    // The identity boundary lands while BOTH callers are still waiting.
+    setCachedAuthToken(null);
+
+    // The shared fetch finally resolves, carrying a token for the identity
+    // that existed BEFORE the invalidation above.
+    fetch.resolve('stale-token-from-before-invalidation');
+
+    await expect(callerA).resolves.toBeNull();
+    await expect(callerB).resolves.toBeNull();
+  });
+
   test('concurrent callers with no invalidation between them still dedupe onto one fetch', async () => {
     __resetAuthTokenCacheForTests();
     let fetchCount = 0;
