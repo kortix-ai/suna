@@ -439,17 +439,12 @@ describe('a second press never runs a second sequence, but always leaves', () =>
 });
 
 describe('the budgets', () => {
-  test('are 3s / 2s / 1s, summing to the 6.0s worst case', () => {
+  test('are 3s / 2s / 1s', () => {
     expect(SIGN_OUT_BUDGETS_MS).toEqual({
       finalizeServerSession: 3_000,
       endSession: 2_000,
       resetClientState: 1_000,
     });
-    const worstCase =
-      SIGN_OUT_BUDGETS_MS.finalizeServerSession +
-      SIGN_OUT_BUDGETS_MS.endSession +
-      SIGN_OUT_BUDGETS_MS.resetClientState;
-    expect(worstCase).toBe(6_000);
   });
 
   test('the server revoke is not tighter than its own AbortSignal', () => {
@@ -458,5 +453,70 @@ describe('the budgets', () => {
     // request would only land because later steps happen to keep the document
     // alive — accidental coupling that every future latency cut would erode.
     expect(SIGN_OUT_BUDGETS_MS.finalizeServerSession).toBeGreaterThanOrEqual(3_000);
+  });
+});
+
+/**
+ * The REAL worst-case ceiling, proven by running `runSignOut` on a clock —
+ * not by summing constants and asserting the sum, which is what stood here
+ * before and which cannot fail no matter what `runSignOut` actually does.
+ *
+ * The scenario: a SETTLED, non-network HTTP error (a 500) that happens to
+ * resolve near the end of the first `endSession` budget.
+ * `isNetworkClassFailure` only skips the retry for `{status: 'timeout'}` or a
+ * settled `AuthRetryableFetchError` — a plain 500 is neither, so the retry
+ * fires and gets its OWN fresh `budgets.endSession`, not the leftover of the
+ * first. That makes `endSession` run TWICE, which is exactly what the false
+ * "sum of three" ceiling could not see.
+ */
+describe('the true sign-out ceiling is 8.0s (endSession can run twice), not 6.0s', () => {
+  test('a settled non-network endSession failure buys the retry a FRESH full budget', async () => {
+    // Scaled down from the real 3000/2000/1000 (same 3:2:1 ratio) so the test
+    // runs in milliseconds, not seconds.
+    const budgets = { finalizeServerSession: 10, endSession: 100, resetClientState: 10 };
+
+    // Settles just under its budget with a plain HTTP error — proven, not
+    // hung: `isNetworkClassFailure` reads `status === 'timeout'` only when
+    // `withTimeBudget` itself gives up, so this must SETTLE inside its
+    // budget to reach the "settled HTTP error" branch at all.
+    const settleNearBudgetEnd = () =>
+      new Promise<{ error: { status: number; message: string } }>((resolve) => {
+        setTimeout(
+          () => resolve({ error: { status: 500, message: 'boom' } }),
+          Math.round(budgets.endSession * 0.85),
+        );
+      });
+
+    const r = recorder({ endSession: settleNearBudgetEnd });
+
+    const started = Date.now();
+    await runSignOut(r.steps, { budgets });
+    const elapsed = Date.now() - started;
+
+    // Both attempts genuinely ran — the second `endSession` budget is real,
+    // not theoretical.
+    expect(r.calls.filter((c) => c === 'endSession' || c === 'endSession:local')).toEqual([
+      'endSession',
+      'endSession:local',
+    ]);
+
+    // The FALSE ceiling the old test pinned: the sum of the three DISTINCT
+    // budgets, counting `endSession` once.
+    const falseCeiling =
+      budgets.finalizeServerSession + budgets.endSession + budgets.resetClientState;
+    // The TRUE ceiling: `endSession` counted twice, matching the doc comment
+    // fixed alongside this test (`sign-out-sequence.ts`).
+    const trueCeiling = falseCeiling + budgets.endSession;
+
+    // Falsifies the "sum of three" claim: elapsed clears it, because the
+    // retry consumed a WHOLE second `endSession` budget rather than sharing
+    // what was left of the first. If the retry instead shared the first
+    // attempt's remaining budget (the change that would make 6.0s true),
+    // elapsed would land near `falseCeiling`, not clear it — see this
+    // test's mutation proof in the final-fix-wave report.
+    expect(elapsed).toBeGreaterThan(falseCeiling);
+    // Still bounded near the real (four-budget) ceiling — generous slack for
+    // scheduler jitter, not room for a fifth budget to appear from nowhere.
+    expect(elapsed).toBeLessThan(trueCeiling + 80);
   });
 });

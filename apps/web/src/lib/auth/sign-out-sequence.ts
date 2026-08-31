@@ -17,9 +17,12 @@ import { type BudgetOutcome, withTimeBudget } from '@/lib/utils/time-budget';
 export const SIGN_OUT_DESTINATION = '/auth';
 
 /**
- * How long each step may hold up the exit, in milliseconds. Worst case is their
- * SUM — 6.0s — because the local retry is skipped in the only case that could
- * make all three run long (see `runSignOut`).
+ * How long each step may hold up the exit, in milliseconds. Worst case is
+ * 8.0s, not the sum of these three: `runSignOut` gives the local RETRY its
+ * own fresh `endSession` budget, and the retry fires on any settled non-
+ * network HTTP error (a 500), not only on a hang — so `endSession` can
+ * genuinely run twice. `finalizeServerSession + endSession + endSession +
+ * resetClientState` = 3.0 + 2.0 + 2.0 + 1.0 = 8.0s. See `runSignOut`.
  *
  * They are not the same number, and the differences are load-bearing:
  *
@@ -134,7 +137,7 @@ export function __resetSignOutLatchForTests(): void {
  *     `/auth` as though it had worked, where the still live session sent them
  *     straight back into the app.
  *
-    Reading the error buys a retry with `scope: 'local'`, and that retry is
+ *     Reading the error buys a retry with `scope: 'local'`, and that retry is
  *     worth taking — but it is NOT the guarantee it looks like. `scope: 'local'`
  *     still posts to `/logout` and still bails before removing the session on a
  *     non-404/401/403 error, so offline and 5xx defeat both calls. The
@@ -177,9 +180,17 @@ export function __resetSignOutLatchForTests(): void {
  *     signed out, inside the app, with a permanently disabled button and a
  *     route guard that had already stood down.
  *
- * Worst case before `leave()` is 6.0s: the sum of the three budgets, since the
- * only case that makes all of them run long — everything hanging — is exactly
- * the case that skips the retry.
+ * Worst case before `leave()` is 8.0s, not the 6.0s sum of the three DISTINCT
+ * budgets. The case that makes every step run long is NOT the same case that
+ * skips the retry: a hang produces `{status: 'timeout'}`, which
+ * `isNetworkClassFailure` does treat as network-class and skips the retry for
+ * — but a SETTLED plain HTTP error (a 500) that happens to resolve near the
+ * end of the first `endSession` budget is neither a timeout nor a settled
+ * `AuthRetryableFetchError`, so it falls through to the retry, which gets its
+ * OWN fresh `budgets.endSession` rather than whatever was left of the first.
+ * That is `endSession` counted twice: `finalizeServerSession` (3.0) +
+ * `endSession` (2.0) + the retry's `endSession` (2.0) + `resetClientState`
+ * (1.0) = 8.0s.
  */
 export async function runSignOut(
   steps: SignOutSteps,
