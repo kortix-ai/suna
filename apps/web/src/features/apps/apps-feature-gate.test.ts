@@ -294,22 +294,32 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
   const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
 
-  // One column ladder, used by the grid AND the skeleton, so nothing reflows
-  // when data lands. There is no size control and no stored preference.
-  const GRID = "cn('grid gap-x-4 gap-y-6', APP_GRID_COLUMNS)";
-  expect(view.split(GRID)).toHaveLength(3);
-  // The picker and everything that persisted it are gone.
+  // The grid and the skeleton read the SAME chosen ladder, so nothing reflows
+  // when data lands under a non-default choice. The skeleton takes it as a
+  // prop; the grid reads the state directly.
+  expect(view).toContain("cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)");
+  expect(view).toContain("cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[columns].grid)");
+  expect(view).toContain('<AppGridSkeleton columns={gridColumns} />');
+  // The 3-or-4 control is back (2026-08-31) after a three-way density picker
+  // was removed. The thing that made the old one wrong was three options and no
+  // sane default, so what has to hold is the DEFAULT, not the absence.
+  expect(view).toContain('export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;');
   expect(view).not.toContain('AppGridDensity');
-  expect(view).not.toContain('window.localStorage');
-  expect(view).not.toContain('useSyncExternalStore');
-  // The header is a title and a docs link — no size buttons to hide or show.
+  // A picker over the feature gate, the error state or the empty state is a
+  // dead switch, so the header takes an explicit flag rather than always
+  // rendering it.
   const header = view.slice(view.indexOf('function AppsHeader('), view.indexOf('export function AppsView('));
-  expect(header).not.toContain('<Button');
+  expect(header).toContain('showColumns');
+  expect(header).toContain('{showColumns ? (');
 
   // The gallery column is also the grid's measuring box. A `@lg/apps:` variant
   // with no `@container/apps` ancestor compiles and then never matches, so the
   // grid would silently stay one column forever.
-  expect(view).toContain('max-w-7xl flex-col px-4 py-6 pb-20');
+  // `px-4 md:px-8` — the gutter is the one thing here that may key off the
+  // VIEWPORT rather than the container: it is this element's own padding, and
+  // this element IS `@container/apps`, so it cannot query itself. The column
+  // ladder inside it stays container-based.
+  expect(view).toContain('max-w-7xl flex-col px-4 md:px-8 py-6 pb-20');
   expect(view).not.toContain('max-w-5xl flex-col');
   expect(view).toContain('APP_GRID_CONTAINER,');
   expect(view).toContain("export const APP_GRID_CONTAINER = '@container/apps';");
