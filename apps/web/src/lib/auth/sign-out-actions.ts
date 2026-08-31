@@ -2,6 +2,7 @@
 
 import { AUTH_BOUNCE_COOKIE } from '@/lib/onboarding/landing-destination';
 import { getEnv } from '@/lib/env-config';
+import { MAINTENANCE_BYPASS_COOKIE } from '@/lib/maintenance-bypass';
 import { createClient } from '@/lib/supabase/server';
 import { recordPlatformLogout } from '@kortix/sdk';
 import { cookies } from 'next/headers';
@@ -39,6 +40,24 @@ import { cookies } from 'next/headers';
  */
 export async function clearAuthBounceCookie(): Promise<void> {
   (await cookies()).delete(AUTH_BOUNCE_COOKIE);
+}
+
+/**
+ * Drop the admin maintenance-lockdown bypass cookie (`maintenance-bypass.ts`).
+ *
+ * It is `httpOnly` (minted by `POST /api/maintenance/bypass`) — same reason
+ * as `clearAuthBounceCookie`, a server round trip is the only way to clear
+ * it. Task 5's client-state sweep cannot reach it either: cookies are outside
+ * `localStorage`/`sessionStorage` entirely, so without an explicit clear here
+ * the 8h bypass would keep working, on this browser, past the sign-out that
+ * ended the admin session it was minted for — for up to 8h, on a possibly
+ * shared machine, for whoever signs in next.
+ *
+ * Always safe to call: an absent cookie deletes to a no-op, and
+ * `verifyBypassToken` already fails closed on anything malformed.
+ */
+export async function clearMaintenanceBypassCookie(): Promise<void> {
+  (await cookies()).delete(MAINTENANCE_BYPASS_COOKIE);
 }
 
 /**
@@ -106,4 +125,5 @@ export async function finalizeServerSignOut(): Promise<void> {
   }
 
   await clearAuthBounceCookie();
+  await clearMaintenanceBypassCookie();
 }

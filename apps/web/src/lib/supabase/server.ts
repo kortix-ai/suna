@@ -32,6 +32,10 @@ export async function createClient() {
         name: KORTIX_SUPABASE_AUTH_COOKIE,
         path: '/',
         sameSite: 'lax',
+        // `@supabase/ssr` never sets this itself — see the doc comment in
+        // `lib/supabase/client.ts`. Server-side, `NODE_ENV` is the reliable
+        // signal (mirrors `MAINTENANCE_BYPASS_COOKIE`'s route handler).
+        secure: process.env.NODE_ENV === 'production',
       },
       cookies: {
         getAll() {

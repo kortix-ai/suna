@@ -236,7 +236,12 @@ export async function middleware(request: NextRequest) {
       expectedAccessCookie
     ) {
       response.cookies.set(ENVIRONMENT_ACCESS_COOKIE, expectedAccessCookie, {
-        domain: '.kortix.com',
+        // No `domain` — this is the only Domain-scoped cookie in the repo,
+        // and `.kortix.com` sent it to EVERY subdomain: dev's middleware set
+        // a cookie that staging, prod, and api.kortix.com all received on
+        // every request too, regardless of which environment actually
+        // authorized it. Omitting `domain` makes it host-only (RFC 6265
+        // §5.3): scoped to whichever exact host issued it.
         httpOnly: true,
         maxAge: 60 * 60 * 24 * 7,
         path: '/',
@@ -458,6 +463,9 @@ export async function middleware(request: NextRequest) {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
       path: '/',
       sameSite: 'lax',
+      // `@supabase/ssr` never sets this itself — see the doc comment in
+      // `lib/supabase/client.ts`.
+      secure: process.env.NODE_ENV === 'production',
     },
     cookies: {
       getAll() {
@@ -630,6 +638,7 @@ export async function middleware(request: NextRequest) {
           maxAge: AUTH_BOUNCE_MAX_AGE,
           path: '/',
           sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
         },
       );
       return finalizeEnvironmentAccess(bounceResponse);

@@ -155,6 +155,16 @@ describe('the server half of the sign-out', () => {
     expect(serverActions).toContain('AUTH_BOUNCE_COOKIE');
     expect(serverActions).toContain('await clearAuthBounceCookie();');
   });
+
+  // Task 5's client-state sweep (`reset-client-state.ts`) cannot reach this —
+  // it is an httpOnly cookie, outside `localStorage`/`sessionStorage`
+  // entirely. Without this call the 8h admin maintenance-lockdown bypass
+  // keeps working, on this browser, past the sign-out that ended the admin
+  // session it was minted for.
+  test('clears the httpOnly maintenance-bypass cookie, which no client can reach', () => {
+    expect(serverActions).toContain('MAINTENANCE_BYPASS_COOKIE');
+    expect(serverActions).toContain('await clearMaintenanceBypassCookie();');
+  });
 });
 
 describe('nothing on an identity change can wait forever', () => {

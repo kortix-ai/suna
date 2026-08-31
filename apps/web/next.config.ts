@@ -479,6 +479,18 @@ const nextConfig = (): NextConfig => ({
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN',
           },
+          // The Supabase session cookie (see lib/supabase/client.ts /
+          // server.ts / middleware.ts) is now Secure-only on HTTPS, but
+          // without this header a plaintext http:// hit on a domain that
+          // NORMALLY redirects to HTTPS is still a window an on-path
+          // attacker can use before that redirect happens. Browsers ignore
+          // this header entirely when it arrives over plain HTTP (RFC 6797),
+          // so it is a no-op locally and on any HTTP-only self-host —
+          // effective only where it matters, on real HTTPS deployments.
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains',
+          },
         ],
       },
       {
