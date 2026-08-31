@@ -91,7 +91,7 @@ function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: str
                 <span className="truncate">{relativeTime(cr.created_at)}</span>
               </span>
             </span>
-            <CaretRightIcon className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
+            <CaretRightIcon className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0" />
           </button>
         ))}
       </div>

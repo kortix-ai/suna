@@ -8,11 +8,12 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
 import { textToParagraphs } from '../composer-logic';
+import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { SLASH_ACTIONS } from '../menus/slash-actions';
-import type { SlashFile } from '../menus/slash-files';
 import { createSlashSuggestion } from '../menus/slash-controller';
+import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
@@ -608,7 +609,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * curve is now monotonic: 45vh below 640px (a phone keyboard eats the
            * rest of the screen anyway), 40vh above it.
            */
-          class: 'outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto',
+          class: `outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto ${COMPOSER_TEXT_METRICS}`,
         },
         handleKeyDown,
       },

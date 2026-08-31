@@ -5,7 +5,11 @@ import { stripTags } from '@/test-utils/strip-tags';
 import type { App } from '@kortix/sdk';
 
 import {
-  APP_GRID_COLUMNS,
+  APP_GRID_COLUMN_OPTIONS,
+  APP_GRID_COLUMN_ORDER,
+  APP_GRID_COLUMNS_STORAGE_KEY,
+  APP_GRID_DEFAULT_COLUMNS,
+  parseAppGridColumns,
   APP_GRID_CONTAINER,
   AppPreview,
   AppPreviewOverlay,
@@ -203,29 +207,33 @@ describe('previewScale', () => {
     expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(Number(w) / Number(h), 5);
   });
 
-  test('the tile is 4:5 — FINAL, chosen after five candidates', () => {
-    // Settled by Jay on 2026-08-27 over 16:9, 9:16, 3:4, 1:1 and 2:3. This is a
-    // product decision, not a derived value: it does not move without a new one.
-    expect(PREVIEW_TILE_ASPECT).toBe('aspect-[4/5]');
-    expect(PREVIEW_VIEWPORT_WIDTH).toBe(1080);
-    expect(PREVIEW_VIEWPORT_HEIGHT).toBe(1350);
-    expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(4 / 5, 5);
+  test('the tile is 16:9 — a product decision, not a derived value', () => {
+    // Set by Jay on 2026-08-31, replacing the 4:5 chosen on 2026-08-27. The
+    // ratio has now moved twice in both directions; see the constant's comment
+    // in `apps-view.tsx` for what each side of the argument actually is. It
+    // does not move again without a new decision.
+    expect(PREVIEW_TILE_ASPECT).toBe('aspect-[16/9]');
+    expect(PREVIEW_VIEWPORT_WIDTH).toBe(1280);
+    expect(PREVIEW_VIEWPORT_HEIGHT).toBe(720);
+    expect(PREVIEW_VIEWPORT_WIDTH / PREVIEW_VIEWPORT_HEIGHT).toBeCloseTo(16 / 9, 5);
   });
 
-  test('4:5 works now only because the tile is no longer 230px', () => {
-    // 4:5 shipped once (e56c580271) and was reverted (e6c4ba0b62) — paired with
-    // a `max-w-5xl` cap and a fixed four-column grid, it produced a 230px tile:
-    // the App at 18% scale, every card the same grey rectangle. The ratio was
-    // never the fault. At the current cap a four-across tile is 300px.
+  test('the tile stays above the ~230px width that turns a card into a grey rectangle', () => {
+    // The one failure mode that was never about the ratio: 4:5 paired with a
+    // `max-w-5xl` cap and a fixed four-column grid gave a 230px tile — the App
+    // at 18% scale, every card the same grey rectangle (e56c580271, reverted by
+    // e6c4ba0b62). The cap is `max-w-7xl` now, so a four-across tile is 300px.
+    // This floor is what has to hold, whatever the ratio is.
     const tileAtCap = (1280 - 32 - 3 * 16) / 4;
     expect(tileAtCap).toBeGreaterThan(230);
-    expect(tileAtCap * (5 / 4)).toBeCloseTo(375, 0);
+    expect(tileAtCap * (9 / 16)).toBeCloseTo(169, 0);
   });
 
   test('the viewport is a desktop width — a phone width would defeat the point', () => {
-    // The tile is portrait; the VIEWPORT must not be. 1080px is still past
-    // every common desktop breakpoint, so no App answers the thumbnail with
-    // its hamburger-and-one-column layout.
+    // 1280px is past every common desktop breakpoint, so no App answers the
+    // thumbnail with its hamburger-and-one-column layout. This holds
+    // independently of the tile's shape — it is about which layout the guest
+    // picks, not about the ratio.
     expect(PREVIEW_VIEWPORT_WIDTH).toBeGreaterThanOrEqual(1024);
   });
 });
@@ -354,29 +362,52 @@ describe('deployNotice — the header speaks only when there is news', () => {
 });
 
 /**
- * The third defect: the gallery decided tile size for you, and chose wrong.
+ * The grid measures the box it is in, and the reader picks its cap.
  *
- * It shipped a three-way size picker backed by `localStorage` — a preference
- * nobody holds until they have seen the page. The grid sizes itself now, and it
- * does so against its CONTAINER rather than the window: this page sits beside a
- * sidebar that docks and collapses, so ~256px of the grid's width appears and
- * disappears without the viewport moving at all.
+ * Two things are true at once here and the file has flip-flopped on both, so
+ * they are written down rather than re-litigated:
+ *
+ *  - Every step is a CONTAINER query. This page sits beside a sidebar that
+ *    docks and collapses, so ~256px of the grid's width appears and disappears
+ *    without the viewport moving at all. A viewport breakpoint asks the wrong
+ *    question and always will. This one is settled.
+ *  - Whether a reader may cap the column count is NOT settled. A three-way
+ *    `localStorage` size picker shipped, was removed as "a preference nobody
+ *    holds until they have seen the page", and is back on 2026-08-31 by Jay's
+ *    call as a two-way 3-or-4 choice defaulting to 3. The removal argument was
+ *    about a control with three options and no sane default; this one has a
+ *    default that needs no interaction, which is the part that was wrong before.
+ *
+ * The invariants below hold for EVERY option, which is the point: adding a
+ * column option cannot quietly reintroduce a viewport breakpoint, an
+ * interpolated class, a skipped step, or a tile too small to read the App in.
  */
-describe('APP_GRID_COLUMNS — the grid measures the box it is in', () => {
+describe('APP_GRID_COLUMN_OPTIONS — the grid measures the box it is in', () => {
   /** The tile width `cols` columns leave inside a container of `width`. */
   const tile = (width: number, cols: number) => (width - 32 - (cols - 1) * 16) / cols;
 
-  /** Which step the ladder resolves to at a given container width. */
-  const columnsAt = (width: number) =>
-    width >= 1024 ? 4 : width >= 768 ? 3 : width >= 512 ? 2 : 1;
+  /** Which step a ladder capped at `cap` resolves to at a given container width. */
+  const columnsAt = (width: number, cap: number) =>
+    Math.min(cap, width >= 1024 ? 4 : width >= 768 ? 3 : width >= 512 ? 2 : 1);
 
-  test('every step is a CONTAINER query, never a viewport breakpoint', () => {
-    // `xl:grid-cols-4` on a 1280px viewport with the sidebar docked fires on a
-    // container that is really ~1024px wide. The window is the wrong question.
-    for (const viewportOnly of ['sm:', 'md:', 'lg:', 'xl:', '2xl:']) {
-      expect(APP_GRID_COLUMNS).not.toContain(viewportOnly);
+  const ladders = APP_GRID_COLUMN_ORDER.map((cap) => [cap, APP_GRID_COLUMN_OPTIONS[cap].grid] as const);
+
+  test('the default is three across, and needs no interaction to get there', () => {
+    // The control trades tile size for count. Nobody has to touch it: three
+    // across at the cap is a ~405px tile, where four is ~300px.
+    expect(APP_GRID_DEFAULT_COLUMNS).toBe(3);
+    expect(APP_GRID_COLUMN_OPTIONS[APP_GRID_DEFAULT_COLUMNS]).toBeDefined();
+    expect(tile(1280, 3)).toBeGreaterThan(tile(1280, 4));
+  });
+
+  test('every option is a CONTAINER query, never a viewport breakpoint', () => {
+    for (const [cap, grid] of ladders) {
+      for (const viewportOnly of ['sm:', 'md:', 'lg:', 'xl:', '2xl:']) {
+        expect(grid).not.toContain(viewportOnly);
+      }
+      // One variant per step above the base `grid-cols-1`.
+      expect(grid.match(/@\w+\/apps:/g)).toHaveLength(cap - 1);
     }
-    expect(APP_GRID_COLUMNS.match(/@\w+\/apps:/g)).toHaveLength(3);
   });
 
   test('the grid and its container name each other, or every step is inert', () => {
@@ -384,43 +415,84 @@ describe('APP_GRID_COLUMNS — the grid measures the box it is in', () => {
     // then never matches — the grid would silently stay one column forever.
     expect(APP_GRID_CONTAINER).toBe('@container/apps');
     const name = APP_GRID_CONTAINER.split('/')[1];
-    for (const step of APP_GRID_COLUMNS.match(/@\w+\/\w+:/g) ?? []) {
-      expect(step.split('/')[1]).toBe(`${name}:`);
+    for (const [, grid] of ladders) {
+      for (const step of grid.match(/@\w+\/\w+:/g) ?? []) {
+        expect(step.split('/')[1]).toBe(`${name}:`);
+      }
     }
   });
 
-  test('a docked desktop lands on four across', () => {
+  test('each option actually reaches the count it promises', () => {
     // 1440px window minus a docked sidebar is a ~1184px container; the cap is
-    // 1280px. Both are past the last step.
-    expect(columnsAt(1184)).toBe(4);
-    expect(columnsAt(1280)).toBe(4);
-    expect(APP_GRID_COLUMNS).toContain('@5xl/apps:grid-cols-4');
+    // 1280px. Both are past the last step of either ladder.
+    for (const [cap, grid] of ladders) {
+      expect(columnsAt(1184, cap)).toBe(cap);
+      expect(columnsAt(1280, cap)).toBe(cap);
+      expect(grid).toContain(`grid-cols-${cap}`);
+    }
   });
 
-  test('a phone gets one column', () => {
+  test('a phone gets one column whichever option is chosen', () => {
     // Four columns of a 375px page is a 78px tile. One column is the floor and
     // the base class, so it needs no variant at all.
-    expect(columnsAt(375)).toBe(1);
-    expect(APP_GRID_COLUMNS.startsWith('grid-cols-1 ')).toBe(true);
-  });
-
-  test('no step ever produces a tile too small to read the App in', () => {
-    // 230px is the width the 4:5 grid shipped at for one day: the App's whole
-    // layout at ~18% scale, where every card is the same grey rectangle.
-    for (const width of [375, 512, 640, 768, 900, 1024, 1184, 1280]) {
-      const cols = columnsAt(width);
-      if (cols === 1) continue;
-      expect(tile(width, cols)).toBeGreaterThan(230);
+    for (const [cap, grid] of ladders) {
+      expect(columnsAt(375, cap)).toBe(1);
+      expect(grid.startsWith('grid-cols-1 ')).toBe(true);
     }
   });
 
-  test('the ladder only ever widens, and names its classes in full', () => {
-    const counts = [...(APP_GRID_COLUMNS.match(/grid-cols-(\d)/g) ?? [])].map((c) =>
-      Number(c.replace('grid-cols-', '')),
-    );
-    expect(counts).toEqual([1, 2, 3, 4]);
-    // Tailwind scans source text, so an interpolated class never reaches the
-    // stylesheet.
-    expect(APP_GRID_COLUMNS).not.toContain('${');
+  test('no step of any option produces a tile too small to read the App in', () => {
+    // 230px is the width the 4:5 grid shipped at for one day: the App's whole
+    // layout at ~18% scale, where every card is the same grey rectangle.
+    for (const [cap] of ladders) {
+      for (const width of [375, 512, 640, 768, 900, 1024, 1184, 1280]) {
+        const cols = columnsAt(width, cap);
+        if (cols === 1) continue;
+        expect(tile(width, cols)).toBeGreaterThan(230);
+      }
+    }
+  });
+
+  test('every ladder only ever widens, and names its classes in full', () => {
+    for (const [cap, grid] of ladders) {
+      const counts = [...(grid.match(/grid-cols-(\d)/g) ?? [])].map((c) =>
+        Number(c.replace('grid-cols-', '')),
+      );
+      // 1..cap with no gaps: a ladder that jumps 2 -> 4 doubles the tile count
+      // in one container step.
+      expect(counts).toEqual(Array.from({ length: cap }, (_, i) => i + 1));
+      // Tailwind scans source text, so an interpolated class never reaches the
+      // stylesheet.
+      expect(grid).not.toContain('${');
+    }
+  });
+
+  test('the options share every step below the smaller cap', () => {
+    // Switching may only change what happens in a WIDE container. If the
+    // ladders disagreed lower down, the control would silently reflow a phone.
+    const [small, large] = ladders;
+    expect(large[1].startsWith(small[1])).toBe(true);
+  });
+});
+
+describe('the stored column preference is untrusted input', () => {
+  test('anything that is not one of ours reads back as null', () => {
+    // `localStorage` is a string bucket shared with every other tab and every
+    // past version of this page. An unknown value would index
+    // `APP_GRID_COLUMN_OPTIONS` as `undefined` and render a grid with NO column
+    // class at all — one column, silently, forever.
+    for (const bad of [null, '', '2', '5', 'large', 'undefined', '3.0', ' 3']) {
+      expect(parseAppGridColumns(bad)).toBeNull();
+    }
+  });
+
+  test('the values we do write survive the round trip', () => {
+    for (const cap of APP_GRID_COLUMN_ORDER) {
+      expect(parseAppGridColumns(String(cap))).toBe(cap);
+    }
+  });
+
+  test('the storage key is namespaced to this product and this control', () => {
+    expect(APP_GRID_COLUMNS_STORAGE_KEY).toBe('kortix.apps.grid-columns');
   });
 });
