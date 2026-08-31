@@ -454,15 +454,41 @@ describe('POST /v1/projects/provision (managed git)', () => {
       projectRole: 'manager',
     });
 
-    // Provisioned the repo through the backend seam (no seeding without flag).
-    expect(backendCalls).toEqual(['createRepo']);
+    // A caller who says nothing about `seed_starter` gets the starter. Seeding
+    // is the DEFAULT, so a bare provision goes through BOTH backend seams.
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
-    // An unseeded managed repo is a legitimate `kortix ship` state, but it must
-    // be RECORDED, not silently indistinguishable from a seeded one.
+    // The row records the INTENT at insert time — the seed push has not been
+    // verified yet at that point, so `pending`, never `caller_opted_out`.
     expect(insertedProject.metadata.git.seed).toMatchObject({
       seeded: false,
-      expected: false,
-      reason: 'caller_opted_out',
+      expected: true,
+      reason: 'pending',
+    });
+    expect(body.seeded).toBe(true);
+  });
+
+  // The one opt-out, and what it does NOT mean. `kortix ship` pushes its own
+  // `kortix init` history with a plain non-force push, so the provision-time
+  // seed must be suppressed or that push is rejected as non-fast-forward. It is
+  // still recorded `expected: true` — a client that never pushes gets repaired
+  // by `shouldSelfHealManagedRepoSeed`, not left permanently without a manifest.
+  test('an explicit seed_starter:false suppresses the push but still expects a manifest', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Shipped Agent', seed_starter: false }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+
+    expect(backendCalls).toEqual(['createRepo']);
+    expect(insertedProject.metadata.git.seed).toMatchObject({
+      seeded: false,
+      expected: true,
+      reason: 'client_owns_first_commit',
     });
     expect(body.seeded).toBe(false);
   });

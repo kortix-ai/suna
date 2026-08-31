@@ -114,7 +114,11 @@ import type { DraftScope } from '@/features/session/composer/draft/composer-draf
 import { usePlanInChat } from '@/features/session/plan-surface';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
+import {
+  ToolActivateContext,
+  ToolPartRenderer,
+  TurnLiveContext,
+} from '@/features/session/tool/tool-renderers';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
@@ -1488,30 +1492,32 @@ function SessionTurnImpl({
 
   if (shellModePart) {
     return (
-      <div className="space-y-1">
-        <ToolPartRenderer
-          part={shellModePart}
-          sessionId={sessionId}
-          disableNavigation={disableToolNavigation}
-          permission={nextPermission?.tool ? nextPermission : undefined}
-          onPermissionReply={onPermissionReply}
-          defaultOpen
-        />
-        {turnError && (
-          <TurnErrorDisplay
-            errorText={turnError}
-            errorDetails={turnErrorDetails}
-            isAbort={turnErrorIsAbort}
-            abortReason={turnErrorAbortReason}
-            className="mt-2"
+      <TurnLiveContext.Provider value={working}>
+        <div className="space-y-1">
+          <ToolPartRenderer
+            part={shellModePart}
+            sessionId={sessionId}
+            disableNavigation={disableToolNavigation}
+            permission={nextPermission?.tool ? nextPermission : undefined}
+            onPermissionReply={onPermissionReply}
+            defaultOpen
           />
-        )}
-        <ConnectProviderDialog
-          open={connectProviderOpen}
-          onOpenChange={setConnectProviderOpen}
-          providers={providers}
-        />
-      </div>
+          {turnError && (
+            <TurnErrorDisplay
+              errorText={turnError}
+              errorDetails={turnErrorDetails}
+              isAbort={turnErrorIsAbort}
+              abortReason={turnErrorAbortReason}
+              className="mt-2"
+            />
+          )}
+          <ConnectProviderDialog
+            open={connectProviderOpen}
+            onOpenChange={setConnectProviderOpen}
+            providers={providers}
+          />
+        </div>
+      </TurnLiveContext.Provider>
     );
   }
 
@@ -1682,49 +1688,56 @@ function SessionTurnImpl({
 			      questions are dropped when rendering inline content (below),
 			      since that mode shows them already, in natural order. */}
       {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
-        <div className="space-y-3">
-          {segments.map((segment, index) => {
-            if (segment.kind === 'burst') {
-              return (
-                <ActivityBurst
-                  key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
-                  parts={segment.parts}
-                  sessionId={sessionId}
-                  working={working}
-                  isTrailing={index === segments.length - 1}
-                  disableNavigation={disableToolNavigation}
-                  density={conversationDensity}
-                />
-              );
-            }
+        // Every tool row below — the bursts' rows and the standalone ones —
+        // reads this to tell a call that has not spoken YET from one that never
+        // will. Provided here rather than per-row because `working` is a fact
+        // about the TURN, and this block is the turn's whole part tree.
+        // See `TurnLiveContext`.
+        <TurnLiveContext.Provider value={working}>
+          <div className="space-y-3">
+            {segments.map((segment, index) => {
+              if (segment.kind === 'burst') {
+                return (
+                  <ActivityBurst
+                    key={`burst-${segment.parts[0]?.id ?? 'empty'}`}
+                    parts={segment.parts}
+                    sessionId={sessionId}
+                    working={working}
+                    isTrailing={index === segments.length - 1}
+                    disableNavigation={disableToolNavigation}
+                    density={conversationDensity}
+                  />
+                );
+              }
 
-            if (segment.kind === 'standalone') {
-              if (!shouldShowToolPart(segment.part)) return null;
-              return (
-                <ToolPartRenderer
-                  key={segment.part.id}
-                  part={segment.part}
-                  sessionId={sessionId}
-                  disableNavigation={disableToolNavigation}
-                  permission={getPermissionForTool(permissions, segment.part.callID)}
-                  onPermissionReply={onPermissionReply}
-                />
-              );
-            }
+              if (segment.kind === 'standalone') {
+                if (!shouldShowToolPart(segment.part)) return null;
+                return (
+                  <ToolPartRenderer
+                    key={segment.part.id}
+                    part={segment.part}
+                    sessionId={sessionId}
+                    disableNavigation={disableToolNavigation}
+                    permission={getPermissionForTool(permissions, segment.part.callID)}
+                    onPermissionReply={onPermissionReply}
+                  />
+                );
+              }
 
-            // Text segments render as prose between bursts. Text rendering
-            // for no-step turns is handled below in the dedicated response
-            // section, to avoid duplicate output.
-            if (!hasSteps) return null;
-            const text = segment.part.text?.trim();
-            if (!text) return null;
-            return (
-              <div key={segment.part.id} className="min-w-0 text-sm">
-                <ThrottledMarkdown content={text} isStreaming={working} />
-              </div>
-            );
-          })}
-        </div>
+              // Text segments render as prose between bursts. Text rendering
+              // for no-step turns is handled below in the dedicated response
+              // section, to avoid duplicate output.
+              if (!hasSteps) return null;
+              const text = segment.part.text?.trim();
+              if (!text) return null;
+              return (
+                <div key={segment.part.id} className="min-w-0 text-sm">
+                  <ThrottledMarkdown content={text} isStreaming={working} />
+                </div>
+              );
+            })}
+          </div>
+        </TurnLiveContext.Provider>
       )}
 
       {/* ── Screen reader ──

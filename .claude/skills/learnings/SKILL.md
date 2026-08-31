@@ -21,6 +21,39 @@ linked, not inlined.
 
 ## Register
 
+### A proxied WebSocket that carries idle traffic needs a keepalive YOU send (2026-08-30)
+
+**When:** you proxy a WebSocket through `apps/api` (the PTY terminal, an app
+preview socket, anything on `/v1/p/.../connect`). Every hop between the API and a
+sandbox drops a connection with no bytes on it, and a terminal is idle by nature
+— a shell at its prompt emits nothing and a reader types nothing. Measured on a
+real Platinum box, the API->sandbox leg dies at **exactly 60 s** of silence.
+
+`websocket.idleTimeout: 0` on both Bun servers does NOT cover this: it governs
+neither the provider edge nor the API's own upstream client. And on a PTY you
+cannot keep the leg busy with data — an upstream byte is typed into the user's
+shell, a downstream byte is printed into their terminal. **Send a PING control
+frame on BOTH legs, well under the shortest hop timeout, and clear the interval
+on every close path** (`PREVIEW_WS_KEEPALIVE_MS`, `pingPreviewWsLegs`).
+
+**Diagnosing a WS that dies on a timer:** a browser reports every drop as `1006`
+with no detail, so instrument from a Bun client instead and run three arms on ONE
+sandbox in ONE minute — no keepalive, PING, DATA. A ping terminates at the API,
+so `PING dies / DATA survives` proves the cut is on the UPSTREAM leg; the reverse
+proves it is on the client leg. Guessing at ALB/Cloudflare timeouts from the
+outside is how this stayed unexplained.
+
+*Incident:* PR #7062. Terminals reconnected once a minute on dev, staging AND
+prod ("not connecting anymore, basically EVERY time"), rendered as
+`Reconnecting in Ns (code 1006)`. Root cause reproduced on the LOCAL stack with
+no Cloudflare and no ALB in the path, which is what ruled out the edge.
+*Enforcer:* `apps/api/src/sandbox-proxy/ws-proxy-keepalive.test.ts` pins that both
+legs are pinged, that one leg throwing does not skip the other, and that the
+interval clears the measured 60 s cut twice over. There is still NO end-to-end
+coverage of the PTY WebSocket in `tests/` — `grep -rn "kortix/pty" tests/` was
+empty before this incident, which is why a socket that died every 60 s on every
+environment shipped unnoticed.
+
 ### Reach for a leaf, not the module that happens to hold the helper (2026-08-30)
 
 **When:** you need one small function that currently lives inside a large module
@@ -3782,3 +3815,116 @@ dead-ended.
   `available:true` plus `source:"mirror"`, and verifies session isolation in the
   mirrored content. `session-transcript.test.ts` separately pins the stopped
   session mirror and the no-mirror `available:false` path.
+## A root-only package smoke can publish a broken optional entry point
+
+- **Incident (2026-08-29, v0.13.7 npm release):** a fresh consumer could import
+  `@kortix/sdk` and `@kortix/sdk/server`, but `@kortix/sdk/react` failed after
+  installing its documented peers. The React graph reached
+  `@kortix/llm-catalog/dist/index.js`, which exported `./enablement` without the
+  `.js` extension required by plain Node ESM. Repository typechecks and the
+  root-only packed-artifact smoke did not traverse that graph.
+- **Rule:** a publish smoke must install every documented optional peer and
+  import every public entry point that those peers enable. TypeScript
+  `moduleResolution:"Bundler"` does not repair extensionless relative imports
+  in emitted Node ESM. Source imports must name the emitted `.js` file.
+- **Enforcement:** `packages/sdk/scripts/smoke-install.mjs` installs React and
+  TanStack Query, imports `@kortix/sdk/react`, and asserts `useSession` exists.
+  The `@kortix/llm-catalog` build runs `tsc-alias --resolve-full-paths` to turn
+  its extensionless workspace import into `./enablement.js` after `tsc` emits.
+
+---
+
+## A guard nobody armed is not a guard, and a path-only allowlist is a hole (2026-08-29)
+
+Audit of the plaintext-`.env` defenses, prompted by "are we sure a new dev
+can't commit a plaintext .env?". Three defenses existed. Two did not do what
+the docs claimed.
+
+**1. The pre-commit hook was never armed.** `.githooks/pre-commit` is
+version-controlled and good — it auto-*encrypts* every staged `.env`. But it
+only runs after `git config core.hooksPath .githooks`, which nothing executed.
+No `prepare`, no `postinstall`, not in `scripts/setup-env.sh`, not in README or
+CONTRIBUTING. It was documented in the hook's own comment header and one line of
+an agent skill file. A clone + `pnpm install` + `git commit` had **zero** local
+protection. Proven in a throwaway repo: hooks unarmed → `sk_live_…` landed in
+the commit; hooks armed → the same commit carried ciphertext, plaintext grep
+count `0`.
+
+**2. gitleaks was allowlisted over the exact leak surface.** `.gitleaks.toml`
+allowlist #1 named the six encrypted profiles by `paths` with **no**
+`condition = "AND"` and **no** `regexes`. A gitleaks allowlist that only
+constrains paths exempts every finding in those files. A committed plaintext
+`apps/api/.env` holding a Postgres password, an HMAC secret, and a
+Stripe-shaped key scanned as `no leaks found`, exit `0`. The other three
+allowlists in the same file were written correctly, with `condition = "AND"`
+— the bug was one missing line in one block.
+
+**3. The remaining net was thinner than assumed.** GitHub push protection is
+enabled, but is provider-pattern based. After tightening the allowlist, gitleaks
+caught `INTERNAL_HMAC_SECRET` (generic-api-key) and still missed the plaintext
+`postgres://kortix:S3cr3tP4ssw0rd@host` URL.
+
+**Rules.**
+1. **A guard that requires a manual activation step is off.** Assume every
+   optional setup line was skipped, because it was. Arm it from something the
+   developer already runs — here, the root `package.json` `prepare` script,
+   which `pnpm install` executes (verified: `core.hooksPath` = `.githooks`
+   after a bare `pnpm install`).
+2. **Never write a path-only gitleaks allowlist.** `paths` alone exempts the
+   whole file. Pair it with `condition = "AND"` **and** `regexes` (plus
+   `regexTarget = "line"` when exempting a file *format* rather than a value)
+   so only the intended lines are exempt and a real secret still fails.
+   `condition = "AND"` with no `regexes` is still path-only — the AND has
+   nothing to intersect. The first version of the tripwire below checked only
+   the condition and would have passed that shape; review caught it.
+3. **Know each gate's shape before trusting it.** `dotenvx ext precommit`
+   inspects only the **staged** diff — correct for a hook, a no-op in CI where
+   nothing is staged. gitleaks runs on the **pull request** — after the commit,
+   after the push, on a public repo. Only the hook runs before the commit
+   exists. A gate list is not a defense unless you know when each one fires.
+4. **Pattern matching is not a structural guarantee.** For a file format whose
+   whole invariant is "every value is ciphertext", assert *that*, not a
+   catalogue of secret shapes.
+5. Test a security control in **both** directions. "It passes on the real repo"
+   proves nothing about whether it fails on a leak.
+
+*Automation:* root `prepare` arms the hooks on `pnpm install`;
+`scripts/check-env-encrypted.sh` (`pnpm secrets:check`) structurally asserts
+every value in a committed `.env` profile starts with `encrypted:`;
+`.github/workflows/secrets-guard.yml` runs it on every PR **and** fails the
+build if a path-only allowlist reappears in `.gitleaks.toml`.
+
+*Incident:* No leak occurred. Found by audit, closed the same session. All
+findings reproduced in throwaway repos with real gitleaks 8.30.1 and the repo's
+own config; no real secret was ever written to disk in plaintext.
+
+## Every build command must declare its executable in that package
+
+- **Incident (2026-08-29, v0.13.8 production release):** the
+  `@kortix/llm-catalog` publish job ran `tsc-alias` from its `build` script, but
+  the package did not declare `tsc-alias`. Local builds found the executable
+  through `@kortix/sdk`. The isolated production publish runner returned exit
+  `127`. The workflow then skipped the dependent `@kortix/sdk` publish.
+- **Rule:** each publishable package must directly declare every executable in
+  its lifecycle scripts. A sibling package dependency does not satisfy this
+  requirement.
+- **Enforcement:** `packages/llm-catalog/package.json` declares `tsc-alias` in
+  `devDependencies`. The package build now resolves the executable through its
+  own `node_modules/.bin` directory.
+
+## An action endpoint must refresh a replicated mirror before returning 404
+
+- **Incident (2026-08-29, v0.13.9 release QA):** `CLI-TRG` created a trigger,
+  then `triggers ls` and `triggers info` found it through refreshed API
+  replicas. The subsequent `triggers fire` request reached a different replica
+  whose Git mirror was still inside its 60-second cache interval. That replica
+  returned `404 Not found` in two consecutive release-gate attempts.
+- **Rule:** a mutable-resource action endpoint can use its replica cache for the
+  first lookup. It must force one source refresh before it returns a definitive
+  not-found response. A successful read through another replica does not prove
+  fleet-wide cache convergence.
+- **Enforcement:** `findProjectTriggerBySlug()` retries a missing cached trigger
+  through `readManifest(..., { forceRefresh: true })`. A per-project cooldown
+  limits forced fetches to one per Git refresh interval. The manual fire route
+  uses this helper. Unit tests prove cached-hit, forced-refresh, and bounded-miss
+  sequences.

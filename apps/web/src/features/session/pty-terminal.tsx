@@ -53,6 +53,10 @@ const terminalTheme: ITheme = {
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 const PTY_CONNECT_TIMEOUT_MS = 15_000;
+// A close the browser reports as `1006` carries no information at all — it is
+// what a refused upgrade, a dropped socket, and a network blip all look like
+// from JavaScript. Printed at the user it reads as a real error code.
+const UNINFORMATIVE_CLOSE_REASON = /^code (1005|1006)$/;
 // xterm's default is 1000 lines — a single `npm install` or test run scrolls
 // past that, and the buffer is the only place that output exists client-side.
 const PTY_SCROLLBACK_LINES = 10_000;
@@ -149,6 +153,9 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
    *  may therefore wake a parked sandbox. Cleared by each connect so automatic
    *  backoff retries never resurrect a box. */
   const wakeOnNextConnectRef = useRef(true);
+  /** The "Waking the sandbox…" line is written once per wake episode, not once
+   *  per backoff retry. Cleared alongside the wake flag on a successful open. */
+  const wakeNoticeShownRef = useRef(false);
   // Until this timestamp, drop capability-query responses (see isTerminalReport)
   // so the scrollback replayed on connect doesn't echo garbage at the prompt.
   const suppressReportsUntilRef = useRef(0);
@@ -282,7 +289,12 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       reconnectAttemptsRef.current += 1;
       const delay = Math.min(1000 * 2 ** (reconnectAttemptsRef.current - 1), 15000);
-      const suffix = reason ? ` (${reason})` : '';
+      // `code 1006` is the browser's way of saying it has NO information: it is
+      // what every refused upgrade and every dropped socket looks like from
+      // JavaScript, so printing it tells the user nothing and reads like a real
+      // error code they could act on. Anything else — a close reason, a real
+      // code — is genuine signal and still shown.
+      const suffix = reason && !UNINFORMATIVE_CLOSE_REASON.test(reason) ? ` (${reason})` : '';
 
       term.writeln(`\r\n\x1b[33mReconnecting in ${Math.ceil(delay / 1000)}s${suffix}...\x1b[0m`);
       updateStatus('connecting');
@@ -375,6 +387,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         // Consumed only now: the attach succeeded, so the box is awake and the
         // next dial has nothing left to wake.
         wakeOnNextConnectRef.current = false;
+        wakeNoticeShownRef.current = false;
         if (connectTimeoutRef.current) {
           clearTimeout(connectTimeoutRef.current);
           connectTimeoutRef.current = null;
@@ -411,8 +424,14 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         // status, so the one thing we DO know is worth saying: this attach asked
         // the API to wake a parked sandbox, and a parked box takes a few seconds
         // to come back. Without this the panel just counts down at the user.
-        if (wake) {
-          term.writeln('\r\n\x1b[33mWaking the sandbox — this can take a few seconds...\x1b[0m');
+        // Once per wake episode, not once per retry. A parked Platinum box takes
+        // ~60s to come back (measured on dev: stop 17:57:02 -> provider running
+        // confirmed 17:58:05), which is a whole backoff ladder of attempts — and
+        // repeating the line every attempt read as a stuck loop rather than as
+        // one thing taking a minute. Reset on a successful open.
+        if (wake && !wakeNoticeShownRef.current) {
+          wakeNoticeShownRef.current = true;
+          term.writeln('\r\n\x1b[33mWaking the sandbox — this can take up to a minute...\x1b[0m');
         }
         // Browser WS error events carry no detail (always an empty Event) and the
         // status (e.g. a 401) is never exposed. The onclose that follows drives
@@ -460,6 +479,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     reconnectNowRef.current = () => {
       if (disposedRef.current) return;
       wakeOnNextConnectRef.current = true;
+      wakeNoticeShownRef.current = false;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
@@ -472,6 +492,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
     // A fresh (pty, serverUrl) pair is a new attach — the panel opened, or the
     // runtime moved. Both are user intent, so the first dial may wake a parked box.
     wakeOnNextConnectRef.current = true;
+    wakeNoticeShownRef.current = false;
 
     // Delay fit + initial WS connect to ensure the container has real dimensions
     const initTimer = setTimeout(() => {

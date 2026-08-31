@@ -2,6 +2,8 @@
   "name": "kortix",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "secrets:check": "bash scripts/check-env-encrypted.sh",
     "dev": "bash scripts/dev-local.sh",
     "preview": "bash scripts/dev-local.sh --build",
     "worktree": "bun run scripts/worktree/cli.ts",

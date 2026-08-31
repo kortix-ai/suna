@@ -265,6 +265,46 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
             );
           });
         }
+        // MANIFEST TRIPWIRE. A project always has a manifest
+        // (../projects/managed-repo-seed.ts). Provisioning now guarantees one
+        // at birth and `kortix ship` refuses to push without one, but a plain
+        // `git push` straight at this proxy can still land a default branch
+        // with no kortix.yaml — which produces a project with no declared
+        // agents, no skills, and manifest detection falling back to v1
+        // `kortix.toml`. That used to be discovered as an unexplained
+        // session-start failure, long after the push.
+        //
+        // This cannot REJECT the push: the proxy streams the pack straight to
+        // the upstream and only runs here on a 2xx, so the commit has already
+        // landed on GitHub. Blocking it pre-commit means staging the (thin)
+        // pack through the mirror first — tracked separately. Until then, name
+        // it at the moment it happens instead of letting it surface as a
+        // mystery two steps downstream.
+        //
+        // The mirror is already refreshed by this block, so this is one
+        // pathspec-scoped ls-tree.
+        void (async () => {
+          try {
+            const repoPath = await refreshMirror(gitProject);
+            const listed = await runGit(
+              ['ls-tree', gitProject.defaultBranch, '--', 'kortix.yaml', 'kortix.yml', 'kortix.toml'],
+              repoPath,
+            );
+            if (!listed.stdout.trim()) {
+              console.error(
+                `[git-proxy] MANIFEST MISSING after push to ${projectId}: ` +
+                  `${gitProject.defaultBranch} has no kortix.yaml. This project cannot ` +
+                  `declare agents or skills and session start will fail.`,
+              );
+            }
+          } catch (err) {
+            console.warn(
+              `[git-proxy] manifest tripwire skipped for ${projectId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        })();
+
         const [compiledResult, piResult] = await Promise.allSettled([
           config.KORTIX_COMPILED_BOOT_MODE !== 'off' || piWorkerEnabled
             ? prebuildDefaultBranchArtifacts(

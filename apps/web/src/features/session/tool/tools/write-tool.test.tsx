@@ -88,6 +88,60 @@ describe('WriteTool trigger carries the filename and the size', () => {
   });
 });
 
+describe('WriteTool speaks the tense the row is actually in', () => {
+  // `Write` was the registry key. Every other surface in this feature —
+  // step-label.ts, activity-file-chips.tsx, narration.ts — has reported this
+  // call as Writing/Wrote for a long time; the trigger was the last holdout,
+  // and a machine noun frozen in one tense is what made a settled row read as
+  // a paused one.
+  test('a live call is present tense, beside the filename it is writing', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <ToolRunningContext.Provider value>
+          <WriteTool
+            part={makePart({ filePath: '/workspace/app.py', content: 'a' }, 'running')}
+          />
+        </ToolRunningContext.Provider>,
+      ),
+    );
+
+    expect(html).toContain('Writing');
+    expect(html).toContain('app.py');
+    expect(html).not.toContain('>Write<');
+  });
+
+  test('a settled call is past tense — a finished transcript is all of these', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <WriteTool part={makePart({ filePath: '/workspace/app.py', content: 'a' })} />,
+      ),
+    );
+
+    expect(html).toContain('Wrote');
+    expect(html).not.toContain('Writing');
+  });
+
+  // `renderToStaticMarkup` escapes the apostrophe, so the assertion is on the
+  // entity. Asserting the raw string here would silently never match and the
+  // test would be unable to fail.
+  test('a failed write never claims it wrote', () => {
+    const html = renderToStaticMarkup(
+      withProviders(
+        <WriteTool
+          part={makePart(
+            { filePath: '/workspace/app.py', content: 'a' },
+            'completed',
+            'Error: EACCES permission denied',
+          )}
+        />,
+      ),
+    );
+
+    expect(html).toContain('Couldn&#x27;t write');
+    expect(html).not.toContain('>Wrote<');
+  });
+});
+
 describe('WriteTool, for the part that never got its content', () => {
   // A pending part with no filename and no running turn is a leftover from a
   // finished run — restored sessions carry them. The old body answered with a

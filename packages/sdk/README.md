@@ -87,6 +87,12 @@ Three others exist, each for a reason that fits in one sentence:
 | `@kortix/sdk/server`     | imports `node:async_hooks`  |
 | `@kortix/sdk/internal/*` | unsupported, outside semver |
 
+Install the optional peers before you use the React entry:
+
+```bash
+npm install @kortix/sdk react @tanstack/react-query
+```
+
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
 `@deprecated`. Import from the root instead — see **API-MAP.md**'s Stability
 table for the full list (20 of them).

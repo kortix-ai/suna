@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } from './db';
+import { auditDb } from './audit-db';
 
 export interface AuditReconciliationResult {
   inserted: number;
@@ -18,7 +18,7 @@ export async function reconcileAuditEvents(
   accountId: string,
   limit = 1_000,
 ): Promise<AuditReconciliationResult> {
-  const rows = await db.execute<{ sourceLedger: string }>(sql`
+  const rows = await auditDb().execute<{ sourceLedger: string }>(sql`
     WITH candidates AS (
       SELECT c.account_id, c.project_id, c.session_id::text AS session_id,
              NULL::text AS opencode_session_id, c.acting_user_id AS actor_user_id,

@@ -8,8 +8,10 @@ import {
   partInput,
   partOutput,
   partStatus,
+  ToolRunningContext,
   useToolNavigation,
 } from '@/features/session/tool/shared/infrastructure';
+import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -17,7 +19,7 @@ import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import { getDirectory } from '@/ui';
 import { TreeStructureIcon as ListTree } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
 
 const NO_PATHS: string[] = [];
 
@@ -26,6 +28,7 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled } = useToolNavigation();
   const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
   const directory = getDirectory(input.path as string) || (input.path as string) || undefined;
@@ -46,7 +49,10 @@ export function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       icon={<ListTree className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'List',
+        // `List` was the registry key, not a word anyone says about a folder.
+        // `step-label.ts` has reported this call as Listed/Listing for a long
+        // time; the trigger is joining it rather than keeping a private name.
+        title: fileVerb('list', filePhase(running, errored)),
         subtitle: directory,
         args: hasResults
           ? [`${filePaths.length} ${filePaths.length === 1 ? 'file' : 'files'}`]

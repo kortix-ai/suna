@@ -72,7 +72,11 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
    * `Created 4 files` rather than `Apply Patch 4 files`. See `patch-summary.ts`.
    */
   const verb = useMemo(() => patchVerb(files.map((f) => f.type)), [files]);
-  const triggerTitle = isStreaming ? verb.running : verb.verb;
+  // A failed patch must not wear the wording of a patch that landed. The row
+  // already flipped its ICON to a warning via `ToolOutcomeContext`, but kept
+  // saying `Created 4 files` underneath it — the glyph and the words disagreeing
+  // about the same call, which is the exact lie `group-steps.ts` forbids (W7).
+  const triggerTitle = isError ? verb.failed : isStreaming ? verb.running : verb.verb;
   const Icon = PATCH_ICON[verb.icon];
 
   const triggerSubtitle = useMemo(() => {
