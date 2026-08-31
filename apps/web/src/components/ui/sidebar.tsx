@@ -894,7 +894,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      className={cn('flex w-full min-w-0 flex-col gap-1', className)}
+      className={cn('flex w-full min-w-0 flex-col gap-px', className)}
       {...props}
     />
   );
@@ -928,9 +928,8 @@ const sidebarMenuButtonVariants = cva(
           'bg-foreground text-background font-medium justify-center border-none hover:bg-foreground/90 hover:text-background',
       },
       size: {
-        default: 'h-7.5 text-sm',
+        default: 'h-8 text-sm',
         sm: 'h-7 text-xs',
-        md: 'h-8 text-sm',
         lg: 'h-12 text-sm group-data-[collapsible=icon]:p-0!',
       },
     },

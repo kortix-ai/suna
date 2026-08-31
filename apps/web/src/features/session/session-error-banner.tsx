@@ -16,11 +16,7 @@ import { buildAccountSettingsHref } from '@/stores/account-settings-modal-store'
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
 import type { KortixSendError } from '@kortix/sdk/react';
-import {
-  CreditCardIcon,
-  LightningIcon,
-  WarningCircleIcon,
-} from '@phosphor-icons/react';
+import { CreditCardIcon, LightningIcon, WarningCircleIcon } from '@phosphor-icons/react';
 
 // ============================================================================
 // Insufficient-credits detection — upstream 402 from /v1/router/chat/completions
@@ -194,35 +190,20 @@ interface TurnErrorDisplayProps {
    * text sniff (over `text`) is used then.
    */
   isAbort?: boolean;
-  /**
-   * The machine-readable WHY behind `isAbort` (the SDK's `AbortReason` —
-   * `core/http/abort-error.ts`), when the caller can read one off the
-   * message (`abortErrorReason(error)`).
-   *
-   * `undefined` covers "no abort", "reason: 'user'" (a real user Stop), and
-   * a genuine wire abort (opencode's own `MessageAbortedError`, which is
-   * never tagged) — all three render the "Interrupted" row exactly as
-   * before. Any OTHER value — currently only `'runtime-disposed'`, stamped
-   * when a runtime disposes/respawns mid-stream — is pure infrastructure,
-   * not a cut turn, and renders nothing at all: no Interrupted row, no error
-   * banner. A respawn that recovers cleanly must not scar the transcript.
-   */
-  abortReason?: string;
   className?: string;
 }
 
 /**
  * Renders a turn-level or send-failure error inline.
  *
- * Abort errors (user-initiated stops) get a minimal, lowkey treatment —
- * just muted text, no border/background card.
+ * Abort errors render nothing at all — a stop the user asked for is not a
+ * failure to report back to them, whatever its `AbortReason`.
  */
 export function TurnErrorDisplay({
   errorText,
   errorDetails,
   error,
   isAbort,
-  abortReason,
   className,
 }: TurnErrorDisplayProps) {
   const text = error ? error.message : errorText;
@@ -236,24 +217,17 @@ export function TurnErrorDisplay({
   // would say the same thing twice, once without the remedy.
   if (error?.kind === 'connector') return null;
 
-  // Abort/cancelled → tiny muted note, no card. Identity when the caller knows
-  // it, prose only when it does not — both routed through the SDK's single
-  // `isAbortError` classifier (see `@kortix/sdk` `core/http/abort-error.ts`).
-  if (isAbort ?? isAbortError(text)) {
-    // A reasoned, non-user abort (currently only `'runtime-disposed'`) is
-    // pure infrastructure — a runtime that disposed and respawned, not a cut
-    // turn. Render NOTHING: no Interrupted row, no error banner. `undefined`
-    // (no reason, or `'user'`) falls through to the row exactly as before.
-    if (abortReason && abortReason !== 'user') return null;
-    return (
-      <Checkpoint className={className}>
-        <CheckpointIcon>
-          <WarningCircleIcon className="text-muted-foreground size-4 shrink-0" />
-        </CheckpointIcon>
-        <CheckpointLabel>Interrupted</CheckpointLabel>
-      </Checkpoint>
-    );
-  }
+  // Abort/cancelled → render NOTHING. An abort is never a failure the user
+  // needs told about: either they pressed Stop themselves (`reason: 'user'`,
+  // or an untagged wire abort when the Stop came from another tab/client), or
+  // a runtime disposed and respawned (`'runtime-disposed'`) — infrastructure,
+  // not a cut turn. Announcing a stop the user just asked for is noise, and it
+  // scars the transcript with a row that reads like something went wrong.
+  //
+  // Identity when the caller knows it, prose only when it does not — both
+  // routed through the SDK's single `isAbortError` classifier (see
+  // `@kortix/sdk` `core/http/abort-error.ts`).
+  if (isAbort ?? isAbortError(text)) return null;
 
   // Typed billing failure — the "is this billing at all" question is already
   // answered by `error.kind`, so no message regex needed for that. The
@@ -338,8 +312,7 @@ export function SessionRetryDisplay({
         </ItemMedia>
         <ItemContent>
           <ItemTitle className="tabular-nums">
-            {title}{' '}
-            <span className="text-muted-foreground font-normal">#{attempt}</span>
+            {title} <span className="text-muted-foreground font-normal">#{attempt}</span>
           </ItemTitle>
           <ItemDescription className={cn('text-pretty', !details && 'line-clamp-2')}>
             {message}
