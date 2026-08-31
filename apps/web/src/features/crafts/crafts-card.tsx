@@ -20,6 +20,10 @@ import { craftIsUpload, craftRepoSlug, formatCount, type Craft } from './crafts-
  * the install modal, so the Install affordance is a styled `span`, never a
  * nested `<button>` — the same one-control rule `AppCard` follows.
  *
+ * Every card in a grid is the SAME height, and two things are load-bearing for
+ * that: the description reserves two line boxes whether or not it fills them,
+ * and the card fills its grid cell (`h-full`). See the notes on each.
+ *
  * `glass` swaps the panel fill for the translucent one the project home paints
  * over the wallpaper — the same treatment the old starter chips used.
  */
@@ -56,7 +60,13 @@ export function CraftCard({
       onClick={onOpen}
       aria-label={installed ? `${craft.title} — installed` : `Install ${craft.title}`}
       className={cn(
-        'group hover:border-foreground/20 flex w-full cursor-pointer flex-col gap-2.5 rounded-md border p-4 text-left',
+        // `h-full`, not just `w-full`: in the store the card is wrapped in an
+        // `<li>` grid cell, and a grid cell stretches while the button inside
+        // it does not. Without this the card keeps its content height and a
+        // short one leaves a gap under itself in a stretched row. The home
+        // preview renders the card as a direct grid child, where the stretch
+        // already applied — which is why only the store row looked broken.
+        'group hover:border-foreground/20 flex h-full w-full cursor-pointer flex-col gap-2.5 rounded-md border p-4 text-left',
         'transition-[border-color,transform] duration-150 hover:-translate-y-0.5 active:scale-[0.99]',
         glass ? 'bg-background/60 backdrop-blur-sm' : 'bg-popover',
       )}
@@ -101,7 +111,14 @@ export function CraftCard({
           </span>
         )}
       </div>
-      <p className="text-muted-foreground line-clamp-2 min-h-9 text-xs leading-relaxed text-pretty">
+      {/* `min-h-[2lh]` — exactly two line boxes of THIS paragraph, so a craft
+          with a one-line description reserves the same height as a craft with
+          two and every card in the grid matches. `min-h-9` reserved 33.12px
+          (`--spacing` is `0.23rem`) against a 42.25px pair of lines at the 13px
+          `--text-xs` and `leading-relaxed` — 1.57 lines, which left the short
+          card 9.14px shorter than its neighbours. `2lh` is derived from the
+          computed line-height, so it stays correct if either token moves. */}
+      <p className="text-muted-foreground line-clamp-2 min-h-[2lh] text-xs leading-relaxed text-pretty">
         {craft.description ?? 'No description in its kortix.yaml.'}
       </p>
       <div className="text-muted-foreground mt-auto flex items-center gap-1.5 pt-0.5 text-xs">
