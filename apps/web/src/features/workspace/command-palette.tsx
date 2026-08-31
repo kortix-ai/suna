@@ -106,19 +106,19 @@ import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import {
   type FeatureFlagKey,
-  type KortixAccount,
-  type KortixProject,
-  type ProjectDetail,
-  type ProjectSession,
+  featureFlags,
   getProject,
   getProjectDetail,
+  type KortixAccount,
+  type KortixProject,
   listProjectSessions,
   listProjectsForAccount,
+  normalizeAppPathname,
+  type ProjectDetail,
+  type ProjectSession,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
-import { featureFlags } from '@kortix/sdk/feature-flags';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
   contract,
   invalidateProject,
@@ -976,7 +976,7 @@ export function CommandPalette() {
   // panel rendered nothing unless it was ENABLED — a palette entry that opened
   // a blank pane. It now follows enablement like every other flag.
   // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
-  // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
+  // above is the DEPLOYMENT flag set (`featureFlags` from `@kortix/sdk`, build-time
   // capabilities like `enableProjects`), a different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);

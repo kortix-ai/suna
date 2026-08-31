@@ -94,8 +94,9 @@ npm install @kortix/sdk react @tanstack/react-query
 ```
 
 Older subpaths (`@kortix/sdk/projects-client`, `/turns`, …) still work and are
-`@deprecated`. Import from the root instead — see **API-MAP.md**'s Stability
-table for the full list (20 of them).
+`@deprecated`. Import from the root instead — see **Entry points** below for
+the three that are real, and **API-MAP.md**'s Stability table for the full
+list of aliases (20 of them).
 
 > **React Native / Expo:** REST works. **Streaming does not** — RN's `fetch` has
 > no `response.body`. Use `createHttpSessionSyncController` for bounded history
@@ -373,7 +374,7 @@ mode — see its README.
 ## Rendering chat (the headless chat kit)
 
 Everything needed to render an agent transcript without adopting any Kortix
-UI: `classifyPart`/`classifyTurn` (`@kortix/sdk/turns`, framework-free)
+UI: `classifyPart`/`classifyTurn` (framework-free, from the root entry)
 normalize all twelve opencode part types (text, reasoning, tool, file,
 subtask, patch, snapshot, agent, retry, compaction, step, + a forward-compat
 `unknown`) into a typed `ClassifiedPart`, and normalize a failed assistant
@@ -385,7 +386,7 @@ build error at your call site instead of a silent drop in production:
 
 ```tsx
 import { renderParts, type PartRenderers } from "@kortix/sdk/react";
-import { classifyTurn } from "@kortix/sdk/turns";
+import { classifyTurn } from "@kortix/sdk";
 
 const renderers: PartRenderers<React.ReactNode> = {
   text: (p) => <Markdown>{p.text}</Markdown>,
@@ -429,8 +430,7 @@ chat UI actually dispatches on.
 One typed hierarchy, produced by **every** HTTP layer — `backendApi`, the
 platform client's `platformFetch`, `authenticatedFetch`, the files client, the
 opencode client, and `ensureReady()` all throw/return the same classes (from
-the root barrel or `@kortix/sdk/api-client`; `@kortix/sdk/react` re-exports
-them too). They're real classes: `instanceof` works across every host, and
+the root barrel; `@kortix/sdk/react` re-exports them too). They're real classes: `instanceof` works across every host, and
 `name`/shape are preserved for legacy `error.name === 'ApiError'` sniffers.
 
 - `ApiError` — any failed request; branch on `.status` / `.code` (e.g.
@@ -485,28 +485,43 @@ only the HTTP error message, `getRetryMessage(status)` still returns the full
 gateway composite. That message includes the request ID and each candidate's
 provider, resolved model, HTTP status, code, and bounded message.
 
-## Subpath modules
+## Entry points
 
-Stable, tree-shakeable surfaces (also reachable via the facade). Not exhaustive
-— see `package.json`'s `exports` field for the complete list (it also includes
-`./config`, `./api-client`, `./feature-flags`, `./fresh-sessions`,
-`./instance-routes`, `./opencode-errors`, `./platform-client`, `./event-stream`,
-`./sandbox-connection-store`, `./opencode-pending-store`, `./session/url`,
-`./idb-sync-cache`):
+**There are three, plus one internal.** Everything framework-free lives at the
+root; the other two exist because each carries a dependency the root cannot.
+That is the whole map — learn it once.
 
-| import                                                | provides                                                                                                                                                                                                                                                          |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@kortix/sdk`                                         | `createKortix`, `configureKortix`, `files`, the error classes, `classifyPart`/`classifyTurn`, `narrowChatEvent`, `openEventStream`, domain result types                                                                                                           |
-| `@kortix/sdk/server`                                  | **Node/Bun only** — `runWithKortix`, `createScopedKortix`, `getScopedConfig` (per-request config isolation; see "Kortix as a Backend")                                                                                                                            |
-| `@kortix/sdk/react`                                   | every `useOpenCode*` hook + providers (reactive data), `useSession`, `useChatTurns`/`renderParts`, domain hooks (`useProjectSecrets`/`useProjectTriggers`/`useChangeRequests`)                                                                                    |
-| `@kortix/sdk/turns`                                   | framework-free part/turn classification (`classifyPart`, `classifyTurn`, `toolInfo`, turn grouping/cost helpers)                                                                                                                                                  |
-| `@kortix/sdk/files`                                   | workspace file ops (daemon `/file` + `/find`): `listFiles`, `readFile`, `readBlob`, `getFileStatus`, `findFiles`, `findText`, `uploadFile`, `writeFile` (the only op that OVERWRITES — `uploadFile` never does), `deleteFile`, `mkdir`, `renameFile`, …           |
-| `@kortix/sdk/session`                                 | a session's runtime surface — `getSessionHealth`/`isRuntimeReady` + proxy/preview URL builders (`rewriteLocalhostUrl`, `proxyLocalhostUrl`, `detectLocalhostUrls`, …) + preview-auth helpers. **No "sandbox" in the public surface** — a session owns its runtime |
-| `@kortix/sdk/opencode-client`                         | `getClient`, `getClientForUrl` + the **full opencode v2 type surface** (`Event`, `Part`, `Message`, `Session`, `Pty`, `Config`, …)                                                                                                                                |
-| `@kortix/sdk/projects-client`                         | the raw REST functions (the facade wraps these)                                                                                                                                                                                                                   |
-| `@kortix/sdk/auth`                                    | `authenticatedFetch`, token accessors                                                                                                                                                                                                                             |
-| `@kortix/sdk/api-client`                              | the raw `backendApi` primitive — host code should go through the facade or another subpath module instead of calling this directly                                                                                                                                |
-| `@kortix/sdk/server-store` · `@kortix/sdk/sync-store` | active-sandbox state · live message/part/status store                                                                                                                                                                                                             |
+| import | when you use it | why it is separate |
+| --- | --- | --- |
+| `@kortix/sdk` | **almost always.** `createKortix`, `configureKortix`, the REST surface, `files`, session URLs + health, `classifyPart`/`classifyTurn`/`toolViewModel`, `openEventStream`, `narrowChatEvent`, the message queue, the error classes, and every domain type | — |
+| `@kortix/sdk/react` | hooks and providers: `useSession`, every `useOpenCode*`, `useChatTurns`/`renderParts`, the domain hooks | `react` is an **optional peer dependency**. Putting these at the root would force React on a CLI, a worker, or a React Native host |
+| `@kortix/sdk/server` | `runWithKortix`, `createScopedKortix`, `getScopedConfig` — per-request config isolation in a Node/Bun backend | imports `node:async_hooks`. Never let it into a browser bundle |
+| `@kortix/sdk/internal/*` | nothing, in host code | apps/web's zustand stores. Browser-only, **outside semver**, and not on the `window.Kortix` global. Implementation detail that is regrettably visible |
+
+The root really is canonical, and that is a test rather than a promise:
+`src/root-canonical.test.ts` asserts that every name exported by every other
+isomorphic subpath is also exported from `@kortix/sdk`. The only names it
+permits to be missing are the browser-only stores above — `zustand` is a
+forbidden import in the root's `isomorphic-core` tier, so they cannot live
+there.
+
+```ts
+import { createKortix, classifyTurn, listFiles, openEventStream } from '@kortix/sdk';
+import { useSession } from '@kortix/sdk/react';
+```
+
+### Legacy aliases — do not use in new code
+
+`package.json` still declares about twenty more subpaths: `/turns`, `/files`,
+`/session`, `/session/url`, `/auth`, `/config`, `/api-client`,
+`/projects-client`, `/platform-client`, `/opencode-client`, `/opencode-errors`,
+`/event-stream`, `/feature-flags`, `/fresh-sessions`, `/instance-routes`,
+`/message-queue`, and the un-prefixed store aliases.
+
+Every one of them is a one-line `export *` re-export under `src/deprecated/`,
+kept alive only so an existing `npm install` does not break. **They add nothing
+the root does not already export.** They are removed at the next major; new
+code imports the root.
 
 ## Configuration
 
@@ -535,9 +550,10 @@ The SDK is host-agnostic: no Next.js / web coupling in the core. The host inject
 its token getter and toast/notify sinks; the SDK does the rest. Today that's proven
 in React DOM (`apps/web` and the `apps/whitelabel-demo` reference app are the
 `configureKortix`/`@kortix/sdk/react` consumers).
-The framework-free core modules — `turns`, `session/url`, `session` (health),
-`projects-client`, `files`, `transcript` — have no React or DOM dependency and are
-usable from any JS host; `apps/mobile` already imports `@kortix/sdk/turns` this way.
+The framework-free core — turn classification, session URLs and health, the
+REST clients, file operations, transcript formatting — has no React or DOM
+dependency and is usable from any JS host, all of it from the root entry;
+`apps/mobile` imports `classifyTurn` from `@kortix/sdk` this way.
 React Native does not use `@kortix/sdk/react`. Mobile now uses the framework-free
 `createHttpSessionSyncController` for message history, status recovery, and older
 pagination. Mobile keeps its platform-specific event transport because React
@@ -546,7 +562,7 @@ Native cannot consume the SDK's fetch-based SSE stream.
 ## Rules of the road
 
 - **No `@opencode-ai/sdk` in host code.** Import opencode types/client from
-  `@kortix/sdk/opencode-client`. The SDK is the sole owner of that dependency.
+  `@kortix/sdk`. The SDK is the sole owner of that dependency.
   (Holds today — no host imports it.)
 - **No raw `backendApi` / `authenticatedFetch` in host code.** Use the facade or a
   subpath module. (Aspirational: apps/web still calls `backendApi` via its

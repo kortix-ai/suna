@@ -18,7 +18,7 @@ import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
 import { projectSessionHref } from '@/lib/navigation/session-href';

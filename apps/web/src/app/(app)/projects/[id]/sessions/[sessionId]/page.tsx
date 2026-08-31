@@ -79,15 +79,16 @@ import {
 } from '@/stores/session-switch-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
+  clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isSessionFresh,
   listProjectSessions,
   sessionStartKey,
+  setActiveInstanceCookie,
   updateProjectSession,
   wakeProgressFingerprint,
 } from '@kortix/sdk';
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
-import { setActiveInstanceCookie } from '@kortix/sdk/instance-routes';
 import {
   type UseSessionResult,
   clearStartStash,
