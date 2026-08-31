@@ -2208,9 +2208,29 @@ async function postPrompt(
         kind: 'principal',
         userId,
         callerSessionId,
-        // A real Kortix session id (the session this prompt is FOR), so it is
-        // also the correct agent binding.
-        boundCredentialSessionId: callerSessionId,
+        // NOT an agent binding — this is the API's own delivery loop, so it is
+        // `null`, the value `callerKortixSessionId()` gives a non-session-bound
+        // caller. It used to pass the TARGET session id ("the session this
+        // prompt is FOR"), which reads as "I am that sandbox" and silently
+        // disabled the trigger-session manager override in
+        // `isProjectSessionVisibleTo` — that gate is keyed on
+        // `boundCredentialSessionId === null`. A trigger creates its session
+        // `private` and owned by the AUTOMATION ACTOR, so every prompt a human
+        // sent into a craft/trigger session was answered `403 Not authorized to
+        // access this session`, retried 5x, and dead-lettered as
+        // `delivery outcome: pending` (local, 2026-08-31: every craft run had an
+        // empty transcript).
+        //
+        // `null` cannot widen access. The sibling-narrowing verdict is
+        // unchanged — it only fires for a backend-origin target when the
+        // binding differs from it, and the binding WAS the target — and every
+        // row in this queue was already authorized at enqueue time by
+        // `POST /prompts` -> `loadVisibleSession(..., callerKortixSessionId(c),
+        // callerKortixSessionId(c))`, which applies the real narrowing against
+        // the caller's own credential. `SessionInvocationSource` has no
+        // agent/sandbox-bound value, so no row here originates from one.
+        // Pinned by `trigger-session-delivery-authz.test.ts`.
+        boundCredentialSessionId: null,
         sandboxAuthored: false,
       },
       'POST',

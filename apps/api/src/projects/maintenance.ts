@@ -10,6 +10,7 @@ import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
 import { reconcileUndeliveredPrompts } from './session-lifecycle/undelivered-prompts';
+import { reconcileLostBootPrompts } from './session-lifecycle/lost-boot-prompt';
 import { verifyParkedRuntimes } from './reaping/parked-runtime-verification';
 import { reconcileRuntimeWakeFences } from './session-lifecycle/runtime-wake-maintenance';
 import {
@@ -235,6 +236,7 @@ export async function runProjectMaintenance(): Promise<void> {
       orphanCompute,
       stuckSessions,
       undeliveredPrompts,
+      lostBootPrompts,
       forwardedPrompts,
       orphanBoxes,
       branches,
@@ -286,6 +288,17 @@ export async function runProjectMaintenance(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
         return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
+      }),
+      // BOOT prompts the runtime dropped. A session created with
+      // `initial_prompt` never enters the inbox, so an abandoned boot delivery
+      // was a silent permanent loss — every craft run empty. Hands the prompt
+      // to the inbox, at most once per session. See `lost-boot-prompt.ts`.
+      reconcileLostBootPrompts().catch((err) => {
+        console.warn(
+          '[project-maintenance] lost-boot-prompt reconcile failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { scanned: 0, requeued: 0, deduped: 0, errors: 0 };
       }),
       // The other end of the same queue: FORWARDED prompts whose ledger
       // confirmation never arrived. It only ever closes rows — a prompt that
@@ -408,6 +421,8 @@ export async function runProjectMaintenance(): Promise<void> {
         stuckSessions.reconciled ||
         stuckSessions.errors ||
         undeliveredPrompts.claimed ||
+        lostBootPrompts.requeued ||
+        lostBootPrompts.errors ||
         forwardedPrompts.confirmed ||
         forwardedPrompts.forceClosed ||
         orphanBoxes.stopped ||
@@ -441,6 +456,7 @@ export async function runProjectMaintenance(): Promise<void> {
         orphanCompute,
         stuckSessions,
         undeliveredPrompts,
+        lostBootPrompts,
         forwardedPrompts,
         orphanBoxes,
         branches,
