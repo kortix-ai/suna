@@ -1,3 +1,4 @@
+import { ToolRunningContext } from '@/features/session/tool/shared/infrastructure';
 import type { ToolPart } from '@/ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
@@ -14,14 +15,26 @@ const part = (files: unknown[], status = 'completed', output = 'ok'): ToolPart =
     state: { status, output, metadata: { files }, time: { start: 1, end: 2 } },
   }) as unknown as ToolPart;
 
-const render = (p: ToolPart, open = false) =>
+const render = (p: ToolPart, open = false, running = false) =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-        <ApplyPatchTool part={p} defaultOpen={open} />
+        <ToolRunningContext.Provider value={running}>
+          <ApplyPatchTool part={p} defaultOpen={open} />
+        </ToolRunningContext.Provider>
       </NextIntlClientProvider>
     </QueryClientProvider>,
   );
+
+/** A live call whose file list has not arrived yet. */
+const streamingPart = (): ToolPart =>
+  ({
+    id: '1',
+    type: 'tool',
+    tool: 'apply_patch',
+    callID: 'c1',
+    state: { status: 'running', metadata: {}, time: { start: 1 } },
+  }) as unknown as ToolPart;
 
 /** The trigger's visible words, with markup and icons stripped. */
 const rowText = (markup: string) =>
@@ -96,5 +109,45 @@ describe('ApplyPatchTool, when the patch did not land', () => {
     // asserting the raw string would be an assertion that can never fail.
     expect(text).toContain('Couldn&#x27;t write');
     expect(text).not.toContain('Wrote 4 files');
+  });
+});
+
+describe('ApplyPatchTool while the patch is still streaming', () => {
+  // The reported defect: the row opened onto a body holding one shimmering
+  // line. Its `px-3` put that line 12px from the row's left edge while every
+  // other body under a tool row sits at `--tool-indent` (28px in a chain), so
+  // the `ChainOfThought` rail at `left-2` ran 4px off the text — and the line
+  // then jumped 16px right the moment the file list replaced it.
+  test('the live line is the ROW, not a body under it', () => {
+    const markup = render(streamingPart(), false, true);
+    expect(markup).toContain('Preparing changes…');
+    // On the trigger, inside the header's own flex row.
+    expect(markup).toContain('data-component="tool-trigger"');
+    // The misaligned body is gone — that inset was its signature.
+    expect(markup).not.toContain('px-3 py-2');
+  });
+
+  test('a row with nothing to open is not a door', () => {
+    // `CollapsibleToolRow`'s rule: no children, no disclosure. Forcing the row
+    // open must still produce no trigger affordance and no body, because there
+    // is no payload for either to reveal.
+    const markup = render(streamingPart(), true, true);
+    expect(markup).not.toContain('aria-expanded');
+    expect(markup).not.toContain('role="button"');
+  });
+
+  test('once files arrive the row names them and opens', () => {
+    const live = {
+      ...(streamingPart() as unknown as { state: Record<string, unknown> }),
+      state: {
+        status: 'running',
+        metadata: { files: [{ relativePath: 'a/b.ts', type: 'update', additions: 2 }] },
+        time: { start: 1 },
+      },
+    } as unknown as ToolPart;
+    const markup = render(live, false, true);
+    expect(markup).not.toContain('Preparing changes…');
+    expect(rowText(markup)).toContain('Editing b.ts');
+    expect(markup).toContain('aria-expanded');
   });
 });

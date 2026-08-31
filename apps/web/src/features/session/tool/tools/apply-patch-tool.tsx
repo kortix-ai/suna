@@ -58,9 +58,6 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     return Array.isArray(raw) ? (raw as PatchFileLite[]) : [];
   }, [metadata.files]);
 
-  const totalAdds = useMemo(() => files.reduce((s, f) => s + (f.additions ?? 0), 0), [files]);
-  const totalDels = useMemo(() => files.reduce((s, f) => s + (f.deletions ?? 0), 0), [files]);
-
   const [expanded, setExpanded] = useState<number | null>(files.length === 1 ? 0 : null);
 
   const isStreaming = (status === 'pending' || status === 'running') && running;
@@ -80,8 +77,10 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
   const Icon = PATCH_ICON[verb.icon];
 
   const triggerSubtitle = useMemo(() => {
-    // Nothing has arrived yet, so the verb alone carries the row — a subtitle
-    // here would be a count of files we have not been told about.
+    // No file list — either the call is still streaming (in which case the row
+    // is the shimmer below, not this) or it settled without one. Either way the
+    // verb carries the row alone: a subtitle here would be a count of files we
+    // have not been told about.
     if (files.length === 0) return undefined;
     // One file names itself, the same grammar the chain's file rows use.
     if (files.length === 1) {
@@ -91,24 +90,49 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
     return `${files.length} files`;
   }, [files]);
 
-  const triggerArgs = useMemo(() => {
-    const parts: string[] = [];
-    if (totalAdds > 0) parts.push(`+${totalAdds}`);
-    if (totalDels > 0) parts.push(`−${totalDels}`);
-    if (files.length === 1) {
-      const dir = getDirectory(files[0].relativePath || files[0].filePath || '');
-      if (dir) parts.unshift(dir);
-    }
-    return parts.length > 0 ? parts : undefined;
-  }, [files, totalAdds, totalDels]);
+  /**
+   * The call is live and not one file has arrived — so there is nothing to
+   * name, nothing to count and nothing to open.
+   *
+   * This state used to be an expanded BODY holding one shimmering line. Three
+   * separate defects came with it, all of which this branch removes rather
+   * than tunes:
+   *
+   *  1. It made a payload-less row a disclosure. `CollapsibleToolRow` already
+   *     states the rule — a row with no children is not a door — and the row
+   *     carried a caret onto a body that could only say "still working".
+   *  2. Its `px-3` put the line 12px in, while every other body under a tool
+   *     row takes its offset from `--tool-indent` (28px inside a chain). The
+   *     `ChainOfThought` rail runs at `left-2`, so the shimmer sat 4px off the
+   *     hairline — the exact "content at the margin, rail through the text"
+   *     failure `chain-of-thought.tsx` documents — and then jumped 16px right
+   *     the moment the file list replaced it.
+   *  3. It said the same thing the burst summary above it and the session
+   *     status line below it were both already saying.
+   *
+   * So the liveness moves INTO the row, which is where `show-tool` and `bash`
+   * both already put it: one shimmering line, on the trigger, at the row's own
+   * scale. `bash` renders the identical shape for its stale-pending state.
+   */
+  const isPreparing = isStreaming && files.length === 0;
 
   return (
     <BasicTool
       icon={<Icon className="size-3.5 shrink-0" />}
-      trigger={{
-        title: triggerTitle,
-        subtitle: triggerSubtitle,
-      }}
+      trigger={
+        isPreparing ? (
+          <div className="flex min-w-0 flex-1 items-center">
+            <TextShimmer duration={1} spread={2} className="min-w-0 truncate text-sm">
+              Preparing changes…
+            </TextShimmer>
+          </div>
+        ) : (
+          {
+            title: triggerTitle,
+            subtitle: triggerSubtitle,
+          }
+        )
+      }
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
       locked={locked}
@@ -200,16 +224,6 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
             );
           })}
         </ToolResultCard>
-      ) : isStreaming ? (
-        <div className="px-3 py-2 text-xs">
-          {/* "Applying patch…" was the last of the jargon on this row. Nothing
-					    has arrived yet at this point — not even the file list — so the
-					    line can only say that something is coming, and it should say it
-					    in the same words the title now uses. */}
-          <TextShimmer duration={1} spread={2} className="text-xs">
-            Preparing changes…
-          </TextShimmer>
-        </div>
       ) : null}
     </BasicTool>
   );
