@@ -37,7 +37,13 @@ function slice(source: string, startAnchor: string, endAnchor: string): string {
 }
 
 describe('Strict-Transport-Security header', () => {
-  test('is set, with a >= 1 year max-age and includeSubDomains', () => {
+  // R18, CONTROLLER RULING (final): a >= 1 year max-age, WITHOUT
+  // `includeSubDomains`, and gated to production. `includeSubDomains` pins
+  // every `*.kortix.com` subdomain — and, from the prod apex, the whole
+  // zone — for the max-age duration, in every visitor's browser, with no
+  // server-side undo. That is a DNS-wide infra decision, not a side effect
+  // of an auth-cookie fix, so it does not belong in this diff.
+  test('is set, with a >= 1 year max-age, and WITHOUT includeSubDomains', () => {
     // Match the literal header assignment, not just the string anywhere in
     // the file (e.g. inside this test's own describe name if it were ever
     // copy-pasted back into next.config.ts).
@@ -52,7 +58,27 @@ describe('Strict-Transport-Security header', () => {
     const maxAge = Number(maxAgeMatch?.[1] ?? 0);
     expect(maxAge).toBeGreaterThanOrEqual(31_536_000); // 1 year, in seconds
 
-    expect(value).toContain('includeSubDomains');
+    expect(value).not.toContain('includeSubDomains');
+  });
+
+  // `headers()` has no per-request environment branch — an entry added here
+  // ships IDENTICALLY from local `next dev`, `dev.kortix.com`,
+  // `staging.kortix.com`, and prod. `NODE_ENV === 'production'` is the
+  // BUILD-time gate (`next build` sets it) that keeps HSTS off local dev and
+  // off any HTTP-only self-host, without touching CSP / X-Frame-Options,
+  // which stay unconditional for every environment.
+  test('is gated to production, unlike CSP / X-Frame-Options which stay unconditional', () => {
+    const block = slice(nextConfig, "source: '/:path*',", "source: '/fonts/:path*',");
+    const gateIdx = block.indexOf("process.env.NODE_ENV === 'production'");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const hstsIdx = block.indexOf('Strict-Transport-Security');
+    expect(hstsIdx).toBeGreaterThan(gateIdx);
+
+    // CSP / X-Frame-Options are NOT behind that same gate — they come before
+    // it in the array, outside the conditional spread.
+    const cspIdx = block.indexOf('Content-Security-Policy');
+    expect(cspIdx).toBeGreaterThan(-1);
+    expect(cspIdx).toBeLessThan(gateIdx);
   });
 
   test('applies on the same catch-all block as the other security headers, not a narrower route', () => {

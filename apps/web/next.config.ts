@@ -483,14 +483,37 @@ const nextConfig = (): NextConfig => ({
           // server.ts / middleware.ts) is now Secure-only on HTTPS, but
           // without this header a plaintext http:// hit on a domain that
           // NORMALLY redirects to HTTPS is still a window an on-path
-          // attacker can use before that redirect happens. Browsers ignore
-          // this header entirely when it arrives over plain HTTP (RFC 6797),
-          // so it is a no-op locally and on any HTTP-only self-host —
-          // effective only where it matters, on real HTTPS deployments.
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains',
-          },
+          // attacker can use before that redirect happens.
+          //
+          // CONTROLLER RULING (R18, final): gated to production, and
+          // WITHOUT `includeSubDomains`. `headers()` here has no per-request
+          // environment check — the entry, once added, ships identically
+          // from local `next dev`, `dev.kortix.com`, `staging.kortix.com`
+          // and prod. Browsers ignore this header over plain HTTP (RFC
+          // 6797), so it is genuinely inert on bare `localhost` — but dev
+          // and staging are REAL HTTPS deployments of this same app, so an
+          // ungated header is enforced there too, and `includeSubDomains`
+          // would pin `*.dev.kortix.com` / `*.staging.kortix.com`, and from
+          // the prod apex the entire `*.kortix.com` zone — known and future
+          // subdomains — for two years, in every visitor's browser, with no
+          // server-side undo. The auth-cookie plaintext window this closes
+          // is fully closed by the header on the ONE host serving that
+          // cookie; subdomain-wide enforcement is a separate, DNS-wide
+          // infra decision that belongs to whoever owns that zone, not a
+          // side effect of this fix. `process.env.NODE_ENV === 'production'`
+          // here is a BUILD-time check (`next build` sets it), same
+          // mechanism `next.config.ts`'s `rewrites()` already uses for the
+          // Supabase proxy rewrite above, and matches how `secure` is gated
+          // server-side in
+          // `lib/supabase/server.ts` / `middleware.ts`.
+          ...(process.env.NODE_ENV === 'production'
+            ? [
+                {
+                  key: 'Strict-Transport-Security',
+                  value: 'max-age=63072000',
+                },
+              ]
+            : []),
         ],
       },
       {
