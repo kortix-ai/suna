@@ -488,6 +488,31 @@ export function NewWorkspacePage() {
                   </p>
                 ) : null}
 
+                {/* The `isForeignAccountList` case (`new-workspace-form.ts`) —
+                      2+ creatable accounts, none of them this user's own. Its
+                      only reachable trigger today is a LEGITIMATE user with no
+                      personal account (SAML JIT or a direct invite acceptance
+                      that bypassed the personal-account bootstrap gate), not a
+                      caching defect — see that function's own doc comment. Before
+                      this note the page went silent here: no picker (the top
+                      bar collapses to bare identity text), no "Create in" line,
+                      and a permanently disabled submit with nothing explaining
+                      why. Same treatment as the sibling message above —
+                      gated on `!accountsQuery.isLoading` for the same reason. */}
+                {!accountsQuery.isLoading && foreignAccountList ? (
+                  <p className="text-muted-foreground text-xs">
+                    We can't tell which of your accounts is yours, so we're not guessing.
+                    Email{' '}
+                    <a
+                      href="mailto:support@kortix.ai"
+                      className="text-foreground underline underline-offset-2"
+                    >
+                      support@kortix.ai
+                    </a>{' '}
+                    and we'll get it fixed.
+                  </p>
+                ) : null}
+
                 {/* `effectiveAccountId`, not `state.accountId`: the GitHub
                       queries inside are account-scoped, and `state.accountId`
                       is legitimately null for a single-account user (the

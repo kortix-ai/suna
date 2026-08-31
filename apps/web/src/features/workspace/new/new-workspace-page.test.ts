@@ -411,6 +411,37 @@ describe('/new page: zero-creatable-accounts state', () => {
   });
 });
 
+describe('/new page: foreign-accounts-list state (B3)', () => {
+  // Before this, `foreignAccountList` (2+ creatable accounts, none the
+  // user's own) nulled the account id and blocked submit with NOTHING telling
+  // the user why: no picker (the top bar collapses to bare identity text via
+  // `showAccountLine={false}`), no "Create in" line, a permanently disabled
+  // button. After Task 10 scoped `['accounts']` to the signed-in user, the
+  // only user who can still reach this state is a legitimate one (no
+  // personal account, owner/admin on 2+ team accounts via SAML JIT or a
+  // direct invite acceptance) — a silent dead end for a real user is strictly
+  // worse than the 403 this branch set out to fix.
+  test('renders a reason with an escape hatch instead of a silent dead end', () => {
+    expect(code).toContain('!accountsQuery.isLoading && foreignAccountList');
+    expect(code).toContain("We can't tell which of your accounts is yours");
+    expect(code).toContain('mailto:support@kortix.ai');
+    // Same restrained treatment as the sibling zero-accounts note — no new
+    // chrome introduced for this one state.
+    expect(code).not.toContain('<InfoBanner');
+  });
+
+  test('the note is gated on accountsQuery.isLoading, same reason as the zero-accounts note', () => {
+    // `foreignAccountList` is computed from `creatableAccounts`, which is
+    // `[]` for every user during the load window — `isForeignAccountList`
+    // returns `false` for an empty list (length < 2), so this specific note
+    // cannot flash on its own; the gate still has to be asserted directly so
+    // a future change to that short-circuit cannot silently drop it.
+    const noteGuard = code.match(/\{[^{}]*foreignAccountList[^{}]*\? \(/)?.[0];
+    expect(noteGuard).toBeDefined();
+    expect(noteGuard).toContain('!accountsQuery.isLoading');
+  });
+});
+
 describe('/new page: exports', () => {
   test('exports NewWorkspacePage', () => {
     expect(code).toContain('export function NewWorkspacePage()');

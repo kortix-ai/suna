@@ -146,35 +146,46 @@ export function resolveDefaultCreatableAccountId(
  * not a leak — it is exactly the scenario Task 1's fix protects (Task 2
  * controller addendum A2.2), so it is never FOREIGN on its own.
  *
- * A MULTI-account list with no anchor to the viewer at all has no such
- * legitimate shape: once the viewer's own personal account exists it is
- * always one of their membership rows, and therefore always present. Two or
- * more accounts with zero anchor to the viewer is the signature a stale or
- * wrong account-list cache entry would produce (a leftover list from a
- * DIFFERENT signed-in user), not a genuine response for this identity — so
- * this is the fail-closed branch (G2): treat it as untrustworthy rather than
- * guess which entry, if any, is safe to default into.
- *
  * The N=1 case this function CANNOT catch, and no longer has to: a SOLE
- * foreign account (the branch above that returns `false`) is
+ * foreign account (the branch above that returns `false`) used to be
  * INDISTINGUISHABLE, from this function's inputs alone, from a stale account
  * list still holding a DIFFERENT, previously-signed-in user's single-account
  * list. Both shapes are exactly one account, `account_id !== userId`, so
- * rejecting one would permanently lock legitimate invited admins out of
- * creating any workspace.
+ * rejecting one would have permanently locked legitimate invited admins out
+ * of creating any workspace. That gap is closed one layer up instead,
+ * structurally: the account list is cached under `qk.accounts.list(userId)`
+ * (`packages/sdk/src/react/query-keys.ts`), read only through
+ * `useAccountsList()` (`hooks/account/use-accounts-list.ts`), and every
+ * reader is gated `enabled: !!user`. A previous user's list — of ANY size,
+ * not only one account — is not ADDRESSABLE from this user's session, so it
+ * cannot reach this function at all any more.
  *
- * That gap is now closed one layer up instead, structurally: the account list
- * is cached under `qk.accounts.list(userId)` (`packages/sdk/src/react/
- * query-keys.ts`), read only through `useAccountsList()`
- * (`hooks/account/use-accounts-list.ts`), and every reader is gated
- * `enabled: !!user`. A previous user's list is not ADDRESSABLE from this
- * user's session, so it can no longer reach this function at all.
+ * WHAT THAT MEANS FOR THE 2+-ACCOUNT CASE THIS FUNCTION ACTUALLY GUARDS:
+ * before the key scoping above, a 2+-account list with no anchor to the
+ * viewer had TWO possible causes — (a) a stale or wrong cache entry left by a
+ * DIFFERENT signed-in user, or (b) a genuine, still-rare shape: a user who
+ * owns/admins 2+ team accounts and has no personal account of their own, so
+ * none of their creatable accounts is `account_id === userId`. The key
+ * scoping above closes (a) the same way it closes the N=1 case — a previous
+ * user's list cannot reach this function at all. It does NOT close (b): that
+ * user's OWN list, correctly scoped to their OWN session, still has zero
+ * anchor to their identity, because their identity genuinely has no
+ * creatable account of its own. So today the ONLY reachable trigger for this
+ * predicate is (b), a legitimate user, not a caching defect — reachable via
+ * SAML JIT provisioning (`iam/sso-sync.ts` inserting a membership directly)
+ * or direct invite acceptance (`accounts/invites.ts`), either of which can
+ * add someone as owner/admin on 2+ accounts without ever running the
+ * `memberships.length === 0` personal-account bootstrap gate.
  *
- * This check still earns its place and must NOT be deleted: it is the
- * fail-closed guard for a 2+-account list with no anchor to the viewer, which
- * the key cannot rule out (a genuine response can legitimately contain
- * accounts the viewer does not own). Key scoping and this check cover
- * different shapes.
+ * This check still earns its place and must NOT be deleted or relaxed: (b)
+ * is real, and this function still cannot tell "a genuine multi-account user
+ * with no personal account" apart from any other reason a response might
+ * carry zero anchor to the viewer — guessing which of 2+ unrelated accounts
+ * is safe to default into is worse than refusing to guess (G2, fail-closed).
+ * What changed is the caller's obligation: since the reachable trigger is now
+ * a LEGITIMATE user rather than a caching artifact, `new-workspace-page.tsx`
+ * must render that user a REASON, not a silently disabled form — see its own
+ * comment where `foreignAccountList` is read.
  *
  * `userId` is required, not optional: an omitted argument used to compile
  * clean and silently degrade to `undefined`, which made every 2+-account
