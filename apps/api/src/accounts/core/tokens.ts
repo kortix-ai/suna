@@ -93,12 +93,22 @@ accountsRouter.openapi(
     }
   };
 
-  if (authType === 'supabase' && userEmail) {
-    await autoClaimPendingInvites(userId, userEmail);
-  }
+  // Bootstrap BEFORE claiming pending invites (R3 — see
+  // accounts/core/accounts.ts:registerAccountRoutes, GET /). Decide on the
+  // PRE-claim membership count, not the post-claim one: the old order
+  // claimed first, so an invite-first caller of THIS route also never got a
+  // personal account — whichever of /accounts or /accounts/me a client hit
+  // first silently decided the user's fate, which is exactly the coupling
+  // R3 was chosen to remove. `resolveAccountId` re-checks membership itself
+  // and bootstraps only when it is still zero, so reading it here before
+  // the claim is what makes the bootstrap actually fire.
   let memberships = await loadMemberships();
   if (memberships.length === 0 && authType === 'supabase') {
     await resolveAccountId(userId);
+    memberships = await loadMemberships();
+  }
+  if (authType === 'supabase' && userEmail) {
+    await autoClaimPendingInvites(userId, userEmail);
     memberships = await loadMemberships();
   }
 

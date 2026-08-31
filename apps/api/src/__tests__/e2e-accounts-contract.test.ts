@@ -976,4 +976,88 @@ describe('accounts API contract', () => {
     expect(memberRows.filter((m) => m.userId === OWNER_ID)).toHaveLength(2);
     expect(accountRows.some((a) => a.accountId === OWNER_ID)).toBe(false);
   });
+
+  // GET /v1/accounts/me (tokens.ts) had the identical claim-before-check
+  // defect as GET /v1/accounts: it claimed pending invites first, then only
+  // fell back to `resolveAccountId` (which bootstraps) when the resulting
+  // membership count was still zero — so an invite-first caller of THIS
+  // route also never got a personal account. Same R3 fix, same ordering,
+  // applied here too.
+  //
+  // NOTE: this suite's `resolveAccountId` mock (above) models a "repair an
+  // existing orphaned account" shortcut, not real `bootstrapPersonalAccount`
+  // semantics (`account_id === user.id`) — it reuses whatever account
+  // happens to be first in `accountRows` rather than minting one keyed on
+  // the caller's own id. That identity-equality guarantee is a property of
+  // the REAL `bootstrapPersonalAccount`/`resolveAccountId` (covered by
+  // `unit-resolve-account.test.ts` and, for the real function, by the
+  // GET /v1/accounts tests above). What THIS test proves is the ordering:
+  // the route must end with a membership beyond the invited-into org, not
+  // just the org — so it identifies the bootstrapped entry by "not the org
+  // id" rather than asserting a specific id the mock cannot faithfully
+  // produce.
+  test('bootstraps before claiming on /accounts/me too, so an invite-first identity probe shows both memberships', async () => {
+    const ME_INVITE_USER_ID = '00000000-0000-4000-a000-000000000007';
+    const ME_INVITE_EMAIL = 'me-invite-first@example.test';
+    const ME_ORG_ID = '00000000-0000-4000-a000-000000000303';
+    accountRows.push({
+      accountId: ME_ORG_ID,
+      name: 'Me Org',
+      personalAccount: false,
+      createdAt: baseDate,
+      updatedAt: baseDate,
+    });
+    inviteRows.push({
+      inviteId: '00000000-0000-4000-a000-000000000403',
+      accountId: ME_ORG_ID,
+      email: ME_INVITE_EMAIL,
+      invitedBy: OWNER_ID,
+      initialRole: 'member',
+      acceptedAt: null,
+      createdAt: baseDate,
+      expiresAt: futureDate,
+    });
+    currentUserId = ME_INVITE_USER_ID;
+    currentUserEmail = ME_INVITE_EMAIL;
+
+    const res = await createApp().request('/v1/accounts/me');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Two memberships, not just the org.
+    expect(body.accounts).toHaveLength(2);
+    const orgEntry = body.accounts.find((a: any) => a.account_id === ME_ORG_ID);
+    expect(orgEntry).toMatchObject({ account_id: ME_ORG_ID, role: 'member' });
+    const bootstrapped = body.accounts.find((a: any) => a.account_id !== ME_ORG_ID);
+    expect(bootstrapped).toBeDefined();
+    expect(bootstrapped.role).toBe('owner');
+
+    expect(memberRows).toContainEqual(expect.objectContaining({
+      userId: ME_INVITE_USER_ID,
+      accountId: ME_ORG_ID,
+      accountRole: 'member',
+    }));
+    expect(memberRows.filter((m) => m.userId === ME_INVITE_USER_ID)).toHaveLength(2);
+    expect(inviteRows.find((i) => i.email === ME_INVITE_EMAIL)?.acceptedAt).toBeInstanceOf(Date);
+
+    // Idempotency: a repeat call must not add a third membership — the
+    // invite is already accepted, and the mocked `resolveAccountId` only
+    // fires when the pre-claim membership count is zero (it is not, on the
+    // second call).
+    const res2 = await createApp().request('/v1/accounts/me');
+    expect(res2.status).toBe(200);
+    expect((await res2.json()).accounts).toHaveLength(2);
+    expect(memberRows.filter((m) => m.userId === ME_INVITE_USER_ID)).toHaveLength(2);
+  });
+
+  test('/accounts/me does not bootstrap for a user who already has memberships', async () => {
+    // OWNER already has two memberships from resetState.
+    const accountCountBefore = accountRows.length;
+    const res = await createApp().request('/v1/accounts/me');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.accounts).toHaveLength(2);
+    expect(accountRows).toHaveLength(accountCountBefore);
+    expect(memberRows.filter((m) => m.userId === OWNER_ID)).toHaveLength(2);
+  });
 });

@@ -118,6 +118,16 @@ export function registerAccountRoutes(): void {
       // membership set here (not the post-claim one) makes this route agree
       // with that one: bootstrap fires exactly when the caller had no
       // account at all, independent of whether an invite is waiting.
+      //
+      // GET /v1/accounts/me (accounts/core/tokens.ts) applies the identical
+      // pre-claim-decision ordering for the same reason — kept as a
+      // parallel implementation rather than a shared helper because its
+      // bootstrap primitive (`resolveAccountId`, best-effort, never fails
+      // the request), gating (`authType === 'supabase'`), and response
+      // shape all differ from this route's; forcing one function to cover
+      // both would trade a 10-line ordering discipline for a multi-parameter
+      // abstraction that hides the one real asymmetry that matters — this
+      // route's bootstrap failure is fatal (500 below), /me's is not.
       let memberships = await loadMemberships();
       if (memberships.length === 0) {
         try {
