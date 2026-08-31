@@ -153,6 +153,17 @@ export function parseAuthBounceOwner(cookieValue: string | null | undefined): st
  * Who the remembered project belongs to, or `''`. The middleware falls back to
  * this when the bounce happens after the stale-session self-heal has already
  * dropped the Supabase cookies and there is no user id left to read.
+ *
+ * Byte-identical to `parseAuthBounceOwner` today — both cookies share the
+ * `<ownerId>:<rest>` shape via `ownerIdFromCookie`. Kept as a SEPARATE
+ * exported name rather than an alias on purpose: `AUTH_BOUNCE_COOKIE` and
+ * `LAST_PROJECT_COOKIE` answer different questions, and a rule that should
+ * apply to only one of them (a shorter TTL, a stricter owner check) must not
+ * force touching the other's call sites to add. If that divergence never
+ * happens, collapse the two into one — until then,
+ * `landing-destination.test.ts`'s "these two must agree" test is the
+ * anti-drift guard: a change to one that is not mirrored to the other fails
+ * immediately instead of drifting silently.
  */
 export function parseLastProjectOwner(cookieValue: string | null | undefined): string {
   return ownerIdFromCookie(cookieValue);

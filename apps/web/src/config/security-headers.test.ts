@@ -61,18 +61,34 @@ describe('Strict-Transport-Security header', () => {
     expect(value).not.toContain('includeSubDomains');
   });
 
-  // `headers()` has no per-request environment branch — an entry added here
-  // ships IDENTICALLY from local `next dev`, `dev.kortix.com`,
-  // `staging.kortix.com`, and prod. `NODE_ENV === 'production'` is the
-  // BUILD-time gate (`next build` sets it) that keeps HSTS off local dev and
-  // off any HTTP-only self-host, without touching CSP / X-Frame-Options,
-  // which stay unconditional for every environment.
+  // `NODE_ENV === 'production'` is a BUILD-time gate (`next build` sets it
+  // unconditionally), not a per-environment one — it ships the header from
+  // EVERY environment built with `next build`, including `dev.kortix.com`
+  // and `staging.kortix.com`, not only prod. What it genuinely excludes is
+  // bare `next dev` and any HTTP-only self-host build. See the honest
+  // comment beside the real gate in `next.config.ts` (I4/R21) for the full
+  // reasoning; CSP / X-Frame-Options stay unconditional for every
+  // environment, gated or not.
   test('is gated to production, unlike CSP / X-Frame-Options which stay unconditional', () => {
     const block = slice(nextConfig, "source: '/:path*',", "source: '/fonts/:path*',");
     const gateIdx = block.indexOf("process.env.NODE_ENV === 'production'");
     expect(gateIdx).toBeGreaterThan(-1);
-    const hstsIdx = block.indexOf('Strict-Transport-Security');
-    expect(hstsIdx).toBeGreaterThan(gateIdx);
+
+    // CONTAINMENT, not ordering: the HSTS entry must sit INSIDE the
+    // ternary's true branch (between its `?` and the matching `: []` false
+    // branch) — not merely somewhere later in the file. A bare
+    // `hstsIdx > gateIdx` position check is satisfied by lifting the entry
+    // OUT of the ternary into the unconditional part of the array, which
+    // would ship HSTS from every environment unconditionally while still
+    // passing that check.
+    const questionIdx = block.indexOf('?', gateIdx);
+    expect(questionIdx).toBeGreaterThan(gateIdx);
+    const falseBranchMatch = block.slice(questionIdx).match(/:\s*\[\s*\]/);
+    expect(falseBranchMatch).not.toBeNull();
+    const falseBranchIdx = questionIdx + (falseBranchMatch?.index ?? 0);
+    expect(falseBranchIdx).toBeGreaterThan(questionIdx);
+    const trueBranch = block.slice(questionIdx, falseBranchIdx);
+    expect(trueBranch).toContain('Strict-Transport-Security');
 
     // CSP / X-Frame-Options are NOT behind that same gate — they come before
     // it in the array, outside the conditional spread.

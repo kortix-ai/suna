@@ -72,12 +72,14 @@ export default function ProjectStartPage() {
 
   // The guard has done its one job the moment this surface renders: the user
   // has now been TOLD their last workspace is gone and offered a way back
-  // (below). Leaving the flag set past this point would silently block
-  // auto-provision for the next account this tab visits that happens to be
-  // empty too — it's a single process-wide sessionStorage key, not scoped to
-  // the account that triggered it. Session-scoped by design (see
-  // ensure-first-project.ts): a later sign-in or a fresh tab still
-  // auto-provisions normally, clear or not.
+  // (below). `isAutoProjectSuppressed` binds the flag to `{accountId, at}`
+  // (`ensure-first-project.ts`), so a stale flag can no longer suppress
+  // auto-provision for a DIFFERENT account — but nothing un-suppresses THIS
+  // account's own retries without this clear: leaving it set would keep
+  // showing this SAME account the "suppressed" terminal on every later visit
+  // to this tab, past the one deliberate delete it was recorded for. Session-
+  // scoped by design (see ensure-first-project.ts): a later sign-in or a
+  // fresh tab still auto-provisions normally, clear or not.
   useEffect(() => {
     if (terminal === 'suppressed') clearAutoProjectSuppression();
   }, [terminal]);

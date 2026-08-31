@@ -1,7 +1,6 @@
-import { describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 import * as idb from '@kortix/sdk/idb-sync-cache';
-import * as localStorageUtils from '@/lib/utils/clear-local-storage';
 import {
   clearImpersonationSession,
   getImpersonationSession,
@@ -41,19 +40,65 @@ mock.module('@kortix/sdk/idb-sync-cache', () => ({
 /**
  * `clearUserLocalStorage()` reaches `localStorage` directly, and reading that
  * accessor THROWS in a storage-blocked context (Safari private mode, a
- * partitioned iframe). It was the one unguarded call in `resetClientState()`.
+ * partitioned iframe).
  *
- * `runSignOut` absorbed a rejection through `withTimeBudget`, but
- * `AuthProvider.adoptUser` awaits this bare and before `setIsLoading(false)` —
- * so an unguarded throw rejected a SIGN-IN and parked the app on its loading
- * frame, in exactly the browsers least able to report it.
+ * `runSignOut` absorbed a rejection through `withTimeBudget`, and
+ * `AuthProvider.adoptUser` awaits `resetClientState()` bare, before
+ * `setIsLoading(false)` — so a throw reaching `resetClientState()` unhandled
+ * would reject a SIGN-IN and park the app on its loading frame, in exactly
+ * the browsers least able to report it.
+ *
+ * Stubs a throwing GLOBAL `localStorage`, the same technique
+ * `clear-local-storage.test.ts` uses for its own "a throwing localStorage
+ * does not stop the sessionStorage sweep" case — not `mock.module` on
+ * `@/lib/utils/clear-local-storage`. `mock.module` is PROCESS-WIDE in this
+ * repo: it replaced `clearUserLocalStorage` for every test that shares this
+ * process, so `bun test src/lib/utils` outside `--isolate` broke
+ * `clear-local-storage.test.ts`'s own tests of the real function with an
+ * error belonging to a module this file never runs. The gated CI command
+ * (`bun test --isolate --parallel=4`) never saw it — one process per file —
+ * but any focused run a human or agent types did.
  */
-mock.module('@/lib/utils/clear-local-storage', () => ({
-  ...localStorageUtils,
-  clearUserLocalStorage: () => {
-    throw new Error('SecurityError: localStorage is not available');
-  },
-}));
+const originalWindow = globalThis.window;
+const originalLocalStorage = (globalThis as { localStorage?: Storage }).localStorage;
+
+/**
+ * `clearUserLocalStorage()` early-returns on `typeof window === 'undefined'`
+ * — true by default in this Bun test environment (`test-setup.ts` registers
+ * no DOM), so the throwing `localStorage` below would never even be reached
+ * without also stubbing `window`. Same two-global shape
+ * `clear-local-storage.test.ts` stubs for its own throwing-storage case.
+ */
+function stubThrowingLocalStorage(): void {
+  const throwing = {
+    get length(): number {
+      throw new Error('SecurityError: localStorage is not available');
+    },
+  };
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: { localStorage: throwing, sessionStorage: throwing },
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: throwing,
+  });
+}
+
+function restoreLocalStorage(): void {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    writable: true,
+    value: originalWindow,
+  });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    writable: true,
+    value: originalLocalStorage,
+  });
+}
 
 const { resetClientState } = await import('./reset-client-state');
 
@@ -70,23 +115,47 @@ describe('resetClientState with an IndexedDB purge that never settles', () => {
   });
 
   test('resolves repeatedly, so a second sign-in is not blocked by the first', async () => {
+    // `expect(true).toBe(true)` used to stand here — it proves only that
+    // both awaits eventually returned, which is also true if the second call
+    // silently inherited (or waited out) the first's hang before settling.
+    // Bounding each call's OWN elapsed time is what actually distinguishes
+    // "the second sign-in got its own fresh budget" from "the second sign-in
+    // was blocked by the first and only unblocked much later" — the risk
+    // named in this test's own title.
+    const firstStarted = Date.now();
     await resetClientState({ idbTimeoutMs: 5 });
+    const firstElapsed = Date.now() - firstStarted;
+
+    const secondStarted = Date.now();
     await resetClientState({ idbTimeoutMs: 5 });
-    expect(true).toBe(true);
+    const secondElapsed = Date.now() - secondStarted;
+
+    expect(firstElapsed).toBeLessThan(500);
+    expect(secondElapsed).toBeLessThan(500);
   });
 });
 
 describe('resetClientState when localStorage access throws', () => {
+  beforeEach(() => stubThrowingLocalStorage());
+  afterEach(() => restoreLocalStorage());
+
   test('still resolves, so a SIGN-IN cannot be parked by a blocked storage bucket', async () => {
-    // Unguarded, this rejects and the `await` below throws.
+    // The real `clearUserLocalStorage()` runs here, against the throwing
+    // global stubbed above — not a mocked-away function. Its own internal
+    // try/catch (`clear-local-storage.ts`) already absorbs a throwing
+    // `localStorage`, so this proves the FULL real path — `resetClientState`
+    // calling the real `clearUserLocalStorage` calling a genuinely throwing
+    // browser API — still settles, end to end.
     await resetClientState({ idbTimeoutMs: 5 });
     expect(true).toBe(true);
   });
 
-  test('the earlier clears still ran — the throw does not abort the whole reset', async () => {
+  test('the earlier clears still ran — a throwing localStorage does not abort the whole reset', async () => {
     // `clearUserLocalStorage` is the THIRD step. The React Query cache and the
     // account store are cleared before it, and both are guarded already; this
-    // pins that a throw in step 3 does not skip step 4 either.
+    // pins that a throwing storage bucket in step 3 does not skip step 4
+    // either, across two consecutive resets (the second sign-in must not be
+    // blocked by the first).
     await resetClientState({ idbTimeoutMs: 5 });
     await resetClientState({ idbTimeoutMs: 5 });
     expect(true).toBe(true);

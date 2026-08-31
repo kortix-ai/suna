@@ -513,7 +513,10 @@ function importGraph(entries: string[]): string[] {
     if (seen.has(file)) continue;
     seen.add(file);
 
-    const source = readFileSync(resolve(WEB_SRC, file), 'utf8');
+    // Comments stripped, same as `code()` above: an import specifier inside
+    // PROSE (a doc comment naming a module by example) is not an import
+    // statement and must not add a graph edge.
+    const source = stripComments(readFileSync(resolve(WEB_SRC, file), 'utf8'));
     for (const match of source.matchAll(/(?:from|import)\s*['"]([^'"]+)['"]/g)) {
       const next = resolveLocal(match[1], file);
       if (next && !seen.has(next)) queue.push(next);

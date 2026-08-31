@@ -227,9 +227,15 @@ describe('AccountPicker + shouldShowAccountLine: the rendered (identity, account
     const showAccountLine = shouldShowAccountLine(accounts, 'me');
     expect(showAccountLine).toBe(true);
     // 2+ accounts with showAccountLine true is the one state AccountPicker
-    // renders the Select, not the identity/account line pair — what matters
-    // here is that the REAL, unfiltered list is what would reach it.
-    expect(accounts).toEqual([own, foreignSole]);
+    // renders the Select — off its own `accounts` PARAMETER, unfiltered. A
+    // previous version of this test asserted `accounts` against itself
+    // (`expect(accounts).toEqual([own, foreignSole])`, comparing the local
+    // variable to a literal copy of what it was constructed from two lines
+    // above) — a tautology that invokes nothing and cannot fail. This checks
+    // the component's actual source instead: the Select branch maps
+    // `accounts` directly, not a filtered/sliced stand-in, so a shrunk list
+    // could never reach it silently.
+    expect(code).toContain('{accounts.map((account) => (');
   });
 
   test('foreign list (2+, none owned): identity line only — no account name and no Select at all (item 2, G2 fail closed)', () => {

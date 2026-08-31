@@ -485,27 +485,35 @@ const nextConfig = (): NextConfig => ({
           // NORMALLY redirects to HTTPS is still a window an on-path
           // attacker can use before that redirect happens.
           //
-          // CONTROLLER RULING (R18, final): gated to production, and
-          // WITHOUT `includeSubDomains`. `headers()` here has no per-request
-          // environment check — the entry, once added, ships identically
-          // from local `next dev`, `dev.kortix.com`, `staging.kortix.com`
-          // and prod. Browsers ignore this header over plain HTTP (RFC
-          // 6797), so it is genuinely inert on bare `localhost` — but dev
-          // and staging are REAL HTTPS deployments of this same app, so an
-          // ungated header is enforced there too, and `includeSubDomains`
-          // would pin `*.dev.kortix.com` / `*.staging.kortix.com`, and from
-          // the prod apex the entire `*.kortix.com` zone — known and future
-          // subdomains — for two years, in every visitor's browser, with no
-          // server-side undo. The auth-cookie plaintext window this closes
-          // is fully closed by the header on the ONE host serving that
-          // cookie; subdomain-wide enforcement is a separate, DNS-wide
-          // infra decision that belongs to whoever owns that zone, not a
-          // side effect of this fix. `process.env.NODE_ENV === 'production'`
-          // here is a BUILD-time check (`next build` sets it), same
-          // mechanism `next.config.ts`'s `rewrites()` already uses for the
-          // Supabase proxy rewrite above, and matches how `secure` is gated
-          // server-side in
-          // `lib/supabase/server.ts` / `middleware.ts`.
+          // HONEST STATE OF THIS GATE (R21, correcting R18's own comment):
+          // `next build` sets `process.env.NODE_ENV = 'production'`
+          // UNCONDITIONALLY, regardless of which host the build is deployed
+          // to. The ternary below is therefore a BUILD-time check, not an
+          // environment check — it ships the header from EVERY environment
+          // built with `next build`: `dev.kortix.com`, `staging.kortix.com`,
+          // every HTTPS self-host preview, and prod, all identically. The
+          // only thing this gate actually excludes is bare `next dev`
+          // (`NODE_ENV === 'development'`), which nothing on the public
+          // internet is served by. Read this as "not `next dev`", never as
+          // "production only" — a comment that implied the latter is
+          // exactly what stood here before and is what this note replaces.
+          //
+          // CONTROLLER RULING (R18/R21, final): keep the header and its
+          // 2-year `max-age` anyway, despite shipping everywhere. It is
+          // HOST-ONLY — `includeSubDomains` was dropped in the same fix —
+          // and every host it reaches is HTTPS-only regardless, so at worst
+          // it is redundant with a redirect that already exists. What it
+          // must not do is UNDERSTATE its own commitment: `max-age=63072000`
+          // has NO SERVER-SIDE UNDO. A browser that received this header
+          // from dev.kortix.com refuses plain HTTP to that exact host for
+          // two years, even if the header is removed from a later build.
+          // That commitment is made from dev and staging TODAY, not only
+          // from prod. `includeSubDomains` would additionally have pinned
+          // `*.dev.kortix.com` / `*.staging.kortix.com`, and from the prod
+          // apex the whole `*.kortix.com` zone — known and future
+          // subdomains, for two years, in every visitor's browser. That
+          // DNS-wide decision belongs to whoever owns the zone, not to this
+          // auth-cookie fix, which is why it stays out.
           ...(process.env.NODE_ENV === 'production'
             ? [
                 {

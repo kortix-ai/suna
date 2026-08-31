@@ -178,20 +178,37 @@ describe("the bare ['accounts'] query key is gone from apps/web", () => {
   const SRC = join(import.meta.dir, '..', '..');
 
   test('no file constructs a query key from the bare accounts literal', () => {
+    const files = tsFilesUnder(SRC);
+    // A floor on the walk itself, same shape as
+    // `persisted-store-coverage.test.ts:148` — an empty or broken walk
+    // (a renamed directory, a changed exclude list) would otherwise let this
+    // test pass by examining zero files. 2000 as a floor against 2560 real
+    // files as of this test's writing, generous slack against unrelated
+    // deletions.
+    expect(files.length).toBeGreaterThanOrEqual(2000);
+
     const offenders: string[] = [];
-    for (const file of tsFilesUnder(SRC)) {
+    // `\s` (not a line split) so a multi-line construct —
+    // `queryKey: [\n  'accounts'\n]`, which prettier can produce as readily
+    // as the single-line form — is caught too. The previous, line-based
+    // version split the file into lines FIRST and matched each line alone,
+    // so a literal broken across lines evaded both patterns below entirely.
+    const patterns = [
+      /queryKey:\s*\[\s*['"]accounts['"]/g,
+      /(setQueryData|getQueryData)\s*(<[^>]*>)?\(\s*\[\s*['"]accounts['"]\s*\]/g,
+    ];
+    for (const file of files) {
       const code = readFileSync(file, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/(^|[^:])\/\/.*$/gm, '$1');
-      for (const line of code.split('\n')) {
-        // `'accounts'` only, never `'account'`: `['account', accountId]` is a
-        // DIFFERENT, still-live family (one account's detail row, keyed by
-        // account id, which already carries its own scope). Widening this to
-        // `accounts?` swept nine of those in and would have turned a defect
-        // fix into an unrelated migration.
-        if (/queryKey:\s*\[\s*['"]accounts['"]/.test(line)) offenders.push(`${file}: ${line.trim()}`);
-        if (/(setQueryData|getQueryData)\s*(<[^>]*>)?\(\s*\[\s*['"]accounts['"]\s*\]/.test(line)) {
-          offenders.push(`${file}: ${line.trim()}`);
+      // `'accounts'` only, never `'account'`: `['account', accountId]` is a
+      // DIFFERENT, still-live family (one account's detail row, keyed by
+      // account id, which already carries its own scope). Widening this to
+      // `accounts?` swept nine of those in and would have turned a defect
+      // fix into an unrelated migration.
+      for (const pattern of patterns) {
+        for (const match of code.matchAll(pattern)) {
+          offenders.push(`${file}: ${match[0].replace(/\s+/g, ' ').trim()}`);
         }
       }
     }
