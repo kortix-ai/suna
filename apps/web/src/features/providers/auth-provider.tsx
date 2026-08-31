@@ -149,12 +149,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setBootstrapAuthToken(null);
             setCachedAuthToken(null);
             await resetClientState();
-            // The identity marker is deliberately LEFT IN PLACE. Removing it
-            // here deleted the exact value the next `SIGNED_IN` compares
-            // against, so after an explicit logout the cross-user reset could
-            // never fire — the one moment two accounts are most likely to share
-            // a browser. It is a user id, not a credential, and it is already
-            // rewritten on every sign-in.
+            // This branch no longer calls `safeRemoveItem(IDENTITY_MARKER_KEY)`
+            // directly — an earlier revision did, which deleted the exact
+            // value the next `SIGNED_IN` compares against, so after an
+            // explicit logout the cross-user reset could never fire. But the
+            // marker does NOT survive this branch: `resetClientState()` above
+            // -> `clearUserLocalStorage()` runs a PREFIX sweep, and
+            // `IDENTITY_MARKER_KEY` ('kortix-last-user-id') matches
+            // `APP_STORAGE_PREFIXES[0]` ('kortix-') and is not on
+            // `KEEP_STORAGE_KEYS` — so it is swept like every other per-user
+            // key. That is SAFE, not a residual hole: `shouldResetClientState`
+            // reads an absent marker as UNKNOWN, and unknown resets (see its
+            // own doc comment). The next sign-in rewrites the marker
+            // unconditionally (`safeSetItem` in `adoptUser`, above) regardless
+            // of whether this branch ran.
             break;
           case 'TOKEN_REFRESHED':
             if (newSession?.access_token) {

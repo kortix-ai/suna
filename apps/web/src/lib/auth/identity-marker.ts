@@ -47,6 +47,18 @@ export type IdentityMarkers = {
  * reset over empty caches, and a browser that blocks storage runs one per cold
  * load. Both are wasted work, never wrong state. The opposite error hands one
  * account another account's cached workspaces.
+ *
+ * The persisted marker does NOT survive a reset, on `SIGNED_OUT` or anywhere
+ * else. `resetClientState()` sweeps every `localStorage`/`sessionStorage` key
+ * this app owns (`clear-local-storage.ts`'s prefix sweep), and
+ * `IDENTITY_MARKER_KEY` ('kortix-last-user-id') matches that sweep's own
+ * `'kortix-'` prefix and is not on `KEEP_STORAGE_KEYS` — so any caller that
+ * resets deletes the very key it is about to compare against on the next
+ * call. That is exactly why absent must read as UNKNOWN rather than as "no
+ * marker, so no previous user, so nothing to reset": a real explicit sign-out
+ * sweeps this key as a SIDE EFFECT of resetting, not as a special case coded
+ * for it, and the UNKNOWN-resets rule above is what keeps that side effect
+ * safe instead of self-disarming.
  */
 export function shouldResetClientState({
   inDocumentUserId,

@@ -24,12 +24,21 @@ function slice(startAnchor: string, endAnchor: string): string {
   return code.slice(start, end);
 }
 
-describe('the SIGNED_OUT branch keeps the marker it will be compared against', () => {
-  test('it no longer deletes kortix-last-user-id', () => {
-    // The self-disarming guard: `SIGNED_OUT` removed the marker, so the later
-    // `SIGNED_IN` comparison always read "absent" and — with the old
-    // `prev && prev !== next` spelling — concluded "same user". The reset could
-    // therefore never fire after an explicit logout.
+describe('the SIGNED_OUT branch no longer special-cases the marker — resetClientState sweeps it either way', () => {
+  test('it no longer calls safeRemoveItem directly (resetClientState sweeps the key instead)', () => {
+    // The self-disarming guard an earlier revision had: `SIGNED_OUT` removed
+    // the marker directly, so the later `SIGNED_IN` comparison always read
+    // "absent" and — with the old `prev && prev !== next` spelling —
+    // concluded "same user". The reset could therefore never fire after an
+    // explicit logout.
+    //
+    // This does NOT mean the marker survives a sign-out: `resetClientState()`
+    // -> `clearUserLocalStorage()` sweeps every `kortix-`-prefixed key,
+    // `IDENTITY_MARKER_KEY` included, and it is not on `KEEP_STORAGE_KEYS`.
+    // See `identity-marker.test.ts` for why that is safe rather than a hole —
+    // `shouldResetClientState` reads an absent marker as UNKNOWN, and unknown
+    // resets (G3). What this test pins is the MECHANICAL fact that the
+    // branch does not re-add a direct call.
     const branch = slice("case 'SIGNED_OUT':", "case 'TOKEN_REFRESHED':");
     expect(branch).not.toContain('safeRemoveItem');
     // Paired presence check: the branch still does its real job.
@@ -98,6 +107,10 @@ describe("the provider's signOut is the shared one", () => {
   test('useAuth().signOut is performSignOut, not a provider-local cleanup', () => {
     expect(code).toContain("from '@/lib/auth/perform-sign-out'");
     expect(code).toContain('signOut: performSignOut');
-    expect(code).not.toContain('await supabase.auth.signOut();\n      await resetClientState();');
+    // Regex, not a literal two-line string: a hard-coded 6-space indent is
+    // satisfied by any reindent (prettier, a wrapping change) with the same
+    // defect still present. `\s+` tolerates whitespace and line breaks
+    // between the two statements while still anchoring the exact call shape.
+    expect(code).not.toMatch(/await supabase\.auth\.signOut\(\);\s+await resetClientState\(\);/);
   });
 });
