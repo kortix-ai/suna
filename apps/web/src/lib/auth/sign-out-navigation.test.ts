@@ -23,8 +23,21 @@ import { dirname, relative, resolve } from 'node:path';
 const WEB_SRC = resolve(import.meta.dir, '../..');
 
 /** Comments stripped; `//` spared when it is a URL scheme. */
+/**
+ * Line comments FIRST, then block comments. The order is load-bearing.
+ *
+ * Stripping blocks first treats a slash-star that appears inside PROSE in a
+ * line comment as the start of a real block comment, and the lazy match then
+ * runs to the next star-slash anywhere in the file — swallowing the import
+ * statements in between. That silently SHRINKS the graph this file walks,
+ * which for a security ban means it stops seeing the modules it is meant to
+ * police. It happened: a doc comment mentioning an npm subpath wildcard
+ * truncated the sign-out graph before `stores/current-account-store.ts`, and
+ * only the "the walk has to reach past the entry points" assertions below
+ * caught it. Removing line comments first makes that unrepresentable.
+ */
 function stripComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+  return source.replace(/(^|[^:])\/\/.*$/gm, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
 function code(relativePath: string): string {

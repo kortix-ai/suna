@@ -264,7 +264,15 @@ function chipClass(html: string): string {
     expect(markup).not.toContain('cursor-pointer');
     expect(markup).not.toContain('Click to preview');
     expect(markup).toContain('not available in this session');
-    expect(markup).toContain('text-muted-foreground');
+    // Deliberately NOT dimmed: an unavailable path reads as ordinary inline
+    // code, and only the interactive affordances go away. A probe failure
+    // cannot tell a deleted file apart from a sandbox that stopped answering,
+    // so dimming would assert the first when only the second may be true.
+    // Pinned against the ordinary chip rather than against one class name, so
+    // a future restyle of INLINE_CODE cannot quietly re-introduce a demotion.
+    expect(chipClass(markup)).not.toContain('text-muted-foreground');
+    const classSet = (html: string) => chipClass(html).split(/\s+/).sort();
+    expect(classSet(markup)).toEqual(classSet(render({ children: 'plain code' })));
 
     resetFileAvailability();
   });
