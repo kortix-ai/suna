@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
+import { CraftRunAge } from './craft-run-age';
 import { CraftRunDot } from './craft-run-dot';
 import { CraftRunLegend } from './craft-run-legend';
 import {
@@ -216,9 +217,7 @@ export function CraftReportDetail({
                       <span className="text-muted-foreground hidden shrink-0 text-xs tabular-nums sm:block">
                         {durationLabel(run.duration_ms)}
                       </span>
-                      <span className="text-muted-foreground/60 w-12 shrink-0 text-right text-xs tabular-nums">
-                        {agoLabel(run.created_at, now)}
-                      </span>
+                      <CraftRunAge iso={run.created_at} now={now} heading="Run queued" />
                     </>
                   );
                   const rowClass =

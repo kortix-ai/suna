@@ -6,14 +6,10 @@ import type { CraftRun } from '@kortix/sdk';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { cn } from '@/lib/utils';
+import { CraftRunAge } from './craft-run-age';
 import { CraftRunDot } from './craft-run-dot';
-import { agoLabel, craftReportHref, craftRunStrip, latestRun } from './craft-runs';
+import { craftReportHref, craftRunStrip, latestRun } from './craft-runs';
 import { craftVisual } from './craft-visual';
-
-/** Fixed-width relative-time column, so the strip's right edge never reflows
- *  row to row. Same idea and same `tabular-nums` as the sidebar's session
- *  time column. */
-const AGO_COLUMN_CLASS = 'text-muted-foreground/60 w-12 shrink-0 text-right text-xs tabular-nums';
 
 /** How many circles survive at each breakpoint. The strip is `shrink-0` — it
  *  has to be, or the circles would squash into ellipses — so without this a
@@ -109,7 +105,7 @@ export function CraftReportRow({
         ))}
       </ul>
 
-      <span className={AGO_COLUMN_CLASS}>{agoLabel(latest?.created_at ?? null, now)}</span>
+      <CraftRunAge iso={latest?.created_at ?? null} now={now} heading="Time since last run" />
     </li>
   );
 }
