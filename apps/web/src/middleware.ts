@@ -60,6 +60,7 @@ const PUBLIC_ROUTES = [
   '/', // Homepage should be public!
   '/auth',
   '/auth/callback',
+  '/logout', // Signing OUT must never require signing IN — a protected /logout would be bounced to /auth?redirect=/logout, and the sign-in would land right back here
   '/auth/signup',
   '/auth/forgot-password',
   '/auth/reset-password',

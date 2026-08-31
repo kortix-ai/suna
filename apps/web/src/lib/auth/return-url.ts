@@ -5,6 +5,10 @@ import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 // UI, so no auth path has to block on the backend to build this redirect.
 const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
+  // Not legacy — but the same rule applies: a sign-in must never RETURN here.
+  // `?redirect=/logout` would undo the sign-in that just happened, so it is
+  // replaced with the landing door. See `app/logout/page.tsx`.
+  '/logout',
   '/dashboard',
   '/instances',
   '/sessions',
