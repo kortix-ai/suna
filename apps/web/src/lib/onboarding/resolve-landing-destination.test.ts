@@ -47,7 +47,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('team', 'member'), account('personal', 'owner')],
       selectedAccountId: 'team',
       preferredProjectId: null,
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: fakeClient({
         team: [],
@@ -70,7 +70,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('team', 'member'), account('personal', 'owner')],
       selectedAccountId: null,
       preferredProjectId: null,
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: fakeClient({
         team: [project('t1', 'team')],
@@ -94,7 +94,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('personal', 'owner'), account('team', 'member')],
       selectedAccountId: 'personal',
       preferredProjectId: 't1',
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: fakeClient({
         personal: [project('p1', 'personal')],
@@ -118,7 +118,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('team', 'member'), account('personal', 'owner')],
       selectedAccountId: null,
       preferredProjectId: null,
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: fakeClient({ team: [], personal: [] }, async (input) => {
         // `account_id` is optional on the wire type; the assertion below
@@ -148,7 +148,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('team', 'member'), account('personal', 'owner')],
       selectedAccountId: 'team',
       preferredProjectId: null,
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: fakeClient({ team: [], personal: [] }, async () => {
         provisionCalls += 1;
@@ -157,7 +157,7 @@ describe('resolveLandingDestination', () => {
     });
 
     expect(provisionCalls).toBe(0);
-    expect(result).toEqual({ kind: 'terminal', canCreate: false });
+    expect(result).toEqual({ kind: 'terminal', canCreate: false, suppressed: false });
   });
 
   test('member everywhere with nothing to open is the ONLY true no-permission terminal', async () => {
@@ -165,12 +165,12 @@ describe('resolveLandingDestination', () => {
       accounts: [account('team-a', 'member'), account('team-b', 'member')],
       selectedAccountId: null,
       preferredProjectId: null,
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: fakeClient({ 'team-a': [], 'team-b': [] }),
     });
 
-    expect(result).toEqual({ kind: 'terminal', canCreate: false });
+    expect(result).toEqual({ kind: 'terminal', canCreate: false, suppressed: false });
   });
 
   test('suppression after a delete holds back the create but reports it was possible', async () => {
@@ -179,7 +179,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('personal', 'owner')],
       selectedAccountId: 'personal',
       preferredProjectId: null,
-      suppressed: true,
+      isAccountSuppressed: (accountId) => accountId === 'personal',
       mayCreate: true,
       client: fakeClient({ personal: [] }, async () => {
         provisionCalls += 1;
@@ -188,7 +188,37 @@ describe('resolveLandingDestination', () => {
     });
 
     expect(provisionCalls).toBe(0);
-    expect(result).toEqual({ kind: 'terminal', canCreate: true });
+    expect(result).toEqual({ kind: 'terminal', canCreate: true, suppressed: true });
+  });
+
+  // JAY: review round 1 finding. The suppression check applies to the ONE
+  // primary candidate account this resolver evaluates for creation
+  // (`creator`, above) — never "any account the caller happens to own". A
+  // flag left over from account 'other' (its own last-project archive) must
+  // never suppress auto-create in an unrelated account 'personal' the SAME
+  // user also owns. Two owned accounts, `isAccountSuppressed` scoped to the
+  // one that is NOT the primary candidate.
+  test('a suppression flag scoped to a DIFFERENT account does not block auto-create on the primary candidate', async () => {
+    const provisioned: string[] = [];
+    const result = await resolveLandingDestination({
+      accounts: [account('personal', 'owner'), account('other', 'owner')],
+      selectedAccountId: 'personal',
+      preferredProjectId: null,
+      isAccountSuppressed: (accountId) => accountId === 'other',
+      mayCreate: true,
+      client: fakeClient({ personal: [], other: [] }, async (input) => {
+        const accountId = input.account_id ?? 'missing-account-id';
+        provisioned.push(accountId);
+        return project('fresh', accountId);
+      }),
+    });
+
+    expect(provisioned).toEqual(['personal']);
+    expect(result).toEqual({
+      kind: 'project',
+      accountId: 'personal',
+      project: project('fresh', 'personal'),
+    });
   });
 
   test('one account list failing does not block landing in another account', async () => {
@@ -198,7 +228,7 @@ describe('resolveLandingDestination', () => {
       accounts: [account('team', 'member'), account('personal', 'owner')],
       selectedAccountId: 'team',
       preferredProjectId: null,
-      suppressed: false,
+      isAccountSuppressed: () => false,
       mayCreate: true,
       client: {
         listProjectsForAccount: async (accountId) => {
@@ -224,7 +254,7 @@ describe('resolveLandingDestination', () => {
         accounts: [account('personal', 'owner')],
         selectedAccountId: null,
         preferredProjectId: null,
-        suppressed: false,
+        isAccountSuppressed: () => false,
         mayCreate: true,
         client: {
           listProjectsForAccount: async () => {

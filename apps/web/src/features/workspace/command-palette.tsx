@@ -72,18 +72,18 @@ import {
   resolveSettingsOverlayHref,
 } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   buildWebProxyUrl,
@@ -112,14 +112,12 @@ import {
   type ProjectSession,
   getProject,
   getProjectDetail,
-  listAccounts,
   listProjectSessions,
   listProjectsForAccount,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
 import { featureFlags } from '@kortix/sdk/feature-flags';
-import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
 import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
   contract,
@@ -852,6 +850,9 @@ export function CommandPalette() {
   /** The change request whose detail dialog is open, picked on the 'changes' page. */
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  // Never cleared: `performSignOut` ends on a document load, so this component
+  // is discarded rather than re-rendered.
+  const [loggingOut, setLoggingOut] = useState(false);
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -889,12 +890,7 @@ export function CommandPalette() {
   const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
-  const { data: accountsList } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: open,
-    staleTime: 60_000,
-  });
+  const { data: accountsList } = useAccountsList({ enabled: open });
   const activeAccount =
     accountsList?.find((account) => account.account_id === selectedAccountId) ??
     accountsList?.[0] ??
@@ -1609,13 +1605,6 @@ export function CommandPalette() {
     router.prefetch(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
   }, [open, projectId, inviteMembersAccountId, router]);
 
-  // Sign out lands on /auth. Warm it while the confirm dialog is up — the push
-  // itself only runs after `signOut()` has resolved.
-  useEffect(() => {
-    if (!logoutConfirmOpen) return;
-    router.prefetch('/auth');
-  }, [logoutConfirmOpen, router]);
-
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
@@ -1921,17 +1910,22 @@ export function CommandPalette() {
     setLogoutConfirmOpen(true);
   }, [close]);
 
-  const performLogout = useCallback(async () => {
+  // This used to clear `localStorage` and the IDB cache — two of the four
+  // things a logout owes, missing the React Query cache and the persisted
+  // account selection. It is `performSignOut` now, the same call every other
+  // logout control makes, and it leaves on a DOCUMENT load rather than a
+  // `router.push`: nothing else discards the App Router route cache across an
+  // identity change.
+  const performLogout = useCallback((event: React.MouseEvent) => {
+    // `preventDefault` keeps the confirm dialog UP. Radix closes it on click,
+    // which left the palette gone, the dialog gone, and the unchanged app on
+    // screen for as long as the sign-out took — up to the full step budget when
+    // the network is broken — with nothing saying anything was happening.
+    event.preventDefault();
     reopenPaletteRef.current = false;
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    clearUserLocalStorage();
-    await clearSessionIDBCache();
-    // nav-contract: prefetch-only — the push runs after `signOut()` resolves,
-    // so an anchor would leave before the session is cleared. The confirm-open
-    // effect warms /auth.
-    router.push('/auth');
-  }, [router]);
+    setLoggingOut(true);
+    void performSignOut();
+  }, []);
 
   const handleSetTheme = useCallback(
     (newTheme: string) => {
@@ -3208,8 +3202,9 @@ export function CommandPalette() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={performLogout}>
+            <AlertDialogCancel disabled={loggingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={loggingOut} onClick={performLogout}>
+              {loggingOut ? <Loading className="size-4 shrink-0" /> : null}
               {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
             </AlertDialogAction>
           </AlertDialogFooter>

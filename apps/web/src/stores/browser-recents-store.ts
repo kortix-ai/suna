@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 export interface BrowserRecent {
   /** Canonical visited URL, e.g. http://localhost:3000/debug/tools */
@@ -63,3 +64,7 @@ export const useBrowserRecentsStore = create<BrowserRecentsState>()(
     },
   ),
 );
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+registerPersistedStore('kortix-browser-recents', () => resetPersistedStore(useBrowserRecentsStore));

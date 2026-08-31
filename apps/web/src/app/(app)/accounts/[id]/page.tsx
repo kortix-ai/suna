@@ -19,7 +19,7 @@ import {
   ScrollIcon as ScrollText,
   PlugsIcon as Unplug,
 } from '@phosphor-icons/react';
-import { invalidatePermissionProbes } from '@kortix/sdk/react';
+import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
@@ -67,6 +67,7 @@ import { SettingsRowGroup } from '@/components/ui/settings-row';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { useBrandingScope } from '@/features/branding/branding-provider';
@@ -305,9 +306,7 @@ export default function AccountSettingsPage() {
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -1128,7 +1127,10 @@ function GeneralCard({
     onSuccess: (updated) => {
       successToast('Account updated');
       queryClient.setQueryData(['account', account.account_id], updated);
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      // The account LIST renders this name in every switcher. `scope()` is
+      // the prefix that reaches the signed-in user's list slot from inside a
+      // mutation callback, which has no user id in hand.
+      queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to update account'),
   });
@@ -1368,7 +1370,7 @@ function MembersCard({
     onSettled: () => clearPending(currentUserId),
     onSuccess: () => {
       successToast(`Left ${account.name}`);
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
       router.push('/accounts');
     },
     onError: (err: Error) => errorToast(err.message || 'Failed to leave team'),

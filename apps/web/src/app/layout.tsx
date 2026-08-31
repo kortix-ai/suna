@@ -373,7 +373,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                       billing, IAM) can open it via useRequestDemo(). */}
                       {/* Organization branding (Enterprise): the active
                       account's own logo / icon / favicon / product name.
-                      Reads the shared ['accounts'] query, so it sits inside
+                      Reads the shared account-list query, so it sits inside
                       ReactQueryProvider and above everything that renders a
                       KortixLogo. */}
                       <BrandingProvider>

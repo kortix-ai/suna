@@ -479,6 +479,49 @@ const nextConfig = (): NextConfig => ({
             key: 'X-Frame-Options',
             value: 'SAMEORIGIN',
           },
+          // The Supabase session cookie (see lib/supabase/client.ts /
+          // server.ts / middleware.ts) is now Secure-only on HTTPS, but
+          // without this header a plaintext http:// hit on a domain that
+          // NORMALLY redirects to HTTPS is still a window an on-path
+          // attacker can use before that redirect happens.
+          //
+          // HONEST STATE OF THIS GATE (R21, correcting R18's own comment):
+          // `next build` sets `process.env.NODE_ENV = 'production'`
+          // UNCONDITIONALLY, regardless of which host the build is deployed
+          // to. The ternary below is therefore a BUILD-time check, not an
+          // environment check — it ships the header from EVERY environment
+          // built with `next build`: `dev.kortix.com`, `staging.kortix.com`,
+          // every HTTPS self-host preview, and prod, all identically. The
+          // only thing this gate actually excludes is bare `next dev`
+          // (`NODE_ENV === 'development'`), which nothing on the public
+          // internet is served by. Read this as "not `next dev`", never as
+          // "production only" — a comment that implied the latter is
+          // exactly what stood here before and is what this note replaces.
+          //
+          // CONTROLLER RULING (R18/R21, final): keep the header and its
+          // 2-year `max-age` anyway, despite shipping everywhere. It is
+          // HOST-ONLY — `includeSubDomains` was dropped in the same fix —
+          // and every host it reaches is HTTPS-only regardless, so at worst
+          // it is redundant with a redirect that already exists. What it
+          // must not do is UNDERSTATE its own commitment: `max-age=63072000`
+          // has NO SERVER-SIDE UNDO. A browser that received this header
+          // from dev.kortix.com refuses plain HTTP to that exact host for
+          // two years, even if the header is removed from a later build.
+          // That commitment is made from dev and staging TODAY, not only
+          // from prod. `includeSubDomains` would additionally have pinned
+          // `*.dev.kortix.com` / `*.staging.kortix.com`, and from the prod
+          // apex the whole `*.kortix.com` zone — known and future
+          // subdomains, for two years, in every visitor's browser. That
+          // DNS-wide decision belongs to whoever owns the zone, not to this
+          // auth-cookie fix, which is why it stays out.
+          ...(process.env.NODE_ENV === 'production'
+            ? [
+                {
+                  key: 'Strict-Transport-Security',
+                  value: 'max-age=63072000',
+                },
+              ]
+            : []),
         ],
       },
       {

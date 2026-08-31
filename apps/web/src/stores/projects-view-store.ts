@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 /**
  * How the Projects page groups its grid:
@@ -34,3 +35,7 @@ export const useProjectsViewStore = create<ProjectsViewState>()(
     },
   ),
 );
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+registerPersistedStore('kortix.projectsView', () => resetPersistedStore(useProjectsViewStore));

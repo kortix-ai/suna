@@ -8,7 +8,7 @@
  * variant. Every upload goes to
  * the API (`POST /accounts/:id/branding/assets/:kind`), which sniffs the bytes
  * and owns the URL — this pane never chooses where an image lives. After every
- * write the `['accounts']` query is invalidated, which is what
+ * write the account-list query is invalidated (`qk.accounts.scope()`), which is what
  * `BrandingProvider` renders from, so the header above this very pane
  * re-brands live.
  *
@@ -28,6 +28,7 @@ import {
   type AccountBrandingAssetKind,
   type AccountBrandingState,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { TrashIcon, UploadSimpleIcon } from '@phosphor-icons/react';
 import { type FormEvent, useRef, useState } from 'react';
@@ -94,10 +95,10 @@ export function BrandingTab({ accountId, canManage }: { accountId: string; canMa
   });
 
   // Every write returns the full state — seed the cache from it and let the
-  // rendering provider (`['accounts']`) refetch so the header re-brands.
+  // rendering provider (the account list) refetch so the header re-brands.
   const settle = (state: AccountBrandingState) => {
     queryClient.setQueryData(brandingQueryKey(accountId), state);
-    void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
     void queryClient.invalidateQueries({ queryKey: ['account', accountId] });
   };
 

@@ -5,24 +5,26 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import { type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   CaretRightIcon as ChevronRight,
   PlusIcon as Plus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 export default function AccountsPage() {
@@ -39,16 +41,11 @@ export default function AccountsPage() {
   // this only avoids showing an affordance a non-admin can't use.
   const canCreateAccount = !isAccountCreationRestricted() || Boolean(adminRole?.isAdmin);
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: !!user,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
+  // The exact key `accountsQuery` reads, for the create-account seed below.
+  const accountsQueryKey = useAccountsQueryKey();
 
   const sortedAccounts = useMemo(() => {
     const accounts = accountsQuery.data ?? [];
@@ -136,13 +133,19 @@ export default function AccountsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(account) => {
-          queryClient.setQueryData<KortixAccount[]>(['accounts'], (accounts) => {
+          // The reader's OWN key, not a hand-built one: writer and reader
+          // on different keys is silent — the create appears to succeed and
+          // the list never changes.
+          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
             const current = accounts ?? [];
             return current.some((item) => item.account_id === account.account_id)
               ? current.map((item) => (item.account_id === account.account_id ? account : item))
               : [account, ...current];
           });
-          void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          // `scope()`, not `list(userId)`: this is the "the account list
+          // changed" prefix, and it provably reaches the only slot that can
+          // be live without a callback having to re-derive whose slot it is.
+          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
           setSelectedAccountId(account.account_id);
           // qk.projects.scope(): reaches every account's list (and the
           // accountless slot), the same reach the old bare projects-literal
