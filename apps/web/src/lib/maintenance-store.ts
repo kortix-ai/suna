@@ -44,13 +44,6 @@ const DEFAULT_CONFIG: MaintenanceConfig = {
   updatedAt: new Date(0).toISOString(),
 };
 
-const AUTOMATIC_MAINTENANCE: MaintenanceConfig = {
-  ...DEFAULT_CONFIG,
-  level: 'blocking',
-  title: 'Service maintenance',
-  message: 'Kortix is temporarily unavailable. Service will resume automatically.',
-};
-
 const EDGE_CONFIG_KEY = 'maintenance_config';
 
 let edgeClient: EdgeConfigClient | null = null;
@@ -214,15 +207,16 @@ export async function getEdgeMaintenanceConfig(): Promise<MaintenanceConfig> {
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };
 
   try {
-    return (
-      (await readEdgeConfig()) ?? {
-        ...AUTOMATIC_MAINTENANCE,
-        updatedAt: new Date().toISOString(),
-      }
-    );
+    const edgeConfig = await readEdgeConfig();
+    if (edgeConfig) return edgeConfig;
+    // Fail open: an empty or unreadable Edge Config must not lock the edge down.
+    // Blocking maintenance comes only from an explicit admin action (persisted
+    // in Edge Config or the DB), never from a transient read miss. The same
+    // invariant as readMaintenanceConfig's fail-open path above.
+    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
   } catch (error) {
     console.error('[maintenance-store] independent Edge Config read failed:', error);
-    return { ...AUTOMATIC_MAINTENANCE, updatedAt: new Date().toISOString() };
+    return { ...DEFAULT_CONFIG, updatedAt: new Date().toISOString() };
   }
 }
 
