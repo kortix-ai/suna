@@ -6,7 +6,7 @@
  * different amount of jargon. One vocabulary, no jargon that reaches a screen.
  */
 
-import type { Outcome, OutcomeKind, OutcomeTone } from './outcome-types';
+import type { OutcomeTone } from './outcome-types';
 
 /**
  * The tinted tile's classes per tone.
@@ -80,42 +80,6 @@ export function outcomeMetaLine(outcome: { meta: string[]; status: { label: stri
 
 /** A row title is one line, not a sentence. */
 export const OUTCOME_TITLE_MAX = 64;
-
-/**
- * The noun a reader sees for each kind.
- *
- * No `deliverable` and no `schedule`: neither can be proven to belong to the
- * turn that rendered it. See `OutcomeKind`.
- */
-const KIND_NOUN: Record<OutcomeKind, { one: string; many: string }> = {
-  change_request: { one: 'change request', many: 'change requests' },
-  external: { one: 'link', many: 'links' },
-};
-
-/**
- * Fixed display order — never alphabetical. A change request needs a human, so
- * it leads; a link needs nobody, so it trails.
- */
-const KIND_ORDER: OutcomeKind[] = ['change_request', 'external'];
-
-/**
- * "1 change request, 2 files". Empty for an empty list — "0 outcomes" is a
- * sentence nobody needs to read.
- */
-export function outcomeCountLabel(outcomes: Outcome[]): string {
-  if (outcomes.length === 0) return '';
-  const counts = new Map<OutcomeKind, number>();
-  for (const item of outcomes) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
-
-  const parts: string[] = [];
-  for (const kind of KIND_ORDER) {
-    const n = counts.get(kind);
-    if (!n) continue;
-    const noun = KIND_NOUN[kind];
-    parts.push(`${n} ${n === 1 ? noun.one : noun.many}`);
-  }
-  return parts.join(', ');
-}
 
 /**
  * One line, hard-capped by character count.

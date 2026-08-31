@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { Outcome } from './outcome-types';
-import {
-  OUTCOME_TITLE_MAX,
-  outcomeCountLabel,
-  outcomeTint,
-  truncateOutcomeTitle,
-} from './outcome-vocabulary';
+import { OUTCOME_TITLE_MAX, outcomeTint, truncateOutcomeTitle } from './outcome-vocabulary';
 
 function outcome(over: Partial<Outcome> = {}): Outcome {
   return {
@@ -22,45 +17,6 @@ function outcome(over: Partial<Outcome> = {}): Outcome {
     ...over,
   };
 }
-
-describe('outcomeCountLabel', () => {
-  test('one kind reads as that kind, singular', () => {
-    expect(outcomeCountLabel([outcome()])).toBe('1 change request');
-  });
-
-  test('one kind, many, pluralises the kind not the count', () => {
-    expect(outcomeCountLabel([outcome({ id: 'a' }), outcome({ id: 'b' })])).toBe(
-      '2 change requests',
-    );
-  });
-
-  test('mixed kinds list each kind in a fixed order, never alphabetical', () => {
-    // change_request always leads — it is the one that needs a human.
-    const label = outcomeCountLabel([
-      outcome({ id: 'e', kind: 'external' }),
-      outcome({ id: 'c', kind: 'change_request' }),
-    ]);
-    expect(label).toBe('1 change request, 1 link');
-  });
-
-  test('files and schedules are not kinds at all — no label names either', () => {
-    // Files were removed outright: a file is content, and content is the Show
-    // tool's job. This goes red if a `deliverable` kind is reintroduced.
-    const every = outcomeCountLabel([
-      outcome({ id: 'c', kind: 'change_request' }),
-      outcome({ id: 'e', kind: 'external' }),
-    ]);
-    expect(every).toBe('1 change request, 1 link');
-    // Neither removed kind may reappear in a label.
-    expect(every).not.toContain('file');
-    expect(every).not.toContain('schedule');
-    expect(every).not.toContain('background');
-  });
-
-  test('no outcomes produces an empty string, never "0 outcomes"', () => {
-    expect(outcomeCountLabel([])).toBe('');
-  });
-});
 
 describe('outcomeTint', () => {
   // The tinted tile is where an outcome's colour lives — the status chip stays

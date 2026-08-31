@@ -55,19 +55,3 @@ export function anchorOutcomes(outcomes: Outcome[], spans: TurnSpan[]): Map<stri
 
   return byTurn;
 }
-
-/**
- * Do two outcome lists carry the same content?
- *
- * Compares `(id, at)` per entry, NOT id alone. An id alone is not a sound
- * identity: a change request keeps `cr:<id>` while its status moves open →
- * merged, so an id-only comparison would report "unchanged", hand back the
- * previous array, and freeze a stale status on screen.
- *
- * Used to hold the provider's context value flat across a stream, so a turn
- * that is merely re-rendering does not re-render every card beneath it.
- */
-export function sameOutcomes(prev: Outcome[], next: Outcome[]): boolean {
-  if (prev.length !== next.length) return false;
-  return prev.every((p, i) => p.id === next[i].id && p.at === next[i].at);
-}

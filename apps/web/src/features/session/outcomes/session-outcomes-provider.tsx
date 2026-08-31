@@ -51,7 +51,6 @@ import type { Outcome } from './outcome-types';
 
 interface OutcomesValue {
   byTurn: Map<string, Outcome[]>;
-  all: Outcome[];
   onOpen: (outcome: Outcome) => void;
 }
 
@@ -87,7 +86,7 @@ export function SessionOutcomesProvider({
 
   const byTurn = useMemo(() => anchorOutcomes(all, turnSpans), [all, turnSpans]);
 
-  const value = useMemo<OutcomesValue>(() => ({ byTurn, all, onOpen }), [byTurn, all, onOpen]);
+  const value = useMemo<OutcomesValue>(() => ({ byTurn, onOpen }), [byTurn, onOpen]);
 
   return <OutcomesContext.Provider value={value}>{children}</OutcomesContext.Provider>;
 }
@@ -97,10 +96,6 @@ export function SessionOutcomesProvider({
 export function useTurnOutcomes(turnKey: string): Outcome[] {
   const ctx = useContext(OutcomesContext);
   return ctx?.byTurn.get(turnKey) ?? EMPTY;
-}
-
-export function useAllOutcomes(): Outcome[] {
-  return useContext(OutcomesContext)?.all ?? EMPTY;
 }
 
 export function useOutcomeOpen(): (outcome: Outcome) => void {

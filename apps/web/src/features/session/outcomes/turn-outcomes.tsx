@@ -9,8 +9,7 @@
  *
  * Capped at four. A long tool-heavy turn can produce a lot, and a footer that
  * outgrows its response has inverted the page. The overflow count says so
- * ("N more in this session") — the session summary strip (`SessionOutcomeSummary`)
- * is a one-line sentence, not a second place the overflow cards render.
+ * ("N more in this session") and nothing re-renders those cards elsewhere.
  */
 
 import { ItemGroup } from '@/components/ui/item';

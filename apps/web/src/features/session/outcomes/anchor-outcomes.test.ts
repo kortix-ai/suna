@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { anchorOutcomes, sameOutcomes, type TurnSpan } from './anchor-outcomes';
+import { anchorOutcomes, type TurnSpan } from './anchor-outcomes';
 import type { Outcome } from './outcome-types';
 
 function outcome(id: string, at: number): Outcome {
@@ -95,38 +95,5 @@ describe('anchorOutcomes', () => {
   test('an outcome with at=0 still anchors — an unparseable date is not a dropped card', () => {
     const map = anchorOutcomes([outcome('a', 0)], spans);
     expect(map.get('t1')?.map((o) => o.id)).toEqual(['a']);
-  });
-});
-
-describe('sameOutcomes', () => {
-  const o = (id: string, at: number): Outcome => ({
-    id,
-    kind: 'change_request',
-    title: id,
-    description: '',
-    status: { label: 'Saved', tone: 'success' },
-    at,
-    meta: [],
-    action: { label: 'Open', intent: 'open' },
-    resourceHref: null,
-  });
-
-  test('identical lists compare equal', () => {
-    expect(sameOutcomes([o('cr:a', 100)], [o('cr:a', 100)])).toBe(true);
-  });
-
-  test('a different length is never equal', () => {
-    expect(sameOutcomes([o('cr:a', 100)], [])).toBe(false);
-  });
-
-  test('a different id is not equal', () => {
-    expect(sameOutcomes([o('cr:a', 100)], [o('cr:b', 100)])).toBe(false);
-  });
-
-  test('THE REGRESSION: same id, later stamp, is NOT equal', () => {
-    // The same change request seen again keeps `cr:<id>` and gains a new
-    // `at`. Comparing ids alone would call this unchanged and pin the card to
-    // the earlier turn.
-    expect(sameOutcomes([o('cr:1', 100)], [o('cr:1', 900)])).toBe(false);
   });
 });

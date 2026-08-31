@@ -85,7 +85,6 @@ import {
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
-import { SessionOutcomeSummary } from '@/features/session/outcomes/session-outcome-summary';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
 import { TurnOutcomes } from '@/features/session/outcomes/turn-outcomes';
 import { SessionOverridesComposer } from '@/features/session/overrides/session-overrides-composer';
@@ -5215,24 +5214,6 @@ export function SessionChat({
                       turnSpans={turnSpans}
                       onOpen={handleOpenOutcome}
                     >
-                      {/* Head-of-transcript rollup — same provider the footer cards
-                      read (see session-outcomes-provider.tsx). NO `isBusy`
-                      gate, unlike the per-turn footer card: a footer card
-                      gates on busy because an in-progress turn hasn't produced
-                      a settled outcome yet, but this strip only ever
-                      summarises outcomes that are ALREADY settled — nothing
-                      about it becomes truer once the session goes idle.
-                      Self-hides via `SummaryHeading` returning null for an
-                      empty list. Gating this on `isBusy` would remount it on
-                      EVERY turn (far more often than outcomes actually
-                      change) and shift content above a bottom-anchored,
-                      self-anchoring transcript — do not add the gate back for
-                      symmetry with the footer card. Gated on `!readOnly`: the
-                      nested sub-session modal (`SubSessionModal`) mounts this
-                      SAME `SessionChat` with `readOnly` set, and without the
-                      gate it grew its own head-of-transcript strip on top of
-                      the parent transcript's. */}
-                      {!readOnly && <SessionOutcomeSummary />}
                       <ToolActivateContext.Provider value={toolActivate}>
                         {/* The first prompt's producer copy (`useFirstPromptPreviewStore`),
                         ABOVE the turns: the transcript's own user message can arrive as
