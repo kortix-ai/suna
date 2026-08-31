@@ -826,4 +826,154 @@ describe('accounts API contract', () => {
     const expired = await app.request('/v1/account-invites/00000000-0000-4000-a000-000000000202/accept', { method: 'POST' });
     expect(expired.status).toBe(410);
   });
+
+  // R3: bootstrap the personal account BEFORE claiming pending invites, so an
+  // invite-first signup ends with BOTH — not just the inviter's org. Before
+  // this ordering, `autoClaimPendingInvites` ran first, so the membership
+  // count checked afterward was never zero the moment any invite existed,
+  // and the bootstrap silently never fired.
+  test('bootstraps the personal account before claiming a pending invite, so an invite-first signup gets both', async () => {
+    const INVITE_FIRST_USER_ID = '00000000-0000-4000-a000-000000000005';
+    const INVITE_FIRST_EMAIL = 'invite-first@example.test';
+    inviteRows.push({
+      inviteId: INVITE_ID,
+      accountId: ACCOUNT_ID,
+      email: INVITE_FIRST_EMAIL,
+      invitedBy: OWNER_ID,
+      initialRole: 'member',
+      acceptedAt: null,
+      createdAt: baseDate,
+      expiresAt: futureDate,
+    });
+    currentUserId = INVITE_FIRST_USER_ID;
+    currentUserEmail = INVITE_FIRST_EMAIL;
+
+    const res = await createApp().request('/v1/accounts');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Two memberships: their own personal account (account_id === their own
+    // user id) AND the org they were invited into — not just the org, which
+    // was the pre-fix defect this test guards against.
+    expect(body).toHaveLength(2);
+    const own = body.find((a: any) => a.account_id === INVITE_FIRST_USER_ID);
+    expect(own).toMatchObject({
+      account_id: INVITE_FIRST_USER_ID,
+      account_role: 'owner',
+      is_primary_owner: true,
+    });
+    const org = body.find((a: any) => a.account_id === ACCOUNT_ID);
+    expect(org).toMatchObject({
+      account_id: ACCOUNT_ID,
+      account_role: 'member',
+      is_primary_owner: false,
+    });
+
+    // The invite is still claimed — stamped accepted and turned into a real
+    // membership, exactly like before this change.
+    expect(inviteRows[0]?.acceptedAt).toBeInstanceOf(Date);
+    expect(memberRows).toContainEqual(expect.objectContaining({
+      userId: INVITE_FIRST_USER_ID,
+      accountId: INVITE_FIRST_USER_ID,
+      accountRole: 'owner',
+    }));
+    expect(memberRows).toContainEqual(expect.objectContaining({
+      userId: INVITE_FIRST_USER_ID,
+      accountId: ACCOUNT_ID,
+      accountRole: 'member',
+    }));
+
+    // Idempotency: a second call must not mint a second personal account or
+    // duplicate the org membership — the invite is already accepted, and
+    // `bootstrapPersonalAccount` is a conflict no-op on the existing row.
+    const res2 = await createApp().request('/v1/accounts');
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toHaveLength(2);
+    expect(accountRows.filter((a) => a.accountId === INVITE_FIRST_USER_ID)).toHaveLength(1);
+    expect(memberRows.filter((m) => m.userId === INVITE_FIRST_USER_ID)).toHaveLength(2);
+  });
+
+  // Task 2's `isForeignAccountList` fail-closed rule on the web `/new` form
+  // blocks submit when an account list has >= 2 entries and NONE has
+  // account_id === the caller's own user id. An invite-first user who is
+  // admin on two orgs has exactly that shape without this fix — their
+  // account list is [org A, org B], neither equal to their user id — so
+  // Task 2 would wrongly classify their real, legitimate list as foreign and
+  // lock them out of creating any workspace. This proves the fix removes
+  // that precondition: their own account is always present.
+  test('an invite-first user who is admin on two orgs ends with three memberships, one always their own', async () => {
+    const TWO_ORG_USER_ID = '00000000-0000-4000-a000-000000000006';
+    const TWO_ORG_EMAIL = 'two-org-invitee@example.test';
+    const ORG_ALPHA_ID = '00000000-0000-4000-a000-000000000301';
+    const ORG_BETA_ID = '00000000-0000-4000-a000-000000000302';
+    accountRows.push(
+      { accountId: ORG_ALPHA_ID, name: 'Org Alpha', personalAccount: false, createdAt: baseDate, updatedAt: baseDate },
+      { accountId: ORG_BETA_ID, name: 'Org Beta', personalAccount: false, createdAt: baseDate, updatedAt: baseDate },
+    );
+    inviteRows.push(
+      {
+        inviteId: '00000000-0000-4000-a000-000000000401',
+        accountId: ORG_ALPHA_ID,
+        email: TWO_ORG_EMAIL,
+        invitedBy: OWNER_ID,
+        initialRole: 'admin',
+        acceptedAt: null,
+        createdAt: baseDate,
+        expiresAt: futureDate,
+      },
+      {
+        inviteId: '00000000-0000-4000-a000-000000000402',
+        accountId: ORG_BETA_ID,
+        email: TWO_ORG_EMAIL,
+        invitedBy: OWNER_ID,
+        initialRole: 'admin',
+        acceptedAt: null,
+        createdAt: baseDate,
+        expiresAt: futureDate,
+      },
+    );
+    currentUserId = TWO_ORG_USER_ID;
+    currentUserEmail = TWO_ORG_EMAIL;
+
+    const res = await createApp().request('/v1/accounts');
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body).toHaveLength(3);
+    expect(body.map((a: any) => a.account_id).sort()).toEqual(
+      [ORG_ALPHA_ID, ORG_BETA_ID, TWO_ORG_USER_ID].sort(),
+    );
+
+    // The exact invariant Task 2's fail-closed rule relies on: their own
+    // account is present, so a real >= 2-org list is never classified
+    // foreign.
+    expect(body.some((a: any) => a.account_id === TWO_ORG_USER_ID)).toBe(true);
+
+    const own = body.find((a: any) => a.account_id === TWO_ORG_USER_ID);
+    expect(own).toMatchObject({ account_role: 'owner', is_primary_owner: true });
+    for (const orgId of [ORG_ALPHA_ID, ORG_BETA_ID]) {
+      const org = body.find((a: any) => a.account_id === orgId);
+      expect(org).toMatchObject({ account_role: 'admin', is_primary_owner: false });
+    }
+
+    expect(
+      inviteRows.filter((i) => i.email === TWO_ORG_EMAIL && i.acceptedAt !== null),
+    ).toHaveLength(2);
+  });
+
+  // The bootstrap must stay conditional on "no membership yet" — not become
+  // unconditional. A user who already has memberships (however they got
+  // them) must not have a personal account minted retroactively on every
+  // list call.
+  test('a user who already has memberships gets no personal account bootstrapped retroactively', async () => {
+    // OWNER already has two memberships from resetState (team ACCOUNT_ID +
+    // fixture PERSONAL_ACCOUNT_ID, neither equal to OWNER_ID itself).
+    const accountCountBefore = accountRows.length;
+    const res = await createApp().request('/v1/accounts');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toHaveLength(2);
+    expect(accountRows).toHaveLength(accountCountBefore);
+    expect(memberRows.filter((m) => m.userId === OWNER_ID)).toHaveLength(2);
+    expect(accountRows.some((a) => a.accountId === OWNER_ID)).toBe(false);
+  });
 });
