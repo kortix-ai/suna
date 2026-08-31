@@ -189,6 +189,9 @@ function chipClass(html: string): string {
     expect(markup).not.toContain('size-3');
   });
 
+  /** Visible text only — attributes carry ids a reader never sees. */
+  const textContent = (markup: string) => markup.replace(/<[^>]*>/g, '');
+
   test('a non-colour token keeps the plain chip — no swatch', () => {
     const markup = render({ children: '#hashtag' });
 
@@ -196,23 +199,33 @@ function chipClass(html: string): string {
     expect(markup).toContain('#hashtag');
   });
 
-  test('inline code holding a setup-link path renders the setup chip', () => {
+  test('inline code holding a setup-link path renders the setup card', () => {
     const markup = render({ children: '/secret-intake/ksl_7f3a91c2b4' });
 
-    expect(markup.startsWith('<button')).toBe(true);
+    // `SetupLinkButton` renders the transcript's own `OutcomeCard` — the same
+    // row a change request gets — so the assertion is the card's testid, not
+    // the `<button>` the pre-card chip used to be.
+    expect(markup).toContain('data-testid="outcome-card-external"');
     expect(markup).toContain('Enter credentials');
-    // The chip replaces the token entirely; a wall of token characters in the
-    // transcript is the thing this interception exists to prevent.
-    expect(markup).not.toContain('ksl_7f3a91c2b4');
+    // Waiting on the reader, so it carries the transcript's warning tone.
+    expect(markup).toContain('Waiting for you');
+    // The card replaces the token entirely; a wall of token characters in the
+    // transcript is the thing this interception exists to prevent. Asserted on
+    // VISIBLE text: the token still rides `data-outcome-id`, which is the
+    // card's identity and never reaches a screen.
+    expect(textContent(markup)).not.toContain('ksl_7f3a91c2b4');
   });
 
-  test('a connector setup link gets the connector chip', () => {
+  test('a connector setup link gets the connector card', () => {
     // Agents mint these against FRONTEND_URL, so the absolute form is the one
     // that actually arrives; server-side there is no window to compare origins.
     const markup = render({ children: 'http://localhost:3000/connect/ksl_7f3a91c2b4' });
 
-    expect(markup.startsWith('<button')).toBe(true);
+    expect(markup).toContain('data-testid="outcome-card-external"');
     expect(markup).toContain('Connect app');
+    // Unsettled, so the action is the filled CTA rather than the outline
+    // `View` a settled card shows.
+    expect(markup).toContain('Connect');
   });
 
   test('an absolute file path becomes a preview target', () => {
