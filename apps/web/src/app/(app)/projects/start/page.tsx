@@ -15,9 +15,8 @@ import {
 } from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { resolveLandingDestination } from '@/lib/onboarding/resolve-landing-destination';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts } from '@kortix/sdk';
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -83,13 +82,10 @@ export default function ProjectStartPage() {
     if (terminal === 'suppressed') clearAutoProjectSuppression();
   }, [terminal]);
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: !!user,
-    staleTime: 60_000,
-    retry: 3,
-  });
+  // `retry: 3` is this reader's own budget, kept verbatim: the landing
+  // destination is resolved FROM this list, so one transient failure here
+  // strands the user on a spinner with nowhere to go.
+  const accountsQuery = useAccountsList({ retry: 3 });
 
   const resolve = useCallback(async () => {
     if (resolving.current) return;
@@ -99,23 +95,30 @@ export default function ProjectStartPage() {
     resolving.current = true;
     attempts.current += 1;
 
-    // Bound per-account (ensure-first-project.ts): a flag left over from a
-    // DIFFERENT account (a sign-out path that skipped the client-state sweep)
-    // must never suppress provisioning here. Checked against every account
-    // this SIGNED-IN session actually owns — never against a persisted
-    // selection, which can itself be stale left over from a previous account.
-    const suppressed = accounts.some((account) => isAutoProjectSuppressed(account.account_id));
-
     try {
       // Every membership is a candidate, not just the remembered/first one: a
       // stale persisted selection (a team where the user is a plain member
       // with zero grants) used to end here as a false "No workspace yet"
       // while the personal account, in the same list, held their projects.
+      //
+      // `isAccountSuppressed` is passed straight through, NOT pre-reduced to
+      // a single boolean here: suppression is bound per-account
+      // (ensure-first-project.ts), and this resolver only ever evaluates
+      // auto-create for ONE primary candidate account
+      // (resolve-landing-destination.ts). Computing `.some(...)` over every
+      // account the user owns — the earlier version of this fix — let a flag
+      // set on account A suppress creation on an unrelated account B owned
+      // by the same user, which is the same cross-account leak this task
+      // exists to close, just at a narrower scope. `isAutoProjectSuppressed`
+      // itself is still identity-safe on its own: never against a persisted
+      // `selectedAccountId`, which can be stale left over from a previous
+      // account — the resolver applies it only to the account IT resolves
+      // as primary from the freshly-fetched, server-verified `accounts` list.
       const resolution = await resolveLandingDestination({
         accounts,
         selectedAccountId,
         preferredProjectId: readLastProjectId(user?.id),
-        suppressed,
+        isAccountSuppressed: isAutoProjectSuppressed,
         mayCreate: navigationMayCreateProject(),
       });
 
@@ -135,7 +138,7 @@ export default function ProjectStartPage() {
       // project, or the rare cross-site-navigation edge. `/projects` is a
       // redirect back to THIS route (Task 21), so bouncing there would loop
       // forever — render the terminal state inline instead.
-      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed }));
+      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed: resolution.suppressed }));
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not

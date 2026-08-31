@@ -63,20 +63,31 @@ function signOutButton(): string {
 /**
  * JAY: symptom 5. `isAutoProjectSuppressed()` used to be called with no
  * argument — a process-wide flag with no owner. It now takes an account id
- * and this route must never call it with a bare, unbound check: the
- * suppression must be evaluated against the accounts this signed-in session
- * actually owns, never against a persisted (and possibly stale) single
- * selection.
+ * and this route must never call it with a bare, unbound check.
+ *
+ * Review round 1 found the FIRST fix here (`accounts.some((account) =>
+ * isAutoProjectSuppressed(account.account_id))`) too broad: it suppressed
+ * auto-create on ANY account the caller owns if ANY of them had a live flag,
+ * while `resolveLandingDestination` only ever gates creation for ONE primary
+ * candidate account. The scoping now lives THERE
+ * (`resolve-landing-destination.ts` — see its own tests for the behavioral
+ * proof), and this route just passes `isAutoProjectSuppressed` straight
+ * through as a per-account predicate.
  */
 describe('/projects/start binds the suppression check to real accounts', () => {
   test('never calls isAutoProjectSuppressed() with zero arguments', () => {
     expect(source).not.toContain('isAutoProjectSuppressed()');
   });
 
-  test('the suppressed flag is derived from the fetched account list', () => {
-    expect(source).toContain(
-      'accounts.some((account) => isAutoProjectSuppressed(account.account_id))',
-    );
+  test('passes isAutoProjectSuppressed straight through, not pre-reduced to a single boolean here', () => {
+    expect(source).toContain('isAccountSuppressed: isAutoProjectSuppressed,');
+    // The bug this guards against: computing `.some(...)` over every account
+    // the caller owns HERE would let a flag on one account suppress creation
+    // on an unrelated one owned by the same user. Scoping to the actual
+    // primary candidate is resolveLandingDestination's job now, not this
+    // route's — so this route must never itself reduce the check to a
+    // single account-agnostic boolean.
+    expect(source).not.toContain('accounts.some((account) => isAutoProjectSuppressed');
   });
 });
 

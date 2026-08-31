@@ -86,11 +86,18 @@ function parseSuppressAutoProjectRecord(raw: string | null): SuppressAutoProject
  * The one real caller (`general-tab.tsx`'s archive mutation) passes this
  * function straight through as a zero-arg `() => void` callback, so the
  * default below — the globally-selected account at the moment archiving
- * completes — is what actually runs in production. Every project navigation
- * calls `setSelectedAccountId` to heal this exact value to the account just
- * landed in (`/projects/start`), so by the time a user reaches a project's
- * settings tab it already names that project's account. Tests exercise the
- * explicit parameter directly instead of relying on the global.
+ * completes — is what actually runs in production. This default is correct
+ * ONLY because the store is kept healed to whichever project is actually
+ * open: `/projects/start`'s landing resolution calls `setSelectedAccountId`
+ * on arrival, and — the path that actually matters for reaching Settings —
+ * `workspace-menu-section.tsx`'s workspace switcher does the same on every
+ * switch (`if (project.account_id !== selectedAccountId)
+ * setSelectedAccountId(project.account_id)`), so by the time a user opens a
+ * project's settings tab the store already names that project's account.
+ * This invariant is enforced nowhere in types — if either healing call is
+ * ever removed, this default silently starts suppressing (or failing to
+ * suppress) for the wrong account. Tests exercise the explicit parameter
+ * directly instead of relying on the global.
  */
 export function suppressAutoProjectAfterDelete(
   accountId: string | null | undefined = useCurrentAccountStore.getState().selectedAccountId,
