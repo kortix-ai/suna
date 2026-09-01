@@ -154,10 +154,25 @@ export function buildWorkingInputs(input: {
     // live turns whenever a frame was dropped.
     stream: input.status
       ? {
+          // Only `idle` means idle. Everything else — `busy`, `retry`, and any
+          // word this build does not know — is working.
+          //
+          // This used to be the inverse (`busy`/`retry` kept, EVERYTHING else
+          // collapsed to `idle`), which disagreed with `streamTurnPhase` right
+          // above on the same question. The pi runtime emits
+          // `{type:'running'}`, which is outside OpenCode's `idle|busy|retry`
+          // union, so for the whole of every pi turn this asserted "idle" while
+          // the agent was generating: the working indicator and the Stop button
+          // disappeared mid-answer.
+          //
+          // Unknown is not idle. An unreadable status is a reason to keep the
+          // escape hatch visible, not to hide it.
           type:
-            input.status.type === 'busy' || input.status.type === 'retry'
-              ? input.status.type
-              : 'idle',
+            input.status.type === 'idle'
+              ? 'idle'
+              : input.status.type === 'retry'
+                ? 'retry'
+                : 'busy',
           origin: input.statusOrigin ?? 'wire',
           atMs: input.statusAtMs,
         }

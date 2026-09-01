@@ -91,7 +91,13 @@ export class ChatEventAdapter {
     const sessionID = this.sessionID;
     switch (event.type) {
       case 'agent_start':
-        return [{ type: 'session.status', properties: { sessionID, status: { type: 'running' } } }];
+        // `busy`, not `running`. OpenCode's SessionStatus union is exactly
+        // `idle | busy | retry`, and this adapter's whole job is to make pi
+        // look like OpenCode. `running` is not in that union, so every
+        // consumer switching on it fell through to its default: the SDK read
+        // it as IDLE and hid the working indicator and the Stop button for the
+        // entire turn while the agent was still generating.
+        return [{ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }];
 
       case 'message_start': {
         // Only ASSISTANT messages translate. The worker publishes the USER

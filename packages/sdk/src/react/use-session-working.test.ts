@@ -51,6 +51,67 @@ describe('workingPollMs', () => {
 });
 
 describe('buildWorkingInputs', () => {
+  // A runtime status this build does not recognise must never read as IDLE.
+  //
+  // `buildWorkingInputs` mapped everything except `busy`/`retry` to `idle`,
+  // while `streamTurnPhase` in the same file maps everything except `idle` to
+  // `active` — opposite defaults for the same unknown word. The pi runtime
+  // emits `{type:'running'}` (not one of OpenCode's `idle|busy|retry`), so for
+  // the WHOLE of every pi turn the projection was told the session was idle:
+  // the working indicator and the Stop button vanished while the agent was
+  // still generating. Observed on pi.kortix.com with the worker reporting
+  // `turn_in_flight: true` and the UI showing idle.
+  //
+  // Unknown is not idle. The escape hatch fails safe: if the runtime said
+  // something we cannot read, assume it is working.
+  test('an UNRECOGNISED status is treated as working, never as idle', () => {
+    const inputs = buildWorkingInputs({
+      turn: undefined,
+      inbox: undefined,
+      status: { type: 'running' } as never,
+      statusAtMs: T0,
+      optimistic: null,
+      nowMs: T0,
+    });
+
+    expect(inputs.stream?.type).toBe('busy');
+    expect(projectWorking(inputs).state).not.toBe('idle');
+  });
+
+  test('it agrees with streamTurnPhase on what counts as active', () => {
+    // These two live in the same file and answer the same question. They
+    // disagreeing is what produced the bug above.
+    for (const type of ['running', 'compacting', 'whatever-comes-next']) {
+      const status = { type } as never;
+      expect(streamTurnPhase(status)).toBe('active');
+      expect(
+        buildWorkingInputs({
+          turn: undefined,
+          inbox: undefined,
+          status,
+          statusAtMs: T0,
+          optimistic: null,
+          nowMs: T0,
+        }).stream?.type,
+      ).toBe('busy');
+    }
+  });
+
+  test('the KNOWN statuses are still mapped exactly', () => {
+    const build = (type: string) =>
+      buildWorkingInputs({
+        turn: undefined,
+        inbox: undefined,
+        status: { type } as never,
+        statusAtMs: T0,
+        optimistic: null,
+        nowMs: T0,
+      }).stream?.type;
+    expect(build('idle')).toBe('idle');
+    expect(build('busy')).toBe('busy');
+    expect(build('retry')).toBe('retry');
+  });
+
   test('a first /turn read that never succeeded contributes NOTHING', () => {
     // A 404/500 with no prior success leaves `turn` undefined. The old machine
     // answered silence with a busy latch; this one answers it with nothing.

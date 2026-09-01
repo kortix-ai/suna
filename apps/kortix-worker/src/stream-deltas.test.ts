@@ -87,3 +87,40 @@ describe('pi streams as deltas, not only snapshots', () => {
     expect(snap?.transcriptOnly).toBe(true);
   });
 });
+
+/**
+ * The status word this surface emits must be one OpenCode defines.
+ *
+ * `SessionStatus` in @opencode-ai/sdk is exactly `idle | busy | retry`. The
+ * adapter emitted `{type:'running'}`, which is none of them. Every consumer
+ * that switches on the union therefore fell to its default branch — the SDK's
+ * `buildWorkingInputs` read it as IDLE, so for the whole of a pi turn the
+ * working indicator and the Stop button were hidden while the agent generated.
+ *
+ * The wire format is not ours to invent: this adapter exists to make pi look
+ * like OpenCode, so an unknown word is a bug even when a tolerant consumer
+ * happens to cope.
+ */
+describe('session.status uses OpenCode’s canonical vocabulary', () => {
+  const OPENCODE_STATUSES = new Set(['idle', 'busy', 'retry']);
+
+  test('agent_start reports busy, not an invented word', () => {
+    const adapter = new ChatEventAdapter({ sessionId: 's' } as never);
+    const wires = adapter.translate({ type: 'agent_start' });
+    const status = wires.find((w: any) => w.type === 'session.status');
+    expect(status).toBeDefined();
+    expect((status as any).properties.status.type).toBe('busy');
+  });
+
+  test('every session.status this adapter can emit is in the union', () => {
+    const adapter = new ChatEventAdapter({ sessionId: 's' } as never);
+    const emitted = [
+      ...adapter.translate({ type: 'agent_start' }),
+      ...adapter.translate({ type: 'agent_end' }),
+    ].filter((w: any) => w.type === 'session.status');
+    expect(emitted.length).toBeGreaterThan(0);
+    for (const w of emitted) {
+      expect(OPENCODE_STATUSES.has((w as any).properties.status.type)).toBe(true);
+    }
+  });
+});
