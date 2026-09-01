@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A compatibility repair must recognize the current writer's exact output (2026-09-02)
+
+**When:** adding a repair that runs before later prompt delivery. Derive both the
+current and legacy transcript forms without file I/O. Treat an exact current form
+as already repaired. Materialize only parts that still use the legacy file shape.
+*Incident:* a new multi-file first prompt used `<commandId>` paths; the next prompt
+expected `legacy-<commandId>` and stayed queued. Early fixes exposed crash-window
+and overwrite defects. *Enforcer:* `legacy-inline-attachment-repair.test.ts` and
+`queued-continue-inbox-delivery.test.ts` cover canonical, legacy, retry, and mixed batches.
+
 ### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
 
 **When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
