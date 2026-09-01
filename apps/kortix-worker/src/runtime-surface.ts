@@ -537,6 +537,24 @@ export class RuntimeSurface {
     return this.authorized(req, url);
   }
 
+  /**
+   * Is this worker running with a credential at all?
+   *
+   * A SESSION box always is — the platform injects KORTIX_TOKEN — so every
+   * product route can and must be gated. The BENCH runs this worker with no
+   * token, and `authorized()` correctly refuses everything when there is none,
+   * which would make the bench's own surface unreachable. So the bench-only
+   * routes ask this first: gate when there is a credential to check, stay open
+   * when there is provably no deployment to protect.
+   *
+   * `prompt_async` deliberately does NOT use this — it is the product's own
+   * delivery route, so a box that somehow lost its token must fail CLOSED
+   * rather than accept anonymous prompts.
+   */
+  requiresAuth(): boolean {
+    return Boolean(this.opts.token);
+  }
+
   private authorized(req: IncomingMessage, url: URL): boolean {
     const token = this.opts.token;
     if (!token) return false;

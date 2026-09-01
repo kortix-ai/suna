@@ -166,13 +166,26 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read 
       const denied = await fetch(`${base}/kortix/opencode/state`);
       expect(denied.status).toBe(401);
 
-      // Drive one scripted faux turn.
+      // Drive one scripted faux turn. The bench surface is gated on a worker
+      // that HAS a credential (this one does): those routes used to be the only
+      // ones on the box with no auth at all, so a caller that reached the port
+      // could inject a prompt or read the whole transcript. A tokenless bench
+      // worker keeps them open — there is nothing to protect — which is why
+      // `requiresAuth()` and not a bare `authorize()` guards them.
       const turn = await fetch(`${base}/prompt`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
         body: JSON.stringify({ text: 'render me', script: [{ text: 'rendered, chief' }] }),
       });
       expect(turn.ok).toBe(true);
+
+      // ...and without the credential it is refused, like every sibling route.
+      const promptDenied = await fetch(`${base}/prompt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'nope' }),
+      });
+      expect(promptDenied.status).toBe(401);
 
       // Transcript: user + assistant, ids unique and sorted, text present.
       const page = (await (

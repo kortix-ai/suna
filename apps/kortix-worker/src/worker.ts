@@ -733,7 +733,7 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/events') {
-      if (!surface.authorize(req, url)) {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(
           JSON.stringify({ error: 'unauthorized' }),
         );
@@ -747,7 +747,7 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/prompt' && req.method === 'POST') {
-      if (!surface.authorize(req, url)) {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(
           JSON.stringify({ error: 'unauthorized' }),
         );
@@ -786,7 +786,7 @@ export async function startWorker(cfg = configFromEnv()) {
     // chunk that carries assistant text, which is what a user actually waits
     // for — not when the turn finishes.
     if (url.pathname === '/turn' && req.method === 'POST') {
-      if (!surface.authorize(req, url)) {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(
           JSON.stringify({ error: 'unauthorized' }),
         );
@@ -825,7 +825,7 @@ export async function startWorker(cfg = configFromEnv()) {
     // One real turn, answer + timings, as JSON. This is the endpoint the
     // comparison benchmark calls, and the one to curl by hand.
     if (url.pathname === '/say' && req.method === 'POST') {
-      if (!surface.authorize(req, url)) {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(
           JSON.stringify({ error: 'unauthorized' }),
         );
@@ -867,7 +867,7 @@ export async function startWorker(cfg = configFromEnv()) {
     // the real point is that the SAME data is readable from the store with no
     // worker running at all — see bench/read-transcript.ts.
     if (url.pathname === '/history') {
-      if (!surface.authorize(req, url)) {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(
           JSON.stringify({ error: 'unauthorized' }),
         );
@@ -885,7 +885,7 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/interrupt' && req.method === 'POST') {
-      if (!surface.authorize(req, url)) {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
         res.writeHead(401, { 'content-type': 'application/json' }).end(
           JSON.stringify({ error: 'unauthorized' }),
         );

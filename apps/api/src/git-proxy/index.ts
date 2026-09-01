@@ -73,6 +73,13 @@ import {
   COMPILED_RUNTIME_FORMAT,
 } from './compiled-runtime';
 import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
+import {
+  GIT_SERVICES,
+  type GitService,
+  advertisementPrefix,
+  resolveLocalRepo,
+  runGitService,
+} from './local-upstream';
 import { config } from '../config';
 
 export const gitProxyApp = makeOpenApiApp();
@@ -187,6 +194,66 @@ export function __resetGitProxyMemosForTests(): void {
   upstreamMemo.clear();
 }
 
+/**
+ * Answer a smart-HTTP git request from a bare repo on this filesystem.
+ *
+ * Mirrors what `git http-backend` does for the three routes this proxy
+ * exposes. Authorization already happened in `forward`; `scope` is re-checked
+ * here so a read-scoped caller can never reach `git-receive-pack` even if a
+ * future route wires the suffix differently.
+ */
+async function serveLocalGit(
+  c: any,
+  repoPath: string,
+  scope: GitScope,
+  suffix: string,
+): Promise<Response> {
+  const requested =
+    suffix === '/info/refs'
+      ? (new URL(c.req.url).searchParams.get('service') ?? '')
+      : suffix.replace(/^\//, '');
+
+  if (requested !== 'git-upload-pack' && requested !== 'git-receive-pack') {
+    return c.text('unsupported git service', 400);
+  }
+  const service = requested as GitService;
+  if (GIT_SERVICES[service] === 'write' && scope !== 'write') {
+    return c.text('git-receive-pack requires write scope', 403);
+  }
+
+  // Ref advertisement: banner + flush + `--advertise-refs` output, verbatim.
+  if (suffix === '/info/refs') {
+    const r = await runGitService(service, repoPath, ['--stateless-rpc', '--advertise-refs']);
+    if (!r.ok) {
+      console.warn(`[git-proxy] local ${service} advertise failed for ${repoPath}: ${r.stderr}`);
+      return c.text('git upstream unreachable', 502);
+    }
+    const advertised = Buffer.concat([Buffer.from(advertisementPrefix(service)), r.stdout]);
+    return new Response(new Uint8Array(advertised), {
+      status: 200,
+      headers: {
+        'content-type': `application/x-${service}-advertisement`,
+        'cache-control': 'no-cache, max-age=0, must-revalidate',
+      },
+    });
+  }
+
+  // Negotiation / pack transfer: the request body IS the client's side.
+  const body = new Uint8Array(await c.req.arrayBuffer());
+  const r = await runGitService(service, repoPath, ['--stateless-rpc'], body);
+  if (!r.ok) {
+    console.warn(`[git-proxy] local ${service} failed for ${repoPath}: ${r.stderr}`);
+    return c.text('git upstream unreachable', 502);
+  }
+  return new Response(new Uint8Array(r.stdout), {
+    status: 200,
+    headers: {
+      'content-type': `application/x-${service}-result`,
+      'cache-control': 'no-cache, max-age=0, must-revalidate',
+    },
+  });
+}
+
 async function forward(c: any, projectId: string, scope: GitScope, suffix: string): Promise<Response> {
   const auth = await authorize(c, projectId, scope);
   if (!auth.ok) {
@@ -198,6 +265,13 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
   }
+
+  // A LOCAL upstream (a bare repo on disk) cannot be proxied: `fetch()` does
+  // not speak `file://`, so this used to fall through to the catch below and
+  // answer `502 git upstream unreachable` for every clone. Serve it directly
+  // instead — smart-HTTP is a thin envelope around the same git services.
+  const localRepo = resolveLocalRepo(upstream.url);
+  if (localRepo) return serveLocalGit(c, localRepo, scope, suffix);
 
   const search = new URL(c.req.url).search; // includes leading '?' or ''
   const base = upstream.url.replace(/\/$/, '');
