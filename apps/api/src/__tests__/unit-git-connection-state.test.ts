@@ -123,6 +123,11 @@ describe('installing from GitHub instead of from Kortix', () => {
     // The installation id has to survive the redirect or the install is
     // unrecoverable — nothing else identifies it.
     expect(body).toContain("qs.set('installation_id'");
+    // Absent, not merely falsy: `?state=` arrives as '' and is malformed — GitHub
+    // always sends a real state on a flow Kortix started — so it must fall
+    // through to the error branch, not be greeted as a fresh install.
+    expect(body).toContain('query.state === undefined');
+    expect(body).not.toContain('if (!query.state)');
   });
 
   test('a genuinely rejected state is still an error', () => {
