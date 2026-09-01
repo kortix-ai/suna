@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 628,
+  "count": 633,
   "routes": [
     {
       "method": "GET",
@@ -676,6 +676,22 @@
     },
     {
       "method": "POST",
+      "path": "/v1/auth/mfa/factors"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/auth/mfa/factors/:factorId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/mfa/factors/:factorId/challenge"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/mfa/factors/:factorId/verify"
+    },
+    {
+      "method": "POST",
       "path": "/v1/auth/oauth/exchange"
     },
     {
@@ -701,6 +717,10 @@
     {
       "method": "POST",
       "path": "/v1/auth/sign-in/password"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/sso"
     },
     {
       "method": "POST",

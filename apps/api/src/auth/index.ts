@@ -128,6 +128,100 @@ authRouter.openapi(
   },
 );
 
+/**
+ * MFA — enrol, challenge, verify, unenrol.
+ *
+ * Every route forwards to GoTrue with the CALLER's bearer, never the
+ * service-role key: with the service role any signed-in user could enrol or
+ * remove a factor on someone else's account, which is precisely what a second
+ * factor exists to prevent.
+ *
+ * There is no route for assurance level. Supabase reads it from the JWT's `aal`
+ * claim without a network call, and so can a client — a round trip to learn
+ * something already in the token you are holding is pure latency.
+ */
+const mfaGuard = (c: any): Response | null => {
+  const token = bearerOf(c);
+  // A PAT has no second factor to step up with (see authorize() step 6, which
+  // exempts tokens for exactly that reason), so enrolling one under a
+  // long-lived machine credential would defeat the point.
+  if (!token || (c.get('authType') as string) !== 'supabase') {
+    return c.json({ error: 'invalid_token', error_description: 'This route needs a Supabase session bearer' }, 401) as Response;
+  }
+  return null;
+};
+
+const mfaForward = async (c: any, path: string, method: 'POST' | 'DELETE', body?: unknown) => {
+  const denied = mfaGuard(c);
+  if (denied) return denied;
+  const result = await gotrue<Record<string, unknown>>(path, { method, bearer: bearerOf(c)!, ...(body !== undefined ? { body } : {}) });
+  if (!result.ok) {
+    return c.json({ error: result.body.error ?? 'auth_error', error_description: result.body.error_description ?? '' }, result.status as never);
+  }
+  return c.json(result.body);
+};
+
+authRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/mfa/factors',
+    tags: ['auth'],
+    summary: 'Enrol a new MFA factor (headless)',
+    ...auth,
+    request: { body: { content: { 'application/json': { schema: z.object({ factor_type: z.string().max(32), friendly_name: z.string().max(120).optional(), phone: z.string().max(32).optional(), issuer: z.string().max(120).optional() }) } } } },
+    responses: { 200: json(z.object({}).passthrough(), 'The enrolled factor'), ...errors(400, 401, 422) },
+  }),
+  async (c: any) => mfaForward(c, '/factors', 'POST', c.req.valid('json')),
+);
+
+authRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/mfa/factors/{factorId}/challenge',
+    tags: ['auth'],
+    summary: 'Start a challenge for an MFA factor (headless)',
+    ...auth,
+    request: {
+      params: z.object({ factorId: z.string().max(64) }),
+      body: { content: { 'application/json': { schema: z.object({ channel: z.string().max(32).optional() }) } }, required: false },
+    },
+    responses: { 200: json(z.object({}).passthrough(), 'The challenge'), ...errors(400, 401, 422) },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => ({}));
+    return mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}/challenge`, 'POST', body ?? {});
+  },
+);
+
+authRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/mfa/factors/{factorId}/verify',
+    tags: ['auth'],
+    summary: 'Verify an MFA challenge (headless)',
+    ...auth,
+    request: {
+      params: z.object({ factorId: z.string().max(64) }),
+      body: { content: { 'application/json': { schema: z.object({ challenge_id: z.string().max(64), code: z.string().max(16) }) } } },
+    },
+    responses: { 200: json(z.object({}).passthrough(), 'A session at aal2'), ...errors(400, 401, 422) },
+  }),
+  async (c: any) => mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}/verify`, 'POST', c.req.valid('json')),
+);
+
+authRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/mfa/factors/{factorId}',
+    tags: ['auth'],
+    summary: 'Remove an MFA factor (headless)',
+    ...auth,
+    request: { params: z.object({ factorId: z.string().max(64) }) },
+    responses: { 200: json(z.object({}).passthrough(), 'Removed'), ...errors(400, 401, 422) },
+  }),
+  async (c: any) => mfaForward(c, `/factors/${encodeURIComponent(c.req.param('factorId'))}`, 'DELETE'),
+);
+
 authRouter.openapi(
   createRoute({
     method: 'patch',

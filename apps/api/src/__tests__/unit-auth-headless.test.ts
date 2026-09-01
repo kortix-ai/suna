@@ -145,3 +145,44 @@ describe('/v1/auth headless routes', () => {
     expect(other.status).toBe(200);
   });
 });
+
+/**
+ * SSO — the last sign-in method with no headless route.
+ *
+ * `apps/web` calls `supabase.auth.signInWithSSO({ domain })` to discover
+ * whether an email domain has an enterprise IdP and get the redirect URL. It is
+ * one call site, but leaving it behind would keep a Supabase client on the
+ * sign-in page — which is the one page that must not need one.
+ *
+ * Unauthenticated by design: the caller is signing IN, so there is no bearer
+ * yet, and the answer ("this domain has an IdP at this URL") is not a secret —
+ * it is the same thing the IdP's own discovery endpoint publishes.
+ */
+describe('POST /v1/auth/sign-in/sso', () => {
+  test('asks GoTrue for the IdP redirect and returns the URL', async () => {
+    respond = () => Response.json({ url: 'https://idp.example/saml?RelayState=x' });
+    const response = await app().request('/v1/auth/sign-in/sso', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'essentia.example', redirect_to: 'https://app.example/auth/callback' }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ url: 'https://idp.example/saml?RelayState=x' });
+
+    const call = seen.at(-1)!;
+    expect(call.method).toBe('POST');
+    expect(call.url).toContain('/sso');
+    expect(call.body).toMatchObject({ domain: 'essentia.example' });
+  });
+
+  test('a domain with no provider is a clean refusal, not a 500', async () => {
+    respond = () => Response.json({ error: 'sso_provider_not_found', error_description: 'no provider' }, { status: 404 });
+    const response = await app().request('/v1/auth/sign-in/sso', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ domain: 'nobody.example' }),
+    });
+    expect(response.status).toBe(404);
+    expect((await response.json()).error).toBe('sso_provider_not_found');
+  });
+})

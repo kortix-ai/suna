@@ -82,7 +82,7 @@ function apiBase(opts?: AuthRequestOptions): string {
 
 async function call<T>(
   path: string,
-  init: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown; bearer?: string },
+  init: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; bearer?: string },
   opts?: AuthRequestOptions,
 ): Promise<T> {
   const fetchImpl = opts?.fetch ?? platformConfig().fetch ?? ((input: RequestInfo | URL, i?: RequestInit) => fetch(input, i));
@@ -187,6 +187,46 @@ export function updateUserMetadata(
   return call<{ user: AuthUser }>('/auth/user', { method: 'PATCH', body: input, bearer: accessToken }, opts);
 }
 
+/**
+ * Enterprise SSO discovery + redirect for an email domain.
+ *
+ * Unauthenticated: the caller is signing in, so there is no token yet. Answers
+ * 404 when the domain has no configured IdP, which is an ordinary outcome and
+ * not a failure — branch on it rather than treating it as an error.
+ */
+export function signInWithSso(input: { domain: string; redirect_to?: string }, opts?: AuthRequestOptions) {
+  return call<{ url: string }>('/auth/sign-in/sso', { body: input }, opts);
+}
+
+/**
+ * Multi-factor auth.
+ *
+ * Every call carries the user's own session bearer — a PAT is refused, because
+ * a machine credential has no second factor to step up with. Assurance level is
+ * deliberately absent: it is a claim (`aal`) inside the access token you are
+ * already holding, so reading it costs no round trip.
+ */
+export const authMfa = {
+  enroll: (
+    input: { factor_type: string; friendly_name?: string; phone?: string; issuer?: string },
+    accessToken: string,
+    opts?: AuthRequestOptions,
+  ) => call<Record<string, unknown>>('/auth/mfa/factors', { body: input, bearer: accessToken }, opts),
+
+  challenge: (factorId: string, input: { channel?: string } = {}, accessToken?: string, opts?: AuthRequestOptions) =>
+    call<Record<string, unknown>>(`/auth/mfa/factors/${encodeURIComponent(factorId)}/challenge`, { body: input, bearer: accessToken }, opts),
+
+  verify: (
+    factorId: string,
+    input: { challenge_id: string; code: string },
+    accessToken: string,
+    opts?: AuthRequestOptions,
+  ) => call<Record<string, unknown>>(`/auth/mfa/factors/${encodeURIComponent(factorId)}/verify`, { body: input, bearer: accessToken }, opts),
+
+  unenroll: (factorId: string, accessToken: string, opts?: AuthRequestOptions) =>
+    call<Record<string, unknown>>(`/auth/mfa/factors/${encodeURIComponent(factorId)}`, { method: 'DELETE', bearer: accessToken }, opts),
+};
+
 export function signOut(accessToken: string, input: { scope?: 'global' | 'local' | 'others' } = {}, opts?: AuthRequestOptions) {
   return call<{ ok: true }>('/auth/sign-out', { body: input, bearer: accessToken }, opts);
 }
@@ -207,6 +247,8 @@ export interface HeadlessAuthApi {
   resetPassword: typeof resetPassword;
   updatePassword: typeof updatePassword;
   updateUserMetadata: typeof updateUserMetadata;
+  signInWithSso: typeof signInWithSso;
+  mfa: typeof authMfa;
   user: typeof authUser;
   signOut: typeof signOut;
   /** A self-refreshing session store; wire `session.getToken` into `createKortix`. */
