@@ -282,14 +282,22 @@ flow(
     });
 
     await ctx.step(
-      'install-callback with installation_id but NO state param → 302 (not 500)',
+      'install-callback with installation_id but NO state param → 302 carrying the installation',
       async () => {
-        // The exact regression-guard for the bug the suite surfaced: an
-        // installation_id present but `state` entirely absent used to crash
-        // verifyGitHubAppInstallStatePayload (undefined.split). With the fix
-        // the function returns null on non-string input and the route
-        // redirects. A confused browser stripping query params, or a direct
-        // hit with only the installation_id, is the realistic shape.
+        // Two separate guards live here.
+        //
+        // The original one: an installation_id present but `state` entirely
+        // absent used to crash verifyGitHubAppInstallStatePayload
+        // (undefined.split). It must still redirect rather than 500.
+        //
+        // The second, added when this stopped being treated as an error at
+        // all: no state is the NORMAL shape when someone installs the App from
+        // its own GitHub page rather than through Kortix's Connect button —
+        // Kortix never minted a state for that flow. Calling it `github=error`
+        // read as a security failure and dropped the user at the site root,
+        // stranding an installation nobody had linked to an account. The
+        // redirect must now say an install arrived and carry the
+        // installation_id, which is the only thing that identifies it.
         const r = await ctx.client
           .as(ctx.P.ANON)
           .get('/v1/platform/github-app/install-callback', {
@@ -297,8 +305,15 @@ flow(
           });
         r.status(302);
         const loc = r.header('location') ?? '';
-        if (!loc.includes('github=error')) {
-          throw new Error(`expected redirect to carry github=error, got: ${loc}`);
+        if (!loc.includes('github=install_received') || !loc.includes('reason=direct_install')) {
+          throw new Error(
+            `expected redirect to report a direct install, got: ${loc}`,
+          );
+        }
+        if (!loc.includes('installation_id=12345')) {
+          throw new Error(
+            `expected the installation_id to survive the redirect, got: ${loc}`,
+          );
         }
       },
     );
