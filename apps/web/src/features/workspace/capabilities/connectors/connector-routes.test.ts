@@ -13,14 +13,13 @@ describe('connector detail routes', () => {
     );
   });
 
-  test.each(['discover', 'easy-connect', 'computer'] as const)(
-    'builds a %s catalogue route',
-    (source) => {
+  for (const source of ['discover', 'easy-connect', 'computer'] as const) {
+    test(`builds a ${source} catalogue route`, () => {
       expect(catalogConnectorHref('p1', { source, slug: 'GitHub Search' })).toBe(
         `/projects/p1/connectors/catalog/${source}/GitHub%20Search`,
       );
-    },
-  );
+    });
+  }
 
   test('accepts only supported catalogue sources', () => {
     expect(parseCatalogSource('discover')).toBe('discover');

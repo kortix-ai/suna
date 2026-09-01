@@ -1,6 +1,36 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectorSetupSteps, connectorTechnicalRows } from './connector-detail-copy';
+import {
+  connectorConnectionIsReady,
+  connectorSetupSteps,
+  connectorTechnicalRows,
+} from './connector-detail-copy';
+
+describe('connectorConnectionIsReady', () => {
+  const connector = {
+    provider: 'mcp' as const,
+    status: 'active' as const,
+    authorizationStrategy: 'project' as const,
+    authSecret: 'TOKEN',
+    secretSet: false,
+  };
+
+  test('treats active connectors with no authentication as ready', () => {
+    expect(connectorConnectionIsReady({ ...connector, authSecret: null }, false)).toBe(true);
+  });
+
+  test('requires the strategy-compatible connection for user authorization', () => {
+    const userConnector = { ...connector, authorizationStrategy: 'user' as const };
+    expect(connectorConnectionIsReady(userConnector, false)).toBe(false);
+    expect(connectorConnectionIsReady(userConnector, true)).toBe(true);
+  });
+
+  test('never reports disabled, errored, or unfinished OAuth connectors as ready', () => {
+    expect(connectorConnectionIsReady({ ...connector, status: 'disabled' }, true)).toBe(false);
+    expect(connectorConnectionIsReady({ ...connector, status: 'error' }, true)).toBe(false);
+    expect(connectorConnectionIsReady({ ...connector, status: 'needs_auth' }, true)).toBe(false);
+  });
+});
 
 describe('connectorSetupSteps', () => {
   test('keeps OAuth terminology for a managed project connector', () => {

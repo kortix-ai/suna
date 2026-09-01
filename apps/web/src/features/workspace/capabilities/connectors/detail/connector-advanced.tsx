@@ -3,25 +3,23 @@
 import { CaretDownIcon } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
-import {
-  Disclosure,
-  DisclosureContent,
-  DisclosureTrigger,
-} from '@/components/ui/disclosure';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 
 import type { ConnectorTechnicalRow } from './connector-detail-copy';
 
 export function ConnectorAdvanced({
   rows,
   headers = {},
+  defaultOpen = false,
 }: {
   rows: readonly ConnectorTechnicalRow[];
   headers?: Readonly<Record<string, string>>;
+  defaultOpen?: boolean;
 }) {
   if (rows.length === 0 && Object.keys(headers).length === 0) return null;
 
   return (
-    <Disclosure variant="outline">
+    <Disclosure variant="outline" defaultOpen={defaultOpen}>
       <DisclosureTrigger variant="outline">
         <Button
           variant="popover"
@@ -41,7 +39,7 @@ export function ConnectorAdvanced({
                   className="grid min-w-0 gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4"
                 >
                   <dt className="text-foreground text-base font-medium sm:text-sm">{row.label}</dt>
-                  <dd className="text-muted-foreground min-w-0 break-words font-mono text-base sm:text-sm">
+                  <dd className="text-muted-foreground min-w-0 font-mono text-base break-words sm:text-sm">
                     {row.value}
                   </dd>
                 </div>

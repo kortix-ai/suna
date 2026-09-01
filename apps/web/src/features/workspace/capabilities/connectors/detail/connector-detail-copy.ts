@@ -29,6 +29,22 @@ type ConnectorTechnicalInput = Pick<
 
 const MANAGED_PROVIDERS = new Set<AdminConnector['provider']>(['composio', 'pipedream']);
 
+type ConnectorReadinessInput = Pick<
+  AdminConnector,
+  'provider' | 'status' | 'authorizationStrategy' | 'authSecret' | 'secretSet'
+>;
+
+export function connectorConnectionIsReady(
+  connector: ConnectorReadinessInput,
+  hasStrategyConnection: boolean,
+): boolean {
+  if (connector.status !== 'active') return false;
+  if (connector.provider === 'composio') return hasStrategyConnection;
+  if (!connector.authSecret) return true;
+  if (connector.authorizationStrategy === 'user') return hasStrategyConnection;
+  return connector.secretSet;
+}
+
 function credentialLabel(type: ConnectorSetupInput['requestAuthType']): string {
   switch (type) {
     case 'bearer':

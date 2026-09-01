@@ -40,7 +40,9 @@ export function ConnectorDetailLayout({
 }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <main className={cn('mx-auto w-full max-w-3xl space-y-6 px-4 py-8 pb-20 lg:py-12', className)}>
+      <main
+        className={cn('mx-auto w-full max-w-3xl space-y-6 px-4 py-8 pb-20 lg:py-12', className)}
+      >
         <Button asChild variant="ghost" size="sm" className="-ml-2 w-fit gap-1.5">
           <Link href={backHref}>
             <ArrowLeftIcon className="size-3.5 shrink-0" />
@@ -91,10 +93,7 @@ export function ConnectorSetupGuide({ steps }: { steps: readonly ConnectorSetupS
       </h2>
       <ol role="list" className="bg-popover rounded-md border">
         {steps.map((step, index) => (
-          <li
-            key={step.title}
-            className="border-border flex gap-3 px-4 py-4 not-last:border-b"
-          >
+          <li key={step.title} className="border-border flex gap-3 px-4 py-4 not-last:border-b">
             <span className="bg-primary/6 text-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-medium tabular-nums">
               {index + 1}
             </span>
@@ -123,18 +122,20 @@ export function ConnectorDocumentationLinks({
         Documentation
       </h2>
       <div className="flex flex-wrap gap-2">
-        {links.map((link) => (
-          <Button key={`${link.label}:${link.href}`} asChild variant="outline" size="sm">
-            <a
-              href={link.href}
-              target={link.external ? '_blank' : undefined}
-              rel={link.external ? 'noreferrer' : undefined}
-            >
-              {link.label}
-              <ArrowSquareOutIcon className="size-3.5 shrink-0" />
-            </a>
-          </Button>
-        ))}
+        {links.map((link) =>
+          link.external ? (
+            <Button key={`${link.label}:${link.href}`} asChild variant="outline" size="sm">
+              <a href={link.href} target="_blank" rel="noreferrer">
+                {link.label}
+                <ArrowSquareOutIcon className="size-3.5 shrink-0" />
+              </a>
+            </Button>
+          ) : (
+            <Button key={`${link.label}:${link.href}`} asChild variant="outline" size="sm">
+              <Link href={link.href}>{link.label}</Link>
+            </Button>
+          ),
+        )}
       </div>
     </section>
   );

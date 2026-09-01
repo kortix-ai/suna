@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -10,7 +11,8 @@ export interface CatalogCardProps {
   description?: string | null;
   badges?: ReactNode;
   trailing?: ReactNode;
-  onClick: () => void;
+  href?: string;
+  onClick?: () => void;
   disabled?: boolean;
   className?: string;
   style?: CSSProperties;
@@ -22,26 +24,23 @@ export function CatalogCard({
   description,
   badges,
   trailing,
+  href,
   onClick,
   disabled,
   className,
   style,
 }: CatalogCardProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={style}
-      className={cn(
-        'bg-accent/50 group border-border/60  flex w-full items-start gap-3 rounded-md border px-4 py-3.5 text-left',
-        'transition-[background-color,border-color] duration-150 ease-out',
-        'hover:bg-accent hover:border-border',
-        'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
-        'disabled:pointer-events-none disabled:opacity-60',
-        className,
-      )}
-    >
+  const cardClassName = cn(
+    'bg-accent/50 group border-border/60 flex w-full items-start gap-3 rounded-md border px-4 py-3.5 text-left',
+    'transition-[background-color,border-color] duration-150 ease-out',
+    'hover:bg-accent hover:border-border',
+    'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
+    'disabled:pointer-events-none disabled:opacity-60',
+    disabled && 'pointer-events-none opacity-60',
+    className,
+  );
+  const content = (
+    <>
       {leading ? <span className="shrink-0">{leading}</span> : null}
       <span className="min-w-0 flex-1 space-y-1">
         <span className="flex items-center gap-1.5">
@@ -55,6 +54,29 @@ export function CatalogCard({
         ) : null}
       </span>
       {trailing ? <span className="shrink-0">{trailing}</span> : null}
+    </>
+  );
+
+  return href ? (
+    <Link
+      href={href}
+      onClick={onClick}
+      aria-disabled={disabled || undefined}
+      tabIndex={disabled ? -1 : undefined}
+      style={style}
+      className={cardClassName}
+    >
+      {content}
+    </Link>
+  ) : (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={style}
+      className={cardClassName}
+    >
+      {content}
     </button>
   );
 }

@@ -6,7 +6,7 @@ import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,6 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Modal,
   ModalBody,
@@ -33,8 +32,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
   connectorConnectionQueryKeys,
@@ -50,9 +49,6 @@ import {
 } from './connector-identity';
 import { providerLabel } from './provider-label';
 
-import { ComputersAddFlow } from '@/features/workspace/capabilities/connectors/add/computers-add-flow';
-import { DiscoverAddFlow } from '@/features/workspace/capabilities/connectors/add/discover-add-flow';
-import { EasyConnectAddFlow } from '@/features/workspace/capabilities/connectors/add/easy-connect-add-flow';
 import {
   connectedCatalogKeys,
   type CatalogEntry,
@@ -68,16 +64,16 @@ import { CatalogCard } from '@/features/workspace/capabilities/shared/catalog/ca
 import { catalogEmptyKind } from '@/features/workspace/capabilities/shared/catalog/catalog-empty';
 import { CatalogNoMatch } from '@/features/workspace/capabilities/shared/catalog/catalog-empty-state';
 import { CatalogGrid } from '@/features/workspace/capabilities/shared/catalog/catalog-grid';
-import { detailSelection } from '@/features/workspace/capabilities/shared/detail-selection';
 import {
   connectorDisplayName,
   connectorSummary,
   filterConnectors,
   type ConnectorScope,
 } from './connector-filter';
+import { catalogConnectorHref, connectedConnectorHref } from './connector-routes';
 
 /**
- * The two click-gated surfaces, split out of this route's initial chunk.
+ * The custom-connector form is split out of this route's initial chunk.
  *
  * Both reach `customize/sections/connectors-view.tsx` — 5,075 lines whose own
  * import list pulls `@pipedream/sdk/browser`, `HighlightedCode` (shiki),
@@ -87,24 +83,12 @@ import {
  * `connector-identity.tsx` was lifted out of that file for exactly this
  * reason; these were the two edges that put it straight back.
  *
- *   • `ConnectorModal` reaches it via `connector-accounts.tsx`
- *     (`ConnectionRoster`/`ConnectionSection`/…) and its own
- *     `SetCredentialModal`, and owns the only `usePipedreamConnect` call on
- *     the route.
- *   • `CustomConnectorForm` is the Add modal's body.
+ * `CustomConnectorForm` is the Add modal's body.
  *
  * Neither can render before a click, so neither needs to be parsed before
  * one. `ssr: false` keeps them out of the server bundle too — a closed modal
  * has no markup worth streaming.
  */
-const ConnectorModal = dynamic(
-  () =>
-    import('@/features/workspace/capabilities/connectors/detail/connector-modal').then(
-      (m) => m.ConnectorModal,
-    ),
-  { ssr: false },
-);
-
 const CustomConnectorForm = dynamic(
   () =>
     import('@/features/workspace/customize/sections/connectors-view').then(
@@ -249,13 +233,8 @@ type Panel = 'custom';
  * catalogue cards, Channels as catalogue entries alongside them. A modal is
  * the right home for a form; it was the wrong home for a catalogue.
  *
- * `?c=<slug>` still owns which connector's detail is open, and that is
- * load-bearing rather than cosmetic. `SetCredentialModal` starts an OAuth 2.0
- * authorization-code grant by sending the browser to the provider with
- * `success_redirect_uri = window.location.href` minus the two `oauth2*`
- * params. The user comes back through a full page load, so any React state
- * saying "this connector's modal was open" is gone — but `?c=` survives,
- * because the redirect URL is built from the current one.
+ * Connector cards open dedicated routes. Each route owns its OAuth return,
+ * account management, tools, settings, documentation, and technical details.
  */
 export function ConnectorsPage({ projectId }: { projectId: string }) {
   // `accountId` comes off the detail this page already loads. Without it
@@ -271,16 +250,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string>(ALL_CATEGORIES);
   const [panel, setPanel] = useState<Panel | null>(null);
-  const [catalogTarget, setCatalogTarget] = useState<CatalogEntry | null>(null);
-  const [pendingDetail, setPendingDetail] = useState<{
-    slug: string;
-    dataUpdatedAt: number;
-  } | null>(null);
 
   const search = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const detailSlug = search?.get('c') ?? null;
 
   const replaceParams = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -290,12 +263,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
     },
     [pathname, router, search],
-  );
-
-  const setDetailSlug = useCallback(
-    (slug: string | null) =>
-      replaceParams((params) => (slug ? params.set('c', slug) : params.delete('c'))),
-    [replaceParams],
   );
 
   // Which scope the strip is on, held in the URL rather than in state.
@@ -313,19 +280,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       replaceParams((params) =>
         next === 'discover' ? params.delete('scope') : params.set('scope', next),
       ),
-    [replaceParams],
-  );
-
-  // Both params in ONE `replaceParams`, and that is load-bearing. Each call
-  // builds its `URLSearchParams` from the `search` snapshot it closed over, so
-  // two calls in the same tick both start from the pre-change URL and the
-  // second `router.replace` silently discards the first's param.
-  const showConnected = useCallback(
-    (slug: string) =>
-      replaceParams((params) => {
-        params.set('scope', 'connected');
-        params.set('c', slug);
-      }),
     [replaceParams],
   );
 
@@ -353,7 +307,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   });
 
   const connectors = useMemo(() => connectorsQuery.data?.connectors ?? [], [connectorsQuery.data]);
-  const existingSlugs = useMemo(() => connectors.map((c) => c.slug), [connectors]);
   const connectedKeys = useMemo(() => connectedCatalogKeys(connectors), [connectors]);
 
   // What the card actually shows, handed to the search so typing a word the
@@ -395,24 +348,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
       void queryClient.invalidateQueries({ queryKey: key });
     }
   }, [authorizationQueryKeys, queryClient]);
-
-  // The OAuth 2.0 return leg. The provider bounces the user back here with
-  // `?oauth2=connected|error`. Confirm, refetch every authorization-derived
-  // query, then strip only the two `oauth2*` params — `?c=` is deliberately
-  // left in place, so the detail modal reopens on the connector just
-  // authorized.
-  const oauth2Result = search?.get('oauth2');
-  const oauth2Error = search?.get('oauth2_error');
-  useEffect(() => {
-    if (oauth2Result !== 'connected' && oauth2Result !== 'error') return;
-    if (oauth2Result === 'connected') successToast('OAuth 2.0 connection completed');
-    else errorToast(oauth2Error || 'OAuth 2.0 connection failed');
-    invalidate();
-    replaceParams((params) => {
-      params.delete('oauth2');
-      params.delete('oauth2_error');
-    });
-  }, [invalidate, oauth2Error, oauth2Result, replaceParams]);
 
   // Both queries gate what this page can offer, so both have to be able to
   // report a failure and both have to be retried.
@@ -526,57 +461,10 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
     [connectors, query, describeConnector],
   );
 
-  // Looked up against the unfiltered list, never `filtered` — searching or
-  // switching scope while the modal is open must not yank it shut.
-  //
-  // `detailSelection` then keeps the modal's `open` on `?c=` alone. Deriving
-  // it from this lookup is what made the modal animate itself open a beat
-  // after an OAuth return (list still loading, so the lookup missed) and
-  // vanish mid-edit whenever one of `invalidate()`'s four refetches failed.
-  const detail = detailSelection({
-    selection: detailSlug,
-    record: connectors.find((c) => c.slug === detailSlug),
-    // A catalogue create returns before the invalidated connector list has
-    // refetched. Its previous successful result is stale but still reports
-    // `isSuccess`, so treating it as authoritative closes the detail we just
-    // opened. Wait until one newer successful list result has landed.
-    isSuccess:
-      connectorsQuery.isSuccess &&
-      (!pendingDetail ||
-        pendingDetail.slug !== detailSlug ||
-        connectorsQuery.dataUpdatedAt > pendingDetail.dataUpdatedAt),
-  });
-
-  // The one honest auto-close: the list came back, and this connector is not
-  // in it. That is a deletion — by this user in another tab, or by a teammate.
-  useEffect(() => {
-    if (detail.isMissing) setDetailSlug(null);
-  }, [detail.isMissing, setDetailSlug]);
-
-  // The detail chunk is lazy (see the `dynamic` block above), so it must not
-  // mount until something is selected — otherwise every page load pays for it.
-  // Once mounted it STAYS mounted: unmounting on close would cut Radix's exit
-  // animation, and the chunk is already in memory by then anyway.
-  // Seeded from the FIRST render, not an effect: `?c=<slug>` is already in the
-  // URL on a deep link and on every OAuth return, and mounting a frame later
-  // would put the modal on screen one paint after the page behind it.
-  const [detailMounted, setDetailMounted] = useState(() => detailSlug !== null);
-  useEffect(() => {
-    if (detail.open) setDetailMounted(true);
-  }, [detail.open]);
-
   const emptyKind = catalogEmptyKind(connectors.length, filtered.length);
-
-  const onCatalogAdded = useCallback(
-    (slug?: string) => {
-      setCatalogTarget(null);
-      if (slug) {
-        setPendingDetail({ slug, dataUpdatedAt: connectorsQuery.dataUpdatedAt });
-        showConnected(slug);
-      }
-      invalidate();
-    },
-    [connectorsQuery.dataUpdatedAt, invalidate, showConnected],
+  const getCatalogHref = useCallback(
+    (entry: CatalogEntry) => catalogConnectorHref(projectId, entry),
+    [projectId],
   );
 
   return (
@@ -694,7 +582,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           mode={scope === 'discover' ? 'sectioned' : 'flat'}
           category={category}
           onCategoryChange={setCategory}
-          onSelect={setCatalogTarget}
+          getHref={getCatalogHref}
           emptyTitle="Catalogue unavailable"
           emptyDescription="The connector catalogue returned nothing. Try again shortly."
         />
@@ -742,41 +630,11 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                   <ConnectorConnectedMark />
                 ) : undefined
               }
-              onClick={() => setDetailSlug(connector.slug)}
+              href={connectedConnectorHref(projectId, connector.slug)}
             />
           ))}
         </CatalogGrid>
       )}
-
-      {/* One target, two add flows. `CatalogEntry` is a discriminated union, so
-          the source that produced the card decides which flow opens — a
-          Discover entry cannot be handed to Pipedream's connection modal, and
-          vice versa. Each receives `null` unless the target is its own kind,
-          which is also what keeps them closed. */}
-      <DiscoverAddFlow
-        projectId={projectId}
-        connector={catalogTarget?.source === 'discover' ? catalogTarget.connector : null}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
-      />
-      <EasyConnectAddFlow
-        projectId={projectId}
-        app={catalogTarget?.source === 'easy-connect' ? catalogTarget.app : null}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
-      />
-      <ComputersAddFlow
-        projectId={projectId}
-        open={catalogTarget?.source === 'computer'}
-        existingSlugs={existingSlugs}
-        canWrite={canWrite}
-        onClose={() => setCatalogTarget(null)}
-        onAdded={onCatalogAdded}
-      />
 
       {/* Custom upload only. `CustomConnectorForm` prints no heading of its
           own, so unlike the `AddAppPanel` this replaced it gets a real visible
@@ -801,7 +659,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
                 invalidate();
                 if (slug) {
                   setPanel(null);
-                  showConnected(slug);
+                  router.push(connectedConnectorHref(projectId, slug));
                 }
               }}
             />
@@ -830,22 +688,6 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
           </SheetBody>
         </SheetContent>
       </Sheet>
-
-      {detailMounted ? (
-        <ConnectorModal
-          projectId={projectId}
-          connector={detail.record}
-          canWrite={canWrite}
-          open={detail.open}
-          isResolving={detail.isResolving}
-          onOpenChange={(open) => !open && setDetailSlug(null)}
-          onChanged={invalidate}
-          onRemoved={() => {
-            invalidate();
-            setDetailSlug(null);
-          }}
-        />
-      ) : null}
     </CapabilityPageShell>
   );
 }
