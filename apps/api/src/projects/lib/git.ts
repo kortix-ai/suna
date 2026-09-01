@@ -503,9 +503,27 @@ export async function hasServerManagedGitAuth(project: ProjectRow): Promise<bool
 }
 
 
+/**
+ * Why `resolveProjectGitAuth` could not produce a credential. Only set when
+ * `authSource` is `'none'`. `installation_*` mean the ACCOUNT has to act (the
+ * GitHub App is missing, or no longer mints tokens for the stored
+ * installation — which is what happens when the App identity itself changes);
+ * everything else is a server-side or data problem the account cannot fix by
+ * reconnecting. `resolveProjectGitConnection` turns the first kind into a
+ * reconnect prompt.
+ */
+export type GitAuthUnavailableReason =
+  | 'installation_missing'
+  | 'installation_unusable'
+  | 'installation_mismatch'
+  | 'repo_url_unparseable'
+  | 'managed_git_unavailable'
+  | 'no_credential';
+
 export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
+  reason?: GitAuthUnavailableReason;
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
 
@@ -544,39 +562,55 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         );
       }
     }
-    return { authSource: 'none' };
+    return { authSource: 'none', reason: 'managed_git_unavailable' };
   }
 
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
-    if (!repo) return { authSource: 'none' };
+    if (!repo) return { authSource: 'none', reason: 'repo_url_unparseable' };
     const installation = remote.installationId
       ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
       : (await listAccountGitHubInstallations(project.accountId)).find(
           (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
         ) ?? null;
-    if (!installation) return { authSource: 'none' };
+    if (!installation) return { authSource: 'none', reason: 'installation_missing' };
     if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-      return { authSource: 'none' };
+      return { authSource: 'none', reason: 'installation_mismatch' };
     }
     if (remote.repoOwner && remote.repoOwner.toLowerCase() !== repo.owner.toLowerCase()) {
-      return { authSource: 'none' };
+      return { authSource: 'none', reason: 'installation_mismatch' };
     }
     if (remote.repoName && remote.repoName.toLowerCase() !== repo.repo.toLowerCase()) {
-      return { authSource: 'none' };
+      return { authSource: 'none', reason: 'installation_mismatch' };
     }
     // Scope the BYO token to the single linked repo too.
-    const token = await createInstallationToken(installation.installationId, [repo.repo]);
-    return {
-      auth: {
-        token: token.token,
-        source: 'app_installation',
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType,
-        installationId: installation.installationId,
-      },
-      authSource: 'app_installation',
-    };
+    //
+    // Minting can fail for a reason the account can fix: GitHub 404s when the
+    // App JWT does not own this installation, which is exactly what a stored
+    // installation looks like after the App identity changes, and it also 404s
+    // once someone uninstalls the App. Without this catch that failure THREW
+    // out of a routine auth resolve, so callers saw an opaque error instead of
+    // "reconnect GitHub". Degrade to a named reason and let
+    // resolveProjectGitConnection turn it into a prompt.
+    try {
+      const token = await createInstallationToken(installation.installationId, [repo.repo]);
+      return {
+        auth: {
+          token: token.token,
+          source: 'app_installation',
+          owner: installation.ownerLogin,
+          ownerType: installation.ownerType,
+          installationId: installation.installationId,
+        },
+        authSource: 'app_installation',
+      };
+    } catch (err) {
+      console.warn(
+        `[projects] GitHub App installation ${installation.installationId} no longer mints tokens for ${project.projectId}:`,
+        err,
+      );
+      return { authSource: 'none', reason: 'installation_unusable' };
+    }
   }
 
   if (remote.authMethod === 'project_credential') {
@@ -618,7 +652,46 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     };
   }
 
-  return { authSource: 'none' };
+  return { authSource: 'none', reason: 'no_credential' };
+}
+
+/** What the client should show for a project's git connection. */
+export type ProjectGitConnectionState = {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: GitAuthUnavailableReason;
+  installUrl?: string | null;
+};
+
+/**
+ * Answer "is this project's git connection usable, and if not can the account
+ * fix it themselves?" — the read behind the Reconnect GitHub prompt.
+ *
+ * Only the two `installation_*` reasons are the account's to fix, and only
+ * those return an install URL. A managed-git or repo-URL failure is ours, so
+ * it reports `unavailable`: telling someone to reconnect would send them round
+ * a loop that cannot help.
+ */
+export async function resolveProjectGitConnection(
+  project: ProjectRow,
+  userId: string,
+): Promise<ProjectGitConnectionState> {
+  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+  if (!remote.upstreamUrl && !project.repoUrl) return { state: 'not_connected' };
+
+  const resolved = await resolveProjectGitAuth(project);
+  if (resolved.authSource !== 'none') return { state: 'connected' };
+
+  const reconnectable =
+    resolved.reason === 'installation_missing' ||
+    resolved.reason === 'installation_unusable' ||
+    resolved.reason === 'installation_mismatch';
+  if (!reconnectable) return { state: 'unavailable', reason: resolved.reason };
+
+  return {
+    state: 'reconnect_required',
+    reason: resolved.reason,
+    installUrl: await createGitHubInstallationInstallUrl(project.accountId, userId),
+  };
 }
 
 
