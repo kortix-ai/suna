@@ -86,8 +86,11 @@ let legacyPartUpdates: Array<{
   body: Record<string, unknown>;
 }> = [];
 let legacyRepairMarks = 0;
+let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
+let promptDeduplicationsRemaining = 0;
+let canonicalAcceptanceRecords: Array<{ commandId: string; sessionId: string }> = [];
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
@@ -170,6 +173,10 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
       return Response.json({ ok: true });
     }
     capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+    if (promptDeduplicationsRemaining > 0) {
+      promptDeduplicationsRemaining -= 1;
+      return Response.json({ deduplicated: true });
+    }
     if (promptFailuresRemaining > 0) {
       promptFailuresRemaining -= 1;
       return new Response(null, { status: 500 });
@@ -198,12 +205,20 @@ mock.module('../store', () => ({
   },
   markLegacyInlineAttachmentsRepaired: async () => {
     legacyRepairMarks += 1;
+    events.push('legacy-marker');
+    if (legacyRepairMarkerFailuresRemaining > 0) {
+      legacyRepairMarkerFailuresRemaining -= 1;
+      throw new Error('marker write failed');
+    }
     if (sessionRow) {
       sessionRow.metadata = {
         ...((sessionRow.metadata as Record<string, unknown> | null) ?? {}),
         legacy_inline_attachments_repaired_at: '2026-09-02T00:00:00.000Z',
       };
     }
+  },
+  recordCanonicalPendingFirstAcceptance: async (commandId: string, sessionId: string) => {
+    canonicalAcceptanceRecords.push({ commandId, sessionId });
   },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
@@ -234,6 +249,7 @@ mock.module('../store', () => ({
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
   markCommandSucceeded: async (commandId: string, result: unknown) => {
+    events.push('command-succeeded');
     succeededCalls.push({ commandId, result });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
@@ -363,8 +379,11 @@ beforeEach(() => {
   legacyMessageReads = [];
   legacyPartUpdates = [];
   legacyRepairMarks = 0;
+  legacyRepairMarkerFailuresRemaining = 0;
   legacyPendingLoads = 0;
   promptFailuresRemaining = 0;
+  promptDeduplicationsRemaining = 0;
+  canonicalAcceptanceRecords = [];
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
     // The staged-revert guard reads the session row; the re-mint and the
@@ -596,6 +615,154 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(legacyPartUpdates).toEqual([]);
     expect(legacyPendingLoads).toBe(0);
     expect(legacyRepairMarks).toBe(1);
+  });
+
+  test('an answered canonical pending-first retry restores its failed marker without resending', async () => {
+    sessionRow!.metadata = {
+      pending_prompt: { attachment_names: ['README.md'] },
+    };
+    const firstPayload = {
+      text: 'Inspect this.',
+      clientMessageId: 'q_first',
+      wireMessageId: SUBMITTED_WIRE_ID,
+      parts: [
+        { type: 'text' as const, text: 'Inspect this.' },
+        {
+          type: 'file' as const,
+          mime: 'text/markdown',
+          filename: 'README.md',
+          url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+        },
+      ],
+    };
+    legacyRepairMarkerFailuresRemaining = 1;
+
+    const first = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-first',
+        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+        payload: firstPayload,
+      }),
+    );
+
+    expect(first).toBe('queued');
+    expect(capturedBodies).toHaveLength(1);
+    expect(canonicalAcceptanceRecords).toEqual([
+      { commandId: 'command-first', sessionId: SESSION_ID },
+    ]);
+    expect(legacyRepairMarks).toBe(1);
+    expect(sessionRow!.metadata).not.toHaveProperty(
+      'legacy_inline_attachments_repaired_at',
+    );
+
+    transcript = [
+      { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
+      {
+        info: {
+          id: NEWER_TRANSCRIPT_ID,
+          role: 'assistant',
+          parentID: SUBMITTED_WIRE_ID,
+          time: { completed: NOW_MS - 30_000 },
+        },
+      },
+    ];
+    const retry = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-first',
+        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+        payload: {
+          ...firstPayload,
+          remintOnDelivery: true,
+          canonicalInlineAttachmentsAccepted: true,
+        },
+      }),
+    );
+
+    expect(retry).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(1);
+    expect(legacyRepairMarks).toBe(2);
+    expect(sessionRow!.metadata).toHaveProperty(
+      'legacy_inline_attachments_repaired_at',
+    );
+    expect(events.slice(-2)).toEqual(['legacy-marker', 'command-succeeded']);
+    expect(succeededCalls).toEqual([
+      {
+        commandId: 'command-first',
+        result: { status: 'skipped', reason: 'already_answered' },
+      },
+    ]);
+  });
+
+  test('a deduplicated legacy pending-first retry does not suppress later repair', async () => {
+    sessionRow!.metadata = {
+      pending_prompt: { attachment_names: ['bundle.zip'] },
+    };
+    const legacyParts = [
+      { type: 'text' as const, text: 'Inspect this.' },
+      {
+        type: 'file' as const,
+        mime: 'application/zip',
+        filename: 'bundle.zip',
+        url: 'data:application/zip;base64,UEsDBA==',
+      },
+    ];
+    legacyPendingFirst = {
+      commandId: 'command-first',
+      deliveredMessageIds: [SUBMITTED_WIRE_ID],
+      parts: legacyParts,
+    };
+    legacyRuntimeMessages[SUBMITTED_WIRE_ID] = {
+      info: { id: SUBMITTED_WIRE_ID, role: 'user' },
+      parts: [
+        { id: 'part-text', type: 'text', text: 'Inspect this.' },
+        {
+          id: 'part-zip',
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    };
+    promptDeduplicationsRemaining = 1;
+
+    const legacyRetry = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-first',
+        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+        payload: {
+          text: 'Inspect this.',
+          clientMessageId: 'q_first',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          deliveryAttempt: 1,
+          parts: legacyParts,
+        },
+      }),
+    );
+    const later = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-later',
+        idempotencyKey: `prompt:${SESSION_ID}:q_later`,
+      }),
+    );
+
+    expect([legacyRetry, later]).toEqual(['succeeded', 'succeeded']);
+    expect(canonicalAcceptanceRecords).toEqual([]);
+    expect(legacyRepairMarks).toBe(1);
+    expect(legacyPartUpdates).toEqual([
+      {
+        method: 'PATCH',
+        path: `/session/${OC_SESSION_ID}/message/${SUBMITTED_WIRE_ID}/part/part-zip`,
+        query: '?directory=%2Fworkspace',
+        body: {
+          id: 'part-zip',
+          sessionID: OC_SESSION_ID,
+          messageID: SUBMITTED_WIRE_ID,
+          type: 'text',
+          text: expect.stringContaining('filename="bundle.zip"'),
+        },
+      },
+    ]);
   });
 
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {

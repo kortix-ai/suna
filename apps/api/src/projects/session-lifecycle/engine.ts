@@ -490,7 +490,7 @@ export async function continueSession(
   };
   const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<boolean> => {
     await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
-    const delivered = await postPrompt(
+    const delivery = await postPrompt(
       externalId,
       opencodeSessionId,
       text,
@@ -504,12 +504,21 @@ export async function continueSession(
         materializationKey: command.materializationKey,
       },
     );
-    if (delivered && command.isPendingFirstPrompt === true) {
+    if (delivery === 'accepted' && command.isPendingFirstPrompt === true) {
       // This first message used the canonical command-id path. The marker keeps
       // later prompts from treating its materialized text parts as legacy data URLs.
+      // Persist that acceptance first so a failed marker write is recoverable
+      // without another prompt POST.
+      if (!command.materializationKey) {
+        throw new Error('canonical pending-first acceptance is missing its command id');
+      }
+      await lifecycleStore.recordCanonicalPendingFirstAcceptance(
+        command.materializationKey,
+        sessionId,
+      );
       await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
     }
-    return delivered;
+    return delivery !== 'failed';
   };
 
   // Server-side delivery is the first prompt for sessions created without one.
@@ -1471,6 +1480,24 @@ export async function executeQueuedContinue(
     });
     return 'failed';
   }
+  const isPendingFirstPrompt =
+    row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
+
+  // A fresh canonical prompt was accepted, but its session-marker write failed.
+  // Restore the marker before admission or transcript guards can requeue or
+  // close this row. The durable acceptance fact is never set by proxy dedupe.
+  if (isPendingFirstPrompt && payload.canonicalInlineAttachmentsAccepted === true) {
+    try {
+      await lifecycleStore.markLegacyInlineAttachmentsRepaired(row.sessionId);
+    } catch (err) {
+      await markCommandFailed(
+        row.commandId,
+        `canonical attachment marker recovery failed: ${err instanceof Error ? err.message : String(err)}`,
+        { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
+      );
+      return 'queued';
+    }
+  }
 
   // ADMISSION FIRST, before any side effect. A prompt that arrives behind an
   // older prompt of its own session — or beside a sibling already on the wire —
@@ -1758,8 +1785,7 @@ export async function executeQueuedContinue(
           ...(payload.overrides ? { overrides: payload.overrides } : {}),
           ...(wireMessageId ? { wireMessageId } : {}),
           materializationKey: row.commandId,
-          isPendingFirstPrompt:
-            row.idempotencyKey === `prompt:${row.sessionId}:pending-first`,
+          isPendingFirstPrompt,
         },
         // F2: stable across every drain-and-retry of THIS row — see
         // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
@@ -2304,7 +2330,7 @@ async function postPrompt(
     wireMessageId?: string;
     materializationKey?: string;
   },
-): Promise<boolean> {
+): Promise<'accepted' | 'deduplicated' | 'failed'> {
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const deliverableParts = prompt?.materializationKey
@@ -2383,15 +2409,23 @@ async function postPrompt(
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
     );
-    if (res.ok || res.status === 204) return true;
+    if (res.ok || res.status === 204) {
+      if (res.status === 200) {
+        const result = (await res.json().catch(() => null)) as {
+          deduplicated?: unknown;
+        } | null;
+        if (result?.deduplicated === true) return 'deduplicated';
+      }
+      return 'accepted';
+    }
     if (res.status !== 404)
       console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
-    return false;
+    return 'failed';
   } catch (err) {
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
     console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
-    return false;
+    return 'failed';
   }
 }
