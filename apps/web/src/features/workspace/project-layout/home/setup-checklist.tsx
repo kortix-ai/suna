@@ -3,7 +3,7 @@
 import { CheckCircleIcon, CircleIcon, XIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useSyncExternalStore, type ReactNode } from 'react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,14 @@ import { useSlackInstall } from '@/hooks/channels/use-channels-installations';
 import { cn } from '@/lib/utils';
 import { getProjectDetail, listConnectors, listProjectAccess } from '@kortix/sdk';
 import { contract, qk, useProjectTriggers } from '@kortix/sdk/react';
+import {
+  BAND_HEADER_CLASS,
+  BAND_LIST_CLASS,
+  BAND_PANEL_CLASS,
+  BAND_ROW_CLASS,
+  BAND_ROW_HOVER_CLASS,
+  BAND_TITLE_CLASS,
+} from './band';
 import {
   CHECKLIST_HIDDEN_UNKNOWN,
   deriveSetupCompletion,
@@ -90,11 +98,19 @@ export interface ProjectSetupStep {
  *
  * Three moments, and nothing else moves:
  *
- * - **The band arriving.** It mounts a tick after the composer, so the column
- *   re-centres under it. `height: 0 → auto` on the clipper turns that jump
- *   into a glide; the content fades and rises 8px inside it.
+ * - **The band arriving.** It mounts a tick after the composer. `height: 0 →
+ *   auto` on the clipper grows the band into place; the content fades and
+ *   rises 8px inside it.
  * - **The band leaving.** Same collapse in reverse at 80% of the duration, so
  *   dismissing recovers the space smoothly instead of snapping.
+ *
+ *   Both also smooth the COLUMN: `welcome-body.tsx` centres it, so a change in
+ *   this band's height moves the composer. That used to be a jump on dismissal
+ *   — the band vanished and the column snapped to a new centre. It is a much
+ *   smaller move now, because this slot is never empty: the starter prompts
+ *   take it over the moment the checklist gives it up (`fallback` below), so
+ *   the swap is one band's height for another's rather than a band's height
+ *   for nothing.
  * - **A step ticking.** `AnimatePresence initial={false}` — the check springs
  *   in only when a step is COMPLETED while you are looking, never on mount.
  *   Six checks popping on every paint would be noise; one popping when you
@@ -106,10 +122,26 @@ export interface ProjectSetupStep {
 export function ProjectSetupChecklist({
   projectId,
   steps,
+  fallback,
   className,
 }: {
   projectId: string;
   steps: ProjectSetupStep[];
+  /**
+   * What occupies this slot when the checklist has nothing to say —
+   * `StarterPromptBand` in practice.
+   *
+   * It is rendered HERE rather than chosen by a parent because this component
+   * is the only thing that knows the answer: "is the checklist showing" is
+   * `settled && !allDone`, and `settled` folds the dismissal store together
+   * with five probes that live in this function body. Reporting that upward
+   * would mean a callback, parent state and an extra render to say something
+   * the slot's own owner already knows.
+   *
+   * Optional: a host that passes nothing gets an empty slot, which is what the
+   * instant session shell wants.
+   */
+  fallback?: ReactNode;
   className?: string;
 }) {
   const reduceMotion = useReducedMotion();
@@ -199,9 +231,28 @@ export function ProjectSetupChecklist({
   // `settled`, so a finished checklist never flashes on its way to hidden.
   const open = settled && !allDone;
 
+  /**
+   * The answer is KNOWN — which is not the same as `!open`.
+   *
+   * There are two windows where the checklist is not showing and we do not yet
+   * know whether it will: before the client has read the dismissal store
+   * (`hidden === null`, which is every server render and the first client
+   * frame), and while the probes above are still in flight. Treating either as
+   * "no checklist" would paint the fallback and then shove it out a beat
+   * later — the exact shuffle the `settled` gate above was written to stop.
+   *
+   * `hidden === true` short-circuits the probes on purpose: a dismissed
+   * checklist runs none of them, so waiting on `settled` there would leave the
+   * slot empty forever for the users who see the fallback most.
+   */
+  const resolved = hidden === true || settled;
+
   return (
-    <AnimatePresence>
-      {open && (
+    // `mode="wait"`, so the band's height collapse finishes before the
+    // fallback lands. Overlapping them would cross-fade one panel through
+    // another at two different heights.
+    <AnimatePresence mode="wait">
+      {open ? (
         // The clipper. It owns the height so the column re-centres smoothly;
         // it owns no padding or background, so a collapsed band is genuinely
         // zero pixels. Under reduced motion the height is left alone entirely
@@ -228,10 +279,10 @@ export function ProjectSetupChecklist({
             // Flat on the page, the way the reference lays it out — no border,
             // no card. The translucent wash is the one concession: this sits
             // over the animated wallpaper, and legibility outranks flatness.
-            className="bg-background/70 w-full rounded-md pb-2 backdrop-blur-sm"
+            className={BAND_PANEL_CLASS}
           >
-            <div className="flex items-center gap-2 py-2 pr-2 pl-4">
-              <h2 className="text-foreground flex-1 text-sm font-medium">Get started</h2>
+            <div className={BAND_HEADER_CLASS}>
+              <h2 className={BAND_TITLE_CLASS}>Get started</h2>
 
               {/* No presence gate: the band only exists once `settled` is
                   true, so the count is a fact from the first frame it is
@@ -269,14 +320,30 @@ export function ProjectSetupChecklist({
                 refetch. That one is a `layout` move, so the row slides down
                 into the done block instead of teleporting out from under the
                 check that just ticked. */}
-            <div className="flex flex-col px-2">
+            <div className={BAND_LIST_CLASS}>
               {orderStepsOpenFirst(steps, done).map((step) => (
                 <SetupChecklistRow key={step.key} step={step} done={done[step.key]} />
               ))}
             </div>
           </m.section>
         </m.div>
-      )}
+      ) : resolved && fallback ? (
+        // `initial={false}` — never an enter animation, on first paint or on
+        // the swap after a dismissal. The fallback is the hero's resting state
+        // and is seen on every project open; `StarterPromptBand`'s own header
+        // explains why motion there is a cost with no information in it. The
+        // exit exists only for the rare return trip, when a completed step is
+        // undone and the checklist comes back.
+        <m.div
+          key="project-home-band-fallback"
+          initial={false}
+          animate={{ opacity: 1 }}
+          exit={reduceMotion ? { opacity: 0 } : { opacity: 0, transition: BAND_EXIT }}
+          className={cn('w-full', className)}
+        >
+          {fallback}
+        </m.div>
+      ) : null}
     </AnimatePresence>
   );
 }
@@ -346,17 +413,13 @@ function SetupChecklistRow({ step, done }: { step: ProjectSetupStep; done: boole
   // No colour branch here: the indicator and the label each own their own
   // done state above. A `text-muted-foreground` on the row was dead the moment
   // the label started setting `text-kortix-blue` itself.
-  const rowClass = 'flex items-center gap-2 rounded-md py-2 pr-4 pl-2.5';
+  const rowClass = BAND_ROW_CLASS;
 
   // Only "Invite your team" can lack a destination, and only while
   // `account_id` is in flight. The row keeps its place and its height rather
   // than reflowing the list.
   const row = step.href ? (
-    <HoverPrefetchLink
-      href={step.href}
-      prefetch
-      className={cn(rowClass, 'hover:bg-hover transition-colors duration-fast ease-out')}
-    >
+    <HoverPrefetchLink href={step.href} prefetch className={cn(rowClass, BAND_ROW_HOVER_CLASS)}>
       {body}
     </HoverPrefetchLink>
   ) : (

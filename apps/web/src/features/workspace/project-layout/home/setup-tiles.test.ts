@@ -85,7 +85,29 @@ describe('setup tiles are IAM-gated', () => {
       'tile.actions.every((action) => caps[action]?.allowed !== false)',
     );
     expect(sectionsSource).not.toContain('disabled');
-    expect(sectionsSource).toContain('if (tiles.length === 0) return null;');
+  });
+
+  // The all-denied branch used to be a bare `return null`. It hands the slot to
+  // the fallback now — `StarterPromptBand`, via `welcome-body.tsx` — because a
+  // person who can see none of the setup steps never gets a checklist and would
+  // otherwise stare at an empty slot forever. `null` is still the answer when
+  // the host passes no fallback, which is what keeps the instant session shell
+  // rendering exactly as it did.
+  //
+  // Both halves asserted, so neither can be dropped: losing the fallback would
+  // silently empty the slot, and losing the `null` would reserve a gap in a
+  // column that has nothing to put in it.
+  test('all steps denied hands the slot to the fallback, or renders nothing without one', () => {
+    expect(sectionsSource).toContain(
+      'if (tiles.length === 0) return fallback ? <>{fallback}</> : null;',
+    );
+  });
+
+  // The checklist owns the swap for every OTHER route to "no checklist"
+  // (dismissed, all done, still probing) — see `ProjectSetupChecklist.fallback`
+  // — so the same node has to reach it, not just the early return above.
+  test('the fallback is forwarded to the checklist as well', () => {
+    expect(sectionsSource).toContain('fallback={fallback}');
   });
 });
 

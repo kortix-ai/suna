@@ -7,7 +7,7 @@ import { IdentityConfetti } from '@/components/ui/identity-confetti';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { useProjectIcon, useProjectName } from '@kortix/sdk/react';
 import { ProjectHomeSections } from './project-home-sections';
-import { StarterPromptChips } from './starter-prompt-chips';
+import { StarterPromptBand } from './starter-prompt-band';
 
 /**
  * The project-home empty state: ONE centred column.
@@ -22,10 +22,33 @@ import { StarterPromptChips } from './starter-prompt-chips';
  * thing to do. One column with one gap gives the checklist a reason to be
  * where it is, and gives both blocks the same left and right edges.
  *
- * The trade this makes, deliberately: the composer's vertical position now
- * depends on whether the checklist is present. That is why the checklist
- * animates its height in and out rather than appearing — see
- * `ProjectSetupChecklist`.
+ * ## Where the column sits: centred
+ *
+ * `m-auto`. Plainly centred on both axes, which is where it started.
+ *
+ * It was briefly centred in the TOP HALF instead, against a half-height
+ * ballast element, to stop the column sliding when the setup checklist was
+ * dismissed. That was the wrong fix for two reasons, and it is worth writing
+ * down so nobody reaches for it again:
+ *
+ * 1. It solved a problem that no longer exists. The slot below the composer is
+ *    now ALWAYS occupied — the checklist while there are open steps, the
+ *    starter prompts once there are not (`ProjectHomeSections`). The column's
+ *    height barely changes across that swap, so the slide it was compensating
+ *    for is gone at the source.
+ * 2. Centring inside a half is only distinguishable from pinning to the top
+ *    while the content is much shorter than that half. With the starter band
+ *    in the slot the content is nearly as tall as the top half, so the maths
+ *    put it flush against the top edge with the whole bottom half left empty.
+ *    A rule that degrades into "jammed at the top" the moment content grows is
+ *    not a layout rule, it is a coincidence.
+ *
+ * `shrink-0` stays. It has nothing to do with the centring: it stops the
+ * column being squashed when the container is shorter than the content — a
+ * phone in landscape, or the on-screen keyboard halving the viewport — so the
+ * overflow scrolls instead. Auto margins resolve to zero once free space is
+ * negative, so the column simply starts at the top and scrolls, with nothing
+ * unreachable above it.
  *
  * Shared by the project index page AND the instant session shell's empty
  * state, so a brand-new session opens onto the identical surface.
@@ -79,8 +102,20 @@ export function ProjectHomeWelcomeBody({
 
         `gap-10` has exactly two children to separate: the ask group and the
         checklist. Every gap inside each group is owned by that group.
+
+        `m-auto` — centred on both axes. See this component's header for the
+        half-height ballast this replaced, and why that approach collapsed into
+        "pinned to the top" the moment the slot below always had content in
+        it.
+
+        `py-8` is symmetric, so it cannot bias the centre. It is breathing room
+        for the case where the container is short and the auto margins have
+        gone to zero.
+
+        `shrink-0` so a short container scrolls the column rather than
+        compressing it.
       */}
-      <div className="m-auto flex w-full max-w-3xl flex-col gap-10 px-2 py-8 sm:px-4">
+      <div className="m-auto flex w-full max-w-3xl shrink-0 flex-col gap-10 py-8 sm:px-4">
         <div className="flex w-full flex-col gap-6">
           {/*
             `w-full` with no `max-w`: the line runs the full column and breaks
@@ -98,7 +133,7 @@ export function ProjectHomeWelcomeBody({
             centred block, and this one is ragged-right by design; pretty just
             keeps the last line off a single orphan word.
           */}
-          <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-pretty max-sm:text-2xl">
+          <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
             Give{' '}
             {/*
               A real <button>, not a <span> with an onClick: this is the only
@@ -159,15 +194,26 @@ export function ProjectHomeWelcomeBody({
             />
           ) : null}
 
-          {composer || onPickSuggestion ? (
-            <div className="flex w-full flex-col gap-4">
-              {composer}
-              {/*{onPickSuggestion ? <StarterPromptChips onPick={onPickSuggestion} /> : null}*/}
-            </div>
-          ) : null}
+          {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
         </div>
 
-        <ProjectHomeSections projectId={projectId} />
+        {/* ONE slot, two occupants. The checklist owns it while there are open
+            setup steps; the starter prompts own it once there are not —
+            dismissed, all finished, or every step denied by IAM. They wear the
+            same panel and the same row rail (`./band.ts`), so this reads as one
+            thing changing its contents rather than two panels taking turns.
+
+            The prompts used to be a row of pills under the composer, and had
+            been commented out rather than deleted. A slot that is empty for
+            most returning users, and a second shape for the same job in the
+            same column, were both fixed by moving them here.
+
+            Gated on `onPickSuggestion`: a host with nowhere to put a picked
+            prompt gets no prompts. The instant session shell is that host. */}
+        <ProjectHomeSections
+          projectId={projectId}
+          fallback={onPickSuggestion ? <StarterPromptBand onPick={onPickSuggestion} /> : undefined}
+        />
       </div>
     </div>
   );

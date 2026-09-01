@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
 
 import { useProjectCans } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
@@ -15,9 +16,14 @@ import { PROJECT_SETUP_TILES, PROJECT_SETUP_TILE_ACTIONS, setupTileHref } from '
  */
 export function ProjectHomeSections({
   projectId,
+  fallback,
   className,
 }: {
   projectId: string;
+  /** Occupies the slot when there is no checklist to show — see
+   *  `ProjectSetupChecklist`'s own `fallback` for the three states this
+   *  covers, and `starter-prompt-band.tsx` for what actually goes in it. */
+  fallback?: ReactNode;
   className?: string;
 }) {
   // One batched probe for every leaf the tiles name — not one hook per tile,
@@ -48,13 +54,20 @@ export function ProjectHomeSections({
   });
   const accountId = projectDetailQuery.data?.project?.account_id;
 
-  // Every step denied — render nothing rather than a band that still reserves
-  // its gap in the column.
-  if (tiles.length === 0) return null;
+  // Every step denied. There is no checklist to gate on any more, and never
+  // will be for this person, so the slot goes straight to the fallback rather
+  // than sitting empty — this is the same "resolved, and the answer is no"
+  // that `ProjectSetupChecklist` reaches through dismissal, arrived at one
+  // level higher and permanently.
+  //
+  // `null` when the host passed no fallback, which keeps the original
+  // behaviour: nothing rendered, and no gap reserved in the column.
+  if (tiles.length === 0) return fallback ? <>{fallback}</> : null;
 
   return (
     <ProjectSetupChecklist
       projectId={projectId}
+      fallback={fallback}
       className={className}
       steps={tiles.map((tile) => ({
         key: tile.key,

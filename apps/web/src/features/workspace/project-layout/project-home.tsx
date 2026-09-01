@@ -191,7 +191,7 @@ export function ProjectHome({
       : undefined;
 
   return (
-    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden px-4.5">
+    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
       <AccessRequestsBell count={pendingAccessCount} href={accessRequestsHref} />
