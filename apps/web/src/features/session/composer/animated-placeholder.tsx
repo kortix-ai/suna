@@ -132,7 +132,7 @@ export function AnimatedComposerPlaceholder({
       // in — the placeholder and the cursor stop agreeing on where the line
       // starts. See composer-text-metrics.ts.
       className={cn(
-        'text-muted-foreground pointer-events-none absolute inset-x-1 top-0 overflow-hidden text-base sm:text-sm',
+        'text-muted-foreground pointer-events-none absolute inset-x-1 top-0 overflow-hidden text-sm',
         COMPOSER_TEXT_METRICS,
       )}
     >
