@@ -4,6 +4,8 @@ import {
   repairLegacyInlineAttachments,
   type LegacyRuntimeMessage,
 } from './legacy-inline-attachment-repair';
+import { materializePromptAttachments } from './prompt-attachment-materializer';
+import type { PromptPartWire } from './store';
 
 function repair(overrides: Partial<Parameters<typeof repairLegacyInlineAttachments>[0]> = {}) {
   return repairLegacyInlineAttachments({
@@ -174,14 +176,12 @@ test('repairs a legacy ZIP part in place and records completion', async () => {
   ]);
 });
 
-test('recognizes exact command-key XML as already canonical and records completion', async () => {
+test('recognizes exact command-key XML without materializing or overwriting the file', async () => {
   const updates: Array<{ messageId: string; partId: string; text: string }> = [];
-  const materializationKeys: string[] = [];
+  let materializations = 0;
   let marks = 0;
   const canonicalXml =
     '<file path="/workspace/uploads/.kortix-inbox/command_first/1-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
-  const legacyXml =
-    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/1-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
 
   const result = await repairLegacyInlineAttachments({
     sessionId: 'session_1',
@@ -208,9 +208,9 @@ test('recognizes exact command-key XML as already canonical and records completi
         { id: 'part_zip', type: 'text', text: canonicalXml },
       ],
     }),
-    materialize: async (parts, key) => {
-      materializationKeys.push(key);
-      return [parts[0]!, { type: 'text', text: key === 'command_first' ? canonicalXml : legacyXml }];
+    materialize: async () => {
+      materializations += 1;
+      throw new Error('recognized transcript must not materialize');
     },
     updatePart: async (update) => {
       updates.push(update);
@@ -221,14 +221,141 @@ test('recognizes exact command-key XML as already canonical and records completi
   });
 
   expect(result).toEqual({ repaired: 1 });
-  expect(materializationKeys).toEqual(['command_first', 'legacy-command_first']);
+  expect(materializations).toBe(0);
   expect(updates).toEqual([]);
   expect(marks).toBe(1);
 });
 
+test('recognizes exact legacy repair XML without materializing again', async () => {
+  let materializations = 0;
+  let marks = 0;
+  const legacyXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/0-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
+
+  const result = await repairLegacyInlineAttachments({
+    sessionId: 'session_1',
+    externalId: 'sbx_1',
+    opencodeSessionId: 'oc_1',
+    userId: 'user_1',
+    loadPendingFirst: async () => ({
+      commandId: 'command_first',
+      deliveredMessageIds: ['msg_first'],
+      parts: [
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    }),
+    readMessage: async () => ({
+      info: { id: 'msg_first', role: 'user' },
+      parts: [{ id: 'part_zip', type: 'text', text: legacyXml }],
+    }),
+    materialize: async () => {
+      materializations += 1;
+      throw new Error('recognized transcript must not materialize');
+    },
+    updatePart: async () => {
+      throw new Error('recognized transcript must not PATCH');
+    },
+    markRepaired: async () => {
+      marks += 1;
+    },
+  });
+
+  expect(result).toEqual({ repaired: 1 });
+  expect(materializations).toBe(0);
+  expect(marks).toBe(1);
+});
+
+test('a mixed batch materializes only original file parts at their original indices', async () => {
+  const canonicalXml =
+    '<file path="/workspace/uploads/.kortix-inbox/command_first/1-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const markdownXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/2-README.md" mime="text/markdown" filename="README.md">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const materializedInputs: Array<{ key: string; parts: PromptPartWire[] }> = [];
+  const writePaths: string[] = [];
+  const updates: Array<{ messageId: string; partId: string; text: string }> = [];
+
+  await repairLegacyInlineAttachments({
+    sessionId: 'session_1',
+    externalId: 'sbx_1',
+    opencodeSessionId: 'oc_1',
+    userId: 'user_1',
+    loadPendingFirst: async () => ({
+      commandId: 'command_first',
+      deliveredMessageIds: ['msg_first'],
+      parts: [
+        { type: 'text', text: 'Inspect these.' },
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+        {
+          type: 'file',
+          mime: 'text/markdown',
+          filename: 'README.md',
+          url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+        },
+      ],
+    }),
+    readMessage: async () => ({
+      info: { id: 'msg_first', role: 'user' },
+      parts: [
+        { id: 'part_text', type: 'text', text: 'Inspect these.' },
+        { id: 'part_zip', type: 'text', text: canonicalXml },
+        {
+          id: 'part_markdown',
+          type: 'file',
+          mime: 'text/markdown',
+          filename: 'README.md',
+        },
+      ],
+    }),
+    materialize: async (parts, key) => {
+      materializedInputs.push({ key, parts });
+      return materializePromptAttachments({
+        parts,
+        externalId: 'sbx_1',
+        sessionId: 'session_1',
+        userId: 'user_1',
+        materializationKey: key,
+        writeFile: async (input) => {
+          writePaths.push(input.targetPath);
+          return { path: input.targetPath, size: input.bytes.byteLength };
+        },
+      });
+    },
+    updatePart: async (update) => {
+      updates.push(update);
+    },
+    markRepaired: async () => undefined,
+  });
+
+  expect(materializedInputs).toHaveLength(1);
+  expect(materializedInputs[0]!.key).toBe('legacy-command_first');
+  expect(materializedInputs[0]!.parts[1]).toEqual({ type: 'text', text: canonicalXml });
+  expect(materializedInputs[0]!.parts[2]).toMatchObject({
+    type: 'file',
+    filename: 'README.md',
+  });
+  expect(writePaths).toEqual([
+    '/workspace/uploads/.kortix-inbox/legacy-command_first/2-README.md',
+  ]);
+  expect(updates).toEqual([
+    { messageId: 'msg_first', partId: 'part_markdown', text: markdownXml },
+  ]);
+});
+
 test('retries after the first of two part updates already succeeded', async () => {
-  const zipXml = '<file path="/workspace/1-bundle.zip" filename="bundle.zip">zip</file>';
-  const markdownXml = '<file path="/workspace/2-README.md" filename="README.md">md</file>';
+  const zipXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/1-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const markdownXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/2-README.md" mime="text/markdown" filename="README.md">\nThis file has been uploaded and is available at the path above.\n</file>';
   const runtimeParts: LegacyRuntimeMessage['parts'] = [
     { id: 'part_text', type: 'text', text: 'Inspect these.' },
     {
@@ -304,8 +431,10 @@ test('retries after the first of two part updates already succeeded', async () =
 });
 
 test('retries the marker after all part updates already succeeded', async () => {
-  const zipXml = '<file path="/workspace/0-bundle.zip" filename="bundle.zip">zip</file>';
-  const markdownXml = '<file path="/workspace/1-README.md" filename="README.md">md</file>';
+  const zipXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/0-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const markdownXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/1-README.md" mime="text/markdown" filename="README.md">\nThis file has been uploaded and is available at the path above.\n</file>';
   const runtimeParts: LegacyRuntimeMessage['parts'] = [
     {
       id: 'part_zip',

@@ -653,6 +653,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(sessionRow!.metadata).not.toHaveProperty(
       'legacy_inline_attachments_repaired_at',
     );
+    const writesAfterFirst = runtimeWrites.slice();
     const canonicalParts = capturedBodies[0].parts as Array<Record<string, unknown>>;
     legacyPendingFirst = {
       commandId: 'command-first',
@@ -712,6 +713,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(sessionRow!.metadata).toHaveProperty(
       'legacy_inline_attachments_repaired_at',
     );
+    expect(runtimeWrites).toEqual(writesAfterFirst);
     expect(legacyPartUpdates).toEqual([]);
   });
 
@@ -744,6 +746,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         },
       }),
     );
+    const writesAfterFirst = runtimeWrites.slice();
     const canonicalParts = capturedBodies[0].parts as Array<Record<string, unknown>>;
     legacyPendingFirst = {
       commandId: 'command-first',
@@ -769,6 +772,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies).toHaveLength(3);
     expect(legacyRepairMarks).toBe(1);
     expect(legacyPartUpdates).toEqual([]);
+    expect(runtimeWrites).toEqual(writesAfterFirst);
     expect(sessionRow!.metadata).toHaveProperty(
       'legacy_inline_attachments_repaired_at',
     );

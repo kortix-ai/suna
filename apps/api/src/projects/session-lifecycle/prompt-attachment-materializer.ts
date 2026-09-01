@@ -63,6 +63,30 @@ function targetPath(key: string, index: number, filename: string): string {
   return `/workspace/uploads/.kortix-inbox/${safeKey(key)}/${index}-${sanitizePromptUploadFilename(filename)}`;
 }
 
+export interface PromptAttachmentReference {
+  targetPath: string;
+  filename: string;
+  mime: string;
+  text: string;
+}
+
+/** Build the exact deterministic runtime reference without reading or writing file bytes. */
+export function buildPromptAttachmentReference(input: {
+  part: PromptPartWire;
+  index: number;
+  materializationKey: string;
+}): PromptAttachmentReference {
+  const filename = input.part.filename?.trim() || 'File';
+  const mime = input.part.mime?.trim() || 'application/octet-stream';
+  const path = targetPath(input.materializationKey, input.index, filename);
+  return {
+    targetPath: path,
+    filename,
+    mime,
+    text: promptFileReferenceXml({ path, mime, filename }),
+  };
+}
+
 export async function materializePromptAttachments(input: {
   parts: PromptPartWire[];
   externalId: string;
@@ -81,23 +105,26 @@ export async function materializePromptAttachments(input: {
 
   const settled = await Promise.allSettled(
     candidates.map(async ({ part, index }) => {
-      const filename = part.filename?.trim() || 'File';
-      const mime = part.mime?.trim() || 'application/octet-stream';
+      const reference = buildPromptAttachmentReference({
+        part,
+        index,
+        materializationKey: input.materializationKey,
+      });
       const bytes = decodeDataUrl(part);
-      const written = await input.writeFile({
+      await input.writeFile({
         externalId: input.externalId,
         sessionId: input.sessionId,
         userId: input.userId,
-        targetPath: targetPath(input.materializationKey, index, filename),
-        filename,
-        mime,
+        targetPath: reference.targetPath,
+        filename: reference.filename,
+        mime: reference.mime,
         bytes,
       });
       return {
         index,
         part: {
           type: 'text' as const,
-          text: promptFileReferenceXml({ path: written.path, mime, filename }),
+          text: reference.text,
         },
       };
     }),

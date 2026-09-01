@@ -1,5 +1,6 @@
 import { isModelNativeAttachmentMime } from '@kortix/shared';
 
+import { buildPromptAttachmentReference } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 
 export interface LegacyPendingFirstPrompt {
@@ -70,32 +71,20 @@ export async function repairLegacyInlineAttachments(input: {
   }
   if (!message) throw new Error('legacy attachment message was not found');
 
-  // The runtime may contain either:
-  // - the canonical command-id XML written by the current delivery path, or
-  // - the legacy-prefixed XML written by an earlier repair attempt.
-  // Materialize both deterministic forms before mapping so an ambiguous
-  // prompt response or a failed marker write can recover from transcript state.
-  const canonicalMaterialized = await input.materialize(pending.parts, pending.commandId);
-  const legacyMaterialized = await input.materialize(
-    pending.parts,
-    `legacy-${pending.commandId}`,
-  );
+  // Build both deterministic transcript forms without touching workspace files.
+  // Stateful materialization starts only after every runtime part maps uniquely.
   const usedPartIds = new Set<string>();
-  const replacements = candidates.map((candidate) => {
-    const canonicalReplacement = canonicalMaterialized[candidate.index];
-    const legacyReplacement = legacyMaterialized[candidate.index];
-    if (
-      canonicalReplacement?.type !== 'text' ||
-      typeof canonicalReplacement.text !== 'string' ||
-      legacyReplacement?.type !== 'text' ||
-      typeof legacyReplacement.text !== 'string'
-    ) {
-      throw new Error(
-        `legacy attachment "${candidate.part.filename ?? 'File'}" was not materialized`,
-      );
-    }
-    const canonicalText = canonicalReplacement.text;
-    const legacyText = legacyReplacement.text;
+  const mappings = candidates.map((candidate) => {
+    const canonicalText = buildPromptAttachmentReference({
+      part: candidate.part,
+      index: candidate.index,
+      materializationKey: pending.commandId,
+    }).text;
+    const legacyText = buildPromptAttachmentReference({
+      part: candidate.part,
+      index: candidate.index,
+      materializationKey: `legacy-${pending.commandId}`,
+    }).text;
     const matchesCandidate = (part: LegacyRuntimeMessage['parts'][number]): boolean =>
       sameAttachment(candidate.part, part) ||
       sameReplacement(part, canonicalText) ||
@@ -108,14 +97,53 @@ export async function repairLegacyInlineAttachments(input: {
         `legacy attachment "${candidate.part.filename ?? 'File'}" does not map to one runtime part`,
       );
     }
-    usedPartIds.add(matches[0]!.id);
+    const runtimePart = matches[0]!;
+    usedPartIds.add(runtimePart.id);
     return {
-      partId: matches[0]!.id,
-      text: legacyText,
-      alreadyRepaired:
-        sameReplacement(matches[0]!, canonicalText) ||
-        sameReplacement(matches[0]!, legacyText),
+      index: candidate.index,
+      partId: runtimePart.id,
+      runtimePart,
+      legacyText,
+      needsPatch: sameAttachment(candidate.part, runtimePart),
     };
+  });
+
+  const pendingWrites = mappings.filter((mapping) => mapping.needsPatch);
+  let legacyMaterialized: PromptPartWire[] | null = null;
+  if (pendingWrites.length > 0) {
+    // Keep original indices, but replace already-canonical/repaired staged file
+    // candidates with their transcript text so the materializer cannot rewrite them.
+    const partsToMaterialize = pending.parts.slice();
+    for (const mapping of mappings) {
+      if (!mapping.needsPatch) {
+        partsToMaterialize[mapping.index] = {
+          type: 'text',
+          text: mapping.runtimePart.text,
+        };
+      }
+    }
+    legacyMaterialized = await input.materialize(
+      partsToMaterialize,
+      `legacy-${pending.commandId}`,
+    );
+  }
+
+  const replacements = mappings.map((mapping) => {
+    if (!mapping.needsPatch) {
+      return { partId: mapping.partId, text: mapping.legacyText, alreadyRepaired: true };
+    }
+    const replacement = legacyMaterialized?.[mapping.index];
+    if (
+      replacement?.type !== 'text' ||
+      typeof replacement.text !== 'string' ||
+      replacement.text !== mapping.legacyText
+    ) {
+      const candidate = pending.parts[mapping.index];
+      throw new Error(
+        `legacy attachment "${candidate?.filename ?? 'File'}" was not materialized`,
+      );
+    }
+    return { partId: mapping.partId, text: replacement.text, alreadyRepaired: false };
   });
   for (const replacement of replacements) {
     if (replacement.alreadyRepaired) continue;
