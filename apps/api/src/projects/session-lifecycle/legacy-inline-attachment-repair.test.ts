@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test';
 
-import { repairLegacyInlineAttachments } from './legacy-inline-attachment-repair';
+import {
+  repairLegacyInlineAttachments,
+  type LegacyRuntimeMessage,
+} from './legacy-inline-attachment-repair';
 
 function repair(overrides: Partial<Parameters<typeof repairLegacyInlineAttachments>[0]> = {}) {
   return repairLegacyInlineAttachments({
@@ -107,6 +110,10 @@ test('rejects ambiguous filename and MIME fallback matches', async () => {
           },
         ],
       }),
+      materialize: async () => [
+        { type: 'text', text: 'Inspect this.' },
+        { type: 'text', text: '<file filename="bundle.zip">bundle</file>' },
+      ],
     }),
   ).rejects.toThrow('legacy attachment "bundle.zip" does not map to one runtime part');
 });
@@ -165,4 +172,151 @@ test('repairs a legacy ZIP part in place and records completion', async () => {
       text: expect.stringContaining('filename="bundle.zip"'),
     },
   ]);
+});
+
+test('retries after the first of two part updates already succeeded', async () => {
+  const zipXml = '<file path="/workspace/1-bundle.zip" filename="bundle.zip">zip</file>';
+  const markdownXml = '<file path="/workspace/2-README.md" filename="README.md">md</file>';
+  const runtimeParts: LegacyRuntimeMessage['parts'] = [
+    { id: 'part_text', type: 'text', text: 'Inspect these.' },
+    {
+      id: 'part_zip',
+      type: 'file',
+      mime: 'application/zip',
+      filename: 'bundle.zip',
+    },
+    {
+      id: 'part_markdown',
+      type: 'file',
+      mime: 'text/markdown',
+      filename: 'README.md',
+    },
+  ];
+  const updateAttempts: string[] = [];
+  let failMarkdown = true;
+  let marks = 0;
+  const dependencies: Parameters<typeof repairLegacyInlineAttachments>[0] = {
+    sessionId: 'session_1',
+    externalId: 'sbx_1',
+    opencodeSessionId: 'oc_1',
+    userId: 'user_1',
+    loadPendingFirst: async () => ({
+      commandId: 'command_first',
+      deliveredMessageIds: ['msg_first'],
+      parts: [
+        { type: 'text', text: 'Inspect these.' },
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+        {
+          type: 'file',
+          mime: 'text/markdown',
+          filename: 'README.md',
+          url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+        },
+      ],
+    }),
+    readMessage: async () => ({
+      info: { id: 'msg_first', role: 'user' },
+      parts: runtimeParts,
+    }),
+    materialize: async () => [
+      { type: 'text', text: 'Inspect these.' },
+      { type: 'text', text: zipXml },
+      { type: 'text', text: markdownXml },
+    ],
+    updatePart: async ({ partId, text }) => {
+      updateAttempts.push(partId);
+      if (partId === 'part_markdown' && failMarkdown) {
+        failMarkdown = false;
+        throw new Error('second PATCH failed');
+      }
+      const part = runtimeParts.find(({ id }) => id === partId)!;
+      part.type = 'text';
+      part.text = text;
+    },
+    markRepaired: async () => {
+      marks += 1;
+    },
+  };
+
+  await expect(repairLegacyInlineAttachments(dependencies)).rejects.toThrow(
+    'second PATCH failed',
+  );
+  expect(await repairLegacyInlineAttachments(dependencies)).toEqual({ repaired: 2 });
+  expect(updateAttempts).toEqual(['part_zip', 'part_markdown', 'part_markdown']);
+  expect(marks).toBe(1);
+});
+
+test('retries the marker after all part updates already succeeded', async () => {
+  const zipXml = '<file path="/workspace/0-bundle.zip" filename="bundle.zip">zip</file>';
+  const markdownXml = '<file path="/workspace/1-README.md" filename="README.md">md</file>';
+  const runtimeParts: LegacyRuntimeMessage['parts'] = [
+    {
+      id: 'part_zip',
+      type: 'file',
+      mime: 'application/zip',
+      filename: 'bundle.zip',
+    },
+    {
+      id: 'part_markdown',
+      type: 'file',
+      mime: 'text/markdown',
+      filename: 'README.md',
+    },
+  ];
+  const updates: string[] = [];
+  let markerAttempts = 0;
+  const dependencies: Parameters<typeof repairLegacyInlineAttachments>[0] = {
+    sessionId: 'session_1',
+    externalId: 'sbx_1',
+    opencodeSessionId: 'oc_1',
+    userId: 'user_1',
+    loadPendingFirst: async () => ({
+      commandId: 'command_first',
+      deliveredMessageIds: ['msg_first'],
+      parts: [
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+        {
+          type: 'file',
+          mime: 'text/markdown',
+          filename: 'README.md',
+          url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+        },
+      ],
+    }),
+    readMessage: async () => ({
+      info: { id: 'msg_first', role: 'user' },
+      parts: runtimeParts,
+    }),
+    materialize: async () => [
+      { type: 'text', text: zipXml },
+      { type: 'text', text: markdownXml },
+    ],
+    updatePart: async ({ partId, text }) => {
+      updates.push(partId);
+      const part = runtimeParts.find(({ id }) => id === partId)!;
+      part.type = 'text';
+      part.text = text;
+    },
+    markRepaired: async () => {
+      markerAttempts += 1;
+      if (markerAttempts === 1) throw new Error('marker write failed');
+    },
+  };
+
+  await expect(repairLegacyInlineAttachments(dependencies)).rejects.toThrow(
+    'marker write failed',
+  );
+  expect(await repairLegacyInlineAttachments(dependencies)).toEqual({ repaired: 2 });
+  expect(updates).toEqual(['part_zip', 'part_markdown']);
+  expect(markerAttempts).toBe(2);
 });

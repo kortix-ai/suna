@@ -31,6 +31,13 @@ function sameAttachment(
   );
 }
 
+function sameReplacement(
+  runtime: LegacyRuntimeMessage['parts'][number],
+  expectedText: string,
+): boolean {
+  return runtime.type === 'text' && runtime.text === expectedText;
+}
+
 export async function repairLegacyInlineAttachments(input: {
   sessionId: string;
   externalId: string;
@@ -66,26 +73,36 @@ export async function repairLegacyInlineAttachments(input: {
   const materialized = await input.materialize(pending.parts, `legacy-${pending.commandId}`);
   const usedPartIds = new Set<string>();
   const replacements = candidates.map((candidate) => {
-    const indexed = message.parts[candidate.index];
-    const matches =
-      indexed && sameAttachment(candidate.part, indexed)
-        ? [indexed]
-        : message.parts.filter((part) => sameAttachment(candidate.part, part));
-    if (matches.length !== 1 || usedPartIds.has(matches[0]!.id)) {
-      throw new Error(
-        `legacy attachment "${candidate.part.filename ?? 'File'}" does not map to one runtime part`,
-      );
-    }
     const replacement = materialized[candidate.index];
     if (replacement?.type !== 'text' || typeof replacement.text !== 'string') {
       throw new Error(
         `legacy attachment "${candidate.part.filename ?? 'File'}" was not materialized`,
       );
     }
+    const expectedText = replacement.text;
+    const indexed = message.parts[candidate.index];
+    const matches =
+      indexed &&
+      (sameAttachment(candidate.part, indexed) || sameReplacement(indexed, expectedText))
+        ? [indexed]
+        : message.parts.filter(
+            (part) =>
+              sameAttachment(candidate.part, part) || sameReplacement(part, expectedText),
+          );
+    if (matches.length !== 1 || usedPartIds.has(matches[0]!.id)) {
+      throw new Error(
+        `legacy attachment "${candidate.part.filename ?? 'File'}" does not map to one runtime part`,
+      );
+    }
     usedPartIds.add(matches[0]!.id);
-    return { partId: matches[0]!.id, text: replacement.text };
+    return {
+      partId: matches[0]!.id,
+      text: expectedText,
+      alreadyRepaired: sameReplacement(matches[0]!, expectedText),
+    };
   });
   for (const replacement of replacements) {
+    if (replacement.alreadyRepaired) continue;
     await input.updatePart({
       messageId: message.info.id,
       partId: replacement.partId,
