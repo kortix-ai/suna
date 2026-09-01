@@ -56,7 +56,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * Deliberately NOT the full form state. `icon` and `defaultBranch` are
  * refinements a user can still be adjusting between a failed submit and a
  * retry — a retry must reuse the SAME key, not mint a new one just because
- * the icon changed. `name`, `accountId`, `templateId` and `source` are what
+ * the icon changed. `name`, `accountId` and `source` are what
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
@@ -64,9 +64,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [state.accountId ?? 'default', state.name.trim(), state.templateId ?? '', state.source].join(
-    ':',
-  );
+  return [state.accountId ?? 'default', state.name.trim(), state.source].join(':');
 }
 
 /**

@@ -284,9 +284,8 @@ test.describe("26 — Crafts UI", () => {
       //
       // The local profile EXCLUDES cloud sandboxes, so session creation answers
       // `503 KORTIX_URL_UNREACHABLE` here — there is no callback origin a
-      // sandbox could reach. That is the same boundary `MKTP-11` documents for
-      // `marketplace/install-session`, and it is why this step asserts the
-      // request and the authorization outcome rather than a live session.
+      // sandbox could reach. That is why this step asserts the request and the
+      // authorization outcome rather than a live session.
       //
       // What IS proven, and is exactly what the mock failed at: a real request
       // leaves the browser, carrying the craft id the card was built from, and

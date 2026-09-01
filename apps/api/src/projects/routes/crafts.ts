@@ -9,8 +9,7 @@
  *   GET   /:projectId/crafts/runs                 → every craft's runs
  *   GET   /:projectId/crafts/:slug/runs           → one craft's runs
  *
- * Installing is agent-driven for the same reason a `registry:project` import is
- * (see `./marketplace-install-prompts.ts`): merging a craft into a LIVE project
+ * Installing is agent-driven because merging a craft into a LIVE project
  * is judgment-heavy — name collisions, an existing connector that may already
  * hold credentials, a `default_agent` that must not move. So the route starts a
  * session with a generated prompt, and the agent lands a change request a human

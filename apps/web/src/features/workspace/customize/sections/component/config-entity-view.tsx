@@ -17,7 +17,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
-import { MarketplaceSectionButton } from '@/features/workspace/customize/marketplace-section-button';
 import CustomizeSectionWrapper from '@/features/workspace/customize/sections/component/section-wrapper';
 import { splitFrontmatter, toArray } from '@/features/workspace/customize/shared/utils';
 import {
@@ -619,7 +618,6 @@ export function ConfigEntityView<T extends ConfigEntity>(props: ConfigEntityView
       fill={layout === 'split' || layout === 'grid'}
       action={
         <div className="flex items-center gap-1.5">
-          <MarketplaceSectionButton projectId={projectId} />
           {canWrite ? (
             <Button
               size="sm"

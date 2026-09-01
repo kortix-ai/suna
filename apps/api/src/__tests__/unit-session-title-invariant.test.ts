@@ -117,8 +117,7 @@ describe('session-title invariant', () => {
         'channels/teams/session.ts',
         'channels/telegram-webhook.ts',
         'projects/routes/r2.ts',
-        'projects/routes/r10.ts',
-        // Craft install/uninstall. Accounted for the same way r10 is: both
+        // Craft install/uninstall. Both
         // createSession calls pass an explicit `body.name`
         // (`Install <craft>` / `Remove <craft>`), so `needsTitle` returns false
         // and Hook 1 no-ops — the rendered install envelope can never reach a

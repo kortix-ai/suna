@@ -1,6 +1,6 @@
 'use client';
 
-import { listAccounts, provisionProject } from '@kortix/sdk';
+import { createCraftInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
@@ -24,15 +24,18 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import Loading from '@/components/ui/loading';
-import { useProjectPicker } from '@/features/marketplace/marketplace-project-picker';
+import { useProjectPicker } from '@/features/projects/use-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
-import { installMarketplaceItemAsSession } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 
-// First-party use-case templates ship in the bundled `kortix-starter` registry,
-// so a use-case slug maps to the catalog id the install-session resolves by.
-const TEMPLATE_CATALOG_NAMESPACE = 'kortix-starter';
-
+// A use-case slug is handed to the craft install-session as the craft
+// identifier. The marketplace catalog this used to resolve against
+// (`kortix-starter:<slug>`) was removed with the marketplace, and the craft
+// index is what replaces it.
+//
+// UNVERIFIED, on purpose: no craft with a use-case slug exists in the index
+// yet, so this install answers 404 until that catalog content is published.
+// The alternative was dropping the only CTA on an indexed acquisition page.
 // Same sentinel the unified AddToProjectModal uses: "create a project inline,
 // then install into it" as one Select choice next to the existing projects.
 const NEW_PROJECT = '__new__';
@@ -101,10 +104,7 @@ export function TemplateSessionInstallDialog({
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         projectId = project.project_id;
       }
-      const { session_id } = await installMarketplaceItemAsSession(
-        projectId,
-        `${TEMPLATE_CATALOG_NAMESPACE}:${templateId}`,
-      );
+      const { session_id } = await createCraftInstallSession(projectId, templateId);
       // nav-contract: prefetch-only — `session_id` comes back from the install
       // POST, and the project may be provisioned in the same click, so neither
       // half of this href exists before the click.

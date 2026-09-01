@@ -682,7 +682,6 @@ describe('envelopes', () => {
   test('feature flag keys stay in sync with the map schema', () => {
     expect(FEATURE_FLAG_KEYS).toEqual([
       'agent_tunnel',
-      'marketplace',
       'connectors_api_discover',
       'agentmail_email',
       'teams',

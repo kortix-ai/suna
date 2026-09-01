@@ -770,8 +770,6 @@ supplied scope field without restarting the session.
 `PROJ-17` `POST /projects/:id/turn-stream {session_id,text}` → missing session id → 400; unknown session id → 404 before event-payload validation; `kind:end|turn_end` needs only a valid `session_id` (`status: idle|error`) → 200 `ok:false` when no live stream.
 `PROJ-18` Project cap by plan: a FREE account may own exactly 1 project — `POST /projects/provision` for the 2nd → 403 `{code:project_limit_reached,limit:1}` (checked before any repo is provisioned); paid/team plans get `MAX_PROJECTS_PER_ACCOUNT`. Archived projects do not consume the slot, so deleting the one project frees it. Requires `managedGit`+`stripe` (billing enforced).
 `PROJ-19` Full v2 agent-config editor (agent-first spec §2.2): `GET /projects/:id/agents/:agentName/config` (`read`) → 200 `{agent,schema_version,editable,default_agent,block}` — `editable:false` + `block:null` for a v1/empty manifest (the UI's degrade signal), the agent's full `AgentBlockV2` for a declared v2 agent; `PUT /projects/:id/agents/:agentName/config {…AgentBlockV2}` (`manage`, gated `project.customize.write`) validates the block through the manifest-schema validator (bad permission tree/enum/ungrantable `kortix_cli` → 400 `invalid_config`) then writes it into the `agents:` map in `kortix.yaml`; a v1 project is refused with a 400 upgrade pointer (v2-only); malformed body → 400 `invalid_body`; caller with no project grant → 403.
-`MKTP-1` `GET /marketplace/items {query?,type?}` → auth → 200 `{items:[{id,registry,name,type,title,description,categories,capabilities,dependencies,fileCount,managedBy?,updatePolicy?}]}` (catalog includes the minimal Kortix runtime skills, optional General Knowledge Worker skills such as `pdf`, and curated bundles; the default starter does not ship the GKW pack; `?query=`/`?type=` filter).
-`MKTP-2` `GET /marketplace/items/:id` → auth → 200 item detail (`files`, `readme`, `capabilities`, managed metadata when applicable); unknown id → 404.
 `EXP-1` `PATCH /projects/:id/features {feature,enabled}` (canonical) and `PATCH /projects/:id/experimental` (deprecated alias, same handler) → 200 with `experimental`/`experimental_features` in body; unknown flag → 400; non-bool enabled → 400; `enabled:null` clears the override → 200; archived project → 404 with metadata unchanged. Flag-gated routes reject with `403 {code:'feature_disabled', feature}` when their flag is off.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
@@ -908,8 +906,7 @@ than it is:
 - Install, uninstall and author each spawn a real session past validation, and
   a session needs a cloud sandbox with a reachable callback origin, excluded
   locally. So those flows assert every 4xx boundary exactly and accept
-  `201` or `503 KORTIX_URL_UNREACHABLE` past the gate — the same convention
-  `MKTP-11` documents.
+  `201` or `503 KORTIX_URL_UNREACHABLE` past the gate.
 
 `CRAFT-1` Catalog CRUD — `POST /crafts` indexes an uploaded archive and derives
 the card by PARSING the manifest (its triggers and agents come back named, not
@@ -1016,12 +1013,6 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `INV-7` Invite accept and decline are email-bound, idempotent where documented, and cannot be used by another user.
 `MEM-6` Changing an account role reconciles project grants so account-wide permissions do not retain stale project rows.
 `MEM-7` `POST /accounts/:id/members {email,role,project_grants}` grants project access alongside the invite: applied immediately for an existing user, staged on the pending invite and applied on accept for a new one. A grant naming a project outside the caller's account is rejected. Grants are ignored for `admin`/`owner` invites (implicit access already covers every project).
-`MKTP-6` An authenticated user reads one catalog file. Unknown items and invalid paths are rejected.
-`MKTP-7` An authenticated user lists available marketplaces.
-`MKTP-8` An authenticated user reads the featured marketplace collection.
-`MKTP-9` An authenticated user lists configured marketplace sources.
-`MKTP-10` An authorized user adds and removes one marketplace source. Invalid and protected sources are rejected.
-`MKTP-11` A project writer starts an agent-driven marketplace installation session. Missing items, unknown items, and unauthorized callers are rejected.
 `PROJ-20` An authenticated user reads whether managed Git is configured.
 `PROJ-27` A project member reads model choices and a project manager sets, reads, and clears model defaults.
 `PROJ-28` The Suna migration eligibility, status, and start routes enforce authentication and current migration state.

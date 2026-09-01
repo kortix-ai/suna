@@ -14,16 +14,11 @@
  *   kortix system-skills path [name]     locate the on-disk skill dir
  *
  * SCOPE — system skills only, always. The command used to be `kortix skills` with
- * an `--all` flag that folded the browsable marketplace catalog into the same
- * list, which made "what does this command return?" depend on a flag. It now
- * returns exactly one thing: the kortix-managed floor that describes how Kortix
- * works. Optional/marketplace skills were never lost — they are the marketplace's
- * job and stay reachable at their proper home:
- *
- *   kortix marketplace list --type skill
- *
- * which is the identical query `--all` issued (`/marketplace/items?type=skill`),
- * with richer output. Nothing was deleted; one surface stopped doing two jobs.
+ * an `--all` flag that folded a browsable catalog into the same list, which made
+ * "what does this command return?" depend on a flag. It now returns exactly one
+ * thing: the kortix-managed floor that describes how Kortix works. The optional
+ * first-party catalog that `--all` listed was removed with the marketplace, so
+ * there is no second set of skills for this command to hide.
  *
  * `kortix skills` REMAINS a working alias, permanently and without a deprecation
  * nag. Every already-baked sandbox image carries a seeded `kortix-system` skill
@@ -107,8 +102,6 @@ Examples:
   kortix ${cmd} file kortix-system references/kortix/kortix-yaml.md
   kortix ${cmd} get kortix-slack --json
 
-Optional (non-system) skills live in the marketplace:
-  kortix marketplace list --type skill
 `;
 
 /** Where a skill's files live inside a Kortix project. */
@@ -144,14 +137,14 @@ async function fetchSystemSkills(client: ApiClient): Promise<SkillSummary[]> {
   return res.skills ?? [];
 }
 
-/** `--all` used to mix the marketplace catalog into this list. It no longer does
- *  anything, and a silently-different result for an old invocation is worse than
- *  a one-line redirect — say where those skills went. Skipped under --json: a
- *  parser deserves a clean run with nothing on either channel it must ignore. */
+/** `--all` used to mix an optional-skill catalog into this list. That catalog is
+ *  gone, so the flag does nothing, and a silently-different result for an old
+ *  invocation is worse than a one-line note. Skipped under --json: a parser
+ *  deserves a clean run with nothing on either channel it must ignore. */
 function noteAllFlagMoved(flags: SkillsFlags): void {
   if (!flags.all || flags.json) return;
   process.stderr.write(
-    `${C.dim}--all no longer applies: this lists system skills only. Optional skills:${C.reset} ${C.cyan}kortix marketplace list --type skill${C.reset}\n`,
+    `${C.dim}--all no longer applies: this lists system skills only.${C.reset}\n`,
   );
 }
 

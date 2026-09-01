@@ -87,67 +87,6 @@ async function requestJson<T>(
   return body as T;
 }
 
-export interface PublicMarketplaceQuery {
-  query?: string;
-  type?: string;
-  source?: string;
-  limit?: number;
-  offset?: number;
-}
-
-function marketplaceQuery(input?: PublicMarketplaceQuery): string {
-  const params = new URLSearchParams();
-  if (input?.query) params.set('query', input.query);
-  if (input?.type) params.set('type', input.type);
-  if (input?.source) params.set('source', input.source);
-  if (input?.limit !== undefined) params.set('limit', String(input.limit));
-  if (input?.offset !== undefined) params.set('offset', String(input.offset));
-  const query = params.toString();
-  return query ? `?${query}` : '';
-}
-
-export function listPublicMarketplaceItems<
-  T = {
-    items: unknown[];
-    total?: number;
-    hasMore?: boolean;
-    loading?: boolean;
-    pending?: number;
-    sources?: unknown[];
-  },
->(options: HostRequestOptions, query?: PublicMarketplaceQuery): Promise<T> {
-  return requestJson<T>(`/marketplace/items${marketplaceQuery(query)}`, options);
-}
-
-export function listPublicMarketplaces<
-  T = {
-    marketplaces: unknown[];
-    loading?: boolean;
-    pending?: number;
-    sources?: unknown[];
-  },
->(options: HostRequestOptions): Promise<T> {
-  return requestJson<T>('/marketplace/marketplaces', options);
-}
-
-export function getPublicMarketplaceItem<T = Record<string, unknown>>(
-  id: string,
-  options: HostRequestOptions,
-): Promise<T> {
-  return requestJson<T>(`/marketplace/items/${encodeURIComponent(id)}`, options);
-}
-
-export function getPublicMarketplaceItemFile<T = Record<string, unknown>>(
-  id: string,
-  path: string,
-  options: HostRequestOptions,
-): Promise<T> {
-  return requestJson<T>(
-    `/marketplace/items/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
-    options,
-  );
-}
-
 export function checkAccessEmail<T = Record<string, unknown>>(
   email: string,
   options: HostRequestOptions,

@@ -22,7 +22,7 @@ import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { config } from '../config';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { assertAllowedSourceAddress } from '../shared/allowed-source-address';
 import {
   type ConnectorSpec,
   extractConnectors,

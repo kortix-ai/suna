@@ -376,26 +376,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const connectStatus = P.getConnectStatus;
 
   /**
-   * Public marketplace catalog browse (`/v1/marketplace/*`) — top-level and
-   * distinct from `project(id).marketplace`, which is install-scoped (commits
-   * an item onto a specific project's branch). This is read-only browsing +
-   * the authed "add a marketplace source" surface.
-   */
-  const marketplace = {
-    items: (options?: Parameters<typeof P.listMarketplaceCatalogItems>[0]) =>
-      P.listMarketplaceCatalogItems(options),
-    item: (id: string) => P.getMarketplaceCatalogItem(id),
-    itemFile: (id: string, path: string) => P.getMarketplaceCatalogItemFile(id, path),
-    marketplaces: () => P.listMarketplaces(),
-    featured: () => P.listFeaturedMarketplaces(),
-    sources: {
-      list: () => P.listMarketplaceSources(),
-      add: (input: Parameters<typeof P.addMarketplaceSource>[0]) => P.addMarketplaceSource(input),
-      remove: (id: string) => P.removeMarketplaceSource(id),
-    },
-  };
-
-  /**
    * The craft store (`/v1/crafts/*`) — top-level and account-scoped, distinct
    * from `project(id).crafts`, which is what a specific project has installed.
    *
@@ -1378,8 +1358,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     sandboxShares,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
-    /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
-    marketplace,
     /** The craft store (`/v1/crafts/*`, account-scoped). Installing is per-project. */
     crafts,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */

@@ -8,11 +8,15 @@ import { listProjectsForAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 
 /**
- * Shared "pick a project to add this item to" query + auto-select state, used
- * by the one unified `AddToProjectModal` (which also offers a "＋ New
- * project" sentinel alongside whatever this returns). Lists the caller's
- * projects under one query key and auto-picks a sensible default the first
- * time the list loads.
+ * Shared "pick a project to add this item to" query + auto-select state. Lists
+ * the caller's projects under one query key and auto-picks a sensible default
+ * the first time the list loads.
+ *
+ * It used to live in `features/marketplace/marketplace-project-picker.ts`. The
+ * marketplace was removed from the product; this hook is not a marketplace
+ * concern — it answers "which of my projects am I acting on", which any
+ * install/import surface asks. Kept as a leaf here rather than re-homed inside
+ * whichever feature happens to call it first.
  *
  * Fetches with no account_id, so this is the ONE real reader of
  * `qk.projects.list()` — the API resolves that to the caller's primary

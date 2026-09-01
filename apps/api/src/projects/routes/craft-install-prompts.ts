@@ -2,8 +2,7 @@
  * Prompt builders for the agent-driven craft install and uninstall.
  *
  * A leaf module — no config, no db imports — so the install SEMANTICS are
- * unit-testable without booting the API's env graph. Same discipline, and the
- * same reason, as `./marketplace-install-prompts.ts`.
+ * unit-testable without booting the API's env graph.
  *
  * Why an agent and not a deterministic merge: installing a craft is
  * judgment-heavy. Does its agent name collide with one already here? Does the

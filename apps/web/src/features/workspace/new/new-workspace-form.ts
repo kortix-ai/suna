@@ -10,7 +10,6 @@ export interface NewWorkspaceFormState {
   icon: ProjectIconValue;
   source: RepositorySource;
   defaultBranch: string;
-  templateId: string | null;
   /** Null means "the user has exactly one account, so there is nothing to pick". */
   accountId: string | null;
   /**
@@ -35,7 +34,6 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
   icon: null,
   source: 'managed',
   defaultBranch: 'main',
-  templateId: null,
   accountId: null,
   installationId: null,
   repoFullName: null,
@@ -158,7 +156,6 @@ export function buildProvisionPayload(state: NewWorkspaceFormState): Record<stri
   if (state.icon && 'emoji' in state.icon) payload.icon = state.icon.emoji;
   else if (state.icon && 'glyph' in state.icon) payload.icon_glyph = state.icon.glyph;
 
-  if (state.templateId) payload.source_item_id = state.templateId;
   if (state.accountId) payload.account_id = state.accountId;
 
   return payload;

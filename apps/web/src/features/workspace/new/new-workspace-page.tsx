@@ -5,7 +5,6 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
 
@@ -116,7 +115,6 @@ const ICON_WIDTH = '2.5rem';
 export function NewWorkspacePage() {
   const { user, signOut } = useAuth();
   const searchParams = useSearchParams();
-  const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
   // Same `useSearchParams()` result the clone param reads — one subscription,
   // two params. Non-null only between "the workspace was created" and "the
@@ -133,7 +131,6 @@ export function NewWorkspacePage() {
 
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
-    templateId: cloneItemId,
     ...(initialSource ? { source: initialSource } : {}),
   }));
   const [touched, setTouched] = useState(false);
@@ -312,12 +309,6 @@ export function NewWorkspacePage() {
                 void create(effectiveState);
               }}
             >
-              {state.templateId && (
-                <p className="text-muted-foreground text-center text-xs">
-                  This workspace will be seeded from the template you picked.
-                </p>
-              )}
-
               {/* No card. A single question does not need a bordered surface
                     to group it — the border was drawing a box around one field
                     on an otherwise empty page, which reads as chrome rather than

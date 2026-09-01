@@ -19,7 +19,6 @@ import { runHosts } from './commands/hosts.ts';
 import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
-import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
 import { runModels } from './commands/models.ts';
 import { runProjects } from './commands/projects.ts';
@@ -271,11 +270,6 @@ const TIERS: readonly CommandTier[] = [
             name: 'crafts',
             args: '<subcommand>',
             blurb: 'Publish, install and operate crafts (a Kortix project you install)',
-          },
-          {
-            name: 'marketplace',
-            args: '<subcommand>',
-            blurb: 'Search, show, install, and inspect marketplace items',
           },
         ],
       },
@@ -600,9 +594,6 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'crafts' || argv[0] === 'craft') {
     return runCrafts(argv.slice(1));
   }
-  if (argv[0] === 'marketplace') {
-    return runMarketplace(argv.slice(1));
-  }
   // `system-skills` is the canonical name; `skills` stays a permanent alias
   // because every already-baked sandbox image seeds a kortix-system skill whose
   // live pointer says `kortix skills get <name>`. Both hand the invoked name
@@ -612,7 +603,7 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'registry') {
     process.stderr.write(
-      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
+      `${C.yellow}developer command:${C.reset} registry is an internal authoring format for first-party template content.\n`,
     );
     return runRegistry(argv.slice(1));
   }
@@ -698,7 +689,6 @@ const KNOWN_COMMANDS = [
   'sandboxes',
   'crafts',
   'craft',
-  'marketplace',
   'system-skills',
   'skills',
   'registry',

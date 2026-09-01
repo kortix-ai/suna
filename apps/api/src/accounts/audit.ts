@@ -17,7 +17,7 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { assertAllowedSourceAddress } from '../shared/allowed-source-address';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
 import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
 import {

@@ -76,7 +76,6 @@ import { describeEmailChain } from './lib/email/transport';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { mountLlmGateway } from './llm-gateway/wire';
 import { craftsApp } from './crafts';
-import { marketplaceApp } from './marketplace';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
 import { compressResponse } from './middleware/compress';
@@ -938,7 +937,6 @@ app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
-app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 app.route('/v1/crafts', craftsApp); // /v1/crafts — the craft index (installing is project-scoped)
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served

@@ -4,10 +4,10 @@ import { describe, expect, test } from 'bun:test';
  * Regression for Better Stack API prod pattern `f5c0ce61…` —
  * `Error: Only https registry URLs on public hosts are allowed.`
  * (mechanism `generic`, `handled:true`), call site `assertAllowedSourceAddress`
- * in `apps/api/src/marketplace/catalog.ts`, on
+ * in `apps/api/src/shared/allowed-source-address.ts`, on
  * `POST /v1/connectors/projects/:id/connectors` (8 occurrences, last 2026-08-04).
  *
- * Root cause: `assertAllowedSourceAddress` (the marketplace LFI/SSRF guard)
+ * Root cause: `assertAllowedSourceAddress` (the source-address LFI/SSRF guard)
  * throws a bare `Error` when a user submits a non-https or non-public URL as a
  * connector source. The throw is a VALID security validation, NOT a server
  * defect — but the connector `POST /connectors` route handler called
@@ -43,7 +43,7 @@ import {
   AllowedSourceValidationError,
   assertAllowedSourceAddress,
   isAllowedSourceValidationError,
-} from '../marketplace/catalog';
+} from '../shared/allowed-source-address';
 import {
   createConnectorRouter,
   type ConnectorPrincipal,

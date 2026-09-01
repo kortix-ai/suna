@@ -1094,7 +1094,13 @@ describe('create-repo starter scaffold contract', () => {
     });
   });
 
-  test('commits a selected marketplace project template into the new GitHub repository', async () => {
+  test('source_item_id is accepted and IGNORED — cloning a catalog item is gone', async () => {
+    // `source_item_id` used to clone a `registry:project` marketplace item, and
+    // an unknown/hidden id was refused with a 400 before any repo was created.
+    // The marketplace was removed from the product, so the field no longer
+    // selects anything: the create proceeds and commits the plain starter. The
+    // field stays accepted (rather than 400) so an old client is not broken by
+    // sending it.
     const app = createApp();
     const res = await app.request('/v1/projects/create-repo', {
       method: 'POST',
@@ -1104,11 +1110,12 @@ describe('create-repo starter scaffold contract', () => {
         name: 'company-os',
         project_name: 'Company OS',
         private: true,
-        source_item_id: 'kortix-projects:starter',
+        source_item_id: 'kortix-projects:no-such-item-any-more',
       }),
     });
 
     expect(res.status).toBe(201);
+    // The plain starter scaffold, not a cloned item's tree.
     expect(commitCalls.map((call) => call.path)).toContain(
       '.kortix/opencode/skills/agent-browser/SKILL.md',
     );
@@ -1122,45 +1129,5 @@ describe('create-repo starter scaffold contract', () => {
         managed: true,
       }),
     );
-  });
-
-  test('rejects a retired bundled project id instead of committing a half-built repo', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/create-repo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'seo-team',
-        project_name: 'Acme SEO',
-        private: true,
-        source_item_id: 'kortix-projects:seo-department',
-      }),
-    });
-
-    // The department templates were retired; the marketplace now leads with the
-    // single Kortix Starter project. Asking for a gone id must fail outright
-    // rather than create a repo and commit a partial tree into it.
-    expect(res.status).not.toBe(201);
-    expect(commitCalls.length).toBe(0);
-  });
-
-  test('rejects hidden marketplace projects before creating a GitHub repository', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/create-repo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        account_id: ACCOUNT_ID,
-        name: 'internal-project',
-        source_item_id: 'kortix-projects:web-studio',
-      }),
-    });
-
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'Unknown or non-cloneable project item "kortix-projects:web-studio"',
-    });
-    expect(repoCreateCalls).toHaveLength(0);
   });
 });

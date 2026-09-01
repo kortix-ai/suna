@@ -149,7 +149,6 @@ describe('buildSingleParentDeltaBundle', () => {
         projectName: 'Boot Benchmark',
         repoFullName: 'boot-benchmark-project-id',
         template: 'general-knowledge-worker',
-        marketplaceItems: [],
         now: '2026-08-20T00:00:00.000Z',
       });
       for (const file of seed.baseFiles) {

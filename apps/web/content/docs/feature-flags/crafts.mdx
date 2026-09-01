@@ -1,0 +1,206 @@
+---
+title: Crafts
+description: Install a Kortix project into another project — publish, install by change request, activate, and read run history.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **craft** is a Kortix project you install into another project: a repository
+whose own `kortix.yaml` declares agents, skills, connectors and triggers.
+Installing one merges that declaration into the target project. Its triggers
+then fire on their own schedule, and each fire is a **run**.
+
+Crafts is a [feature flag](/docs/feature-flags). Its stability is
+**experimental**, and it is off by default. Turn it on per project before you
+install anything.
+
+Building on Crafts from TypeScript? See [SDK → Crafts](/docs/sdk/crafts) for the
+client surface and the React hooks.
+
+## Turn Crafts on
+
+Open **Settings → Feature flags** and switch **Crafts** on for the project. You
+need `project.customize.write`.
+
+While the flag is off:
+
+- Every project-scoped craft route answers `403` with
+  `{ error, code: "feature_disabled", feature: "crafts" }`.
+- Every project-scoped `kortix crafts` subcommand prints `Crafts is not enabled
+  for this project. Enable it in Settings → Feature flags.` and exits `1`.
+- The **Crafts** row does not appear in the project sidebar.
+
+The account-scoped catalog routes (`GET /v1/crafts`, `POST /v1/crafts`,
+`GET|DELETE /v1/crafts/:craftId`) are **not** flag-gated. Publishing and
+browsing are account-level; only what a project installs is gated.
+
+## The four steps
+
+Crafts has one lifecycle, and each step is a separate decision:
+
+1. **Publish** — index a repo or an archive into the catalog.
+2. **Install** — an agent session merges the craft and opens a change request.
+3. **Activate** — turn the craft's triggers on. Nothing fires before this.
+4. **Read runs** — every trigger fire, with a derived status.
+
+<Callout type="warn" title="Install does not install. It opens a change request.">
+Install starts an agent session that reads both manifests, resolves name
+collisions, and opens a **change request**. The craft is not installed until
+that CR merges to the default branch. Uninstall works the same way. Neither
+call commits on its own.
+</Callout>
+
+## Publish a craft
+
+A craft comes from one of two sources, and they behave differently.
+
+| Source | Tracks the source | Re-crawls when it moves | Where |
+|---|---|---|---|
+| A GitHub repo | yes — `owner/repo`, optionally `@branch-or-tag` | yes | Web and CLI |
+| An uploaded `.zip` | no — the files are a snapshot | never | Web only |
+
+A craft is **private** by default. It goes public on purpose, with
+`--public` on the CLI or the visibility control in **Add a craft**.
+
+Publishing derives the card — title, description, and what the craft declares —
+from the manifest at the resolved commit. The response carries `warnings`, which
+never block: a manifest deprecation, a per-entry parse error, or a count of
+files the crawl left behind. The craft **is** indexed. Show the warnings; do not
+read them as a failure.
+
+Rejections carry a machine `code` — `manifest_not_found`, `manifest_invalid`,
+`ref_not_found`, `repo_not_found`, `upstream_unavailable`, `invalid_archive`,
+`archive_refused`. See [SDK → Crafts](/docs/sdk/crafts#rejections-worth-handling)
+for what each one means.
+
+### An upload keeps only the craft
+
+You can zip a whole project folder. The crawl keeps `kortix.yaml`, anything
+under `.kortix/`, a root `README.md`, and a root `.env.example`. It leaves
+`src/**`, tests, lockfiles, and `docs/**` behind.
+
+That filter is not only about size. The install prompt tells the agent *these
+files ARE the craft — copy from here*, so a stored `src/server.ts` would become
+a file the agent writes into **someone else's** repository.
+
+Archive bounds, all server-side: 10 MB envelope, 5 MB of extracted text,
+256 KB per file, 1000 files after filtering. Over any of them and the route
+answers `400 archive_refused` naming which one.
+
+### Or describe one and have it built
+
+**Grow your crafts** on the store page takes a description and starts an agent
+session that builds and publishes the craft for you. It is the same kind of
+session as install: it ends in work you review, not in a finished catalog entry.
+
+## What an install records
+
+An install writes a `crafts:` entry to the target project's `kortix.yaml`, and
+stamps `craft: <slug>` on every agent, skill, connector, and trigger it
+contributed. Both halves land in one commit, which is what makes `git revert` a
+working uninstall.
+
+```yaml
+crafts:
+  - slug: seo-watch
+    repo: acme/seo-craft
+    ref: v1.2.0
+    sha: 4f1c8a2e9b7d3056a1c4e8f0b6a92d5c7e3b1f80
+    title: SEO Watch
+    installed_at: '2026-08-30T09:14:22Z'
+    owns:
+      agents: [seo-analyst]
+      triggers: [seo-daily]
+
+triggers:
+  - slug: seo-daily
+    type: cron
+    craft: seo-watch
+    cron: '0 0 9 * * 1-5'
+    prompt: Check yesterday's rankings.
+```
+
+The installed list a project reads comes from **this section**, not from the
+catalog. An install outlives its catalog entry: a craft withdrawn from the store
+still appears in the project with its own recorded title and pinned `sha`.
+
+Full field reference and validation rules:
+[Manifest → `crafts:`](/docs/project/manifest#crafts).
+
+## Activation
+
+<Callout type="warn" title="A craft installs with every trigger OFF">
+That is deliberate: a craft that starts firing the moment it lands is a craft
+nobody trusts. Enabling it is a separate, explicit step.
+</Callout>
+
+Enabling a craft **commits to the manifest** — a craft's activation is
+configuration, visible in `git log`. It is not the project-wide pause switch,
+which is `kortix triggers pause`.
+
+There is no "this craft is on" flag. A craft is on exactly when its triggers
+are, so its state is three-valued:
+
+| State | Meaning |
+|---|---|
+| On | Every trigger it owns is enabled |
+| Off | None are |
+| Indeterminate | **Some** are, or it owns no triggers at all |
+
+Render the third state as indeterminate. A two-state switch that rounds it to
+on or off hides the other half.
+
+## Runs
+
+A run is **one trigger fire** — one row of the project's own execution history.
+The join is the trigger's manifest `craft:` field. A hand-authored trigger has
+no `craft:`, so its fires never appear in a craft report.
+
+Run status is derived from the session's last ended turn, not stored. Seven
+values: `starting`, `retrying`, `running`, `done`, `failed`, `stopped`,
+`skipped`. Two of them are why a craft report needs its own legend:
+
+- **`retrying`** — the fire failed and will be attempted again. A failed
+  attempt returns to the queue and only becomes terminal after five tries.
+- **`skipped`** — a filter or the pause switch declined the fire. Nothing ran,
+  and nothing is wrong.
+
+Success rate is `done / (done + failed)`. `stopped` and `skipped` count on
+neither side: a reaped sandbox is not the craft failing.
+
+## The Crafts pages
+
+| Page | What it shows |
+|---|---|
+| `/projects/<id>/crafts` | The store. Installed crafts first, then the catalog with `All` / `Installed` / `Available` filters and search. |
+| `/projects/<id>/crafts/runs` | Craft runs across every installed craft. |
+| `/projects/<id>/crafts/runs/<slug>` | One craft's runs, with aggregate stats. |
+
+The project home carries two previews above the composer: the five
+most-recently-run crafts with their recent runs as status circles, and a grid
+of crafts you can install. Each self-hides when it has nothing to show.
+
+## From the CLI
+
+```bash
+kortix crafts publish acme/seo-craft --ref v1.2.0 --public
+kortix crafts list --query seo
+kortix crafts install seo-watch     # opens a change request
+kortix crafts enable seo-watch      # now it fires
+kortix crafts runs seo-watch
+```
+
+Full subcommand and option reference: [CLI → Crafts](/docs/cli#crafts).
+
+## From the SDK
+
+Two surfaces, deliberately separate — the account-scoped catalog, and what one
+project has installed:
+
+```ts
+kortix.crafts;                        // the catalog
+kortix.project(projectId).crafts;     // installed, activation, runs
+```
+
+See [SDK → Crafts](/docs/sdk/crafts) for every method, the React hooks, and the
+error codes.

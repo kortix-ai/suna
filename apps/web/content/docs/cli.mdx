@@ -293,9 +293,9 @@ needs project read; `new` and `rm` need
 `project.credentials.issue`. An agent-session token can neither mint nor
 revoke project tokens (`403`).
 
-`kortix projects upgrade` needs project write. The default agent refreshes the
-marketplace baseline, rewrites the manifest, runs `kortix validate`, and opens
-a change request. It never merges: a human reviews the diff.
+`kortix projects upgrade` needs project write. The default agent rewrites the
+manifest, runs `kortix validate`, and opens a change request. It never merges:
+a human reviews the diff.
 
 ### Project scaffold
 
@@ -317,7 +317,7 @@ changing the cloud OpenCode runtime. The command does not write
 
 The local coding-tool selection does not change the cloud OpenCode runtime.
 
-`kortix init` does not include a marketplace picker. Adding a marketplace skill is an agent import: start a session and ask the agent to bring one in.
+`kortix init` does not include a capability picker. Adding a skill is an agent import: start a session and ask the agent to bring one in.
 
 ### Ship
 
@@ -648,22 +648,49 @@ Pinning a provider needs `project.customize.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
-### Marketplace
+### Crafts
 
-Browse the Kortix marketplace, and install an item into a project.
+A craft is a Kortix project you install into another project: a repository whose
+`kortix.yaml` declares agents, skills, connectors and triggers. See
+[Crafts](/docs/feature-flags/crafts).
+
+Two halves. `publish`, `list`, `show`, and `remove` are account-scoped — the
+catalog. The rest act on one project, default the linked one.
 
 | Command | Effect |
 | --- | --- |
-| `kortix marketplace search [query]` | Search marketplace items. |
-| `kortix marketplace list` | List marketplace items. |
-| `kortix marketplace show <id-or-name>` | Show one marketplace item. |
-| `kortix marketplace install <id-or-name>` | Start an agent session that imports the item. |
+| `kortix crafts publish <owner/repo>` | Index a craft from a GitHub repo. Private by default. Aliases: `submit`. |
+| `kortix crafts list` | Browse the catalog. Aliases: `ls`, `search`. |
+| `kortix crafts show <id-or-slug>` | One craft: what it declares and what it needs. Alias: `view`. |
+| `kortix crafts remove <id>` | Withdraw from the catalog. Does **not** uninstall it from any project. Aliases: `rm`, `delete`. |
+| `kortix crafts installed` | What the target project has installed. |
+| `kortix crafts install <id-or-slug>` | Start the agent session that installs it. |
+| `kortix crafts uninstall <slug>` | Start the agent session that removes it. |
+| `kortix crafts enable <slug>` / `disable <slug>` | Turn this craft's triggers on or off. |
+| `kortix crafts runs [slug]` | Run history. Omit the slug for every craft. |
 
-Options: `--query <text>`, `--type <type>`, `--source <source>`, `--host <name>`, `--project <id>`, `--json`.
+`publish` options: `--ref <branch-or-tag>` (aliases `--branch`, `--tag`) pins the
+ref; `--public` lists it in the public catalog.
 
-Install is agent-driven: it starts a project session that clones the item,
-reads it, merges what fits, and opens a change request. There is no
-deterministic install/update/remove machinery.
+Options on every subcommand: `--project <id>`, `--host <name>`, `--limit <n>`,
+`--query <text>` (alias `-q`), `--json`.
+
+`--limit` defaults to 50 and the CLI caps it at 200. The server clamps again:
+`runs` returns at most 200 rows, `list` at most 100.
+
+`install` and `uninstall` do not change the project. Each starts an agent session
+that reads both manifests, resolves name collisions, and opens a change request
+you review. A craft installs with every trigger **off** — `enable` is what starts
+it working, and it commits the change to `kortix.yaml`. That is not the
+project-wide pause switch, which is `kortix triggers pause`.
+
+`kortix crafts` never uploads an archive. Publishing from a `.zip` exists on the
+web, for a folder that is not a repo yet. A craft that tracks a repo gets
+re-crawled when it moves; an uploaded snapshot never does.
+
+Crafts is a per-project [feature flag](/docs/feature-flags), off by default.
+While it is off, every project-scoped subcommand prints the feature-disabled
+sentence and exits `1`.
 
 ### System skills
 
@@ -682,7 +709,7 @@ Options: `--host <name>`, `--json`.
 
 `kortix skills` is a permanent alias for the same command.
 
-This list is always the system skills, never a mix. Optional skills live in the marketplace: `kortix marketplace list --type skill`.
+This list is always the system skills, never a mix.
 
 ### Connector
 

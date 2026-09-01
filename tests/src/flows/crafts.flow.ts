@@ -13,8 +13,7 @@
  *     An uploaded archive exercises the SAME crawl — the manifest parse, the
  *     card derivation, the upsert — against bytes the flow builds itself, so
  *     the assertions are about our code rather than about GitHub's uptime.
- *  2. **Install and uninstall are asserted at the validation boundary**, the
- *     same convention `MKTP-11` documents for `marketplace/install-session`.
+ *  2. **Install and uninstall are asserted at the validation boundary.**
  *     Each spawns a real session once past validation, and a session needs a
  *     cloud sandbox with a reachable callback origin — excluded locally. So a
  *     `503 KORTIX_URL_UNREACHABLE` past the gate is the pass condition, and

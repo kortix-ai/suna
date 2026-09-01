@@ -536,7 +536,7 @@ test('kortix.connectStatus hits the top-level connect-status endpoint (not proje
 });
 
 test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {
-  await kortix.project('PID123').updateExperimentalFeature('marketplace', true);
+  await kortix.project('PID123').updateExperimentalFeature('review_center', true);
   expect(last().url).toContain('/projects/PID123/experimental');
   expect(last().method).toBe('PATCH');
 
@@ -778,36 +778,6 @@ test('kortix.billing.sessionCosts covers paginated list and detail reads', async
     'http://test.local/usage/session-costs/SID%2F1?account_id=ACC1&project_id=PID1',
   );
   expect(last().method).toBe('GET');
-});
-
-test('kortix.marketplace covers public catalog browse + authed sources CRUD (top-level, not project-scoped)', async () => {
-  await kortix.marketplace.items({ query: 'slack' });
-  expect(last().url).toContain('/marketplace/items?query=slack');
-  expect(last().method).toBe('GET');
-
-  await kortix.marketplace.item('kortix:researcher');
-  expect(last().url).toContain('/marketplace/items/kortix%3Aresearcher');
-
-  await kortix.marketplace.itemFile('kortix:researcher', 'agent.md');
-  expect(last().url).toContain('/marketplace/items/kortix%3Aresearcher/file?path=agent.md');
-
-  await kortix.marketplace.marketplaces();
-  expect(last().url).toContain('/marketplace/marketplaces');
-
-  await kortix.marketplace.featured();
-  expect(last().url).toContain('/marketplace/marketplaces/featured');
-
-  await kortix.marketplace.sources.list();
-  expect(last().url).toContain('/marketplace/sources');
-  expect(last().method).toBe('GET');
-
-  await kortix.marketplace.sources.add({ address: 'https://github.com/acme/registry' });
-  expect(last().url).toContain('/marketplace/sources');
-  expect(last().method).toBe('POST');
-
-  await kortix.marketplace.sources.remove('SRC1');
-  expect(last().url).toContain('/marketplace/sources/SRC1');
-  expect(last().method).toBe('DELETE');
 });
 
 test('kortix.validateToken hits /accounts/me and never throws', async () => {

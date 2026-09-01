@@ -239,6 +239,7 @@ Legacy `kortix.toml` uses the same fields in a different container; see [legacy 
 | `mode` | required, monitor only | — | `poll` re-runs `run` every `interval`; `stream` runs it once and keeps it alive. |
 | `interval` | required for `mode: poll` | — | Duration literal (`30s`, `5m`, `24h`, `7d`), minimum `30s`. Invalid on `mode: stream`. |
 | `expect_event_within` | no, monitor only | — | Duration literal, minimum `5m`. Silence longer than this fires a lifecycle event. |
+| `craft` | no | — | The craft that contributed this trigger. Written by a craft install, never by hand. See [Craft-owned triggers](#craft-owned-triggers). |
 
 A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `secret_env` is rejected — there is no unauthenticated webhook. A monitor needs `run` and `mode`, and rejects `cron`, `run_at`, `timezone`, and `secret_env` outright — a manifest that claims a schedule the monitor runner never reads is a lie.
 
@@ -344,6 +345,17 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 ## Pause and resume
 
 A project-level switch stops every trigger in the project at once, independent of each trigger's own `enabled` field. While paused, the scheduler skips the project and inbound webhooks return `200` with `{ status: "skipped" }` — no session fires. A manual fire still works. Use this when the same repository runs on two control planes (for example, dev and production) so cron does not fire twice. CLI: `kortix triggers pause` and `kortix triggers resume`. See [CLI](/docs/cli) for the full `kortix triggers` command group.
+
+## Craft-owned triggers
+
+Installing a [craft](/docs/feature-flags/crafts) merges its triggers into this project's `kortix.yaml`. Each one carries `craft: <slug>`, naming the craft it came from. A hand-authored trigger has no `craft:` field.
+
+That field does two things:
+
+- **It groups activation.** Enabling or disabling one craft flips every trigger it owns, in one commit. A craft installs with every trigger **off**, so nothing fires until someone enables it. This is a third switch, distinct from a trigger's own `enabled` field and from the project-wide pause above.
+- **It joins the run history.** The craft-run report reads `project_trigger_runtime.craft_slug`, materialized from this field. A trigger without `craft:` never appears in a craft report; its fires are still in the project's own trigger history.
+
+Craft-owned triggers are ordinary triggers otherwise. They obey the same scheduler, the same session strategy, the same limits, and the same project pause. Field reference: [Manifest → `crafts:`](/docs/project/manifest#crafts).
 
 ## Limits and reliability
 

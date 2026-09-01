@@ -21,6 +21,10 @@ const catalog = kortix.crafts;
 const installed = kortix.project(projectId).crafts;
 ```
 
+This page is the client surface. For the product — the flag, the four steps, the
+pages — see [Crafts](/docs/feature-flags/crafts). For what an install writes to
+`kortix.yaml`, see [Manifest → `crafts:`](/docs/project/manifest#crafts).
+
 <Callout type="info" title="Crafts is a feature flag">
 Every project-scoped craft route answers `403` with
 `{ error, code: "feature_disabled", feature: "crafts" }` until the project turns
@@ -303,3 +307,5 @@ kortix crafts uninstall seo-watch
 
 `kortix crafts` does not upload an archive: by the time you are at a terminal you
 have a repository, and a craft that tracks one gets re-crawled when it moves.
+
+Full subcommand and option reference: [CLI → Crafts](/docs/cli#crafts).

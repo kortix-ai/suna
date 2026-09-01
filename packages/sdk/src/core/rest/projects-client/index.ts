@@ -38,7 +38,6 @@ export * from './public-session-shares';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
-export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
 

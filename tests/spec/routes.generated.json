@@ -1104,38 +1104,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/marketplace/items"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/items/:id"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/items/:id/file"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/marketplaces"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/marketplaces/featured"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/sources"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/marketplace/sources"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/marketplace/sources/:id"
-    },
-    {
-      "method": "GET",
       "path": "/v1/oauth/.well-known/oauth-authorization-server"
     },
     {
@@ -1841,10 +1809,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/manifest/validate"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/marketplace/install-session"
     },
     {
       "method": "DELETE",

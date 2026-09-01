@@ -159,7 +159,6 @@ export function buildCreateRepoPayload(
     ...(state.installationId ? { installation_id: state.installationId } : {}),
     private: true,
     starter_template: 'general-knowledge-worker',
-    ...(state.templateId ? { source_item_id: state.templateId } : {}),
     ...iconPayload(state),
   } as CreateProjectRepoInput;
 }

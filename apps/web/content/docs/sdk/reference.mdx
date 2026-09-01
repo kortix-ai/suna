@@ -27,7 +27,7 @@ kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.connectStatus; // easy-connect (Pipedream) status
-kortix.marketplace; // public marketplace catalog
+kortix.crafts; // the craft catalog — publish, browse, withdraw
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
 kortix.runtime(); // OpenCode REST compatibility client
@@ -112,7 +112,7 @@ Reached by invite token alone — the invitee may not be a member yet.
 | `list()` · `listForAccount(accountId)` | your projects · projects in an account |
 | `get(id)` · `detail(id)` | summary · full detail |
 | `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
-| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
+| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, idempotency_key? }` |
 | `update(id, input)` · `archive(id)` | update settings · archive |
 | `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
 | `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
@@ -183,16 +183,23 @@ project-scoped.
 | `create(input)` | create one — `{ sandboxId, port, ttl?, label? }` |
 | `revoke(sandboxId, token)` | revoke one |
 
-### Marketplace catalog — `kortix.marketplace`
+### Craft catalog — `kortix.crafts`
 
-Public catalog browsing, read-only — distinct from `project(id).marketplace`,
-which installs an item onto a project.
+The catalog of crafts — account-scoped, and distinct from
+`project(id).crafts`, which is what one project has installed. A craft comes
+from a GitHub repo or an uploaded `.zip`. See [Crafts](/docs/sdk/crafts).
 
 | method | what |
 | --- | --- |
-| `items(options?)` · `item(id)` · `itemFile(id, path)` | browse · one item · a file inside an item |
-| `marketplaces()` · `featured()` | all · featured marketplaces |
-| `sources.list()` · `sources.add(input)` · `sources.remove(id)` | list · add · remove a source |
+| `list(options?)` · `get(craftId)` | every public craft plus your own private ones; `options.q` filters · one craft |
+| `submit(input)` | index a craft from `owner/repo`, optionally `@branch-or-tag` |
+| `submitArchive(input)` | index a craft from an uploaded `.zip` (`{ file, visibility? }`) |
+| `remove(craftId)` | withdraw from the catalog — does **not** uninstall it from any project |
+
+Both submit calls resolve to `{ craft, warnings }`. `warnings` never blocks: the
+craft **is** indexed. Rejections carry a machine `code` —
+`manifest_not_found`, `manifest_invalid`, `ref_not_found`, `repo_not_found`,
+`upstream_unavailable`, `invalid_archive`, `archive_refused`.
 
 ### The project handle — `kortix.project(id)`
 
@@ -302,7 +309,7 @@ project manager as much as a member.
 | `connections.updateCredential(connectionId, input)` | rotate a connection credential |
 | `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
 
-`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
+`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Feature flags](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector catalog.
 
 | method | what |
 | --- | --- |
@@ -363,16 +370,27 @@ not a role. It decides who can open one trigger's sessions. It grants no
 permission the role verdict denies. See
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
-#### `p.marketplace` / `p.registry` — installed items
+#### `p.crafts` — installed crafts and their runs
 
-Installs a catalog item's files onto the project's default branch.
-`registry.*` is an identical alias of `marketplace.*`.
+What this project has installed, plus activation and run history. Behind the
+`crafts` [feature flag](/docs/feature-flags/crafts): every method here answers
+`403` `feature_disabled` while it is off. See [Crafts](/docs/sdk/crafts).
 
 | method | what |
 | --- | --- |
-| `marketplace.list()` · `marketplace.install(id)` | installed items · install a catalog item |
-| `marketplace.updates()` · `marketplace.update(name)` · `marketplace.updateAll()` | available updates · update one · update all |
-| `marketplace.remove(name)` | uninstall an item |
+| `list()` | the installed crafts, read from the project's manifest — not the catalog |
+| `install(craftId)` · `uninstall(slug)` | start the agent session that installs · removes it |
+| `author(description)` | describe a craft and have one built and published |
+| `setActivation(slug, enabled)` | turn ONE craft's triggers on or off |
+| `runs(options?)` · `runsFor(slug, options?)` | runs across every craft · one craft's runs plus aggregate `stats` |
+
+`install`, `uninstall`, and `author` return a **session id**, not a result. Each
+opens a change request a human reviews; the project changes when that CR merges.
+
+`uninstall` and `setActivation` key on the manifest `slug`, not a craft id. A
+craft installs with every trigger off, so `setActivation(slug, true)` is what
+starts it working — and it commits to `kortix.yaml`. It is not the project-wide
+pause, which is `triggers.setActivation`.
 
 #### `p.files` — repo files (read)
 

@@ -105,6 +105,7 @@ triggers:
 | `opencode.config_dir`                               | no       | default `.kortix/opencode`                                                                 |
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
 | `connectors`                                        | no       | list of connector definitions                                                              |
+| `crafts`                                            | no       | installed crafts. Written by the install flow, not by hand                                 |
 | `policy.default_mode`                               | no       | `allow_all` (default) or `risk`; project-wide connector approval mode                      |
 | `agents`                                            | yes      | name-to-block governance map; must not be empty                                            |
 
@@ -228,6 +229,7 @@ triggers:
 | `model`        | no                    | resolves at fire time | Wire form `provider/model`. Pins the fired session to that model. See [Models](/docs/project/models). |
 | `session_mode` | no                    | `fresh`               | `fresh`, `reuse`, `pinned`, or `keyed`.                                                               |
 | `session_id`   | required for `pinned` | —                     | Exact session to re-prompt.                                                                           |
+| `craft`        | no                    | —                     | The craft that contributed this trigger. Must name an entry in `crafts:`. Omitted on hand-authored triggers. See [`crafts:`](#crafts). |
 
 Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a one-off ISO-8601 timestamp), plus `timezone` as an IANA name. Webhook triggers need `secret_env`, the name of a secret that uses `broker` delivery with the `connector` consumer. Monitor triggers need `run` (a repo-relative command) and `mode` (`poll` or `stream`), and reject every cron and webhook field. Full field reference, credential setup, payload templating, endpoints, and session strategy: see [Triggers](/docs/connect/triggers).
 
@@ -280,6 +282,64 @@ belong to the connector. Every connection under that connector uses the same
 policies.
 
 `policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `allow_all` (default; every unmatched tool runs) or `risk` (require approval for write and destructive unmatched calls). Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI](/docs/cli).
+
+## `crafts:`
+
+A list of the crafts this project has installed. A craft is another Kortix project — a repository whose own `kortix.yaml` declares agents, skills, connectors and triggers — merged into this one. See [Crafts](/docs/feature-flags/crafts) for the product, and [SDK → Crafts](/docs/sdk/crafts) for the client surface.
+
+**You do not write this section by hand.** The install flow writes it: an agent session reads both manifests, resolves name collisions, and opens a change request. The entry and the entities it names land in one commit, which is what makes `git revert` a working uninstall.
+
+```yaml
+crafts:
+  - slug: seo-watch
+    repo: acme/seo-craft
+    ref: v1.2.0
+    sha: 4f1c8a2e9b7d3056a1c4e8f0b6a92d5c7e3b1f80
+    title: SEO Watch
+    installed_at: '2026-08-30T09:14:22Z'
+    owns:
+      agents: [seo-analyst]
+      triggers: [seo-daily]
+```
+
+| Field          | Required | Notes                                                                                                    |
+| -------------- | -------- | -------------------------------------------------------------------------------------------------------- |
+| `slug`         | yes      | `[a-z0-9][a-z0-9_-]{0,127}`, unique among crafts. The key `craft:` back-references and the API uses.     |
+| `repo`         | yes      | Source as `owner/repo`. A craft always records where it came from.                                       |
+| `ref`          | no       | The branch or tag the install asked for. Absent means the repo's default branch. An update re-resolves against it. |
+| `sha`          | no       | The commit `ref` resolved to at install. The integrity source — a branch moves, a sha does not.           |
+| `version`      | no       | Display-only tag (`v1.2.0`). Never the integrity source.                                                 |
+| `title`        | no       | Display name recorded at install, so it survives the catalog entry being withdrawn.                      |
+| `installed_at` | no       | ISO-8601 timestamp.                                                                                      |
+| `owns`         | no       | What this craft contributed, by kind: `agents`, `skills`, `connectors`, `triggers`. Each a list of slugs. |
+
+`ref`, `sha`, `version`, and `installed_at` must be non-empty when present. `owns` accepts only those four kinds; any other key is a validation error.
+
+### `craft:` back-references
+
+Ownership is recorded twice, on purpose. `crafts[].owns` says what one craft contributed; `craft: <slug>` on each trigger, connector, and agent block says who owns it. The validator cross-checks them: a `craft:` value that names no entry in `crafts:` fails validation with `does not match any entry in crafts`.
+
+```yaml
+crafts:
+  - slug: seo-watch
+    repo: acme/seo-craft
+
+triggers:
+  - slug: seo-daily
+    type: cron
+    craft: seo-watch
+    cron: '0 0 9 * * 1-5'
+    prompt: Check yesterday's rankings.
+
+agents:
+  seo-analyst:
+    craft: seo-watch
+    connectors: [googlesearchconsole]
+```
+
+That second half is not bookkeeping. The craft-run report joins on the trigger's `craft:` field, so an orphaned reference silently drops the trigger's fires out of its craft's history.
+
+`crafts:` is v2-only. A `kortix.toml` (v1) manifest that declares it is rejected with a message pointing at the v2 migration — see [Legacy TOML](/docs/project/legacy-toml).
 
 ## Channels
 

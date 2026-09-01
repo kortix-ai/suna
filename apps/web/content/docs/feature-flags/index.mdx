@@ -4,7 +4,7 @@ description: Turn a Kortix surface on for one project, and read what every flag 
 ---
 
 import { Card, Cards } from '@/components/markdown/docs-card';
-import { BrowserIcon } from '@/lib/icons/ssr';
+import { BrowserIcon, PackageIcon } from '@/lib/icons/ssr';
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A feature flag turns one Kortix surface on for one project. Any surface can
@@ -16,11 +16,12 @@ another project, and nothing for other accounts.
 
 <Cards>
   <Card icon={<BrowserIcon />} title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon={<PackageIcon />} title="Crafts" href="/docs/feature-flags/crafts">Install a Kortix project into another project, activate its triggers, and read its runs.</Card>
 </Cards>
 
 ## Turn a flag on
 
-1. Open **Settings → Experimental**. The tab lists every flag the platform
+1. Open **Settings → Feature flags**. The tab lists every flag the platform
    supports.
 2. Read the row: the flag name, its stability badge, one sentence of
    description, and its origin — `Default on`, `Default off`, or
@@ -113,11 +114,10 @@ this.
 
 ## Every flag
 
-Registry order — the same order **Settings → Experimental** shows.
+Registry order — the same order **Settings → Feature flags** shows.
 
 | Key | Name | Stability | Default | Enforcement |
 |---|---|---|---|---|
-| `marketplace` | Marketplace | Beta | On | `routes` |
 | `agent_tunnel` | Agent Computer Tunnel | Experimental | Off | `ui-only` |
 | `connectors_api_discover` | Connectors API Discover | Experimental | Off | `routes` |
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
@@ -139,8 +139,6 @@ refs). An explicit project choice always wins.
 
 ### What each flag gates
 
-- **`marketplace`** — browse and install skills from community and vendor
-  registries.
 - **`agent_tunnel`** — let agents reach a local machine over a permissioned
   reverse tunnel. See [Computer Tunnel](/docs/connect/computers).
 - **`connectors_api_discover`** — browse direct API, MCP, GraphQL, CLI, and
@@ -158,7 +156,7 @@ refs). An explicit project choice always wins.
   output.
 - **`crafts`** — install a craft (a GitHub repo whose `kortix.yaml` declares
   agents, skills, connectors and triggers) into a project, and read the run
-  history of the triggers it owns.
+  history of the triggers it owns. See [Crafts](/docs/feature-flags/crafts).
 - **`meta_agent`** — add a platform-owned coordinator agent that spawns and
   manages specialized sessions.
 - **`apps`** — deploy static sites, bundles, Dockerfiles, and OCI images to

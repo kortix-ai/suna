@@ -31,11 +31,8 @@ import {
 import { normalizeStarterTemplateId } from './starter';
 import {
   buildProjectSeedFiles,
-  buildProjectSeedFilesFromItem,
   defaultAgentFromSeedFiles,
-  normalizeMarketplaceItems,
 } from './seed-files';
-import { getCatalogItemDetail } from '../marketplace/catalog';
 import { remoteBranchExists } from './git';
 import { config } from '../config';
 import { db } from '../shared/db';
@@ -228,16 +225,6 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // PATCH path needs.
   const iconGlyph = normalizeProjectGlyph(body.icon_glyph);
 
-  // "Clone project" — seed the new repo from a `registry:project` marketplace
-  // item instead of the blank starter. Resolved + type-checked BEFORE any
-  // upstream repo/DB row is created, same as the name checks above.
-  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
-  if (sourceItemId) {
-    const sourceItem = await getCatalogItemDetail(sourceItemId);
-    if (!sourceItem || sourceItem.type !== 'registry:project') {
-      return { status: 400, body: { error: `Unknown or non-cloneable project item "${sourceItemId}"` } };
-    }
-  }
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
@@ -272,7 +259,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   //
   // NON-GOAL, stated so callers can rely on it: the key is NOT a fingerprint of
   // the request. It identifies the ATTEMPT, not the payload. The same key with
-  // a different `name`, `starter_template`, or `source_item_id` returns the
+  // a different `name` or `starter_template` returns the
   // FIRST project, silently ignoring the new payload. Clients must therefore
   // mint a fresh key per distinct create, and reuse one only across retries of
   // the same create.
@@ -354,11 +341,10 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // the insert and a verified seed leaves `{ expected: true, seeded: false }`,
   // which the same repair path fixes.
   const clientOwnsFirstCommit = body.seed_starter === false || body.seedStarter === false;
-  const seedStarter = !clientOwnsFirstCommit || !!sourceItemId;
-  const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
+  const seedStarter = !clientOwnsFirstCommit;
   const initialSeedState = buildManagedRepoSeedState(
     seedStarter
-      ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
+      ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: starterTemplate }
       : { seeded: false, expected: true, reason: 'client_owns_first_commit', at: now.toISOString(), template: starterTemplate },
   );
 
@@ -570,21 +556,12 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   if (seedStarter) {
     try {
       if (!internalPushToken) throw new Error('no push credential resolved for seeding');
-      const seed = sourceItemId
-        ? await buildProjectSeedFilesFromItem({
-            id: sourceItemId,
-            projectName: name,
-            repoFullName: repoSlug,
-            extraMarketplaceItems: marketplaceItems,
-            now: now.toISOString(),
-          })
-        : await buildProjectSeedFiles({
-            projectName: name,
-            repoFullName: repoSlug,
-            template: starterTemplate,
-            marketplaceItems,
-            now: now.toISOString(),
-          });
+      const seed = await buildProjectSeedFiles({
+        projectName: name,
+        repoFullName: repoSlug,
+        template: starterTemplate,
+        now: now.toISOString(),
+      });
       // Seed a deterministic scaffold root followed by the project's small
       // customization commit. Fresh-session boot can import that exact second
       // commit from the API mirror as a bounded Git bundle, on top of the
@@ -629,7 +606,7 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         expected: true,
         reason: 'seeded',
         at: new Date().toISOString(),
-        template: sourceItemId ?? starterTemplate,
+        template: starterTemplate,
       });
       row.metadata = {
         ...((row.metadata as Record<string, unknown> | null) ?? {}),

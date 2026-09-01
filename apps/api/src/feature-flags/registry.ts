@@ -97,17 +97,6 @@ export interface FeatureFlagDef {
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
-    key: 'marketplace',
-    name: 'Marketplace',
-    description:
-      'Browse and 1-click install skills from a marketplace of community & vendor registries (any SKILL.md repo). Sources, updates, and team scopes are still in flux.',
-    stability: 'beta',
-    available: () => true,
-    // On by default for every project — no longer gated behind an opt-in toggle.
-    platformDefault: () => true,
-    enforcement: 'routes',
-  },
-  {
     key: 'agent_tunnel',
     name: 'Agent Computer Tunnel',
     description:

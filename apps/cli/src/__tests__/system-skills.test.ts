@@ -189,12 +189,12 @@ describe('kortix system-skills — list', () => {
     expect(out).not.toContain('Load whenever the user asks');
   });
 
-  test('--all no longer widens the list — it stays the system floor, and says where the rest went', async () => {
+  test('--all no longer widens the list — it stays the system floor and says so', async () => {
     const code = await runSystemSkills(['list', '--all']);
     expect(code).toBe(0);
     expect(stripAnsi(stdout)).toContain('kortix-system');
     expect(requests.some((u) => u.includes('marketplace'))).toBe(false);
-    expect(stripAnsi(stderr)).toContain('kortix marketplace list --type skill');
+    expect(stripAnsi(stderr)).toContain('--all no longer applies');
   });
 
   test('--json emits the whole description, untruncated, on a clean pair of streams', async () => {
