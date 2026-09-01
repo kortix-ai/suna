@@ -412,7 +412,23 @@ export async function buildHarness(cfg: WorkerConfig) {
     // ANY agent event means this process is doing work, so the boot reconcile
     // must never fire — it exists only for a session that booted idle.
     bootReconcile.noteTurnStarted();
-    if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
+    // `agent_end` ONLY — never pi's `turn_end`.
+    //
+    // The two systems use the word "turn" for different things. In pi, a TURN
+    // is ONE provider round: `turn_end` carries a single assistant message plus
+    // its `toolResults`, and the loop then decides whether to start another
+    // round (`shouldStopAfterTurn` — @earendil-works/pi-agent-core types.d.ts).
+    // `agent_end` is the last event of the RUN. A Kortix `session_turns` row
+    // spans the whole run — prompt to final answer.
+    //
+    // Relaying on `turn_end` therefore closed the row on the FIRST tool round,
+    // while the agent was still working: the Stop button and the working
+    // indicator disappeared mid-answer, and the box's deadline was pulled in to
+    // the idle tail under a run that was still generating. It looked correct in
+    // testing because a prompt that uses NO tools has exactly one pi turn, so
+    // `turn_end` and `agent_end` arrive back to back and the second relay is a
+    // harmless no-op.
+    if (event.type !== 'agent_end') return;
     // Snapshotted HERE, synchronously: `runTurn`'s `finally` clears the active
     // message id as soon as `agent.prompt()` resolves, so reading it inside the
     // awaited relay would read null and match nothing.

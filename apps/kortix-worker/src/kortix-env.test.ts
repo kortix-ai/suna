@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { toFileErrorCode } from './kortix-env.ts';
+import {
+  toExecTimeoutMs, toFileErrorCode } from './kortix-env.ts';
 
 // The daemon's env-rpc is a thin fs proxy and reports the real errno. pi's
 // tools compare against pi's OWN codes, so this client has to translate.
@@ -33,5 +34,36 @@ describe('toFileErrorCode', () => {
     expect(toFileErrorCode('not_supported')).toBe('not_supported');
     expect(toFileErrorCode(undefined)).toBe('unknown');
     expect(toFileErrorCode('')).toBe('unknown');
+  });
+});
+
+/**
+ * pi's `ExecutionEnvironment.exec` takes a timeout in SECONDS
+ * (@earendil-works/pi-agent-core harness/types.d.ts:205 — "Timeout in
+ * seconds"). The Kortix daemon reads the same field as `timeoutMs` and
+ * SIGKILLs the child on it (kortix-sandbox-agent-server routes/env-rpc.ts,
+ * `case 'exec'`). Forwarding the number unconverted killed every model-supplied
+ * timeout ~1000x early — `bash({ timeout: 600 })` meaning ten minutes died
+ * after 600ms with exit 124, and the model was told it had timed out.
+ */
+describe('toExecTimeoutMs', () => {
+  test('converts pi seconds to daemon milliseconds', () => {
+    expect(toExecTimeoutMs(600)).toBe(600_000);
+    expect(toExecTimeoutMs(1)).toBe(1_000);
+    expect(toExecTimeoutMs(0.5)).toBe(500);
+  });
+
+  test('leaves an unset timeout unset so the daemon applies its own default', () => {
+    expect(toExecTimeoutMs(undefined)).toBeUndefined();
+    expect(toExecTimeoutMs(null)).toBeUndefined();
+    expect(toExecTimeoutMs('600')).toBeUndefined();
+  });
+
+  test('refuses values that would read as "kill immediately"', () => {
+    // 0 forwarded as 0 is a SIGKILL before the command starts.
+    expect(toExecTimeoutMs(0)).toBeUndefined();
+    expect(toExecTimeoutMs(-5)).toBeUndefined();
+    expect(toExecTimeoutMs(Number.NaN)).toBeUndefined();
+    expect(toExecTimeoutMs(Number.POSITIVE_INFINITY)).toBeUndefined();
   });
 });

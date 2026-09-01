@@ -567,3 +567,51 @@ name = "release-bot"
     expect(v1.defaultAgent).toBeFalsy();
   });
 });
+
+/**
+ * `kortix_version: 3` must reach the SAME reader v2 does.
+ *
+ * `parseManifestString` is the reader the session/trigger/GRANT pipeline uses —
+ * a different one from `compile-agent-config.ts`, which has its own parser and
+ * is what the pi boot path exercises. So a v3 project could boot correctly and
+ * still lose every grant, every trigger, and every manifest write, because this
+ * reader threw `Unsupported kortix.yaml schema version 3` and its callers
+ * swallow the throw into an empty spec list (`loadProjectAgents` ->
+ * `grantFromLoadedAgents` returns no grants at all).
+ *
+ * That is exactly what shipped when `kortix_version: 3` was added: the schema
+ * package's ceiling was bumped and this one — the acceptance ceiling the
+ * runtime actually reads through — was not.
+ */
+describe('kortix_version 3 reaches the runtime manifest reader', () => {
+  const v3 = [
+    'kortix_version: 3',
+    'default_agent: kortix',
+    'agents:',
+    '  kortix:',
+    '    connectors: all',
+    '    secrets: all',
+    '    kortix_cli: all',
+  ].join('\n');
+
+  test('parses instead of throwing', () => {
+    const parsed = parseManifestString(v3, 'yaml');
+    expect(parsed.schemaVersion).toBe(3);
+  });
+
+  test('its agents resolve through the v2 map reader, with their grants intact', () => {
+    const loaded = extractAgents(parseManifestString(v3, 'yaml'));
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.specs.map((s) => s.name)).toEqual(['kortix']);
+    expect(loaded.defaultAgent).toBe('kortix');
+    // The grant is the whole point: an empty list here is a session that
+    // silently gets nothing.
+    expect(loaded.specs[0]?.kortixCli).not.toEqual([]);
+  });
+
+  test('a version genuinely above the ceiling is still refused', () => {
+    expect(() => parseManifestString('kortix_version: 4\n', 'yaml')).toThrow(
+      /Unsupported .* schema version 4/,
+    );
+  });
+});

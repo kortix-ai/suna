@@ -101,6 +101,19 @@ export interface KortixEnvOptions {
   transport?: TransportKind;
 }
 
+/**
+ * pi hands `exec` a timeout in SECONDS; the daemon expects milliseconds.
+ *
+ * Anything that is not a positive finite number becomes `undefined` so the
+ * daemon falls back to its own default — passing 0 or NaN through would be
+ * read as "kill immediately".
+ */
+export function toExecTimeoutMs(timeoutSeconds: unknown): number | undefined {
+  if (typeof timeoutSeconds !== 'number') return undefined;
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) return undefined;
+  return Math.round(timeoutSeconds * 1000);
+}
+
 export class KortixExecutionEnv {
   readonly cwd: string;
   private readonly baseUrl: string;
@@ -214,7 +227,17 @@ export class KortixExecutionEnv {
       command,
       cwd: options?.cwd,
       env: options?.env,
-      timeout: options?.timeout,
+      // SECONDS -> MILLISECONDS. The two sides of this call disagreed on the
+      // unit: pi's ExecutionEnvironment contract is "Timeout in seconds"
+      // (@earendil-works/pi-agent-core harness/types.d.ts:205) and the Kortix
+      // daemon reads the field as `timeoutMs` and SIGKILLs on it
+      // (kortix-sandbox-agent-server routes/env-rpc.ts `case 'exec'`).
+      // Forwarding it unconverted killed every model-supplied timeout ~1000x
+      // early: `bash({ command: 'pnpm install', timeout: 600 })` — ten minutes
+      // — died after 600ms with exit code 124, and the model was told the
+      // command had timed out. Undefined stays undefined so the daemon applies
+      // its own default rather than 0.
+      timeout: toExecTimeoutMs(options?.timeout),
     });
     if (!r.ok) return err(new ExecutionErrorLike((r.error as any)?.code ?? 'unknown', String((r.error as any)?.message)));
     // Streaming callbacks are honoured after the fact for the spike; the real
