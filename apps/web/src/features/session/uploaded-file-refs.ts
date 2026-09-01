@@ -1,3 +1,8 @@
+import {
+  MAX_PROMPT_UPLOAD_FILENAME_BYTES,
+  promptFileReferenceXml,
+  sanitizePromptUploadFilename,
+} from '@kortix/shared';
 import type { UploadResult } from '@/features/files/api/runtime-files';
 import { attachmentMime } from '@/features/session/attachment-mime';
 import type { AttachedFile } from '@/features/session/session-chat-input';
@@ -52,89 +57,16 @@ export const UPLOADS_DIR = '/workspace/uploads';
  * Leaving that headroom means a collision cannot push a legal name back over
  * the limit.
  */
-export const MAX_UPLOAD_FILENAME_BYTES = 255 - 40;
-
-/**
- * The only characters an upload filename may not carry: the two path
- * separators, and the C0/C1 control range including NUL.
- *
- * Built from a source string rather than written as a literal so the control
- * range stays readable as escapes — a regex literal here would have to hold the
- * raw bytes.
- */
-const UNSAFE_FILENAME_CHARS = new RegExp('[/\\\\\\u0000-\\u001f\\u007f]', 'g');
-
-const UTF8 = new TextEncoder();
-
-function byteLength(value: string): number {
-  return UTF8.encode(value).length;
-}
-
-/** Split `name` into `[stem, extension]`, where the extension keeps its dot. */
-function splitExtension(name: string): [string, string] {
-  const dot = name.lastIndexOf('.');
-  // `dot <= 0` is a dotfile or a name with no dot at all — neither has an
-  // extension to preserve. A very long "extension" is not one either, so it is
-  // truncated with the rest of the name rather than reserved whole.
-  if (dot <= 0 || byteLength(name.slice(dot)) > 32) return [name, ''];
-  return [name.slice(0, dot), name.slice(dot)];
-}
-
-/** Cut `value` to at most `max` bytes, never mid code point. */
-function truncateBytes(value: string, max: number): string {
-  if (byteLength(value) <= max) return value;
-  let out = '';
-  let used = 0;
-  // Iterate code points, not UTF-16 units, so a surrogate pair is never halved
-  // into a lone surrogate the daemon would receive as U+FFFD.
-  for (const char of value) {
-    const size = byteLength(char);
-    if (used + size > max) break;
-    out += char;
-    used += size;
-  }
-  return out;
-}
-
-/**
- * The name to hand the daemon for an uploaded file.
- *
- * This used to map every character outside `[a-zA-Z0-9._-]` to `_`, which made
- * a non-Latin filename unreadable and, worse, ambiguous: `报告.pdf` became
- * `__.pdf` and `Отчёт.pdf` became `______.pdf`, so two CJK files of equal
- * length were indistinguishable on disk and in the prompt the model reads.
- *
- * Only genuinely unsafe characters are replaced now — path separators, control
- * characters and NUL. Everything else, Unicode included, survives. The daemon
- * applies `path.basename` and rejects a name that basenames to nothing
- * (`safeUploadName` in `apps/kortix-sandbox-agent-server/src/routes/files.ts`),
- * so this is defence in depth rather than the only guard.
- */
-export function sanitizeUploadFilename(name: string): string {
-  const sanitized = name.replace(UNSAFE_FILENAME_CHARS, '_').trim();
-  // `.` and `..` basename to themselves, so the daemon rejects them outright.
-  if (!sanitized || sanitized === '.' || sanitized === '..') return 'upload';
-
-  if (byteLength(sanitized) <= MAX_UPLOAD_FILENAME_BYTES) return sanitized;
-
-  const [stem, ext] = splitExtension(sanitized);
-  const truncatedStem = truncateBytes(stem, MAX_UPLOAD_FILENAME_BYTES - byteLength(ext));
-  // A name whose extension alone eats the budget still has to keep the
-  // extension — the type matters more than any surviving character of the stem.
-  return truncatedStem ? `${truncatedStem}${ext}` : `upload${ext}`;
-}
-
-function xmlAttr(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
+export const MAX_UPLOAD_FILENAME_BYTES = MAX_PROMPT_UPLOAD_FILENAME_BYTES;
+export const sanitizeUploadFilename = sanitizePromptUploadFilename;
 
 export function uploadedFileRefXml(input: UploadedFileRef): string {
-  const pending = input.pendingId ? ` pending="${xmlAttr(input.pendingId)}"` : '';
-  return `<file path="${xmlAttr(input.path)}" mime="${xmlAttr(input.mime)}" filename="${xmlAttr(input.filename)}"${pending}>\nThis file has been uploaded and is available at the path above.\n</file>`;
+  return promptFileReferenceXml({
+    path: input.path,
+    mime: input.mime,
+    filename: input.filename,
+    pendingId: input.pendingId,
+  });
 }
 
 /**
