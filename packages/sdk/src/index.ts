@@ -391,6 +391,7 @@ export {
   refreshSession,
   resetPassword,
   updatePassword,
+  updateUserMetadata,
   authUser,
   signOut,
   HeadlessAuthError,

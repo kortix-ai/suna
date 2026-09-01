@@ -130,6 +130,46 @@ authRouter.openapi(
 
 authRouter.openapi(
   createRoute({
+    method: 'patch',
+    path: '/user',
+    tags: ['auth'],
+    summary: "Update the signed-in user's profile metadata (headless)",
+    description:
+      "Writes `user_metadata` — display name, avatar URL, language. The headless replacement for `supabase.auth.updateUser({ data })`, which is what kept ordinary profile screens holding a Supabase client. Metadata ONLY: a password or email change is a credential change with its own flow (`/password/update`, GoTrue's email confirmation), and accepting one here would give a single route two very different blast radii.",
+    ...auth,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            // `.strict()` is doing real work: it is what turns a smuggled
+            // `password` into a 400 instead of a silently ignored field.
+            schema: z.object({ data: z.record(z.unknown()) }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ user: z.object({ id: z.string() }).passthrough() }), 'Updated'),
+      ...errors(400, 401, 422),
+    },
+  }),
+  async (c: any) => {
+    const token = bearerOf(c);
+    // The caller's OWN bearer, never the service-role key: GoTrue then applies
+    // the write to whoever the token belongs to. With the service role this
+    // route would happily edit any user whose id turned up in the body.
+    if (!token || (c.get('authType') as string) !== 'supabase') {
+      return c.json({ error: 'invalid_token', error_description: 'This route needs a Supabase session bearer' }, 401);
+    }
+    const body = c.req.valid('json');
+    const result = await gotrue<Record<string, unknown>>('/user', { method: 'PUT', bearer: token, body: { data: body.data } });
+    if (!result.ok) return c.json({ error: result.body.error ?? 'auth_error', error_description: result.body.error_description ?? '' }, result.status as never);
+    return c.json({ user: result.body });
+  },
+);
+
+authRouter.openapi(
+  createRoute({
     method: 'post',
     path: '/password/update',
     tags: ['auth'],

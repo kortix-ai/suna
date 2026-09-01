@@ -1,6 +1,6 @@
 import { test, expect, beforeEach } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { HeadlessAuthError, exchangeCode, resetPassword, sendMagicLink, signInWithPassword, signInWithProvider, signOut, signUp, updatePassword, authUser, verifyOtp, refreshSession } from './auth';
+import { HeadlessAuthError, exchangeCode, resetPassword, sendMagicLink, signInWithPassword, signInWithProvider, signOut, signUp, updatePassword, updateUserMetadata, authUser, verifyOtp, refreshSession } from './auth';
 
 let calls: Array<{ url: string; method: string; body: unknown; auth: string | null }> = [];
 let nextStatus = 200;
@@ -30,6 +30,7 @@ test('every call targets /v1/auth/* on the configured backend with the documente
   await refreshSession({ refresh_token: 'rt' });
   await resetPassword({ email: 'a@b' });
   await updatePassword({ password: 'newpass123' }, 'at');
+  await updateUserMetadata({ data: { name: 'Ada' } }, 'at');
   await authUser('at');
   await signOut('at', { scope: 'local' });
   expect(calls.map((c) => [c.method, c.url.replace('http://backend.local', ''), c.auth])).toEqual([
@@ -42,11 +43,15 @@ test('every call targets /v1/auth/* on the configured backend with the documente
     ['POST', '/v1/auth/refresh', null],
     ['POST', '/v1/auth/password/reset', null],
     ['POST', '/v1/auth/password/update', 'Bearer at'],
+    // PATCH, not POST: a profile write is not a credential change, and the
+    // method is what keeps the two apart on one path.
+    ['PATCH', '/v1/auth/user', 'Bearer at'],
     ['GET', '/v1/auth/user', 'Bearer at'],
     ['POST', '/v1/auth/sign-out', 'Bearer at'],
   ]);
   expect(calls[3].body).toEqual({ email: 'a@b', token: '123456', type: 'magiclink' });
-  expect(calls[10].body).toEqual({ scope: 'local' });
+  expect(calls[9].body).toEqual({ data: { name: 'Ada' } });
+  expect(calls[11].body).toEqual({ scope: 'local' });
 });
 
 test('an upstream error becomes an HeadlessAuthError carrying code, description and status', async () => {

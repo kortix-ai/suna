@@ -156,6 +156,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     refresh: A.refreshSession,
     resetPassword: A.resetPassword,
     updatePassword: A.updatePassword,
+    updateUserMetadata: A.updateUserMetadata,
     user: A.authUser,
     signOut: A.signOut,
     session: createKortixSession,

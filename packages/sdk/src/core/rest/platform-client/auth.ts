@@ -82,7 +82,7 @@ function apiBase(opts?: AuthRequestOptions): string {
 
 async function call<T>(
   path: string,
-  init: { method?: 'GET' | 'POST'; body?: unknown; bearer?: string },
+  init: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown; bearer?: string },
   opts?: AuthRequestOptions,
 ): Promise<T> {
   const fetchImpl = opts?.fetch ?? platformConfig().fetch ?? ((input: RequestInfo | URL, i?: RequestInit) => fetch(input, i));
@@ -171,6 +171,22 @@ export function authUser(accessToken: string, opts?: AuthRequestOptions) {
   return call<{ user: AuthUser }>('/auth/user', { bearer: accessToken }, opts);
 }
 
+/**
+ * Update the signed-in user's profile metadata — display name, avatar, language.
+ *
+ * The headless replacement for `supabase.auth.updateUser({ data })`. Metadata
+ * only: a password change is `updatePassword`, and an email change has its own
+ * confirmation flow. Keeping them apart keeps one call from carrying two very
+ * different blast radii.
+ */
+export function updateUserMetadata(
+  input: { data: Record<string, unknown> },
+  accessToken: string,
+  opts?: AuthRequestOptions,
+) {
+  return call<{ user: AuthUser }>('/auth/user', { method: 'PATCH', body: input, bearer: accessToken }, opts);
+}
+
 export function signOut(accessToken: string, input: { scope?: 'global' | 'local' | 'others' } = {}, opts?: AuthRequestOptions) {
   return call<{ ok: true }>('/auth/sign-out', { body: input, bearer: accessToken }, opts);
 }
@@ -190,6 +206,7 @@ export interface HeadlessAuthApi {
   refresh: typeof refreshSession;
   resetPassword: typeof resetPassword;
   updatePassword: typeof updatePassword;
+  updateUserMetadata: typeof updateUserMetadata;
   user: typeof authUser;
   signOut: typeof signOut;
   /** A self-refreshing session store; wire `session.getToken` into `createKortix`. */
