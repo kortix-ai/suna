@@ -81,6 +81,32 @@ describe('project git connection state', () => {
   });
 });
 
+describe('a GitHub App with no OAuth client', () => {
+  test('boot warns instead of staying silent', async () => {
+    const config = await Bun.file(new URL('../config.ts', import.meta.url)).text();
+    // The gap that hid this for months: these two are read straight from
+    // process.env, so they never appeared in the startup report and every
+    // environment ran without them unnoticed.
+    expect(config).toContain('KORTIX_GITHUB_APP_CLIENT_ID');
+    expect(config).toContain('KORTIX_GITHUB_APP_CLIENT_SECRET');
+    expect(config).toContain('oauth_not_configured');
+
+    const start = config.indexOf('const githubAppConfigured');
+    expect(start).toBeGreaterThan(-1);
+    // Bound the slice to THIS block — the next conditional legitimately raises
+    // errors, and reading into it would assert the wrong thing.
+    const end = config.indexOf('// ── Conditional: Tunnel enabled', start);
+    expect(end).toBeGreaterThan(start);
+    const block = config.slice(start, end);
+    // Only warn when an App is actually configured — a deployment with no
+    // GitHub App at all is not misconfigured and must stay quiet.
+    expect(block).toContain('KORTIX_GITHUB_APP_ID');
+    // Warn, never fail: the App JWT and managed git work without an OAuth client.
+    expect(block).toContain("level: 'warn'");
+    expect(block).not.toContain("level: 'error'");
+  });
+});
+
 describe('installing from GitHub instead of from Kortix', () => {
   test('a state-less install callback is reported as an install, not a bad state', () => {
     const start = githubAppSource.indexOf('const state = verifyGitHubAppInstallStatePayload');
