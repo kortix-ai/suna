@@ -101,15 +101,13 @@ describe('gatewayModelCatalog — served catalog', () => {
   });
 
   test('project catalog advertises the GPT-5.6 Codex family', () => {
-    expect(full['codex/gpt-5.6-luna']).toMatchObject({
-      name: 'GPT-5.6 Luna (ChatGPT)',
+    expect(full['codex/gpt-5.6-sol']).toMatchObject({
+      name: 'GPT-5.6 Sol (ChatGPT)',
       reasoning: true,
       tool_call: true,
     });
     expect(full['codex/gpt-5.6-terra']).toBeDefined();
-    // gpt-5.6-sol is not a ChatGPT-account model (upstream 400), so it must not
-    // be advertised under the codex subscription route.
-    expect(full['codex/gpt-5.6-sol']).toBeUndefined();
+    expect(full['codex/gpt-5.6-luna']).toBeDefined();
   });
 
   test('native OpenCode Zen free models are not served by the gateway catalog', () => {
@@ -142,7 +140,7 @@ describe('gatewayModelCatalog — served catalog', () => {
     expect(full['glm-5.3-flash']?.provider).toBe('kortix');
     // Codex (ChatGPT subscription) models brand as their own `codex` provider,
     // distinct from the raw `openai` BYOK provider.
-    expect(full['codex/gpt-5.6-luna']?.provider).toBe('codex');
+    expect(full['codex/gpt-5.6-sol']?.provider).toBe('codex');
 
     const missingProvider = Object.entries(full)
       .filter(([, m]) => typeof m.provider !== 'string' || m.provider.length === 0)
@@ -164,7 +162,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 
     // Codex models carry the same enriched field set (previously hand-built
     // without reasoning_options/cost/modalities/structured_output/knowledge).
-    const codexModel = full['codex/gpt-5.6-luna'];
+    const codexModel = full['codex/gpt-5.6-sol'];
     expect(codexModel?.reasoning_options?.[0]?.values).toContain('xhigh');
   });
 
@@ -230,7 +228,7 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
   });
 
   test('resolves a codex/<id> wire model via the underlying openai/<id> catalog entry', () => {
-    const model = catalogModelForWireModel('codex/gpt-5.6-luna');
+    const model = catalogModelForWireModel('codex/gpt-5.6-sol');
     expect(model?.reasoning).toBe(true);
     expect(model?.temperature).toBe(false);
   });
