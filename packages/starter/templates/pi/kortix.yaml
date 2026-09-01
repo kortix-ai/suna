@@ -44,4 +44,12 @@ agents:
     connectors: all
     secrets: all
     kortix_cli: all
-    skills: all
+    # No `skills:` grant. The pi runtime has no skill loader — a pi worker
+    # runs exactly four built-in tools (bash, read, write, edit) and never
+    # reads the `permission.skill` this grant compiles into. Granting it
+    # would name a capability the runtime does not have, and v3 is
+    # deny-by-default, so omitting it is both honest and correct.
+    #
+    # `.kortix/pi/skills/` is still real and still worth writing to: it is
+    # what the LOCAL coding tools read (`.claude/skills`, `.pi/skills`,
+    # `.agents/skills` all link there after `kortix init`).

@@ -102,6 +102,29 @@ describe('pi starter kit', () => {
     expect(checked).toBeGreaterThan(0);
   });
 
+  // The pi worker builds exactly [bash, read, write, edit] and never reads the
+  // `permission.skill` a `skills:` grant compiles into. Granting it would name
+  // a capability the runtime does not have — the same "authoritative but inert"
+  // trap as scaffolding .kortix/opencode into a pi project. v3 is
+  // deny-by-default, so omitting it is also the correct default.
+  test('grants no skills, because the pi runtime has no skill loader', () => {
+    const manifest = parseManifestText(byPath().get('kortix.yaml')!, 'yaml') as Record<
+      string,
+      unknown
+    >;
+    const agents = manifest.agents as Record<string, Record<string, unknown>>;
+    for (const [name, block] of Object.entries(agents)) {
+      expect(`${name}:${'skills' in (block ?? {})}`).toBe(`${name}:false`);
+    }
+  });
+
+  // `.kortix/pi/skills/` still exists and still matters — it is what the LOCAL
+  // coding tools read after `kortix init` links .claude/skills, .pi/skills and
+  // .agents/skills at it. The AGENTS.md pointer names this exact file.
+  test('still ships the kortix-cli front door for local tools', () => {
+    expect(byPath().has('.kortix/pi/skills/kortix-cli/SKILL.md')).toBe(true);
+  });
+
   test('ships no .kortix/opencode — a pi box never starts opencode', () => {
     expect(files().filter((f) => f.path.startsWith('.kortix/opencode/'))).toEqual([]);
   });
