@@ -65,11 +65,12 @@ Do these in order. Do not start writing classNames during pass 1.
 
 ### Surface ladder
 
-Three neutral steps. Pick by depth, not by taste.
+Four neutral steps. Pick by depth, not by taste.
 
 | Role | Token | Light | Dark | Use |
 | --- | --- | --- | --- | --- |
 | canvas | `bg-background` | `#ffffff` | `#090909` | The page itself |
+| surface | `bg-surface` | `#fcfcfc` | `#141414` | Full-bleed shell pane — a full-screen modal or settings shell that replaces the page |
 | surface-1 | `bg-card` / `bg-accent` / `bg-sidebar` | `#f4f4f4` | `#141414` | Lifted region, sidebar, hover surface |
 | surface-2 | `bg-secondary` / `bg-muted` / `bg-input` | `#ececec` | `#1c1c1c` | Inset controls, input wells, chips |
 | top surface | `bg-popover` | `#ffffff` | `#141414` | **Panels, rows, overlays** — the default panel fill |
@@ -79,6 +80,13 @@ Three neutral steps. Pick by depth, not by taste.
 
 `bg-popover` is the panel default — not `bg-card`. `bg-card` is the washed-gray
 region tone; `bg-popover` is the flat elevated surface panels sit on.
+
+`bg-surface` is the shell tone, not a panel tone. It paints one thing: a
+full-bleed surface that stands in for the page (the settings modal at
+`side="fullscreen"`). In light it reads as a hair off white, so the shell is
+distinguishable from a `bg-background` page behind it without the washed cast of
+`bg-card`. In dark it is the same `#141414` as surface-1. Do not reach for it on
+a card, a row, or a panel.
 
 ### Brand accents — the complete set
 

@@ -220,7 +220,14 @@ function SettingsNav() {
 
 export function AccountSettingsSidebar() {
   return (
-    <Sidebar collapsible="offcanvas" variant="sidebar">
+    // `--surface` is this shell's pane color, one rung off canvas. The child
+    // variant is required: `className` lands on the positioning container,
+    // while the box that paints `bg-background` is `sidebar-inner` inside it.
+    <Sidebar
+      collapsible="offcanvas"
+      variant="sidebar"
+      className="bg-surface [&>[data-slot=sidebar-inner]]:bg-surface"
+    >
       <SidebarHeader className="gap-0 px-2 pt-0 pb-1">
         <div className="flex h-11 items-center justify-between py-2 pr-0.5">
           <Button
@@ -253,7 +260,7 @@ export function AccountSettingsSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="gap-0">
+      <SidebarContent className="gap-0 bg-inherit">
         <Suspense fallback={<NavSkeleton />}>
           <SettingsNav />
         </Suspense>

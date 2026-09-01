@@ -109,11 +109,11 @@ export function AccountSettingsShell({ children }: { children: ReactNode }) {
     <SidebarProvider
       open={open}
       onOpenChange={setOpen}
-      className="h-svh"
+      className="bg-surface h-svh"
       style={{ '--sidebar-width': `${SETTINGS_SIDEBAR_WIDTH_PX}px` } as CSSProperties}
     >
       <AccountSettingsSidebar />
-      <SidebarInset className="min-h-0">
+      <SidebarInset className="bg-surface min-h-0">
         <header className="flex h-11 shrink-0 items-center gap-1 border-b px-2">
           <CollapsedTrigger />
           <Suspense fallback={null}>

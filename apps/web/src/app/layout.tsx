@@ -9,13 +9,13 @@ import { LazyMotionProvider } from '@/components/lazy-motion-provider';
 import { IconProvider } from '@/components/ui/icon-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { MfaStepUpProvider } from '@/features/auth/mfa-step-up';
-import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { BrandingProvider } from '@/features/branding/branding-provider';
+import { RequestDemoProvider } from '@/features/contact/request-demo-provider';
 import { AuthProvider } from '@/features/providers/auth-provider';
-import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import { locales, type Locale } from '@/i18n/config';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
+import { RouterBridge } from '@/lib/navigation/router-bridge-mount';
 import '@/lib/polyfills';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
@@ -240,14 +240,14 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                     pathname = '/' + pathname;
                   }
                 }
-                
+
                 // Default analytics language to English. UI language changes only
                 // after an explicit profile settings update; browser storage and
                 // cookies must not infer language.
                 var lang = 'en';
-                
+
                 var context = { master_group: 'General', content_group: 'Other', page_type: 'other', language: lang };
-                
+
                 if (pathname === '/' || pathname === '') {
                   context = { master_group: 'General', content_group: 'Other', page_type: 'home', language: lang };
                 } else if (pathname.indexOf('/auth') === 0) {
@@ -257,7 +257,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 } else if (pathname.indexOf('/settings') === 0) {
                   context = { master_group: 'Platform', content_group: 'User', page_type: 'settings', language: lang };
                 }
-                
+
                 window.dataLayer.push(context);
               })();
             `,
@@ -344,7 +344,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           warning is purely cosmetic but pollutes the dev overlay. */}
       <body
         translate="no"
-        className="notranslate text-foreground bg-background min-h-screen w-full scroll-smooth font-sans font-medium antialiased"
+        className="notranslate text-foreground bg-background min-h-screen w-full scroll-smooth font-sans font-medium tracking-normal antialiased"
         suppressHydrationWarning
       >
         <WebMcpTools />
