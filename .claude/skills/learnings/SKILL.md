@@ -21,6 +21,52 @@ linked, not inlined.
 
 ## Register
 
+### Env handed to a process over HTTP is not state the box owns; persist it or the first resume loses it (2026-09-01)
+
+**When:** any handoff where a long-lived box is told WHAT to be at runtime — the
+pi worker pool's park/claim, and anything else that boots generic and is
+specialised by a request. `park.mjs` received the claim env over HTTP and
+spawned the worker with it **in the child process only**, while the container's
+own environment still said `KORTIX_PI_PARK=1`. Stop/resume re-ran the
+entrypoint, which exec'd the park script again with the claim gone: port 8000
+answered `{parked:true,runtimeReady:false}` forever,
+`shouldBootstrapSessionRuntime` retried once, and the session could never run
+another turn. Its transcript survived; nothing else did.
+**Rules:** (1) persist the claim to the box's disk BEFORE acknowledging it, and
+prefer it over the generic path on every later boot — the acknowledgement is a
+promise the box must be able to keep; (2) a failed persist answers 500 and stays
+claimable rather than accepting a claim it cannot honour; (3) whenever a
+container has a "mode" env var, ask what re-running the entrypoint does — a
+resume is not a fresh create.
+**Diagnostic:** a session whose transcript loads but whose every turn hangs, on
+a box whose `/kortix/health` says `parked:true`. A cold-created box resumed
+fine, so it read as random until the pool was in the picture.
+*Near-miss:* pool is gated off everywhere (`KORTIX_PI_WORKER_POOL_TARGET=0`), so
+this never reached a user — it would have shipped with the pool.
+*Enforcer:* `pi-worker-park.test.ts` boots the real baked script, claims it,
+kills the box, and re-boots the SAME disk.
+
+### A test that SIGKILLs a child orphans its grandchildren, and a leaked listener poisons a fixed port range (2026-09-01)
+
+**When:** any test that spawns a process which itself spawns another (a
+supervisor, a park/handoff script, a dev server that forks). `child.kill()`
+reaches only the direct child; the grandchild is reparented to init and KEEPS
+its port bound. 42 had accumulated on one machine, each squatting a port in the
+helper's `18800 + random(500)` range, so a later boot drew a stranger's worker,
+got `{runtimeReady:true}` with no `parked` field, and the assertion failed on
+`parked === undefined` — 1 run in 6, at a rate that climbed with every run and
+therefore looked like a change-induced regression rather than a leak.
+**Rules:** (1) `spawn(..., { detached: true })` and kill the process GROUP
+(`process.kill(-pid, 'SIGKILL')`) — the group id survives reparenting, so it
+reaches the orphans; (2) never pick a test port from a fixed range — bind `0`,
+read the assigned port, close, use it; (3) a flake whose rate RISES across a
+session is accumulating state on the machine — count the processes before
+blaming the diff.
+**Diagnostic:** `lsof -nP -iTCP -sTCP:LISTEN` in the range, plus
+`ps -o pid,ppid,pgid,command` showing `ppid=1`.
+*Enforcer:* `killTree()` + `freePort()` in `pi-worker-park.test.ts`; 12/12 clean
+and 0 new leaks afterwards.
+
 ### A fix on a path the client never calls is not a fix, and a test that uses the same wrong path certifies it (2026-09-01)
 
 **When:** adding or verifying a route on a runtime the SDK talks to. The pi
