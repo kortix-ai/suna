@@ -90,7 +90,7 @@ let legacyRepairMarkerFailuresRemaining = 0;
 let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
-let canonicalAcceptanceRecords: Array<{ commandId: string; sessionId: string }> = [];
+let promptResponsePlan: Array<'failed' | 'deduplicated'> = [];
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
@@ -173,6 +173,11 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
       return Response.json({ ok: true });
     }
     capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+    const plannedResponse = promptResponsePlan.shift();
+    if (plannedResponse === 'failed') return new Response(null, { status: 500 });
+    if (plannedResponse === 'deduplicated') {
+      return Response.json({ status: 'duplicate', deduplicated: true });
+    }
     if (promptDeduplicationsRemaining > 0) {
       promptDeduplicationsRemaining -= 1;
       return Response.json({ deduplicated: true });
@@ -216,9 +221,6 @@ mock.module('../store', () => ({
         legacy_inline_attachments_repaired_at: '2026-09-02T00:00:00.000Z',
       };
     }
-  },
-  recordCanonicalPendingFirstAcceptance: async (commandId: string, sessionId: string) => {
-    canonicalAcceptanceRecords.push({ commandId, sessionId });
   },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
@@ -383,7 +385,7 @@ beforeEach(() => {
   legacyPendingLoads = 0;
   promptFailuresRemaining = 0;
   promptDeduplicationsRemaining = 0;
-  canonicalAcceptanceRecords = [];
+  promptResponsePlan = [];
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
     // The staged-revert guard reads the session row; the re-mint and the
@@ -617,7 +619,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(legacyRepairMarks).toBe(1);
   });
 
-  test('an answered canonical pending-first retry restores its failed marker without resending', async () => {
+  test('an answered canonical pending-first retry is recovered from its transcript before a later prompt', async () => {
     sessionRow!.metadata = {
       pending_prompt: { attachment_names: ['README.md'] },
     };
@@ -647,13 +649,23 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
 
     expect(first).toBe('queued');
     expect(capturedBodies).toHaveLength(1);
-    expect(canonicalAcceptanceRecords).toEqual([
-      { commandId: 'command-first', sessionId: SESSION_ID },
-    ]);
     expect(legacyRepairMarks).toBe(1);
     expect(sessionRow!.metadata).not.toHaveProperty(
       'legacy_inline_attachments_repaired_at',
     );
+    const canonicalParts = capturedBodies[0].parts as Array<Record<string, unknown>>;
+    legacyPendingFirst = {
+      commandId: 'command-first',
+      deliveredMessageIds: [SUBMITTED_WIRE_ID],
+      parts: firstPayload.parts,
+    };
+    legacyRuntimeMessages[SUBMITTED_WIRE_ID] = {
+      info: { id: SUBMITTED_WIRE_ID, role: 'user' },
+      parts: [
+        { id: 'part-text', type: 'text', text: 'Inspect this.' },
+        { id: 'part-markdown', ...canonicalParts[1] },
+      ],
+    };
 
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
@@ -673,24 +685,93 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         payload: {
           ...firstPayload,
           remintOnDelivery: true,
-          canonicalInlineAttachmentsAccepted: true,
         },
       }),
     );
 
     expect(retry).toBe('succeeded');
     expect(capturedBodies).toHaveLength(1);
-    expect(legacyRepairMarks).toBe(2);
-    expect(sessionRow!.metadata).toHaveProperty(
-      'legacy_inline_attachments_repaired_at',
-    );
-    expect(events.slice(-2)).toEqual(['legacy-marker', 'command-succeeded']);
+    expect(legacyRepairMarks).toBe(1);
     expect(succeededCalls).toEqual([
       {
         commandId: 'command-first',
         result: { status: 'skipped', reason: 'already_answered' },
       },
     ]);
+
+    const later = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-later',
+        idempotencyKey: `prompt:${SESSION_ID}:q_later`,
+      }),
+    );
+
+    expect(later).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(2);
+    expect(legacyRepairMarks).toBe(2);
+    expect(sessionRow!.metadata).toHaveProperty(
+      'legacy_inline_attachments_repaired_at',
+    );
+    expect(legacyPartUpdates).toEqual([]);
+  });
+
+  test('an ambiguously accepted canonical pending-first prompt is recovered from its transcript', async () => {
+    sessionRow!.metadata = {
+      pending_prompt: { attachment_names: ['README.md'] },
+    };
+    const stagedParts = [
+      { type: 'text' as const, text: 'Inspect this.' },
+      {
+        type: 'file' as const,
+        mime: 'text/markdown',
+        filename: 'README.md',
+        url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+      },
+    ];
+    // The runtime accepted the first POST but the proxy returned a 500. Its
+    // retry hits the same proxy claim and receives only deduplication proof.
+    promptResponsePlan = ['failed', 'deduplicated'];
+
+    const first = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-first',
+        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+        payload: {
+          text: 'Inspect this.',
+          clientMessageId: 'q_first',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: stagedParts,
+        },
+      }),
+    );
+    const canonicalParts = capturedBodies[0].parts as Array<Record<string, unknown>>;
+    legacyPendingFirst = {
+      commandId: 'command-first',
+      deliveredMessageIds: [SUBMITTED_WIRE_ID],
+      parts: stagedParts,
+    };
+    legacyRuntimeMessages[SUBMITTED_WIRE_ID] = {
+      info: { id: SUBMITTED_WIRE_ID, role: 'user' },
+      parts: [
+        { id: 'part-text', type: 'text', text: 'Inspect this.' },
+        { id: 'part-markdown', ...canonicalParts[1] },
+      ],
+    };
+
+    const later = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-later',
+        idempotencyKey: `prompt:${SESSION_ID}:q_later`,
+      }),
+    );
+
+    expect([first, later]).toEqual(['succeeded', 'succeeded']);
+    expect(capturedBodies).toHaveLength(3);
+    expect(legacyRepairMarks).toBe(1);
+    expect(legacyPartUpdates).toEqual([]);
+    expect(sessionRow!.metadata).toHaveProperty(
+      'legacy_inline_attachments_repaired_at',
+    );
   });
 
   test('a deduplicated legacy pending-first retry does not suppress later repair', async () => {
@@ -747,7 +828,6 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     );
 
     expect([legacyRetry, later]).toEqual(['succeeded', 'succeeded']);
-    expect(canonicalAcceptanceRecords).toEqual([]);
     expect(legacyRepairMarks).toBe(1);
     expect(legacyPartUpdates).toEqual([
       {

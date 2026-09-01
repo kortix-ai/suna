@@ -154,14 +154,6 @@ export interface QueuedContinueSessionPayload {
    *  delivery's idempotency key — see `withNextDeliveryAttempt`. */
   deliveryAttempt?: number;
   /**
-   * OpenCode accepted this pending-first row after its non-native attachments
-   * were materialized under the row's command id.
-   *
-   * This fact is durable so a failed session-marker write can be recovered
-   * before an answered retry closes the row. Proxy deduplication does not set it.
-   */
-  canonicalInlineAttachmentsAccepted?: boolean;
-  /**
    * This row did NOT go out on its first claim, so the client's wire id can no
    * longer be trusted to sort above the transcript.
    *
@@ -327,29 +319,6 @@ export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Pr
       })}::jsonb`,
     })
     .where(eq(projectSessions.sessionId, sessionId));
-}
-
-/** Persist fresh canonical acceptance before writing the recoverable session marker. */
-export async function recordCanonicalPendingFirstAcceptance(
-  commandId: string,
-  sessionId: string,
-): Promise<void> {
-  const [recorded] = await db
-    .update(sessionLifecycleCommands)
-    .set({
-      payload: sql`${sessionLifecycleCommands.payload} || '{"canonicalInlineAttachmentsAccepted": true}'::jsonb`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(sessionLifecycleCommands.commandId, commandId),
-        eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:pending-first`),
-      ),
-    )
-    .returning({ commandId: sessionLifecycleCommands.commandId });
-  if (!recorded) {
-    throw new Error('canonical pending-first acceptance could not be recorded');
-  }
 }
 
 /**

@@ -70,25 +70,39 @@ export async function repairLegacyInlineAttachments(input: {
   }
   if (!message) throw new Error('legacy attachment message was not found');
 
-  const materialized = await input.materialize(pending.parts, `legacy-${pending.commandId}`);
+  // The runtime may contain either:
+  // - the canonical command-id XML written by the current delivery path, or
+  // - the legacy-prefixed XML written by an earlier repair attempt.
+  // Materialize both deterministic forms before mapping so an ambiguous
+  // prompt response or a failed marker write can recover from transcript state.
+  const canonicalMaterialized = await input.materialize(pending.parts, pending.commandId);
+  const legacyMaterialized = await input.materialize(
+    pending.parts,
+    `legacy-${pending.commandId}`,
+  );
   const usedPartIds = new Set<string>();
   const replacements = candidates.map((candidate) => {
-    const replacement = materialized[candidate.index];
-    if (replacement?.type !== 'text' || typeof replacement.text !== 'string') {
+    const canonicalReplacement = canonicalMaterialized[candidate.index];
+    const legacyReplacement = legacyMaterialized[candidate.index];
+    if (
+      canonicalReplacement?.type !== 'text' ||
+      typeof canonicalReplacement.text !== 'string' ||
+      legacyReplacement?.type !== 'text' ||
+      typeof legacyReplacement.text !== 'string'
+    ) {
       throw new Error(
         `legacy attachment "${candidate.part.filename ?? 'File'}" was not materialized`,
       );
     }
-    const expectedText = replacement.text;
+    const canonicalText = canonicalReplacement.text;
+    const legacyText = legacyReplacement.text;
+    const matchesCandidate = (part: LegacyRuntimeMessage['parts'][number]): boolean =>
+      sameAttachment(candidate.part, part) ||
+      sameReplacement(part, canonicalText) ||
+      sameReplacement(part, legacyText);
     const indexed = message.parts[candidate.index];
     const matches =
-      indexed &&
-      (sameAttachment(candidate.part, indexed) || sameReplacement(indexed, expectedText))
-        ? [indexed]
-        : message.parts.filter(
-            (part) =>
-              sameAttachment(candidate.part, part) || sameReplacement(part, expectedText),
-          );
+      indexed && matchesCandidate(indexed) ? [indexed] : message.parts.filter(matchesCandidate);
     if (matches.length !== 1 || usedPartIds.has(matches[0]!.id)) {
       throw new Error(
         `legacy attachment "${candidate.part.filename ?? 'File'}" does not map to one runtime part`,
@@ -97,8 +111,10 @@ export async function repairLegacyInlineAttachments(input: {
     usedPartIds.add(matches[0]!.id);
     return {
       partId: matches[0]!.id,
-      text: expectedText,
-      alreadyRepaired: sameReplacement(matches[0]!, expectedText),
+      text: legacyText,
+      alreadyRepaired:
+        sameReplacement(matches[0]!, canonicalText) ||
+        sameReplacement(matches[0]!, legacyText),
     };
   });
   for (const replacement of replacements) {

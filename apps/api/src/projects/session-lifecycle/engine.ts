@@ -506,16 +506,8 @@ export async function continueSession(
     );
     if (delivery === 'accepted' && command.isPendingFirstPrompt === true) {
       // This first message used the canonical command-id path. The marker keeps
-      // later prompts from treating its materialized text parts as legacy data URLs.
-      // Persist that acceptance first so a failed marker write is recoverable
-      // without another prompt POST.
-      if (!command.materializationKey) {
-        throw new Error('canonical pending-first acceptance is missing its command id');
-      }
-      await lifecycleStore.recordCanonicalPendingFirstAcceptance(
-        command.materializationKey,
-        sessionId,
-      );
+      // later prompts from entering repair. If this write fails, repair compares
+      // the transcript against this exact command-id XML and records the marker.
       await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
     }
     return delivery !== 'failed';
@@ -1482,22 +1474,6 @@ export async function executeQueuedContinue(
   }
   const isPendingFirstPrompt =
     row.idempotencyKey === `prompt:${row.sessionId}:pending-first`;
-
-  // A fresh canonical prompt was accepted, but its session-marker write failed.
-  // Restore the marker before admission or transcript guards can requeue or
-  // close this row. The durable acceptance fact is never set by proxy dedupe.
-  if (isPendingFirstPrompt && payload.canonicalInlineAttachmentsAccepted === true) {
-    try {
-      await lifecycleStore.markLegacyInlineAttachmentsRepaired(row.sessionId);
-    } catch (err) {
-      await markCommandFailed(
-        row.commandId,
-        `canonical attachment marker recovery failed: ${err instanceof Error ? err.message : String(err)}`,
-        { retryable: true, attempts: row.attempts, sessionId: row.sessionId },
-      );
-      return 'queued';
-    }
-  }
 
   // ADMISSION FIRST, before any side effect. A prompt that arrives behind an
   // older prompt of its own session — or beside a sibling already on the wire —

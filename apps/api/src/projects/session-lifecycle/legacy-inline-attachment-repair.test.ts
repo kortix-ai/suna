@@ -174,6 +174,58 @@ test('repairs a legacy ZIP part in place and records completion', async () => {
   ]);
 });
 
+test('recognizes exact command-key XML as already canonical and records completion', async () => {
+  const updates: Array<{ messageId: string; partId: string; text: string }> = [];
+  const materializationKeys: string[] = [];
+  let marks = 0;
+  const canonicalXml =
+    '<file path="/workspace/uploads/.kortix-inbox/command_first/1-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
+  const legacyXml =
+    '<file path="/workspace/uploads/.kortix-inbox/legacy-command_first/1-bundle.zip" mime="application/zip" filename="bundle.zip">\nThis file has been uploaded and is available at the path above.\n</file>';
+
+  const result = await repairLegacyInlineAttachments({
+    sessionId: 'session_1',
+    externalId: 'sbx_1',
+    opencodeSessionId: 'oc_1',
+    userId: 'user_1',
+    loadPendingFirst: async () => ({
+      commandId: 'command_first',
+      deliveredMessageIds: ['msg_first'],
+      parts: [
+        { type: 'text', text: 'Inspect this.' },
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    }),
+    readMessage: async () => ({
+      info: { id: 'msg_first', role: 'user' },
+      parts: [
+        { id: 'part_text', type: 'text', text: 'Inspect this.' },
+        { id: 'part_zip', type: 'text', text: canonicalXml },
+      ],
+    }),
+    materialize: async (parts, key) => {
+      materializationKeys.push(key);
+      return [parts[0]!, { type: 'text', text: key === 'command_first' ? canonicalXml : legacyXml }];
+    },
+    updatePart: async (update) => {
+      updates.push(update);
+    },
+    markRepaired: async () => {
+      marks += 1;
+    },
+  });
+
+  expect(result).toEqual({ repaired: 1 });
+  expect(materializationKeys).toEqual(['command_first', 'legacy-command_first']);
+  expect(updates).toEqual([]);
+  expect(marks).toBe(1);
+});
+
 test('retries after the first of two part updates already succeeded', async () => {
   const zipXml = '<file path="/workspace/1-bundle.zip" filename="bundle.zip">zip</file>';
   const markdownXml = '<file path="/workspace/2-README.md" filename="README.md">md</file>';
