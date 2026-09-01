@@ -7,7 +7,7 @@
  * traffic runs over the edge, never through the session proxy.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
@@ -77,6 +77,12 @@ async function authorizeEnvironmentCall(
   if (!callerSession) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   }
+    // Scoped to the project AND account the caller was just authorized for.
+    // Authorization above proves the caller may act on `projectId`; without
+    // these two predicates the ROW is fetched by session id alone, so a caller
+    // authorized on their own project could pass any other project's session id
+    // and act on it — authorization checked against one object, action taken on
+    // another. Mirrors `loadProjectSessionRow` (projects/lib/access.ts).
   const [session] = await db
     .select({
       agentName: projectSessions.agentName,
@@ -84,7 +90,13 @@ async function authorizeEnvironmentCall(
       metadata: projectSessions.metadata,
     })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, sessionId),
+        eq(projectSessions.projectId, loaded.row.projectId),
+        eq(projectSessions.accountId, loaded.row.accountId),
+      ),
+    )
     .limit(1);
   if (!session || (session.metadata as Record<string, unknown> | null)?.deletedAt) {
     return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };

@@ -19,6 +19,9 @@
  * This pins the predicate itself against the real multi-round event sequence.
  */
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /** The worker's relay predicate, kept in lockstep with worker.ts. */
 function relaysTurnEnd(event: { type: string }): boolean {
@@ -65,8 +68,8 @@ describe('the turn-end relay fires once per RUN, not once per pi turn', () => {
     expect(simple.filter(relaysTurnEnd)).toHaveLength(1);
   });
 
-  test('the source still uses this predicate', async () => {
-    const src = await Bun.file(new URL('./worker.ts', import.meta.url)).text();
+  test('the source still uses this predicate', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'worker.ts'), 'utf8');
     // The relay subscriber must not re-admit turn_end.
     expect(src).toContain("if (event.type !== 'agent_end') return;");
     // The PERSISTENCE subscriber deliberately keeps turn_end: persisting each

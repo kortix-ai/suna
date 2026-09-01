@@ -600,6 +600,18 @@ export async function startWorker(cfg = configFromEnv()) {
     {
       const m = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
       if (m && req.method === 'POST') {
+        // Auth FIRST, and before the session-id probe: an unauthenticated
+        // caller must not be able to distinguish "wrong session" from "right
+        // session" on this box. This route runs the agent with bash/read/
+        // write/edit against the session's environment and secrets; every
+        // `/kortix/opencode/*` sibling has always been gated and this one was
+        // not, purely because it is served here rather than by RuntimeSurface.
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
         const sid = decodeURIComponent(m[1]!);
         if (sid !== surface.rootId) {
           res.writeHead(404, { 'content-type': 'application/json' }).end(
@@ -721,6 +733,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/events') {
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       const send = (c: string) => res.write(c);
       listeners.add(send);
@@ -729,6 +747,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/prompt' && req.method === 'POST') {
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
@@ -762,6 +786,12 @@ export async function startWorker(cfg = configFromEnv()) {
     // chunk that carries assistant text, which is what a user actually waits
     // for — not when the turn finishes.
     if (url.pathname === '/turn' && req.method === 'POST') {
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
@@ -795,6 +825,12 @@ export async function startWorker(cfg = configFromEnv()) {
     // One real turn, answer + timings, as JSON. This is the endpoint the
     // comparison benchmark calls, and the one to curl by hand.
     if (url.pathname === '/say' && req.method === 'POST') {
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
@@ -831,6 +867,12 @@ export async function startWorker(cfg = configFromEnv()) {
     // the real point is that the SAME data is readable from the store with no
     // worker running at all — see bench/read-transcript.ts.
     if (url.pathname === '/history') {
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       if (!session) { res.writeHead(200, { 'content-type': 'application/json' }).end('{"messages":[]}'); return; }
       const leaf = await session.getLeafId();
       const entries = leaf ? await session.findEntriesOnBranch({ start: leaf } as any) : [];
@@ -843,6 +885,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/interrupt' && req.method === 'POST') {
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       agent.abort();
       res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
       return;

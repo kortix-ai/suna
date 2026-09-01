@@ -522,6 +522,21 @@ export class RuntimeSurface {
     }
   }
 
+  /**
+   * The same check every `/kortix/opencode/*` route makes, exposed so the
+   * worker's RAW routes can make it too.
+   *
+   * `worker.ts` serves `/session/:id/prompt_async` and the bench surface
+   * directly, and called nothing — so those routes were the only ones on the
+   * box with no auth at all, while every sibling here had it. Accepts either
+   * the session bearer or the signed user-context header, which is what the
+   * API's sandbox proxy already sends (proven: an abort issued through the
+   * proxy passes this).
+   */
+  authorize(req: IncomingMessage, url: URL): boolean {
+    return this.authorized(req, url);
+  }
+
   private authorized(req: IncomingMessage, url: URL): boolean {
     const token = this.opts.token;
     if (!token) return false;
