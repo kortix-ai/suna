@@ -1,10 +1,11 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
+import { IdentityConfetti } from '@/components/ui/identity-confetti';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { useProjectName } from '@kortix/sdk/react';
+import { useProjectIcon, useProjectName } from '@kortix/sdk/react';
 import { ProjectHomeSections } from './project-home-sections';
 import { StarterPromptChips } from './starter-prompt-chips';
 
@@ -28,6 +29,12 @@ import { StarterPromptChips } from './starter-prompt-chips';
  *
  * Shared by the project index page AND the instant session shell's empty
  * state, so a brand-new session opens onto the identical surface.
+ *
+ * The workspace's name in the heading is a button: pressing it throws confetti
+ * made of that workspace's own icon (`components/ui/identity-confetti.tsx`) out
+ * of the word itself. It is the one playful thing on this screen, and it is
+ * deliberately silent at rest — see the button's own comment for why it carries
+ * no hover treatment.
  */
 export function ProjectHomeWelcomeBody({
   projectId,
@@ -43,6 +50,15 @@ export function ProjectHomeWelcomeBody({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
+  // The SAME `qk.project.detail(projectId)` entry `useProjectName` reads, so
+  // the name in this heading and the icon thrown out of it cannot come from
+  // two caches that have diverged — and it costs no extra request.
+  const icon = useProjectIcon(projectId);
+  // `id` is the remount key: `IdentityConfetti` fires on mount, so a second
+  // press needs a second mount. `origin` is captured per press rather than
+  // fixed, because the word moves — the heading rewraps with the viewport and
+  // with the length of the name.
+  const [burst, setBurst] = useState<{ id: number; origin: { x: number; y: number } } | null>(null);
   // One word, not two. The name sits inside the sentence in `text-foreground`
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
@@ -83,11 +99,65 @@ export function ProjectHomeWelcomeBody({
             keeps the last line off a single orphan word.
           */}
           <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-pretty max-sm:text-2xl">
-            Give <span className="text-foreground">{displayName}</span>{' '}
+            Give{' '}
+            {/*
+              A real <button>, not a <span> with an onClick: this is the only
+              interactive thing in the heading, and it has to be reachable by
+              keyboard and announced as pressable. A button is phrasing content,
+              so nesting it in an <h1> is valid, and its text still counts
+              toward the heading's accessible name — the sentence reads intact.
+
+              `inline` overrides the UA's `inline-block`, which is what keeps
+              this byte-identical to the <span> it replaces: an inline-block
+              cannot break across lines, so a two-word workspace name would
+              suddenly refuse to wrap and push the line ragged.
+
+              NO hover or press treatment, and that is the decision, not an
+              omission. This heading is on screen every time a workspace is
+              opened — the top rung of the motion ladder, where the budget is
+              none. A permanent affordance in a hero line would also be visual
+              noise on every load for a control nobody needs to find. The
+              pointer cursor and the tooltip are the whole invitation.
+            */}
+            <button
+              type="button"
+              title="Throw some confetti"
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setBurst((current) => ({
+                  id: (current?.id ?? 0) + 1,
+                  // Canvas fractions, measured against the viewport, because
+                  // the confetti canvas is portalled to <body> at `fixed
+                  // inset-0`. Centre of the word, so the burst comes out of the
+                  // name rather than from somewhere near it.
+                  origin: {
+                    x: (rect.left + rect.width / 2) / window.innerWidth,
+                    y: (rect.top + rect.height / 2) / window.innerHeight,
+                  },
+                }));
+              }}
+              className="text-foreground focus-visible:ring-ring inline cursor-pointer rounded-sm focus-visible:ring-2 focus-visible:outline-none"
+            >
+              {displayName}
+            </button>{' '}
             {tI18nHardcoded.raw(
               'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
             )}
           </h1>
+
+          {/* Keyed on the press count, so each press is a fresh mount and a
+              fresh burst. Rendered here rather than inside the <h1> because a
+              canvas is not phrasing content; it portals to <body> anyway, so
+              its position in this tree has no visual effect. */}
+          {burst ? (
+            <IdentityConfetti
+              key={burst.id}
+              label={name}
+              emoji={icon?.icon}
+              glyph={icon?.icon_glyph}
+              origin={burst.origin}
+            />
+          ) : null}
 
           {composer || onPickSuggestion ? (
             <div className="flex w-full flex-col gap-4">
