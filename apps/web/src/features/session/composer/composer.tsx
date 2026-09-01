@@ -1446,7 +1446,7 @@ function ComposerImpl({
           // `globals.css` and `shadow-xl` was dead — twMerge dropped it for the
           // arbitrary `shadow-[…oklch…]` that followed, which was the only
           // raw colour left in the composer.
-          'bg-secondary/30 border-border relative isolate z-10 w-full rounded-xl border',
+          'bg-background border-border relative isolate z-10 w-full rounded-xl border',
           'pt-3',
           // The drag border swaps colour AND gains a ring. Without this it
           // snapped: a hard flash the moment a file crossed the card.
