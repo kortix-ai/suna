@@ -67,6 +67,56 @@ describe('sanitizeInboxPromptParts', () => {
     expect('error' in result).toBe(false);
   });
 
+  test('accepts a staged ZIP data URL for runtime materialization', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ]),
+    ).toEqual({
+      parts: [
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    });
+  });
+
+  test('rejects a remote ZIP before it can poison model history', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'https://files.example.test/bundle.zip',
+        },
+      ]),
+    ).toEqual({
+      error: 'file "bundle.zip" must be uploaded before it can be sent',
+    });
+  });
+
+  test('rejects a MIME mismatch inside a staged data URL', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:text/plain;base64,SGVsbG8=',
+        },
+      ]),
+    ).toEqual({ error: 'file "bundle.zip" has inconsistent MIME metadata' });
+  });
+
   test('caps the serialized payload — a durable row is a Postgres row, not a blob store', () => {
     // One oversized data-URL part. The cap exists so a first-prompt attachment
     // can ride the inbox as a data URL while an unbounded upload cannot wedge

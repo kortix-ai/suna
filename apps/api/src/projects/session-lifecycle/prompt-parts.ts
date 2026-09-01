@@ -12,6 +12,7 @@
  * not a blob store.
  */
 
+import { isModelNativeAttachmentMime } from '@kortix/shared';
 import type { PromptPartWire } from './store';
 
 export const PROMPT_MAX_PARTS = 64;
@@ -23,6 +24,7 @@ export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
  * daemon stays an ordinary request.
  */
 export const PROMPT_PARTS_MAX_BYTES = 12 * 1024 * 1024;
+const DATA_URL_MIME = /^data:([^;,]+);base64,/i;
 
 export type SanitizedPromptParts = { parts: PromptPartWire[] } | { error: string };
 
@@ -48,6 +50,10 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
   if (!text && !parts.some((part) => part.type !== 'text')) {
     return { error: 'parts must carry text' };
   }
+  for (const part of parts as PromptPartWire[]) {
+    const error = validateFilePart(part);
+    if (error) return { error };
+  }
   let bytes = 0;
   for (const part of parts) {
     bytes += JSON.stringify(part).length;
@@ -58,6 +64,21 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
     }
   }
   return { parts: parts as PromptPartWire[] };
+}
+
+function validateFilePart(part: PromptPartWire): string | null {
+  if (part.type !== 'file') return null;
+  const filename = part.filename?.trim() || 'File';
+  const mime = part.mime?.trim();
+  const url = part.url?.trim();
+  if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
+  if (isModelNativeAttachmentMime(mime)) return null;
+  const stagedMime = DATA_URL_MIME.exec(url)?.[1]?.trim().toLowerCase();
+  if (!stagedMime) return `file "${filename}" must be uploaded before it can be sent`;
+  if (stagedMime !== mime.toLowerCase()) {
+    return `file "${filename}" has inconsistent MIME metadata`;
+  }
+  return null;
 }
 
 /** Flatten a prompt body to the plain text every pre-inbox reader still wants
