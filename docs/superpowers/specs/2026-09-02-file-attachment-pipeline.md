@@ -1,6 +1,6 @@
 # File Attachment Pipeline Design
 
-**Status:** Approved problem statement; implementation not started.
+**Status:** Implemented and locally verified on `files-attachment`.
 
 **Branch:** `files-attachment`
 
@@ -204,3 +204,74 @@ The current inbox row remains retryable with a filename-specific error.
 11. Existing image/PDF first-message behavior remains unchanged.
 12. The first-message aggregate limit still rejects more than 9 MiB with explicit
     copy.
+
+## Implementation Log — 2026-09-02
+
+The plan assigned this contract to `SESS-26`. That stable ID already belongs to
+session sharing and has a `SESS-7` reference. The controller preserved `SESS-26` and
+assigned the next unused ID, `SESS-27`, to durable session attachments.
+
+### Automated verification
+
+- The focused attachment suite passed `121` tests with `0` failures across `10`
+  files in `4.00s`.
+- `pnpm test -- --id SESS-27` passed `1/1` flows in `0.3s`. The flow verifies
+  ordered Markdown, TypeScript, ZIP, and PNG admission before readiness. It also
+  verifies lifecycle read-back and rejects a remote ZIP without creating a partial
+  prompt.
+- Route coverage passed at `97.3%`: `618/635` routes covered, `17` allowlisted, and
+  `0` uncovered.
+- `pnpm test` passed `389/389` API and CLI flows. The SDK, flow-runner, route
+  coverage, and worktree lanes also passed. The total core lane took `47.2s`.
+- `pnpm test -- --packages-only` passed both package lanes in `186.2s`.
+
+### Local stack provenance
+
+The browser run used the feature worktree processes. The web listener PID was
+`43233`, with cwd
+`/Users/jay/root/kortix/suna-files-attachment/apps/web`. The API listener PID was
+`43114`, with cwd
+`/Users/jay/root/kortix/suna-files-attachment/apps/api`. The API health request
+returned HTTP `200` and `status:"ok"`.
+
+### Browser and runtime evidence
+
+The browser used project `adc67cc3-fafa-4a6f-991a-6a65411dcd92`, session
+`6e2be848-85c8-490a-8650-93ce6e9cf0fc`, sandbox
+`sbx_01M1FD9SXN6T9WS5NF7G7MM992`, and runtime conversation
+`ses_fa12af464ffeAefRyDuCwFrfK6`.
+
+The new-session request staged `README.md`, `probe.ts`, `probe.zip`, and `probe.png`
+in that order. The runtime user message contained ordered text references for the
+first three files and one native `image/png` part for `probe.png`. It contained zero
+non-native OpenCode file parts. The deterministic first-message paths used command
+`54062ffa-4dc7-4942-ad6a-b9485feecef0` and indexes `1`, `2`, and `3`.
+
+Authenticated raw-file reads returned `19`, `37`, and `368` bytes. The Markdown and
+TypeScript bytes matched their local sources. The ZIP bytes matched their local
+source and started with `50 4b 03 04`.
+
+The ready-session chooser selected `README.md`, `probe.ts`, and `probe.zip` once.
+All three upload requests returned HTTP `200`. The prompt request returned HTTP
+`202` with prompt `faca67d4-a055-4520-aaae-7c7d7919ab5a`. Runtime message
+`msg_05f205212000LLDrRwtSzAJOGV` arrived with the same ordered references. Its
+Markdown, TypeScript, and ZIP raw files matched their sources. The runtime ZIP also
+started with `50 4b 03 04`. The lifecycle command succeeded in one attempt and had
+no legacy-path mismatch.
+
+After reload, the UI retained both three-file and four-file attachment batches. The
+exact user-message timestamps remained `2026-09-01T21:19:19.135Z` and
+`2026-09-01T22:41:11.484Z`. The completed first turn retained status `Finished` and
+duration `26s`.
+
+The genuine legacy session `aa65b0a1-704b-43f2-b712-b7a9c9b4b2ec` repaired
+`pr-context.zip` in place. Its marker is
+`2026-09-01T21:26:35.709Z`. The repaired path ends with
+`legacy-d36915b6-d2ed-4ffc-a1bb-ef9332310792/1-pr-context.zip`. The raw response
+returned HTTP `200` and ZIP magic `50 4b 03 04`. The validation response displayed
+`ATTACHMENT_OK REPAIR_OK`.
+
+An earlier ready-session attempt failed before Task 5 repair. The lifecycle row
+reported a legacy-path mismatch, and the runtime message count did not increase.
+This proved that the failure path forwarded no partial prompt. The successful rerun
+above proves the repaired positive path.
