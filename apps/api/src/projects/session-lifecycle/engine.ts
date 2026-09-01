@@ -488,6 +488,29 @@ export async function continueSession(
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
+  const sendPrompt = async (externalId: string, opencodeSessionId: string): Promise<boolean> => {
+    await repairLegacyBeforeDelivery(externalId, opencodeSessionId);
+    const delivered = await postPrompt(
+      externalId,
+      opencodeSessionId,
+      text,
+      userId,
+      sessionId,
+      idempotencyKey,
+      {
+        parts: command.parts,
+        overrides: command.overrides,
+        wireMessageId: command.wireMessageId,
+        materializationKey: command.materializationKey,
+      },
+    );
+    if (delivered && command.isPendingFirstPrompt === true) {
+      // This first message used the canonical command-id path. The marker keeps
+      // later prompts from treating its materialized text parts as legacy data URLs.
+      await lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId);
+    }
+    return delivered;
+  };
 
   // Server-side delivery is the first prompt for sessions created without one.
   void generateSessionTitleFromFirstPrompt({
@@ -561,15 +584,7 @@ export async function continueSession(
           opencodeSessionId: healed.opencode_session_id,
         };
       },
-      send: async (externalId, runtimeId) => {
-        await repairLegacyBeforeDelivery(externalId, runtimeId);
-        return postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
-          parts: command.parts,
-          overrides: command.overrides,
-          wireMessageId: command.wireMessageId,
-          materializationKey: command.materializationKey,
-        });
-      },
+      send: sendPrompt,
     });
   }
 
@@ -662,15 +677,7 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: async (externalId, runtimeId) => {
-      await repairLegacyBeforeDelivery(externalId, runtimeId);
-      return postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
-        parts: command.parts,
-        overrides: command.overrides,
-        wireMessageId: command.wireMessageId,
-        materializationKey: command.materializationKey,
-      });
-    },
+    send: sendPrompt,
   });
 }
 

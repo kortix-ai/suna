@@ -198,6 +198,12 @@ mock.module('../store', () => ({
   },
   markLegacyInlineAttachmentsRepaired: async () => {
     legacyRepairMarks += 1;
+    if (sessionRow) {
+      sessionRow.metadata = {
+        ...((sessionRow.metadata as Record<string, unknown> | null) ?? {}),
+        legacy_inline_attachments_repaired_at: '2026-09-02T00:00:00.000Z',
+      };
+    }
   },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
@@ -454,6 +460,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
 
     expect(outcome).toBe('queued');
     expect(capturedBodies).toEqual([]);
+    expect(legacyRepairMarks).toBe(0);
     expect(failedCalls).toEqual([
       {
         commandId: 'cmd-1',
@@ -531,25 +538,64 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     );
   });
 
-  test('does not repair legacy history while delivering the pending-first row', async () => {
+  test('a newly materialized pending-first prompt marks canonical history before a later prompt', async () => {
     sessionRow!.metadata = {
-      pending_prompt: { attachment_names: ['bundle.zip'] },
+      pending_prompt: { attachment_names: ['README.md'] },
     };
+    const stagedParts = [
+      { type: 'text' as const, text: 'Inspect this.' },
+      {
+        type: 'file' as const,
+        mime: 'text/markdown',
+        filename: 'README.md',
+        url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+      },
+    ];
+
+    const first = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-first',
+        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+        payload: {
+          text: 'Inspect this.',
+          clientMessageId: 'q_first',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: stagedParts,
+        },
+      }),
+    );
+    const canonicalParts = capturedBodies[0].parts as Array<Record<string, unknown>>;
     legacyPendingFirst = {
-      commandId: 'cmd-1',
-      deliveredMessageIds: [],
-      parts: [],
+      commandId: 'command-first',
+      deliveredMessageIds: ['msg-first'],
+      parts: stagedParts,
+    };
+    legacyRuntimeMessages['msg-first'] = {
+      info: { id: 'msg-first', role: 'user' },
+      parts: [
+        { id: 'part-text', type: 'text', text: 'Inspect this.' },
+        { id: 'part-markdown', ...canonicalParts[1] },
+      ],
     };
 
-    const outcome = await executeQueuedContinue(
+    const later = await executeQueuedContinue(
       baseRow({
-        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+        commandId: 'command-later',
+        idempotencyKey: `prompt:${SESSION_ID}:q_later`,
       }),
     );
 
-    expect(outcome).toBe('succeeded');
+    expect([first, later]).toEqual(['succeeded', 'succeeded']);
+    expect(capturedBodies).toHaveLength(2);
+    expect(canonicalParts[1]).toEqual({
+      type: 'text',
+      text: expect.stringContaining(
+        '/workspace/uploads/.kortix-inbox/command-first/1-README.md',
+      ),
+    });
+    expect(legacyPartUpdates).toEqual([]);
     expect(legacyPendingLoads).toBe(0);
-    expect(legacyRepairMarks).toBe(0);
+    expect(legacyRepairMarks).toBe(1);
   });
 
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {
