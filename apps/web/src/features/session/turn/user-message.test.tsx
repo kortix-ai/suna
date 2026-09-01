@@ -312,6 +312,59 @@ describe('UserMessage timestamp', () => {
   });
 });
 
+describe('UserMessage persisted attachments', () => {
+  test('renders every persisted file part in order without losing the timestamp', () => {
+    const persisted = {
+      info: {
+        id: 'message-files',
+        role: 'user',
+        time: { created: Date.parse('2026-09-01T18:58:54.410Z') },
+      },
+      parts: [
+        {
+          id: 'part-text',
+          messageID: 'message-files',
+          type: 'text',
+          text: 'Inspect these files.',
+        },
+        {
+          id: 'part-zip',
+          messageID: 'message-files',
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+        {
+          id: 'part-markdown',
+          messageID: 'message-files',
+          type: 'file',
+          mime: 'text/markdown',
+          filename: 'README.md',
+          url: 'data:text/markdown;base64,IyBSRUFETUU=',
+        },
+        {
+          id: 'part-png',
+          messageID: 'message-files',
+          type: 'file',
+          mime: 'image/png',
+          filename: 'shot.png',
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ],
+    } as MessageWithParts;
+
+    const html = render(false, persisted);
+    expect(html).toContain('bundle.zip');
+    expect(html).toContain('README.md');
+    expect(html).toContain('shot.png');
+    expect(html.match(/rounded-sm border/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(html).toMatch(/datetime="2026-09-01T18:58:54.410Z"/i);
+    expect(html.indexOf('bundle.zip')).toBeLessThan(html.indexOf('README.md'));
+    expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('shot.png'));
+  });
+});
+
 describe('UserMessage renders the plan it owns', () => {
   /**
    * The plan card is the only surface left for session todos ON MOBILE:

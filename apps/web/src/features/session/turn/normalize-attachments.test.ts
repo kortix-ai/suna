@@ -57,6 +57,18 @@ describe('normalizeAttachments', () => {
     expect(result.map((f) => f.filename)).toEqual(['chart.png', 'notes.md']);
   });
 
+  test('keeps one native part followed by workspace references in source order', () => {
+    const result = normalizeAttachments(
+      [part('p1', 'bundle.zip', 'application/zip', 'data:application/zip;base64,UEsDBA==')],
+      [
+        upload('/workspace/README.md', 'text/markdown', 'README.md'),
+        upload('/workspace/shot.png', 'image/png', 'shot.png'),
+      ],
+    );
+
+    expect(result.map((file) => file.filename)).toEqual(['bundle.zip', 'README.md', 'shot.png']);
+  });
+
   test('keys stay unique across routes so React does not collide them', () => {
     const result = normalizeAttachments(
       [part('same', 'a.txt', 'text/plain')],
