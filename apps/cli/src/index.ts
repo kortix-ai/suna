@@ -8,7 +8,7 @@ import { runBilling } from './commands/billing.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
-import { runCrafts } from './commands/crafts.ts';
+import { runSubprojects } from './commands/subprojects.ts';
 import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -267,9 +267,9 @@ const TIERS: readonly CommandTier[] = [
             blurb: 'Experimental: deploy serverless Apps with stable Kortix URLs',
           },
           {
-            name: 'crafts',
+            name: 'subprojects',
             args: '<subcommand>',
-            blurb: 'Publish, install and operate crafts (a Kortix project you install)',
+            blurb: 'Publish, install and operate subprojects (a Kortix project you install)',
           },
         ],
       },
@@ -591,8 +591,8 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
   }
-  if (argv[0] === 'crafts' || argv[0] === 'craft') {
-    return runCrafts(argv.slice(1));
+  if (argv[0] === 'subprojects' || argv[0] === 'subproject') {
+    return runSubprojects(argv.slice(1));
   }
   // `system-skills` is the canonical name; `skills` stays a permanent alias
   // because every already-baked sandbox image seeds a kortix-system skill whose
@@ -687,8 +687,8 @@ const KNOWN_COMMANDS = [
   'apps',
   'channels',
   'sandboxes',
-  'crafts',
-  'craft',
+  'subprojects',
+  'subproject',
   'system-skills',
   'skills',
   'registry',

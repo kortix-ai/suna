@@ -119,7 +119,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    // Explicit opt-in: Easy Connect remains the default connector catalog.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -190,15 +190,15 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'crafts',
-    name: 'Crafts',
+    key: 'subprojects',
+    name: 'Subprojects',
     description:
-      'Install a craft — a GitHub repo whose kortix.yaml declares agents, skills, connectors and triggers — into this project, and read the run history of the triggers it owns. The store, the install flow, and the run report are still being built out.',
+      'Install a subproject — a GitHub repo whose kortix.yaml declares agents, skills, connectors and triggers — into this project, and read the run history of the triggers it owns. The store, the install flow, and the run report are still being built out.',
     stability: 'experimental',
     // Pure app surface: the routes, the index table and the manifest section all
     // ship with the app, so no operator env gates it.
     available: () => true,
-    // Explicit opt-in while the surface is incomplete. Installing a craft
+    // Explicit opt-in while the surface is incomplete. Installing a subproject
     // commits to the project's repo, so it must never turn on by accident.
     platformDefault: () => false,
     enforcement: 'routes',

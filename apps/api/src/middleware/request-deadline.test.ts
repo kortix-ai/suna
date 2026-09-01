@@ -13,18 +13,15 @@ function ctx(path: string, method = 'POST') {
 
 describe('requestDeadline exemptions', () => {
   test.each([
-    '/v1/projects/00000000-0000-4000-a000-000000000001/marketplace/install',
     '/v1/projects/00000000-0000-4000-a000-000000000001/registry/install',
-    '/v1/projects/00000000-0000-4000-a000-000000000001/marketplace/update',
-    '/v1/projects/00000000-0000-4000-a000-000000000001/marketplace/update-all',
     '/v1/projects/00000000-0000-4000-a000-000000000001/registry/update',
   ])('exempts install/update route %s', (path) => {
     expect(isExempt(ctx(path))).toBe(true);
   });
 
   test.each([
-    '/v1/marketplace/items',
     '/v1/projects/00000000-0000-4000-a000-000000000001/registry',
+    '/v1/subprojects',
   ])('does not exempt bounded route %s', (path) => {
     expect(isExempt(ctx(path))).toBe(false);
   });

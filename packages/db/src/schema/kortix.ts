@@ -37,11 +37,11 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
-/** Who may see a craft in the store. `private` = the submitting account only. */
-export const craftVisibilityEnum = kortixSchema.enum('craft_visibility', ['public', 'private']);
+/** Who may see a subproject in the store. `private` = the submitting account only. */
+export const subprojectVisibilityEnum = kortixSchema.enum('subproject_visibility', ['public', 'private']);
 
 /**
- * Index health for one craft.
+ * Index health for one subproject.
  *
  *   active       the last crawl succeeded; the store lists it.
  *   unavailable  the last crawl failed (repo gone, manifest broken). Listed to
@@ -50,25 +50,25 @@ export const craftVisibilityEnum = kortixSchema.enum('craft_visibility', ['publi
  *                is advisory at the source and enforced at the index — the same
  *                stance MARKETPLACE.md takes for registry items.
  */
-export const craftStatusEnum = kortixSchema.enum('craft_status', [
+export const subprojectStatusEnum = kortixSchema.enum('subproject_status', [
   'active',
   'unavailable',
   'yanked',
 ]);
 
 /**
- * Where a craft's files come from.
+ * Where a subproject's files come from.
  *
  *   github  the repo is the source of truth. Files are fetched from
  *           raw.githubusercontent.com at `resolved_sha`, so the index stores a
  *           manifest and nothing else — Kortix indexes, git hosts.
  *   upload  someone uploaded a .zip. There is no repo to fetch from, so the
- *           craft's text files are stored on the row and EMBEDDED in the
+ *           subproject's text files are stored on the row and EMBEDDED in the
  *           install prompt (the same shape `buildRegistryProjectInstallPrompt`
  *           already uses for a base registry item). Bounded to text under
- *           `CRAFT_ZIP_LIMITS`; this is not a file host.
+ *           `SUBPROJECT_ZIP_LIMITS`; this is not a file host.
  */
-export const craftSourceKindEnum = kortixSchema.enum('craft_source_kind', ['github', 'upload']);
+export const subprojectSourceKindEnum = kortixSchema.enum('subproject_source_kind', ['github', 'upload']);
 
 /**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
@@ -1249,12 +1249,12 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
-    // The craft that contributed this trigger, materialized from the manifest
-    // entry's `craft:` field by `reconcileProjectTriggerRuntime`. This is the
-    // join that makes a craft's run history one indexed query over
+    // The subproject that contributed this trigger, materialized from the manifest
+    // entry's `subproject:` field by `reconcileProjectTriggerRuntime`. This is the
+    // join that makes a subproject's run history one indexed query over
     // `project_trigger_executions` instead of a git read per row. NULL for every
     // hand-authored trigger, which is the overwhelming majority.
-    craftSlug: varchar('craft_slug', { length: 128 }),
+    subprojectSlug: varchar('subproject_slug', { length: 128 }),
     // Materialized schedule catalog. The repo manifest remains the source of
     // truth, but the timing path reads only these indexed columns. Nullable
     // columns keep mixed-version deploys safe while existing rows are cataloged.
@@ -1283,13 +1283,13 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
-    // NOTE: a partial index `idx_project_trigger_runtime_craft`
-    // ((project_id, craft_slug) WHERE craft_slug IS NOT NULL) ALSO exists — it
-    // serves the craft-runs join. It is deliberately NOT declared here, for the
+    // NOTE: a partial index `idx_project_trigger_runtime_subproject`
+    // ((project_id, subproject_slug) WHERE subproject_slug IS NOT NULL) ALSO exists — it
+    // serves the subproject-runs join. It is deliberately NOT declared here, for the
     // same reason as `idx_project_sessions_account_active` below: this table
     // already exists, so the index must be built CONCURRENTLY, and re-adding it
     // here would make `db:generate` emit a conflicting plain `CREATE INDEX`.
-    // Manage it via migrations/20260830162046763_project_trigger_runtime_craft_index.concurrent.ts.
+    // Manage it via migrations/20260830162046763_project_trigger_runtime_subproject_index.concurrent.ts.
   ],
 );
 
@@ -1495,29 +1495,29 @@ export const projectTriggerExecutions = kortixSchema.table(
 );
 
 /**
- * The craft index — the catalogue the Crafts store renders.
+ * The subproject index — the catalogue the Subprojects store renders.
  *
- * A craft is a GitHub repo whose own `kortix.yaml` declares agents, triggers and
+ * A subproject is a GitHub repo whose own `kortix.yaml` declares agents, triggers and
  * connectors. Kortix indexes that manifest; it never hosts the files. This is
  * the same index-not-host stance `packages/registry/MARKETPLACE.md` sets for
  * registry items, and the reason a row is a projection of public git state
  * rather than a source of truth: every derived column below is re-derivable by
  * re-crawling `(repo_owner, repo_name, git_ref)`.
  *
- * A craft repo needs ONLY a `kortix.yaml` — no `registry.json`. The submit path
+ * A subproject repo needs ONLY a `kortix.yaml` — no `registry.json`. The submit path
  * fetches the manifest, validates it with `@kortix/manifest-schema`, and derives
  * the card with the same `extractTriggers` / `extractConnectors` parsers the
- * runtime uses, so the store can never show a craft the runtime would reject.
+ * runtime uses, so the store can never show a subproject the runtime would reject.
  */
-export const crafts = kortixSchema.table(
-  'crafts',
+export const subprojects = kortixSchema.table(
+  'subprojects',
   {
-    craftId: uuid('craft_id').defaultRandom().primaryKey(),
+    subprojectId: uuid('subproject_id').defaultRandom().primaryKey(),
     /** Derived from the repo name (or the archive name); the identity a
      *  project's manifest records. */
     slug: varchar('slug', { length: 128 }).notNull(),
-    sourceKind: craftSourceKindEnum('source_kind').default('github').notNull(),
-    /** NULL for an uploaded craft — there is no repo. */
+    sourceKind: subprojectSourceKindEnum('source_kind').default('github').notNull(),
+    /** NULL for an uploaded subproject — there is no repo. */
     repoOwner: varchar('repo_owner', { length: 255 }),
     repoName: varchar('repo_name', { length: 255 }),
     /** Branch or tag crawled. NULL = the repo's default branch. */
@@ -1540,9 +1540,9 @@ export const crafts = kortixSchema.table(
     skills: jsonb('skills').default([]).$type<string[]>().notNull(),
     envRequired: jsonb('env_required').default([]).$type<string[]>().notNull(),
     /**
-     * For `source_kind = 'upload'`: the craft's text files, `[{path, content}]`.
-     * Empty for a github craft, whose files are fetched at `resolved_sha`
-     * instead. Bounded by `CRAFT_ZIP_LIMITS` (1 MB, 200 files, text only) —
+     * For `source_kind = 'upload'`: the subproject's text files, `[{path, content}]`.
+     * Empty for a github subproject, whose files are fetched at `resolved_sha`
+     * instead. Bounded by `SUBPROJECT_ZIP_LIMITS` (1 MB, 200 files, text only) —
      * this column exists so an upload is installable, not so Kortix becomes a
      * file host.
      */
@@ -1552,11 +1552,11 @@ export const crafts = kortixSchema.table(
     /** GitHub stargazers at the last crawl. NULL when the host did not report it. */
     stars: integer('stars'),
     installCount: integer('install_count').default(0).notNull(),
-    visibility: craftVisibilityEnum('visibility').default('private').notNull(),
-    /** Submitting account. NULL for a craft Kortix publishes itself. */
+    visibility: subprojectVisibilityEnum('visibility').default('private').notNull(),
+    /** Submitting account. NULL for a subproject Kortix publishes itself. */
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
     submittedBy: uuid('submitted_by'),
-    status: craftStatusEnum('status').default('active').notNull(),
+    status: subprojectStatusEnum('status').default('active').notNull(),
     lastCrawledAt: timestamp('last_crawled_at', { withTimezone: true }),
     /** Why the last crawl failed. Set with `status = 'unavailable'`. */
     lastError: text('last_error'),
@@ -1568,28 +1568,28 @@ export const crafts = kortixSchema.table(
     // a plain unique index treats every NULL as distinct — which would let the
     // same repo be submitted unbounded times. COALESCE collapses them; '' is
     // safe as the sentinel because a git ref is never empty.
-    uniqueIndex('idx_crafts_repo_ref').on(
+    uniqueIndex('idx_subprojects_repo_ref').on(
       table.repoOwner,
       table.repoName,
       sql`coalesce(${table.gitRef}, '')`,
     ),
-    index('idx_crafts_listing').on(table.visibility, table.status),
-    index('idx_crafts_account').on(table.accountId),
-    index('idx_crafts_slug').on(table.slug),
-    // NOTE: a partial unique index `idx_crafts_upload_identity`
+    index('idx_subprojects_listing').on(table.visibility, table.status),
+    index('idx_subprojects_account').on(table.accountId),
+    index('idx_subprojects_slug').on(table.slug),
+    // NOTE: a partial unique index `idx_subprojects_upload_identity`
     // ((account_id, slug) WHERE source_kind = 'upload') ALSO exists — it gives an
-    // uploaded craft an identity, so re-uploading a fixed archive REPLACES the
-    // craft instead of adding a duplicate row. `idx_crafts_repo_ref` cannot do
+    // uploaded subproject an identity, so re-uploading a fixed archive REPLACES the
+    // subproject instead of adding a duplicate row. `idx_subprojects_repo_ref` cannot do
     // that job: an upload has NULL repo columns, and a btree unique treats every
     // NULL as distinct. Declared in
-    // migrations/20260830162048440_crafts_upload_identity_index.concurrent.ts,
+    // migrations/20260830162048440_subprojects_upload_identity_index.concurrent.ts,
     // not here, because it must be built CONCURRENTLY on an existing table.
   ],
 );
 
 /**
- * Which crafts one project has installed — a projection of that project's own
- * `kortix.yaml` `crafts:` block, reconciled by `reconcileProjectCrafts` exactly
+ * Which subprojects one project has installed — a projection of that project's own
+ * `kortix.yaml` `subprojects:` block, reconciled by `reconcileProjectSubprojects` exactly
  * as `project_trigger_runtime` is reconciled from `triggers:`.
  *
  * The manifest is the source of truth. This table exists so "what is installed
@@ -1597,22 +1597,22 @@ export const crafts = kortixSchema.table(
  * and so the periodic sweep heals a hand-edited manifest or a raw git push.
  * Never write a field here that the manifest cannot express.
  */
-export const projectCrafts = kortixSchema.table(
-  'project_crafts',
+export const projectSubprojects = kortixSchema.table(
+  'project_subprojects',
   {
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
-    /** `crafts[].slug` from the project's manifest. */
+    /** `subprojects[].slug` from the project's manifest. */
     slug: varchar('slug', { length: 128 }).notNull(),
     /**
      * The index row this was installed from. NULL when the manifest names a
-     * repo the index does not carry — a craft installed by hand, or one whose
+     * repo the index does not carry — a subproject installed by hand, or one whose
      * index row was deleted. The install stays valid either way, which is why
      * this is `set null` and not `cascade`: the project's manifest, not this
-     * row, is what makes the craft installed.
+     * row, is what makes the subproject installed.
      */
-    craftId: uuid('craft_id').references(() => crafts.craftId, { onDelete: 'set null' }),
+    subprojectId: uuid('subproject_id').references(() => subprojects.subprojectId, { onDelete: 'set null' }),
     repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
     repoName: varchar('repo_name', { length: 255 }).notNull(),
     gitRef: varchar('git_ref', { length: 255 }),
@@ -1620,7 +1620,7 @@ export const projectCrafts = kortixSchema.table(
     resolvedSha: varchar('resolved_sha', { length: 64 }),
     title: varchar('title', { length: 255 }).notNull(),
     /**
-     * Whether this craft's triggers are armed. Mirrors the manifest `enabled`
+     * Whether this subproject's triggers are armed. Mirrors the manifest `enabled`
      * of the triggers it owns; NULL while no trigger has been cataloged yet.
      */
     enabled: boolean('enabled'),
@@ -1644,10 +1644,10 @@ export const projectCrafts = kortixSchema.table(
     foreignKey({
       columns: [table.installSessionId],
       foreignColumns: [projectSessions.sessionId],
-      name: 'project_crafts_install_session_fk',
+      name: 'project_subprojects_install_session_fk',
     }).onDelete('set null'),
-    index('idx_project_crafts_craft').on(table.craftId),
-    index('idx_project_crafts_install_session').on(table.installSessionId),
+    index('idx_project_subprojects_subproject').on(table.subprojectId),
+    index('idx_project_subprojects_install_session').on(table.installSessionId),
   ],
 );
 

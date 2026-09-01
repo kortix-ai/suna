@@ -28,8 +28,8 @@ import {
   extractConnectors,
   manifestHashForConnector,
 } from '../projects/connectors';
-import { reconcileProjectCrafts } from '../projects/craft-catalog';
-import { extractCrafts } from '../projects/crafts';
+import { reconcileProjectSubprojects } from '../projects/subproject-catalog';
+import { extractSubprojects } from '../projects/subprojects';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
@@ -457,13 +457,13 @@ export async function syncProjectConnectors(
     await reconcileProjectTriggerRuntime(projectId, triggers.specs);
     errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
-    // Installed crafts are a projection of the same manifest read, reconciled in
+    // Installed subprojects are a projection of the same manifest read, reconciled in
     // the same pass and under the same "only when the manifest is readable"
     // guard above. This sweep is what heals a hand-edited kortix.yaml or a raw
-    // git push that added or removed a craft outside the install flow.
-    const craftEntries = extractCrafts(manifest);
-    await reconcileProjectCrafts(projectId, craftEntries.specs);
-    errors.push(...craftEntries.errors.map((e) => ({ slug: e.slug, error: e.error })));
+    // git push that added or removed a subproject outside the install flow.
+    const subprojectEntries = extractSubprojects(manifest);
+    await reconcileProjectSubprojects(projectId, subprojectEntries.specs);
+    errors.push(...subprojectEntries.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
     const parsed = extractConnectors(manifest);
     declaredSpecs = parsed.specs;

@@ -146,7 +146,7 @@ describe('round-trip serialize preserves the file format', () => {
 
 describe('draftToSpec — new trigger spec path uses the real manifest file', () => {
   const draft = {
-    slug: 'nightly', name: 'Nightly', craftSlug: null, type: 'cron' as const, agent: 'kortix', model: null,
+    slug: 'nightly', name: 'Nightly', subprojectSlug: null, type: 'cron' as const, agent: 'kortix', model: null,
     enabled: true, promptTemplate: 'do it', cron: '0 0 3 * * *', runAt: null,
     timezone: 'UTC', secretEnv: null, run: null, monitorMode: null, intervalSeconds: null,
     expectEventWithinSeconds: null, sessionMode: 'fresh' as const, pinnedSessionId: null,

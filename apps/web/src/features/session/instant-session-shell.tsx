@@ -290,7 +290,7 @@ export function InstantSessionShell({
           below is what `SessionChat` replaces. */}
       <SessionBodyRow actionPanel={!!submitted} transient>
         {/* Empty new session → the identical project-home empty state (centered
-            heading + hero composer + crafts preview, setup pills at the bottom),
+            heading + hero composer + subprojects preview, setup pills at the bottom),
             so a fresh session opens onto the same surface as the project index
             page. Swapped out for the optimistic turn the moment a first message
             is sent (the crossfade is unchanged); the composer moves to its

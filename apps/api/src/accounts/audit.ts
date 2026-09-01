@@ -582,7 +582,7 @@ auditRouter.openapi(
     }
     // SSRF guard: reject private/link-local/internal targets (e.g. cloud
     // metadata at 169.254.169.254). This endpoint fires a server-side test
-    // delivery immediately on create, so the same guard used for marketplace
+    // delivery immediately on create, so the same guard used for connector
     // source URLs applies here.
     try {
       assertAllowedSourceAddress(url);

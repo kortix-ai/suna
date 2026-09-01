@@ -817,7 +817,6 @@ async function commandMatrix(): Promise<void> {
     ['providers ls', ['providers', 'ls']],
     ['channels status', ['channels', 'status']],
     ['channels manifest', ['channels', 'manifest']],
-    ['marketplace list', ['marketplace', 'list', '--limit', '1']],
     ['gateway routing get', ['gateway', 'routing', 'get']],
     ['gateway usage', ['gateway', 'usage']],
     ['gateway logs', ['gateway', 'logs']],

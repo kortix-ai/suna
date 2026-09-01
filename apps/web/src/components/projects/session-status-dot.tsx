@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 
 /**
  * What this dot can paint: every session display status, plus the two states a
- * CRAFT RUN has that a session does not.
+ * SUBPROJECT RUN has that a session does not.
  *
  * The two extras are here rather than in a second component because forking the
  * paint table is exactly how a `done` check ends up green on one screen and
@@ -94,15 +94,15 @@ const STATUS_DOT_STYLE: Record<
 
 /**
  * The 16px session status circle. ONE implementation for every surface that
- * paints a session's state — the project sidebar's session rows and the craft
- * run strips on the craft-report surfaces. It lived inside
- * `project-session-list.tsx` until the craft reports needed the same glyph;
+ * paints a session's state — the project sidebar's session rows and the subproject
+ * run strips on the subproject-report surfaces. It lived inside
+ * `project-session-list.tsx` until the subproject reports needed the same glyph;
  * two copies of this paint table is exactly how a `done` check ends up green
  * on one screen and muted on another.
  *
  * It takes a resolved {@link StatusDotStatus}, not a `ProjectSession`, so a
- * surface with no session payload (a craft run) renders the identical dot.
- * Callers holding a session resolve it with `sessionDisplayStatus`; a craft run
+ * surface with no session payload (a subproject run) renders the identical dot.
+ * Callers holding a session resolve it with `sessionDisplayStatus`; a subproject run
  * passes its own status, which is that union plus `retrying` and `skipped`.
  */
 export function SessionStatusDot({

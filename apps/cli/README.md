@@ -27,7 +27,7 @@ agents to wire through `--primary` and `--agents`.
 
 Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
-sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
+sessions, triggers, connectors, secrets, sandboxes, subprojects, and more).
 
 ## What gets written
 

@@ -11,7 +11,7 @@ function trigger(slug: string, pinnedSessionId: string | null = null): GitTrigge
     slug,
     path: `kortix.yaml#triggers.${slug}`,
     name: slug,
-    craftSlug: null,
+    subprojectSlug: null,
     type: 'cron',
     agent: 'kortix',
     model: null,
@@ -99,32 +99,32 @@ describe('reconcileProjectTriggerRuntime', () => {
 });
 
 /**
- * `craft_slug` is materialized here, so it must also be part of the
+ * `subproject_slug` is materialized here, so it must also be part of the
  * change-detection comparison. Without that, a manifest edit that ONLY adds or
- * removes `craft:` changes neither the pinned session nor the schedule
+ * removes `subproject:` changes neither the pinned session nor the schedule
  * revision — the reconcile would skip the write, the column would stay stale,
- * and the craft's run report would be empty (or claim a trigger it no longer
+ * and the subproject's run report would be empty (or claim a trigger it no longer
  * owns) while every trigger fired normally. Nothing would error.
  */
-describe('reconcileProjectTriggerRuntime — craft ownership', () => {
-  function craftTrigger(slug: string, craftSlug: string | null): GitTriggerSpec {
-    return { ...trigger(slug), craftSlug };
+describe('reconcileProjectTriggerRuntime — subproject ownership', () => {
+  function subprojectTrigger(slug: string, subprojectSlug: string | null): GitTriggerSpec {
+    return { ...trigger(slug), subprojectSlug };
   }
 
   /** A store whose existing row already matches on schedule + session. */
-  function storeWith(existingCraftSlug: string | null | undefined) {
+  function storeWith(existingSubprojectSlug: string | null | undefined) {
     const upserted: Array<string | null> = [];
     const store: TriggerRuntimeCatalogStore = {
       list: async () => [
         {
           slug: 'seo-weekly',
           sessionId: null,
-          ...(existingCraftSlug === undefined ? {} : { craftSlug: existingCraftSlug }),
+          ...(existingSubprojectSlug === undefined ? {} : { subprojectSlug: existingSubprojectSlug }),
           scheduleRevision: triggerScheduleRevision(trigger('seo-weekly')),
         },
       ],
       upsert: async (_projectId, spec) => {
-        upserted.push(spec.craftSlug);
+        upserted.push(spec.subprojectSlug);
       },
       remove: async () => {},
     };
@@ -135,7 +135,7 @@ describe('reconcileProjectTriggerRuntime — craft ownership', () => {
     const { store, upserted } = storeWith(null);
     const result = await reconcileProjectTriggerRuntimeWithStore(
       'project-1',
-      [craftTrigger('seo-weekly', 'seo-watch')],
+      [subprojectTrigger('seo-weekly', 'seo-watch')],
       store,
     );
     expect(upserted).toEqual(['seo-watch']);
@@ -146,7 +146,7 @@ describe('reconcileProjectTriggerRuntime — craft ownership', () => {
     const { store, upserted } = storeWith('seo-watch');
     await reconcileProjectTriggerRuntimeWithStore(
       'project-1',
-      [craftTrigger('seo-weekly', null)],
+      [subprojectTrigger('seo-weekly', null)],
       store,
     );
     expect(upserted).toEqual([null]);
@@ -156,17 +156,17 @@ describe('reconcileProjectTriggerRuntime — craft ownership', () => {
     const { store, upserted } = storeWith('seo-watch');
     await reconcileProjectTriggerRuntimeWithStore(
       'project-1',
-      [craftTrigger('seo-weekly', 'other-craft')],
+      [subprojectTrigger('seo-weekly', 'other-subproject')],
       store,
     );
-    expect(upserted).toEqual(['other-craft']);
+    expect(upserted).toEqual(['other-subproject']);
   });
 
   test('an unchanged owner is NOT rewritten', async () => {
     const { store, upserted } = storeWith('seo-watch');
     const result = await reconcileProjectTriggerRuntimeWithStore(
       'project-1',
-      [craftTrigger('seo-weekly', 'seo-watch')],
+      [subprojectTrigger('seo-weekly', 'seo-watch')],
       store,
     );
     expect(upserted).toEqual([]);
@@ -174,12 +174,12 @@ describe('reconcileProjectTriggerRuntime — craft ownership', () => {
   });
 
   test('a legacy row that predates the column converges to null, not to a write loop', async () => {
-    // `craftSlug` absent from the selected row (a store that never had it).
+    // `subprojectSlug` absent from the selected row (a store that never had it).
     // A hand-authored trigger must settle, or every sweep would rewrite it.
     const { store, upserted } = storeWith(undefined);
     const result = await reconcileProjectTriggerRuntimeWithStore(
       'project-1',
-      [craftTrigger('seo-weekly', null)],
+      [subprojectTrigger('seo-weekly', null)],
       store,
     );
     expect(upserted).toEqual([]);

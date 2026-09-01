@@ -291,7 +291,7 @@ export async function runProjectMaintenance(): Promise<void> {
       }),
       // BOOT prompts the runtime dropped. A session created with
       // `initial_prompt` never enters the inbox, so an abandoned boot delivery
-      // was a silent permanent loss — every craft run empty. Hands the prompt
+      // was a silent permanent loss — every subproject run empty. Hands the prompt
       // to the inbox, at most once per session. See `lost-boot-prompt.ts`.
       reconcileLostBootPrompts().catch((err) => {
         console.warn(

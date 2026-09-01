@@ -27,7 +27,7 @@ kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.connectStatus; // easy-connect (Pipedream) status
-kortix.crafts; // the craft catalog — publish, browse, withdraw
+kortix.subprojects; // the subproject catalog — publish, browse, withdraw
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
 kortix.runtime(); // OpenCode REST compatibility client
@@ -183,21 +183,21 @@ project-scoped.
 | `create(input)` | create one — `{ sandboxId, port, ttl?, label? }` |
 | `revoke(sandboxId, token)` | revoke one |
 
-### Craft catalog — `kortix.crafts`
+### Subproject catalog — `kortix.subprojects`
 
-The catalog of crafts — account-scoped, and distinct from
-`project(id).crafts`, which is what one project has installed. A craft comes
-from a GitHub repo or an uploaded `.zip`. See [Crafts](/docs/sdk/crafts).
+The catalog of subprojects — account-scoped, and distinct from
+`project(id).subprojects`, which is what one project has installed. A subproject comes
+from a GitHub repo or an uploaded `.zip`. See [Subprojects](/docs/sdk/subprojects).
 
 | method | what |
 | --- | --- |
-| `list(options?)` · `get(craftId)` | every public craft plus your own private ones; `options.q` filters · one craft |
-| `submit(input)` | index a craft from `owner/repo`, optionally `@branch-or-tag` |
-| `submitArchive(input)` | index a craft from an uploaded `.zip` (`{ file, visibility? }`) |
-| `remove(craftId)` | withdraw from the catalog — does **not** uninstall it from any project |
+| `list(options?)` · `get(subprojectId)` | every public subproject plus your own private ones; `options.q` filters · one subproject |
+| `submit(input)` | index a subproject from `owner/repo`, optionally `@branch-or-tag` |
+| `submitArchive(input)` | index a subproject from an uploaded `.zip` (`{ file, visibility? }`) |
+| `remove(subprojectId)` | withdraw from the catalog — does **not** uninstall it from any project |
 
-Both submit calls resolve to `{ craft, warnings }`. `warnings` never blocks: the
-craft **is** indexed. Rejections carry a machine `code` —
+Both submit calls resolve to `{ subproject, warnings }`. `warnings` never blocks: the
+subproject **is** indexed. Rejections carry a machine `code` —
 `manifest_not_found`, `manifest_invalid`, `ref_not_found`, `repo_not_found`,
 `upstream_unavailable`, `invalid_archive`, `archive_refused`.
 
@@ -370,25 +370,25 @@ not a role. It decides who can open one trigger's sessions. It grants no
 permission the role verdict denies. See
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
-#### `p.crafts` — installed crafts and their runs
+#### `p.subprojects` — installed subprojects and their runs
 
 What this project has installed, plus activation and run history. Behind the
-`crafts` [feature flag](/docs/feature-flags/crafts): every method here answers
-`403` `feature_disabled` while it is off. See [Crafts](/docs/sdk/crafts).
+`subprojects` [feature flag](/docs/feature-flags/subprojects): every method here answers
+`403` `feature_disabled` while it is off. See [Subprojects](/docs/sdk/subprojects).
 
 | method | what |
 | --- | --- |
-| `list()` | the installed crafts, read from the project's manifest — not the catalog |
-| `install(craftId)` · `uninstall(slug)` | start the agent session that installs · removes it |
-| `author(description)` | describe a craft and have one built and published |
-| `setActivation(slug, enabled)` | turn ONE craft's triggers on or off |
-| `runs(options?)` · `runsFor(slug, options?)` | runs across every craft · one craft's runs plus aggregate `stats` |
+| `list()` | the installed subprojects, read from the project's manifest — not the catalog |
+| `install(subprojectId)` · `uninstall(slug)` | start the agent session that installs · removes it |
+| `author(description)` | describe a subproject and have one built and published |
+| `setActivation(slug, enabled)` | turn ONE subproject's triggers on or off |
+| `runs(options?)` · `runsFor(slug, options?)` | runs across every subproject · one subproject's runs plus aggregate `stats` |
 
 `install`, `uninstall`, and `author` return a **session id**, not a result. Each
 opens a change request a human reviews; the project changes when that CR merges.
 
-`uninstall` and `setActivation` key on the manifest `slug`, not a craft id. A
-craft installs with every trigger off, so `setActivation(slug, true)` is what
+`uninstall` and `setActivation` key on the manifest `slug`, not a subproject id. A
+subproject installs with every trigger off, so `setActivation(slug, true)` is what
 starts it working — and it commits to `kortix.yaml`. It is not the project-wide
 pause, which is `triggers.setActivation`.
 

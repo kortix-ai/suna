@@ -1,5 +1,5 @@
 /**
- * A minimal, bounded ZIP reader — enough to read a craft out of an uploaded
+ * A minimal, bounded ZIP reader — enough to read a subproject out of an uploaded
  * archive, and deliberately nothing more.
  *
  * No dependency: `Bun.inflateSync` handles the only compression method that
@@ -34,26 +34,26 @@ export interface ZipReadLimits {
   maxEntries: number;
 }
 
-export const CRAFT_ZIP_LIMITS: ZipReadLimits = {
+export const SUBPROJECT_ZIP_LIMITS: ZipReadLimits = {
   // Total EXTRACTED TEXT we keep, not the archive envelope — that is
-  // `MAX_UPLOAD_BYTES` in `crafts/index.ts`, checked on the declared size
+  // `MAX_UPLOAD_BYTES` in `subprojects/index.ts`, checked on the declared size
   // before any read.
   //
-  // Raised 1 MB → 5 MB on 2026-08-30. A craft is a manifest plus agent `.md`
+  // Raised 1 MB → 5 MB on 2026-08-30. A subproject is a manifest plus agent `.md`
   // files and skill folders, so a real one is tens of KB; the old cap was
   // rejecting people who zipped a whole repo folder with docs and fixtures in
   // it, which is the obvious thing to do and was never the failure we wanted to
   // catch. 5 MB still refuses "someone zipped their node_modules".
   //
   // Note what this does NOT change: `maxEntryBytes` stays at 256 KB, because a
-  // single 5 MB text file is not craft content, and the install prompt has its
-  // own tighter budget (`CRAFT_INSTALL_EMBED_BUDGET`) since an upload's files
+  // single 5 MB text file is not subproject content, and the install prompt has its
+  // own tighter budget (`SUBPROJECT_INSTALL_EMBED_BUDGET`) since an upload's files
   // travel to the agent inside the prompt.
   maxTotalBytes: 5_000_000,
   maxEntryBytes: 256_000,
-  // Counted AFTER `isCraftContentPath`, so this bounds craft files — agent
+  // Counted AFTER `isSubprojectContentPath`, so this bounds subproject files — agent
   // `.md`s and skill folders — not the size of the repo someone zipped.
-  // Raised 200 → 1000 on 2026-08-30: a craft with many skills is legitimate,
+  // Raised 200 → 1000 on 2026-08-30: a subproject with many skills is legitimate,
   // and 200 was low enough that a real one could hit it.
   maxEntries: 1000,
 };
@@ -86,7 +86,7 @@ const EOCD_MIN_SIZE = 22;
 const EOCD_MAX_SEARCH = 0xffff + EOCD_MIN_SIZE;
 
 /**
- * Text extensions a craft may contain. An ALLOWLIST, not a denylist: the files
+ * Text extensions a subproject may contain. An ALLOWLIST, not a denylist: the files
  * are read as UTF-8 and shown to an agent, so a binary that happens to decode
  * is worse than a file we simply refuse to carry.
  */
@@ -114,35 +114,35 @@ function extensionOf(path: string): string {
   return dot === -1 ? '' : base.slice(dot).toLowerCase();
 }
 
-export function isCraftTextPath(path: string): boolean {
+export function isSubprojectTextPath(path: string): boolean {
   if (path.endsWith('.env.example')) return true;
   return TEXT_EXTENSIONS.has(extensionOf(path));
 }
 
 /**
- * Whether a path is part of the CRAFT, as opposed to part of the repo the craft
+ * Whether a path is part of the SUBPROJECT, as opposed to part of the repo the subproject
  * happens to live in.
  *
- * This is the filter that lets someone zip a whole project folder. A craft IS
+ * This is the filter that lets someone zip a whole project folder. A subproject IS
  * its manifest plus `.kortix/` — the agent `.md`s and skill directories the
  * install copies. Application source (`src/**.ts`, tests, configs) has no role
- * in installing a craft INTO another project, and keeping it would be actively
- * wrong: the install prompt says "these ARE the craft — copy from here", so a
+ * in installing a subproject INTO another project, and keeping it would be actively
+ * wrong: the install prompt says "these ARE the subproject — copy from here", so a
  * stored `src/server.ts` becomes a file the agent writes into someone else's
  * repo.
  *
  * Deliberately narrow, and anchored:
- *   - the manifest, at the ROOT only — `crawlCraftZip` looks for it exactly
+ *   - the manifest, at the ROOT only — `crawlSubprojectZip` looks for it exactly
  *     there (`manifestCandidatePaths(null)`), so a nested `kortix.yaml` is a
- *     different project's manifest, not this craft's.
+ *     different project's manifest, not this subproject's.
  *   - anything under a `.kortix/` directory at any depth — agents, skills,
  *     opencode config. A skill's bundled helper script lives here too, which is
  *     the documented convention and why no extra allowance is needed for it.
  *   - `README.md` at the root, which is what a person reads before installing.
- *   - `.env.example` at the root, which declares what the craft needs.
+ *   - `.env.example` at the root, which declares what the subproject needs.
  */
-export function isCraftContentPath(path: string): boolean {
-  if (!isCraftTextPath(path)) return false;
+export function isSubprojectContentPath(path: string): boolean {
+  if (!isSubprojectTextPath(path)) return false;
   // `.kortix/` at any depth (a monorepo may hold `apps/foo/.kortix/`).
   if (path === '.kortix' || path.startsWith('.kortix/') || path.includes('/.kortix/')) return true;
   // Root-anchored: no '/' left in the path means it sits at the archive root.
@@ -281,7 +281,7 @@ function entryBody(view: DataView, bytes: Uint8Array, entry: CentralEntry): Uint
  */
 export function readZipTextFiles(
   input: ArrayBuffer | Uint8Array,
-  limits: ZipReadLimits = CRAFT_ZIP_LIMITS,
+  limits: ZipReadLimits = SUBPROJECT_ZIP_LIMITS,
 ): { files: ZipEntry[]; skipped: string[]; ignored: string[]; root: string | null } {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength < EOCD_MIN_SIZE) {
@@ -293,9 +293,9 @@ export function readZipTextFiles(
   const root = detectSingleRoot(central.map((e) => e.name));
   const files: ZipEntry[] = [];
   const skipped: string[] = [];
-  // Text files that are simply not craft content — the bulk of a repo zip.
+  // Text files that are simply not subproject content — the bulk of a repo zip.
   // Reported separately from `skipped` so a warning can distinguish "we could
-  // not carry this" from "this is not part of a craft".
+  // not carry this" from "this is not part of a subproject".
   const ignored: string[] = [];
   let total = 0;
 
@@ -314,13 +314,13 @@ export function readZipTextFiles(
       // whole archive rather than silently dropping the interesting entry.
       throw new ZipReadError('unsafe_path', `"${entry.name}" is not a safe relative path`);
     }
-    if (!isCraftTextPath(path)) {
+    if (!isSubprojectTextPath(path)) {
       skipped.push(path);
       continue;
     }
     // Checked BEFORE maxEntries, which is the whole point: a 900-file
-    // application source tree must not consume the craft-file budget.
-    if (!isCraftContentPath(path)) {
+    // application source tree must not consume the subproject-file budget.
+    if (!isSubprojectContentPath(path)) {
       ignored.push(path);
       continue;
     }

@@ -118,7 +118,7 @@ and rejected by spec validators:
 - Good: `release-notes`, `competitor-teardown`, `invoice-parse` — Bad:
   `-draft`, `My_Skill`, `pdf--merge`
 
-**`description` craft** — this is where most skills succeed or fail:
+**`description` subproject** — this is where most skills succeed or fail:
 
 - Say *what it does* **and** *when to fire it*. Pack in the trigger
   phrases a user would actually type.

@@ -11,27 +11,27 @@
 /** The slug reserved for the platform-shared default sandbox template. */
 export const RESERVED_SANDBOX_SLUG = 'default';
 
-/** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors, crafts). */
+/** Regex matching every user-defined slug (triggers, sandboxes, apps, connectors, subprojects). */
 export const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
 /**
- * A craft's source repository, as `owner/repo`. Deliberately NOT a URL: the
+ * A subproject's source repository, as `owner/repo`. Deliberately NOT a URL: the
  * manifest records provenance in the shortest form that still resolves, and
  * the host is implied (GitHub). The submit API normalizes every URL/SSH/clone
  * form down to this before it is ever written here.
  */
-export const CRAFT_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const SUBPROJECT_REPO_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /**
- * The four entity kinds a craft can contribute, and therefore the only keys
- * `crafts[].owns` may carry. Uninstall reads this map to know what to remove,
+ * The four entity kinds a subproject can contribute, and therefore the only keys
+ * `subprojects[].owns` may carry. Uninstall reads this map to know what to remove,
  * so an unknown key here would silently strand files in the project.
  */
-export const CRAFT_OWNED_KINDS = ['agents', 'skills', 'connectors', 'triggers'] as const;
-export type CraftOwnedKind = (typeof CRAFT_OWNED_KINDS)[number];
+export const SUBPROJECT_OWNED_KINDS = ['agents', 'skills', 'connectors', 'triggers'] as const;
+export type SubprojectOwnedKind = (typeof SUBPROJECT_OWNED_KINDS)[number];
 
-/** A craft's source address, normalized. `ref` is a branch or tag, never a sha. */
-export interface CraftRepoAddress {
+/** A subproject's source address, normalized. `ref` is a branch or tag, never a sha. */
+export interface SubprojectRepoAddress {
   owner: string;
   repo: string;
   /** The branch/tag the caller pinned, or null for the repo's default branch. */
@@ -39,7 +39,7 @@ export interface CraftRepoAddress {
 }
 
 /**
- * Normalize whatever a person pastes into one craft source address.
+ * Normalize whatever a person pastes into one subproject source address.
  *
  * Accepts a browser URL, an `.git` clone URL, an `ssh://` or `git@` remote, a
  * `github:` scheme, or a bare `owner/repo` — optionally suffixed `@<ref>` to
@@ -55,7 +55,7 @@ export interface CraftRepoAddress {
  * Shared by the API's submit route and the web submit modal so the two can
  * never disagree about what a person typed.
  */
-export function parseCraftRepo(value: string): CraftRepoAddress | null {
+export function parseSubprojectRepo(value: string): SubprojectRepoAddress | null {
   const raw = value.trim();
   if (!raw) return null;
 

@@ -6,7 +6,7 @@ export interface TriggerRuntimeCatalogStore {
     Array<{
       slug: string;
       sessionId?: string | null;
-      craftSlug?: string | null;
+      subprojectSlug?: string | null;
       scheduleRevision?: string | null;
     }>
   >;
@@ -34,15 +34,15 @@ export async function reconcileProjectTriggerRuntimeWithStore(
   for (const spec of specs) {
     const current = existingBySlug.get(spec.slug);
     const scheduleRevision = triggerScheduleRevision(spec);
-    // `craftSlug` is part of the comparison, not just the written row: a
-    // manifest edit that only adds or removes `craft:` changes neither the
+    // `subprojectSlug` is part of the comparison, not just the written row: a
+    // manifest edit that only adds or removes `subproject:` changes neither the
     // pinned session nor the schedule revision, so without it here the
-    // ownership column would silently never be materialized — and the craft's
+    // ownership column would silently never be materialized — and the subproject's
     // run history would stay empty while its triggers fired normally.
     if (
       !current ||
       (current.sessionId ?? null) !== spec.pinnedSessionId ||
-      (current.craftSlug ?? null) !== spec.craftSlug ||
+      (current.subprojectSlug ?? null) !== spec.subprojectSlug ||
       current.scheduleRevision !== scheduleRevision
     ) {
       await store.upsert(projectId, spec, scheduleRevision);

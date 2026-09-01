@@ -1,6 +1,6 @@
 'use client';
 
-import { createCraftInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
+import { createSubprojectInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
@@ -28,12 +28,12 @@ import { useProjectPicker } from '@/features/projects/use-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 
-// A use-case slug is handed to the craft install-session as the craft
+// A use-case slug is handed to the subproject install-session as the subproject
 // identifier. The marketplace catalog this used to resolve against
-// (`kortix-starter:<slug>`) was removed with the marketplace, and the craft
+// (`kortix-starter:<slug>`) was removed with the marketplace, and the subproject
 // index is what replaces it.
 //
-// UNVERIFIED, on purpose: no craft with a use-case slug exists in the index
+// UNVERIFIED, on purpose: no subproject with a use-case slug exists in the index
 // yet, so this install answers 404 until that catalog content is published.
 // The alternative was dropping the only CTA on an indexed acquisition page.
 // Same sentinel the unified AddToProjectModal uses: "create a project inline,
@@ -104,7 +104,7 @@ export function TemplateSessionInstallDialog({
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         projectId = project.project_id;
       }
-      const { session_id } = await createCraftInstallSession(projectId, templateId);
+      const { session_id } = await createSubprojectInstallSession(projectId, templateId);
       // nav-contract: prefetch-only — `session_id` comes back from the install
       // POST, and the project may be provisioned in the same click, so neither
       // half of this href exists before the click.

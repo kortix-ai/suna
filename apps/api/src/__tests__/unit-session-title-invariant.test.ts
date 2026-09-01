@@ -117,13 +117,13 @@ describe('session-title invariant', () => {
         'channels/teams/session.ts',
         'channels/telegram-webhook.ts',
         'projects/routes/r2.ts',
-        // Craft install/uninstall. Both
+        // Subproject install/uninstall. Both
         // createSession calls pass an explicit `body.name`
-        // (`Install <craft>` / `Remove <craft>`), so `needsTitle` returns false
+        // (`Install <subproject>` / `Remove <subproject>`), so `needsTitle` returns false
         // and Hook 1 no-ops — the rendered install envelope can never reach a
         // project-visible title. No `title_source` is needed because the
         // generator never runs for these sessions.
-        'projects/routes/crafts.ts',
+        'projects/routes/subprojects.ts',
         'projects/lib/sessions.ts',
       ]),
     ).toEqual([]);

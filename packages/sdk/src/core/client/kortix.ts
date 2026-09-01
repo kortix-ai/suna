@@ -376,22 +376,22 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const connectStatus = P.getConnectStatus;
 
   /**
-   * The craft store (`/v1/crafts/*`) — top-level and account-scoped, distinct
-   * from `project(id).crafts`, which is what a specific project has installed.
+   * The subproject store (`/v1/subprojects/*`) — top-level and account-scoped, distinct
+   * from `project(id).subprojects`, which is what a specific project has installed.
    *
-   * A craft comes from a GitHub repo or an uploaded `.zip`. Submitting indexes
+   * A subproject comes from a GitHub repo or an uploaded `.zip`. Submitting indexes
    * it; installing is project-scoped and returns a session to open.
    */
-  const crafts = {
-    list: (options?: Parameters<typeof P.listCrafts>[0]) => P.listCrafts(options),
-    get: (craftId: string) => P.getCraft(craftId),
-    /** Index a craft from `owner/repo`, optionally `@branch-or-tag`. */
-    submit: (input: Parameters<typeof P.submitCraft>[0]) => P.submitCraft(input),
-    /** Index a craft from an uploaded `.zip`. */
-    submitArchive: (input: Parameters<typeof P.submitCraftArchive>[0]) =>
-      P.submitCraftArchive(input),
+  const subprojects = {
+    list: (options?: Parameters<typeof P.listSubprojects>[0]) => P.listSubprojects(options),
+    get: (subprojectId: string) => P.getSubproject(subprojectId),
+    /** Index a subproject from `owner/repo`, optionally `@branch-or-tag`. */
+    submit: (input: Parameters<typeof P.submitSubproject>[0]) => P.submitSubproject(input),
+    /** Index a subproject from an uploaded `.zip`. */
+    submitArchive: (input: Parameters<typeof P.submitSubprojectArchive>[0]) =>
+      P.submitSubprojectArchive(input),
     /** Remove from the catalogue. Does NOT uninstall it from any project. */
-    remove: (craftId: string) => P.deleteCraft(craftId),
+    remove: (subprojectId: string) => P.deleteSubproject(subprojectId),
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
@@ -641,29 +641,29 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /**
-       * Crafts installed in this project, and the runs of the triggers they own.
+       * Subprojects installed in this project, and the runs of the triggers they own.
        * Install and uninstall return a SESSION to open — the agent inside it
        * does the merge and lands a change request; neither call commits.
        */
-      crafts: {
-        list: () => P.listProjectCrafts(projectId),
-        install: (craftId: string) => P.createCraftInstallSession(projectId, craftId),
-        uninstall: (slug: string) => P.createCraftUninstallSession(projectId, slug),
-        /** Describe a craft and have one built. Returns the session to open. */
-        author: (description: string) => P.createCraftAuthorSession(projectId, description),
+      subprojects: {
+        list: () => P.listProjectSubprojects(projectId),
+        install: (subprojectId: string) => P.createSubprojectInstallSession(projectId, subprojectId),
+        uninstall: (slug: string) => P.createSubprojectUninstallSession(projectId, slug),
+        /** Describe a subproject and have one built. Returns the session to open. */
+        author: (description: string) => P.createSubprojectAuthorSession(projectId, description),
         /**
-         * Enable or disable ONE craft's triggers. A craft installs with every
+         * Enable or disable ONE subproject's triggers. A subproject installs with every
          * trigger off, so this is what starts it working. Not the project-wide
          * pause — that is `triggers.setActivation`.
          */
         setActivation: (slug: string, enabled: boolean) =>
-          P.setCraftActivation(projectId, slug, enabled),
-        /** Runs across every installed craft, newest first. */
-        runs: (options?: Parameters<typeof P.listProjectCraftRuns>[1]) =>
-          P.listProjectCraftRuns(projectId, options),
-        /** Runs for one craft, with aggregate stats. */
-        runsFor: (slug: string, options?: Parameters<typeof P.listCraftRuns>[2]) =>
-          P.listCraftRuns(projectId, slug, options),
+          P.setSubprojectActivation(projectId, slug, enabled),
+        /** Runs across every installed subproject, newest first. */
+        runs: (options?: Parameters<typeof P.listProjectSubprojectRuns>[1]) =>
+          P.listProjectSubprojectRuns(projectId, options),
+        /** Runs for one subproject, with aggregate stats. */
+        runsFor: (slug: string, options?: Parameters<typeof P.listSubprojectRuns>[2]) =>
+          P.listSubprojectRuns(projectId, slug, options),
       },
 
       files: {
@@ -1358,8 +1358,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     sandboxShares,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
-    /** The craft store (`/v1/crafts/*`, account-scoped). Installing is per-project. */
-    crafts,
+    /** The subproject store (`/v1/subprojects/*`, account-scoped). Installing is per-project. */
+    subprojects,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

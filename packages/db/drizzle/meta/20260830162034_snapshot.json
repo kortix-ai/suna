@@ -7488,12 +7488,12 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.crafts": {
-      "name": "crafts",
+    "kortix.subprojects": {
+      "name": "subprojects",
       "schema": "kortix",
       "columns": {
-        "craft_id": {
-          "name": "craft_id",
+        "subproject_id": {
+          "name": "subproject_id",
           "type": "uuid",
           "primaryKey": true,
           "notNull": true,
@@ -7507,7 +7507,7 @@
         },
         "source_kind": {
           "name": "source_kind",
-          "type": "craft_source_kind",
+          "type": "subproject_source_kind",
           "typeSchema": "kortix",
           "primaryKey": false,
           "notNull": true,
@@ -7619,7 +7619,7 @@
         },
         "visibility": {
           "name": "visibility",
-          "type": "craft_visibility",
+          "type": "subproject_visibility",
           "typeSchema": "kortix",
           "primaryKey": false,
           "notNull": true,
@@ -7639,7 +7639,7 @@
         },
         "status": {
           "name": "status",
-          "type": "craft_status",
+          "type": "subproject_status",
           "typeSchema": "kortix",
           "primaryKey": false,
           "notNull": true,
@@ -7673,8 +7673,8 @@
         }
       },
       "indexes": {
-        "idx_crafts_repo_ref": {
-          "name": "idx_crafts_repo_ref",
+        "idx_subprojects_repo_ref": {
+          "name": "idx_subprojects_repo_ref",
           "columns": [
             {
               "expression": "repo_owner",
@@ -7700,8 +7700,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_crafts_listing": {
-          "name": "idx_crafts_listing",
+        "idx_subprojects_listing": {
+          "name": "idx_subprojects_listing",
           "columns": [
             {
               "expression": "visibility",
@@ -7721,8 +7721,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_crafts_account": {
-          "name": "idx_crafts_account",
+        "idx_subprojects_account": {
+          "name": "idx_subprojects_account",
           "columns": [
             {
               "expression": "account_id",
@@ -7736,8 +7736,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_crafts_slug": {
-          "name": "idx_crafts_slug",
+        "idx_subprojects_slug": {
+          "name": "idx_subprojects_slug",
           "columns": [
             {
               "expression": "slug",
@@ -7753,9 +7753,9 @@
         }
       },
       "foreignKeys": {
-        "crafts_account_id_accounts_account_id_fk": {
-          "name": "crafts_account_id_accounts_account_id_fk",
-          "tableFrom": "crafts",
+        "subprojects_account_id_accounts_account_id_fk": {
+          "name": "subprojects_account_id_accounts_account_id_fk",
+          "tableFrom": "subprojects",
           "tableTo": "accounts",
           "schemaTo": "kortix",
           "columnsFrom": [
@@ -11623,8 +11623,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.project_crafts": {
-      "name": "project_crafts",
+    "kortix.project_subprojects": {
+      "name": "project_subprojects",
       "schema": "kortix",
       "columns": {
         "project_id": {
@@ -11639,8 +11639,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "craft_id": {
-          "name": "craft_id",
+        "subproject_id": {
+          "name": "subproject_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -11722,11 +11722,11 @@
         }
       },
       "indexes": {
-        "idx_project_crafts_craft": {
-          "name": "idx_project_crafts_craft",
+        "idx_project_subprojects_subproject": {
+          "name": "idx_project_subprojects_subproject",
           "columns": [
             {
-              "expression": "craft_id",
+              "expression": "subproject_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -11737,8 +11737,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_project_crafts_install_session": {
-          "name": "idx_project_crafts_install_session",
+        "idx_project_subprojects_install_session": {
+          "name": "idx_project_subprojects_install_session",
           "columns": [
             {
               "expression": "install_session_id",
@@ -11754,9 +11754,9 @@
         }
       },
       "foreignKeys": {
-        "project_crafts_project_id_projects_project_id_fk": {
-          "name": "project_crafts_project_id_projects_project_id_fk",
-          "tableFrom": "project_crafts",
+        "project_subprojects_project_id_projects_project_id_fk": {
+          "name": "project_subprojects_project_id_projects_project_id_fk",
+          "tableFrom": "project_subprojects",
           "tableTo": "projects",
           "schemaTo": "kortix",
           "columnsFrom": [
@@ -11768,23 +11768,23 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "project_crafts_craft_id_crafts_craft_id_fk": {
-          "name": "project_crafts_craft_id_crafts_craft_id_fk",
-          "tableFrom": "project_crafts",
-          "tableTo": "crafts",
+        "project_subprojects_subproject_id_subprojects_subproject_id_fk": {
+          "name": "project_subprojects_subproject_id_subprojects_subproject_id_fk",
+          "tableFrom": "project_subprojects",
+          "tableTo": "subprojects",
           "schemaTo": "kortix",
           "columnsFrom": [
-            "craft_id"
+            "subproject_id"
           ],
           "columnsTo": [
-            "craft_id"
+            "subproject_id"
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "project_crafts_install_session_fk": {
-          "name": "project_crafts_install_session_fk",
-          "tableFrom": "project_crafts",
+        "project_subprojects_install_session_fk": {
+          "name": "project_subprojects_install_session_fk",
+          "tableFrom": "project_subprojects",
           "tableTo": "project_sessions",
           "schemaTo": "kortix",
           "columnsFrom": [
@@ -11798,8 +11798,8 @@
         }
       },
       "compositePrimaryKeys": {
-        "project_crafts_project_id_slug_pk": {
-          "name": "project_crafts_project_id_slug_pk",
+        "project_subprojects_project_id_slug_pk": {
+          "name": "project_subprojects_project_id_slug_pk",
           "columns": [
             "project_id",
             "slug"
@@ -14822,8 +14822,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "craft_slug": {
-          "name": "craft_slug",
+        "subproject_slug": {
+          "name": "subproject_slug",
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": false
@@ -20805,16 +20805,16 @@
         "error"
       ]
     },
-    "kortix.craft_source_kind": {
-      "name": "craft_source_kind",
+    "kortix.subproject_source_kind": {
+      "name": "subproject_source_kind",
       "schema": "kortix",
       "values": [
         "github",
         "upload"
       ]
     },
-    "kortix.craft_status": {
-      "name": "craft_status",
+    "kortix.subproject_status": {
+      "name": "subproject_status",
       "schema": "kortix",
       "values": [
         "active",
@@ -20822,8 +20822,8 @@
         "yanked"
       ]
     },
-    "kortix.craft_visibility": {
-      "name": "craft_visibility",
+    "kortix.subproject_visibility": {
+      "name": "subproject_visibility",
       "schema": "kortix",
       "values": [
         "public",

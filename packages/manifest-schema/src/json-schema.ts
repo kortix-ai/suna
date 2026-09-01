@@ -43,8 +43,8 @@ import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
-  CRAFT_OWNED_KINDS,
-  CRAFT_REPO_RE,
+  SUBPROJECT_OWNED_KINDS,
+  SUBPROJECT_REPO_RE,
   CONNECTOR_AUTH_TYPES,
   CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
@@ -323,27 +323,27 @@ function sandboxSchema(): JsonSchemaFragment {
 }
 
 /**
- * One `crafts:` entry — an installed craft's identity and provenance
- * (`validateCrafts`).
+ * One `subprojects:` entry — an installed subproject's identity and provenance
+ * (`validateSubprojects`).
  *
- * A craft is a GitHub repo whose own `kortix.yaml` declares agents, triggers
+ * A subproject is a GitHub repo whose own `kortix.yaml` declares agents, triggers
  * and connectors; installing it MERGES that declaration into this project.
  * This entry is the record of that merge: where it came from, at which commit,
  * and what it contributed. It is the reason `git revert` is a working
  * uninstall — the entry and the entities it names land in one commit.
  *
- * `owns` is the summary; each contributed entity ALSO carries `craft: <slug>`
+ * `owns` is the summary; each contributed entity ALSO carries `subproject: <slug>`
  * on its own manifest entry. Both are written so a hand-edit of one is
  * detectable against the other.
  */
-function craftSchema(): JsonSchemaFragment {
+function subprojectSchema(): JsonSchemaFragment {
   const ownedList: JsonSchemaFragment = { type: 'array', items: SLUG_SCHEMA };
   return {
     type: 'object',
     required: ['slug', 'repo'],
     properties: {
       slug: SLUG_SCHEMA,
-      repo: { type: 'string', pattern: CRAFT_REPO_RE.source },
+      repo: { type: 'string', pattern: SUBPROJECT_REPO_RE.source },
       /**
        * The git ref the install ASKED for — a branch or tag. Absent means the
        * repo's default branch. This is what an update re-resolves against.
@@ -360,7 +360,7 @@ function craftSchema(): JsonSchemaFragment {
       installed_at: NON_EMPTY_STRING,
       owns: {
         type: 'object',
-        properties: Object.fromEntries(CRAFT_OWNED_KINDS.map((kind) => [kind, ownedList])),
+        properties: Object.fromEntries(SUBPROJECT_OWNED_KINDS.map((kind) => [kind, ownedList])),
         additionalProperties: false,
       },
     },
@@ -378,11 +378,11 @@ function triggerSchema(): JsonSchemaFragment {
       slug: SLUG_SCHEMA,
       type: { type: 'string', enum: [...TRIGGER_TYPES] },
       name: { type: 'string' },
-      // The craft that contributed this trigger. Materialized onto
-      // `project_trigger_runtime.craft_slug`, which is what makes a craft's run
-      // history one indexed query. Cross-field: must name a declared craft (or
+      // The subproject that contributed this trigger. Materialized onto
+      // `project_trigger_runtime.subproject_slug`, which is what makes a subproject's run
+      // history one indexed query. Cross-field: must name a declared subproject (or
       // be omitted) — dynamic, left to the imperative validator.
-      craft: SLUG_SCHEMA,
+      subproject: SLUG_SCHEMA,
       // Cross-field: must name a declared agent (or be omitted) — dynamic,
       // left to the imperative validator.
       agent: { type: 'string', minLength: 1 },
@@ -506,8 +506,8 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     properties: {
       slug: SLUG_SCHEMA,
       name: NON_EMPTY_STRING,
-      // The craft that contributed this connector — see `craftSchema`.
-      craft: SLUG_SCHEMA,
+      // The subproject that contributed this connector — see `subprojectSchema`.
+      subproject: SLUG_SCHEMA,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
       provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
       app: { type: 'string' },
@@ -627,9 +627,9 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     properties: {
       enabled: { type: 'boolean' },
       sandbox: SLUG_SCHEMA,
-      // The craft that contributed this agent — see `craftSchema`. Governance,
+      // The subproject that contributed this agent — see `subprojectSchema`. Governance,
       // not behavior, so it belongs here rather than in the agent's own `.md`.
-      craft: SLUG_SCHEMA,
+      subproject: SLUG_SCHEMA,
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',
@@ -724,13 +724,13 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
-    // Crafts are a v2-only concept. A v1 manifest declaring one is a hard
+    // Subprojects are a v2-only concept. A v1 manifest declaring one is a hard
     // error rather than a silent no-op — the same stance `apps` takes, and the
-    // same stance v2 takes on `channels`. A `craft:` key on a v1 trigger or
+    // same stance v2 takes on `channels`. A `subproject:` key on a v1 trigger or
     // connector stays structurally legal (it is just a slug) but is inert:
-    // the "must name a declared craft" cross-check is v2-only, because v1 has
-    // no `crafts:` section for it to resolve against.
-    crafts: connectorVersion === 2 ? { type: 'array', items: craftSchema() } : false,
+    // the "must name a declared subproject" cross-check is v2-only, because v1 has
+    // no `subprojects:` section for it to resolve against.
+    subprojects: connectorVersion === 2 ? { type: 'array', items: subprojectSchema() } : false,
   };
 }
 

@@ -28,7 +28,7 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // scaffold changes.
 // The starter floor ships the core Kortix OpenCode files plus default runtime
 // tools/plugins. Optional skills (agent-browser and knowledge-work skills) are
-// marketplace installable instead.
+// an optional installable instead.
 const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',

@@ -10,7 +10,7 @@ import { useEffect, useState, type ReactNode } from 'react';
  * One presentation per breakpoint, from one markup block: a horizontal
  * scroller below `lg` that bleeds to the viewport edge, and a sticky vertical
  * list from `lg` up. This is the shape every reference legal/support page
- * converges on (Stripe, Mistral, Craft, Clay) and it is structurally the same
+ * converges on (Stripe, Mistral, Subproject, Clay) and it is structurally the same
  * split `/changelog` already ships — a sticky identity column beside the body.
  *
  * `/legal` drives document switching with it (buttons + `?tab=`), `/support`

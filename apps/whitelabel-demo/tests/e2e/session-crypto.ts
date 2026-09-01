@@ -1,6 +1,6 @@
 /**
  * A black-box re-implementation of `src/server/auth.ts`'s token scheme, used
- * ONLY to hand-craft edge-case tokens (expired, tampered) that a real login
+ * ONLY to hand-subproject edge-case tokens (expired, tampered) that a real login
  * flow can't produce on demand. Deliberately duplicated rather than imported
  * from app source — these tests exercise the app as an HTTP black box, and an
  * independent implementation is also a better regression check: if it and
@@ -18,7 +18,7 @@ function sign(secret: string, body: string): string {
   return createHmac('sha256', secret).update(body).digest('base64url');
 }
 
-export function craftToken(
+export function subprojectToken(
   secret: string,
   userId: string,
   { iat, exp }: { iat: number; exp: number },
@@ -30,13 +30,13 @@ export function craftToken(
 /** A validly-signed but already-expired token. */
 export function expiredToken(secret: string, userId: string): string {
   const now = Math.floor(Date.now() / 1000);
-  return craftToken(secret, userId, { iat: now - 1000, exp: now - 10 });
+  return subprojectToken(secret, userId, { iat: now - 1000, exp: now - 10 });
 }
 
 /** A well-formed, non-expired token signed with the WRONG secret (or tampered signature). */
 export function tamperedToken(secret: string, userId: string): string {
   const now = Math.floor(Date.now() / 1000);
-  const valid = craftToken(secret, userId, { iat: now, exp: now + 3600 });
+  const valid = subprojectToken(secret, userId, { iat: now, exp: now + 3600 });
   const dot = valid.indexOf('.');
   const body = valid.slice(0, dot);
   const sig = valid.slice(dot + 1);

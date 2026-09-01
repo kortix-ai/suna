@@ -37,7 +37,7 @@ export default function ProjectHomeLoading() {
           {/* Composer */}
           <div className="bg-muted-foreground/10 h-28 w-full animate-pulse rounded-xl" />
 
-          {/* Crafts preview: label row + compact cards (CraftsHomePreview's shape) */}
+          {/* Subprojects preview: label row + compact cards (SubprojectsHomePreview's shape) */}
           <div className="w-full space-y-2.5">
             <div className="flex items-center justify-between">
               <div className="bg-muted-foreground/10 h-3 w-24 animate-pulse rounded-full" />

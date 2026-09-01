@@ -13,7 +13,7 @@ function schedule(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
     slug: 'morning-email',
     path: 'kortix.yaml#triggers.morning-email',
     name: 'Morning email',
-    craftSlug: null,
+    subprojectSlug: null,
     type: 'cron',
     agent: 'default',
     model: null,

@@ -199,7 +199,7 @@
                 "name": {
                   "type": "string"
                 },
-                "craft": {
+                "subproject": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
@@ -475,7 +475,7 @@
                   "type": "string",
                   "minLength": 1
                 },
-                "craft": {
+                "subproject": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
@@ -769,7 +769,7 @@
             }
           },
           "apps": false,
-          "crafts": false,
+          "subprojects": false,
           "agents": {
             "type": "array",
             "items": {
@@ -986,7 +986,7 @@
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
-                "craft": {
+                "subproject": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
@@ -1307,7 +1307,7 @@
                 "name": {
                   "type": "string"
                 },
-                "craft": {
+                "subproject": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
@@ -1583,7 +1583,7 @@
                   "type": "string",
                   "minLength": 1
                 },
-                "craft": {
+                "subproject": {
                   "type": "string",
                   "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
                 },
@@ -2055,7 +2055,7 @@
               ]
             }
           },
-          "crafts": {
+          "subprojects": {
             "type": "array",
             "items": {
               "type": "object",

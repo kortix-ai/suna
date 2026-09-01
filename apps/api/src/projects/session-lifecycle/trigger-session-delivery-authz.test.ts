@@ -2,7 +2,7 @@
  * A queued prompt for a TRIGGER-CREATED session must survive the proxy's
  * session-visibility gate.
  *
- * Incident (local, 2026-08-31): every craft run produced an empty transcript.
+ * Incident (local, 2026-08-31): every subproject run produced an empty transcript.
  * A trigger creates its session with `session_access_mode='private'`, so the
  * row is `visibility='private'` with `created_by` = the AUTOMATION ACTOR — not
  * the human. When the human then typed into that session, `deliverPrompt`

@@ -184,33 +184,33 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
-### Crafts
+### Subprojects
 
-A craft is a Kortix project you install into another project: a repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.crafts` is the account-scoped catalog; `kortix.project(projectId).crafts` is what one project has installed. Crafts is a project feature flag, so project-scoped routes return `403 feature_disabled` until a manager enables it.
+A subproject is a Kortix project you install into another project: a repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.subprojects` is the account-scoped catalog; `kortix.project(projectId).subprojects` is what one project has installed. Subprojects is a project feature flag, so project-scoped routes return `403 feature_disabled` until a manager enables it.
 
 ```ts
-const { craft } = await kortix.crafts.submit({ repo: 'acme/seo-craft@v1.2.0' });
+const { subproject } = await kortix.subprojects.submit({ repo: 'acme/seo-subproject@v1.2.0' });
 
-const installed = kortix.project(projectId).crafts;
-const { session_id } = await installed.install(craft.craft_id);
-// The craft is NOT installed yet. Open that session — the agent reads both
+const installed = kortix.project(projectId).subprojects;
+const { session_id } = await installed.install(subproject.subproject_id);
+// The subproject is NOT installed yet. Open that session — the agent reads both
 // manifests, merges, and opens a change request a human reviews.
 
 await installed.setActivation('seo-watch', true); // commits to the manifest
 const report = await installed.runsFor('seo-watch');
 ```
 
-`install`, `uninstall` and `author` each return a session id and change nothing themselves. `submitArchive({ file })` indexes a craft from a `.zip` for a folder that is not a repository yet; that craft is a snapshot and never re-crawls.
+`install`, `uninstall` and `author` each return a session id and change nothing themselves. `submitArchive({ file })` indexes a subproject from a `.zip` for a folder that is not a repository yet; that subproject is a snapshot and never re-crawls.
 
 Three shapes are worth knowing before you render any of it:
 
-- **A craft installs with every trigger off.** `setActivation(slug, true)` is what starts it working. An empty `triggers` array in the result means it was already in that state and no commit was made — a different answer from "it worked". This is not the project-wide pause (`project(id).triggers.setActivation`).
-- **`InstalledCraft.enabled` is three-valued.** `null` means some of its triggers are on, or it owns none. Activation is derived from the manifest, never stored, so a stored copy cannot drift from what actually fires. Render `null` as indeterminate.
-- **A run is one trigger fire**, joined through the trigger's manifest `craft:` field. `CraftRunStatus` adds `retrying` and `skipped` to the session vocabulary, `stats.successRate` excludes `stopped` and `skipped` from both sides, and `session_id` is nullable — do not link a run that produced no session.
+- **A subproject installs with every trigger off.** `setActivation(slug, true)` is what starts it working. An empty `triggers` array in the result means it was already in that state and no commit was made — a different answer from "it worked". This is not the project-wide pause (`project(id).triggers.setActivation`).
+- **`InstalledSubproject.enabled` is three-valued.** `null` means some of its triggers are on, or it owns none. Activation is derived from the manifest, never stored, so a stored copy cannot drift from what actually fires. Render `null` as indeterminate.
+- **A run is one trigger fire**, joined through the trigger's manifest `subproject:` field. `SubprojectRunStatus` adds `retrying` and `skipped` to the session vocabulary, `stats.successRate` excludes `stopped` and `skipped` from both sides, and `session_id` is nullable — do not link a run that produced no session.
 
-`craft_slug`, `craft_id`, `craft_repo` and `craft_sha` are server-managed session metadata: sending them on `POST /sessions` answers `400`, so a client cannot attribute its own session to someone else's craft.
+`subproject_slug`, `subproject_id`, `subproject_repo` and `subproject_sha` are server-managed session metadata: sending them on `POST /sessions` answers `400`, so a client cannot attribute its own session to someone else's subproject.
 
-React: `useCrafts`, `useCraft`, `useProjectCrafts`, `useProjectCraftRuns`, `useCraftRuns`. Full reference: `/docs/sdk/crafts`.
+React: `useSubprojects`, `useSubproject`, `useProjectSubprojects`, `useProjectSubprojectRuns`, `useSubprojectRuns`. Full reference: `/docs/sdk/subprojects`.
 
 ### React runtime
 

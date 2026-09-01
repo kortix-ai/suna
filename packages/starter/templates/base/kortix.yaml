@@ -182,31 +182,31 @@ triggers:
 # itself still shows up here as a `connectors` entry with
 # `provider: channel` once you connect one — that part is unchanged.
 
-# ─── Crafts ──────────────────────────────────────────────────────────────
-# A craft is a Kortix project — a GitHub repo, or an uploaded .zip, whose own
+# ─── Subprojects ──────────────────────────────────────────────────────────────
+# A subproject is a Kortix project — a GitHub repo, or an uploaded .zip, whose own
 # kortix.yaml declares agents, skills, triggers and connectors. Installing one
 # MERGES that declaration into this project, so a project can hold several
-# crafts side by side.
+# subprojects side by side.
 #
 # You do not write this section by hand — the install flow writes it, in the
-# same commit that adds the agents/skills/triggers the craft contributes. That
+# same commit that adds the agents/skills/triggers the subproject contributes. That
 # is what makes `git revert` a working uninstall.
 #
-# Each contributed entity ALSO carries `craft: <slug>` on its own entry above
+# Each contributed entity ALSO carries `subproject: <slug>` on its own entry above
 # (a trigger, a connector, an `agents:` block). The trigger side is load-
 # bearing twice over: the platform materializes it so "which runs belong to
-# this craft" is one indexed lookup, and it is what per-craft activation reads.
+# this subproject" is one indexed lookup, and it is what per-subproject activation reads.
 # `owns` is the summary uninstall reads.
 #
-# A craft installs with every trigger `enabled: false` — a craft that starts
-# firing the moment it lands is a craft nobody trusts. Turning one on rewrites
-# `enabled` on exactly the triggers carrying its `craft:` slug, in one commit,
-# so a craft's activation is configuration you can read in `git log`. There is
-# no stored "this craft is on" flag: it IS the state of those triggers.
+# A subproject installs with every trigger `enabled: false` — a subproject that starts
+# firing the moment it lands is a subproject nobody trusts. Turning one on rewrites
+# `enabled` on exactly the triggers carrying its `subproject:` slug, in one commit,
+# so a subproject's activation is configuration you can read in `git log`. There is
+# no stored "this subproject is on" flag: it IS the state of those triggers.
 #
-# crafts:
+# subprojects:
 #   - slug: seo-watch
-#     repo: acme/seo-craft           # owner/repo — where it came from
+#     repo: acme/seo-subproject           # owner/repo — where it came from
 #     ref: main                      # the branch/tag asked for; absent = default
 #     sha: 9f3c1a7e…                 # the commit `ref` resolved to. The real version.
 #     version: v1.2.0                # display only; `sha` is the integrity source

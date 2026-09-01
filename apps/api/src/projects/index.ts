@@ -43,7 +43,7 @@ import './routes/session-config';
 import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';
-import './routes/crafts';
+import './routes/subprojects';
 import './routes/r11';
 import './routes/agent-scope';
 import './routes/agent-config';

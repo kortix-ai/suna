@@ -145,7 +145,6 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/git/:project/compiled-checkout': 'Downloaded compiled project checkout',
   'GET /v1/git/:project/compiled-runtime': 'Downloaded compiled session runtime',
   'GET /v1/git/:project/compiled-pi-runtime': 'Downloaded compiled pi worker runtime',
-  'POST /v1/projects/:projectId/marketplace/install-session': 'Started marketplace install',
   'POST /v1/projects/:projectId/review/bulk': 'Updated review items in bulk',
   'POST /v1/projects/:projectId/snapshots/fix-with-agent': 'Fixed snapshot with agent',
   'POST /v1/projects/github/installations/linkable': 'Listed linkable GitHub installations',
@@ -228,7 +227,6 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/billing/webhook/stripe': 'Received Stripe billing webhook',
   'POST /v1/billing/webhooks/revenuecat': 'Received RevenueCat billing webhook',
   'POST /v1/billing/webhooks/stripe': 'Received Stripe billing webhook',
-  'GET /v1/marketplace/marketplaces/featured': 'Listed featured marketplaces',
   'GET /v1/oauth/authorize': 'Started OAuth authorization',
   'POST /v1/oauth/authorize/consent': 'Submitted OAuth consent',
   'GET /v1/oauth/userinfo': 'Viewed OAuth user information',
@@ -299,7 +297,6 @@ const IRREGULAR_SINGULARS: Record<string, string> = {
   keys: 'key',
   logs: 'log',
   mappings: 'mapping',
-  marketplaces: 'marketplace',
   members: 'member',
   messages: 'message',
   models: 'model',
@@ -776,7 +773,7 @@ function routeArea(path: string): string {
   if (path.startsWith('/v1/billing/')) return 'Billing';
   if (path.startsWith('/v1/tunnel/')) return 'Computer';
   if (path.startsWith('/v1/admin/')) return 'Administration';
-  if (path.startsWith('/v1/marketplace/')) return 'Marketplace';
+  if (path.startsWith('/v1/subprojects') || path.includes('/subprojects')) return 'Subprojects';
   if (path.startsWith('/v1/webhooks/')) return 'Webhooks';
   if (path.includes('/channels/')) return 'Channels';
   if (path.startsWith('/v1/router/') || path.startsWith('/v1/llm/')) return 'Models';

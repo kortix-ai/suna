@@ -648,26 +648,26 @@ Pinning a provider needs `project.customize.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
-### Crafts
+### Subprojects
 
-A craft is a Kortix project you install into another project: a repository whose
+A subproject is a Kortix project you install into another project: a repository whose
 `kortix.yaml` declares agents, skills, connectors and triggers. See
-[Crafts](/docs/feature-flags/crafts).
+[Subprojects](/docs/feature-flags/subprojects).
 
 Two halves. `publish`, `list`, `show`, and `remove` are account-scoped — the
 catalog. The rest act on one project, default the linked one.
 
 | Command | Effect |
 | --- | --- |
-| `kortix crafts publish <owner/repo>` | Index a craft from a GitHub repo. Private by default. Aliases: `submit`. |
-| `kortix crafts list` | Browse the catalog. Aliases: `ls`, `search`. |
-| `kortix crafts show <id-or-slug>` | One craft: what it declares and what it needs. Alias: `view`. |
-| `kortix crafts remove <id>` | Withdraw from the catalog. Does **not** uninstall it from any project. Aliases: `rm`, `delete`. |
-| `kortix crafts installed` | What the target project has installed. |
-| `kortix crafts install <id-or-slug>` | Start the agent session that installs it. |
-| `kortix crafts uninstall <slug>` | Start the agent session that removes it. |
-| `kortix crafts enable <slug>` / `disable <slug>` | Turn this craft's triggers on or off. |
-| `kortix crafts runs [slug]` | Run history. Omit the slug for every craft. |
+| `kortix subprojects publish <owner/repo>` | Index a subproject from a GitHub repo. Private by default. Aliases: `submit`. |
+| `kortix subprojects list` | Browse the catalog. Aliases: `ls`, `search`. |
+| `kortix subprojects show <id-or-slug>` | One subproject: what it declares and what it needs. Alias: `view`. |
+| `kortix subprojects remove <id>` | Withdraw from the catalog. Does **not** uninstall it from any project. Aliases: `rm`, `delete`. |
+| `kortix subprojects installed` | What the target project has installed. |
+| `kortix subprojects install <id-or-slug>` | Start the agent session that installs it. |
+| `kortix subprojects uninstall <slug>` | Start the agent session that removes it. |
+| `kortix subprojects enable <slug>` / `disable <slug>` | Turn this subproject's triggers on or off. |
+| `kortix subprojects runs [slug]` | Run history. Omit the slug for every subproject. |
 
 `publish` options: `--ref <branch-or-tag>` (aliases `--branch`, `--tag`) pins the
 ref; `--public` lists it in the public catalog.
@@ -680,15 +680,15 @@ Options on every subcommand: `--project <id>`, `--host <name>`, `--limit <n>`,
 
 `install` and `uninstall` do not change the project. Each starts an agent session
 that reads both manifests, resolves name collisions, and opens a change request
-you review. A craft installs with every trigger **off** — `enable` is what starts
+you review. A subproject installs with every trigger **off** — `enable` is what starts
 it working, and it commits the change to `kortix.yaml`. That is not the
 project-wide pause switch, which is `kortix triggers pause`.
 
-`kortix crafts` never uploads an archive. Publishing from a `.zip` exists on the
-web, for a folder that is not a repo yet. A craft that tracks a repo gets
+`kortix subprojects` never uploads an archive. Publishing from a `.zip` exists on the
+web, for a folder that is not a repo yet. A subproject that tracks a repo gets
 re-crawled when it moves; an uploaded snapshot never does.
 
-Crafts is a per-project [feature flag](/docs/feature-flags), off by default.
+Subprojects is a per-project [feature flag](/docs/feature-flags), off by default.
 While it is off, every project-scoped subcommand prints the feature-disabled
 sentence and exits `1`.
 

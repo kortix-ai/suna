@@ -9,8 +9,8 @@ import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
-import { ensureProjectCrafts } from '../craft-catalog';
-import { extractCrafts } from '../crafts';
+import { ensureProjectSubprojects } from '../subproject-catalog';
+import { extractSubprojects } from '../subprojects';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
 import {
@@ -1381,8 +1381,8 @@ export async function loadTriggersForResponse(
     // must never prune rows from that possibly stale snapshot. Authoritative
     // mutation/delete paths perform the destructive reconciliation themselves.
     await ensureProjectTriggerRuntime(projectId, specs);
-    // Same read, same non-destructive rule — see ensureProjectCrafts.
-    await ensureProjectCrafts(projectId, extractCrafts(manifest).specs);
+    // Same read, same non-destructive rule — see ensureProjectSubprojects.
+    await ensureProjectSubprojects(projectId, extractSubprojects(manifest).specs);
   }
   const runtimeRows =
     specs.length === 0
@@ -1436,12 +1436,12 @@ export interface TriggerDraft {
   slug: string;
   name: string;
   /**
-   * The craft that contributed this trigger, carried through the CRUD
+   * The subproject that contributed this trigger, carried through the CRUD
    * read-modify-write so an edit never orphans it. Callers do not set this: it
-   * arrives on the merge base from `specToBody`, and only a craft install
+   * arrives on the merge base from `specToBody`, and only a subproject install
    * writes it in the first place.
    */
-  craftSlug: string | null;
+  subprojectSlug: string | null;
   type: GitTriggerType;
   agent: string;
   /** Wire-form model (`provider/model`) or null for "Default" (resolve at fire time). */
@@ -1500,9 +1500,9 @@ export function parseTriggerDraft(
   // the current owner, so an edit preserves it; a create sends nothing and the
   // trigger is hand-authored. A non-slug value degrades to null rather than
   // failing the request — the manifest gate is what rejects a malformed ref.
-  const craftSlugRaw = normalizeString((body as any).craft);
-  const craftSlug =
-    craftSlugRaw && /^[a-z0-9][a-z0-9_-]{0,127}$/.test(craftSlugRaw) ? craftSlugRaw : null;
+  const subprojectSlugRaw = normalizeString((body as any).subproject);
+  const subprojectSlug =
+    subprojectSlugRaw && /^[a-z0-9][a-z0-9_-]{0,127}$/.test(subprojectSlugRaw) ? subprojectSlugRaw : null;
 
   const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
   if (
@@ -1563,7 +1563,7 @@ export function parseTriggerDraft(
     return {
       slug,
       name,
-      craftSlug,
+      subprojectSlug,
       type: 'monitor',
       agent,
       model,
@@ -1598,7 +1598,7 @@ export function parseTriggerDraft(
       return {
         slug,
         name,
-        craftSlug,
+        subprojectSlug,
         type: 'cron',
         agent,
         model,
@@ -1626,7 +1626,7 @@ export function parseTriggerDraft(
     return {
       slug,
       name,
-      craftSlug,
+      subprojectSlug,
       type: 'cron',
       agent,
       model,
@@ -1655,7 +1655,7 @@ export function parseTriggerDraft(
   return {
     slug,
     name,
-    craftSlug,
+    subprojectSlug,
     type: 'webhook',
     agent,
     model,
@@ -1684,7 +1684,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
   return {
     slug: spec.slug,
     name: spec.name,
-    craft: spec.craftSlug,
+    subproject: spec.subprojectSlug,
     type: spec.type,
     agent: spec.agent,
     model: spec.model,
@@ -1735,7 +1735,7 @@ export function draftToSpec(
     // `kortix.yaml#triggers.<slug>`, not a hardcoded `kortix.toml#…`.
     path: `${manifestPath}#triggers.${draft.slug}`,
     name: draft.name,
-    craftSlug: draft.craftSlug,
+    subprojectSlug: draft.subprojectSlug,
     type: draft.type,
     agent: draft.agent,
     model: draft.model,

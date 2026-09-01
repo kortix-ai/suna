@@ -52,14 +52,14 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 export const qk = {
-  /** The craft STORE — account-scoped, not per-project. */
-  crafts: {
+  /** The subproject STORE — account-scoped, not per-project. */
+  subprojects: {
     /** Invalidation prefix over every store listing, whatever it searched for. */
-    scope: () => ['kx', 'crafts'] as const,
+    scope: () => ['kx', 'subprojects'] as const,
 
     /**
      * One store listing. The search terms are part of the key because
-     * `listCrafts({ q })` is a different SERVER request per term, not a
+     * `listSubprojects({ q })` is a different SERVER request per term, not a
      * client-side filter of one response — sharing a key would let whichever
      * fetch resolved last overwrite what the other search's readers see.
      * `'all'` stands in for "no search", so an absent option and an explicit
@@ -67,15 +67,15 @@ export const qk = {
      */
     list: (options?: { q?: string; limit?: number; offset?: number }) =>
       [
-        ...qk.crafts.scope(),
+        ...qk.subprojects.scope(),
         'list',
         options?.q?.trim() || 'all',
         options?.limit ?? 'default',
         options?.offset ?? 0,
       ] as const,
 
-    /** One craft's detail. */
-    detail: (craftId: string) => [...qk.crafts.scope(), 'detail', craftId] as const,
+    /** One subproject's detail. */
+    detail: (subprojectId: string) => [...qk.subprojects.scope(), 'detail', subprojectId] as const,
   },
 
   projects: {
@@ -262,29 +262,29 @@ export const qk = {
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
 
     /** What this project has installed, read from its own manifest. */
-    crafts: (id: string) => [...qk.project.scope(id), 'crafts'] as const,
+    subprojects: (id: string) => [...qk.project.scope(id), 'subprojects'] as const,
 
     /**
-     * Prefix over EVERY craft-runs entry in this project — the all-crafts list
-     * and each per-craft report. Siblings, not parent and child, for the same
-     * reason `sessionsScope` exists: uninstalling a craft or firing a trigger
+     * Prefix over EVERY subproject-runs entry in this project — the all-subprojects list
+     * and each per-subproject report. Siblings, not parent and child, for the same
+     * reason `sessionsScope` exists: uninstalling a subproject or firing a trigger
      * must reach both in one invalidation, and invalidating only one would
      * leave the other silently showing history that no longer matches.
      */
-    craftRunsScope: (id: string) => [...qk.project.scope(id), 'craft-runs'] as const,
+    subprojectRunsScope: (id: string) => [...qk.project.scope(id), 'subproject-runs'] as const,
 
     /**
-     * Runs across every installed craft. The literal `'all'` segment keeps this
-     * from ever colliding with `craftRuns(id, slug)` below — without it a craft
+     * Runs across every installed subproject. The literal `'all'` segment keeps this
+     * from ever colliding with `subprojectRuns(id, slug)` below — without it a subproject
      * whose slug happened to be the string this key ends in would produce the
      * identical array. Same standard the `sessions` key applies: make the
      * collision unrepresentable rather than rely on slugs staying tame.
      */
-    craftRunsAll: (id: string) => [...qk.project.craftRunsScope(id), 'all'] as const,
+    subprojectRunsAll: (id: string) => [...qk.project.subprojectRunsScope(id), 'all'] as const,
 
-    /** One craft's runs. */
-    craftRuns: (id: string, slug: string) =>
-      [...qk.project.craftRunsScope(id), 'craft', slug] as const,
+    /** One subproject's runs. */
+    subprojectRuns: (id: string, slug: string) =>
+      [...qk.project.subprojectRunsScope(id), 'subproject', slug] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the
