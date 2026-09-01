@@ -102,6 +102,24 @@ describe('ephemeral self-host preview stack', () => {
     expect(overlay).not.toContain('volumes/db/data');
   });
 
+  // 2026-09-01: a redeploy of pi.kortix.com made every `POST /sessions` answer
+  // 500 `could not read Username for 'https://github.com'`. Cause: the git
+  // mirror lives at `/tmp/kortix/git-cache` (mirror.ts `cacheRoot()`) and
+  // kortix-api had NO volumes, so recreating the container deleted it. On a
+  // real deployment that is a slow re-clone; on a preview it is DATA LOSS,
+  // because the preview App cannot create repos (403) and a seeded project's
+  // history therefore exists nowhere else. The org held none of the preview's
+  // repos, and `/tmp/kortix/git-cache` was simply gone.
+  it('keeps the git mirror across a container recreate', () => {
+    const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
+    // Mounted at the PARENT of git-cache so sibling caches survive too.
+    expect(overlay).toContain('kortix-git-cache:/tmp/kortix');
+    // A named volume needs its top-level declaration or compose refuses the file.
+    expect(overlay).toMatch(/\nvolumes:\n  kortix-git-cache:/);
+    const apiBlock = overlay.slice(overlay.indexOf('  kortix-api:'));
+    expect(apiBlock.slice(0, apiBlock.indexOf('\n\nvolumes:'))).toContain('volumes:');
+  });
+
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
       'DAYTONA_API_KEY',

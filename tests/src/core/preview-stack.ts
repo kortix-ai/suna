@@ -198,6 +198,28 @@ export function buildPreviewComposeOverlay(
   supabase-db:
     ports:
       - "127.0.0.1:15432:5432"
+  # The git mirror must outlive the container.
+  #
+  # \`cacheRoot()\` (apps/api/src/projects/git/mirror.ts) is
+  # \`/tmp/kortix/git-cache\`, and kortix-api runs with NO volumes — so every
+  # redeploy recreates the container and deletes every project's mirror. On a
+  # deployment whose managed repos exist on GitHub that is only a slow re-clone.
+  # On a PREVIEW it is data loss: the preview's GitHub App cannot create repos
+  # (403 \`Resource not accessible by integration\`), so a seeded project's
+  # history lives ONLY in that cache. Losing it leaves the project unopenable —
+  # \`POST /sessions\` answers 500 \`could not read Username for
+  # 'https://github.com'\` because the re-clone has no upstream to clone from.
+  #
+  # Measured on pi.kortix.com 2026-09-01: container restarted 10:14:06, and
+  # every session create for the branch's own test project failed from 10:12
+  # onward with that exact error; \`ls /tmp/kortix/git-cache\` -> no such
+  # directory, and the managed org held none of the preview's repos.
+  kortix-api:
+    volumes:
+      - "kortix-git-cache:/tmp/kortix"
+
+volumes:
+  kortix-git-cache:
 `;
 }
 
