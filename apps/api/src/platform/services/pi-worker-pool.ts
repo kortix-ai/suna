@@ -51,6 +51,27 @@ export interface ClaimedPiWorkerBox {
   baseUrl: string;
 }
 
+/**
+ * The pool is OFF by default (`KORTIX_PI_WORKER_POOL_TARGET` = 0) and is off in
+ * every deployed environment today.
+ *
+ * KNOWN DEFECT, unfixed — read this before turning it on. A claim delivers the
+ * session's env over HTTP to `park.mjs`, which execs the worker with it. That
+ * env exists in the CHILD PROCESS ONLY: the container's own environment still
+ * carries `KORTIX_PI_PARK=1`. So the first stop/resume of a pooled box re-runs
+ * the entrypoint, which sees the park marker, execs `park.mjs` again, and the
+ * claim env is gone. Port 8000 then answers `{parked:true,runtimeReady:false}`
+ * forever, `shouldBootstrapSessionRuntime` retries once, and the session is
+ * unrecoverable — the transcript survives but no turn can ever run again. A
+ * cold-created (non-pooled) box resumes correctly, so the failure hits only the
+ * fast path and looks random.
+ *
+ * Fixing it means making the claim DURABLE on the box: `park.mjs` must persist
+ * the claim env to disk and the entrypoint must prefer that over the park
+ * marker, so a resume boots the worker rather than re-parking. Until that
+ * lands, enabling this pool trades a faster start for sessions that die on
+ * their first resume.
+ */
 export function piWorkerPoolEnabled(): boolean {
   return config.KORTIX_PI_WORKER_POOL_TARGET > 0;
 }
