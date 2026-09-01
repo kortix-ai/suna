@@ -139,10 +139,14 @@ function SidebarProvider({
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
       if (setOpenProp) {
+        // Controlled: whoever owns the state owns its persistence. The
+        // settings shell (`features/accounts/hub/account-settings-shell.tsx`)
+        // controls its sidebar precisely so a collapse there does not land in
+        // this cookie and hide the project sidebar on the next app load.
         setOpenProp(openState);
-      } else {
-        _setOpen(openState);
+        return;
       }
+      _setOpen(openState);
 
       // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
@@ -738,7 +742,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'div'>) {
         // Opacity only — a width/position transition here would animate layout
         // on hover, on an element that sits over the content pane.
         'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:opacity-0',
-        'after:bg-background-border after:transition-opacity after:duration-150 after:ease-out',
+        'after:bg-kortix-base after:transition-opacity after:duration-100 after:ease-out',
         'hover:after:opacity-100 focus-visible:after:opacity-100 data-[resizing]:after:opacity-100',
         // Tapered top and bottom so the line reads as a seam, not a border.
         'after:[clip-path:polygon(calc(50%-0.0625rem)_0%,calc(50%+0.0625rem)_0%,calc(50%+0.125rem)_50%,calc(50%+0.0625rem)_100%,calc(50%-0.0625rem)_100%,calc(50%-0.125rem)_50%)]',
