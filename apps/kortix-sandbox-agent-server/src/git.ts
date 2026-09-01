@@ -702,6 +702,12 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       baseSha: cfg.baseSha,
       reason: restoreNeeded ? 'restore-session-branch' : 'base-mismatch',
     })
+    // Before discarding: this disk may already hold MOST of what the wipe is
+    // about to re-download. Advancing it with a delta fetch measured 4.6x
+    // faster and moved 8.5x fewer bytes than clear+re-clone on a 977 MiB repo
+    // (bench-materialize-matrix.ts, 2026-09-01). Any refusal falls through to
+    // the wipe below, which stays the authoritative, self-healing path.
+    if (await tryReuseCheckoutDelta(cfg, target, base, bakedHead)) return
     await clearDirContents(target)
   }
   {
@@ -979,6 +985,136 @@ export async function materializeProjectSeed(cfg: Config): Promise<boolean> {
   } catch (err) {
     logger.warn('[git] project seed materialize failed; warm seed will fall back to scaffold', {
       err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    return false
+  }
+}
+
+/**
+ * Advance the checkout ALREADY on disk to `cfg.baseSha` instead of deleting it
+ * and downloading the repository again. Returns true when `target` is ready on
+ * the session branch; false → the caller wipes and re-materializes.
+ *
+ * Why this exists: the tier above reuses the checkout only when
+ * `bakedHead === cfg.baseSha`. Every other value — a baked scaffold on a
+ * project that has commits, a restarted sandbox a few commits behind — wiped a
+ * disk that already held nearly every object the re-clone then re-fetched.
+ * Measured on a 977 MiB repo with a 413 MiB tip tree (file:// origin, so no
+ * network in the number): clear+re-clone 2950 ms / 415 MiB against 646 ms /
+ * 49 MiB here.
+ *
+ * TWO GUARDS, both mandatory, both measured against the failure they prevent
+ * (bench-materialize-adversarial.ts):
+ *
+ *   IDENTITY. Reuse only when `origin` ALREADY points at this project's repo.
+ *   A pristine image checkout still points at /opt/kortix/scaffold.git, so it
+ *   is refused here and reaches the scaffold tiers below — which keeps their
+ *   zero-network bundle path intact. Without this check a workspace holding a
+ *   DIFFERENT project fetched into the same object database and produced a repo
+ *   with two unrelated roots, leaving one project's objects readable inside
+ *   another's sandbox.
+ *
+ *   INTEGRITY. `cat-file -e HEAD^{tree}` forces a real object read out of the
+ *   pack. `rev-parse HEAD` does not: it reads a loose ref, so a sandbox killed
+ *   mid-write passed that check and booted into a repo whose `fsck` failed. The
+ *   wipe is self-healing by construction; a reuse path has to earn that back.
+ *
+ * A restore of an existing remote session branch is out of scope — that needs
+ * `checkoutSessionBranch`, not the base tip — so it is refused outright.
+ */
+async function tryReuseCheckoutDelta(
+  cfg: Config,
+  target: string,
+  base: string,
+  bakedHead: string,
+): Promise<boolean> {
+  if (cfg.sessionBranchRestore) return false
+  if (!cfg.baseSha || !/^[0-9a-f]{40}$/.test(cfg.baseSha)) return false
+  if (!/^[0-9a-f]{40}$/.test(bakedHead)) return false
+
+  // GUARD 1 — identity.
+  const originUrl = await execGit(['-C', target, 'remote', 'get-url', 'origin'])
+  if (originUrl.code !== 0 || originUrl.stdout.trim() !== cfg.repoUrl) {
+    logger.info('[git] reuse refused: origin is not this project', {
+      onDisk: originUrl.code === 0 ? originUrl.stdout.trim().slice(0, 120) : '(none)',
+    })
+    return false
+  }
+
+  // GUARD 2 — integrity.
+  const treeProbe = await execGit(['-C', target, 'cat-file', '-e', `${bakedHead}^{tree}`])
+  if (treeProbe.code !== 0) {
+    logger.warn('[git] reuse refused: object database failed its integrity probe', {
+      stderr: treeProbe.stderr.slice(0, 160),
+    })
+    return false
+  }
+
+  const t0 = Date.now()
+  try {
+    let fetchedObjects = 0
+    const alreadyHasTip = await execGit(['-C', target, 'cat-file', '-e', `${cfg.baseSha}^{commit}`])
+    if (alreadyHasTip.code !== 0) {
+      const credential = await resolveCloneCredential(cfg)
+      const fetchArgs = (ref: string) => [
+        '-C', target,
+        '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+        'fetch', '-q', '--depth', '1', '--no-tags', 'origin', ref,
+      ]
+      // Fetching a bare SHA needs uploadpack.allowAnySHA1InWant; not every host
+      // enables it, so fall back to the branch and re-check for the tip after.
+      let fetched = await gitWithAuth(credential, cfg.repoUrl, fetchArgs(cfg.baseSha), {
+        timeoutMs: 35_000,
+      })
+      if (fetched.code !== 0) {
+        fetched = await gitWithAuth(
+          credential,
+          cfg.repoUrl,
+          fetchArgs(`+refs/heads/${base}:refs/remotes/origin/${base}`),
+          { timeoutMs: 35_000 },
+        )
+      }
+      if (fetched.code !== 0) throw new Error(`delta fetch failed: ${fetched.stderr.slice(0, 200)}`)
+      const haveTip = await execGit(['-C', target, 'cat-file', '-e', `${cfg.baseSha}^{commit}`])
+      // The branch moved between the server resolving baseSha and this fetch.
+      // The wipe path clones whatever the tip is, so defer to it.
+      if (haveTip.code !== 0) throw new Error(`fetched ${base} does not contain ${cfg.baseSha}`)
+      fetchedObjects = 1
+    }
+
+    const setBase = await execGit(['-C', target, 'update-ref', `refs/heads/${base}`, cfg.baseSha])
+    if (setBase.code !== 0) throw new Error(`update-ref ${base}: ${setBase.stderr}`)
+    const checkout = await execGit([
+      '-C', target, 'checkout', '-q', '--force', '-B', cfg.branchName ?? base, cfg.baseSha,
+    ])
+    if (checkout.code !== 0) throw new Error(`checkout: ${checkout.stderr.slice(0, 200)}`)
+
+    // A fresh session must start pristine. The wipe gave that for free; here it
+    // is explicit. Untracked and ignored leftovers from a previous session are
+    // removed — config-dir dependencies are installed AFTER materialization, so
+    // nothing this boot needs exists yet. A non-fresh restart keeps its files.
+    if (cfg.sessionFresh) {
+      const cleaned = await execGit(['-C', target, 'clean', '-q', '-f', '-d', '-x'])
+      if (cleaned.code !== 0) {
+        logger.warn('[git] reuse: clean failed; falling back to authoritative wipe', {
+          stderr: cleaned.stderr.slice(0, 160),
+        })
+        return false
+      }
+    }
+
+    await configureRepoGitIdentity(cfg, target)
+    await markSessionCheckoutAdopted(target, cfg.branchName)
+    logger.info('[git] repo materialized by reusing the on-disk checkout', {
+      ms: Date.now() - t0,
+      from: bakedHead.slice(0, 8),
+      to: cfg.baseSha.slice(0, 8),
+      fetched: fetchedObjects > 0 ? 'delta' : 'nothing (tip already present)',
+    })
+    return true
+  } catch (error) {
+    logger.info('[git] checkout reuse unavailable; using authoritative materialization', {
+      error: error instanceof Error ? error.message.slice(0, 200) : String(error),
     })
     return false
   }
