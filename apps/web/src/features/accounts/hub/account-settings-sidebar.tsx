@@ -46,6 +46,7 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
+import { cn } from '@/lib/utils';
 import { NAV_GROUPS, type AccountNavItem } from './sections';
 import { useAccountHubSection } from './use-account-hub-access';
 import { useAccountMembers } from './use-account-members';
@@ -95,6 +96,12 @@ function NavRow({ entry }: { entry: NavEntry }) {
             // The mobile sidebar is a sheet over the page; a pick closes it.
             if (isMobile) setOpenMobile(false);
           }}
+          className={cn(
+            'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
+            'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
+            'data-[state=active]:bg-active data-[state=active]:font-medium',
+            '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
+          )}
         >
           {Glyph ? <Glyph className="size-4 shrink-0" /> : null}
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
