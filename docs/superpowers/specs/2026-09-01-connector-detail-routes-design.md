@@ -14,7 +14,7 @@ The result is difficult for non-technical users and slow to understand. The curr
 
 - Give every connector card a stable detail route.
 - Show one clear primary action above secondary configuration.
-- Explain the connection process as a short ordered flow.
+- Explain the connection process as a short ordered flow without removing technical facts.
 - Show Kortix documentation and the connector's official website or documentation when available.
 - Keep Accounts, Tools, and Settings available for connected connectors.
 - Move transport, endpoint, authentication, access scope, and custom headers into an Advanced disclosure when they are not required for the immediate action.
@@ -102,13 +102,13 @@ The detail page uses one content column inside the existing capability shell.
 
 The primary panel contains the current state and one action. It does not contain tool permissions, headers, or removal controls.
 
-The setup guidance uses no more than three steps:
+The setup guidance uses no more than three steps. It keeps protocol names and configuration labels when they are accurate. It adds a concise explanation instead of replacing them with vague consumer wording.
 
 1. Start the connection.
 2. Complete the provider or credential step.
 3. Return to Kortix and confirm the connected state.
 
-Provider-specific text can replace a step only when the connector record supplies the required information.
+Provider-specific text can replace a step only when the connector record supplies the required information. The page uses exact terms such as OAuth, API key, MCP transport, endpoint, request header, and access scope where applicable.
 
 ## Progressive disclosure
 
