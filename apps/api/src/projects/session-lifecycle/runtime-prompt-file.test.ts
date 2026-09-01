@@ -41,15 +41,15 @@ test('uploads to a temporary path and renames the returned path over the determi
   ]);
 });
 
-test('rejects an upload failure without exposing the file body', async () => {
+test('rejects an upload failure without exposing an echoed file body', async () => {
   const error = await writeRuntimePromptFile(
     input,
-    async () => new Response('daemon rejected upload', { status: 500 }),
+    async () => new Response('daemon rejected upload: UEsDBA==', { status: 500 }),
     () => 'fixed',
   ).catch((value) => value);
 
   expect(error).toBeInstanceOf(Error);
-  expect(error.message).toBe('runtime upload failed (500): daemon rejected upload');
+  expect(error.message).toBe('runtime upload failed (500)');
   expect(error.message).not.toContain('UEsDBA==');
 });
 
@@ -70,7 +70,7 @@ test('rejects an upload response with no authoritative temporary path', async ()
   expect(requests).toEqual(['POST /file/upload']);
 });
 
-test('deletes the temporary file when the rename fails without exposing the file body', async () => {
+test('deletes the temporary file when rename failure echoes the file body', async () => {
   const requests: Array<{ method: string; path: string; body: ArrayBuffer }> = [];
   const temporaryPath = '/workspace/uploads/.kortix-inbox/command_1/.bundle.zip.kortix-prompt-fixed';
   const error = await writeRuntimePromptFile(
@@ -78,14 +78,14 @@ test('deletes the temporary file when the rename fails without exposing the file
     async (_externalId, _port, _access, method, path, _query, _headers, body) => {
       requests.push({ method, path, body: body ?? new ArrayBuffer(0) });
       if (path === '/file/upload') return Response.json([{ path: temporaryPath, size: 4 }]);
-      if (path === '/file/rename') return new Response('rename blocked', { status: 500 });
+      if (path === '/file/rename') return new Response('rename blocked: UEsDBA==', { status: 500 });
       return Response.json(true);
     },
     () => 'fixed',
   ).catch((value) => value);
 
   expect(error).toBeInstanceOf(Error);
-  expect(error.message).toBe('runtime rename failed (500): rename blocked');
+  expect(error.message).toBe('runtime rename failed (500)');
   expect(error.message).not.toContain('UEsDBA==');
   expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
     'POST /file/upload',
