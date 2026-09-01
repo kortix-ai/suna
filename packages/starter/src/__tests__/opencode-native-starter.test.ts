@@ -49,10 +49,20 @@ describe('one starter', () => {
     expect(filesFor('bogus')).toEqual(filesFor('general-knowledge-worker'));
   });
 
-  test('every accepted id scaffolds the same OpenCode-native manifest', () => {
-    for (const id of STARTER_TEMPLATE_IDS) {
+  // Scoped to the OPENCODE kits deliberately. `pi` is a different runtime with
+  // its own manifest (kortix_version 3, `.kortix/pi`), so folding it in here
+  // would either force the two runtimes to share one manifest or turn this
+  // assertion into a tautology. Its own contract lives in pi-template.test.ts.
+  test('every OpenCode id scaffolds the same OpenCode-native manifest', () => {
+    for (const id of STARTER_TEMPLATE_IDS.filter((candidate) => candidate !== 'pi')) {
       expect(manifestFor(id)).toBe(manifestFor('general-knowledge-worker'));
     }
+  });
+
+  test('the pi kit is the one id that scaffolds a different runtime', () => {
+    expect(manifestFor('pi')).not.toBe(manifestFor('general-knowledge-worker'));
+    expect(manifestFor('pi')).toContain('kortix_version: 3');
+    expect(manifestFor('general-knowledge-worker')).toContain('kortix_version: 2');
   });
 });
 

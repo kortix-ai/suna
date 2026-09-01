@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://kortix.com/schema/kortix.v3.schema.json
+#
+# Kortix project manifest, schema version 3 — the pi-native version.
+#
+# v3 is v2 with two defaults flipped and no new syntax:
+#
+#   runtime      defaults to `pi`         (v2 defaults to `opencode`)
+#   config_dir   defaults to `.kortix/pi` (v2 defaults to `.kortix/opencode`)
+#
+# So there is no `runtime: pi` line below — the version already says it — and
+# this project's agents live in `.kortix/pi/agents/`, not in a directory named
+# after a runtime it does not run. Everything else is exactly v2: the `agents:`
+# map is GOVERNANCE ONLY (connectors/secrets/kortix_cli/skills/workspace/
+# enabled), and each agent's BEHAVIOR — description, model, the prompt itself —
+# lives in its own `.kortix/pi/agents/<name>.md` frontmatter + body. The agent's
+# NAME is the join between this map's keys and that file's name.
+kortix_version: 3
+
+# The agent a session/trigger boots when it names no concrete agent.
+# Must always resolve to a declared agent below.
+default_agent: kortix
+
+project:
+  name: "{{projectName}}"
+  description: A Kortix project on the pi runtime.
+
+# Env vars the runtime needs. Required values must be set in the Kortix
+# Secrets Manager before a session can start.
+env:
+  required: []
+  optional: []
+
+# ─── Agents ──────────────────────────────────────────────────────────────
+# v3 is deny-by-default, exactly like v2: an omitted connectors/secrets/
+# kortix_cli/skills grant resolves to "none". The starter's own `kortix` agent
+# is granted broadly so a fresh project is capable out of the box — narrow it
+# once you know what this project actually needs.
+#
+# One agent per session: a pi session boots ONE compiled agent bundle, so the
+# agent cannot be swapped mid-session. Declare more agents here and pick one
+# when you start a session.
+agents:
+  kortix:
+    connectors: all
+    secrets: all
+    kortix_cli: all
+    skills: all
