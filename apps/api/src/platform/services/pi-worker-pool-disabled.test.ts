@@ -1,17 +1,16 @@
 /**
- * The pi warm pool stays OFF until its resume defect is fixed.
+ * The pi warm pool stays OFF by default.
  *
- * A claim hands the session's env to `park.mjs` over HTTP, which execs the
- * worker with it — but only in that child process. The container keeps
- * `KORTIX_PI_PARK=1`, so the first stop/resume re-execs the entrypoint into
- * park mode with the claim env gone: port 8000 answers
- * `{parked:true,runtimeReady:false}` forever and the session can never run
- * another turn. A cold-created box resumes fine, so the failure hits only the
- * fast path and reads as random.
+ * It used to be off because a claimed box died on its first resume — the claim
+ * env lived only in `park.mjs`'s child process while the container kept
+ * `KORTIX_PI_PARK=1`. That is fixed: the claim is persisted and preferred over
+ * parking on every later boot (see snapshots/pi-worker-park.test.ts, which
+ * drives the real baked script through claim → handoff → restart).
  *
- * This is not a test of the pool. It pins the DEFAULT, so switching it on is a
- * deliberate act by someone who had to change a test and therefore had to read
- * why.
+ * The default stays 0 anyway, because enabling a warm pool is a product
+ * decision that needs live validation a unit test cannot give: a real provider
+ * stop/resume, and the reaper never recycling a box whose claim is on disk.
+ * This pins the DEFAULT so turning it on is deliberate.
  */
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -30,9 +29,9 @@ describe('the pi worker pool is off by default', () => {
   });
 
   // The comment is the whole point: it is what a person enabling the pool has
-  // to walk past.
-  test('the gate carries the known-defect warning', () => {
-    expect(SRC).toContain('KNOWN DEFECT');
-    expect(SRC).toContain('KORTIX_PI_PARK');
+  // to walk past — now telling them what to validate rather than what is broken.
+  test('the gate says what must be validated before enabling it', () => {
+    expect(SRC).toContain('Before enabling it anywhere');
+    expect(SRC).toContain('stop/resume');
   });
 });

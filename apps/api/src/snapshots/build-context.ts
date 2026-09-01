@@ -375,10 +375,24 @@ const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session clai
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 
 const PORT = Number(process.env.PORT ?? 8000);
 const PARK_TOKEN = process.env.KORTIX_PI_PARK_TOKEN ?? '';
 const RUNTIME_DIR = process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix';
+// The claim, made durable.
+//
+// A claim arrives over HTTP and is spawned into a CHILD process, but the
+// container's own environment still carries KORTIX_PI_PARK=1 — so the first
+// stop/resume re-runs the entrypoint, which execs this script again with the
+// claim env gone. The box then answered {parked:true,runtimeReady:false}
+// forever and the session could never run another turn: its transcript
+// survived, nothing else did. Writing the claim here, and preferring it over
+// parking on every later boot, is what makes a resume come back as a worker.
+//
+// 0600: this file holds the session token, same as the process env already
+// does. It never leaves the box.
+const CLAIM_FILE = RUNTIME_DIR + '/claim.json';
 const REQUIRED = [
   'KORTIX_API_URL',
   'KORTIX_TOKEN',
@@ -426,6 +440,47 @@ async function boot(env) {
   worker.on('exit', (code) => process.exit(code ?? 1));
 }
 
+function validClaimEnv(env) {
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return false;
+  for (const [key, value] of Object.entries(env)) {
+    if (!/^KORTIX_[A-Z0-9_]*$/.test(key) || typeof value !== 'string') return false;
+  }
+  return REQUIRED.every((key) => Boolean(env[key]));
+}
+
+/** Atomic, so a crash mid-write cannot leave a half claim that parses. */
+function persistClaim(env) {
+  try {
+    const tmp = CLAIM_FILE + '.tmp';
+    writeFileSync(tmp, JSON.stringify(env), { mode: 0o600 });
+    renameSync(tmp, CLAIM_FILE);
+    return true;
+  } catch (error) {
+    console.error(JSON.stringify({ msg: 'claim persist FAILED', error: String(error?.message ?? error) }));
+    return false;
+  }
+}
+
+/** The claim from a previous life, or null. A corrupt file parks. */
+function loadClaim() {
+  try {
+    const env = JSON.parse(readFileSync(CLAIM_FILE, 'utf8'));
+    // Re-validated on the way in: a file that no longer satisfies the contract
+    // must not boot a worker with a half env.
+    return validClaimEnv(env) ? env : null;
+  } catch {
+    return null;
+  }
+}
+
+const resumed = loadClaim();
+if (resumed) {
+  // Already claimed in a previous life. Never listen — the port belongs to the
+  // worker, and a parked answer here is what stranded the session before.
+  console.log(JSON.stringify({ msg: 'park resume: booting the claimed session', keys: Object.keys(resumed).length }));
+  void boot(resumed);
+} else {
+
 const server = createServer(async (req, res) => {
   const path = String(req.url ?? '').split('?')[0];
   if (req.method === 'GET' && path === '/kortix/health') {
@@ -463,6 +518,14 @@ const server = createServer(async (req, res) => {
       return;
     }
     claimed = true;
+    // Persist BEFORE answering: a claim the API believes succeeded must
+    // survive a restart, so the durable write is part of accepting it.
+    if (!persistClaim(env)) {
+      claimed = false;
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: 'could not persist claim' }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ok: true }));
     console.log(JSON.stringify({ msg: 'park claim accepted', keys: Object.keys(env).length }));
@@ -476,6 +539,8 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(JSON.stringify({ msg: 'pi worker parked', port: PORT }));
 });
+
+}
 `;
 
 const PI_WORKER_FETCH_MJS = `// Download this session's compiled pi runtime, verified before it may run.
