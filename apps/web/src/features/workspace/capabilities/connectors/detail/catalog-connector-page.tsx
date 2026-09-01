@@ -12,6 +12,7 @@ import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { GlobeIcon, MonitorIcon, PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -57,12 +58,12 @@ function CatalogDetailIcon({ entry }: { entry: CatalogEntry }) {
   if (entry.icon) {
     return (
       <span className="border-border/60 bg-card flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border">
-        {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary third-party catalogue icons. */}
-        <img
+        <Image
           src={entry.icon}
           alt=""
           width={40}
           height={40}
+          unoptimized
           referrerPolicy="no-referrer"
           className="size-10 object-contain"
         />

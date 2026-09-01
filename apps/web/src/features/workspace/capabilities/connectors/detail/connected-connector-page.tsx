@@ -5,6 +5,7 @@ import {
   listConnections,
   listConnectors,
   setConnectorAuthorizationStrategy,
+  type AdminConnector,
   type ConnectorAuthorizationStrategy,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
@@ -43,6 +44,7 @@ import {
   connectorConnectionIsReady,
   connectorSetupSteps,
   connectorTechnicalRows,
+  type ConnectorTechnicalRow,
 } from './connector-detail-copy';
 import {
   ConnectorDetailLayout,
@@ -100,7 +102,6 @@ function ConnectedConnectorSkeleton({ projectId }: { projectId: string }) {
 }
 
 export function ConnectedConnectorPage({ projectId, slug }: { projectId: string; slug: string }) {
-  const router = useRouter();
   const pathname = usePathname();
   const search = useSearchParams();
   const queryClient = useQueryClient();
@@ -147,8 +148,12 @@ export function ConnectedConnectorPage({ projectId, slug }: { projectId: string;
     params.delete('oauth2');
     params.delete('oauth2_error');
     const suffix = params.toString();
-    router.replace(suffix ? `${pathname}?${suffix}` : pathname, { scroll: false });
-  }, [invalidate, oauth2Error, oauth2Result, pathname, router, search]);
+    window.history.replaceState(
+      window.history.state,
+      '',
+      suffix ? `${pathname}?${suffix}` : pathname,
+    );
+  }, [invalidate, oauth2Error, oauth2Result, pathname, search]);
 
   if (connectorsQuery.isLoading) return <ConnectedConnectorSkeleton projectId={projectId} />;
 
@@ -211,7 +216,7 @@ function ConnectedConnectorContent({
   invalidate,
 }: {
   projectId: string;
-  connector: NonNullable<Awaited<ReturnType<typeof listConnectors>>['connectors'][number]>;
+  connector: AdminConnector;
   canWrite: boolean;
   canManageConnections: boolean;
   invalidate: () => void;
@@ -355,6 +360,8 @@ function ConnectedConnectorContent({
       ? [{ label: 'Official connector URL', href: configQuery.data.url, external: true }]
       : []),
   ];
+  const returnToConnected = () =>
+    router.replace(`/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`);
 
   return (
     <ConnectorDetailLayout
@@ -395,106 +402,36 @@ function ConnectedConnectorContent({
 
       <ConnectorDocumentationLinks links={docsLinks} />
 
-      <Tabs value={tab} onValueChange={(next) => setSelectedTab(next as ConnectorTab)}>
-        <TabsList
-          type="underline"
-          className="w-full justify-start overflow-x-auto"
-          aria-label={`${displayName} sections`}
-        >
-          {tabs.map((value) => (
-            <TabsTrigger key={value} value={value} className="w-fit flex-none">
-              {CONNECTOR_TAB_LABEL[value]}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <div className="pt-5">
-          <TabsContent value="accounts">
-            {connectionsQuery.isError ? (
-              <ErrorState
-                size="sm"
-                title="Couldn’t load connections"
-                description={
-                  connectionsQuery.error instanceof Error
-                    ? connectionsQuery.error.message
-                    : 'The accounts stored for this connector could not be read.'
-                }
-                action={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void connectionsQuery.refetch()}
-                  >
-                    Retry
-                  </Button>
-                }
-              />
-            ) : (
-              <ConnectorAccounts
-                projectId={projectId}
-                connector={connector}
-                displayName={displayName}
-                canWrite={canWrite}
-                canManageConnections={canManageConnections}
-                strategyUpdating={strategyUpdating}
-                onChanged={invalidate}
-                onRemoved={() =>
-                  router.replace(
-                    `/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`,
-                  )
-                }
-                onStartSession={startPrivateSession}
-                onSetCredential={() => setCredOpen(true)}
-              />
-            )}
-          </TabsContent>
-          <TabsContent value="tools">
-            <ConnectorTools
-              projectId={projectId}
-              connector={connector}
-              displayName={displayName}
-              canWrite={canWrite}
-              disabled={strategyUpdating}
-              onChanged={invalidate}
-            />
-          </TabsContent>
-          <TabsContent value="settings">
-            <ConnectorSettings
-              projectId={projectId}
-              connector={connector}
-              displayName={displayName}
-              canWrite={canWrite}
-              strategyUpdating={strategyUpdating}
-              onAuthorizationStrategyChange={(next) => {
-                setCredOpen(false);
-                setAuthorizationStrategyAwaitingRefresh(next);
-                updateAuthorizationStrategy.mutate(next);
-              }}
-              onRemoved={() =>
-                router.replace(
-                  `/projects/${encodeURIComponent(projectId)}/connectors?scope=connected`,
-                )
-              }
-            />
-          </TabsContent>
-        </div>
-      </Tabs>
+      <ConnectorManagementTabs
+        projectId={projectId}
+        connector={connector}
+        displayName={displayName}
+        tabs={tabs}
+        selectedTab={tab}
+        canWrite={canWrite}
+        canManageConnections={canManageConnections}
+        strategyUpdating={strategyUpdating}
+        connectionsError={connectionsQuery.isError ? connectionsQuery.error : null}
+        onRetryConnections={() => void connectionsQuery.refetch()}
+        onTabChange={setSelectedTab}
+        onChanged={invalidate}
+        onRemoved={returnToConnected}
+        onStartSession={startPrivateSession}
+        onSetCredential={() => setCredOpen(true)}
+        onAuthorizationStrategyChange={(next) => {
+          setCredOpen(false);
+          setAuthorizationStrategyAwaitingRefresh(next);
+          updateAuthorizationStrategy.mutate(next);
+        }}
+      />
 
-      {configQuery.isLoading ? (
-        <Skeleton className="h-12 rounded-md" />
-      ) : configQuery.isError ? (
-        <ErrorState
-          size="sm"
-          title="Couldn’t load advanced configuration"
-          description="Transport, endpoint, authentication, and request headers are unavailable."
-          action={
-            <Button variant="outline" size="sm" onClick={() => void configQuery.refetch()}>
-              Retry
-            </Button>
-          }
-        />
-      ) : (
-        <ConnectorAdvanced rows={technicalRows} headers={configQuery.data?.headers} />
-      )}
+      <ConnectorAdvancedSection
+        loading={configQuery.isLoading}
+        error={configQuery.isError}
+        rows={technicalRows}
+        headers={configQuery.data?.headers}
+        onRetry={() => void configQuery.refetch()}
+      />
 
       {credOpen ? (
         <SetCredentialModal
@@ -513,4 +450,141 @@ function ConnectedConnectorContent({
       ) : null}
     </ConnectorDetailLayout>
   );
+}
+
+function ConnectorManagementTabs({
+  projectId,
+  connector,
+  displayName,
+  tabs,
+  selectedTab,
+  canWrite,
+  canManageConnections,
+  strategyUpdating,
+  connectionsError,
+  onRetryConnections,
+  onTabChange,
+  onChanged,
+  onRemoved,
+  onStartSession,
+  onSetCredential,
+  onAuthorizationStrategyChange,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  displayName: string;
+  tabs: readonly ConnectorTab[];
+  selectedTab: ConnectorTab;
+  canWrite: boolean;
+  canManageConnections: boolean;
+  strategyUpdating: boolean;
+  connectionsError: unknown;
+  onRetryConnections: () => void;
+  onTabChange: (tab: ConnectorTab) => void;
+  onChanged: () => void;
+  onRemoved: () => void;
+  onStartSession: () => void;
+  onSetCredential: () => void;
+  onAuthorizationStrategyChange: (strategy: ConnectorAuthorizationStrategy) => void;
+}) {
+  return (
+    <Tabs value={selectedTab} onValueChange={(next) => onTabChange(next as ConnectorTab)}>
+      <TabsList
+        type="underline"
+        className="w-full justify-start overflow-x-auto"
+        aria-label={`${displayName} sections`}
+      >
+        {tabs.map((value) => (
+          <TabsTrigger key={value} value={value} className="w-fit flex-none">
+            {CONNECTOR_TAB_LABEL[value]}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      <div className="pt-5">
+        <TabsContent value="accounts">
+          {connectionsError ? (
+            <ErrorState
+              size="sm"
+              title="Couldn’t load connections"
+              description={
+                connectionsError instanceof Error
+                  ? connectionsError.message
+                  : 'The accounts stored for this connector could not be read.'
+              }
+              action={
+                <Button variant="outline" size="sm" onClick={onRetryConnections}>
+                  Retry
+                </Button>
+              }
+            />
+          ) : (
+            <ConnectorAccounts
+              projectId={projectId}
+              connector={connector}
+              displayName={displayName}
+              canWrite={canWrite}
+              canManageConnections={canManageConnections}
+              strategyUpdating={strategyUpdating}
+              onChanged={onChanged}
+              onRemoved={onRemoved}
+              onStartSession={onStartSession}
+              onSetCredential={onSetCredential}
+            />
+          )}
+        </TabsContent>
+        <TabsContent value="tools">
+          <ConnectorTools
+            projectId={projectId}
+            connector={connector}
+            displayName={displayName}
+            canWrite={canWrite}
+            disabled={strategyUpdating}
+            onChanged={onChanged}
+          />
+        </TabsContent>
+        <TabsContent value="settings">
+          <ConnectorSettings
+            projectId={projectId}
+            connector={connector}
+            displayName={displayName}
+            canWrite={canWrite}
+            strategyUpdating={strategyUpdating}
+            onAuthorizationStrategyChange={onAuthorizationStrategyChange}
+            onRemoved={onRemoved}
+          />
+        </TabsContent>
+      </div>
+    </Tabs>
+  );
+}
+
+function ConnectorAdvancedSection({
+  loading,
+  error,
+  rows,
+  headers,
+  onRetry,
+}: {
+  loading: boolean;
+  error: boolean;
+  rows: readonly ConnectorTechnicalRow[];
+  headers?: Readonly<Record<string, string>>;
+  onRetry: () => void;
+}) {
+  if (loading) return <Skeleton className="h-12 rounded-md" />;
+  if (error) {
+    return (
+      <ErrorState
+        size="sm"
+        title="Couldn’t load advanced configuration"
+        description="Transport, endpoint, authentication, and request headers are unavailable."
+        action={
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Retry
+          </Button>
+        }
+      />
+    );
+  }
+  return <ConnectorAdvanced rows={rows} headers={headers} />;
 }
