@@ -22,10 +22,18 @@ export const DEFAULT_PRIMARY: CodingAgent = 'codex';
  * generated AGENTS.md, where a dangling reference just wastes a file read.
  * `kortix-cli` ships in the scaffold and is the front door to the others.
  */
-export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-cli/SKILL.md';
+export const DEFAULT_CONFIG_DIR = '.kortix/opencode';
 
-/** The starter's canonical project skill source. */
-const OPENCODE_DIR = '.kortix/opencode';
+/** The pi runtime's config dir — a `kortix_version: 3` project's home. */
+export const PI_CONFIG_DIR = '.kortix/pi';
+
+/** Path of the canonical Kortix skill for a project rooted at `configDir`. */
+export function canonicalSkillPath(configDir: string = DEFAULT_CONFIG_DIR): string {
+  return `${configDir}/skills/kortix-cli/SKILL.md`;
+}
+
+/** @deprecated Use {@link canonicalSkillPath} — kept for existing importers. */
+export const CANONICAL_SKILL = canonicalSkillPath();
 
 /**
  * Native discovery paths each agent reads:
@@ -54,21 +62,33 @@ interface AgentLink {
   target: string;
 }
 
-const AGENT_LINKS: Partial<Record<CodingAgent, readonly AgentLink[]>> = {
-  opencode: [{ path: '.opencode', target: OPENCODE_DIR }],
-  claude: [
-    { path: '.claude/skills', target: '../.kortix/opencode/skills' },
-    { path: '.claude/agents', target: '../.kortix/opencode/agents' },
-    { path: '.claude/commands', target: '../.kortix/opencode/commands' },
-  ],
-  codex: [{ path: '.agents', target: OPENCODE_DIR }],
-  pi: [{ path: '.pi/skills', target: '../.kortix/opencode/skills' }],
-};
+/**
+ * Built from the PROJECT'S config dir, not a constant.
+ *
+ * A `kortix_version: 3` project keeps its config in `.kortix/pi`, so wiring
+ * these links to a hardcoded `.kortix/opencode` produced two DANGLING symlinks
+ * (`.opencode`, `.agents`) and an AGENTS.md pointing at a skill file that does
+ * not exist — every local tool then silently discovers nothing.
+ */
+function agentLinks(configDir: string): Partial<Record<CodingAgent, readonly AgentLink[]>> {
+  return {
+    opencode: [{ path: '.opencode', target: configDir }],
+    claude: [
+      { path: '.claude/skills', target: `../${configDir}/skills` },
+      { path: '.claude/agents', target: `../${configDir}/agents` },
+      { path: '.claude/commands', target: `../${configDir}/commands` },
+    ],
+    codex: [{ path: '.agents', target: configDir }],
+    pi: [{ path: '.pi/skills', target: `../${configDir}/skills` }],
+  };
+}
 
 export interface WireAgentsInput {
   repoRoot: string;
   agents: readonly CodingAgent[];
   overwrite: boolean;
+  /** The project's Kortix config dir. Defaults to the OpenCode layout. */
+  configDir?: string;
 }
 
 export interface WireAgentsResult {
@@ -85,9 +105,11 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   const written: string[] = [];
   const skipped: string[] = [];
   let wantAgentsMd = false;
+  const configDir = input.configDir ?? DEFAULT_CONFIG_DIR;
+  const links = agentLinks(configDir);
 
   for (const agent of input.agents) {
-    for (const link of AGENT_LINKS[agent] ?? []) {
+    for (const link of links[agent] ?? []) {
       const abs = resolve(input.repoRoot, link.path);
       try {
         mkdirSync(dirname(abs), { recursive: true });
@@ -115,7 +137,7 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
   if (wantAgentsMd) {
     const abs = resolve(input.repoRoot, 'AGENTS.md');
     if (handleExisting(abs, input.overwrite)) {
-      writeFileSync(abs, agentsPointer(), 'utf8');
+      writeFileSync(abs, agentsPointer(configDir), 'utf8');
       written.push('AGENTS.md');
     } else {
       skipped.push('AGENTS.md');
@@ -143,7 +165,7 @@ function handleExisting(abs: string, overwrite: boolean): boolean {
   return false;
 }
 
-function agentsPointer(): string {
+function agentsPointer(configDir: string): string {
   return `# Kortix project
 
 This repository is a [Kortix](https://kortix.ai) project — its agent runtime
@@ -153,7 +175,7 @@ location.
 
 Whenever the user asks about Kortix — \`kortix.yaml\`, triggers, secrets, the
 sandbox image, sessions, connectors, or OpenCode,
-Claude Code, Codex, and Pi configuration — read \`${CANONICAL_SKILL}\` first.
+Claude Code, Codex, and Pi configuration — read \`${canonicalSkillPath(configDir)}\` first.
 It is the canonical reference.
 
 For any other task, proceed normally.
