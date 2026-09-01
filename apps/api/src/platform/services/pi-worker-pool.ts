@@ -73,6 +73,19 @@ export interface ClaimedPiWorkerBox {
  * Before enabling it anywhere, validate on a live environment what a unit test
  * cannot: that a claimed box survives a real provider stop/resume, and that
  * the pool's reaper never recycles a box whose claim file is still on disk.
+ *
+ * THE POOL IS DAYTONA-ONLY, and that is load-bearing rather than incidental.
+ * The persisted claim (`/opt/kortix/claim.json`) lives on the box's writable
+ * layer, so it only survives a provider whose resume returns the SAME box with
+ * its disk intact. Daytona qualifies: `ensureSessionRuntimeStarted` resolves
+ * the existing sandbox by external id and execs `pi-worker-entrypoint` inside
+ * it — which is also precisely why the claim is needed, since that entrypoint
+ * re-reads the container's still-set `KORTIX_PI_PARK=1` and would otherwise
+ * re-park a box that already belongs to a session. A provider that cold-boots
+ * its template on resume instead (Platinum — see the `ensureSessionRuntimeStarted`
+ * contract in `platform/providers/index.ts`) starts from a fresh rootfs, so the
+ * claim file would be gone and the resume defect would come back in a form no
+ * test here covers. Do not widen this provider without re-proving durability.
  */
 export function piWorkerPoolEnabled(): boolean {
   return config.KORTIX_PI_WORKER_POOL_TARGET > 0;
