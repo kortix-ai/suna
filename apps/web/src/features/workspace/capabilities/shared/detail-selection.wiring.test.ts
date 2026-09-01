@@ -11,16 +11,16 @@ import { fileURLToPath } from 'node:url';
  *   -  open={detail.open}
  *   +  open={selected !== null}
  *
- * — and it silently hands the modal back to the query. Nothing type-checks
+ * — and it silently hands an entity modal back to the query. Nothing type-checks
  * differently, no test of the page's own logic fails, and the symptom
  * (a modal that opens by itself after an OAuth redirect, or vanishes when one
  * of four refetches errors) shows up as a timing-dependent bug report weeks
  * later. So the shape is asserted at its call sites.
  */
 
+// Connectors use `/projects/:id/connectors/:slug`; they have no detail modal.
 const PAGES = [
   { name: 'agents', file: '../agents/agents-page.tsx', clear: 'setSelectedPath(null)' },
-  { name: 'connectors', file: '../connectors/connectors-page.tsx', clear: 'setDetailSlug(null)' },
   { name: 'skills', file: '../skills/skills-page.tsx', clear: 'setSelectedPath(null)' },
 ] as const;
 
