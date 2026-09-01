@@ -38,6 +38,7 @@ import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
+import { persistNewMessages } from './durable-append.ts';
 import { type TurnEndIdentity, buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
 
 /**
@@ -369,15 +370,18 @@ export async function buildHarness(cfg: WorkerConfig) {
   // when AgentHarness lands.
   if (session) {
     let persisted = restoredMessages.length;
+    // `turn_end` is kept here deliberately (unlike the relay below): persisting
+    // each provider round as it completes is what makes a killed worker
+    // recoverable rather than losing the whole run.
     agent.subscribe(async (event: any) => {
       if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
-      const all = agent.state.messages;
-      for (let i = persisted; i < all.length; i++) {
-        await session!.appendMessage(toDurable(all[i])).catch((e) =>
-          console.error(JSON.stringify({ msg: 'session append failed', error: String(e?.message ?? e) })),
-        );
-      }
-      persisted = all.length;
+      // The watermark advances only over messages that actually landed. It used
+      // to be set to `all.length` unconditionally after a loop that swallowed
+      // its failures, so one 5xx from the store dropped a message for good —
+      // and if that message carried a `toolCall` whose `toolResult` appended
+      // fine, every later turn 400'd at the provider, permanently, because the
+      // hole is in an append-only log.
+      persisted = await persistNewMessages(session!, agent.state.messages, persisted, toDurable);
     });
   }
 
