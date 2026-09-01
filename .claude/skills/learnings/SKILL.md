@@ -21,6 +21,32 @@ linked, not inlined.
 
 ## Register
 
+### A cache on a container filesystem is data, not cache, when nothing upstream holds it (2026-09-01)
+
+**When:** choosing where a service writes derived state, or adding a step
+that recreates a container. `apps/api` keeps every project's bare git mirror
+at `/tmp/kortix/git-cache` (`mirror.ts` `cacheRoot()`), and `kortix-api` ran
+with **no volumes**. On a real deployment losing that is a slow re-clone. On a
+PREVIEW it is permanent data loss: the preview GitHub App cannot create repos
+(403 `Resource not accessible by integration`), so a seeded project's history
+lives ONLY in that mirror. `POST /sessions` then answers 500 `could not read
+Username for 'https://github.com'` — the re-clone has no upstream.
+Compounding it, the managed-git guard recreated `kortix-api` with a bare
+`docker compose up` (no `-f overlay`), which drops every overlay service AND
+volume — so even a mounted volume would have been silently detached.
+**Rules:** (1) if a cache cannot be rebuilt from an authoritative source,
+it is state — give it a volume; (2) any scripted `docker compose up` must
+pass the SAME `-f` files as the deploy, or it silently rewrites the service
+without the overlay; (3) before trusting `repo_url`, check the repo actually
+exists — the preview's org held none of its projects' repos.
+*Incident:* pi.kortix.com 2026-09-01, ~35 min of failing session creation on
+the branch's test project; recovered by pointing the project at a local bare
+repo inside the new volume and pushing the surviving history back from a live
+session's environment box.
+*Enforcer:* `tests/unit/preview-stack.test.ts` pins the volume + its top-level
+declaration. Nothing yet pins the guard's compose invocation.
+
+
 ### A write endpoint that SELECTS its target by identity answers 200 when it matched nothing (2026-08-30)
 
 **When:** relaying a lifecycle event to `POST /:projectId/turn-stream`, or
