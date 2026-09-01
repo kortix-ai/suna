@@ -267,10 +267,19 @@ export async function buildHarness(cfg: WorkerConfig) {
   // Degrade to faux and SAY SO instead: the turn still answers (emptily), and
   // the reason is in /kortix/health where it can be read.
   const missingCredential = cfg.modelMode === 'real' && !cfg.apiKey;
+  // Surfaced in /kortix/health, not only in a log nobody reads. A session in
+  // this state ANSWERS — with the scripted faux provider — so from the product
+  // it looks like the agent replying nonsense, with no error anywhere. The
+  // usual cause is the LLM gateway being off for the project: the API sets
+  // KORTIX_MODEL_MODE=real for every session but injects KORTIX_LLM_BASE_URL
+  // only when the gateway is enabled, and it never sets KORTIX_API_KEY. (No
+  // credential is disclosed by this path — with no key the worker contacts no
+  // provider at all.)
+  let modelError: string | null = null;
   if (missingCredential) {
-    console.error(
-      '[worker] KORTIX_MODEL_MODE=real but no credential (KORTIX_API_KEY / KORTIX_TOKEN); using faux',
-    );
+    modelError =
+      'KORTIX_MODEL_MODE=real but no credential (KORTIX_API_KEY / KORTIX_LLM_BASE_URL + KORTIX_TOKEN); answering with the faux provider';
+    console.error(`[worker] ${modelError}`);
   }
   if (cfg.modelMode === 'faux' || missingCredential) {
     faux = fauxProvider({ provider: 'faux', models: [{ id: 'faux-1', name: 'Faux' }] });
@@ -443,7 +452,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle', identity);
   });
 
-  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile, setTurnIdentity };
+  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -452,7 +461,7 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError, bootReconcile, setTurnIdentity } =
+  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity } =
     await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
@@ -687,6 +696,11 @@ export async function startWorker(cfg = configFromEnv()) {
         // null = the transcript is durable. A string means this session is
         // answering but its history will NOT survive the process.
         store_error: storeError,
+        // Which provider is actually answering, and why if it is not the real
+        // one. `model_error` mirrors `store_error`: null = fine, a string means
+        // this session answers but the answers are worthless.
+        model_mode: modelError ? 'faux' : cfg.modelMode,
+        model_error: modelError,
         // The pi worker has no OpenCode store to pin — the start path must not
         // wait for one.
         opencode_session_id: surface.rootId,
