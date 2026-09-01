@@ -608,6 +608,41 @@ export class RuntimeSurface {
    * auth posture as the namespace routes.
    */
   handleRawSessionList(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+    // POST /session/:id/abort — the Stop button's REAL path.
+    //
+    // There is a second abort handler under `/kortix/opencode/`, and it is not
+    // the one the product calls. The SDK builds its OpenCode client with
+    // `baseUrl = <backend>/p/<externalId>/8000` (`getClientForUrl` in
+    // packages/sdk/src/core/runtime/client.ts), so `session.abort()` resolves
+    // to `<base>/session/:id/abort` — HERE, at the raw root, with no prefix.
+    //
+    // This method was GET-only, so that POST fell through to the worker's
+    // catch-all 404. Stop therefore did nothing on a pi session: the UI painted
+    // "Interrupted" from its own optimistic receipt while the agent kept
+    // generating to completion, and the turn closed later as if it had never
+    // been stopped. Verified against pi.kortix.com 2026-09-01 — raw path 404,
+    // prefixed path 200.
+    //
+    // Same contract as the prefixed handler: idempotent, root-scoped, and
+    // `Agent.abort()` on an idle agent is a no-op.
+    const rawAbort = url.pathname.match(/^\/session\/([^/]+)\/abort$/);
+    if (rawAbort && req.method === 'POST') {
+      if (!this.authorized(req, url)) {
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      if (decodeURIComponent(rawAbort[1]!) !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      this.opts.onAbort?.();
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }));
+      return true;
+    }
     if (req.method !== 'GET') return false;
     if (!this.authorized(req, url)) {
       res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unauthorized' }));

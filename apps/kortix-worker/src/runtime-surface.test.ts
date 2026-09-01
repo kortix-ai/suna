@@ -166,6 +166,26 @@ function callSurface(surface: RuntimeSurface, method: string, path: string, toke
   return { handled, status, body };
 }
 
+/** The RAW root, with no `/kortix/opencode` prefix — what the SDK actually calls. */
+function callRaw(surface: RuntimeSurface, method: string, path: string, token?: string) {
+  const url = new URL(`http://127.0.0.1:8000${path}`);
+  const req = { method, headers: token ? { authorization: `Bearer ${token}` } : {} } as any;
+  let status = 0;
+  let body = '';
+  const res = {
+    writeHead(code: number) {
+      status = code;
+      return res;
+    },
+    end(chunk?: string) {
+      body = chunk ?? '';
+      return res;
+    },
+  } as any;
+  const handled = surface.handleRawSessionList(req, res, url);
+  return { handled, status, body };
+}
+
 /**
  * Reported 2026-08-29 on pi: pressing Stop showed "Interrupted" in the
  * transcript and the answer kept streaming.
@@ -210,6 +230,52 @@ describe('RuntimeSurface session abort', () => {
     const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
     const res = callSurface(surface, 'POST', `/kortix/opencode/session/${surface.rootId}/abort`, 'tok');
     expect(res.status).toBe(200);
+  });
+
+  // THE PATH THE PRODUCT USES. The SDK builds its OpenCode client with
+  // `baseUrl = <backend>/p/<externalId>/8000` (getClientForUrl), so
+  // `session.abort()` posts to the RAW root — no `/kortix/opencode` prefix.
+  // Every test above passes against the prefixed route, which is exactly how
+  // Stop shipped broken: the prefixed handler existed, the raw one did not, and
+  // the POST fell through to the worker's catch-all 404 while the UI showed
+  // "Interrupted" from its own optimistic receipt.
+  describe('the RAW path the SDK calls', () => {
+    test('POST /session/:id/abort (no prefix) reaches the agent', () => {
+      let aborted = 0;
+      const surface = new RuntimeSurface({ sessionId: 's', token: 'tok', onAbort: () => { aborted += 1; } });
+      const res = callRaw(surface, 'POST', `/session/${surface.rootId}/abort`, 'tok');
+      expect(res.handled).toBe(true);
+      expect(res.status).toBe(200);
+      expect(aborted).toBe(1);
+    });
+
+    test('refuses an unknown session rather than aborting the wrong run', () => {
+      let aborted = 0;
+      const surface = new RuntimeSurface({ sessionId: 's', token: 'tok', onAbort: () => { aborted += 1; } });
+      const res = callRaw(surface, 'POST', '/session/not-this-one/abort', 'tok');
+      expect(res.status).toBe(404);
+      expect(aborted).toBe(0);
+    });
+
+    test('still requires auth — an abort is a state change', () => {
+      let aborted = 0;
+      const surface = new RuntimeSurface({ sessionId: 's', token: 'tok', onAbort: () => { aborted += 1; } });
+      const res = callRaw(surface, 'POST', `/session/${surface.rootId}/abort`, 'wrong');
+      expect(res.status).toBe(401);
+      expect(aborted).toBe(0);
+    });
+
+    test('is harmless with no handler wired', () => {
+      const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+      expect(callRaw(surface, 'POST', `/session/${surface.rootId}/abort`, 'tok').status).toBe(200);
+    });
+
+    test('GET /session/:id still returns the session object', () => {
+      const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+      const res = callRaw(surface, 'GET', `/session/${surface.rootId}`, 'tok');
+      expect(res.status).toBe(200);
+      expect(JSON.parse(res.body).id).toBe(surface.rootId);
+    });
   });
 
   test('GET session/:id still returns the session, not an abort', () => {
