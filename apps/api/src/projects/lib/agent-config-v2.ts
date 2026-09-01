@@ -21,6 +21,7 @@
  * load/commit (mirrors `applyAgentScope` in `../agents.ts`).
  */
 import {
+  manifestUsesAgentMap,
   type AgentBlockV2,
   resolveGrantSet,
   SLUG_RE,
@@ -109,13 +110,13 @@ export type ReadAgentBlockResult =
 
 /**
  * Read one agent's raw v2 block out of an already-loaded manifest. Never
- * throws. `block` is `null` for a v1 manifest (schemaVersion !== 2) or when
+ * throws. `block` is `null` for a v1 manifest (no `agents:` map) or when
  * the named agent isn't declared yet (a brand-new agent the editor is about
  * to create) — both are valid, non-error states the caller (the GET route)
  * surfaces distinctly via `schemaVersion`/`ok`.
  */
 export function readAgentBlockV2(manifest: ParsedManifest, agentName: string): ReadAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return { ok: true, schemaVersion: manifest.schemaVersion, block: null, defaultAgent: null };
   }
   const rawAgents = manifest.raw.agents;
@@ -198,11 +199,11 @@ export function applyDefaultAgentV2(
   manifest: ParsedManifest,
   agentName: string,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       error:
-        'This project must use kortix_version 2 (kortix.yaml) to set a project default agent.',
+        'This project must use kortix_version 2 or later (kortix.yaml) to set a project default agent.',
     };
   }
   if (!isValidAgentName(agentName)) {
@@ -244,11 +245,11 @@ export function applyAgentBlockV2(
   agentName: string,
   block: AgentBlockV2,
 ): ApplyAgentBlockResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       error:
-        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 (kortix.yaml) to edit the full agent configuration.',
+        'This project uses a kortix_version 1 manifest. Upgrade to kortix_version 2 or later (kortix.yaml) to edit the full agent configuration.',
     };
   }
   return applyAgentMapBlock(manifest, agentName, block as Record<string, unknown>);
@@ -278,11 +279,11 @@ export function applyAgentScopeV2(
     connectorsRequired?: string[];
   },
 ): ApplyAgentBlockResult & { notFound?: boolean } {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       error:
-        'This project must use kortix_version 2 (kortix.yaml) to edit agent scope.',
+        'This project must use kortix_version 2 or later (kortix.yaml) to edit agent scope.',
     };
   }
   const rawAgents = manifest.raw.agents;
@@ -384,12 +385,12 @@ export function grantSecretToAgentV2(
   identifier: string,
   projectIdentifiers: readonly string[] = [],
 ): GrantSecretToAgentResult {
-  if (manifest.schemaVersion !== 2) {
+  if (!manifestUsesAgentMap(manifest.schemaVersion)) {
     return {
       ok: false,
       unsupportedV1: true,
       error:
-        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 (kortix.yaml) to grant a secret to an agent.',
+        'This project uses a kortix_version 1 manifest (kortix.toml). Upgrade to kortix_version 2 or later (kortix.yaml) to grant a secret to an agent.',
     };
   }
   const rawAgents = manifest.raw.agents;

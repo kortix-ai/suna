@@ -66,6 +66,8 @@ import {
   TRIGGER_TYPES,
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
+  manifestDefaultConfigDir,
+  manifestUsesAgentMap,
 } from './constants';
 import {
   CONNECTOR_HEADER_NAME_MAX_LENGTH,
@@ -118,13 +120,13 @@ function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): Json
  * grantable catalog PLUS the legacy set. v2 hard-rejects them, so its enum
  * is the live grantable catalog ONLY. Both always accept the `"*"` wildcard.
  */
-function kortixCliEnum(version: 1 | 2): readonly string[] {
-  return version === 2
+function kortixCliEnum(version: number): readonly string[] {
+  return manifestUsesAgentMap(version)
     ? [...GRANTABLE_KORTIX_CLI_ACTIONS, '*']
     : [...GRANTABLE_KORTIX_CLI_ACTIONS, ...LEGACY_TOLERATED_KORTIX_CLI_ACTIONS, '*'];
 }
 
-function kortixCliGrantSetSchema(version: 1 | 2): JsonSchemaFragment {
+function kortixCliGrantSetSchema(version: number): JsonSchemaFragment {
   return grantSetSchema({ type: 'string', enum: [...kortixCliEnum(version)] });
 }
 
@@ -444,9 +446,10 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    tolerates the stray legacy key (warning-level only, so unconstrained
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
-function connectorSchema(version: 1 | 2): JsonSchemaFragment {
-  const credentialSchema: JsonSchemaFragment = version === 2 ? { const: 'shared' } : {};
-  const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
+function connectorSchema(version: number): JsonSchemaFragment {
+  const modern = manifestUsesAgentMap(version);
+  const credentialSchema: JsonSchemaFragment = modern ? { const: 'shared' } : {};
+  const agentScopeSchema: JsonSchemaFragment | boolean = modern ? false : {};
   return {
     type: 'object',
     required: ['slug', 'provider'],
@@ -692,24 +695,36 @@ export function buildManifestV1Schema(): JsonSchemaFragment {
   };
 }
 
-/** `kortix_version: 2` body. */
-export function buildManifestV2Schema(): JsonSchemaFragment {
+/**
+ * The map-shaped body, shared by `kortix_version: 2` and `3`.
+ *
+ * v3 is v2 with two defaults flipped — `runtime` defaults to `pi` and project
+ * config lives in `.kortix/pi` — and NO new syntax, so it reuses this builder
+ * rather than duplicating ~50 properties that would then drift.
+ */
+export function buildManifestV2Schema(version: 2 | 3 = 2): JsonSchemaFragment {
+  const configDir = manifestDefaultConfigDir(version);
   return {
     $schema: DRAFT,
-    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v2.schema.json`,
-    title: 'Kortix manifest (kortix_version 2)',
+    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.v${version}.schema.json`,
+    title: `Kortix manifest (kortix_version ${version})`,
     description:
-      'kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, ' +
+      `kortix.yaml, schema version ${version} — YAML-only. ` +
+      (version >= 3
+        ? 'The pi-native version: `runtime` defaults to `pi` and project config lives in ' +
+          '`.kortix/pi`. Otherwise identical to version 2. '
+        : '') +
+      '`agents` is a name→block MAP, ' +
       'GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must ' +
       'be declared, and OpenCode behavior (description/model/mode/temperature/permission/the ' +
       'prompt itself) lives entirely in that agent’s own native ' +
-      '`.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields ' +
+      `\`${configDir}/agents/<name>.md\` frontmatter + body — authoring any of those fields ` + +
       'here is a hard error. `[[channels]]` is removed outright. See ' +
       'docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.',
     type: 'object',
     required: ['kortix_version', 'default_agent', 'agents'],
     properties: {
-      kortix_version: { const: 2 },
+      kortix_version: { const: version },
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
       default_agent: NON_EMPTY_STRING,
@@ -742,11 +757,13 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
  */
 export function buildManifestSchema(): JsonSchemaFragment {
   const v1 = buildManifestV1Schema();
-  const v2 = buildManifestV2Schema();
+  const v2 = buildManifestV2Schema(2);
+  const v3 = buildManifestV2Schema(3);
   // Strip the per-document $id/$schema/title/description from the inlined
   // bodies — only the combined document's own carry those.
   const { $schema: _s1, $id: _i1, title: _t1, description: _d1, ...v1Body } = v1;
   const { $schema: _s2, $id: _i2, title: _t2, description: _d2, ...v2Body } = v2;
+  const { $schema: _s3, $id: _i3, title: _t3, description: _d3, ...v3Body } = v3;
   return {
     $schema: DRAFT,
     $id: `${KORTIX_SCHEMA_BASE_URL}/kortix.schema.json`,
@@ -759,11 +776,12 @@ export function buildManifestSchema(): JsonSchemaFragment {
     type: 'object',
     required: ['kortix_version'],
     properties: {
-      kortix_version: { type: 'integer', enum: [1, 2] },
+      kortix_version: { type: 'integer', enum: [1, 2, 3] },
     },
     allOf: [
       { if: { properties: { kortix_version: { const: 1 } } }, then: v1Body },
       { if: { properties: { kortix_version: { const: 2 } } }, then: v2Body },
+      { if: { properties: { kortix_version: { const: 3 } } }, then: v3Body },
     ],
   };
 }
@@ -772,14 +790,18 @@ export function buildManifestSchema(): JsonSchemaFragment {
  *  (the CLI's `kortix schema` command, the web app's `/schema/*.json`
  *  static files, the kortix-system skill) reads from. */
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
-export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
+export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema(2);
+export const KORTIX_V3_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema(3);
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or
  *  `'combined'`) for the single URL that dispatches on `kortix_version`. */
-export function manifestJsonSchema(version: 1 | 2 | 'combined' = 'combined'): JsonSchemaFragment {
+export function manifestJsonSchema(
+  version: 1 | 2 | 3 | 'combined' = 'combined',
+): JsonSchemaFragment {
   if (version === 1) return KORTIX_V1_JSON_SCHEMA;
   if (version === 2) return KORTIX_V2_JSON_SCHEMA;
+  if (version === 3) return KORTIX_V3_JSON_SCHEMA;
   return KORTIX_JSON_SCHEMA;
 }

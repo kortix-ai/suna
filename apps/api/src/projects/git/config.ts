@@ -3,6 +3,7 @@
 // (agents/skills/commands) out of the repo into a ProjectConfigSummary.
 
 import {
+  manifestDefaultConfigDir,
   type ManifestFormat,
   manifestCandidatePaths,
   manifestFormatForPath,
@@ -349,14 +350,20 @@ export async function loadProjectConfig(
 }
 
 /**
- * Resolve `[opencode] config_dir` from the parsed manifest. Mirrors the
+ * Resolve the project's config dir from the parsed manifest. Mirrors the
  * default from triggers.ts (DEFAULT_OPENCODE_CONFIG_DIR) but kept local
  * to avoid a circular import — git.ts is depended on by triggers.ts.
+ *
+ * Version-aware, and it must stay in step with `resolveConfigDir` in
+ * lib/compile-agent-config.ts: this resolver feeds the config SUMMARY the
+ * dashboard renders, that one feeds the COMPILER. If they disagree, a v3
+ * project's Customize view links agent files at a path the compiler never
+ * reads, and edits land in a directory nothing loads.
  */
 function resolveOpencodeDir(manifest: Record<string, unknown>): string {
-  const opencode = manifest.opencode;
-  if (opencode && typeof opencode === 'object' && !Array.isArray(opencode)) {
-    const raw = (opencode as Record<string, unknown>).config_dir;
+  for (const block of [manifest.pi, manifest.opencode]) {
+    if (!block || typeof block !== 'object' || Array.isArray(block)) continue;
+    const raw = (block as Record<string, unknown>).config_dir;
     if (typeof raw === 'string' && raw.trim()) {
       const trimmed = raw.trim();
       // Reject absolute paths + `..` segments here too. parseManifestString
@@ -367,7 +374,7 @@ function resolveOpencodeDir(manifest: Record<string, unknown>): string {
       }
     }
   }
-  return '.kortix/opencode';
+  return manifestDefaultConfigDir(manifestSchemaVersionFor(manifest));
 }
 
 function escapeRegExp(input: string): string {

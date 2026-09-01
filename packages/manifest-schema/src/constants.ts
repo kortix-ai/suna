@@ -340,3 +340,45 @@ export const AGENT_THEME_COLORS_V2 = [
   'info',
 ] as const;
 export const HEX_COLOR_RE_V2 = /^#[0-9a-fA-F]{6}$/;
+
+// ─── Schema versions ──────────────────────────────────────────────────────
+//
+// v1  TOML or YAML, `[[agents]]` ARRAY, grants default to `all`.
+// v2  YAML only,    `agents:` MAP,      grants default to `none`, runtime
+//     defaults to `opencode`, project config lives in `.kortix/opencode`.
+// v3  Exactly v2's body, with two defaults flipped for the pi runtime:
+//     `runtime` defaults to `pi`, and project config lives in `.kortix/pi`.
+//
+// v3 deliberately adds NO new syntax. A pi project should not have to restate
+// `runtime: pi` in a file whose version already says so, and its agents should
+// not live in a directory named after the runtime it does not use. Everything
+// else — the agents map, deny-by-default grants, permission trees — is v2, so
+// every v2 validator and reader applies unchanged.
+
+/** Highest `kortix_version` this build understands. */
+export const KNOWN_SCHEMA_VERSION = 3;
+
+/**
+ * Does this version use the v2-shaped body (`agents:` map, deny-by-default
+ * grants, YAML-only)? True for v2 and up.
+ *
+ * Written as `>= 2`, never `=== 2 || === 3`: every one of these call sites is
+ * asking "is this the modern body?", and an equality list is a gate that
+ * silently starts failing the day v4 lands.
+ */
+export function manifestUsesAgentMap(version: number): boolean {
+  return version >= 2;
+}
+
+/** The runtime a manifest gets when it declares none. */
+export function manifestDefaultRuntime(version: number): 'opencode' | 'pi' {
+  return version >= 3 ? 'pi' : 'opencode';
+}
+
+/**
+ * Where this project's agents, skills, and commands live when the manifest
+ * names no `config_dir` — `.kortix/pi` from v3, `.kortix/opencode` before it.
+ */
+export function manifestDefaultConfigDir(version: number): string {
+  return version >= 3 ? '.kortix/pi' : '.kortix/opencode';
+}

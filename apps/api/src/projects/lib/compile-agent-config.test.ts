@@ -63,6 +63,7 @@ const {
   compileSelectedAgentConfig,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
+  resolveManifestRuntime,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -138,6 +139,58 @@ describe('agentMarkdownPath', () => {
     expect(agentMarkdownPath({ opencode: { config_dir: 'custom/dir' } }, 'support')).toBe(
       'custom/dir/agents/support.md',
     );
+  });
+});
+
+// kortix_version 3 is v2's body with two defaults flipped for the pi runtime.
+// Both flips are DEFAULTS, so the only way to be sure they took is to assert
+// the resolved value at each version rather than the presence of a key.
+describe('kortix_version 3 — the pi-native config directory', () => {
+  test('v3 agents live in .kortix/pi, not .kortix/opencode', () => {
+    expect(agentMarkdownPath({ kortix_version: 3 }, 'support')).toBe(
+      '.kortix/pi/agents/support.md',
+    );
+  });
+
+  test('v2 and v1 are unmoved', () => {
+    expect(agentMarkdownPath({ kortix_version: 2 }, 'support')).toBe(
+      '.kortix/opencode/agents/support.md',
+    );
+    expect(agentMarkdownPath({ kortix_version: 1 }, 'support')).toBe(
+      '.kortix/opencode/agents/support.md',
+    );
+  });
+
+  test('a `pi:` block names its own directory', () => {
+    expect(
+      agentMarkdownPath({ kortix_version: 3, pi: { config_dir: 'custom/dir' } }, 'support'),
+    ).toBe('custom/dir/agents/support.md');
+  });
+
+  test('`pi:` wins over `opencode:` when a v3 manifest sets both', () => {
+    expect(
+      agentMarkdownPath(
+        { kortix_version: 3, pi: { config_dir: 'from/pi' }, opencode: { config_dir: 'from/oc' } },
+        'support',
+      ),
+    ).toBe('from/pi/agents/support.md');
+  });
+
+  // A v3 project that still sets `opencode: config_dir` is making a deliberate
+  // statement about where its files are. Ignoring it in favour of the v3
+  // default would read a directory that does not exist and lose every agent.
+  test('a v3 manifest with only `opencode: config_dir` is still honoured', () => {
+    expect(
+      agentMarkdownPath({ kortix_version: 3, opencode: { config_dir: 'legacy/dir' } }, 'support'),
+    ).toBe('legacy/dir/agents/support.md');
+  });
+
+  test('a v3 manifest compiles through the same v2 path', () => {
+    const manifest = parseManifestText(
+      ['kortix_version: 3', 'default_agent: support', 'agents:', '  support: {}'].join('\n'),
+      'yaml',
+    );
+    expect(compileAgentConfig(manifest)).not.toBeNull();
   });
 });
 
@@ -556,6 +609,40 @@ agents:
       '.kortix/opencode/agents/support.md': supportMd('mode: bogus', 'Body.'),
     };
     expect(await resolveCompiledAgentConfigForSession(PROJECT)).toBeNull();
+  });
+});
+
+// This is the gate `sessions.ts` reads to decide whether a session boots the
+// pi worker image or the OpenCode stack, so "v3 means pi" has to hold HERE and
+// not merely in the constant that says so.
+describe('resolveManifestRuntime — the version decides when the manifest does not', () => {
+  const yaml = (body: string) => ({ path: 'kortix.yaml', content: body });
+
+  test('v3 with no runtime key resolves to pi', async () => {
+    manifestFile = yaml('kortix_version: 3\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBe('pi');
+  });
+
+  test('v2 with no runtime key stays opencode', async () => {
+    manifestFile = yaml('kortix_version: 2\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
+  });
+
+  test('an explicit runtime always wins over the version default', async () => {
+    manifestFile = yaml('kortix_version: 3\nruntime: opencode\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBe('opencode');
+    manifestFile = yaml('kortix_version: 2\nruntime: pi\ndefault_agent: a\nagents:\n  a: {}\n');
+    expect(await resolveManifestRuntime(PROJECT)).toBe('pi');
+  });
+
+  test('a v1 manifest is not a runtime declaration at all', async () => {
+    manifestFile = { path: 'kortix.toml', content: V1_FIXTURE_TOML };
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
+  });
+
+  test('no manifest resolves to null, so the caller keeps the OpenCode path', async () => {
+    manifestFile = null;
+    expect(await resolveManifestRuntime(PROJECT)).toBeNull();
   });
 });
 

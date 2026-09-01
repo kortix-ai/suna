@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://kortix.com/schema/kortix.v2.schema.json",
-  "title": "Kortix manifest (kortix_version 2)",
-  "description": "kortix.yaml, schema version 2 — YAML-only. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/opencode/agents/<name>.md` frontmatter + body — authoring any of those fields NaNdocs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
+  "$id": "https://kortix.com/schema/kortix.v3.schema.json",
+  "title": "Kortix manifest (kortix_version 3)",
+  "description": "kortix.yaml, schema version 3 — YAML-only. The pi-native version: `runtime` defaults to `pi` and project config lives in `.kortix/pi`. Otherwise identical to version 2. `agents` is a name→block MAP, GOVERNANCE ONLY (connectors/secrets/skills/kortix_cli/workspace/enabled); every agent must be declared, and OpenCode behavior (description/model/mode/temperature/permission/the prompt itself) lives entirely in that agent’s own native `.kortix/pi/agents/<name>.md` frontmatter + body — authoring any of those fields NaNdocs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2/§2.5.",
   "type": "object",
   "required": [
     "kortix_version",
@@ -11,7 +11,7 @@
   ],
   "properties": {
     "kortix_version": {
-      "const": 2
+      "const": 3
     },
     "default_agent": {
       "type": "string",
