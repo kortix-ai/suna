@@ -18,11 +18,32 @@ describe('SETTINGS_TABS', () => {
     expect(SETTINGS_TABS).toContain(DEFAULT_SETTINGS_TAB);
   });
 
-  test('carries exactly the person-scoped tabs the overlay still hosts', () => {
+  test('carries the four person-scoped tabs plus the one workspace tab', () => {
     // `tokens` rejoined the list on 2026-08-18: a person's own API keys are
     // person-scoped, not account configuration, so they came back from
     // `/accounts/[id]` while the service-account half stayed there.
-    expect([...SETTINGS_TABS]).toEqual(['profile', 'preferences', 'connected', 'tokens']);
+    //
+    // `workspace` joined on 2026-09-01 and is the ONLY project-scoped id here.
+    // Renaming a workspace and changing its icon had become four surfaces deep
+    // under Customize with no label naming what it did; see `SettingsTab`'s own
+    // comment for why this one row is not "configuration" in the sense the
+    // graduation below means. Its position is last on purpose — the rail orders
+    // itself (`rail.ts`), this list does not.
+    expect([...SETTINGS_TABS]).toEqual([
+      'profile',
+      'preferences',
+      'connected',
+      'tokens',
+      'workspace',
+    ]);
+  });
+
+  // The id has to stay `workspace`. `general` is spent on a GRADUATED redirect
+  // to `/projects/<id>/config`, and a live tab under that key would shadow
+  // every bookmark pointing at the config page.
+  test('the workspace tab does not reclaim the graduated `general` id', () => {
+    expect(SETTINGS_TABS).toContain('workspace');
+    expect(SETTINGS_TABS).not.toContain('general');
   });
 
   // Every project-configuration id left for `/projects/[id]/config`. Asserted

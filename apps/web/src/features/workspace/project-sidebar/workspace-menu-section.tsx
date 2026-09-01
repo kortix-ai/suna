@@ -282,7 +282,15 @@ export function WorkspaceMenuSection() {
                         href={target.href}
                         onClick={(event) => startWorkspaceRow(event, workspace, target)}
                       >
-                        <EntityAvatar label={workspace.name} emoji={workspace.icon} size="sm" />
+                        {/* Same union as the trigger above — see `workspace-switcher.tsx`.
+                            Without `glyph`, every glyph-icon workspace in this
+                            list falls back to its initial. */}
+                        <EntityAvatar
+                          label={workspace.name}
+                          glyph={workspace.icon_glyph}
+                          emoji={workspace.icon}
+                          size="sm"
+                        />
                         <span className="min-w-0 flex-1 truncate text-sm font-medium">
                           {workspace.name}
                         </span>
