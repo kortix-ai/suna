@@ -14,6 +14,8 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
+import { materializePromptAttachments } from './prompt-attachment-materializer';
+import { writeRuntimePromptFile } from './runtime-prompt-file';
 import {
   parseRuntimeAgentNames,
   resolveDeliverableAgent,
@@ -47,6 +49,7 @@ import { resolveProjectAutomationActor } from './actor';
 import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
+import * as lifecycleStore from './store';
 import {
   MAX_RUNTIME_UNREACHABLE_RETRIES,
   type SessionLifecycleCommandRow,
@@ -93,9 +96,14 @@ import {
   wireIdTime,
 } from '../wire-message-id';
 import { crossAccountIdempotencyResult } from './idempotency-guard';
+import {
+  repairLegacyInlineAttachments,
+  type LegacyRuntimeMessage,
+} from './legacy-inline-attachment-repair';
 import type {
   ContinueSessionCommand,
   CreateSessionCommand,
+  LegacyInlineAttachmentRepairMetadata,
   QueuedCreateSessionPayload,
   SessionDeliveryOutcome,
   SessionInvocationSource,
@@ -421,13 +429,65 @@ export async function continueSession(
   // the same status a normal hibernate uses. Without this check a queued
   // follow-up (Slack reply, scheduled trigger, etc.) would revive a session
   // the user explicitly deleted.
-  const sessionMeta = (session.metadata ?? {}) as Record<string, unknown>;
+  const sessionMeta = (session.metadata ?? {}) as LegacyInlineAttachmentRepairMetadata;
   if (typeof sessionMeta.deletedAt === 'string') return 'no-session';
   const userId = command.userId ?? (await resolveProjectAutomationActor(session.accountId));
   if (!userId) {
     console.warn('[session-lifecycle] no actor for follow-up delivery', { sessionId });
     return 'pending';
   }
+  const pendingAttachmentNames = sessionMeta.pending_prompt?.attachment_names;
+  const shouldRepairLegacyInlineAttachments =
+    command.isPendingFirstPrompt !== true &&
+    Array.isArray(pendingAttachmentNames) &&
+    pendingAttachmentNames.length > 0 &&
+    typeof sessionMeta.legacy_inline_attachments_repaired_at !== 'string';
+  const legacyRepairByExternalId = new Map<string, Promise<void>>();
+  const repairLegacyBeforeDelivery = (
+    externalId: string,
+    opencodeSessionId: string,
+  ): Promise<void> => {
+    if (!shouldRepairLegacyInlineAttachments) return Promise.resolve();
+    const existing = legacyRepairByExternalId.get(externalId);
+    if (existing) return existing;
+    const repair = repairLegacyInlineAttachments({
+      sessionId,
+      externalId,
+      opencodeSessionId,
+      userId,
+      loadPendingFirst: () => lifecycleStore.loadLegacyPendingFirstPrompt(sessionId),
+      readMessage: (messageId) =>
+        readLegacyRuntimeMessage({
+          externalId,
+          opencodeSessionId,
+          sessionId,
+          userId,
+          messageId,
+        }),
+      materialize: (parts, key) =>
+        materializePromptAttachments({
+          parts,
+          externalId,
+          sessionId,
+          userId,
+          materializationKey: key,
+          writeFile: writeRuntimePromptFile,
+        }),
+      updatePart: ({ messageId, partId, text: replacementText }) =>
+        updateLegacyRuntimePart({
+          externalId,
+          opencodeSessionId,
+          sessionId,
+          userId,
+          messageId,
+          partId,
+          text: replacementText,
+        }),
+      markRepaired: () => lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId),
+    }).then(() => undefined);
+    legacyRepairByExternalId.set(externalId, repair);
+    return repair;
+  };
 
   // Server-side delivery is the first prompt for sessions created without one.
   void generateSessionTitleFromFirstPrompt({
@@ -501,12 +561,15 @@ export async function continueSession(
           opencodeSessionId: healed.opencode_session_id,
         };
       },
-      send: (externalId, runtimeId) =>
-        postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
+      send: async (externalId, runtimeId) => {
+        await repairLegacyBeforeDelivery(externalId, runtimeId);
+        return postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
           parts: command.parts,
           overrides: command.overrides,
           wireMessageId: command.wireMessageId,
-        }),
+          materializationKey: command.materializationKey,
+        });
+      },
     });
   }
 
@@ -599,12 +662,15 @@ export async function continueSession(
       const healed = await openOnce();
       return healed ? toTarget(healed) : null;
     },
-    send: (externalId, runtimeId) =>
-      postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
+    send: async (externalId, runtimeId) => {
+      await repairLegacyBeforeDelivery(externalId, runtimeId);
+      return postPrompt(externalId, runtimeId, text, userId, sessionId, idempotencyKey, {
         parts: command.parts,
         overrides: command.overrides,
         wireMessageId: command.wireMessageId,
-      }),
+        materializationKey: command.materializationKey,
+      });
+    },
   });
 }
 
@@ -1684,6 +1750,9 @@ export async function executeQueuedContinue(
           ...(payload.parts?.length ? { parts: payload.parts } : {}),
           ...(payload.overrides ? { overrides: payload.overrides } : {}),
           ...(wireMessageId ? { wireMessageId } : {}),
+          materializationKey: row.commandId,
+          isPendingFirstPrompt:
+            row.idempotencyKey === `prompt:${row.sessionId}:pending-first`,
         },
         // F2: stable across every drain-and-retry of THIS row — see
         // `postPrompt`'s F2 note. Two DIFFERENT queued commands (distinct
@@ -2144,6 +2213,72 @@ async function sessionRuntimeAgentRoster(
   });
 }
 
+interface LegacyRuntimePartTarget {
+  externalId: string;
+  opencodeSessionId: string;
+  sessionId: string;
+  userId: string;
+}
+
+function legacyRuntimeAccess(input: LegacyRuntimePartTarget) {
+  return {
+    kind: 'principal' as const,
+    userId: input.userId,
+    callerSessionId: input.sessionId,
+    boundCredentialSessionId: input.sessionId,
+    sandboxAuthored: false,
+  };
+}
+
+async function readLegacyRuntimeMessage(
+  input: LegacyRuntimePartTarget & { messageId: string },
+): Promise<LegacyRuntimeMessage | null> {
+  const response = await forwardToSandbox(
+    input.externalId,
+    DAEMON_PORT,
+    legacyRuntimeAccess(input),
+    'GET',
+    `/session/${encodeURIComponent(input.opencodeSessionId)}/message/${encodeURIComponent(input.messageId)}`,
+    `?directory=${encodeURIComponent(WORKSPACE)}`,
+    new Headers(),
+    undefined,
+    config.KORTIX_URL ?? '',
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(`legacy attachment message read failed (${response.status})`);
+  }
+  return (await response.json()) as LegacyRuntimeMessage;
+}
+
+async function updateLegacyRuntimePart(
+  input: LegacyRuntimePartTarget & { messageId: string; partId: string; text: string },
+): Promise<void> {
+  const body = new TextEncoder().encode(
+    JSON.stringify({
+      id: input.partId,
+      sessionID: input.opencodeSessionId,
+      messageID: input.messageId,
+      type: 'text',
+      text: input.text,
+    }),
+  );
+  const response = await forwardToSandbox(
+    input.externalId,
+    DAEMON_PORT,
+    legacyRuntimeAccess(input),
+    'PATCH',
+    `/session/${encodeURIComponent(input.opencodeSessionId)}/message/${encodeURIComponent(input.messageId)}/part/${encodeURIComponent(input.partId)}`,
+    `?directory=${encodeURIComponent(WORKSPACE)}`,
+    new Headers({ 'Content-Type': 'application/json' }),
+    body.buffer as ArrayBuffer,
+    config.KORTIX_URL ?? '',
+  );
+  if (!response.ok) {
+    throw new Error(`legacy attachment part update failed (${response.status})`);
+  }
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -2160,10 +2295,21 @@ async function postPrompt(
     parts?: PromptPartWire[];
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
+    materializationKey?: string;
   },
 ): Promise<boolean> {
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
+  const deliverableParts = prompt?.materializationKey
+    ? await materializePromptAttachments({
+        parts,
+        externalId,
+        sessionId: callerSessionId,
+        userId,
+        materializationKey: prompt.materializationKey,
+        writeFile: writeRuntimePromptFile,
+      })
+    : parts;
   const overrides = prompt?.overrides;
   // THE AGENT THE RUNTIME CAN ACTUALLY RUN — see `agent-availability.ts`.
   //
@@ -2194,7 +2340,7 @@ async function postPrompt(
   const body = new TextEncoder().encode(
     JSON.stringify({
       ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
-      parts,
+      parts: deliverableParts,
       ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),

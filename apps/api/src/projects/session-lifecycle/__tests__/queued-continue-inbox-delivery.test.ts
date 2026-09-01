@@ -61,11 +61,33 @@ let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
 // A delivered row that carries a wire id no longer closes — it stays OPEN as
 // `forwarded` until the session_turns ledger confirms a turn consumed that id.
 let forwardedCalls: Array<{ commandId: string; sessionId: string; wireMessageId: string }> = [];
-let failedCalls: Array<{ commandId: string; message: string }> = [];
+let failedCalls: Array<{
+  commandId: string;
+  message: string;
+  options?: { retryable?: boolean };
+}> = [];
 let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
+let runtimeWrites: Array<{ targetPath: string; filename: string; mime: string }> = [];
+let runtimeWriteError: Error | null = null;
+let legacyPendingFirst: {
+  commandId: string;
+  deliveredMessageIds: string[];
+  parts: Array<Record<string, unknown>>;
+} | null = null;
+let legacyRuntimeMessages: Record<string, Record<string, unknown>> = {};
+let legacyMessageReads: Array<{ method: string; path: string; query: string }> = [];
+let legacyPartUpdates: Array<{
+  method: string;
+  path: string;
+  query: string;
+  body: Record<string, unknown>;
+}> = [];
+let legacyRepairMarks = 0;
+let legacyPendingLoads = 0;
+let promptFailuresRemaining = 0;
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
@@ -126,13 +148,32 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     _externalId: string,
     _port: number,
     _access: unknown,
-    _method: string,
-    _path: string,
-    _query: string,
+    method: string,
+    path: string,
+    query: string,
     _headers: Headers,
-    body: ArrayBuffer,
+    body?: ArrayBuffer,
   ) => {
+    const messageMatch = /\/message\/([^/]+)$/.exec(path);
+    if (method === 'GET' && messageMatch) {
+      legacyMessageReads.push({ method, path, query });
+      const message = legacyRuntimeMessages[decodeURIComponent(messageMatch[1]!)];
+      return message ? Response.json(message) : new Response(null, { status: 404 });
+    }
+    if (method === 'PATCH' && path.includes('/part/')) {
+      legacyPartUpdates.push({
+        method,
+        path,
+        query,
+        body: JSON.parse(new TextDecoder().decode(body)),
+      });
+      return Response.json({ ok: true });
+    }
     capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+    if (promptFailuresRemaining > 0) {
+      promptFailuresRemaining -= 1;
+      return new Response(null, { status: 500 });
+    }
     return new Response(null, { status: 204 });
   },
 }));
@@ -151,6 +192,13 @@ mock.module('../backpressure', () => ({
 }));
 mock.module('../store', () => ({
   promoteNextInboxRow: async () => null,
+  loadLegacyPendingFirstPrompt: async () => {
+    legacyPendingLoads += 1;
+    return legacyPendingFirst;
+  },
+  markLegacyInlineAttachmentsRepaired: async () => {
+    legacyRepairMarks += 1;
+  },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
   },
@@ -166,8 +214,12 @@ mock.module('../store', () => ({
   MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
   parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
   reArmRuntimeBlockedPrompts: async () => 0,
-  markCommandFailed: async (commandId: string, message: string) => {
-    failedCalls.push({ commandId, message });
+  markCommandFailed: async (
+    commandId: string,
+    message: string,
+    options?: { retryable?: boolean },
+  ) => {
+    failedCalls.push({ commandId, message, options });
   },
   markCommandQueued: async () => {
     throw new Error('not expected');
@@ -205,6 +257,23 @@ mock.module('../../../sandbox-proxy/backend', () => ({
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
   syncSandboxEnvForPrompt: async () => {},
+}));
+
+mock.module('../runtime-prompt-file', () => ({
+  writeRuntimePromptFile: async (input: {
+    targetPath: string;
+    filename: string;
+    mime: string;
+    bytes: Uint8Array;
+  }) => {
+    if (runtimeWriteError) throw runtimeWriteError;
+    runtimeWrites.push({
+      targetPath: input.targetPath,
+      filename: input.filename,
+      mime: input.mime,
+    });
+    return { path: input.targetPath, size: input.bytes.byteLength };
+  },
 }));
 
 const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
@@ -281,6 +350,15 @@ beforeEach(() => {
   claimed = [];
   openDelayBySession = {};
   events = [];
+  runtimeWrites = [];
+  runtimeWriteError = null;
+  legacyPendingFirst = null;
+  legacyRuntimeMessages = {};
+  legacyMessageReads = [];
+  legacyPartUpdates = [];
+  legacyRepairMarks = 0;
+  legacyPendingLoads = 0;
+  promptFailuresRemaining = 0;
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
     // The staged-revert guard reads the session row; the re-mint and the
@@ -293,6 +371,187 @@ beforeEach(() => {
 });
 
 describe('executeQueuedContinue — what actually goes on the wire', () => {
+  test('materializes non-native staged files before prompt_async', async () => {
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'Inspect these files.',
+          clientMessageId: 'q_files',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [
+            { type: 'text', text: 'Inspect these files.' },
+            {
+              type: 'file',
+              mime: 'application/zip',
+              filename: 'bundle.zip',
+              url: 'data:application/zip;base64,UEsDBA==',
+            },
+            {
+              type: 'file',
+              mime: 'text/markdown',
+              filename: 'README.md',
+              url: 'data:text/markdown;base64,IyBSZWFkbWU=',
+            },
+            {
+              type: 'file',
+              mime: 'image/png',
+              filename: 'shot.png',
+              url: 'data:image/png;base64,iVBORw0KGgo=',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(1);
+    const body = capturedBodies[0];
+    expect(body.parts).toEqual([
+      { type: 'text', text: 'Inspect these files.' },
+      {
+        type: 'text',
+        text: expect.stringContaining('filename="bundle.zip"'),
+      },
+      {
+        type: 'text',
+        text: expect.stringContaining('filename="README.md"'),
+      },
+      {
+        type: 'file',
+        mime: 'image/png',
+        filename: 'shot.png',
+        url: expect.stringMatching(/^data:image\/png;base64,/),
+      },
+    ]);
+    expect(JSON.stringify(body.parts)).not.toContain('application/zip;base64');
+    expect(runtimeWrites.map(({ targetPath }) => targetPath)).toEqual([
+      '/workspace/uploads/.kortix-inbox/cmd-1/1-bundle.zip',
+      '/workspace/uploads/.kortix-inbox/cmd-1/2-README.md',
+    ]);
+  });
+
+  test('a materialization failure sends no prompt and leaves the row retryable', async () => {
+    runtimeWriteError = new Error('disk is full');
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'Inspect this file.',
+          clientMessageId: 'q_broken_file',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [
+            { type: 'text', text: 'Inspect this file.' },
+            {
+              type: 'file',
+              mime: 'application/zip',
+              filename: 'bundle.zip',
+              url: 'data:application/zip;base64,UEsDBA==',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(outcome).toBe('queued');
+    expect(capturedBodies).toEqual([]);
+    expect(failedCalls).toEqual([
+      {
+        commandId: 'cmd-1',
+        message: expect.stringContaining('bundle.zip'),
+        options: expect.objectContaining({ retryable: true }),
+      },
+    ]);
+  });
+
+  test('repairs the legacy first message once before a later prompt retries delivery', async () => {
+    sessionRow!.metadata = {
+      pending_prompt: { attachment_names: ['bundle.zip'] },
+    };
+    legacyPendingFirst = {
+      commandId: 'command-first',
+      deliveredMessageIds: ['msg-first'],
+      parts: [
+        { type: 'text', text: 'Inspect this.' },
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    };
+    legacyRuntimeMessages['msg-first'] = {
+      info: { id: 'msg-first', role: 'user' },
+      parts: [
+        { id: 'part-text', type: 'text', text: 'Inspect this.' },
+        {
+          id: 'part-zip',
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    };
+    promptFailuresRemaining = 1;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        commandId: 'command-later',
+        idempotencyKey: 'prompt:sess-inbox-delivery-1:q_later',
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(2);
+    expect(legacyRepairMarks).toBe(1);
+    expect(legacyMessageReads).toEqual([
+      {
+        method: 'GET',
+        path: '/session/oc-1/message/msg-first',
+        query: '?directory=%2Fworkspace',
+      },
+    ]);
+    expect(legacyPartUpdates).toEqual([
+      {
+        method: 'PATCH',
+        path: '/session/oc-1/message/msg-first/part/part-zip',
+        query: '?directory=%2Fworkspace',
+        body: {
+          id: 'part-zip',
+          sessionID: 'oc-1',
+          messageID: 'msg-first',
+          type: 'text',
+          text: expect.stringContaining('filename="bundle.zip"'),
+        },
+      },
+    ]);
+    expect(runtimeWrites.map(({ targetPath }) => targetPath)).toContain(
+      '/workspace/uploads/.kortix-inbox/legacy-command-first/1-bundle.zip',
+    );
+  });
+
+  test('does not repair legacy history while delivering the pending-first row', async () => {
+    sessionRow!.metadata = {
+      pending_prompt: { attachment_names: ['bundle.zip'] },
+    };
+    legacyPendingFirst = {
+      commandId: 'cmd-1',
+      deliveredMessageIds: [],
+      parts: [],
+    };
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        idempotencyKey: `prompt:${SESSION_ID}:pending-first`,
+      }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(legacyPendingLoads).toBe(0);
+    expect(legacyRepairMarks).toBe(0);
+  });
+
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {
     // The POST route deliberately accepts an empty flattened text when a
     // non-text part carries the content. A drain that requires text turns that
