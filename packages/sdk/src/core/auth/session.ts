@@ -43,6 +43,16 @@ export interface KortixSession {
   clear(): Promise<void>;
   /** Load from storage. Called lazily by the other methods; call it up front to hydrate eagerly. */
   load(): Promise<AuthSession | null>;
+  /**
+   * React to sign-in, refresh and sign-out. Returns an unsubscribe.
+   *
+   * The replacement for `supabase.auth.onAuthStateChange`. Distinct from the
+   * `onChange` OPTION, which is a single slot fixed at construction: two
+   * components both wanting to know would silently overwrite each other. This
+   * fans out, and a listener that throws cannot take down its siblings or the
+   * write that notified them.
+   */
+  subscribe(listener: (session: AuthSession | null) => void): () => void;
 }
 
 export function createKortixSession(options: KortixSessionOptions = {}): KortixSession {
@@ -52,6 +62,7 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
   let user: AuthUser | null = null;
   let loaded = !options.storage;
   let inflight: Promise<AuthSession | null> | null = null;
+  const listeners = new Set<(session: AuthSession | null) => void>();
 
   const expiresAt = (s: AuthSession) => (s.expires_at ?? 0) * 1000;
   const needsRefresh = (s: AuthSession) => expiresAt(s) - skew * 1000 <= now();
@@ -61,7 +72,21 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
       if (session) await options.storage.set(JSON.stringify({ session, user }));
       else await options.storage.remove();
     }
-    options.onChange?.(session);
+    // A listener is host code — a React setState, an analytics ping. One of
+    // them throwing must not abort `persist`, or a UI bug becomes a failure to
+    // save the session.
+    for (const listener of [...listeners]) {
+      try {
+        listener(session);
+      } catch {
+        /* a broken listener is that listener's problem */
+      }
+    }
+    try {
+      options.onChange?.(session);
+    } catch {
+      /* same */
+    }
   }
 
   async function load(): Promise<AuthSession | null> {
@@ -114,6 +139,12 @@ export function createKortixSession(options: KortixSessionOptions = {}): KortixS
   }
 
   return {
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     current: () => session,
     user: () => user,
     load,

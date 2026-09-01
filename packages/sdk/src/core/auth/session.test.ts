@@ -70,3 +70,48 @@ test('load() hydrates from storage so a new process resumes the session', async 
   expect(await s.getToken()).toBeNull();
   expect(store.has('k')).toBe(false);
 });
+
+/**
+ * `subscribe` — the replacement for `supabase.auth.onAuthStateChange`.
+ *
+ * A React provider needs to react to sign-in, refresh and sign-out, and it
+ * needs to STOP reacting when it unmounts. The existing `onChange` option is a
+ * single callback fixed at construction, which a provider cannot use: the last
+ * component to mount would silently replace the listener of every earlier one.
+ */
+test('subscribe fans out to every listener and unsubscribes cleanly', async () => {
+  const seenA: Array<string | null> = [];
+  const seenB: Array<string | null> = [];
+  const session = createKortixSession();
+
+  const offA = session.subscribe((s) => seenA.push(s?.access_token ?? null));
+  const offB = session.subscribe((s) => seenB.push(s?.access_token ?? null));
+
+  await session.set({ access_token: 'at1', refresh_token: 'rt1', expires_at: Math.floor(Date.now() / 1000) + 3600 } as never);
+  expect(seenA).toEqual(['at1']);
+  expect(seenB).toEqual(['at1']);
+
+  // One listener leaving must not disturb the other — the bug a single
+  // `onChange` slot guarantees.
+  offA();
+  await session.clear();
+  expect(seenA).toEqual(['at1']);
+  expect(seenB).toEqual(['at1', null]);
+
+  offB();
+  await session.set({ access_token: 'at2', refresh_token: 'rt2', expires_at: Math.floor(Date.now() / 1000) + 3600 } as never);
+  expect(seenB).toEqual(['at1', null]);
+});
+
+test('a throwing listener cannot break the others or the session write', async () => {
+  const seen: string[] = [];
+  const session = createKortixSession();
+  session.subscribe(() => {
+    throw new Error('listener blew up');
+  });
+  session.subscribe((s) => seen.push(s?.access_token ?? 'null'));
+
+  await session.set({ access_token: 'at1', refresh_token: 'rt1', expires_at: Math.floor(Date.now() / 1000) + 3600 } as never);
+  expect(seen).toEqual(['at1']);
+  expect(session.current()?.access_token).toBe('at1');
+});
