@@ -241,10 +241,10 @@ export async function buildPromptPartsWithUploads(
 
 /**
  * First-prompt attachments: the session's sandbox does not exist yet, so there
- * is nowhere to upload into. Local files ride the durable prompt row as
- * `data:` URLs instead — OpenCode's own wire shape for inline attachments —
- * and already-remote files ride as ordinary URL parts, exactly as they do on
- * every later send.
+ * is nowhere to upload into. `data:` URLs are a durable control-plane staging
+ * envelope for local files. The API removes non-native file parts before the
+ * prompt reaches OpenCode. Already-remote files remain ordinary URL parts,
+ * exactly as they do on every later send.
  *
  * The cap mirrors the API's serialized-row ceiling (`PROMPT_PARTS_MAX_BYTES`,
  * 12 MB of JSON ≈ 9 MB of file bytes): a durable row is a Postgres row, not a
@@ -254,7 +254,7 @@ export async function buildPromptPartsWithUploads(
  */
 export const DATA_URL_ATTACHMENTS_MAX_BYTES = 9 * 1024 * 1024;
 
-export async function attachedFilesToDataUrlParts(
+export async function stageFirstPromptAttachments(
   files: AttachedFile[] | undefined,
 ): Promise<PromptFilePart[]> {
   if (!files?.length) return [];

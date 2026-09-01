@@ -299,7 +299,8 @@ describe('planFailedSendRecovery', () => {
   });
 
   test('files restore ahead of newly attached files without duplicates, matching mergeFailedSubmissionFiles', () => {
-    const sent = localFile('offer.pdf', 'blob:offer');
+    const firstSent = localFile('offer.pdf', 'blob:offer');
+    const secondSent = localFile('terms.pdf', 'blob:terms');
     const addedWhileSending = localFile('notes.txt', 'blob:notes');
 
     const plan = planFailedSendRecovery({
@@ -309,10 +310,10 @@ describe('planFailedSendRecovery', () => {
       currentDoc: EMPTY_DOC,
       currentIsEmpty: true,
       currentAttachedFiles: [addedWhileSending],
-      sentFiles: [sent],
+      sentFiles: [firstSent, secondSent],
     });
 
-    expect(plan?.attachedFiles).toEqual([sent, addedWhileSending]);
+    expect(plan?.attachedFiles).toEqual([firstSent, secondSent, addedWhileSending]);
   });
 
   test('clearOnSend=true with everything empty and nothing sent → still returns a plan, empty files, null doc', () => {

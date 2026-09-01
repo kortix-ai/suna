@@ -16,7 +16,7 @@ import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-l
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { QueuedPromptBubbles } from '@/features/session/turn/queued-prompt-bubbles';
 import {
-  attachedFilesToDataUrlParts,
+  stageFirstPromptAttachments,
   buildOptimisticPromptTextWithUploads,
 } from '@/features/session/uploaded-file-refs';
 import { ProjectHomeWelcomeBody } from '@/features/workspace/project-layout/project-home';
@@ -193,7 +193,7 @@ export function InstantSessionShell({
       try {
         const parts = [
           { type: 'text' as const, text },
-          ...(await attachedFilesToDataUrlParts(files)),
+          ...(await stageFirstPromptAttachments(files)),
         ];
         await startSessionWithPrompt(projectId, sessionId, {
           parts,

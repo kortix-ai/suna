@@ -12,7 +12,7 @@ import {
   uploadedFileRefXml,
   UPLOADS_DIR,
   type UploadFileForPrompt,
-  attachedFilesToDataUrlParts,
+  stageFirstPromptAttachments,
   DATA_URL_ATTACHMENTS_MAX_BYTES,
 } from './uploaded-file-refs';
 
@@ -309,7 +309,7 @@ describe('uploaded file references', () => {
   });
 });
 
-describe('attachedFilesToDataUrlParts', () => {
+describe('stageFirstPromptAttachments', () => {
   const local = (name: string, bytes: Uint8Array, type = 'image/png'): AttachedFile => ({
     kind: 'local',
     file: new File([bytes as unknown as BlobPart], name, { type }),
@@ -318,7 +318,7 @@ describe('attachedFilesToDataUrlParts', () => {
   });
 
   test('a local file becomes a data-URL file part; a remote one rides as-is', async () => {
-    const parts = await attachedFilesToDataUrlParts([
+    const parts = await stageFirstPromptAttachments([
       local('shot.png', new Uint8Array([1, 2, 3])),
       { kind: 'remote', url: 'https://files.test/a.pdf', filename: 'a.pdf', mime: 'application/pdf', isImage: false },
     ]);
@@ -334,13 +334,28 @@ describe('attachedFilesToDataUrlParts', () => {
     ]);
   });
 
+  test('stages multiple workspace files and one native image in original order', async () => {
+    const parts = await stageFirstPromptAttachments([
+      local('bundle.zip', new Uint8Array([80, 75, 3, 4]), 'application/zip'),
+      local('README.md', new TextEncoder().encode('# Readme'), 'text/markdown'),
+      local('shot.png', new Uint8Array([1, 2, 3]), 'image/png'),
+    ]);
+
+    expect(parts.map((part) => [part.filename, part.mime])).toEqual([
+      ['bundle.zip', 'application/zip'],
+      ['README.md', 'text/markdown'],
+      ['shot.png', 'image/png'],
+    ]);
+    expect(parts.every((part) => part.url.startsWith(`data:${part.mime};base64,`))).toBe(true);
+  });
+
   test('refuses a batch over the cap with copy that names the way out', async () => {
     const big = local('big.bin', new Uint8Array(DATA_URL_ATTACHMENTS_MAX_BYTES + 1), 'application/octet-stream');
-    await expect(attachedFilesToDataUrlParts([big])).rejects.toThrow(/after the session starts/i);
+    await expect(stageFirstPromptAttachments([big])).rejects.toThrow(/after the session starts/i);
   });
 
   test('no files → no parts', async () => {
-    expect(await attachedFilesToDataUrlParts(undefined)).toEqual([]);
-    expect(await attachedFilesToDataUrlParts([])).toEqual([]);
+    expect(await stageFirstPromptAttachments(undefined)).toEqual([]);
+    expect(await stageFirstPromptAttachments([])).toEqual([]);
   });
 });
