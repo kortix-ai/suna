@@ -324,7 +324,7 @@ export function planDraftSubmission({
  * Should a pointer press on the editor's padded wrapper put the caret in the
  * editor?
  *
- * The wrapper carries the composer's inner padding (`px-2 pb-6`), and padding
+ * The wrapper carries the composer's inner padding (`px-1 pb-9`), and padding
  * belongs to the wrapper's box, NOT to the contenteditable inside it. So the
  * bottom 24px and an 8px strip down each side looked like the input and were
  * dead: pressing there hit the `div`, the editor never took focus, and nothing
