@@ -7,6 +7,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { AccountPane } from '@/features/accounts/hub/account-pane';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -58,26 +59,23 @@ export default function AccountsPage() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-6xl space-y-5 pb-10">
-        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <h2 className="text-foreground text-xl font-medium">Accounts</h2>
-            <p className="text-muted-foreground text-sm text-balance">Teams you belong to.</p>
-          </div>
-          {canCreateAccount && (
-            <div className="mt-2 shrink-0 sm:mt-0">
-              <Button
-                size="sm"
-                variant="secondary"
-                className="gap-1.5"
-                onClick={() => setCreateOpen(true)}
-              >
-                <Plus className="size-4" />
-                New account
-              </Button>
-            </div>
-          )}
-        </header>
+      <AccountPane
+        title="Accounts"
+        description="Teams you belong to."
+        action={
+          canCreateAccount ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="gap-1.5"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus className="size-4" />
+              New account
+            </Button>
+          ) : undefined
+        }
+      >
 
         {accountsQuery.isLoading ? (
           <div className="space-y-2">
@@ -127,7 +125,7 @@ export default function AccountsPage() {
             ))}
           </ul>
         )}
-      </div>
+      </AccountPane>
 
       <CreateAccountModal
         open={createOpen}

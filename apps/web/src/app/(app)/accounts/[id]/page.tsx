@@ -1,28 +1,18 @@
 'use client';
 
 import {
-  CoinsIcon as Coins,
-  CreditCardIcon as CreditCard,
   ArrowSquareOutIcon as ExternalLink,
-  FingerprintIcon as Fingerprint,
-  FolderOpenIcon as FolderOpen,
-  GitBranchIcon as GitBranch,
   GithubLogoIcon as Github,
-  QuestionIcon as HelpCircle,
   InfoIcon as Info,
   KeyIcon as KeyRound,
   LinkIcon,
-  NetworkIcon as Network,
-  PaintBrushIcon as PaintBrush,
   PencilSimpleIcon as PencilSimple,
   ArrowClockwiseIcon as RefreshCw,
-  ScrollIcon as ScrollText,
   PlugsIcon as Unplug,
 } from '@phosphor-icons/react';
 import { invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { m, useReducedMotion } from 'motion/react';
-import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -69,6 +59,11 @@ import { errorToast, infoToast, successToast, warningToast } from '@/components/
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
+import { AccountPane, AccountPaneSkeleton } from '@/features/accounts/hub/account-pane';
+import { PANE_META, paneWidth, type AccountSection } from '@/features/accounts/hub/sections';
+import { useAccountDetail } from '@/features/accounts/hub/use-account-detail';
+import { useAccountHubSection } from '@/features/accounts/hub/use-account-hub-access';
+import { useAccountMembers } from '@/features/accounts/hub/use-account-members';
 import { BrandingTab } from '@/features/accounts/settings/branding-tab';
 import { useBrandingScope } from '@/features/branding/branding-provider';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
@@ -95,10 +90,7 @@ import {
   useAccountRoles,
 } from '@/features/workspace/shared/access';
 import { useAccountState } from '@/hooks/billing';
-import { isBillingEnabled } from '@/lib/config';
 import { isGitHubAppInstallationId } from '@/lib/github-installations';
-import { usePermissions } from '@/lib/use-permission';
-import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import {
   type AccountDetail,
@@ -109,10 +101,8 @@ import {
   type IamPolicy,
   cancelAccountInvite,
   deleteGitHubInstallation,
-  getAccount,
   leaveAccount,
   listAccountInvites,
-  listAccountMembers,
   listGitHubInstallations,
   listPolicies,
   removeAccountMember,
@@ -120,149 +110,12 @@ import {
   updateAccountMemberRole,
   updateAccountName,
 } from '@kortix/sdk';
-import type { Icon as IconType, Icon as LucideIcon } from '@phosphor-icons/react';
 import {
-  GearSixIcon as CogOne,
-  type Icon as IconMynauiType,
   MagnifyingGlassIcon as Search,
-  ShieldIcon as Shield,
   TrashIcon,
   UserPlusIcon as UserPlus,
   UsersIcon as Users,
 } from '@phosphor-icons/react';
-
-// Stable (module-level) probe list for the account-capabilities batch. Order
-// must match the destructure at the call site. Declared outside the component
-// so its identity is constant across renders and React Query doesn't refetch.
-//
-// READ leaves lead, because they decide whether a rail item exists at all:
-// every Access pane fetches a list on mount, and the pane's list route asserts
-// its own read leaf server-side (`apps/api/src/accounts/iam/*.ts`). Probing the
-// same leaf here is what keeps "visible" and "openable" the same set — a rail
-// item whose read probe says no would render straight into
-// "Failed to load … you don't have permission". The WRITE leaves that follow
-// decide what a visible pane offers, never whether it is reachable.
-const ACCOUNT_PERMISSION_PROBES = [
-  // Reads → rail visibility.
-  { action: 'member.read' }, // GET .../iam/members        → Members
-  { action: 'group.read' }, // GET .../iam/groups          → Groups
-  { action: 'role.read' }, // GET .../iam/roles            → Roles
-  { action: 'policy.read' }, // GET .../iam/policies       → the members list's custom-role column
-  { action: 'audit.read' }, // GET .../audit               → Audit log
-  // Writes → controls inside a visible pane.
-  { action: 'account.write' },
-  { action: 'account.delete' },
-  { action: 'member.invite' },
-  { action: 'member.remove' },
-  { action: 'member.update' },
-  { action: 'group.create' },
-  { action: 'group.members.manage' },
-  { action: 'role.create' },
-];
-
-// ── Section nav (left rail) ───────────────────────────────────────────────
-
-const VALID_TABS = [
-  'members',
-  'git',
-  'tokens',
-  'settings',
-  'branding',
-  'billing',
-  'transactions',
-  'groups',
-  'access-projects',
-  'roles',
-  'identity',
-  'audit',
-  'help',
-] as const;
-type AccountSection = (typeof VALID_TABS)[number];
-
-// Three labeled groups. The unlabeled plumbing group (Settings/Git/Tokens —
-// name, security, repo, machine tokens) leads: "who am I and how is this
-// account configured" comes before "who else is in it" (Marko's call,
-// 2026-08-18 — was Access-first; moved Settings ahead of it). Everything
-// access-control-shaped lives in one "Access" cluster right after — Members /
-// Groups / Projects / Roles / Identity / Audit log / Help are all
-// facets of the same concern (who's in the account, what pools they're in,
-// what those pools can do, where they can do it, how they signed in, and what
-// happened) — deliberately not split into a separate "Enterprise" heading
-// (Marko's call, 2026-08-18: Identity/Audit are access control too, plan-gating
-// doesn't change what category they're in). Billing is unchanged.
-//
-// There is no "Agents" item: an agent is a project RESOURCE, not a principal,
-// so agent access is the Agents field on a project grant (`AccessDialog`), not
-// a tab of its own. Help closes the group — it is the old
-// `PermissionsHelpPopover`, promoted to a linkable pane.
-const NAV_GROUPS: Array<{
-  label?: string;
-  items: Array<{ id: AccountSection; label: string; icon: LucideIcon | IconMynauiType | IconType }>;
-}> = [
-  {
-    items: [
-      { id: 'settings', label: 'Settings', icon: CogOne },
-      // Organization branding (Enterprise): the account's own logo, icon,
-      // favicon (light + dark), and product name for every member. Sits with the other
-      // "how is this account configured" items, not under Access.
-      { id: 'branding', label: 'Branding', icon: PaintBrush },
-      { id: 'git', label: 'Git', icon: GitBranch },
-      { id: 'tokens', label: 'Tokens', icon: KeyRound },
-    ],
-  },
-  {
-    label: 'Access',
-    items: [
-      { id: 'members', label: 'Members', icon: Users },
-      { id: 'groups', label: 'Groups', icon: Network },
-      { id: 'access-projects', label: 'Projects', icon: FolderOpen },
-      { id: 'roles', label: 'Roles', icon: Shield },
-      { id: 'identity', label: 'Identity', icon: Fingerprint },
-      { id: 'audit', label: 'Audit log', icon: ScrollText },
-      { id: 'help', label: 'Help', icon: HelpCircle },
-    ],
-  },
-  {
-    label: 'Billing',
-    items: [
-      { id: 'billing', label: 'Plan', icon: CreditCard },
-      { id: 'transactions', label: 'Usage', icon: Coins },
-    ],
-  },
-];
-
-// Header block for sections whose content doesn't carry its own title.
-const PANE_META: Partial<Record<AccountSection, { title: string; description: string }>> = {
-  members: { title: 'Members', description: 'People with access to this account.' },
-  billing: { title: 'Plan', description: 'Plan, wallet, and spend for this account.' },
-  transactions: {
-    title: 'Usage',
-    description: 'Session costs and credit ledger for this account.',
-  },
-  tokens: {
-    title: 'Tokens',
-    // Machine identities only. A person's own API keys moved to their own
-    // settings on 2026-08-18 (`/settings/tokens`) — see the section below.
-    description: 'Service account tokens for CI and automations, and the rules they follow.',
-  },
-  identity: {
-    title: 'Identity',
-    description: 'Bring members in from your identity provider.',
-  },
-  roles: {
-    title: 'Roles',
-    description: 'Built-in and custom roles. Assign them from Members and Projects.',
-  },
-  help: {
-    title: 'Help',
-    description: 'How access works in this account.',
-  },
-  settings: { title: 'Settings', description: 'Name and security for this account.' },
-  branding: {
-    title: 'Branding',
-    description: 'Your logo, icon, favicon, and product name for everyone in this account.',
-  },
-};
 
 // The enterprise IdP surface (SAML SSO + SCIM provisioning) is PLAN-GATED,
 // not env-gated: the cards render only for accounts whose tier carries the
@@ -308,52 +161,34 @@ export default function AccountSettingsPage() {
 
   useSignedOutRedirect();
 
-  // Granular capabilities sourced from the IAM engine. MUST be called
-  // before any conditional return — moving these below the auth-loading
-  // guard would change the hook count between renders.
-  // usePermission internally short-circuits when accountId is falsy, so
-  // it's safe to call before the account query resolves.
-  // One batched probe instead of 12 separate /effective?action=… GETs. Each
-  // singular probe was its own DB round-trip, so a single load of this page
-  // fanned out 12 concurrent queries — a meaningful contributor to DB
-  // connection-pool pressure. The :batch endpoint answers all of them in one
-  // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
-  //
-  // Declared ABOVE the data queries, not below them, because the read probes
-  // now gate whether those queries fire at all.
-  const [
-    { allowed: canReadMembers },
-    { allowed: canReadGroups },
-    { allowed: canReadRoles },
-    { allowed: canReadPolicies },
-    { allowed: canReadAudit },
-    { allowed: canWriteAccount },
-    { allowed: canDeleteAccount },
-    { allowed: canInviteMember },
-    { allowed: canRemoveMember },
-    { allowed: canUpdateMember },
-    { allowed: canCreateGroup },
-    { allowed: canManageGroupMembers },
-    { allowed: canManageRoles },
-  ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
+  // Granular capabilities sourced from the IAM engine — ONE batched probe,
+  // shared with the settings sidebar through the React Query cache (same key,
+  // same probe list, one request). MUST be called before any conditional
+  // return — moving it below the auth-loading guard would change the hook
+  // count between renders. `usePermissions` short-circuits when accountId is
+  // falsy, so it is safe to call before the account query resolves.
+  const {
+    canReadMembers,
+    canReadGroups,
+    canReadRoles,
+    canReadPolicies,
+    canReadAudit,
+    canWriteAccount,
+    canDeleteAccount,
+    canInviteMember,
+    canRemoveMember,
+    canUpdateMember,
+    canCreateGroup,
+    canManageGroupMembers,
+    canManageRoles,
+    sectionVisible,
+    activeSection,
+  } = useAccountHubSection(accountId);
 
-  const accountQuery = useQuery({
-    queryKey: ['account', accountId],
-    queryFn: () => getAccount(accountId!),
-    enabled: !!user && !!accountId,
-    staleTime: 30_000,
-  });
+  // Shared with the settings shell's breadcrumb — same key, one request.
+  const accountQuery = useAccountDetail(accountId);
 
-  // `GET .../iam/members` asserts `member.read`, so hold the request until the
-  // probe stops saying no. `!== false` (not `=== true`) keeps it optimistic:
-  // the list still starts loading the moment the probe answers, and an
-  // in-flight probe never delays it for someone who does have the leaf.
-  const membersQuery = useQuery({
-    queryKey: ['account-members', accountId],
-    queryFn: () => listAccountMembers(accountId!),
-    enabled: !!user && !!accountId && canReadMembers !== false,
-    staleTime: 20_000,
-  });
+  const membersQuery = useAccountMembers(accountId, canReadMembers);
 
   // Enterprise identity (SSO + SCIM) is gated on the account's plan. The cards
   // render only when the tier carries the entitlement — mirrors the server-side
@@ -396,70 +231,6 @@ export default function AccountSettingsPage() {
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const rawTab = searchParams.get('tab');
-  // Legacy callers pass tab=overview — the limits/wallet/spend panels now
-  // live at the top of the Billing tab, so fold it.
-  const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as AccountSection | null;
-  const requestedTab: AccountSection =
-    tabParam && (VALID_TABS as readonly string[]).includes(tabParam) ? tabParam : 'members';
-  // Self-host billing-disabled: no Stripe plan controls to show. Session costs
-  // remain available because they do not require the internal billing engine.
-  const billingActive = isBillingEnabled();
-
-  // Which rail items this caller can see. Mirrors the per-section gates the
-  // content rendering applies below, so a deep link to a section the caller
-  // can't use falls back to Members instead of an empty pane.
-  // Which rail items this caller can see. ONE rule, no exceptions: a section
-  // is visible when the probe for the leaf its own list route asserts came
-  // back `true`. "Discoverability" is not a reason to show a rail item — a
-  // pane that renders "Failed to load roles · You don't have permission
-  // (role.read)" teaches nothing and reads as a broken product, which is
-  // exactly what a plain account member used to get on Roles.
-  //
-  // Entitlement (`rbacEnabled`) is a DIFFERENT axis and stays where it is:
-  // `GroupsTab`/`RolesTab` render the free built-in content and disable only
-  // "Create a group" / "New role" with an inline upsell. Permission decides
-  // whether the pane exists; entitlement decides what it offers.
-  const sectionVisible: Record<AccountSection, boolean> = {
-    // GET .../iam/members — `MEMBER_READ` (accounts/iam/members.ts:150).
-    members: canReadMembers === true,
-    // GET .../iam/groups — `GROUP_READ` (accounts/iam/groups.ts:81).
-    groups: canReadGroups === true,
-    // No account-level leaf of its own: the pane lists projects through
-    // `GET /projects?account_id=` (already scoped to what the caller can
-    // read) and opens each one's access through
-    // `GET /projects/:id/access` — `project.members.read`, a PROJECT leaf
-    // that `AccessProjectsTab` probes per project. An account member with no
-    // projects simply gets an empty list, never a 403.
-    'access-projects': true,
-    // GET .../iam/roles — `ROLE_READ` (accounts/iam/custom-roles.ts:104),
-    // which lives in ADMIN_EXTRAS. This was hard-coded `true`, so every plain
-    // member saw a Roles item that could only ever fail to load.
-    roles: canReadRoles === true,
-    identity: canWriteAccount === true,
-    billing: canWriteAccount === true && billingActive,
-    transactions: canWriteAccount === true,
-    git: canWriteAccount === true,
-    tokens: canWriteAccount === true,
-    // GET .../audit — `AUDIT_READ`, also ADMIN_EXTRAS.
-    audit: canReadAudit === true,
-    settings: canWriteAccount === true,
-    // Branding is all mutations (upload / remove / rename); the entitlement is
-    // the OTHER axis and picks between the pane and the upsell card below.
-    branding: canWriteAccount === true,
-    // Reference copy — no data, no mutations, nothing to gate.
-    help: true,
-  };
-  // Members is no longer unconditionally visible, so it cannot be the blanket
-  // fallback: a caller denied `member.read` would land on a section the rail
-  // does not even list and stare at an empty pane. Fall through to the first
-  // section this caller CAN see, in rail order; `help` closes it out and is
-  // visible to everyone, so this always resolves.
-  const firstVisibleSection: AccountSection =
-    NAV_GROUPS.flatMap((group) => group.items).find((item) => sectionVisible[item.id])?.id ?? 'help';
-  const activeSection: AccountSection = sectionVisible[requestedTab]
-    ? requestedTab
-    : firstVisibleSection;
   // The three drill-down params. Each names the entity whose detail panel
   // replaces its tab's list, in the tab's own pane — `AccessProjectsTab`,
   // `GroupsTab` and `MemberAccessPanel` all read their selection from here so
@@ -496,7 +267,12 @@ export default function AccountSettingsPage() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl pb-10">
+    <AccountPane
+      back={{ href: '/accounts', label: 'Back to accounts' }}
+      title={paneMeta?.title}
+      description={paneMeta?.description}
+      width={paneWidth(activeSection)}
+    >
       {accountQuery.isError ? (
         <ErrorState
           size="sm"
@@ -509,381 +285,282 @@ export default function AccountSettingsPage() {
           }
         />
       ) : accountQuery.isLoading ? (
-        <div className="lg:grid lg:grid-cols-[208px_minmax(0,1fr)] lg:gap-12">
-          <div className="mb-6 space-y-4 lg:mb-0">
-            <div className="flex items-center gap-2.5">
-              <Skeleton className="size-8 rounded-md" />
-              <Skeleton className="h-5 w-32 rounded-md" />
-            </div>
-            <div className="space-y-1">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-full rounded-md" />
-              ))}
-            </div>
-          </div>
-          <div className="max-w-3xl space-y-4">
-            <Skeleton className="h-7 w-40 rounded-md" />
-            <div className="space-y-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-[58px] w-full rounded-md" />
-              ))}
-            </div>
-          </div>
-        </div>
+        <AccountPaneSkeleton />
       ) : account ? (
-        <div className="lg:grid lg:grid-cols-[208px_minmax(0,1fr)] lg:gap-12">
-          {/* ── Rail — identity + section nav ── */}
-          <aside className="mb-6 space-y-4 self-start lg:sticky lg:top-8 lg:mb-0">
-            <div className="flex min-w-0 items-center gap-2.5 px-1">
-              <EntityAvatar label={account.name || 'Account'} size="md" />
-              <div className="min-w-0">
-                <p className="text-foreground truncate text-sm font-medium">{account.name}</p>
-                {/* `members` is `[]` for a caller without `member.read` — the
-                    query never runs — and "0 members" on an account they are
-                    demonstrably a member of is a lie, not a placeholder. */}
-                {sectionVisible.members && !membersQuery.isLoading ? (
-                  <p className="text-muted-foreground text-xs">
-                    {members.length} member{members.length === 1 ? '' : 's'}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <nav
-              aria-label="Account sections"
-              className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:gap-0.5 lg:overflow-visible lg:pb-0"
-            >
-              {NAV_GROUPS.map((group, gi) => {
-                const items = group.items.filter((item) => sectionVisible[item.id]);
-                if (items.length === 0) return null;
-                return (
-                  <div key={group.label ?? gi} className="contents lg:block lg:space-y-0.5">
-                    {gi > 0 ? <div className="hidden lg:block lg:h-4" aria-hidden /> : null}
-                    {group.label ? (
-                      // Same label dialect as the project sidebar's group
-                      // headings. Hidden on the mobile horizontal strip —
-                      // there the items flow as one row of chips.
-                      <p className="text-muted-foreground/60 hidden px-2.5 pb-1 text-xs font-medium tracking-wider uppercase lg:block">
-                        {group.label}
-                      </p>
-                    ) : null}
-                    {items.map((item) => {
-                      const active = item.id === activeSection;
-                      return (
-                        // A rail item is an anchor, not a button: `?tab=<id>`
-                        // is part of the router cache key, so each of the
-                        // twelve sections prefetches as its own segment-cache
-                        // entry and the click never runs a cold RSC fetch.
-                        // `replace` + `scroll={false}` keep the exact history
-                        // and scroll behaviour `navigate()` had, and the bare
-                        // `?tab=` drops the `project` / `group` / `member`
-                        // params the same way `navigate(section)` does.
-                        <Link
-                          key={item.id}
-                          href={`/accounts/${accountId}?tab=${item.id}`}
-                          replace
-                          scroll={false}
-                          aria-current={active ? 'page' : undefined}
-                          className={cn(
-                            'flex h-8 shrink-0 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-sm whitespace-nowrap transition-colors lg:w-full',
-                            active
-                              ? 'bg-primary/[0.06] text-foreground font-medium'
-                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                          )}
-                        >
-                          <item.icon className="size-4 shrink-0" />
-                          {item.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </nav>
-          </aside>
-
-          {/* ── Content pane. Keyed remount + a 200ms rise on section switch;
-                opacity-only under reduced motion. ── */}
-          <m.div
-            key={activeSection}
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            className={cn('min-w-0', activeSection === 'transactions' ? 'max-w-6xl' : 'max-w-3xl')}
-          >
-            {paneMeta ? (
-              <div className="mb-6 space-y-1">
-                <h2 className="text-foreground text-xl font-medium">{paneMeta.title}</h2>
-                <p className="text-muted-foreground text-sm">{paneMeta.description}</p>
-              </div>
-            ) : null}
-
-            {activeSection === 'billing' && canWriteAccount ? (
-              <div className="space-y-6">
-                {/* Scope every billing hook nested below to this account so a
-                    multi-account user doesn't see (or mutate) their primary
-                    account by accident. */}
-                <BillingAccountProvider accountId={account.account_id}>
-                  <BillingTab
-                    // Stripe Billing Portal requires an absolute return_url —
-                    // a bare path 500s with "Not a valid URL". Build from origin.
-                    returnUrl={
-                      typeof window !== 'undefined'
-                        ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
-                        : `/accounts/${account.account_id}?tab=billing`
-                    }
-                    isActive
-                  />
-                  {/* The "Subscribe to Team plan" button opens the global
-                      upgrade-dialog store; mount its renderer here (the global
-                      one lives only on share pages) so the dialog actually
-                      appears, scoped to THIS account via the provider above. */}
-                  <GlobalUpgradeModal />
-                </BillingAccountProvider>
-              </div>
-            ) : null}
-
-            {activeSection === 'transactions' && canWriteAccount ? (
+        /* Keyed remount + a 200ms rise on section switch; opacity-only under
+           reduced motion. */
+        <m.div
+          key={activeSection}
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+          className="min-w-0"
+        >
+          {activeSection === 'billing' && canWriteAccount ? (
+            <div className="space-y-6">
+              {/* Scope every billing hook nested below to this account so a
+                  multi-account user doesn't see (or mutate) their primary
+                  account by accident. */}
               <BillingAccountProvider accountId={account.account_id}>
-                <TransactionsTab />
+                <BillingTab
+                  // Stripe Billing Portal requires an absolute return_url —
+                  // a bare path 500s with "Not a valid URL". Build from origin.
+                  returnUrl={
+                    typeof window !== 'undefined'
+                      ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
+                      : `/accounts/${account.account_id}?tab=billing`
+                  }
+                  isActive
+                />
+                {/* The "Subscribe to Team plan" button opens the global
+                    upgrade-dialog store; mount its renderer here (the global
+                    one lives only on share pages) so the dialog actually
+                    appears, scoped to THIS account via the provider above. */}
+                <GlobalUpgradeModal />
               </BillingAccountProvider>
-            ) : null}
+            </div>
+          ) : null}
 
-            {activeSection === 'members' && sectionVisible.members ? (
-              selectedAccessMemberId ? (
-                <MemberAccessPanel
-                  key={selectedAccessMemberId}
-                  accountId={account.account_id}
-                  accountName={account.name}
-                  memberUserId={selectedAccessMemberId}
-                  currentUserId={user.id}
-                  canUpdateRole={canUpdateMember}
-                  canRemove={canRemoveMember}
-                  rbacEnabled={rbacEnabled}
-                  canManageRoles={canManageRoles}
-                  canReadPolicies={canReadPolicies}
-                  canReadRoles={canReadRoles}
-                  onBack={() => navigate('members')}
-                  onOpenGroup={(groupId) => navigate('groups', { group: groupId })}
-                />
-              ) : (
-                <MembersCard
-                  account={account}
-                  members={members}
-                  isLoading={membersQuery.isLoading}
-                  isError={membersQuery.isError}
-                  error={membersQuery.error as Error | null}
-                  onRetry={() => membersQuery.refetch()}
-                  queryClient={queryClient}
-                  currentUserId={user.id}
-                  canInvite={canInviteMember}
-                  canRemove={canRemoveMember}
-                  canUpdateRole={canUpdateMember}
-                  canAddToGroup={canManageGroupMembers}
-                  rbacEnabled={rbacEnabled}
-                  canManageRoles={canManageRoles}
-                  canReadRoles={canReadRoles}
-                  canReadPolicies={canReadPolicies}
-                  onSelectMember={(id) => navigate('members', { member: id })}
-                />
-              )
-            ) : null}
+          {activeSection === 'transactions' && canWriteAccount ? (
+            <BillingAccountProvider accountId={account.account_id}>
+              <TransactionsTab />
+            </BillingAccountProvider>
+          ) : null}
 
-            {activeSection === 'groups' && sectionVisible.groups ? (
-              entitlementsLoading ? (
-                <Skeleton className="h-64 w-full rounded-md" />
-              ) : (
-                <GroupsTab
-                  accountId={account.account_id}
-                  canCreate={canCreateGroup}
-                  rbacEnabled={rbacEnabled}
-                  canReadRoles={canReadRoles}
-                  canReadPolicies={canReadPolicies}
-                  selectedGroupId={selectedAccessGroupId}
-                  onSelectGroup={(id) => navigate('groups', { group: id })}
-                />
-              )
-            ) : null}
-
-            {/* Page chrome, not panel chrome: `fixed`, so it costs this
-                layout no height and the panel's own "All projects" breadcrumb
-                is untouched. Only on the project panel — the section the
-                Customize bar's "Members" link actually opens. */}
-            {activeSection === 'access-projects' && selectedAccessProjectId && cameFromCustomize ? (
-              <BackToCustomizeOverlay />
-            ) : null}
-
-            {activeSection === 'access-projects' ? (
-              <AccessProjectsTab
+          {activeSection === 'members' && sectionVisible.members ? (
+            selectedAccessMemberId ? (
+              <MemberAccessPanel
+                key={selectedAccessMemberId}
                 accountId={account.account_id}
-                selectedProjectId={selectedAccessProjectId}
-                onSelectProject={(id) => navigate('access-projects', { project: id })}
+                accountName={account.name}
+                memberUserId={selectedAccessMemberId}
+                currentUserId={user.id}
+                canUpdateRole={canUpdateMember}
+                canRemove={canRemoveMember}
                 rbacEnabled={rbacEnabled}
                 canManageRoles={canManageRoles}
+                canReadPolicies={canReadPolicies}
+                canReadRoles={canReadRoles}
+                onBack={() => navigate('members')}
+                onOpenGroup={(groupId) => navigate('groups', { group: groupId })}
               />
-            ) : null}
+            ) : (
+              <MembersCard
+                account={account}
+                members={members}
+                isLoading={membersQuery.isLoading}
+                isError={membersQuery.isError}
+                error={membersQuery.error as Error | null}
+                onRetry={() => membersQuery.refetch()}
+                queryClient={queryClient}
+                currentUserId={user.id}
+                canInvite={canInviteMember}
+                canRemove={canRemoveMember}
+                canUpdateRole={canUpdateMember}
+                canAddToGroup={canManageGroupMembers}
+                rbacEnabled={rbacEnabled}
+                canManageRoles={canManageRoles}
+                canReadRoles={canReadRoles}
+                canReadPolicies={canReadPolicies}
+                onSelectMember={(id) => navigate('members', { member: id })}
+              />
+            )
+          ) : null}
 
-            {activeSection === 'help' ? <AccessHelp accountId={account.account_id} /> : null}
+          {activeSection === 'groups' && sectionVisible.groups ? (
+            entitlementsLoading ? (
+              <Skeleton className="h-64 w-full rounded-md" />
+            ) : (
+              <GroupsTab
+                accountId={account.account_id}
+                canCreate={canCreateGroup}
+                rbacEnabled={rbacEnabled}
+                canReadRoles={canReadRoles}
+                canReadPolicies={canReadPolicies}
+                selectedGroupId={selectedAccessGroupId}
+                onSelectGroup={(id) => navigate('groups', { group: id })}
+              />
+            )
+          ) : null}
 
-            {activeSection === 'roles' && sectionVisible.roles ? (
-              entitlementsLoading ? (
+          {/* Page chrome, not panel chrome: `fixed`, so it costs this
+              layout no height and the panel's own "All projects" breadcrumb
+              is untouched. Only on the project panel — the section the
+              Customize bar's "Members" link actually opens. */}
+          {activeSection === 'access-projects' && selectedAccessProjectId && cameFromCustomize ? (
+            <BackToCustomizeOverlay />
+          ) : null}
+
+          {activeSection === 'access-projects' ? (
+            <AccessProjectsTab
+              accountId={account.account_id}
+              selectedProjectId={selectedAccessProjectId}
+              onSelectProject={(id) => navigate('access-projects', { project: id })}
+              rbacEnabled={rbacEnabled}
+              canManageRoles={canManageRoles}
+            />
+          ) : null}
+
+          {activeSection === 'help' ? <AccessHelp accountId={account.account_id} /> : null}
+
+          {activeSection === 'roles' && sectionVisible.roles ? (
+            entitlementsLoading ? (
+              <Skeleton className="h-64 w-full rounded-md" />
+            ) : (
+              <RolesTab
+                accountId={account.account_id}
+                canManage={canManageRoles}
+                rbacEnabled={rbacEnabled}
+              />
+            )
+          ) : null}
+
+          {activeSection === 'audit' && canReadAudit ? (
+            <div className="space-y-10">
+              {entitlementsLoading ? (
                 <Skeleton className="h-64 w-full rounded-md" />
+              ) : auditEnabled ? (
+                <AuditTab accountId={account.account_id} />
               ) : (
-                <RolesTab
-                  accountId={account.account_id}
-                  canManage={canManageRoles}
-                  rbacEnabled={rbacEnabled}
+                <EnterpriseUpsell feature="audit" />
+              )}
+              {/* Webhooks ship the same events the log above shows, so they
+                  live on this tab rather than buried in Settings. Only
+                  rendered entitled + writable — the card is all mutations. */}
+              {!entitlementsLoading && auditEnabled && canWriteAccount ? (
+                <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
+              ) : null}
+            </div>
+          ) : null}
+
+          {activeSection === 'git' && canWriteAccount ? (
+            <div className="space-y-8">
+              <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+              <GitHubAppSetupCard canManage={canWriteAccount} />
+            </div>
+          ) : null}
+
+          {/* Tokens — the machine-access surface, and ONLY that since
+              2026-08-18: service account tokens first, the rules that govern
+              them second. A person's own API keys are not account
+              configuration and left for `/settings/tokens`
+              (`features/workspace/settings/tabs/tokens-tab.tsx`);
+              `ApiKeysSection` carries the one line that points there. Both
+              components carry their own section headers, so the pane header
+              above is the only other chrome. */}
+          {activeSection === 'tokens' && canWriteAccount ? (
+            <div className="space-y-10">
+              <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
+              {/* OAuth apps — "Sign in with Kortix" clients. A client secret
+                  is a credential the account issues to a machine, so it
+                  sits with the other machine credentials and under the same
+                  `token.*` permissions. */}
+              <OAuthAppsCard accountId={account.account_id} canManage={canWriteAccount} />
+              <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
+            </div>
+          ) : null}
+
+          {/* Identity — SAML SSO + SCIM. Ordering + copy make the
+              relationship explicit (SAML first, SCIM second — provisioned
+              accounts still need SSO to sign in) without merging the two
+              working cards into a new surface. The self-serve
+              enterprise-demo toggle now lives in Settings (see below) —
+              it's an account-level unlock, not part of the identity
+              journey itself. */}
+          {activeSection === 'identity' && canWriteAccount ? (
+            <div className="space-y-3">
+              {entitlementsLoading ? (
+                <Skeleton className="h-40 w-full rounded-md" />
+              ) : enterpriseIdentityEnabled ? (
+                <>
+                  {/* Onboarding copy only — self-hides once either surface
+                      is configured (see IdentityIntro). */}
+                  <IdentityIntro accountId={account.account_id} />
+                  <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                  <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
+                </>
+              ) : (
+                <EnterpriseUpsell feature="identity" />
+              )}
+            </div>
+          ) : null}
+
+          {/* Branding — Enterprise. The pane exists for anyone with
+              account.write (rail rule); the entitlement decides whether it
+              is the editor or the upsell, mirroring the server's 402 on the
+              write routes. */}
+          {activeSection === 'branding' && canWriteAccount ? (
+            entitlementsLoading ? (
+              <Skeleton className="h-64 w-full rounded-md" />
+            ) : brandingEnabled ? (
+              <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
+            ) : (
+              <EnterpriseUpsell feature="branding" />
+            )
+          ) : null}
+
+          {activeSection === 'settings' && canWriteAccount ? (
+            <div className="space-y-10">
+              <SettingsGroup title="General">
+                <GeneralCard
+                  account={account}
+                  queryClient={queryClient}
+                  canWrite={canWriteAccount}
                 />
-              )
-            ) : null}
+              </SettingsGroup>
 
-            {activeSection === 'audit' && canReadAudit ? (
-              <div className="space-y-10">
-                {entitlementsLoading ? (
-                  <Skeleton className="h-64 w-full rounded-md" />
-                ) : auditEnabled ? (
-                  <AuditTab accountId={account.account_id} />
-                ) : (
-                  <EnterpriseUpsell feature="audit" />
-                )}
-                {/* Webhooks ship the same events the log above shows, so they
-                    live on this tab rather than buried in Settings. Only
-                    rendered entitled + writable — the card is all mutations. */}
-                {!entitlementsLoading && auditEnabled && canWriteAccount ? (
-                  <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
-                ) : null}
-              </div>
-            ) : null}
-
-            {activeSection === 'git' && canWriteAccount ? (
-              <div className="space-y-8">
-                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
-                <GitHubAppSetupCard canManage={canWriteAccount} />
-              </div>
-            ) : null}
-
-            {/* Tokens — the machine-access surface, and ONLY that since
-                2026-08-18: service account tokens first, the rules that govern
-                them second. A person's own API keys are not account
-                configuration and left for `/settings/tokens`
-                (`features/workspace/settings/tabs/tokens-tab.tsx`);
-                `ApiKeysSection` carries the one line that points there. Both
-                components carry their own section headers, so the pane header
-                above is the only other chrome. */}
-            {activeSection === 'tokens' && canWriteAccount ? (
-              <div className="space-y-10">
-                <ApiKeysSection accountId={account.account_id} canManage={canWriteAccount} />
-                {/* OAuth apps — "Sign in with Kortix" clients. A client secret
-                    is a credential the account issues to a machine, so it
-                    sits with the other machine credentials and under the same
-                    `token.*` permissions. */}
-                <OAuthAppsCard accountId={account.account_id} canManage={canWriteAccount} />
-                <KeyRulesCard accountId={account.account_id} canManage={canWriteAccount} />
-              </div>
-            ) : null}
-
-            {/* Identity — SAML SSO + SCIM. Ordering + copy make the
-                relationship explicit (SAML first, SCIM second — provisioned
-                accounts still need SSO to sign in) without merging the two
-                working cards into a new surface. The self-serve
-                enterprise-demo toggle now lives in Settings (see below) —
-                it's an account-level unlock, not part of the identity
-                journey itself. */}
-            {activeSection === 'identity' && canWriteAccount ? (
-              <div className="space-y-3">
-                {entitlementsLoading ? (
-                  <Skeleton className="h-40 w-full rounded-md" />
-                ) : enterpriseIdentityEnabled ? (
-                  <>
-                    {/* Onboarding copy only — self-hides once either surface
-                        is configured (see IdentityIntro). */}
-                    <IdentityIntro accountId={account.account_id} />
-                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
-                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
-                  </>
-                ) : (
-                  <EnterpriseUpsell feature="identity" />
-                )}
-              </div>
-            ) : null}
-
-            {/* Branding — Enterprise. The pane exists for anyone with
-                account.write (rail rule); the entitlement decides whether it
-                is the editor or the upsell, mirroring the server's 402 on the
-                write routes. */}
-            {activeSection === 'branding' && canWriteAccount ? (
-              entitlementsLoading ? (
-                <Skeleton className="h-64 w-full rounded-md" />
-              ) : brandingEnabled ? (
-                <BrandingTab accountId={account.account_id} canManage={canWriteAccount} />
-              ) : (
-                <EnterpriseUpsell feature="branding" />
-              )
-            ) : null}
-
-            {activeSection === 'settings' && canWriteAccount ? (
-              <div className="space-y-10">
-                <SettingsGroup title="General">
-                  <GeneralCard
-                    account={account}
-                    queryClient={queryClient}
-                    canWrite={canWriteAccount}
+              {/* MFA and the session policy are one decision — how hard it
+                  is to hold a session here — so they share one bordered
+                  group. The "Advanced" disclosure that used to hide session
+                  lifetime + idle timeout is gone: as full cards they were
+                  genuinely too much, as two rows they cost two lines. See
+                  `components/iam/session-controls-card.tsx`. */}
+              <SettingsGroup title="Security" description="Account-wide sign-in requirements.">
+                <SettingsRowGroup>
+                  <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
+                  <SessionControlsCard
+                    accountId={account.account_id}
+                    canManage={canWriteAccount}
                   />
-                </SettingsGroup>
+                </SettingsRowGroup>
+                <AccountSessionsPanel
+                  accountId={account.account_id}
+                  canManage={canWriteAccount}
+                />
+              </SettingsGroup>
 
-                {/* MFA and the session policy are one decision — how hard it
-                    is to hold a session here — so they share one bordered
-                    group. The "Advanced" disclosure that used to hide session
-                    lifetime + idle timeout is gone: as full cards they were
-                    genuinely too much, as two rows they cost two lines. See
-                    `components/iam/session-controls-card.tsx`. */}
-                <SettingsGroup title="Security" description="Account-wide sign-in requirements.">
+              {/* Tucked away, not headline: this reports whether the
+                  Enterprise surface (SSO/SCIM/RBAC/audit) is unlocked for
+                  evaluation, not a feature admins configure day-to-day. The
+                  toggle is platform-admin-only now; account admins see the
+                  state read-only (see EnterpriseDemoCard). Hidden entirely
+                  when a self-host operator's Enterprise license already
+                  forces every entitlement on — there's nothing left to
+                  demo-toggle or upsell in that case. */}
+              {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
+                <SettingsGroup
+                  title="Enterprise features"
+                  description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
+                >
                   <SettingsRowGroup>
-                    <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
-                    <SessionControlsCard
+                    <EnterpriseDemoCard
                       accountId={account.account_id}
                       canManage={canWriteAccount}
                     />
                   </SettingsRowGroup>
-                  <AccountSessionsPanel
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
                 </SettingsGroup>
+              ) : null}
 
-                {/* Tucked away, not headline: this reports whether the
-                    Enterprise surface (SSO/SCIM/RBAC/audit) is unlocked for
-                    evaluation, not a feature admins configure day-to-day. The
-                    toggle is platform-admin-only now; account admins see the
-                    state read-only (see EnterpriseDemoCard). Hidden entirely
-                    when a self-host operator's Enterprise license already
-                    forces every entitlement on — there's nothing left to
-                    demo-toggle or upsell in that case. */}
-                {!entitlementsLoading && !accountStateQuery.data?.enterprise_license_available ? (
-                  <SettingsGroup
-                    title="Enterprise features"
-                    description="Preview SSO, SCIM, advanced RBAC, and audit logs before upgrading."
-                  >
-                    <SettingsRowGroup>
-                      <EnterpriseDemoCard
-                        accountId={account.account_id}
-                        canManage={canWriteAccount}
-                      />
-                    </SettingsRowGroup>
-                  </SettingsGroup>
-                ) : null}
-
-                {canDeleteAccount ? (
-                  <SettingsGroup title="Danger zone">
-                    <DangerZoneCard />
-                  </SettingsGroup>
-                ) : null}
-              </div>
-            ) : null}
-          </m.div>
-        </div>
+              {canDeleteAccount ? (
+                <SettingsGroup title="Danger zone">
+                  <DangerZoneCard />
+                </SettingsGroup>
+              ) : null}
+            </div>
+          ) : null}
+        </m.div>
       ) : null}
-    </div>
+    </AccountPane>
   );
 }
 

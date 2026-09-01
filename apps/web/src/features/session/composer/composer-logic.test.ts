@@ -485,7 +485,7 @@ describe('planDraftSubmission', () => {
 
 // ── Clicking the composer's padding ────────────────────────────────────────
 //
-// The editor's wrapper carries `px-2 pb-6`, and padding belongs to the
+// The editor's wrapper carries `px-1 pb-9`, and padding belongs to the
 // wrapper's box rather than to the contenteditable inside it. So a 24px band
 // under the last line — exactly where you click to resume typing — and an 8px
 // strip down each side swallowed the press and focused nothing. The input read

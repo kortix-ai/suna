@@ -24,6 +24,7 @@ import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
+import { GeneralTab } from './tabs/general-tab';
 import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
@@ -51,6 +52,11 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
   'tokens',
+  // `workspace` is deliberately ABSENT. It is the one project-scoped tab in
+  // this overlay (`settings-tabs.ts` explains why it came back), so leaving it
+  // out of this list is exactly what makes `isSettingsTabAllowed` hide it — and
+  // with it the whole `Workspace` rail group — on `/settings` and under
+  // `/accounts/**`, where there is no project to name.
 ];
 
 export interface SettingsTabAllowedParams {
@@ -162,6 +168,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         onOpenChange={(next) => (next ? undefined : close())}
         isMobile={isMobile}
         project={project}
+        projectId={projectId}
         accountId={resolvedAccountId}
         groups={groups}
         allItems={allItems}
@@ -177,6 +184,10 @@ export interface SettingsPanelViewProps {
   onOpenChange: (open: boolean) => void;
   isMobile: boolean;
   project: KortixProject | undefined;
+  /** Required by the `workspace` pane, and by nothing else — see
+   *  `SettingsPanelShellProps`. `undefined` outside a project, which is the
+   *  same condition that filters that pane out. */
+  projectId: string | undefined;
   accountId: string | undefined;
   groups: readonly RailGroup[];
   allItems: readonly RailItem[];
@@ -189,6 +200,7 @@ export function SettingsPanelView({
   onOpenChange,
   isMobile,
   project,
+  projectId,
   accountId,
   groups,
   allItems,
@@ -233,6 +245,7 @@ export function SettingsPanelView({
           tab={tab}
           onTabChange={onTabChange}
           isMobile={isMobile}
+          projectId={projectId}
           accountId={accountId}
           groups={groups}
           allItems={allItems}
@@ -243,24 +256,27 @@ export function SettingsPanelView({
 }
 
 /**
- * The shell takes no `project` — and, since 2026-08-17, no `projectId` either.
+ * The shell takes no `project`, but it does take `projectId` again.
  *
- * `SettingsPanelView` still takes `project` — it names the project in the
- * dialog's accessible title — but nothing INSIDE the frame is project-scoped
- * any more. The rail carried a `RelatedProjectsSwitcher` while the overlay held
- * thirteen project-configuration tabs; switching project from a dialog that now
- * holds only Profile, Preferences and Connected accounts changes nothing you
- * can see in it, and the project sidebar's own switcher
+ * `SettingsPanelView` takes `project` because it names the project in the
+ * dialog's accessible title. Nothing inside the frame needs the whole entity.
+ * The rail carried a `RelatedProjectsSwitcher` while the overlay held thirteen
+ * project-configuration tabs; switching project from a dialog that holds
+ * Profile, Preferences, Connected accounts and one workspace pane changes
+ * nothing you can see in it, and the project sidebar's own switcher
  * (`project-sidebar/workspace-switcher.tsx`) is where that job lives.
  *
- * The `projectId` thread survived that cleanup because ONE pane still consumed
- * it: the Connected tab's ChatGPT row, which was project-scoped
- * (`useChatGptSubscriptionConnected(projectId, …)`) on an account-scoped pane.
- * That row is gone — see `tabs/connected-tab.tsx`'s header for why and for
- * where ChatGPT connect actually lives — so no pane takes a project id, and the
- * prop that fed exactly one of them does not either. Every remaining pane is
- * user- or account-scoped, which is what makes the dialog openable from Cmd+,
- * anywhere in the app.
+ * `projectId` was dropped on 2026-08-17, when the last pane that consumed it —
+ * the Connected tab's project-scoped ChatGPT row — was removed. It is back on
+ * 2026-09-01 for exactly ONE pane again: `workspace`, which renders
+ * `tabs/general-tab.tsx` and needs the id to read and write the project.
+ *
+ * That pane cannot render without one, and it does not have to guard: the same
+ * `hasProject` condition that leaves `projectId` undefined also filters the
+ * `workspace` row out of the rail (`ACCOUNT_SCOPED_SETTINGS_TABS` above), so
+ * `SettingsTabPane` is never asked for it. Every OTHER pane is still user- or
+ * account-scoped, which is what keeps the dialog openable from Cmd+, anywhere
+ * in the app.
  */
 export type SettingsPanelShellProps = Omit<
   SettingsPanelViewProps,
@@ -271,6 +287,7 @@ export function SettingsPanelShell({
   tab,
   onTabChange,
   isMobile,
+  projectId,
   accountId,
   groups,
   allItems,
@@ -389,7 +406,12 @@ export function SettingsPanelShell({
                pane scrolls, the frame does not. */
             className="mx-auto flex min-h-0 w-full flex-1 flex-col space-y-6 overflow-y-auto px-6 py-6"
           >
-            <SettingsTabPane item={item} active={item.tab === tab} accountId={accountId} />
+            <SettingsTabPane
+              item={item}
+              active={item.tab === tab}
+              projectId={projectId}
+              accountId={accountId}
+            />
           </TabsContent>
         ))}
       </main>
@@ -400,14 +422,28 @@ export function SettingsPanelShell({
 function SettingsTabPane({
   item,
   active,
+  projectId,
   accountId,
 }: {
   item: RailItem;
   active: boolean;
+  projectId: string | undefined;
   accountId: string | undefined;
 }) {
   if (!active) return null;
 
+  // The SAME component `/projects/<id>/config?section=general` renders
+  // (`capabilities/project-settings/project-settings-page.tsx`), not a copy.
+  // Workspace name and icon have one implementation and one set of mutations;
+  // this overlay is a second door onto it, not a second version of it.
+  //
+  // The `projectId` guard is belt-and-braces: the row is filtered out of the
+  // rail whenever there is no project, so this branch is unreachable without
+  // one. It is here so the pane degrades to its own label rather than
+  // rendering `GeneralTab` with an empty id if that gate is ever loosened.
+  if (item.tab === 'workspace' && projectId) {
+    return <GeneralTab projectId={projectId} />;
+  }
   if (item.tab === 'profile') {
     return <ProfileTab />;
   }

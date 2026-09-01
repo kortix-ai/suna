@@ -19,15 +19,28 @@ const tabsOf = (): string[] => railGroups().flatMap((g) => g.items.map((i) => i.
  * they arrived THERE.
  */
 describe('railGroups', () => {
-  test('renders one group: You', () => {
-    expect(railGroups().map((g) => g.label)).toEqual(['You']);
+  // Workspace FIRST. The overlay is entered from a row labelled "User
+  // Settings", but that row names its default TAB, not the rail's order — so
+  // leading with the workspace's own identity costs the personal tabs nothing
+  // and is what makes renaming findable again.
+  test('renders two groups: Workspace then You', () => {
+    expect(railGroups().map((g) => g.label)).toEqual(['Workspace', 'You']);
   });
 
-  test('holds exactly the person-scoped tabs, in order', () => {
+  test('holds the workspace tab first, then the person-scoped tabs, in order', () => {
     // `tokens` (labelled "API keys") rejoined on 2026-08-18 — a person's own
     // keys are person-scoped; only the service-account half is account
     // configuration and it stayed on `/accounts/[id]`.
-    expect(tabsOf()).toEqual(['profile', 'preferences', 'connected', 'tokens']);
+    expect(tabsOf()).toEqual(['workspace', 'profile', 'preferences', 'connected', 'tokens']);
+  });
+
+  // The row says "General" while the id is `workspace`: the id is a URL segment
+  // and `general` was already spent on a redirect, but "General" is what this
+  // pane has always been called. Pinned so a future tidy-up cannot silently
+  // rename the row to match the id and break the word people look for.
+  test('the workspace row is LABELLED General, under a Workspace group', () => {
+    const group = railGroups().find((g) => g.label === 'Workspace');
+    expect(group?.items.map((i) => i.label)).toEqual(['General']);
   });
 
   test('every rail tab is a live SettingsTab, and every live SettingsTab has a rail row', () => {

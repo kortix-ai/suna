@@ -59,6 +59,10 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     tab: NO_TAB,
     onTabChange: () => {},
     isMobile: false,
+    // Undefined by default, matching the overlay opened outside a project. The
+    // `workspace` pane is the only one that reads it, and the gating suite
+    // below supplies one where it needs the pane to mount.
+    projectId: undefined,
     accountId: undefined,
     groups: allGroups,
     allItems,
@@ -106,16 +110,22 @@ describe('SettingsPanelShell — desktop rail', () => {
    * observable against today's rail.
    */
   describe('group headings', () => {
+    // Explicitly ONE group, not `allGroups` — the production rail carries two
+    // now (`Workspace` + `You`), and the behaviour under test is the shell's
+    // `groups.length > 1` rule, not today's rail contents. Taking the first
+    // group keeps this pinned on the rule even as the rail changes.
     test('one group renders no heading', () => {
-      const html = render();
-      expect(allGroups.length).toBe(1);
-      expect(html).not.toContain(`>${allGroups[0].label}<`);
+      const oneGroup = [allGroups[0]];
+      const html = render({ groups: oneGroup });
+      expect(html).not.toContain(`>${oneGroup[0].label}<`);
     });
 
+    // This is the live case now: the overlay opened inside a project shows
+    // `Workspace` and `You`, so both headings have to paint.
     test('a second group brings every heading back', () => {
-      const twoGroups = [...allGroups, { label: 'Workspace', items: allGroups[0].items }];
-      const html = render({ groups: twoGroups });
-      for (const group of twoGroups) {
+      const html = render({ groups: allGroups });
+      expect(allGroups.length).toBeGreaterThan(1);
+      for (const group of allGroups) {
         expect(html).toContain(`>${group.label}<`);
       }
     });
@@ -268,29 +278,50 @@ describe('SettingsPanelShell — real tab content gating', () => {
 
   test('every surviving tab mounts a real view when it is the active one', () => {
     for (const tab of SETTINGS_TABS) {
-      expect(() => render({ tab, accountId: 'a1' })).toThrow();
+      expect(() => render({ tab, projectId: 'p1', accountId: 'a1' })).toThrow();
     }
   });
 
-  test('each one mounts with no account id either — all three resolve their own scope', () => {
+  test('each one mounts with no account id either — every pane resolves its own scope', () => {
     for (const tab of SETTINGS_TABS) {
-      expect(() => render({ tab, accountId: undefined })).toThrow();
+      expect(() => render({ tab, projectId: 'p1', accountId: undefined })).toThrow();
     }
   });
 
   /**
-   * The shell cannot hand a pane a project id, because it does not have one.
+   * The `workspace` pane's belt-and-braces guard, exercised.
    *
-   * This is the structural half of "all three tabs are user-scoped": the old
-   * assertion passed `projectId: undefined` and proved the panes tolerate its
-   * absence. They cannot receive it at all now — the ChatGPT row that was the
-   * single consumer is gone (`tabs/connected-tab.tsx`), so the prop went with
-   * it. Excess-property checking would fail the type-check if it came back
-   * silently, and this pins the runtime shape too.
+   * `GeneralTab` cannot run without a project id, and the rail already filters
+   * its row out whenever there is none (`ACCOUNT_SCOPED_SETTINGS_TABS`). This
+   * pins the second line of defence: given the row anyway, the pane renders its
+   * own label instead of mounting `GeneralTab` against an empty id.
+   *
+   * It is the exact inverse of the two loops above — same tab, same absence of
+   * a `QueryClientProvider`, opposite outcome — so it cannot pass vacuously.
    */
-  test('`projectId` is not part of the shell contract', () => {
+  test('the workspace pane does NOT mount without a project id', () => {
+    expect(() => render({ tab: 'workspace', projectId: undefined })).not.toThrow();
+    expect(() => render({ tab: 'workspace', projectId: 'p1' })).toThrow();
+  });
+
+  /**
+   * `projectId` is back in the shell contract, for ONE pane.
+   *
+   * It was removed on 2026-08-17 with the last pane that read it (the Connected
+   * tab's project-scoped ChatGPT row) and this test asserted its absence. The
+   * `workspace` pane restored the need on 2026-09-01: `GeneralTab` reads and
+   * writes the project, so the id has to reach it.
+   *
+   * Asserted as a declared, optional-valued prop rather than merely "the type
+   * compiles": a shell that silently dropped the prop while keeping it in the
+   * type would still typecheck, and the workspace pane would then render its
+   * fallback label forever with nothing failing.
+   */
+  test('`projectId` is part of the shell contract, and may be undefined', () => {
     const props: SettingsPanelShellProps = baseProps();
-    expect('projectId' in props).toBe(false);
+    expect('projectId' in props).toBe(true);
+    expect(props.projectId).toBeUndefined();
+    expect(baseProps({ projectId: 'p1' }).projectId).toBe('p1');
   });
 });
 
@@ -423,11 +454,17 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     expect([...allowed].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
   });
 
-  test('every tab left in the overlay is account-scoped, so none is hidden by the scope gate', () => {
+  // `workspace` is the only project-scoped tab, and the gate is what hides it
+  // — and with it the whole `Workspace` rail group — on `/settings` and under
+  // `/accounts/**`, where there is no project to name. Asserted as an exact
+  // list so a second project-scoped tab cannot be added without a decision.
+  test('exactly one tab is project-scoped, and the gate hides it with no project', () => {
     const projectScoped = SETTINGS_TABS.filter(
       (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
     );
-    expect(projectScoped).toEqual([]);
+    expect(projectScoped).toEqual(['workspace']);
+    expect(isSettingsTabAllowed('workspace', paramsFor())).toBe(false);
+    expect(isSettingsTabAllowed('workspace', paramsFor({ hasProject: true }))).toBe(true);
   });
 
   test('with a project, the scope gate changes nothing — every tab is judged on its own gates', () => {

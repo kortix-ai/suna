@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { VALID_TABS } from '@/features/accounts/hub/sections';
 
 import {
   CAPABILITY_TABS,
@@ -108,32 +107,18 @@ describe('every project settings section has a palette row', () => {
 
 describe('every account section has a palette row', () => {
   /**
-   * Read out of the page's source rather than imported, exactly as
-   * `features/workspace/settings/route-contract.test.ts` does: importing
-   * `/accounts/[id]/page.tsx` drags every IAM tab module in with it, and the
-   * allowlist is a `const … as const` literal that a regex can read
-   * faithfully.
+   * `VALID_TABS` used to be a private `const … as const` inside
+   * `/accounts/[id]/page.tsx`, so this read the page's source and parsed it
+   * with a regex — importing the page drags every IAM tab module in with it.
+   * The allowlist is an exported constant of the hub catalog now
+   * (`features/accounts/hub/sections.ts`), which imports only icons, so the
+   * join is a plain import and cannot silently stop matching.
    */
-  const source = readFileSync(
-    join(import.meta.dir, '..', 'app', '(app)', 'accounts', '[id]', 'page.tsx'),
-    'utf8',
-  );
-  const block = source.match(/const VALID_TABS = \[([\s\S]*?)\] as const;/);
-
-  test('the page still declares a VALID_TABS allowlist this test can read', () => {
-    expect(block).not.toBeNull();
-  });
-
-  const tabs = (block?.[1] ?? '')
-    .split(',')
-    .map((line) => line.trim().replace(/^['"]|['"]$/g, ''))
-    .filter(Boolean);
-
   test('the allowlist is not empty', () => {
-    expect(tabs.length).toBeGreaterThan(0);
+    expect(VALID_TABS.length).toBeGreaterThan(0);
   });
 
-  for (const tab of tabs) {
+  for (const tab of VALID_TABS) {
     test(`?tab=${tab} is reachable`, () => {
       const href = `/accounts/${ACCOUNT_TOKEN}?tab=${tab}`;
       expect({ tab, href, hasRow: paletteHrefs.has(href) }).toEqual({ tab, href, hasRow: true });

@@ -44,7 +44,26 @@ export type SettingsTab =
   // automation's. Marko, 2026-08-18:
   // "the personal tokens should be in the personal settings and visible there.
   // the automation tokens should be in the actual account settings."
-  | 'tokens';
+  | 'tokens'
+  // The one PROJECT-scoped tab in an otherwise person-scoped overlay, and a
+  // deliberate partial reversal of the graduation described below (Jay,
+  // 2026-09-01). Everything else that configures a project genuinely belongs
+  // on the Customize bar, but a workspace's NAME and ICON are not
+  // configuration a person goes looking for under "Customize" — they are the
+  // workspace's identity, and the only way to reach them had become
+  // sidebar Customize -> index grid -> Settings -> General, four surfaces deep
+  // with no label on the way naming what it does.
+  //
+  // The id is `workspace`, not `general`: `general` is already spent on a
+  // GRADUATED redirect to `/projects/<id>/config` (see the map below), and a
+  // live tab sharing that key would shadow every bookmark pointing at it. The
+  // rail row is still LABELLED "General" under a "Workspace" group, which is
+  // what it was called before it graduated — see `rail.ts`.
+  //
+  // It renders `tabs/general-tab.tsx`, the same component
+  // `/projects/<id>/config?section=general` renders. ONE component, two
+  // mounts: nothing is forked, and the config page keeps working unchanged.
+  | 'workspace';
 // Organization (General, Billing, Usage, Groups, Roles, Identity, Audit log)
 // and API keys are gone: every one of them configured the ACCOUNT, not the
 // project, and the account already owns a full page for them at
@@ -71,6 +90,10 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'tokens',
+  // Project-scoped, so it is NOT in `ACCOUNT_SCOPED_SETTINGS_TABS`
+  // (`settings-panel.tsx`) and the overlay hides the whole group when it opens
+  // without a project — on `/settings`, or anywhere under `/accounts/**`.
+  'workspace',
 ];
 
 export function parseSettingsTab(raw: string | null | undefined): SettingsTab | null {

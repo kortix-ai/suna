@@ -2,6 +2,7 @@ import {
   KeyIcon as Key,
   LinkIcon as Link,
   SlidersHorizontalIcon as SlidersHorizontal,
+  SquaresFourIcon as SquaresFour,
   UserIcon as User,
 } from '@phosphor-icons/react';
 import type { SettingsTab } from './settings-tabs';
@@ -22,6 +23,34 @@ export function isRailItemActive(item: RailItem, tab: SettingsTab): boolean {
 }
 
 const STATIC_GROUPS: readonly RailGroup[] = [
+  /**
+   * First, above `You`, because it is the thing you are inside. The overlay is
+   * opened from a row labelled "User Settings", but that row names its
+   * DEFAULT tab (`profile`), not the rail's order — so leading with Workspace
+   * costs the personal tabs nothing and puts the workspace's own identity
+   * where a person looks first.
+   *
+   * The group disappears whole when the overlay opens without a project:
+   * `workspace` is absent from `ACCOUNT_SCOPED_SETTINGS_TABS`, so
+   * `isSettingsTabAllowed` filters the row, and `SettingsPanel` drops any group
+   * left with no items. That also restores the rail's group HEADINGS, which
+   * `SettingsPanelShell` hides while there is only one group.
+   */
+  {
+    label: 'Workspace',
+    items: [
+      {
+        // Labelled "General", routed at `/settings/workspace` — the same
+        // label/id split `tokens` ("API keys") makes below, and for the same
+        // reason: the id is a URL segment that `general` had already spent on
+        // a redirect, while the label is what this pane has always been called.
+        tab: 'workspace',
+        label: 'General',
+        description: 'Name and icon for this workspace.',
+        icon: SquaresFour,
+      },
+    ],
+  },
   {
     label: 'You',
     items: [
@@ -54,13 +83,18 @@ const STATIC_GROUPS: readonly RailGroup[] = [
       },
     ],
   },
-  // The 'Workspace' and 'Agent' groups are gone, and 'Developer' went with
-  // them once Feature flags (the old `experimental` row) left too. Every one
-  // of those rows configured a PROJECT, and the Customize bar already gates on
-  // exactly the person allowed to change them — so they live on that bar now,
-  // at `/projects/<id>/config` (`capabilities/project-settings/`). Do not
-  // re-add them as settings tabs; `GRADUATED` in `settings-tabs.ts` carries
-  // every bookmark to the section that replaced it.
+  // The 'Agent' group is gone, and 'Developer' went with it once Feature flags
+  // (the old `experimental` row) left too. Every one of those rows configured a
+  // PROJECT, and the Customize bar already gates on exactly the person allowed
+  // to change them — so they live on that bar now, at `/projects/<id>/config`
+  // (`capabilities/project-settings/`). Do not re-add them as settings tabs;
+  // `GRADUATED` in `settings-tabs.ts` carries every bookmark to the section
+  // that replaced it.
+  //
+  // 'Workspace' came BACK on 2026-09-01, and only its General row did — see
+  // the group above and `SettingsTab`'s own note for why that one row is not
+  // configuration in the sense the rest of this paragraph means. The rule
+  // still holds for everything else that left.
   //
   // The 'Organization' group is gone for a different reason, recorded above
   // its own removal: those rows configured the ACCOUNT and moved to
@@ -68,7 +102,9 @@ const STATIC_GROUPS: readonly RailGroup[] = [
 ];
 
 /**
- * The rail. One group — `You` — and no flag-gated rows left in it.
+ * The rail. Two groups — `Workspace` and `You` — and no flag-gated rows in
+ * either. `Workspace` is filtered out entirely when the overlay opens without a
+ * project, so the rail is back to one group there.
  *
  * It took a `RailFlags` argument until Marketplace, Review and Voice moved to
  * the Customize bar's Settings tab with the rest of project configuration

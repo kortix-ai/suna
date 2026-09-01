@@ -93,6 +93,17 @@ export const PALETTE_NO_PROJECT_DEFAULT_TAB: SettingsTab = 'profile';
  *     is the tab that configures SSO and `audit` is the tab that is a log.
  */
 const TAB_KEYWORDS: Record<SettingsTab, string> = {
+  // The words a person types when they want to rename this workspace or change
+  // its icon, because nobody searches for "General".
+  //
+  // Deliberately NOT "project". `command-palette-search.test.ts` holds the bar
+  // that a query returns the rows that SAY the word rather than every row
+  // scoped to it — ten `proj-*` rows used to answer "proj" by their ids, and
+  // that is the regression the bar exists to prevent. This row is labelled
+  // "General"; "project" would put it in front of the two rows actually
+  // called Projects.
+  workspace:
+    'workspace general name rename title icon emoji glyph avatar picture logo archive delete repo git',
   profile: 'profile name email avatar personal you account display',
   preferences:
     'preferences appearance theme color mode dark light wallpaper shader shaders background sounds audio volume notification sound effects mute shortcuts keyboard hotkeys keybindings',

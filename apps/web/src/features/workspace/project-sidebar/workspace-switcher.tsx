@@ -147,8 +147,21 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     shape that swaps content the moment the query lands. The
                     control keeps its size either way — the row is a fixed
                     `h-8` — so the empty state is a quiet gap, not a jump. */}
+                {/* `glyph` BEFORE `emoji` below, matching EntityAvatar's own
+                    precedence. Both are required: a project's icon is a union —
+                    an emoji XOR a named glyph — so passing only `emoji` renders
+                    a glyph project's chalk INITIAL here, while the projects grid
+                    (`projects/project-card.tsx`) and ⌘K
+                    (`workspace/command-palette.tsx`) both draw its glyph. The
+                    sidebar is where a person looks at their workspace all day,
+                    so that gap read as "I picked an icon and nothing changed". */}
                 {project ? (
-                  <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
+                  <EntityAvatar
+                    label={project.name}
+                    glyph={project.icon_glyph}
+                    emoji={project.icon}
+                    size="sm"
+                  />
                 ) : null}
 
                 <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
