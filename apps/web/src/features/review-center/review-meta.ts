@@ -5,7 +5,6 @@
  * a solid Kortix-token icon.
  */
 
-import type { StatusTone } from '@/components/ui/status';
 import {
   ChatsIcon as ChatMessages,
   CheckCircleIcon as CheckCircleSolid,
@@ -42,68 +41,64 @@ function filled(IconComponent: IconCmp): IconCmp {
   };
 }
 type BadgeVariant =
-  'success' | 'warning' | 'destructive' | 'secondary' | 'muted' | 'kortix' | 'outline';
+  'success' | 'warning' | 'destructive' | 'secondary' | 'muted' | 'kortix' | 'outline' | 'info';
 
 export const KIND_META: Record<
   ReviewKind,
-  { label: string; icon: IconCmp; tile: string; iconColor: string; bar: string }
+  { label: string; icon: IconCmp; tile: string; iconColor: string }
 > = {
   change: {
     label: 'Change',
     icon: GitPullRequest,
     tile: 'bg-kortix-blue/15',
     iconColor: 'text-kortix-blue',
-    bar: 'before:bg-kortix-blue',
   },
   approval: {
     label: 'Approval',
     icon: filled(ShieldCheckSolid),
     tile: 'bg-kortix-orange/15',
     iconColor: 'text-kortix-orange',
-    bar: 'before:bg-kortix-orange',
   },
   output: {
     label: 'Output',
     icon: filled(SparklesSolid),
     tile: 'bg-kortix-purple/15',
     iconColor: 'text-kortix-purple',
-    bar: 'before:bg-kortix-purple',
   },
   decision: {
     label: 'Question',
     icon: filled(QuestionCircleSolid),
     tile: 'bg-kortix-yellow/15',
-    // Darker than the tile hue — kortix-yellow (oklch L≈0.73) is the palette's
-    // lowest-contrast token for a glyph on a light tint. See a11y note.
-    iconColor: 'text-yellow-600 dark:text-kortix-yellow',
-    bar: 'before:bg-kortix-yellow',
+    // kortix-yellow is the palette's lowest-contrast glyph on a light tint. The
+    // kind is always named in text beside the tile, so the glyph is redundant
+    // and the token stays pure (no raw palette, no `dark:`).
+    iconColor: 'text-kortix-yellow',
   },
   batch: {
     label: 'Finished',
     icon: filled(CheckCircleSolid),
     tile: 'bg-kortix-green/15',
     iconColor: 'text-kortix-green',
-    bar: 'before:bg-kortix-green',
   },
 };
 
-/** Left-accent-bar class for the segment's risk tone (Needs-you escalation). */
-export const RISK_BAR: Record<ReviewRisk, string> = {
-  none: 'before:bg-kortix-green',
-  low: 'before:bg-kortix-green',
-  medium: 'before:bg-kortix-orange',
-  high: 'before:bg-destructive',
+// Every chip in the Review Center is the one `Badge` component — no second
+// pill family (Jay, 2026-09-03: "use the badge component only").
+export const RISK_META: Record<ReviewRisk, { label: string; badge: BadgeVariant }> = {
+  none: { label: 'Safe', badge: 'success' },
+  low: { label: 'Low risk', badge: 'success' },
+  medium: { label: 'Medium risk', badge: 'warning' },
+  high: { label: 'High risk', badge: 'destructive' },
 };
 
-// Risk pills use StatusBadge (faint tinted fill + colored text) rather than the
-// solid Badge variants — calmer and consistent across tones, the way the brand
-// reads (red is the brake, not the paint). See components/ui/status.tsx.
-export const RISK_META: Record<ReviewRisk, { label: string; tone: StatusTone }> = {
-  none: { label: 'Safe', tone: 'success' },
-  low: { label: 'Low risk', tone: 'success' },
-  medium: { label: 'Medium risk', tone: 'warning' },
-  high: { label: 'High risk', tone: 'destructive' },
-};
+/** A change's verification entries carry a tone; map it onto the Badge variant. */
+export const VERIFICATION_BADGE: Record<'success' | 'warning' | 'neutral' | 'info', BadgeVariant> =
+  {
+    success: 'success',
+    warning: 'warning',
+    neutral: 'secondary',
+    info: 'info',
+  };
 
 export const STATUS_META: Record<ReviewStatus, { label: string; badge: BadgeVariant }> = {
   needs_you: { label: 'Needs you', badge: 'warning' },

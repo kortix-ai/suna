@@ -60,9 +60,6 @@ export interface ChangeDetail {
   crId?: string; // the underlying Change Request id (connected mode) — enables the live diff
   number?: number;
   whatChanged: string[];
-  /** The agent's free-form description when it's real markdown — rendered as
-   *  such in the modal instead of being line-split into `whatChanged` rows. */
-  descriptionMarkdown?: string;
   impact: string;
   verification: { label: string; tone: 'success' | 'warning' | 'neutral' | 'info' }[];
   previewUrl?: string;
