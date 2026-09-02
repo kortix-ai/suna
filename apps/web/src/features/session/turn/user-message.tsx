@@ -40,6 +40,7 @@ import {
   type Command,
   type FilePart,
   type MessageWithParts,
+  type Part,
   type TextPart,
 } from '@/ui';
 import {
@@ -62,10 +63,10 @@ import {
   SystemNotificationCard,
 } from '../message-parsing';
 
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
-import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -441,8 +442,70 @@ export interface NormalizedAttachment {
   pending?: boolean;
 }
 
+interface OrderedUploadReference {
+  path: string;
+  mime: string;
+  filename: string;
+  pending?: string;
+  sourcePartIndex: number;
+}
+
+interface ParsedAttachmentContent {
+  rawText: string;
+  textAfterFiles: string;
+  replyContext: string | null;
+  uploads: OrderedUploadReference[];
+}
+
 /**
- * The attachment strip's input: message file-parts plus parsed upload refs.
+ * Parse visible text parts once while retaining each upload reference's source
+ * part. The source index lets the attachment normalizer merge references and
+ * native file parts without changing their persisted order.
+ */
+function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent {
+  const rawTextParts: string[] = [];
+  const cleanTextParts: string[] = [];
+  const uploads: OrderedUploadReference[] = [];
+  let replyContext: string | null = null;
+
+  parts.forEach((part, sourcePartIndex) => {
+    if (
+      !isTextPart(part) ||
+      !(part as TextPart).text?.trim() ||
+      (part as TextPart).synthetic ||
+      (part as TextPart & { ignored?: boolean }).ignored
+    ) {
+      return;
+    }
+
+    const rawPartText = stripSystemPtyText((part as TextPart).text);
+    rawTextParts.push(rawPartText);
+
+    const parsedReply = replyContext
+      ? { cleanText: rawPartText, replyContext: null }
+      : parseReplyContext(rawPartText);
+    if (parsedReply.replyContext) replyContext = parsedReply.replyContext;
+
+    const parsedFiles = parseFileReferences(parsedReply.cleanText);
+    cleanTextParts.push(parsedFiles.cleanText);
+    uploads.push(
+      ...parsedFiles.files.map((file) => ({
+        ...file,
+        sourcePartIndex,
+      })),
+    );
+  });
+
+  return {
+    rawText: rawTextParts.join('\n'),
+    textAfterFiles: cleanTextParts.join('\n'),
+    replyContext,
+    uploads,
+  };
+}
+
+/**
+ * The attachment strip's input, merged in original message-part order.
  *
  * Uploads are keyed by POSITION first, then by their pending id or path. Keying
  * on the path alone was a duplicate-key generator: an optimistic ref carries no
@@ -455,25 +518,57 @@ export interface NormalizedAttachment {
  * exist yet.
  */
 export function normalizeAttachments(
-  parts: FilePart[],
-  uploads: ReadonlyArray<{ path: string; mime: string; filename: string; pending?: string }>,
+  parts: readonly Part[],
+  uploads: ReadonlyArray<{
+    path: string;
+    mime: string;
+    filename: string;
+    pending?: string;
+    sourcePartIndex?: number;
+  }>,
 ): NormalizedAttachment[] {
-  return [
-    ...parts.map((file) => ({
-      key: file.id,
-      filename: file.filename || 'File',
-      mime: file.mime,
-      src: file.url,
-    })),
-    ...uploads.map((file, index) => ({
+  const normalized: NormalizedAttachment[] = [];
+  const uploadsByPart = new Map<number, Array<{ file: (typeof uploads)[number]; index: number }>>();
+  const unpositionedUploads: Array<{ file: (typeof uploads)[number]; index: number }> = [];
+
+  uploads.forEach((file, index) => {
+    if (file.sourcePartIndex === undefined) {
+      unpositionedUploads.push({ file, index });
+      return;
+    }
+    const references = uploadsByPart.get(file.sourcePartIndex) ?? [];
+    references.push({ file, index });
+    uploadsByPart.set(file.sourcePartIndex, references);
+  });
+
+  const addUpload = (file: (typeof uploads)[number], index: number) => {
+    normalized.push({
       key: `upload:${index}:${file.pending ?? file.path}`,
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
       src: file.path || undefined,
       path: file.path || undefined,
       pending: Boolean(file.pending) || !file.path,
-    })),
-  ];
+    });
+  };
+
+  parts.forEach((part, sourcePartIndex) => {
+    if (isFilePart(part)) {
+      const file = part as FilePart;
+      normalized.push({
+        key: file.id,
+        filename: file.filename || 'File',
+        mime: file.mime,
+        src: file.url,
+      });
+    }
+    for (const { file, index } of uploadsByPart.get(sourcePartIndex) ?? []) {
+      addUpload(file, index);
+    }
+  });
+
+  for (const { file, index } of unpositionedUploads) addUpload(file, index);
+  return normalized;
 }
 
 /**
@@ -1109,25 +1204,15 @@ export function UserMessage({
     [message.parts],
   );
 
-  // Extract text from sticky parts, parse out <file> and <session_ref> XML references
-  // Filter out both synthetic AND ignored parts from user-visible text
-  const visibleTextParts = stickyParts.filter(
-    (p) =>
-      isTextPart(p) &&
-      (p as TextPart).text?.trim() &&
-      !(p as TextPart).synthetic &&
-      !(p as any).ignored,
-  ) as TextPart[];
-  const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
-  const rawText = stripSystemPtyText(rawVisibleText);
-  const { cleanText: textAfterReply, replyContext } = useMemo(
-    () => parseReplyContext(rawText),
-    [rawText],
-  );
-  const { cleanText: textAfterFiles, files: uploadedFiles } = useMemo(
-    () => parseFileReferences(textAfterReply),
-    [textAfterReply],
-  );
+  // Extract visible text and file references in original part order. This must
+  // keep the source part index because a later native file cannot move ahead
+  // of workspace references that appeared in earlier text parts.
+  const {
+    rawText,
+    textAfterFiles,
+    replyContext,
+    uploads: uploadedFiles,
+  } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
   const { cleanText: textAfterProjects } = useMemo(
     () => parseProjectReferences(textAfterFiles),
     [textAfterFiles],
@@ -1159,8 +1244,8 @@ export function UserMessage({
   // Both attachment routes, drawn as one strip. `uploadedFiles` used to be
   // parsed and then discarded — see `normalizeAttachments`.
   const allAttachments = useMemo(
-    () => normalizeAttachments(attachments, uploadedFiles),
-    [attachments, uploadedFiles],
+    () => normalizeAttachments(message.parts, uploadedFiles),
+    [message.parts, uploadedFiles],
   );
 
   /**
@@ -1276,7 +1361,14 @@ export function UserMessage({
   }, [ignoredRawText]);
 
   // Check if any text part was edited
-  const isEdited = visibleTextParts.some((p) => (p as any).metadata?.edited);
+  const isEdited = message.parts.some(
+    (part) =>
+      isTextPart(part) &&
+      (part as TextPart).text?.trim() &&
+      !(part as TextPart).synthetic &&
+      !(part as TextPart & { ignored?: boolean }).ignored &&
+      Boolean((part as TextPart & { metadata?: { edited?: boolean } }).metadata?.edited),
+  );
 
   // Built once and rendered by every branch below — channel card, trigger card,
   // command card, bubble — so all four carry the same meta line.

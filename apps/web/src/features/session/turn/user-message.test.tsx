@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import type { MessageWithParts } from '@/ui';
 
 import { RemoveFromQueueButton } from './queued-prompt-bubbles';
@@ -362,6 +362,44 @@ describe('UserMessage persisted attachments', () => {
     expect(html).toMatch(/datetime="2026-09-01T18:58:54.410Z"/i);
     expect(html.indexOf('bundle.zip')).toBeLessThan(html.indexOf('README.md'));
     expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('shot.png'));
+  });
+
+  test('keeps workspace references before a later native file after reload', () => {
+    const persisted = {
+      info: {
+        id: 'message-mixed-files',
+        role: 'user',
+        time: { created: Date.parse('2026-09-02T10:15:30.000Z') },
+      },
+      parts: [
+        {
+          id: 'part-reference-one',
+          messageID: 'message-mixed-files',
+          type: 'text',
+          text: 'Review these files.\n<file path="/workspace/README.md" mime="text/markdown" filename="README.md">README.md</file>',
+        },
+        {
+          id: 'part-reference-two',
+          messageID: 'message-mixed-files',
+          type: 'text',
+          text: '<file path="/workspace/report.pdf" mime="application/pdf" filename="report.pdf">report.pdf</file>',
+        },
+        {
+          id: 'part-native-image',
+          messageID: 'message-mixed-files',
+          type: 'file',
+          mime: 'image/png',
+          filename: 'shot.png',
+          url: 'data:image/png;base64,iVBORw0KGgo=',
+        },
+      ],
+    } as MessageWithParts;
+
+    const html = render(false, persisted);
+    expect(html).toContain('Review these files.');
+    expect(html).not.toContain('&lt;file path=');
+    expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('report.pdf'));
+    expect(html.indexOf('report.pdf')).toBeLessThan(html.indexOf('shot.png'));
   });
 });
 
