@@ -33,6 +33,17 @@ const UNREACHABLE = [
   /\bterminated\b/i,
   /unable to connect/i,
   /\b(502|503|504)\b/,
+  // The `ws` library's message when an HTTP upgrade is refused, whatever the
+  // status. MEASURED on pi.kortix.com: the transport is a negotiated WebSocket
+  // (`/rpc-ws`) and a STOPPED Daytona box answers the upgrade with 400 — so the
+  // failure arrives as "Unexpected server response: 400", with the edge alive
+  // and the box behind it gone. Without this the predicate read a dead
+  // environment as a tool failure and never re-attached; the model told the
+  // user the file was "not accessible at this time".
+  //
+  // A stopped box does not always fail to ANSWER. Sometimes something in front
+  // of it answers for it.
+  /unexpected server response/i,
 ];
 
 export function isEnvironmentUnreachable(error: unknown): boolean {

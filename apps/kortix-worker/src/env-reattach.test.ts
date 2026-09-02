@@ -29,7 +29,27 @@ import { isEnvironmentUnreachable } from './env-reattach.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 
 describe('telling a dead environment from a failed operation', () => {
+  /**
+   * MEASURED, not imagined. Driving a real session on pi.kortix.com — write a
+   * token, stop the environment behind the worker's back, read it back — the
+   * failed tool call carried exactly this:
+   *
+   *     "result":{"content":[{"type":"text","text":"Unexpected server response: 400"}]}
+   *
+   * That is the `ws` library's message when an HTTP upgrade is refused. The
+   * transport is a negotiated WebSocket (`/rpc-ws`) and a STOPPED Daytona box
+   * answers the upgrade with 400 — the edge is alive, the box behind it is not.
+   * The first pattern list had 502/503/504 and nothing for this, so the
+   * predicate said "not a transport failure", no re-attach happened, and the
+   * model was left telling the user the file was "not accessible at this time".
+   *
+   * Which is the whole lesson: a stopped box does not always fail to answer.
+   * Sometimes something in front of it answers for it.
+   */
   const unreachable = [
+    'Unexpected server response: 400',
+    'Unexpected server response: 404',
+    'Unexpected server response: 502',
     'fetch failed',
     'connect ECONNREFUSED 10.0.0.4:443',
     'rpc timeout',
@@ -77,6 +97,13 @@ describe('telling a dead environment from a failed operation', () => {
       expect(isEnvironmentUnreachable(error)).toBe(false);
     },
   );
+
+  test('a 400 from the DAEMON is still the tool, not the transport', () => {
+    // The distinction is who answered. `Unexpected server response` is the
+    // socket never opening; a daemon that ran the operation and returned a
+    // mapped code is an answer.
+    expect(isEnvironmentUnreachable({ code: 'not-found', message: 'Unexpected server response: 400' })).toBe(false);
+  });
 
   test('an unknown code with a daemon message is still the tool', () => {
     // The daemon answered — it just had nothing better to say. Nothing about
