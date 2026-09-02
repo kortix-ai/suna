@@ -185,8 +185,12 @@ test('the Apps row matches the row contract of the group it sits in', () => {
     'utf8',
   );
 
-  const ROW =
-    'group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!';
+  // Restyled by 973ca118aa (2026-09-02): the group's rows dropped the explicit
+  // padding/size utilities and now inherit them from `SidebarMenuButton`, so
+  // the shared string is just the group hook, the foreground token, and the
+  // positioning context. Both rows moved together; only this constant lagged,
+  // which is exactly the drift the assertion below exists to catch.
+  const ROW = 'group/menu-button text-sidebar-foreground relative';
   // The same string the sibling rows in this group use — if that contract is
   // ever restyled, this fails rather than letting Apps silently drift out.
   expect(customize).toContain(ROW);
