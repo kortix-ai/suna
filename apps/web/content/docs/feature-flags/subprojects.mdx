@@ -79,8 +79,10 @@ Visibility has three values, and a submission can write two of them:
 
 <Callout type="warn" title="You cannot publish a globally visible subproject">
   The global catalog is curated. There is no role, flag, control or CLI option that promotes a
-  submission into it. Asking for `visibility: 'public'` on the route is **coerced to `private`**,
-  not answered `400` — a rejection naming the value would confirm the value exists.
+  submission into it. Asking for `visibility: 'public'` on the route answers `400` on both body
+  shapes, with `options: ["account", "private"]` — the set you may write, not a confirmation that
+  `public` is reachable. Behind that, the handler coerces any present non-`account` value to
+  `private`, so a body shape added later cannot widen a subproject by skipping a validator.
 </Callout>
 
 Publishing derives the card — title, description, and what the subproject declares —

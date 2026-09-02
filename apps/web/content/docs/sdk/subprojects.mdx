@@ -93,10 +93,26 @@ parseSubprojectRepo('https://gitlab.com/acme/x'); // → null
 | `public`  | Every Kortix user, in every account | **Not submittable.** Migration, seeder or direct insert only |
 
 `SubmittableSubprojectVisibility` is `Exclude<SubprojectVisibility, 'public'>`,
-so the type refuses `public` before a request is built. The route refuses it too,
-and it **coerces rather than answering `400`**: any present value that is not
-`account` lands on `private`. A rejection naming the value would confirm the
-value exists.
+so the type refuses `public` before a request is built. The route refuses it on
+**both** body shapes — JSON and multipart — with `400` and one `issues[]` entry:
+
+```json
+{
+  "received": "public",
+  "code": "invalid_enum_value",
+  "options": ["account", "private"],
+  "path": ["visibility"]
+}
+```
+
+`options` names the set you may write. It does not confirm that `public` is a
+value the column can hold.
+
+Behind that validator the handler also **coerces**: an absent `visibility`
+becomes `account`, and any present value that is not `account` becomes
+`private`. No HTTP request reaches it today, because both schemas reject
+`public` first. It is there so a body shape added later cannot widen a
+subproject by skipping a validator.
 
 `private` is enforced by identity, not by account. The submitter is recorded in
 `submitted_by`, and that is what the read path compares against — so a private

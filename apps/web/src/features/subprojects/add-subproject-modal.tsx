@@ -51,11 +51,14 @@ import { countLabel } from './subprojects-catalog';
  * `public` — every Kortix user, in every account — is deliberately ABSENT. It
  * is a real value of the `subproject_visibility` enum, and the globally listed
  * subprojects hold it, but they are seeded by migration or inserted directly.
- * Three separate things keep a submission out of it, and this list is only the
- * first: the `id` type is `SubmittableSubprojectVisibility`
+ * Four separate things keep a submission out of it, and this list is only the
+ * first. The `id` type is `SubmittableSubprojectVisibility`
  * (`Exclude<SubprojectVisibility, 'public'>`), so an added `public` entry fails
- * to compile; and `POST /v1/subprojects` coerces anything that is not `account`
- * to `private`, so a request built by hand does not reach it either.
+ * to compile. `POST /v1/subprojects` validates `z.enum(['account','private'])`
+ * on BOTH body shapes — JSON and multipart — so a hand-built request answers
+ * `400 invalid_enum_value`. And behind that validator the handler still coerces
+ * any present non-`account` value to `private`, so a body shape added later
+ * cannot widen a subproject by skipping a validator.
  *
  * `account` is the default. It matches "Whole project" leading the session
  * dialog, and it is what the account-scoped catalog already did before
