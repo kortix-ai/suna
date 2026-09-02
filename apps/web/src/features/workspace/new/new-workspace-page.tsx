@@ -4,19 +4,18 @@ import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
@@ -34,6 +33,7 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -123,9 +123,9 @@ export function NewWorkspacePage() {
 
   useSignedOutRedirect();
 
-  // Same `useSearchParams()` result the clone param reads — one subscription,
-  // two params. Non-null only between "the workspace was created" and "the
-  // user finished or skipped onboarding for it".
+  // Same `useSearchParams()` result `readSourceParam` reads below — one
+  // subscription, two params. Non-null only between "the workspace was
+  // created" and "the user finished or skipped onboarding for it".
   const onboardingProjectId = readOnboardingParam(
     new URLSearchParams(searchParams?.toString() ?? ''),
   );
@@ -493,8 +493,7 @@ export function NewWorkspacePage() {
                       gated on `!accountsQuery.isLoading` for the same reason. */}
                 {!accountsQuery.isLoading && foreignAccountList ? (
                   <p className="text-muted-foreground text-xs">
-                    We can't tell which of your accounts is yours, so we're not guessing.
-                    Email{' '}
+                    We can't tell which of your accounts is yours, so we're not guessing. Email{' '}
                     <a
                       href="mailto:support@kortix.ai"
                       className="text-foreground underline underline-offset-2"
@@ -511,11 +510,7 @@ export function NewWorkspacePage() {
                       picker hides itself below two accounts). Passing the raw
                       value would leave those queries permanently disabled for
                       exactly the users who have nothing to pick. */}
-                <AdvancedFields
-                  state={state}
-                  accountId={effectiveAccountId}
-                  onChange={setState}
-                />
+                <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
