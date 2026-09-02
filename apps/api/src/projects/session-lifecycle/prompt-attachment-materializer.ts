@@ -40,11 +40,17 @@ function safeKey(value: string): string {
   return safe || 'prompt';
 }
 
-function decodeDataUrl(part: PromptPartWire): Uint8Array {
-  const filename = part.filename?.trim() || 'File';
-  const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/i.exec(part.url ?? '');
+export function parseStagedPromptDataUrl(input: {
+  filename?: string;
+  mime?: string;
+  url?: string;
+}): { bytes: Uint8Array; mime: string; url: string } {
+  const filename = input.filename?.trim() || 'File';
+  const mime = input.mime?.trim() ?? '';
+  const url = input.url?.trim() ?? '';
+  const match = /^data:([^;,\s]+);base64,([A-Za-z0-9+/]*={0,2})$/i.exec(url);
   if (!match) throw new Error(`file "${filename}" has malformed staged data`);
-  if (match[1]!.toLowerCase() !== part.mime?.toLowerCase()) {
+  if (match[1]!.toLowerCase() !== mime.toLowerCase()) {
     throw new Error(`file "${filename}" has inconsistent MIME metadata`);
   }
   const encoded = match[2]!;
@@ -56,7 +62,11 @@ function decodeDataUrl(part: PromptPartWire): Uint8Array {
   if (canonical !== encoded.replace(/=+$/, '')) {
     throw new Error(`file "${filename}" has malformed staged data`);
   }
-  return Uint8Array.from(decoded);
+  return {
+    bytes: Uint8Array.from(decoded),
+    mime,
+    url: `data:${match[1]!};base64,${encoded}`,
+  };
 }
 
 function targetPath(key: string, index: number, filename: string): string {
@@ -110,7 +120,7 @@ export async function materializePromptAttachments(input: {
         index,
         materializationKey: input.materializationKey,
       });
-      const bytes = decodeDataUrl(part);
+      const { bytes } = parseStagedPromptDataUrl(part);
       await input.writeFile({
         externalId: input.externalId,
         sessionId: input.sessionId,

@@ -41,6 +41,45 @@ test('uploads to a temporary path and renames the returned path over the determi
   ]);
 });
 
+for (const [label, filename] of [
+  ['215-byte ASCII', `${'a'.repeat(211)}.zip`],
+  ['215-byte multibyte', `${'界'.repeat(69)}éé.zip`],
+] as const) {
+  test(`keeps the daemon upload filename within NAME_MAX for a ${label} target basename`, async () => {
+    const uploadFilenames: string[] = [];
+    const targetPath = `/workspace/uploads/.kortix-inbox/command_1/1-${filename}`;
+
+    await writeRuntimePromptFile(
+      { ...input, targetPath, filename },
+      async (_externalId, _port, _access, _method, route, _query, headers, body) => {
+        if (route === '/file/upload') {
+          const request = new Request('http://runtime.invalid/file/upload', {
+            method: 'POST',
+            headers,
+            body,
+          });
+          const form = await request.formData();
+          const file = form.get('file');
+          expect(file).toBeInstanceOf(File);
+          if (file instanceof File) uploadFilenames.push(file.name);
+          return Response.json([
+            {
+              path: `/workspace/uploads/.kortix-inbox/command_1/.kortix-prompt-fixed`,
+              size: 4,
+            },
+          ]);
+        }
+        return Response.json(true);
+      },
+      () => 'fixed',
+    );
+
+    expect(new TextEncoder().encode(filename).length).toBe(215);
+    expect(uploadFilenames).toEqual(['.kortix-prompt-fixed']);
+    expect(new TextEncoder().encode(uploadFilenames[0]!).length).toBeLessThanOrEqual(255);
+  });
+}
+
 test('rejects an upload failure without exposing an echoed file body', async () => {
   const error = await writeRuntimePromptFile(
     input,

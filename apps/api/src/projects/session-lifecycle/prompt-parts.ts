@@ -13,6 +13,7 @@
  */
 
 import { isModelNativeAttachmentMime } from '@kortix/shared';
+import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 
 export const PROMPT_MAX_PARTS = 64;
@@ -24,7 +25,6 @@ export const PROMPT_TEXT_PREVIEW_CHARS = 2000;
  * daemon stays an ordinary request.
  */
 export const PROMPT_PARTS_MAX_BYTES = 12 * 1024 * 1024;
-const DATA_URL_MIME = /^data:([^;,]+);base64,/i;
 
 export type SanitizedPromptParts = { parts: PromptPartWire[] } | { error: string };
 
@@ -40,8 +40,8 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
       | 'agent'
       | 'text',
     ...(typeof part?.text === 'string' ? { text: part.text } : {}),
-    ...(typeof part?.mime === 'string' ? { mime: part.mime } : {}),
-    ...(typeof part?.url === 'string' ? { url: part.url } : {}),
+    ...(typeof part?.mime === 'string' ? { mime: part.mime.trim() } : {}),
+    ...(typeof part?.url === 'string' ? { url: part.url.trim() } : {}),
     ...(typeof part?.filename === 'string' ? { filename: part.filename } : {}),
     ...(typeof part?.name === 'string' ? { name: part.name } : {}),
     ...(part?.source === undefined ? {} : { source: part.source }),
@@ -73,10 +73,13 @@ function validateFilePart(part: PromptPartWire): string | null {
   const url = part.url?.trim();
   if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
   if (isModelNativeAttachmentMime(mime)) return null;
-  const stagedMime = DATA_URL_MIME.exec(url)?.[1]?.trim().toLowerCase();
-  if (!stagedMime) return `file "${filename}" must be uploaded before it can be sent`;
-  if (stagedMime !== mime.toLowerCase()) {
-    return `file "${filename}" has inconsistent MIME metadata`;
+  if (!url.toLowerCase().startsWith('data:')) {
+    return `file "${filename}" must be uploaded before it can be sent`;
+  }
+  try {
+    parseStagedPromptDataUrl({ filename, mime, url });
+  } catch (error) {
+    return error instanceof Error ? error.message : `file "${filename}" has malformed staged data`;
   }
   return null;
 }

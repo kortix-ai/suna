@@ -117,6 +117,47 @@ describe('sanitizeInboxPromptParts', () => {
     ).toEqual({ error: 'file "bundle.zip" has inconsistent MIME metadata' });
   });
 
+  test('rejects malformed base64 before admitting a staged non-native file', () => {
+    for (const url of [
+      'data:application/zip;base64,%%%= ',
+      'data:application/zip;base64,UEs=DBA=',
+      'data:application/zip;base64,UEsDBA==junk',
+    ]) {
+      expect(
+        sanitizeInboxPromptParts([
+          {
+            type: 'file',
+            mime: 'application/zip',
+            filename: 'bundle.zip',
+            url,
+          },
+        ]),
+      ).toEqual({ error: 'file "bundle.zip" has malformed staged data' });
+    }
+  });
+
+  test('stores canonical MIME and data URL values after accepting surrounding whitespace', () => {
+    expect(
+      sanitizeInboxPromptParts([
+        {
+          type: 'file',
+          mime: '  application/zip  ',
+          filename: 'bundle.zip',
+          url: '  data:application/zip;base64,UEsDBA==  ',
+        },
+      ]),
+    ).toEqual({
+      parts: [
+        {
+          type: 'file',
+          mime: 'application/zip',
+          filename: 'bundle.zip',
+          url: 'data:application/zip;base64,UEsDBA==',
+        },
+      ],
+    });
+  });
+
   test('caps the serialized payload — a durable row is a Postgres row, not a blob store', () => {
     // One oversized data-URL part. The cap exists so a first-prompt attachment
     // can ride the inbox as a data URL while an unbounded upload cannot wedge

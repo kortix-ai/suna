@@ -22,6 +22,10 @@ describe('sanitizePromptUploadFilename', () => {
     expect(sanitizePromptUploadFilename('../报告\u0000.zip')).toBe('.._报告_.zip');
   });
 
+  test('removes C1 control characters', () => {
+    expect(sanitizePromptUploadFilename('report\u0080\u009f.zip')).toBe('report__.zip');
+  });
+
   test('stays within the daemon collision budget', () => {
     const name = sanitizePromptUploadFilename(`${'界'.repeat(100)}.zip`);
     expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(

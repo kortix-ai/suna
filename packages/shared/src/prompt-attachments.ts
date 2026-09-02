@@ -12,7 +12,7 @@ export function isModelNativeAttachmentMime(mime: string): boolean {
   return normalized.startsWith('image/') || normalized === 'application/pdf';
 }
 
-const UNSAFE_FILENAME_CHARS = new RegExp('[/\\\\\\u0000-\\u001f\\u007f]', 'g');
+const UNSAFE_FILENAME_CHARS = new RegExp('[/\\\\\\u0000-\\u001f\\u007f-\\u009f]', 'g');
 const UTF8 = new TextEncoder();
 
 function byteLength(value: string): number {

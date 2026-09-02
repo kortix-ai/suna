@@ -43,8 +43,7 @@ export async function writeRuntimePromptFile(
   token: () => string = randomUUID,
 ): Promise<{ path: string; size: number }> {
   const directory = path.posix.dirname(input.targetPath);
-  const basename = path.posix.basename(input.targetPath);
-  const temporaryName = `.${basename}.kortix-prompt-${token()}`;
+  const temporaryName = `.kortix-prompt-${token()}`;
   const fileBytes = new Uint8Array(input.bytes);
   const form = new FormData();
   form.append('path', directory);
