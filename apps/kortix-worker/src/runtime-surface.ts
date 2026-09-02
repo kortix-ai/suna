@@ -165,6 +165,16 @@ interface StoredMessage {
 export class WireTranscript {
   private readonly messages = new Map<string, StoredMessage>();
   private order: string[] = [];
+  /**
+   * Ids hidden by a rewind, still held in `messages`.
+   *
+   * Staged, not deleted: `rewind()` promises a reversible rollback, so the
+   * bytes have to survive until either `unrevert()` puts them back or the next
+   * prompt commits the new path. Keeping them out of `order` is what makes
+   * `page()` — and therefore `/messages` — agree with the removal events
+   * already on the wire, with no second code path.
+   */
+  private staged: string[] = [];
 
   apply(wire: { type: string; properties: Record<string, unknown> }): void {
     if (wire.type === 'message.updated') {
@@ -199,7 +209,80 @@ export class WireTranscript {
       }
       if (!message.parts.has(part.id)) message.order.push(part.id);
       message.parts.set(part.id, part);
+      return;
     }
+    // A reconnecting client replays the wire, so `/messages` can only agree
+    // with `/events` if removals are replayable too.
+    if (wire.type === 'message.removed') {
+      const id = wire.properties.messageID as string | undefined;
+      if (!id) return;
+      this.messages.delete(id);
+      this.order = this.order.filter((x) => x !== id);
+      this.staged = this.staged.filter((x) => x !== id);
+      return;
+    }
+    if (wire.type === 'message.part.removed') {
+      const id = wire.properties.messageID as string | undefined;
+      const partId = wire.properties.partID as string | undefined;
+      if (!id || !partId) return;
+      const message = this.messages.get(id);
+      if (!message) return;
+      message.parts.delete(partId);
+      message.order = message.order.filter((x) => x !== partId);
+    }
+  }
+
+  /**
+   * Hide `fromId` and everything after it. Returns the ids removed, oldest
+   * first, so the caller can emit one `message.removed` per id.
+   *
+   * An unknown id removes nothing rather than guessing a position — a rewind
+   * that silently truncated at the wrong place would be worse than one that
+   * did nothing.
+   */
+  revert(fromId: string): string[] {
+    if (!this.messages.has(fromId)) return [];
+    const cut = this.order.filter((id) => id >= fromId);
+    if (cut.length === 0) return [];
+    this.order = this.order.filter((id) => id < fromId);
+    // A second, earlier rewind subsumes the first: everything stays staged and
+    // one restore brings the whole tail back in id order.
+    this.staged = [...this.staged, ...cut].sort();
+    return cut;
+  }
+
+  /** Put every staged message back. Returns the ids restored, oldest first. */
+  unrevert(): string[] {
+    if (this.staged.length === 0) return [];
+    const restored = [...this.staged].sort();
+    this.order = [...this.order, ...restored].sort();
+    this.staged = [];
+    return restored;
+  }
+
+  /**
+   * Drop the staged tail for good — the next prompt has committed the new path.
+   * After this `unrevert()` cannot resurrect it, which is the point: splicing a
+   * dead branch into a conversation that has moved on is worse than losing it.
+   */
+  commitRevert(): string[] {
+    if (this.staged.length === 0) return [];
+    const dropped = [...this.staged].sort();
+    for (const id of dropped) this.messages.delete(id);
+    this.staged = [];
+    return dropped;
+  }
+
+  /** Ids currently hidden by a rewind. */
+  get stagedIds(): string[] {
+    return [...this.staged];
+  }
+
+  /** One message with its parts in order, or null. Used to re-announce a restore. */
+  messageById(id: string): { info: Record<string, unknown>; parts: Record<string, unknown>[] } | null {
+    const m = this.messages.get(id);
+    if (!m) return null;
+    return { info: m.info, parts: m.order.map((pid) => m.parts.get(pid)!).filter(Boolean) };
   }
 
   page(opts: { limit: number; before: string | null }): {
@@ -446,6 +529,14 @@ export class RuntimeSurface {
     type: string;
     properties: Record<string, unknown>;
     transcriptOnly?: boolean;
+    /**
+     * Bus only — do NOT apply to the transcript. The mirror of
+     * `transcriptOnly`, and rewind is why it exists: the transcript has
+     * already STAGED the change, and re-applying a `message.removed` through
+     * `apply()` would delete the staged copy for good, so `unrevert()` would
+     * find nothing to restore and a "reversible" rollback would be permanent.
+     */
+    busOnly?: boolean;
   }): void {
     this.updatedAt = Date.now();
     // A transcript-only frame is the full-text twin of a `message.part.delta`:
@@ -459,7 +550,7 @@ export class RuntimeSurface {
       const status = wire.properties.status as { type?: string } | undefined;
       if (status?.type) this.status = { type: status.type };
     }
-    this.transcript.apply(wire);
+    if (!wire.busOnly) this.transcript.apply(wire);
     const session =
       (wire.properties.sessionID as string | undefined) ??
       ((wire.properties.info as { sessionID?: string } | undefined)?.sessionID ??
@@ -621,6 +712,84 @@ export class RuntimeSurface {
     };
   }
 
+  /**
+   * Stage a rewind at `messageId` and TELL every client.
+   *
+   * The transcript change alone is invisible to anyone already connected —
+   * `/messages` would disagree with what `/events` has said — so each removed
+   * message is published as `message.removed`. Those events already have
+   * consumers everywhere (the SDK parses them, mobile switches on them); until
+   * now nothing produced them, which is exactly why rewind did nothing.
+   */
+  revertFrom(messageId: string): { removed: string[] } {
+    const removed = this.transcript.revert(messageId);
+    for (const id of removed) {
+      this.publishWire({
+        type: 'message.removed',
+        properties: { messageID: id, sessionID: this.rootId },
+        busOnly: true,
+      });
+    }
+    return { removed };
+  }
+
+  /**
+   * Commit a staged rewind — the new path has been taken.
+   *
+   * No events: clients were told `message.removed` when the rewind was staged,
+   * so they already believe these are gone. This only makes that true, and
+   * stops a later `restoreRewind()` splicing a dead branch back into a
+   * conversation that has moved on.
+   */
+  commitStagedRevert(): string[] {
+    return this.transcript.commitRevert();
+  }
+
+  /** Undo a staged rewind, re-announcing each message it had hidden. */
+  restoreRevert(): { restored: string[] } {
+    const restored = this.transcript.unrevert();
+    for (const id of restored) {
+      const message = this.transcript.messageById(id);
+      if (!message) continue;
+      // Bus-only again: `unrevert()` already put these back in the transcript,
+      // and re-applying would be harmless but redundant work on every restore.
+      this.publishWire({
+        type: 'message.updated',
+        properties: { info: message.info },
+        busOnly: true,
+      });
+      for (const part of message.parts) {
+        this.publishWire({ type: 'message.part.updated', properties: { part }, busOnly: true });
+      }
+    }
+    return { restored };
+  }
+
+  /**
+   * Read a small JSON body. A malformed or absent body reads as `null` rather
+   * than throwing: the caller decides whether the field it wanted was required.
+   */
+  private readRevertBody(req: IncomingMessage): Promise<{ messageID?: string } | null> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      req.on('data', (c: Buffer) => {
+        total += c.length;
+        // A revert body is a single id; anything larger is not one.
+        if (total > 64 * 1024) return;
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+        } catch {
+          resolve(null);
+        }
+      });
+      req.on('error', () => resolve(null));
+    });
+  }
+
   private opencodeSessionObject() {
     const s = this.sessionProjection();
     return {
@@ -674,6 +843,44 @@ export class RuntimeSurface {
       }
       this.opts.onAbort?.();
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }));
+      return true;
+    }
+    // POST /session/:id/revert and /unrevert — `kortix.session().rewind()` and
+    // `.restoreRewind()` land HERE, at the raw root, for the same reason abort
+    // does: the SDK's OpenCode client has no prefix. Answered 404 before this,
+    // so rewinding a pi session silently did nothing.
+    const rawRevert = url.pathname.match(/^\/session\/([^/]+)\/(revert|unrevert)$/);
+    if (rawRevert && req.method === 'POST') {
+      if (!this.authorized(req, url)) {
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      if (decodeURIComponent(rawRevert[1]!) !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      void this.readRevertBody(req).then((body) => {
+        if (rawRevert[2] === 'unrevert') {
+          const { restored } = this.restoreRevert();
+          res
+            .writeHead(200, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ ok: true, restored }));
+          return;
+        }
+        const messageId = body?.messageID;
+        if (!messageId) {
+          res
+            .writeHead(400, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'messageID is required' }));
+          return;
+        }
+        const { removed } = this.revertFrom(messageId);
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, removed }));
+      });
       return true;
     }
     if (req.method !== 'GET') return false;

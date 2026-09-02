@@ -543,6 +543,15 @@ export async function startWorker(cfg = configFromEnv()) {
   // `messageID`): the worker MUST reuse it so the transcript, the API's inbox
   // placement, and the turn oracle all key on the same id.
   const publishUserMessage = (text: string, explicitId?: string): string => {
+    // A new prompt COMMITS a staged rewind: this is the new path, and the
+    // branch the user rewound past is now unreachable. The SDK's `rewind()`
+    // documents exactly this ("The next prompt commits the new path"), and
+    // without it a later `restoreRewind()` would splice the abandoned branch
+    // back in after the conversation had already moved on.
+    const dropped = surface.commitStagedRevert();
+    if (dropped.length > 0) {
+      console.log(JSON.stringify({ msg: 'rewind committed', dropped: dropped.length }));
+    }
     surface.noteUserText(text);
     const id = explicitId ?? surface.mintMessageId();
     surface.publishWire({
