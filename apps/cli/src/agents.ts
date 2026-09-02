@@ -117,6 +117,19 @@ export function wireCodingAgents(input: WireAgentsInput): WireAgentsResult {
         skipped.push(`${link.path} (parent unavailable: ${(err as Error).message})`);
         continue;
       }
+      // Create the TARGET too, or the link dangles. No starter template ships
+      // a `commands/` directory, so `.claude/commands` pointed at nothing in
+      // every project ever initialised; a project whose config dir has no
+      // `skills/` dangled `.claude/skills` and `.pi/skills` the same way. A
+      // broken symlink is worse than a missing one — it looks wired, and the
+      // tool that reads it silently discovers nothing. The link target is
+      // relative to the link's OWN directory, which is what the symlink stores.
+      try {
+        mkdirSync(resolve(dirname(abs), link.target), { recursive: true });
+      } catch (err) {
+        skipped.push(`${link.path} (target unavailable: ${(err as Error).message})`);
+        continue;
+      }
       if (!handleExisting(abs, input.overwrite)) {
         skipped.push(link.path);
       } else {

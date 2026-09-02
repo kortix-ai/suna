@@ -31,6 +31,45 @@ afterEach(() => {
 });
 
 describe('wireCodingAgents', () => {
+  /**
+   * Every link this writes must RESOLVE.
+   *
+   * The fixture above pre-creates `.kortix/opencode/commands`, a directory no
+   * starter template ships — so the suite proved the link was created without
+   * ever proving it pointed at anything. In a real repo `.claude/commands`
+   * dangled on every `kortix init`, and on a pi project (whose config dir is
+   * `.kortix/pi`) so did the rest of them. A broken symlink is worse than a
+   * missing one: it looks wired.
+   */
+  test('no link it writes dangles, even when the config dir is bare', () => {
+    const bare = mkdtempSync(join(tmpdir(), 'kortix-bare-'));
+    try {
+      // Exactly what `getStarterFiles({template:'pi'})` lays down: a manifest
+      // and agent markdown, and NO commands/ directory anywhere.
+      mkdirSync(join(bare, PI_CONFIG_DIR, 'agents'), { recursive: true });
+      writeFileSync(join(bare, PI_CONFIG_DIR, 'agents', 'kortix.md'), '# agent', 'utf8');
+
+      const result = wireCodingAgents({
+        repoRoot: bare,
+        agents: ['opencode', 'claude', 'codex', 'pi'],
+        overwrite: false,
+        configDir: PI_CONFIG_DIR,
+      });
+
+      const dangling: string[] = [];
+      for (const entry of result.written) {
+        const path = entry.split(' \u2192 ')[0];
+        if (path === 'AGENTS.md') continue;
+        const abs = join(bare, path);
+        // existsSync follows the link: false on a symlink to nothing.
+        if (!existsSync(abs)) dangling.push(entry);
+      }
+      expect(dangling).toEqual([]);
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
   test('all agents → native discovery links for opencode/claude/codex/pi + one AGENTS.md', () => {
     mkdirSync(join(dir, '.claude'), { recursive: true });
     mkdirSync(join(dir, '.pi'), { recursive: true });
