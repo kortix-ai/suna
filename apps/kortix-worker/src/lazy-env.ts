@@ -290,9 +290,12 @@ export class LazyKortixEnv {
       // situation from "it failed", and it calls for a different next move.
       return err(
         new EnvironmentRecoveredError(
-          'the environment became unreachable during this operation and has been ' +
-            'recovered. Whether the operation ran is unknown, so it was not ' +
-            'repeated — repeating it could act twice.',
+          'The environment became unreachable during this operation and has ' +
+            'been recovered; it is ready to use now. This operation was NOT ' +
+            'retried automatically because it may already have run, and ' +
+            'repeating it could act twice. Retry it yourself if it is safe to ' +
+            'repeat (a read, a list, an idempotent command); otherwise check ' +
+            'whether it took effect before deciding.',
         ),
       );
     } catch (e) {

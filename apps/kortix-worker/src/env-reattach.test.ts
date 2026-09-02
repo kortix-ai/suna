@@ -306,7 +306,17 @@ describe('what may be retried, and what may not', () => {
     expect(r.ok).toBe(false);
     const error = (r as { error: { code?: string; message?: string } }).error;
     expect(error.code).toBe('environment_recovered');
-    expect(String(error.message)).toMatch(/unknown|may have/i);
+    const message = String(error.message);
+    // It must say the outcome is uncertain...
+    expect(message).toMatch(/may already have run/i);
+    // ...that the environment is usable again...
+    expect(message).toMatch(/ready to use/i);
+    // ...and it must TELL THE MODEL WHAT TO DO. Measured on pi: with a purely
+    // descriptive message, gpt-4o-mini relayed it to the user verbatim as its
+    // final answer and never retried a `cat` — a command it knew was safe to
+    // repeat. The worker cannot know that; the model can. A tool error the
+    // model reads as prose is a tool error it will not act on.
+    expect(message).toMatch(/retry it yourself/i);
   });
 
   test('a READ is retried, because replaying it costs nothing', async () => {
