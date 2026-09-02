@@ -14091,12 +14091,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
         "install_session_id": {
           "name": "install_session_id",
           "type": "text",

@@ -63,7 +63,6 @@ CREATE TABLE "kortix"."project_subprojects" (
 	"git_ref" varchar(255),
 	"resolved_sha" varchar(64),
 	"title" varchar(255) NOT NULL,
-	"enabled" boolean,
 	"install_session_id" text,
 	"owns" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"installed_at" timestamp with time zone,

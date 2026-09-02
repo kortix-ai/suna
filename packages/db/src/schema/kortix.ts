@@ -1648,11 +1648,14 @@ export const projectSubprojects = kortixSchema.table(
     /** The commit sha recorded at install — what "this version" means here. */
     resolvedSha: varchar('resolved_sha', { length: 64 }),
     title: varchar('title', { length: 255 }).notNull(),
-    /**
-     * Whether this subproject's triggers are armed. Mirrors the manifest `enabled`
-     * of the triggers it owns; NULL while no trigger has been cataloged yet.
+    /*
+     * There is deliberately NO `enabled` column. A subproject has no on/off
+     * state: it installs with every trigger OFF, and each trigger is armed
+     * individually under `/:projectId/triggers`, which is the one surface that
+     * owns that decision. A second armed/disarmed flag here would be a mirror
+     * with no writer — and this table is a projection of the manifest, so a
+     * flag the manifest cannot express does not belong in it.
      */
-    enabled: boolean('enabled'),
     /**
      * The session that performed the install, for the "how did this get here"
      * trail. Its FK is named explicitly below — the name drizzle derives from
