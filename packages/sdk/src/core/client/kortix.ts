@@ -514,6 +514,29 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
 
+      /**
+       * Shared filesystems — a named volume of state every agent in this
+       * project can read and write, alive whether or not any sandbox is.
+       * The project's git repo stays what it is: config, not memory.
+       */
+      filesystems: {
+        list: () => P.listProjectFilesystems(projectId),
+        create: (input: Parameters<typeof P.createProjectFilesystem>[1]) =>
+          P.createProjectFilesystem(projectId, input),
+        remove: (name: string) => P.deleteProjectFilesystem(projectId, name),
+        files: (name: string, options?: Parameters<typeof P.listProjectFilesystemFiles>[2]) =>
+          P.listProjectFilesystemFiles(projectId, name, options),
+        read: (name: string, path: string) => P.readProjectFilesystemFile(projectId, name, path),
+        write: (
+          name: string,
+          path: string,
+          content: string | Uint8Array,
+          options?: Parameters<typeof P.writeProjectFilesystemFile>[4],
+        ) => P.writeProjectFilesystemFile(projectId, name, path, content, options),
+        removeFile: (name: string, path: string) =>
+          P.deleteProjectFilesystemFile(projectId, name, path),
+      },
+
       secrets: {
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
