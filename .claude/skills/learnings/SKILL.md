@@ -23,6 +23,21 @@ linked, not inlined.
 
 ### A read that fails is not an admin decision — health flags fail open (2026-09-02)
 
+### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
+
+**When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
+root dependency installed by its `--filter kortix --prod=false` layer. The
+production image contains both. Pin each binary's module graph to Trivy's fixed
+version, then scan the complete `linux/amd64` image.
+
+*Incident:* Deploy Dev run `33501907712`, job `99838193732`, failed on
+`CVE-2026-56854`. Caddy contained `x/crypto v0.53.0`; Supabase CLI contained
+`v0.54.0`. Both were below the fixed `v0.55.0`.
+*Enforcer:* `apps/kortix-app-runtime/build_test.go`,
+`scripts/worktree/__tests__/contract.test.ts`, and the Deploy Dev Trivy gate.
+
+### A proxied WebSocket that carries idle traffic needs a keepalive YOU send (2026-08-30)
+
 **When:** writing any code path that answers "is the platform in maintenance /
 locked down / degraded?", especially one an edge proxy polls.
 `getEdgeMaintenanceConfig()` returned a synthetic `level: 'blocking'` whenever
