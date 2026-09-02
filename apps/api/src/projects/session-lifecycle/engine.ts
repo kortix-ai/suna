@@ -32,6 +32,7 @@ import {
 } from '../instance-scope';
 import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
 import {
@@ -1720,6 +1721,18 @@ export async function executeQueuedContinue(
         await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       }
       tl.mark('marked');
+      // The prompt is now on the wire for its target session. If it came from a
+      // trigger, flip that trigger's runtime row from the transient "queued" to
+      // "fired" so monitoring can tell a delivered reuse fire from a wedged one
+      // (see markTriggerRuntimeDelivered). Failure to write back must never break
+      // delivery, hence the swallow.
+      if (typeof payload.triggerSlug === 'string') {
+        await markTriggerRuntimeDelivered({
+          projectId: row.projectId,
+          slug: payload.triggerSlug,
+          when: new Date(),
+        }).catch(() => {});
+      }
       if (!placedIntoLiveTurn || !wireMessageId) break;
       // PROOF. One tip read after the insert answers exactly whether the box
       // created a newer assistant BEFORE this prompt landed (the strand
