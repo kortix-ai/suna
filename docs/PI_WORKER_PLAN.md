@@ -6,6 +6,21 @@ Branch: `pi-worker`. Environment: `https://pi.kortix.com` (persistent branch env
 This file is the plan of record. Update the status column in the same commit
 that changes the status — a plan that lags the code is worse than no plan.
 
+> ### ⚠ The branch environment is frozen
+>
+> `pi.kortix.com` serves **`ef2163ba`** and has not moved since. The persistent
+> preview sandbox cannot `git fetch` this PRIVATE repo — it holds no credential
+> at all (no repo config, no `~/.gitconfig`, no `~/.git-credentials`, no
+> `GIT_ASKPASS`), and `sandbox-preview.ts` supplies none. The deploy step is
+> `continue-on-error`, so the job continues, the hostname is never re-pointed,
+> and `/v1/health` keeps answering `ok` on the stale commit.
+>
+> **Everything below is verified by local gates only** until a repo-scoped
+> credential exists in that box (`PREVIEW_MANAGED_GIT_GITHUB_TOKEN` — repo
+> admin). `scratchpad/pi-system-test.sh` now fails loudly when the served commit
+> does not match `origin/pi-worker`, so a stale environment can no longer be
+> mistaken for a passing one.
+
 ---
 
 ## The requirements, verbatim in intent
@@ -86,6 +101,7 @@ what it wrote before the switch.
 | REST | `/v1/projects/:projectId/filesystems*` (7 routes) | live |
 | SDK | `kortix.project(id).filesystems.*` | live |
 | CLI | `kortix fs ls\|create\|rm\|list\|put\|get\|del` | live |
+| Docs | `apps/web/content/docs/sdk/filesystems.mdx` | written |
 | Agent | `bash` → `kortix fs …` in the session environment | **pending dev deploy** |
 
 The agent path needs **no new worker tool**. The pi worker runs exactly four
@@ -143,11 +159,12 @@ Ordered by what blocks the most.
    we're going to have like a versioning system"). Content addressing already
    makes it cheap: a version is another row pointing at a blob that already
    exists.
-4. ~~**Blob garbage collection**~~ — **done.** `sweepUnreferencedBlobs`
-   (`apps/api/src/filesystems/gc.ts`) collects blobs no path references, and the
-   safety rule is the GRACE PERIOD, not the reference check: `putFile` stores
-   bytes then metadata, so a blob is legitimately unreferenced mid-write.
-   Nothing schedules it yet — it is a function, not a cron.
+4. ~~**Blob garbage collection**~~ — **done and scheduled.**
+   `sweepUnreferencedBlobs` (`filesystems/gc.ts`) decides WHICH blobs are
+   collectable; `filesystems/blob-sweeper.ts` decides WHEN, hourly among the
+   leader-elected singleton workers. The safety rule is the GRACE PERIOD, not
+   the reference check: `putFile` stores bytes then metadata, so a blob is
+   legitimately unreferenced mid-write.
 5. **`message.removed` / `message.part.removed`** — Kortix uses them for revert
    and compaction; pi's `Session` tree can branch but nothing wires it to
    `Agent`. Frontend-visible.
