@@ -36,13 +36,17 @@ describe('connector approval review contract', () => {
   });
 
   test('Review Center uses the shared full-parameter component', () => {
-    const modal = read('./review-detail-modal.tsx');
+    const modal = read('./review-detail.tsx');
     const center = read('./review-center.tsx');
 
     expect(modal).toContain('<ApprovalRequest');
     expect(modal).toContain('argsPreview: adaptedAction.rawArgsPreview');
     expect(modal).not.toContain('Always allow this');
     expect(center).not.toContain('Approve all safe');
-    expect(center).toContain("item.kind !== 'approval'");
+    // Multi-select left the inbox UI (2026-09-03); the keyboard `d` path still
+    // routes through the outcome resolver that never answers a connector
+    // approval, and no row exposes a checkbox that could bulk-decide one.
+    expect(center).toContain('connectedBulkOutcome(');
+    expect(center).not.toContain('<Checkbox');
   });
 });
