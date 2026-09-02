@@ -321,7 +321,7 @@ export async function runProjectMaintenance(): Promise<void> {
           '[project-maintenance] environment reaper failed:',
           err instanceof Error ? err.message : err,
         );
-        return { scanned: 0, reaped: 0, errors: 0 };
+        return { scanned: 0, stopped: 0, deleted: 0, errors: 0 };
       }),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
@@ -428,7 +428,8 @@ export async function runProjectMaintenance(): Promise<void> {
         forwardedPrompts.forceClosed ||
         orphanBoxes.stopped ||
         orphanBoxes.errors ||
-        orphanEnvironments.reaped ||
+        orphanEnvironments.stopped ||
+        orphanEnvironments.deleted ||
         orphanEnvironments.errors ||
         branches.deleted ||
         branches.errors ||

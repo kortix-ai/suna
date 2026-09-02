@@ -18,74 +18,108 @@
  * age bound, so the row is what protects the box.
  */
 import { describe, expect, test } from 'bun:test';
-import { selectReapableEnvironments, type EnvironmentReapCandidate } from './orphan-environments';
+import {
+  decideEnvironmentReaping,
+  type EnvironmentReapCandidate,
+} from './orphan-environments';
 
 const NOW = new Date('2026-09-02T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 
 const base: EnvironmentReapCandidate = {
   sessionId: 's1',
   sessionDeletedAt: null,
   sessionMissing: false,
-  lastUsedAt: ago(48 * HOUR),
+  lastUsedAt: ago(2 * DAY),
 };
 
-describe('which environments are reapable', () => {
-  test("a deleted session's environment is reapable", () => {
-    const out = selectReapableEnvironments(
-      [{ ...base, sessionDeletedAt: ago(2 * HOUR) }],
-      NOW,
-    );
-    expect(out).toEqual(['s1']);
+const decide = (c: Partial<EnvironmentReapCandidate>) =>
+  decideEnvironmentReaping([{ ...base, ...c }], NOW);
+
+describe('a session that is GONE — delete, nothing can want it back', () => {
+  test('no session row at all', () => {
+    expect(decide({ sessionMissing: true })).toEqual([
+      { sessionId: 's1', action: 'delete', reason: 'session-missing' },
+    ]);
   });
 
-  test('an environment whose session row is gone entirely is reapable', () => {
-    expect(selectReapableEnvironments([{ ...base, sessionMissing: true }], NOW)).toEqual(['s1']);
-  });
-
-  /**
-   * The abandoned case, and the reason this exists: a live session nobody has
-   * touched in days still holds a box that only the provider's 60s idle timer
-   * ever stopped, and that nothing ever deleted.
-   */
-  test('a live session idle past the horizon is reapable', () => {
-    expect(selectReapableEnvironments([{ ...base, lastUsedAt: ago(48 * HOUR) }], NOW)).toEqual(['s1']);
-  });
-
-  test('a live session used recently is NOT reapable', () => {
-    expect(selectReapableEnvironments([{ ...base, lastUsedAt: ago(1 * HOUR) }], NOW)).toEqual([]);
+  test('soft-deleted past its own teardown window', () => {
+    expect(decide({ sessionDeletedAt: ago(2 * HOUR) })).toEqual([
+      { sessionId: 's1', action: 'delete', reason: 'session-deleted' },
+    ]);
   });
 
   /**
-   * A just-deleted session gets a grace window: teardown already ran
-   * inline, and racing it would have two paths deleting one provider box.
+   * `deleteSession` tears the environment down inline. Racing it would have two
+   * paths deleting one provider box.
    */
-  test('a just-deleted session is left to its own teardown', () => {
-    expect(
-      selectReapableEnvironments([{ ...base, sessionDeletedAt: ago(30_000), lastUsedAt: ago(30_000) }], NOW),
-    ).toEqual([]);
+  test('just deleted — left to the inline teardown', () => {
+    expect(decide({ sessionDeletedAt: ago(30_000) })).toEqual([]);
+  });
+});
+
+describe('a session that is LIVE — the horizon decides, and the two differ', () => {
+  /**
+   * THE case this design exists for. On pi.kortix.com 16 of 21 environments
+   * were idle past a day while their sessions were perfectly alive. An
+   * environment holds the session's WORKING TREE: committed work is safe on the
+   * session branch in the git mirror, but uncommitted changes live only in that
+   * box. Deleting on the short horizon would have destroyed sixteen live
+   * sessions' uncommitted work — to reclaim compute the provider's own
+   * `autoStopInterval: 60` had already stopped billing for.
+   */
+  test('idle a day: STOP, never delete — the working tree survives', () => {
+    expect(decide({ lastUsedAt: ago(2 * DAY) })).toEqual([
+      { sessionId: 's1', action: 'stop', reason: 'idle-stop' },
+    ]);
   });
 
-  test('a never-used environment falls back to nothing, not to NaN', () => {
-    // `lastUsedAt` is nullable in the schema. A null must not read as "epoch,
-    // therefore ancient" on one branch and "unknown, therefore keep" on another.
-    expect(selectReapableEnvironments([{ ...base, lastUsedAt: null }], NOW)).toEqual([]);
-    expect(
-      selectReapableEnvironments([{ ...base, lastUsedAt: null, sessionMissing: true }], NOW),
-    ).toEqual(['s1']);
+  test('idle a week: delete — a week of silence is evidence nobody is coming back', () => {
+    expect(decide({ lastUsedAt: ago(8 * DAY) })).toEqual([
+      { sessionId: 's1', action: 'delete', reason: 'idle-delete' },
+    ]);
   });
 
-  test('mixed input returns only the reapable ones', () => {
-    const out = selectReapableEnvironments(
-      [
-        { ...base, sessionId: 'keep', lastUsedAt: ago(1 * HOUR) },
-        { ...base, sessionId: 'idle', lastUsedAt: ago(72 * HOUR) },
-        { ...base, sessionId: 'deleted', sessionDeletedAt: ago(5 * HOUR) },
-        { ...base, sessionId: 'orphan', sessionMissing: true },
-      ],
-      NOW,
-    );
-    expect(out).toEqual(['idle', 'deleted', 'orphan']);
+  test('used within the hour: untouched', () => {
+    expect(decide({ lastUsedAt: ago(1 * HOUR) })).toEqual([]);
   });
+
+  test('the two horizons do not overlap at their boundary', () => {
+    // Just inside a week is still a stop, not a delete.
+    expect(decide({ lastUsedAt: ago(7 * DAY - HOUR) })[0]?.action).toBe('stop');
+    expect(decide({ lastUsedAt: ago(7 * DAY + HOUR) })[0]?.action).toBe('delete');
+  });
+});
+
+describe('the null case', () => {
+  test('a never-used environment is unknown, not ancient', () => {
+    // `lastUsedAt` is nullable. Read as epoch it would look a lifetime idle and
+    // a box created seconds ago would be reaped.
+    expect(decide({ lastUsedAt: null })).toEqual([]);
+  });
+
+  test('but a null lastUsedAt does not protect an environment whose session is gone', () => {
+    expect(decide({ lastUsedAt: null, sessionMissing: true })[0]?.action).toBe('delete');
+  });
+});
+
+test('mixed input: each row gets its own verdict', () => {
+  const out = decideEnvironmentReaping(
+    [
+      { ...base, sessionId: 'fresh', lastUsedAt: ago(1 * HOUR) },
+      { ...base, sessionId: 'idle', lastUsedAt: ago(2 * DAY) },
+      { ...base, sessionId: 'ancient', lastUsedAt: ago(30 * DAY) },
+      { ...base, sessionId: 'deleted', sessionDeletedAt: ago(5 * HOUR) },
+      { ...base, sessionId: 'orphan', sessionMissing: true },
+    ],
+    NOW,
+  );
+  expect(out).toEqual([
+    { sessionId: 'idle', action: 'stop', reason: 'idle-stop' },
+    { sessionId: 'ancient', action: 'delete', reason: 'idle-delete' },
+    { sessionId: 'deleted', action: 'delete', reason: 'session-deleted' },
+    { sessionId: 'orphan', action: 'delete', reason: 'session-missing' },
+  ]);
 });

@@ -28,15 +28,37 @@
 import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionEnvironments } from '@kortix/db';
 import { db } from '../../shared/db';
-import { deleteSessionEnvironment } from '../../platform/services/session-environment-teardown';
+import {
+  deleteSessionEnvironment,
+  stopSessionEnvironment,
+} from '../../platform/services/session-environment-teardown';
 
 /**
- * How long an environment may sit unused before it is reclaimed.
+ * Idle long enough to STOP: power the box off, keep the row and the disk.
  *
- * Long enough that someone returning to yesterday's session resumes it instead
- * of paying a fresh provision.
+ * The provider's own `autoStopInterval: 60` already stops an idle environment
+ * after an hour, so this rarely has anything to do — it is the backstop for a
+ * box whose auto-stop did not fire. Reversible either way: `ensure` resumes a
+ * row whose status reads 'stopped'.
  */
 export const ENVIRONMENT_IDLE_HORIZON_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Idle long enough to DELETE, which is a different question and deserves a
+ * different answer.
+ *
+ * An environment is where the agent ACTS — it holds the session's working
+ * tree. Committed work is safe (it lives on the session branch in the git
+ * mirror), but uncommitted working-tree changes exist only in that box, and
+ * deleting it destroys them with no warning and no undo. On pi.kortix.com,
+ * 16 of 21 environments were idle past 24h; reaping those on the short horizon
+ * would have thrown away sixteen live sessions' uncommitted work to reclaim
+ * quota the provider's auto-stop had already stopped billing for.
+ *
+ * So the short horizon stops and the long one deletes. A week of silence is
+ * evidence nobody is coming back; a day is not.
+ */
+export const ENVIRONMENT_DELETE_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Grace after a delete, so this never races the inline teardown.
@@ -56,37 +78,73 @@ export interface EnvironmentReapCandidate {
   lastUsedAt: Date | null;
 }
 
+/** What to do with one environment. */
+export type EnvironmentReapAction = 'stop' | 'delete';
+
+export interface EnvironmentReapDecision {
+  sessionId: string;
+  action: EnvironmentReapAction;
+  /** Why, for the log — a reaper that cannot explain itself cannot be trusted. */
+  reason: 'session-missing' | 'session-deleted' | 'idle-delete' | 'idle-stop';
+}
+
 /**
- * The decision, as a pure function — this is the part that, wrong, deletes a
- * box someone is using.
+ * The decision, as a pure function — this is the part that, wrong, destroys
+ * someone's uncommitted work.
+ *
+ * The action follows the evidence:
+ *  - the session is GONE (no row, or soft-deleted past its teardown window):
+ *    nothing can ever want this environment again, so delete it.
+ *  - the session is LIVE but silent for a week: delete.
+ *  - the session is LIVE and merely idle: stop only. Reversible, and `ensure`
+ *    resumes it.
  */
-export function selectReapableEnvironments(
+export function decideEnvironmentReaping(
   candidates: EnvironmentReapCandidate[],
   now: Date,
-  options?: { idleHorizonMs?: number; deletedGraceMs?: number },
-): string[] {
+  options?: {
+    idleHorizonMs?: number;
+    deleteHorizonMs?: number;
+    deletedGraceMs?: number;
+  },
+): EnvironmentReapDecision[] {
   const idleHorizon = options?.idleHorizonMs ?? ENVIRONMENT_IDLE_HORIZON_MS;
+  const deleteHorizon = options?.deleteHorizonMs ?? ENVIRONMENT_DELETE_HORIZON_MS;
   const deletedGrace = options?.deletedGraceMs ?? DELETED_SESSION_GRACE_MS;
   const t = now.getTime();
+  const out: EnvironmentReapDecision[] = [];
 
-  return candidates
-    .filter((c) => {
-      // No session row at all: nothing will ever tear this down.
-      if (c.sessionMissing) return true;
-      // Soft-deleted, past the window where its own teardown would have run.
-      if (c.sessionDeletedAt) return t - c.sessionDeletedAt.getTime() > deletedGrace;
-      // Live but abandoned. A NULL lastUsedAt is "unknown", never "ancient" —
-      // reading it as epoch would reap a box created seconds ago that has not
-      // recorded a use yet.
-      if (!c.lastUsedAt) return false;
-      return t - c.lastUsedAt.getTime() > idleHorizon;
-    })
-    .map((c) => c.sessionId);
+  for (const c of candidates) {
+    // No session row at all: nothing will ever tear this down, and nothing can
+    // ever resume it.
+    if (c.sessionMissing) {
+      out.push({ sessionId: c.sessionId, action: 'delete', reason: 'session-missing' });
+      continue;
+    }
+    // Soft-deleted, past the window where its own inline teardown would have run.
+    if (c.sessionDeletedAt) {
+      if (t - c.sessionDeletedAt.getTime() > deletedGrace) {
+        out.push({ sessionId: c.sessionId, action: 'delete', reason: 'session-deleted' });
+      }
+      continue;
+    }
+    // Live. A NULL lastUsedAt is "unknown", never "ancient" — reading it as
+    // epoch would reap a box created seconds ago that has not recorded a use yet.
+    if (!c.lastUsedAt) continue;
+    const idleFor = t - c.lastUsedAt.getTime();
+    if (idleFor > deleteHorizon) {
+      out.push({ sessionId: c.sessionId, action: 'delete', reason: 'idle-delete' });
+    } else if (idleFor > idleHorizon) {
+      out.push({ sessionId: c.sessionId, action: 'stop', reason: 'idle-stop' });
+    }
+  }
+  return out;
 }
 
 export interface EnvironmentReapResult {
   scanned: number;
-  reaped: number;
+  stopped: number;
+  deleted: number;
   errors: number;
 }
 
@@ -95,22 +153,26 @@ export async function reapOrphanEnvironments(options?: {
   limit?: number;
   now?: Date;
   idleHorizonMs?: number;
+  deleteHorizonMs?: number;
 }): Promise<EnvironmentReapResult> {
-  const zero: EnvironmentReapResult = { scanned: 0, reaped: 0, errors: 0 };
+  const zero: EnvironmentReapResult = { scanned: 0, stopped: 0, deleted: 0, errors: 0 };
   if (process.env.KORTIX_ENVIRONMENT_REAP_ENABLED === 'false') return zero;
 
   const limit = Math.min(Math.max(options?.limit ?? 100, 1), 1000);
   const now = options?.now ?? new Date();
   const idleHorizonMs = options?.idleHorizonMs ?? ENVIRONMENT_IDLE_HORIZON_MS;
-  // One cutoff for both the query and the pure filter. Computing the SQL
-  // interval independently is how a `now`/horizon override silently stops
-  // agreeing with the decision function it feeds.
-  const idleCutoff = new Date(now.getTime() - idleHorizonMs);
+  const deleteHorizonMs = options?.deleteHorizonMs ?? ENVIRONMENT_DELETE_HORIZON_MS;
+  // One cutoff for both the query and the pure rule. Computing the SQL interval
+  // independently is how a `now`/horizon override silently stops agreeing with
+  // the decision function it feeds. The query uses the SHORTER horizon — it
+  // selects everything either branch might act on, and the rule sorts them.
+  const idleCutoff = new Date(now.getTime() - Math.min(idleHorizonMs, deleteHorizonMs));
 
   const rows = await db
     .select({
       sessionId: sessionEnvironments.sessionId,
       lastUsedAt: sessionEnvironments.lastUsedAt,
+      status: sessionEnvironments.status,
       sessionRowId: projectSessions.sessionId,
       deletedAt: sql<string | null>`${projectSessions.metadata}->>'deletedAt'`,
     })
@@ -130,7 +192,8 @@ export async function reapOrphanEnvironments(options?: {
 
   if (rows.length === 0) return zero;
 
-  const reapable = selectReapableEnvironments(
+  const byId = new Map(rows.map((r) => [r.sessionId, r]));
+  const decisions = decideEnvironmentReaping(
     rows.map((r) => ({
       sessionId: r.sessionId,
       sessionDeletedAt: r.deletedAt ? new Date(r.deletedAt) : null,
@@ -138,26 +201,40 @@ export async function reapOrphanEnvironments(options?: {
       lastUsedAt: r.lastUsedAt ?? null,
     })),
     now,
-    { idleHorizonMs },
+    { idleHorizonMs, deleteHorizonMs },
   );
 
-  let reaped = 0;
+  let stopped = 0;
+  let deleted = 0;
   let errors = 0;
-  for (const sessionId of reapable) {
+  for (const decision of decisions) {
+    // Nothing to stop on a row that already reads 'stopped'. The provider's own
+    // auto-stop gets there first almost every time, so without this the sweep
+    // would issue a pointless provider call for every idle environment, every
+    // five minutes, forever.
+    if (decision.action === 'stop' && byId.get(decision.sessionId)?.status === 'stopped') continue;
     try {
-      // The same teardown session delete calls: powers the box off, ends
-      // metering, drops the row. One path, so the two cannot diverge.
-      await deleteSessionEnvironment(sessionId);
-      reaped += 1;
+      if (decision.action === 'delete') {
+        // The same teardown session delete calls: powers the box off, ends
+        // metering, drops the row. One path, so the two cannot diverge.
+        await deleteSessionEnvironment(decision.sessionId);
+        deleted += 1;
+      } else {
+        await stopSessionEnvironment(decision.sessionId);
+        stopped += 1;
+      }
+      console.log(
+        `[reaper] environment ${decision.action}: ${decision.sessionId} (${decision.reason})`,
+      );
     } catch (err) {
       errors += 1;
       if (errors <= 5) {
         console.warn(
-          `[reaper] environment reap of ${sessionId} failed:`,
+          `[reaper] environment ${decision.action} of ${decision.sessionId} failed:`,
           err instanceof Error ? err.message : err,
         );
       }
     }
   }
-  return { scanned: rows.length, reaped, errors };
+  return { scanned: rows.length, stopped, deleted, errors };
 }
