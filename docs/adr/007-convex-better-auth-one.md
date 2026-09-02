@@ -150,6 +150,9 @@ every plugin including organizations, and the integration layer to One
   `jwksPath: '/convex/jwks'` so OAuth discovery advertises the same JWKS.
   Better Auth logs `Endpoint path conflicts detected` for the shared path at
   every request; harmless, to be silenced once kitcn can skip its embedded jwt.
+  The alternative, `mcp({ disableJwtPlugin: true })`, issues opaque OAuth
+  access tokens and would force the Kortix API onto token introspection
+  instead of JWKS verification; rejected for now.
 - **R3d Server-only endpoints.** `POST /api-key/verify` returns 404 over HTTP
   by design (server-only); the Kortix API calls `auth.api.verifyApiKey`.
   Requests carrying `x-api-key` resolve a session
