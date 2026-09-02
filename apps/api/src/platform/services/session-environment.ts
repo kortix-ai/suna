@@ -35,6 +35,8 @@ import type { GitBackedProject } from '../../projects/git';
 import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { getProvider } from '../providers';
+import { classifyDaytonaState } from '../providers/daytona-state';
+import { decideEnvironmentLiveness } from './environment-liveness';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 import type { SessionEnvironmentInfo } from './session-environment-types';
 
@@ -140,6 +142,44 @@ async function resumeEnvironment(externalId: string): Promise<void> {
   );
 }
 
+/**
+ * The provider's opinion of a box, normalized — never throws.
+ *
+ * An unreachable provider must read as `unknown`, not as a failure: `unknown`
+ * deliberately means "we could not determine the state right now" and
+ * `decideEnvironmentLiveness` refuses to act on it.
+ */
+async function readBoxStatus(externalId: string) {
+  try {
+    const sandbox = await withTimeout(
+      getDaytona().get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId})`,
+    );
+    return classifyDaytonaState((sandbox as unknown as { state?: unknown }).state);
+  } catch (err) {
+    console.warn(`[session-env] state read for ${externalId} failed:`, err);
+    return 'unknown' as const;
+  }
+}
+
+/** Write what the provider actually reports, so the claim path can act on it. */
+async function reconcileEnvironmentStatus(sessionId: string, status: 'stopped' | 'error') {
+  console.log(`[session-env] reconciling ${sessionId}: active -> ${status} (box says otherwise)`);
+  // The meter tracked a box that is not running. Closing it here keeps the
+  // window honest; a resume opens a fresh one.
+  const current = await readRow(sessionId);
+  const meteredId = (current?.metadata as { environmentId?: string } | null)?.environmentId;
+  if (meteredId) await endComputeSession(meteredId).catch(() => {});
+  const [updated] = await db
+    .update(sessionEnvironments)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(sessionEnvironments.sessionId, sessionId), eq(sessionEnvironments.status, 'active')))
+    .returning();
+  // A concurrent writer may have moved it already; re-read rather than assume.
+  return updated ?? (await readRow(sessionId));
+}
+
 export interface EnsureSessionEnvironmentInput {
   sessionId: string;
   projectId: string;
@@ -171,8 +211,23 @@ export interface EnsureSessionEnvironmentInput {
 export async function ensureSessionEnvironment(
   input: EnsureSessionEnvironmentInput,
 ): Promise<SessionEnvironmentInfo> {
-  const existing = await readRow(input.sessionId);
-  if (existing?.status === 'active' && existing.externalId) return withPreview(existing);
+  let existing = await readRow(input.sessionId);
+  if (existing?.status === 'active' && existing.externalId) {
+    // Ask the provider before trusting the column. Nothing reconciles it —
+    // `applyStoppedState` cannot reach a row with no `session_sandboxes` entry
+    // — while `autoStopInterval: 60` powers the box off after an idle hour. A
+    // row left reading 'active' over a stopped box wedges the session for good,
+    // because `claimEnvironmentWork` re-claims only 'error'/'stopped'/stale
+    // 'provisioning'. See `environment-liveness.ts`.
+    const action = decideEnvironmentLiveness(await readBoxStatus(existing.externalId));
+    if (action === 'serve') return withPreview(existing);
+    // Write the truth, then fall through: the claim path below already knows
+    // how to resume a 'stopped' row and rebuild an 'error' one.
+    existing = await reconcileEnvironmentStatus(
+      input.sessionId,
+      action === 'resume' ? 'stopped' : 'error',
+    );
+  }
 
   const claimed = await claimEnvironmentWork(input, existing);
   if (!claimed) {

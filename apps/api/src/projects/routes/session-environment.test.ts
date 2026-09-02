@@ -138,6 +138,32 @@ async function deleteSource(): Promise<string> {
   return Bun.file(new URL('../session-lifecycle/actions.ts', import.meta.url)).text();
 }
 
+describe('an "active" row is checked against the provider, not trusted', () => {
+  // Nothing reconciles session_environments.status: applyStoppedState cannot
+  // reach a row with no session_sandboxes entry, and the provider webhook keys
+  // on an externalId the environment does not have. Meanwhile the box carries
+  // autoStopInterval: 60. Without this check `ensure` hands back a box the
+  // provider switched off an hour ago, and claimEnvironmentWork never re-claims
+  // an 'active' row — so the session is wedged for good.
+  test('ensure asks the provider before short-circuiting', async () => {
+    const source = await serviceSource();
+    const fn = source.slice(source.indexOf('export async function ensureSessionEnvironment'));
+    const head = fn.slice(0, 1200);
+    expect(head).toContain('decideEnvironmentLiveness(await readBoxStatus(');
+    // And it must WRITE the truth, or the claim path below still cannot act.
+    expect(head).toContain('reconcileEnvironmentStatus(');
+  });
+
+  test('the reconcile is conditioned on the status it read', async () => {
+    const source = await serviceSource();
+    const fn = source.slice(source.indexOf('async function reconcileEnvironmentStatus'));
+    // Two callers racing the same transition must not both win.
+    expect(fn.slice(0, 900)).toContain("eq(sessionEnvironments.status, 'active')");
+    // A box that is not running is not earning; the window closes with it.
+    expect(fn.slice(0, 900)).toContain('endComputeSession(meteredId)');
+  });
+});
+
 describe('an environment does not outlive the session that owns it', () => {
   test('stopping a session stops its environment box', async () => {
     const source = await stopSource();
