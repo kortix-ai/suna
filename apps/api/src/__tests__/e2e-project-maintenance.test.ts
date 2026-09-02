@@ -131,6 +131,7 @@ mock.module('../projects/sandbox-reaper', () => ({
   reconcileOrphanComputeSessions: async () => ({ checked: 0, closed: 0, errors: 0 }),
   reconcileStuckActiveSessions: async () => ({ candidates: 0, reconciled: 0, billingClosed: 0, errors: 0 }),
   reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
+  reapOrphanEnvironments: async () => ({ scanned: 0, reaped: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
 }));
 

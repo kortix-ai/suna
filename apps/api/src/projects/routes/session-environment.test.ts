@@ -9,6 +9,16 @@ async function serviceSource(): Promise<string> {
     new URL('../../platform/services/session-environment.ts', import.meta.url),
   ).text();
 }
+async function typesSource(): Promise<string> {
+  return Bun.file(
+    new URL('../../platform/services/session-environment-types.ts', import.meta.url),
+  ).text();
+}
+async function teardownSource(): Promise<string> {
+  return Bun.file(
+    new URL('../../platform/services/session-environment-teardown.ts', import.meta.url),
+  ).text();
+}
 
 // The environment routes cannot be flow-covered locally (they provision a
 // REAL cloud sandbox, which the local flow profile excludes), so their
@@ -99,8 +109,12 @@ describe('session environment service', () => {
     expect(source).toContain('getPreviewLink(8000)');
     expect(source).toContain('previewToken');
     // No /p/:externalId proxy URL is handed to the worker as the data path.
-    const info = source.indexOf('export interface SessionEnvironmentInfo');
-    const infoBlock = source.slice(info, source.indexOf('}', info));
+    // The shape itself lives in `session-environment-types.ts` — a module with
+    // no imports, so the teardown half can name it without importing the
+    // provisioning half.
+    const types = await typesSource();
+    const info = types.indexOf('export interface SessionEnvironmentInfo');
+    const infoBlock = types.slice(info, types.indexOf('}', info));
     expect(infoBlock).toContain('previewUrl');
   });
 });
@@ -173,7 +187,10 @@ describe('an environment meters against its PARENT session', () => {
   });
 
   test('the window closes with the box, on stop and on delete', async () => {
-    const source = await serviceSource();
+    // Teardown moved to its own module so the maintenance reaper can import it
+    // without dragging the provisioning graph (image builder, git, agent-config
+    // compiler) along. The assertion follows the code.
+    const source = await teardownSource();
     const stop = source.slice(source.indexOf('export async function stopSessionEnvironment'));
     const del = source.slice(source.indexOf('export async function deleteSessionEnvironment'));
     expect(stop.slice(0, 2000)).toContain('endComputeSession(meteredId)');

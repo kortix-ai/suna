@@ -17,6 +17,7 @@ import {
   countBillingInvariantViolations,
   countStaleLivenessWindows,
   reapAndReconcileSandboxes,
+  reapOrphanEnvironments,
   reapOrphanProviderBoxes,
   reconcileOrphanComputeSessions,
   reconcileStuckActiveSessions,
@@ -237,6 +238,7 @@ export async function runProjectMaintenance(): Promise<void> {
       undeliveredPrompts,
       forwardedPrompts,
       orphanBoxes,
+      orphanEnvironments,
       branches,
       computeTick,
       staleBuilds,
@@ -306,6 +308,20 @@ export async function runProjectMaintenance(): Promise<void> {
           err instanceof Error ? err.message : err,
         );
         return { listed: 0, orphans: 0, stopped: 0, errors: 0 };
+      }),
+      // The environment half of the same leak, and the one neither sweep above
+      // can reach: a session ENVIRONMENT has no session_sandboxes row (so the
+      // DB reaper never sees it) and sits in the orphan sweep's keepSet with no
+      // age bound (so the provider reaper is told to leave it alone). Stop and
+      // delete are wired to session stop/delete, so this only ever picks up
+      // what got neither: a deleted session whose teardown was lost, a session
+      // row that is gone entirely, or one abandoned past the idle horizon.
+      reapOrphanEnvironments().catch((err) => {
+        console.warn(
+          '[project-maintenance] environment reaper failed:',
+          err instanceof Error ? err.message : err,
+        );
+        return { scanned: 0, reaped: 0, errors: 0 };
       }),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
@@ -412,6 +428,8 @@ export async function runProjectMaintenance(): Promise<void> {
         forwardedPrompts.forceClosed ||
         orphanBoxes.stopped ||
         orphanBoxes.errors ||
+        orphanEnvironments.reaped ||
+        orphanEnvironments.errors ||
         branches.deleted ||
         branches.errors ||
         computeTick.settled ||
@@ -443,6 +461,7 @@ export async function runProjectMaintenance(): Promise<void> {
         undeliveredPrompts,
         forwardedPrompts,
         orphanBoxes,
+        orphanEnvironments,
         branches,
         computeTick,
         staleBuilds,

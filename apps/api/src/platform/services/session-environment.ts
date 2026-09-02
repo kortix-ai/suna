@@ -36,6 +36,7 @@ import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { getProvider } from '../providers';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
+import type { SessionEnvironmentInfo } from './session-environment-types';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
 /**
@@ -48,15 +49,7 @@ const ENVIRONMENT_METERING_SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCou
 /** A claim whose owner died mid-provision is re-claimable after this. */
 const PROVISION_STALE_MS = 5 * 60_000;
 
-export interface SessionEnvironmentInfo {
-  sessionId: string;
-  status: string;
-  externalId: string | null;
-  /** Direct provider-edge origin of the daemon (port 8000), null until active. */
-  previewUrl: string | null;
-  /** Edge auth token for previewUrl, null until active. */
-  previewToken: string | null;
-}
+export type { SessionEnvironmentInfo } from './session-environment-types';
 
 export class SessionEnvironmentError extends Error {
   constructor(
@@ -392,72 +385,12 @@ export async function readSessionEnvironment(
   return withPreview(row);
 }
 
-/** Stop the environment box; the row survives for a later resume. */
-export async function stopSessionEnvironment(sessionId: string): Promise<SessionEnvironmentInfo | null> {
-  const row = await readRow(sessionId);
-  if (!row) return null;
-  if (row.externalId && row.status === 'active') {
-    try {
-      const daytona = getDaytona();
-      const sandbox = await withTimeout(
-        daytona.get(row.externalId),
-        PROVIDER_CALL_TIMEOUT_MS,
-        `Daytona get(${row.externalId})`,
-      );
-      await withTimeout(
-        (daytona as unknown as { stop(sandbox: unknown): Promise<unknown> }).stop(sandbox),
-        60_000,
-        `Daytona stop(${row.externalId})`,
-      );
-    } catch (err) {
-      console.warn(`[session-env] stop of ${row.externalId} failed:`, err);
-    }
-  }
-  // Close the meter with the box. `environmentId` is the compute row's
-  // sandbox id (the provider's externalId is a different value).
-  const meteredId = (row.metadata as { environmentId?: string } | null)?.environmentId;
-  if (meteredId) await endComputeSession(meteredId).catch(() => {});
-  const [updated] = await db
-    .update(sessionEnvironments)
-    .set({ status: 'stopped', updatedAt: new Date() })
-    .where(eq(sessionEnvironments.sessionId, sessionId))
-    .returning();
-  return updated
-    ? { sessionId, status: updated.status, externalId: updated.externalId, previewUrl: null, previewToken: null }
-    : null;
-}
-
-/**
- * Retire a session's environment for good: power the box off and drop the row.
- *
- * Sessions are soft-deleted (`metadata.deletedAt`), so nothing cascades to this
- * table — before this, a deleted session left its environment box behind with
- * only the provider's 60 s idle timer to stop it and NOTHING to ever delete it.
- * Best-effort on the provider call: a box we cannot reach must still lose its
- * row, or it becomes invisible AND permanent.
- */
-export async function deleteSessionEnvironment(sessionId: string): Promise<void> {
-  const row = await readRow(sessionId);
-  if (!row) return;
-  const meteredId = (row.metadata as { environmentId?: string } | null)?.environmentId;
-  if (meteredId) await endComputeSession(meteredId).catch(() => {});
-  if (row.externalId) {
-    try {
-      const daytona = getDaytona();
-      const sandbox = await withTimeout(
-        daytona.get(row.externalId),
-        PROVIDER_CALL_TIMEOUT_MS,
-        `Daytona get(${row.externalId})`,
-      );
-      await withTimeout(
-        (daytona as unknown as { delete(sandbox: unknown): Promise<unknown> }).delete(sandbox),
-        60_000,
-        `Daytona delete(${row.externalId})`,
-      );
-    } catch (err) {
-      console.warn(`[session-env] delete of ${row.externalId} failed:`, err);
-    }
-  }
-  await db.delete(sessionEnvironments).where(eq(sessionEnvironments.sessionId, sessionId));
-}
+// Teardown lives in `session-environment-teardown.ts`: it needs a provider
+// handle, the metering ledger and one table, while everything above needs the
+// image builder, the git layer and the agent-config compiler. Re-exported here
+// so the split is invisible to callers.
+export {
+  deleteSessionEnvironment,
+  stopSessionEnvironment,
+} from './session-environment-teardown';
 
