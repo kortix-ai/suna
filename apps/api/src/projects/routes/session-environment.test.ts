@@ -148,19 +148,31 @@ describe('an "active" row is checked against the provider, not trusted', () => {
   test('ensure asks the provider before short-circuiting', async () => {
     const source = await serviceSource();
     const fn = source.slice(source.indexOf('export async function ensureSessionEnvironment'));
-    const head = fn.slice(0, 1200);
+    const head = fn.slice(0, 2000);
     expect(head).toContain('decideEnvironmentLiveness(await readBoxStatus(');
     // And it must WRITE the truth, or the claim path below still cannot act.
     expect(head).toContain('reconcileEnvironmentStatus(');
+  });
+
+  test('a REMOVED box loses its id, or nothing can ever rebuild it', async () => {
+    const source = await serviceSource();
+    const fn = source.slice(source.indexOf('async function reconcileEnvironmentStatus'));
+    // `runEnvironmentWork` resumes whenever external_id is set and provisions
+    // only in the else. Leaving a dead id there turned the wedge into an
+    // infinite resume-fail-error loop instead of a rebuild.
+    expect(fn.slice(0, 1200)).toContain('externalId: null');
+    // And the choice must come from the shared decision, not be re-derived here.
+    const ensure = source.slice(source.indexOf('export async function ensureSessionEnvironment'));
+    expect(ensure.slice(0, 1400)).toContain('environmentReconcileWrite(action)');
   });
 
   test('the reconcile is conditioned on the status it read', async () => {
     const source = await serviceSource();
     const fn = source.slice(source.indexOf('async function reconcileEnvironmentStatus'));
     // Two callers racing the same transition must not both win.
-    expect(fn.slice(0, 900)).toContain("eq(sessionEnvironments.status, 'active')");
+    expect(fn.slice(0, 1600)).toContain("eq(sessionEnvironments.status, 'active')");
     // A box that is not running is not earning; the window closes with it.
-    expect(fn.slice(0, 900)).toContain('endComputeSession(meteredId)');
+    expect(fn.slice(0, 1600)).toContain('endComputeSession(meteredId)');
   });
 });
 

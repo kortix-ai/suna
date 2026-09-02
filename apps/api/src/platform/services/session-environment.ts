@@ -36,7 +36,7 @@ import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { getProvider } from '../providers';
 import { classifyDaytonaState } from '../providers/daytona-state';
-import { decideEnvironmentLiveness } from './environment-liveness';
+import { decideEnvironmentLiveness, environmentReconcileWrite } from './environment-liveness';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 import type { SessionEnvironmentInfo } from './session-environment-types';
 
@@ -164,8 +164,15 @@ async function readBoxStatus(externalId: string) {
 }
 
 /** Write what the provider actually reports, so the claim path can act on it. */
-async function reconcileEnvironmentStatus(sessionId: string, status: 'stopped' | 'error') {
-  console.log(`[session-env] reconciling ${sessionId}: active -> ${status} (box says otherwise)`);
+async function reconcileEnvironmentStatus(
+  sessionId: string,
+  write: { status: 'stopped' | 'error'; clearExternalId: boolean },
+) {
+  const { status, clearExternalId } = write;
+  console.log(
+    `[session-env] reconciling ${sessionId}: active -> ${status}` +
+      `${clearExternalId ? ' (box gone, clearing external_id so it is rebuilt)' : ''}`,
+  );
   // The meter tracked a box that is not running. Closing it here keeps the
   // window honest; a resume opens a fresh one.
   const current = await readRow(sessionId);
@@ -173,7 +180,11 @@ async function reconcileEnvironmentStatus(sessionId: string, status: 'stopped' |
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
   const [updated] = await db
     .update(sessionEnvironments)
-    .set({ status, updatedAt: new Date() })
+    .set({
+      status,
+      ...(clearExternalId ? { externalId: null } : {}),
+      updatedAt: new Date(),
+    })
     .where(and(eq(sessionEnvironments.sessionId, sessionId), eq(sessionEnvironments.status, 'active')))
     .returning();
   // A concurrent writer may have moved it already; re-read rather than assume.
@@ -220,13 +231,13 @@ export async function ensureSessionEnvironment(
     // because `claimEnvironmentWork` re-claims only 'error'/'stopped'/stale
     // 'provisioning'. See `environment-liveness.ts`.
     const action = decideEnvironmentLiveness(await readBoxStatus(existing.externalId));
-    if (action === 'serve') return withPreview(existing);
+    const write = environmentReconcileWrite(action);
+    if (!write) return withPreview(existing);
     // Write the truth, then fall through: the claim path below already knows
-    // how to resume a 'stopped' row and rebuild an 'error' one.
-    existing = await reconcileEnvironmentStatus(
-      input.sessionId,
-      action === 'resume' ? 'stopped' : 'error',
-    );
+    // how to resume a 'stopped' row and rebuild an 'error' one. Clearing
+    // external_id on a REMOVED box is what makes "rebuild" happen at all —
+    // `runEnvironmentWork` resumes whenever that column is set.
+    existing = await reconcileEnvironmentStatus(input.sessionId, write);
   }
 
   const claimed = await claimEnvironmentWork(input, existing);

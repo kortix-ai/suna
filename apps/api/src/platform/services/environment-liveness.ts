@@ -51,3 +51,35 @@ export function decideEnvironmentLiveness(boxStatus: SandboxStatus): Environment
       return 'serve';
   }
 }
+
+/**
+ * What the reconcile must WRITE for an action — and specifically whether the
+ * provider id survives.
+ *
+ * This is a separate decision from the action, and conflating them was a real
+ * bug: `reprovision` wrote `status = 'error'` and kept `external_id`, but
+ * `runEnvironmentWork` branches on that column —
+ *
+ *     if (externalId) { await resumeEnvironment(externalId); ... }
+ *     // provision happens ONLY in the else
+ *
+ * — so a removed box was re-claimed out of 'error', sent down the RESUME
+ * branch against an id the provider no longer has, failed, and was marked
+ * 'error' again. Forever. Clearing the id is the whole mechanism by which a
+ * rebuild happens; the status alone decides nothing.
+ */
+export function environmentReconcileWrite(
+  action: EnvironmentLivenessAction,
+): { status: 'stopped' | 'error'; clearExternalId: boolean } | null {
+  switch (action) {
+    case 'serve':
+      return null;
+    case 'resume':
+      // The box is off but intact, and `ensure` resumes it BY id. Keep it.
+      return { status: 'stopped', clearExternalId: false };
+    case 'reprovision':
+      // The box is gone. Keeping its id sends the claim path down the resume
+      // branch against something the provider cannot produce.
+      return { status: 'error', clearExternalId: true };
+  }
+}
