@@ -45,9 +45,11 @@ import {
  *
  * `Install` starts a real agent-driven session and navigates to it. It does NOT
  * install anything by itself: the session's agent reads both manifests, merges,
- * and opens a change request the user reviews. That is why the button says what
- * happens next and the footer states the install lands as a change request —
- * a modal that closed with "Installed" would claim a merge nobody approved.
+ * and opens a change request the user reviews. The footer says so IN the modal,
+ * beside the button — a modal that closed with "Installed" would claim a merge
+ * nobody approved, and a footer that only named the source ("installs from the
+ * linked repo", which is what it said until a browser run caught it) leaves the
+ * person clicking `Install` believing the click is the install.
  *
  * It owns UNINSTALL too, for the same reason it owns install: this is the one
  * place that shows what a subproject brings into the project, so it is the one
@@ -218,8 +220,8 @@ export function SubprojectInstallModal({
               {installed
                 ? 'Installed in this project.'
                 : upload
-                  ? 'Installs into this project from the uploaded archive.'
-                  : 'Open source. Installs into this project from the linked repo.'}
+                  ? 'From the uploaded archive. Install opens a change request you review.'
+                  : 'Open source. Install opens a change request you review.'}
             </span>
             {installed ? (
               // `outline`, not `destructive`: the weight belongs on the confirm
