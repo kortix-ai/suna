@@ -142,6 +142,9 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/projects/:projectId/gateway/playground': 'Ran gateway playground request',
   'POST /v1/projects/:projectId/gateway/routing-policy/preview': 'Previewed gateway routing policy',
   'POST /v1/projects/:projectId/git/collaborators': 'Added Git collaborator',
+  // A read, not a repair: it answers "is this project's GitHub install still
+  // minting tokens", so the log should not read as if someone reconnected.
+  'GET /v1/projects/:projectId/git/connection': 'Checked the Git connection',
   'GET /v1/git/:project/compiled-checkout': 'Downloaded compiled project checkout',
   'GET /v1/git/:project/compiled-runtime': 'Downloaded compiled session runtime',
   'GET /v1/git/:project/compiled-pi-runtime': 'Downloaded compiled pi worker runtime',
@@ -169,6 +172,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'HEAD /v1/runtime-assets/cli': 'Checked the sandbox CLI',
   'GET /v1/runtime-assets/agent': 'Downloaded the sandbox agent',
   'HEAD /v1/runtime-assets/agent': 'Checked the sandbox agent',
+  'GET /v1/runtime-assets/entrypoint': 'Downloaded the sandbox entrypoint',
+  'HEAD /v1/runtime-assets/entrypoint': 'Checked the sandbox entrypoint',
   'GET /v1/runtime-assets/managed-skills': 'Downloaded managed skills',
   'POST /v1/router/web-search': 'Searched the web',
   'POST /v1/router/image-search': 'Searched images',
@@ -238,7 +243,8 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'GET /v1/accounts/:accountId/iam/oauth-clients/:clientId': 'Viewed an OAuth app',
   'PATCH /v1/accounts/:accountId/iam/oauth-clients/:clientId': 'Updated an OAuth app',
   'DELETE /v1/accounts/:accountId/iam/oauth-clients/:clientId': 'Deleted an OAuth app',
-  'POST /v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret': 'Rotated an OAuth app secret',
+  'POST /v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret':
+    'Rotated an OAuth app secret',
   'POST /v1/auth/signup': 'Signed up',
   'POST /v1/auth/sign-in/password': 'Signed in with a password',
   'POST /v1/auth/sign-in/magic-link': 'Requested a sign-in link',
