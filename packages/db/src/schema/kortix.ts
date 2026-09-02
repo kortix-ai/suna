@@ -968,6 +968,89 @@ export const piRuntimeArtifacts = kortixSchema.table(
   ],
 );
 
+/**
+ * Shared filesystems — "a Google Drive between the agents".
+ *
+ * The design huddle's words: "instead of saving any memories anymore in the
+ * git, we would literally just have file systems", and "the shared file system
+ * should only be used like a Google Drive between the agents to share state".
+ * So this is deliberately NOT the project repo: `/projects/:id/files*` reads
+ * git (config, versioned, cloned per session) and this reads a volume (state,
+ * mutable, shared, and alive whether or not any sandbox is). Keeping the two
+ * apart is the point — "we should not be intermixing the concerns anymore".
+ *
+ * A filesystem outlives every session that touches it. Two agents in the same
+ * project see the same bytes, which is what makes it a hand-off channel rather
+ * than per-session scratch space.
+ */
+export const filesystems = kortixSchema.table(
+  'filesystems',
+  {
+    filesystemId: uuid('filesystem_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Addressed by name, not id: agents write `kortix fs put notes ...`. */
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [unique('filesystems_project_name_key').on(table.projectId, table.name)],
+);
+
+/**
+ * One path in one filesystem. Metadata only — the bytes are in `sha256`.
+ *
+ * `storage` records where THIS row's bytes actually live, rather than trusting
+ * today's configuration. A deployment that gains (or loses) S3 must still be
+ * able to read what it wrote before the switch, and a global config flag cannot
+ * answer that for a row written last month.
+ */
+export const filesystemFiles = kortixSchema.table(
+  'filesystem_files',
+  {
+    filesystemId: uuid('filesystem_id')
+      .notNull()
+      .references(() => filesystems.filesystemId, { onDelete: 'cascade' }),
+    /** Normalised, always relative, no leading slash and no `..` segments. */
+    path: text('path').notNull(),
+    size: integer('size').notNull(),
+    sha256: text('sha256').notNull(),
+    contentType: text('content_type').notNull(),
+    /** 'pg' | 's3' — the backend that holds `sha256`. */
+    storage: text('storage').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.filesystemId, table.path] }),
+    // Listing is always "this filesystem, under this prefix, newest first".
+    index('idx_filesystem_files_listing').on(table.filesystemId, table.path),
+  ],
+);
+
+/**
+ * Content-addressed bytes for the `pg` backend.
+ *
+ * PostgreSQL is a first-class backend, not a stand-in: `pi_runtime_artifacts`
+ * above records why — it is "the one store every environment has, including
+ * self-host, which has no S3". Self-host is a shipping configuration, so a
+ * filesystem that only worked on S3 would be a filesystem Essentia cannot use.
+ * S3 is the backend for scale; this one is the backend for everywhere.
+ *
+ * Keyed by content hash, so re-writing the same bytes under ten paths costs one
+ * row, and the S3 object key is the SAME string — the two backends address
+ * blobs identically, which is what lets a row's `storage` column be the only
+ * thing that differs between them.
+ */
+export const filesystemBlobs = kortixSchema.table('filesystem_blobs', {
+  sha256: text('sha256').primaryKey(),
+  size: integer('size').notNull(),
+  content: bytea('content').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const projectSessionRuntimeContexts = kortixSchema.table(
   'project_session_runtime_contexts',
   {
