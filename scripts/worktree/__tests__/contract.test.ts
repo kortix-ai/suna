@@ -78,7 +78,7 @@ describe('supabase CLI contract', () => {
     const version = rootPkg.devDependencies?.supabase;
     expect(version).toMatch(/^\d+\.\d+\.\d+$/);
     const versionNumber = version!.split('.').reduce((score, part) => score * 1000 + Number(part), 0);
-    expect(versionNumber).toBeGreaterThanOrEqual(2_111_000);
+    expect(versionNumber).toBeGreaterThanOrEqual(2_116_000);
   });
 });
 
