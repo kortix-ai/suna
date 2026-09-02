@@ -363,7 +363,7 @@ export function AddSubprojectModal({
                           chooseFile(null);
                           if (fileInput.current) fileInput.current.value = '';
                         }}
-                        className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer transition-colors duration-150"
+                        className="text-muted-foreground hover:text-foreground duration-normal shrink-0 cursor-pointer transition-colors"
                       >
                         <XIcon className="size-3.5" aria-hidden />
                       </button>

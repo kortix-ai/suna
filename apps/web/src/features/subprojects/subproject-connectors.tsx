@@ -38,7 +38,15 @@ function ConnectorMark({ connector }: { connector: Connector }) {
       ) : (
         // Same fallback as an unmapped LLM provider: two letters, never an
         // empty tile, so a connector id that outlives its mark still reads.
-        <span className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+        //
+        // No `tracking-wide`, unlike `ProviderLogo`'s twin. Letter-spacing
+        // applies AFTER the last glyph too and is not trimmed, so on a
+        // two-glyph monogram it pushes the pair off the tile's optical centre.
+        // It also reads to the brand audit as an all-caps eyebrow label
+        // (`uppercase` + `tracking-wide` is its signature) — and this is a
+        // monogram, not a label. `uppercase` is redundant belt-and-braces:
+        // `connectorInitials` already returns upper-case glyphs.
+        <span className="text-muted-foreground text-xs font-semibold uppercase">
           {connectorInitials(connector)}
         </span>
       )}
@@ -84,7 +92,9 @@ export function SubprojectConnectors({
           // The manifest slug is the name the project's connector carries, so
           // it is checked first; the toolkit id catches a connector a human
           // named after its app rather than after the subproject's alias.
-          const isConnected = connected ? connected.has(use.slug) || connected.has(use.id) : undefined;
+          const isConnected = connected
+            ? connected.has(use.slug) || connected.has(use.id)
+            : undefined;
           return (
             <li
               key={use.slug || use.id}

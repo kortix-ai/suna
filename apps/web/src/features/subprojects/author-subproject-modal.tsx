@@ -79,9 +79,7 @@ export function AuthorSubprojectModal({
       setDescription('');
       if (href) router.push(href);
     } catch (error) {
-      errorToast(
-        error instanceof Error ? error.message : 'Could not start the authoring session',
-      );
+      errorToast(error instanceof Error ? error.message : 'Could not start the authoring session');
     }
   };
 
@@ -130,14 +128,16 @@ export function AuthorSubprojectModal({
             {/* Filling the field for them beats explaining what to type. */}
             {trimmed.length === 0 ? (
               <div className="space-y-1.5">
-                <p className="text-muted-foreground text-xs font-medium">Or start from one of these</p>
+                <p className="text-muted-foreground text-xs font-medium">
+                  Or start from one of these
+                </p>
                 <ul className="space-y-1.5">
                   {EXAMPLES.map((example) => (
                     <li key={example}>
                       <button
                         type="button"
                         onClick={() => setDescription(example)}
-                        className="bg-popover hover:border-foreground/20 text-muted-foreground hover:text-foreground w-full cursor-pointer rounded-md border px-3 py-2 text-left text-xs leading-relaxed text-pretty transition-colors duration-150 active:scale-[0.99]"
+                        className="bg-popover hover:border-foreground/20 text-muted-foreground hover:text-foreground duration-normal w-full cursor-pointer rounded-md border px-3 py-2 text-left text-xs leading-relaxed text-pretty transition-colors active:scale-[0.99]"
                       >
                         {example}
                       </button>
@@ -152,7 +152,11 @@ export function AuthorSubprojectModal({
               Cancel
             </Button>
             <Button type="submit" disabled={!ready || author.isPending}>
-              {author.isPending ? <Loading className="size-4 shrink-0" /> : <SparkleIcon className="size-4 shrink-0" aria-hidden />}
+              {author.isPending ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <SparkleIcon className="size-4 shrink-0" aria-hidden />
+              )}
               {author.isPending ? 'Starting' : 'Build it'}
             </Button>
           </ModalFooter>

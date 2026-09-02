@@ -173,7 +173,7 @@ export function SubprojectInstallModal({
                 href={repoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="hover:border-foreground/20 bg-popover text-muted-foreground hover:text-foreground flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs transition-colors duration-150"
+                className="hover:border-foreground/20 bg-popover text-muted-foreground hover:text-foreground duration-normal flex items-center gap-2.5 rounded-md border px-3 py-2.5 text-xs transition-colors"
               >
                 <GithubLogoIcon className="size-4 shrink-0" aria-hidden />
                 <span className="min-w-0 truncate font-mono">{subprojectRepoSlug(subproject)}</span>

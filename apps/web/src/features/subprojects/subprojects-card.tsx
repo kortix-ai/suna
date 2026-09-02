@@ -11,7 +11,12 @@ import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
 import { subprojectVisual } from './subproject-visual';
-import { subprojectIsUpload, subprojectRepoSlug, formatCount, type Subproject } from './subprojects-catalog';
+import {
+  formatCount,
+  subprojectIsUpload,
+  subprojectRepoSlug,
+  type Subproject,
+} from './subprojects-catalog';
 
 /**
  * The subproject card — minimal on purpose: tile + title + install affordance on
@@ -67,7 +72,7 @@ export function SubprojectCard({
         // preview renders the card as a direct grid child, where the stretch
         // already applied — which is why only the store row looked broken.
         'group hover:border-foreground/20 flex h-full w-full cursor-pointer flex-col gap-2.5 rounded-md border p-4 text-left',
-        'transition-[border-color,transform] duration-150 hover:-translate-y-0.5 active:scale-[0.99]',
+        'duration-normal transition-[border-color,transform] hover:-translate-y-0.5 active:scale-[0.99]',
         glass ? 'bg-background/60 backdrop-blur-sm' : 'bg-popover',
       )}
     >
@@ -83,7 +88,9 @@ export function SubprojectCard({
         >
           <Icon weight="fill" className="size-5" aria-hidden />
         </span>
-        <span className="text-foreground min-w-0 truncate text-sm font-medium">{subproject.title}</span>
+        <span className="text-foreground min-w-0 truncate text-sm font-medium">
+          {subproject.title}
+        </span>
         {/* Installed subprojects carry the status pill (earned green, like the
             connect dots); open ones carry the install affordance — a styled
             span, not a button, so the card stays the one control. */}
@@ -104,7 +111,7 @@ export function SubprojectCard({
             className={cn(
               'bg-background text-foreground ml-auto inline-flex shrink-0 items-center rounded-full border py-0.5 text-xs font-medium',
               compact ? 'px-2' : 'px-2.5',
-              'group-hover:bg-foreground group-hover:text-background transition-colors duration-150',
+              'group-hover:bg-foreground group-hover:text-background duration-normal transition-colors',
             )}
           >
             Install
@@ -190,7 +197,9 @@ export function SubprojectBuildCard({
           <SparkleIcon className="size-4" aria-hidden />
         )}
       </span>
-      <span className="text-sm font-medium">{add ? 'Add a subproject' : 'Grow your subprojects'}</span>
+      <span className="text-sm font-medium">
+        {add ? 'Add a subproject' : 'Grow your subprojects'}
+      </span>
       <span className="text-muted-foreground text-center text-xs leading-relaxed text-pretty">
         {add
           ? 'Point at a GitHub repo, or upload a .zip.'
@@ -200,7 +209,7 @@ export function SubprojectBuildCard({
   );
   const className = cn(
     'hover:border-foreground/30 text-muted-foreground hover:text-foreground flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed p-4',
-    'transition-colors duration-150 active:scale-[0.99]',
+    'transition-colors duration-normal active:scale-[0.99]',
     glass ? 'bg-background/40 backdrop-blur-sm' : 'bg-transparent',
   );
 
