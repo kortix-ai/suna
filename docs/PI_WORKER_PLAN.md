@@ -165,9 +165,13 @@ Ordered by what blocks the most.
    leader-elected singleton workers. The safety rule is the GRACE PERIOD, not
    the reference check: `putFile` stores bytes then metadata, so a blob is
    legitimately unreferenced mid-write.
-5. **`message.removed` / `message.part.removed`** — Kortix uses them for revert
-   and compaction; pi's `Session` tree can branch but nothing wires it to
-   `Agent`. Frontend-visible.
+5. ~~**`message.removed` / `message.part.removed`**~~ — **done.** Rewind is
+   implemented in the worker: `POST /session/:id/revert` and `/unrevert` at the
+   RAW ROOT (where the SDK's prefix-less OpenCode client lands), publishing one
+   `message.removed` per hidden message. Staged and reversible; the next prompt
+   commits. `apply()` learned both removal events so a reconnecting client
+   reads the same transcript as one that watched it. What is NOT done is
+   compaction — the same events would carry it, but nothing summarises yet.
 6. **`PREVIEW_MANAGED_GIT_GITHUB_TOKEN` does not exist**, so previews have no
    managed-git credential. An in-sandbox guard restores it ~150 s after every
    deploy wipes it; until then session create answers 500. Creating the secret
