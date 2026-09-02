@@ -231,14 +231,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
-              <SidebarUpgradeButton accountId={accountId} />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>
