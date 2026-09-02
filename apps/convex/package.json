@@ -1,0 +1,35 @@
+{
+  "name": "kortix-convex",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Kortix data plane and identity on Convex: kitcn ORM + Better Auth (ADR-007).",
+  "scripts": {
+    "dev": "kitcn dev",
+    "dev:local": "CONVEX_AGENT_MODE=anonymous kitcn dev",
+    "bootstrap:local": "CONVEX_AGENT_MODE=anonymous kitcn dev --bootstrap --once",
+    "codegen": "kitcn codegen && bun run scripts/patch-generated-auth.ts",
+    "deploy": "kitcn deploy",
+    "typecheck": "tsc --noEmit --project convex/functions/tsconfig.json",
+    "gen:auth-schema": "bun run scripts/gen-auth-schema.ts"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "1.7.2",
+    "@better-auth/expo": "1.7.2",
+    "@better-auth/i18n": "1.7.2",
+    "@better-auth/mcp": "1.7.2",
+    "@better-auth/oauth-provider": "1.7.2",
+    "@better-auth/passkey": "1.7.2",
+    "@opentelemetry/api": "1.9.0",
+    "better-auth": "1.7.2",
+    "convex": "1.44.0",
+    "hono": "4.12.9",
+    "kitcn": "0.32.1",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.9.0",
+    "bun-types": "^1.2.0"
+  }
+}
