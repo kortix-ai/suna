@@ -104,6 +104,27 @@ carries the CLI at `/usr/local/bin/kortix`
 
 ---
 
+## What an adversarial review found (2026-09-02)
+
+Four reviewers with distinct lenses (security/tenant isolation, data integrity,
+agent usability, HTTP/SDK contract), each finding handed to a verifier told to
+REFUTE by default. 22 agents; the survivors, all now fixed:
+
+| Severity | Defect | How it was proven |
+|---|---|---|
+| high | Chunked PUT buffered the whole body before the size check | verifier reproduced an OOM on **bun 1.2.23**, the version the image pins; the same probe 413s on a laptop's 1.3.14 |
+| high | A caller-chosen filesystem name un-bounds the 25 s deadline | `path.includes('/start')` matches `/filesystems/start/files/content` |
+| medium | Path percent-decoded twice, aliasing distinct names onto one key | measured on the preview: two writes, ONE row, first file's bytes gone |
+| medium | `?limit=abc` → NaN → LIMIT clause dropped, returns every row | `Math.min(Math.max(NaN,1),1000)` is NaN |
+| medium | Stored content-type echoed with raw bytes — stored XSS | a file written `text/html` executed on the API origin |
+| medium | SDK surfaced every error as the literal string `"true"` | the platform envelope sets `error` to BOOLEAN `true` |
+| low | Virtual-host S3 branch dropped the bucket from the request | dead code today, wrong the day it is used |
+
+Two lessons worth keeping: the first OOM fix (a `content-length` gate) did NOT
+close it, because a chunked request declares no length — the review caught the
+incomplete fix as well as the bug. And the unit tests MASKED the double decode
+by feeding wire-shaped strings that never occur over HTTP.
+
 ## Open work
 
 Ordered by what blocks the most.
@@ -122,9 +143,11 @@ Ordered by what blocks the most.
    we're going to have like a versioning system"). Content addressing already
    makes it cheap: a version is another row pointing at a blob that already
    exists.
-4. **Blob garbage collection** — deletes are metadata-only by design, since one
-   blob can back many paths across many filesystems. `countBlobReferences` is
-   the primitive; the sweep is not written.
+4. ~~**Blob garbage collection**~~ — **done.** `sweepUnreferencedBlobs`
+   (`apps/api/src/filesystems/gc.ts`) collects blobs no path references, and the
+   safety rule is the GRACE PERIOD, not the reference check: `putFile` stores
+   bytes then metadata, so a blob is legitimately unreferenced mid-write.
+   Nothing schedules it yet — it is a function, not a cron.
 5. **`message.removed` / `message.part.removed`** — Kortix uses them for revert
    and compaction; pi's `Session` tree can branch but nothing wires it to
    `Agent`. Frontend-visible.
