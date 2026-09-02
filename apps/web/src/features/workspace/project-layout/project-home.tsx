@@ -15,7 +15,14 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentType,
+  type ReactNode,
+} from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -35,27 +42,25 @@ import type { DraftScope } from '@/features/session/composer/draft/composer-draf
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import {
+  projectSettingsSectionHref,
+  type ProjectSettingsSectionKey,
+} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import {
   CAPABILITY_TABS,
   capabilityTabHref,
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import {
-  projectSettingsSectionHref,
-  type ProjectSettingsSectionKey,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { SubprojectReportsPreview } from '@/features/subprojects/subproject-reports-preview';
-import { SubprojectsHomePreview } from '@/features/subprojects/subprojects-home-preview';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import {
-  type SandboxTemplate,
   getProjectDetail,
   listProjectAccessRequests,
   listProjectSandboxes,
+  type SandboxTemplate,
 } from '@kortix/sdk';
 import { contract, qk, useProjectName, type Command } from '@kortix/sdk/react';
 import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
@@ -247,9 +252,9 @@ export function ProjectHome({
             projectId={projectId}
             draftScope={draftScope}
             // Home hero: strip the shell's side gutter (`px-4 md:pr-1`) AND its
-            // `max-w-210` cap so the card spans the welcome container exactly,
-            // and the subprojects preview below shares its edges 1:1. Scoped to this
-            // hero instance — session pages keep the shell defaults.
+            // `max-w-210` cap so the card spans the welcome container exactly.
+            // Scoped to this hero instance — session pages keep the shell
+            // defaults.
             parentClassName="max-w-none px-0 md:pr-0"
             // `busy` here means "create in flight" — spinner in the send slot,
             // input locked. NOT isBusy (that renders agent-running stop-button
@@ -319,15 +324,17 @@ function MetaRuntimeIndicator() {
 
 /**
  * The project-home empty-state body, laid out like Perplexity's home: the
- * centered welcome heading with the composer directly beneath it, then the
- * subproject-run report and the installable subprojects grid — all vertically centered —
- * while the quiet "set up your project" pills sit at the bottom of the
- * viewport. Shared by the project index page AND the instant session shell's
- * empty state so a brand-new session opens onto the identical surface.
+ * centered welcome heading with the composer directly beneath it, vertically
+ * centered, while the quiet "set up your project" pills sit at the bottom of
+ * the viewport. Shared by the project index page AND the instant session
+ * shell's empty state so a brand-new session opens onto the identical surface.
  *
- * Runs come BEFORE the store: on a project that already has subprojects, "did they
- * run and did anything break" is the live question, and browsing more subprojects
- * is the follow-up.
+ * The composer is the ONLY thing in the centered column, deliberately. A
+ * subproject-run report and an installable-subprojects grid both used to sit
+ * under it; both are gone. This page's job is "start working", and a monitoring
+ * strip plus a store grid answered two other questions instead. Subprojects are
+ * configuration and live under Customize → Marketplace; run monitoring gets its
+ * own destination and is not a subproject-scoped surface.
  */
 export function ProjectHomeWelcomeBody({
   projectId,
@@ -354,11 +361,7 @@ export function ProjectHomeWelcomeBody({
           </h1>
 
           {composer ? (
-            <div className="flex w-full flex-col items-center space-y-4">
-              {composer}
-              <SubprojectReportsPreview projectId={projectId} />
-              <SubprojectsHomePreview projectId={projectId} />
-            </div>
+            <div className="flex w-full flex-col items-center space-y-4">{composer}</div>
           ) : null}
         </div>
       </div>
@@ -644,7 +647,6 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
           : isCapabilityTabKey(section)
             ? capabilityTabHref(projectId, section)
             : projectSettingsSectionHref(projectId, section);
-
 
         return (
           // Keyed by title, not by section: two tiles land on the Connectors

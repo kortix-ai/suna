@@ -37,8 +37,26 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
-/** Who may see a subproject in the store. `private` = the submitting account only. */
-export const subprojectVisibilityEnum = kortixSchema.enum('subproject_visibility', ['public', 'private']);
+/**
+ * Who may see a subproject in the marketplace.
+ *
+ *   public   every Kortix user, in every account. NOT reachable by submission —
+ *            `POST /v1/subprojects` coerces any other value to `private`, so a
+ *            public row exists only because a migration, a seeder or a direct
+ *            insert made it. That is deliberate: the global catalog is curated,
+ *            not open.
+ *   account  everyone in the submitting account. The default.
+ *   private  the submitter alone (`submitted_by`), inside their own account.
+ *
+ * `account` and `private` are both account-bounded, so `subprojectVisibleTo`
+ * checks `account_id` before either. Only `public` crosses accounts, and only
+ * while `status = 'active'`.
+ */
+export const subprojectVisibilityEnum = kortixSchema.enum('subproject_visibility', [
+  'public',
+  'account',
+  'private',
+]);
 
 /**
  * Index health for one subproject.
@@ -68,7 +86,10 @@ export const subprojectStatusEnum = kortixSchema.enum('subproject_status', [
  *           already uses for a base registry item). Bounded to text under
  *           `SUBPROJECT_ZIP_LIMITS`; this is not a file host.
  */
-export const subprojectSourceKindEnum = kortixSchema.enum('subproject_source_kind', ['github', 'upload']);
+export const subprojectSourceKindEnum = kortixSchema.enum('subproject_source_kind', [
+  'github',
+  'upload',
+]);
 
 /**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
@@ -1285,7 +1306,7 @@ export const projectTriggerRuntime = kortixSchema.table(
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
     // NOTE: a partial index `idx_project_trigger_runtime_subproject`
     // ((project_id, subproject_slug) WHERE subproject_slug IS NOT NULL) ALSO exists — it
-    // serves the subproject-runs join. It is deliberately NOT declared here, for the
+    // serves the run-attribution join. It is deliberately NOT declared here, for the
     // same reason as `idx_project_sessions_account_active` below: this table
     // already exists, so the index must be built CONCURRENTLY, and re-adding it
     // here would make `db:generate` emit a conflicting plain `CREATE INDEX`.
@@ -1552,9 +1573,15 @@ export const subprojects = kortixSchema.table(
     /** GitHub stargazers at the last crawl. NULL when the host did not report it. */
     stars: integer('stars'),
     installCount: integer('install_count').default(0).notNull(),
-    visibility: subprojectVisibilityEnum('visibility').default('private').notNull(),
+    visibility: subprojectVisibilityEnum('visibility').default('account').notNull(),
     /** Submitting account. NULL for a subproject Kortix publishes itself. */
     accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /**
+     * The user who submitted it. Load-bearing for `visibility = 'private'`:
+     * that scope is "this user", not "this account", and this column is the
+     * only record of which user. NULL on a seeded or hand-inserted row, which
+     * `subprojectVisibleTo` reads as account-visible rather than invisible.
+     */
     submittedBy: uuid('submitted_by'),
     status: subprojectStatusEnum('status').default('active').notNull(),
     lastCrawledAt: timestamp('last_crawled_at', { withTimezone: true }),
@@ -1612,7 +1639,9 @@ export const projectSubprojects = kortixSchema.table(
      * this is `set null` and not `cascade`: the project's manifest, not this
      * row, is what makes the subproject installed.
      */
-    subprojectId: uuid('subproject_id').references(() => subprojects.subprojectId, { onDelete: 'set null' }),
+    subprojectId: uuid('subproject_id').references(() => subprojects.subprojectId, {
+      onDelete: 'set null',
+    }),
     repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
     repoName: varchar('repo_name', { length: 255 }).notNull(),
     gitRef: varchar('git_ref', { length: 255 }),

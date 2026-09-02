@@ -7,8 +7,10 @@
 // request — so `createSubprojectInstallSession` returns a SESSION to open, never a
 // finished install. The same is true of uninstall.
 //
-// A subproject "run" is one trigger fire, read out of the project's own execution
-// history. Nothing here writes a run; the runs endpoints are pure reads.
+// A subproject's TRIGGER RUNS are not here. A run belongs to the trigger that
+// fired it, not to the subproject that contributed the trigger, and it is read
+// through the project's own execution history. This module is the catalogue and
+// the install lifecycle only.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
@@ -16,8 +18,17 @@ import { unwrap } from './shared';
 /** Where a subproject's files come from. */
 export type SubprojectSourceKind = 'github' | 'upload';
 
-/** Who may see a subproject in the store. */
-export type SubprojectVisibility = 'public' | 'private';
+/**
+ * Who may see a subproject in the store.
+ *
+ *   `public`   every Kortix user, in every account. NOT submittable — see
+ *              {@link SubmitSubprojectInput.visibility}. A public row exists
+ *              only because a migration, a seeder or a direct insert made it,
+ *              so the global catalogue is curated rather than open.
+ *   `account`  everyone in the submitting account. The default.
+ *   `private`  the submitter alone (`submitted_by`), inside their own account.
+ */
+export type SubprojectVisibility = 'public' | 'account' | 'private';
 
 /**
  * Index health. `unavailable` means the last crawl failed — the subproject is still
@@ -77,6 +88,12 @@ export interface Subproject {
   skills: string[];
   env_required: string[];
   account_id: string | null;
+  /**
+   * The user who submitted it. On the wire because `visibility: 'private'`
+   * means "this one user", so a client rendering "Only you" has to be able to
+   * tell whether "you" is the viewer. Null on a seeded or hand-inserted row.
+   */
+  submitted_by: string | null;
   last_crawled_at: string | null;
   /** Why the last crawl failed. Set with `status: 'unavailable'`. */
   last_error: string | null;
@@ -108,11 +125,20 @@ export interface SubprojectSubmitResult {
   warnings: string[];
 }
 
+/**
+ * The scopes a SUBMISSION may ask for. Narrower than {@link SubprojectVisibility}
+ * by one value, and that omission is the point: `public` is a curation decision,
+ * not an author's, so `POST /v1/subprojects` refuses it at the schema and
+ * coerces any unrecognized value to `private`. Global rows come from a
+ * migration, a seeder or a direct insert.
+ */
+export type SubmittableSubprojectVisibility = Exclude<SubprojectVisibility, 'public'>;
+
 export interface SubmitSubprojectInput {
   /** `owner/repo`, optionally `@branch-or-tag`. A browser or clone URL works. */
   repo: string;
-  /** Defaults to `private` server-side — a subproject goes public on purpose. */
-  visibility?: SubprojectVisibility;
+  /** Defaults to `account` server-side — everyone in the submitting account. */
+  visibility?: SubmittableSubprojectVisibility;
   account_id?: string;
 }
 
@@ -123,35 +149,45 @@ export interface SubmitSubprojectArchiveInput {
    * 200 files). Non-text entries are skipped, not rejected.
    */
   file: File | Blob;
-  visibility?: SubprojectVisibility;
+  visibility?: SubmittableSubprojectVisibility;
   account_id?: string;
 }
 
-function subprojectQuery(options?: ListSubprojectsOptions | { limit?: number; offset?: number }): string {
+function subprojectQuery(options?: ListSubprojectsOptions): string {
   const params = new URLSearchParams();
-  const q = (options as ListSubprojectsOptions | undefined)?.q?.trim();
+  const q = options?.q?.trim();
   if (q) params.set('q', q);
   if (options?.limit !== undefined) params.set('limit', String(options.limit));
   if (options?.offset !== undefined) params.set('offset', String(options.offset));
   return params.size > 0 ? `?${params}` : '';
 }
 
-/** Browse the store: every public subproject, plus the caller's own private ones. */
-export async function listSubprojects(options?: ListSubprojectsOptions): Promise<SubprojectListing> {
+/**
+ * Browse the store. Three scopes, all resolved server-side from the token:
+ * every `public` subproject, every `account` one in the caller's account, and
+ * the caller's own `private` ones.
+ */
+export async function listSubprojects(
+  options?: ListSubprojectsOptions,
+): Promise<SubprojectListing> {
   return unwrap(await backendApi.get<SubprojectListing>(`/subprojects${subprojectQuery(options)}`));
 }
 
 /** One subproject by id. */
 export async function getSubproject(subprojectId: string): Promise<Subproject> {
-  const res = await backendApi.get<{ subproject: Subproject }>(`/subprojects/${encodeURIComponent(subprojectId)}`);
+  const res = await backendApi.get<{ subproject: Subproject }>(
+    `/subprojects/${encodeURIComponent(subprojectId)}`,
+  );
   return unwrap(res).subproject;
 }
 
 /** Index a subproject from a GitHub repo. */
-export async function submitSubproject(input: SubmitSubprojectInput): Promise<SubprojectSubmitResult> {
+export async function submitSubproject(
+  input: SubmitSubprojectInput,
+): Promise<SubprojectSubmitResult> {
   const body: Record<string, unknown> = { repo: input.repo };
-  // Only send what the caller chose. The server defaults visibility to private,
-  // so an explicit `undefined` would be noise on the wire.
+  // Only send what the caller chose. The server defaults visibility to
+  // `account`, so an explicit `undefined` would be noise on the wire.
   if (input.visibility) body.visibility = input.visibility;
   if (input.account_id) body.account_id = input.account_id;
   return unwrap(await backendApi.post<SubprojectSubmitResult>('/subprojects', body));
@@ -182,7 +218,9 @@ export async function submitSubprojectArchive(
  * precisely so an install outlives its catalogue entry.
  */
 export async function deleteSubproject(subprojectId: string): Promise<{ ok: boolean }> {
-  return unwrap(await backendApi.delete<{ ok: boolean }>(`/subprojects/${encodeURIComponent(subprojectId)}`));
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(`/subprojects/${encodeURIComponent(subprojectId)}`),
+  );
 }
 
 // ── per-project ────────────────────────────────────────────────────────────
@@ -197,22 +235,17 @@ export interface InstalledSubproject {
   version: string | null;
   title: string;
   installed_at: string | null;
-  /** What this subproject contributed, by entity kind — what an uninstall removes. */
-  owns: Partial<Record<'agents' | 'skills' | 'connectors' | 'triggers', string[]>>;
   /**
-   * Whether its triggers are firing, DERIVED from the manifest's trigger
-   * entries — there is no stored flag, because a subproject is on exactly when its
-   * triggers are.
+   * What this subproject contributed, by entity kind — what an uninstall
+   * removes.
    *
-   * `null` means the question has no single answer: SOME of its triggers are on,
-   * or it owns none at all. Render that as indeterminate; a switch that picked
-   * on or off would claim a state the manifest does not have.
+   * `owns.triggers` names the triggers it added; it does NOT say whether they
+   * fire. A trigger is enabled or disabled individually, on the Triggers
+   * capability page, because that is where a person can see what each one
+   * does. There is no subproject-level on/off: an installed subproject is a set
+   * of entries in the manifest, not a running thing.
    */
-  enabled: boolean | null;
-  /** How many triggers this subproject owns. `0` means nothing to activate. */
-  trigger_count: number;
-  /** How many of those are currently enabled. */
-  enabled_trigger_count: number;
+  owns: Partial<Record<'agents' | 'skills' | 'connectors' | 'triggers', string[]>>;
 }
 
 export interface InstalledSubprojectListing {
@@ -222,7 +255,9 @@ export interface InstalledSubprojectListing {
 }
 
 /** What is installed in one project, read from its manifest. */
-export async function listProjectSubprojects(projectId: string): Promise<InstalledSubprojectListing> {
+export async function listProjectSubprojects(
+  projectId: string,
+): Promise<InstalledSubprojectListing> {
   return unwrap(
     await backendApi.get<InstalledSubprojectListing>(
       `/projects/${encodeURIComponent(projectId)}/subprojects`,
@@ -283,143 +318,6 @@ export async function createSubprojectAuthorSession(
     await backendApi.post<{ session_id: string }>(
       `/projects/${encodeURIComponent(projectId)}/subprojects/author-session`,
       { description },
-    ),
-  );
-}
-
-/** The result of flipping one subproject's triggers. */
-export interface SubprojectActivationResult {
-  ok: boolean;
-  subproject_slug: string;
-  title: string;
-  enabled: boolean;
-  /**
-   * The trigger slugs that actually moved.
-   *
-   * EMPTY means the subproject was already in the requested state — a different
-   * answer from "it worked", and the reason this is not just `{ ok: true }`.
-   * The route skips the commit entirely in that case.
-   */
-  triggers: string[];
-}
-
-/**
- * Enable or disable one subproject's triggers.
- *
- * A subproject installs with every trigger `enabled: false`, so this is what starts
- * it working. It is NOT the project-wide pause: `setProjectTriggersActivation`
- * stops every trigger in the project at once and is a kill switch. This writes
- * the manifest, so a subproject's activation is committed configuration that
- * survives a redeploy and appears in `git log`.
- */
-export async function setSubprojectActivation(
-  projectId: string,
-  slug: string,
-  enabled: boolean,
-): Promise<SubprojectActivationResult> {
-  return unwrap(
-    await backendApi.patch<SubprojectActivationResult>(
-      `/projects/${encodeURIComponent(projectId)}/subprojects/${encodeURIComponent(slug)}/activation`,
-      { enabled },
-    ),
-  );
-}
-
-// ── runs ───────────────────────────────────────────────────────────────────
-
-/**
- * What a subproject run shows.
- *
- * Overlaps the session sidebar's vocabulary on purpose. Two are run-specific:
- * `retrying` (the fire failed and will be attempted again — collapsing it into
- * `starting` would show a subproject failing every attempt as perpetually starting)
- * and `skipped` (a filter or the pause switch declined the delivery; nothing ran
- * and nothing is wrong).
- */
-export type SubprojectRunStatus =
-  | 'starting'
-  | 'retrying'
-  | 'running'
-  | 'done'
-  | 'failed'
-  | 'stopped'
-  | 'skipped';
-
-/** One run: one trigger fire. */
-export interface SubprojectRun {
-  execution_id: string;
-  subproject_slug: string;
-  trigger_slug: string;
-  status: SubprojectRunStatus;
-  /** The dispatch status underneath, for a report that wants to be precise. */
-  execution_status: string;
-  /** When the slot was due — the schedule's promise. */
-  scheduled_for: string;
-  dispatched_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  attempts: number;
-  last_error: string | null;
-  /** The session this run produced. Null while queued, or if it was deleted. */
-  session_id: string | null;
-  session_status: string | null;
-  /** The session's generated title — the closest thing to what it delivered. */
-  summary: string | null;
-  duration_ms: number | null;
-}
-
-export interface SubprojectRunStats {
-  total: number;
-  done: number;
-  failed: number;
-  /**
-   * `done / (done + failed)` as a 0-100 integer, or null with no settled
-   * verdict. `stopped` and `skipped` count on NEITHER side: a reaped sandbox is
-   * not the subproject failing, and 0% would read as "everything failed".
-   */
-  successRate: number | null;
-  avgDurationSeconds: number | null;
-}
-
-export interface SubprojectRunListing {
-  runs: SubprojectRun[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-export interface SubprojectRunReport extends SubprojectRunListing {
-  subproject_slug: string;
-  /** Aggregated over the RETURNED page; `total` says how many exist. */
-  stats: SubprojectRunStats;
-}
-
-export interface ListSubprojectRunsOptions {
-  limit?: number;
-  offset?: number;
-}
-
-/** Runs across every installed subproject, newest first. */
-export async function listProjectSubprojectRuns(
-  projectId: string,
-  options?: ListSubprojectRunsOptions,
-): Promise<SubprojectRunListing> {
-  return unwrap(
-    await backendApi.get<SubprojectRunListing>(
-      `/projects/${encodeURIComponent(projectId)}/subprojects/runs${subprojectQuery(options)}`,
-    ),
-  );
-}
-
-/** Runs for one subproject, with aggregate stats. */
-export async function listSubprojectRuns(
-  projectId: string,
-  slug: string,
-  options?: ListSubprojectRunsOptions,
-): Promise<SubprojectRunReport> {
-  return unwrap(
-    await backendApi.get<SubprojectRunReport>(
-      `/projects/${encodeURIComponent(projectId)}/subprojects/${encodeURIComponent(slug)}/runs${subprojectQuery(options)}`,
     ),
   );
 }

@@ -265,28 +265,6 @@ export const qk = {
     subprojects: (id: string) => [...qk.project.scope(id), 'subprojects'] as const,
 
     /**
-     * Prefix over EVERY subproject-runs entry in this project — the all-subprojects list
-     * and each per-subproject report. Siblings, not parent and child, for the same
-     * reason `sessionsScope` exists: uninstalling a subproject or firing a trigger
-     * must reach both in one invalidation, and invalidating only one would
-     * leave the other silently showing history that no longer matches.
-     */
-    subprojectRunsScope: (id: string) => [...qk.project.scope(id), 'subproject-runs'] as const,
-
-    /**
-     * Runs across every installed subproject. The literal `'all'` segment keeps this
-     * from ever colliding with `subprojectRuns(id, slug)` below — without it a subproject
-     * whose slug happened to be the string this key ends in would produce the
-     * identical array. Same standard the `sessions` key applies: make the
-     * collision unrepresentable rather than rely on slugs staying tame.
-     */
-    subprojectRunsAll: (id: string) => [...qk.project.subprojectRunsScope(id), 'all'] as const,
-
-    /** One subproject's runs. */
-    subprojectRuns: (id: string, slug: string) =>
-      [...qk.project.subprojectRunsScope(id), 'subproject', slug] as const,
-
-    /**
      * `readProjectFile(id, path)` — a single-file source read, used by the
      * Customize config-entity viewer. Unrelated to the much larger Git file
      * browser under `features/project-files/` (its own local key factories,

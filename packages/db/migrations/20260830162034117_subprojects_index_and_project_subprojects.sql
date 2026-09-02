@@ -23,7 +23,7 @@ set statement_timeout = '30s';
 
 CREATE TYPE "kortix"."subproject_source_kind" AS ENUM('github', 'upload');--> statement-breakpoint
 CREATE TYPE "kortix"."subproject_status" AS ENUM('active', 'unavailable', 'yanked');--> statement-breakpoint
-CREATE TYPE "kortix"."subproject_visibility" AS ENUM('public', 'private');--> statement-breakpoint
+CREATE TYPE "kortix"."subproject_visibility" AS ENUM('public', 'account', 'private');--> statement-breakpoint
 CREATE TABLE "kortix"."subprojects" (
 	"subproject_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"slug" varchar(128) NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE "kortix"."subprojects" (
 	"upload_name" varchar(255),
 	"stars" integer,
 	"install_count" integer DEFAULT 0 NOT NULL,
-	"visibility" "kortix"."subproject_visibility" DEFAULT 'private' NOT NULL,
+	"visibility" "kortix"."subproject_visibility" DEFAULT 'account' NOT NULL,
 	"account_id" uuid,
 	"submitted_by" uuid,
 	"status" "kortix"."subproject_status" DEFAULT 'active' NOT NULL,

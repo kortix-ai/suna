@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 637,
+  "count": 634,
   "routes": [
     {
       "method": "GET",
@@ -1036,22 +1036,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/subprojects"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/subprojects"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/subprojects/:subprojectId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/subprojects/:subprojectId"
-    },
-    {
-      "method": "GET",
       "path": "/v1/docs"
     },
     {
@@ -1631,34 +1615,6 @@
       "path": "/v1/projects/:projectId/connectors/:slug/oauth2/connection"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/subprojects"
-    },
-    {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/subprojects/:slug/activation"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/subprojects/:slug/runs"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/:slug/uninstall-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/author-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/install-session"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/subprojects/runs"
-    },
-    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/default-agent"
     },
@@ -2136,6 +2092,22 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/subprojects"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/subprojects/:slug/uninstall-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/subprojects/author-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/subprojects/install-session"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/triggers"
     },
     {
@@ -2361,6 +2333,22 @@
     {
       "method": "GET",
       "path": "/v1/skills/:name/file"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/subprojects"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/subprojects"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/subprojects/:subprojectId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/subprojects/:subprojectId"
     },
     {
       "method": "POST",

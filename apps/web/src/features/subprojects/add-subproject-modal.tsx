@@ -4,8 +4,6 @@ import {
   ArrowClockwiseIcon,
   FileZipIcon,
   GithubLogoIcon,
-  GlobeIcon,
-  LockIcon,
   UploadSimpleIcon,
   WarningIcon,
   XIcon,
@@ -13,13 +11,14 @@ import {
 import { useMemo, useRef, useState } from 'react';
 
 import { parseSubprojectRepo } from '@kortix/manifest-schema';
-import type { SubprojectSubmitResult, SubprojectVisibility } from '@kortix/sdk';
+import type { SubmittableSubprojectVisibility, SubprojectSubmitResult } from '@kortix/sdk';
 import { useSubprojects } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import Loading from '@/components/ui/loading';
 import {
   Modal,
@@ -30,6 +29,7 @@ import {
   ModalHeader,
   ModalTitle,
 } from '@/components/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsListCompact, TabsTrigger } from '@/components/ui/tabs';
 import { successToast, warningToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
@@ -43,23 +43,38 @@ import { countLabel } from './subprojects-catalog';
  * `parseRepoInput` this file used to export is gone.
  */
 
+/**
+ * The two scopes a person can choose, in widest-first order — the same order
+ * and the same label/description radio shape the session-access dialog uses
+ * (`SharingPicker`), because this is the same question about a different noun.
+ *
+ * `public` — every Kortix user, in every account — is deliberately ABSENT. It
+ * is a real value of the `subproject_visibility` enum, and the globally listed
+ * subprojects hold it, but they are seeded by migration or inserted directly.
+ * Three separate things keep a submission out of it, and this list is only the
+ * first: the `id` type is `SubmittableSubprojectVisibility`
+ * (`Exclude<SubprojectVisibility, 'public'>`), so an added `public` entry fails
+ * to compile; and `POST /v1/subprojects` coerces anything that is not `account`
+ * to `private`, so a request built by hand does not reach it either.
+ *
+ * `account` is the default. It matches "Whole project" leading the session
+ * dialog, and it is what the account-scoped catalog already did before
+ * `private` meant anything narrower than the account.
+ */
 const VISIBILITY: Array<{
-  id: SubprojectVisibility;
+  id: SubmittableSubprojectVisibility;
   label: string;
-  icon: typeof GlobeIcon;
-  hint: string;
+  desc: string;
 }> = [
   {
-    id: 'public',
-    label: 'Public',
-    icon: GlobeIcon,
-    hint: 'Anyone in the subprojects catalog can find and install it.',
+    id: 'account',
+    label: 'Everyone in your account',
+    desc: 'Anyone in this account can find it in the marketplace and install it.',
   },
   {
     id: 'private',
-    label: 'Private',
-    icon: LockIcon,
-    hint: 'Only you can install it. It stays out of the catalog.',
+    label: 'Only you',
+    desc: 'Nobody else in this account sees it.',
   },
 ];
 
@@ -175,7 +190,7 @@ export function AddSubprojectModal({
   const [mode, setMode] = useState<'repo' | 'upload'>('repo');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [visibility, setVisibility] = useState<SubprojectVisibility>('private');
+  const [visibility, setVisibility] = useState<SubmittableSubprojectVisibility>('account');
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -198,7 +213,7 @@ export function AddSubprojectModal({
   const reset = () => {
     setUrl('');
     setFile(null);
-    setVisibility('private');
+    setVisibility('account');
     setError(null);
     setMode('repo');
   };
@@ -388,43 +403,32 @@ export function AddSubprojectModal({
               </TabsContent>
             </Tabs>
 
-            <Field>
-              <FieldLabel htmlFor="subproject-visibility-public">Visibility</FieldLabel>
-              <div
-                id="subproject-visibility"
-                role="radiogroup"
-                aria-label="Visibility"
-                className="grid grid-cols-2 gap-2"
+            {/* The same control as session access, down to the primitives:
+                a heading, then one bordered card per scope carrying its own
+                description. The two-icon-buttons grid this replaces put the
+                consequence in a single line UNDER the group, so whichever
+                option you were not on never stated what it would do. */}
+            <div className="space-y-3">
+              <Label id="subproject-visibility-heading">Who can find and install it</Label>
+              <RadioGroup
+                value={visibility}
+                onValueChange={(next) => setVisibility(next as SubmittableSubprojectVisibility)}
+                aria-labelledby="subproject-visibility-heading"
+                className="space-y-2"
               >
-                {VISIBILITY.map((option) => {
-                  const OptionIcon = option.icon;
-                  const active = visibility === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      id={`subproject-visibility-${option.id}`}
-                      type="button"
-                      role="radio"
-                      aria-checked={active}
-                      onClick={() => setVisibility(option.id)}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-left text-sm font-medium',
-                        'transition-colors duration-150 active:scale-[0.99]',
-                        active
-                          ? 'border-foreground/20 bg-primary/[0.06] text-foreground'
-                          : 'bg-popover text-muted-foreground hover:border-foreground/20 hover:text-foreground',
-                      )}
-                    >
-                      <OptionIcon className="size-4 shrink-0" aria-hidden />
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <FieldDescription>
-                {VISIBILITY.find((option) => option.id === visibility)?.hint}
-              </FieldDescription>
-            </Field>
+                {VISIBILITY.map((option) => (
+                  <RadioGroupItem
+                    key={option.id}
+                    value={option.id}
+                    id={`subproject-visibility-${option.id}`}
+                    label={option.label}
+                    description={option.desc}
+                    size="lg"
+                    variant="outline"
+                  />
+                ))}
+              </RadioGroup>
+            </div>
 
             {error ? (
               <InfoBanner

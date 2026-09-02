@@ -641,29 +641,22 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /**
-       * Subprojects installed in this project, and the runs of the triggers they own.
-       * Install and uninstall return a SESSION to open — the agent inside it
-       * does the merge and lands a change request; neither call commits.
+       * Subprojects installed in this project. Install and uninstall return a
+       * SESSION to open — the agent inside it does the merge and lands a change
+       * request; neither call commits.
+       *
+       * There is no `setActivation` and no `runs` here. A subproject is a set of
+       * entries in the manifest, not a running thing: its triggers are enabled
+       * one at a time through `triggers`, and their runs belong to the trigger
+       * that fired, not to the subproject that contributed it.
        */
       subprojects: {
         list: () => P.listProjectSubprojects(projectId),
-        install: (subprojectId: string) => P.createSubprojectInstallSession(projectId, subprojectId),
+        install: (subprojectId: string) =>
+          P.createSubprojectInstallSession(projectId, subprojectId),
         uninstall: (slug: string) => P.createSubprojectUninstallSession(projectId, slug),
         /** Describe a subproject and have one built. Returns the session to open. */
         author: (description: string) => P.createSubprojectAuthorSession(projectId, description),
-        /**
-         * Enable or disable ONE subproject's triggers. A subproject installs with every
-         * trigger off, so this is what starts it working. Not the project-wide
-         * pause — that is `triggers.setActivation`.
-         */
-        setActivation: (slug: string, enabled: boolean) =>
-          P.setSubprojectActivation(projectId, slug, enabled),
-        /** Runs across every installed subproject, newest first. */
-        runs: (options?: Parameters<typeof P.listProjectSubprojectRuns>[1]) =>
-          P.listProjectSubprojectRuns(projectId, options),
-        /** Runs for one subproject, with aggregate stats. */
-        runsFor: (slug: string, options?: Parameters<typeof P.listSubprojectRuns>[2]) =>
-          P.listSubprojectRuns(projectId, slug, options),
       },
 
       files: {

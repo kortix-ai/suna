@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-import { subprojectsHref } from '@/features/subprojects/subproject-runs';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 
 /**
  * `/projects/[id]/subprojects` — retired, and kept only to forward.
@@ -18,8 +18,15 @@ import { subprojectsHref } from '@/features/subprojects/subproject-runs';
  *
  * Deleting the folder outright was the alternative and is the wrong one — a URL
  * that worked this morning would 404 this afternoon, silently, for anyone who
- * had saved it. `subprojects/runs` and `subprojects/runs/[subprojectSlug]` are
- * NOT retired and keep their URLs; only this index moved.
+ * had saved it. `subprojects/runs` and `subprojects/runs/[subprojectSlug]` were
+ * retired outright rather than forwarded: run monitoring is no longer a
+ * subproject-scoped surface at all, so there is no equivalent page to send
+ * those URLs to.
+ *
+ * `capabilityTabHref` builds the target rather than interpolation, so renaming
+ * or dropping the Marketplace tab fails this line at compile time instead of
+ * leaving a redirect to a 404. The import is safe in a server component:
+ * `capability-tab-routes` is pure data with no icon import.
  */
 export default async function RetiredProjectSubprojectsRoute({
   params,
@@ -27,5 +34,5 @@ export default async function RetiredProjectSubprojectsRoute({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  redirect(subprojectsHref(id));
+  redirect(capabilityTabHref(id, 'marketplace'));
 }

@@ -1,16 +1,14 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
+  type SubmittableSubprojectVisibility,
   createSubprojectAuthorSession,
   createSubprojectInstallSession,
   createSubprojectUninstallSession,
   deleteSubproject,
   getSubproject,
-  listSubprojectRuns,
   listSubprojects,
-  listProjectSubprojectRuns,
   listProjectSubprojects,
-  setSubprojectActivation,
   submitSubproject,
   submitSubprojectArchive,
 } from './subprojects';
@@ -65,18 +63,33 @@ test('listSubprojects passes q, limit and offset through', async () => {
 
 test('submitSubproject POSTs the repo address as JSON', async () => {
   nextResponse = { status: 201, body: { subproject: { subproject_id: 'c1' }, warnings: [] } };
-  const res = await submitSubproject({ repo: 'acme/seo-subproject@v1', visibility: 'public' });
+  const res = await submitSubproject({ repo: 'acme/seo-subproject@v1', visibility: 'account' });
   expect(last().method).toBe('POST');
   expect(last().url).toBe('http://test.local/subprojects');
-  expect(last().body).toEqual({ repo: 'acme/seo-subproject@v1', visibility: 'public' });
+  expect(last().body).toEqual({ repo: 'acme/seo-subproject@v1', visibility: 'account' });
   expect(res.subproject.subproject_id).toBe('c1');
 });
 
 test('submitSubproject omits visibility when the caller does not choose one', async () => {
-  // The server defaults to private; sending `undefined` would be noise.
+  // The server defaults to `account`; sending `undefined` would be noise.
   nextResponse = { status: 201, body: { subproject: { subproject_id: 'c1' }, warnings: [] } };
   await submitSubproject({ repo: 'acme/x' });
   expect(last().body).toEqual({ repo: 'acme/x' });
+});
+
+test('a submission cannot ask for `public` — the type excludes it', () => {
+  // `public` means every Kortix user in every account. It is a curation
+  // decision, so it is reachable only by migration, seeder or direct insert.
+  // The submit route coerces it, and `SubmittableSubprojectVisibility` is what
+  // stops a caller writing the request in the first place.
+  const submittable: SubmittableSubprojectVisibility[] = ['account', 'private'];
+  expect(submittable).toEqual(['account', 'private']);
+  // The assertion IS the `@ts-expect-error`: it fails the typecheck if this
+  // line ever compiles, which is what "the type excludes it" means. `void`
+  // keeps the value unused without a second type error on the assertion.
+  // @ts-expect-error `public` is not a submittable scope.
+  const refused: SubmittableSubprojectVisibility = 'public';
+  void refused;
 });
 
 test('submitSubprojectArchive POSTs multipart with the archive as `file`', async () => {
@@ -172,71 +185,8 @@ test('createSubprojectAuthorSession POSTs the description and returns the sessio
   expect(res.session_id).toBe('s3');
 });
 
-test('setSubprojectActivation PATCHes the subproject slug with the boolean', async () => {
-  // The project-wide pause is a different route entirely
-  // (`/triggers/activation`). This one is scoped to one subproject's own triggers.
-  nextResponse = {
-    status: 200,
-    body: { ok: true, subproject_slug: 'seo-watch', title: 'SEO watch', enabled: true, triggers: ['weekly'] },
-  };
-  const res = await setSubprojectActivation('p1', 'seo-watch', true);
-  expect(last().method).toBe('PATCH');
-  expect(last().url).toBe('http://test.local/projects/p1/subprojects/seo-watch/activation');
-  expect(last().body).toEqual({ enabled: true });
-  expect(res.triggers).toEqual(['weekly']);
-});
-
-test('setSubprojectActivation can disable, and reports an empty trigger list as a no-op', async () => {
-  // An empty `triggers` array means the subproject was ALREADY in this state — a
-  // different answer from "it worked", and callers need to be able to tell.
-  nextResponse = {
-    status: 200,
-    body: { ok: true, subproject_slug: 'seo-watch', title: 'SEO watch', enabled: false, triggers: [] },
-  };
-  const res = await setSubprojectActivation('p1', 'seo-watch', false);
-  expect(last().body).toEqual({ enabled: false });
-  expect(res.enabled).toBe(false);
-  expect(res.triggers).toEqual([]);
-});
-
-// ── runs ───────────────────────────────────────────────────────────────────
-
-test('listProjectSubprojectRuns reads runs across every subproject', async () => {
-  nextResponse = { status: 200, body: { runs: [], total: 0, limit: 50, offset: 0 } };
-  await listProjectSubprojectRuns('p1');
-  expect(last().url).toBe('http://test.local/projects/p1/subprojects/runs');
-});
-
-test('listSubprojectRuns reads one subproject and returns its stats', async () => {
-  nextResponse = {
-    status: 200,
-    body: {
-      subproject_slug: 'seo-watch',
-      runs: [{ execution_id: 'e1', status: 'done' }],
-      total: 1,
-      limit: 50,
-      offset: 0,
-      stats: { total: 1, done: 1, failed: 0, successRate: 100, avgDurationSeconds: 60 },
-    },
-  };
-  const res = await listSubprojectRuns('p1', 'seo-watch');
-  expect(last().url).toBe('http://test.local/projects/p1/subprojects/seo-watch/runs');
-  expect(res.stats.successRate).toBe(100);
-  expect(res.runs[0].status).toBe('done');
-});
-
-test('listSubprojectRuns paginates', async () => {
-  nextResponse = {
-    status: 200,
-    body: { subproject_slug: 'x', runs: [], total: 0, limit: 5, offset: 10, stats: {} },
-  };
-  await listSubprojectRuns('p1', 'x', { limit: 5, offset: 10 });
-  expect(last().url).toContain('limit=5');
-  expect(last().url).toContain('offset=10');
-});
-
 test('every subproject path url-encodes its project id and slug', async () => {
-  nextResponse = { status: 200, body: { runs: [], total: 0 } };
-  await listSubprojectRuns('p/1', 'a b');
-  expect(last().url).toContain('/projects/p%2F1/subprojects/a%20b/runs');
+  nextResponse = { status: 201, body: { session_id: 's4' } };
+  await createSubprojectUninstallSession('p/1', 'a b');
+  expect(last().url).toContain('/projects/p%2F1/subprojects/a%20b/uninstall-session');
 });

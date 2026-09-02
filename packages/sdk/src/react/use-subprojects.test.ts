@@ -15,15 +15,8 @@ mock.module('@tanstack/react-query', () => ({
   }),
 }));
 
-const {
-  useSubprojects,
-  useProjectSubprojects,
-  useSubprojectRuns,
-  useProjectSubprojectRuns,
-  subprojectsKey,
-  projectSubprojectsKey,
-  subprojectRunsKey,
-} = await import('./use-subprojects');
+const { useSubprojects, useProjectSubprojects, subprojectsKey, projectSubprojectsKey } =
+  await import('./use-subprojects');
 const { qk } = await import('./query-keys');
 
 beforeEach(() => {
@@ -71,50 +64,21 @@ describe('useProjectSubprojects — what is installed here', () => {
     expect(invalidated.some((k) => k[0] === 'kx' && k[1] === 'subprojects')).toBe(true);
   });
 
-  test('uninstall invalidates the installed list and the runs scope', () => {
-    // Removing a subproject removes its runs from the report; a stale runs list
-    // would keep showing history for something no longer installed.
+  test('uninstall invalidates the installed list, and nothing else', () => {
+    // One key, deliberately. Uninstall starts a SESSION whose change request
+    // removes the manifest entries — the triggers page is not stale when this
+    // resolves, because nothing has been removed yet.
     const r = useProjectSubprojects('p1') as any;
     r.uninstall.onSuccess();
-    expect(invalidated).toContainEqual([...projectSubprojectsKey('p1')]);
-    expect(invalidated).toContainEqual([...qk.project.subprojectRunsScope('p1')]);
-  });
-});
-
-describe('useSubprojectRuns — one subproject', () => {
-  test('keys on project AND slug', () => {
-    const a = useSubprojectRuns('p1', 'seo') as any;
-    const b = useSubprojectRuns('p1', 'standup') as any;
-    expect(a.queryKey).not.toEqual(b.queryKey);
-    expect(a.queryKey).toEqual(subprojectRunsKey('p1', 'seo'));
+    expect(invalidated).toEqual([[...projectSubprojectsKey('p1')]]);
   });
 
-  test('is disabled without either a project or a slug', () => {
-    expect((useSubprojectRuns(undefined, 'seo') as any).enabled).toBe(false);
-    expect((useSubprojectRuns('p1', undefined) as any).enabled).toBe(false);
-    expect((useSubprojectRuns('p1', 'seo') as any).enabled).toBe(true);
-  });
-
-  test('sits under the project runs SCOPE so one invalidation reaches every subproject', () => {
-    const scope = qk.project.subprojectRunsScope('p1');
-    const key = subprojectRunsKey('p1', 'seo') as readonly unknown[];
-    expect(key.slice(0, scope.length)).toEqual([...scope]);
-  });
-});
-
-describe('useProjectSubprojectRuns — every subproject', () => {
-  test('keys under the same runs scope as a single subproject', () => {
-    const scope = qk.project.subprojectRunsScope('p1');
-    const key = (useProjectSubprojectRuns('p1') as any).queryKey as readonly unknown[];
-    expect(key.slice(0, scope.length)).toEqual([...scope]);
-  });
-
-  test('is distinct from any single subproject key', () => {
-    const all = (useProjectSubprojectRuns('p1') as any).queryKey;
-    expect(all).not.toEqual(subprojectRunsKey('p1', 'seo'));
-  });
-
-  test('is disabled without a projectId', () => {
-    expect((useProjectSubprojectRuns(null) as any).enabled).toBe(false);
+  test('exposes no activation mutation', () => {
+    // A subproject is a set of manifest entries, not a running thing. Its
+    // triggers are enabled one at a time on the Triggers page, which is the one
+    // place a person can see what each trigger does.
+    const r = useProjectSubprojects('p1') as any;
+    expect(r.setActivation).toBeUndefined();
+    expect(Object.keys(r)).toContain('uninstall');
   });
 });

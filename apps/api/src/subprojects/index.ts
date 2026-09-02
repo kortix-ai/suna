@@ -24,12 +24,17 @@ import { actorOf, authorize } from '../iam';
 import { ACCOUNT_ACTIONS } from '../iam/actions';
 import { combinedAuth } from '../middleware/auth';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
-import { SubprojectCrawlError, crawlSubprojectRepo, crawlSubprojectZip } from '../projects/subproject-index';
+import {
+  SubprojectCrawlError,
+  crawlSubprojectRepo,
+  crawlSubprojectZip,
+} from '../projects/subproject-index';
 import {
   SUBPROJECT_INSTALL_EMBED_BUDGET,
   subprojectExceedsEmbedBudget,
 } from '../projects/routes/subproject-install-prompts';
 import {
+  type SubprojectVisibility,
   subprojectVisibleTo,
   deleteSubproject,
   getSubprojectById,
@@ -120,6 +125,10 @@ subprojectsApp.openapi(
     const offset = clampOffset(c.req.query('offset'));
     const { items, total } = await listSubprojects({
       accountId: scope.accountId,
+      // Passed so the caller's OWN `private` subprojects stay in their catalogue.
+      // Omitting it would hide every private row, including the ones this user
+      // submitted — a wrong answer, not a safe one.
+      userId: scope.userId,
       q: c.req.query('q') ?? null,
       limit,
       offset,
@@ -150,7 +159,7 @@ subprojectsApp.openapi(
                * and answer "repo: Required" instead of explaining both shapes.
                */
               repo: z.string().min(1).optional(),
-              visibility: z.enum(['public', 'private']).optional(),
+              visibility: z.enum(['account', 'private']).optional(),
               account_id: z.string().optional(),
             }),
           },
@@ -159,7 +168,7 @@ subprojectsApp.openapi(
           'multipart/form-data': {
             schema: z.object({
               file: z.any().openapi({ type: 'string', format: 'binary' }),
-              visibility: z.enum(['public', 'private']).optional(),
+              visibility: z.enum(['account', 'private']).optional(),
               account_id: z.string().optional(),
             }),
           },
@@ -223,9 +232,30 @@ subprojectsApp.openapi(
       return c.json({ error: 'Owner or admin role required' }, 403);
     }
 
-    // Private by default. A subproject becomes public because someone chose to
-    // publish it, never because they forgot to say otherwise.
-    const visibility = body?.visibility === 'public' ? 'public' : 'private';
+    /**
+     * `public` is NOT submittable, at any role, on either body shape.
+     *
+     * A public subproject is visible to every Kortix user in every account, so
+     * publishing one is a curation decision, not an author's. Those rows are
+     * created by migration, by a seeder, or by a direct insert. This coerces
+     * rather than answering `400`: the schemas above already exclude `public`,
+     * so anything that reaches here asking for it is bypassing the validator,
+     * and the safe reading of a scope this route does not recognize is the
+     * narrow one.
+     *
+     * Hence the two-step read. An ABSENT `visibility` is the default and gets
+     * `account` — everyone in the submitting account, which is who a
+     * marketplace inside one account is for. A PRESENT value that is not
+     * `account` gets `private`, so `public` and any future enum value both
+     * land on the submitter alone rather than on the whole account.
+     *
+     * `private` is enforced by identity, not by account:
+     * `upsertSubprojectFromCrawl` records the submitter in `submitted_by` and
+     * `subprojectVisibleTo` compares against it.
+     */
+    const requested = typeof body?.visibility === 'string' ? body.visibility : null;
+    const visibility: SubprojectVisibility =
+      requested === null || requested === 'account' ? 'account' : 'private';
 
     let crawl: Awaited<ReturnType<typeof crawlSubprojectRepo>>;
     try {
@@ -298,8 +328,9 @@ subprojectsApp.openapi(
     }
     const subproject = await getSubprojectById(c.req.param('subprojectId'));
     // A subproject the caller may not see is 404, not 403: a 403 would confirm the
-    // id exists, which leaks another account's private catalogue.
-    if (!subproject || !subprojectVisibleTo(subproject, scope.accountId)) {
+    // id exists, which leaks another account's private catalogue. `userId` is
+    // load-bearing — a `private` row belongs to one user, not to the account.
+    if (!subproject || !subprojectVisibleTo(subproject, scope.accountId, scope.userId)) {
       return c.json({ error: 'Not found' }, 404);
     }
     return c.json({ subproject });
@@ -330,7 +361,7 @@ subprojectsApp.openapi(
     }
     const subprojectId = c.req.param('subprojectId');
     const subproject = await getSubprojectById(subprojectId);
-    if (!subproject || !subprojectVisibleTo(subproject, scope.accountId)) {
+    if (!subproject || !subprojectVisibleTo(subproject, scope.accountId, scope.userId)) {
       return c.json({ error: 'Not found' }, 404);
     }
     // Owner-scoped in the store too, so a subproject published by Kortix

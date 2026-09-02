@@ -5,9 +5,12 @@
  *   POST  /:projectId/subprojects/install-session      → start the agent-driven install
  *   POST  /:projectId/subprojects/author-session       → start the agent-driven authoring
  *   POST  /:projectId/subprojects/:slug/uninstall-session → start the agent-driven removal
- *   PATCH /:projectId/subprojects/:slug/activation     → enable/disable its triggers
- *   GET   /:projectId/subprojects/runs                 → every subproject's runs
- *   GET   /:projectId/subprojects/:slug/runs           → one subproject's runs
+ *
+ * That is the whole surface: read what is installed, install, uninstall, author.
+ * There is no activation route and no runs route. An installed subproject is a
+ * set of entries in the project's manifest, not a running thing — its triggers
+ * are enabled one at a time under `/:projectId/triggers`, and a trigger's runs
+ * belong to the trigger that fired, not to the subproject that contributed it.
  *
  * Installing is agent-driven because merging a subproject into a LIVE project
  * is judgment-heavy — name collisions, an existing connector that may already
@@ -24,13 +27,11 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { manifestCandidatePaths } from '@kortix/manifest-schema';
-import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam/actions';
 import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json } from '../../openapi';
 import { ensureProjectSubprojects } from '../subproject-catalog';
-import { listSubprojectRuns, summarizeSubprojectRuns } from '../subproject-runs';
 import {
   bumpSubprojectInstallCount,
   subprojectVisibleTo,
@@ -38,12 +39,7 @@ import {
   getSubprojectFiles,
   getSubprojectManifest,
 } from '../subproject-store';
-import {
-  subprojectTriggerActivation,
-  extractSubprojects,
-  setSubprojectTriggersEnabled,
-} from '../subprojects';
-import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { extractSubprojects } from '../subprojects';
 import { readManifestFromRepo } from '../git/files';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -51,7 +47,7 @@ import { loadGitProject } from '../lib/git';
 import { readBody, requestAuditContext } from '../lib/serializers';
 import { sendSessionCreateError } from '../lib/sessions';
 import { createSession } from '../session-lifecycle';
-import { extractTriggers, readManifest } from '../triggers';
+import { readManifest } from '../triggers';
 import {
   type SubprojectInstallSubject,
   buildSubprojectAuthorPrompt,
@@ -71,52 +67,6 @@ async function manifestRawOrNull(
   return found?.content ?? null;
 }
 
-/** Runs paging. Bounded so one call can never ask for a whole history. */
-const RUNS_DEFAULT_LIMIT = 50;
-const RUNS_MAX_LIMIT = 200;
-
-function runPaging(c: any): { limit: number; offset: number } {
-  const rawLimit = Number(c.req.query('limit'));
-  const rawOffset = Number(c.req.query('offset'));
-  return {
-    limit:
-      Number.isFinite(rawLimit) && rawLimit > 0
-        ? Math.min(Math.floor(rawLimit), RUNS_MAX_LIMIT)
-        : RUNS_DEFAULT_LIMIT,
-    offset: Number.isFinite(rawOffset) && rawOffset > 0 ? Math.floor(rawOffset) : 0,
-  };
-}
-
-/**
- * Membership + flag + capability for a subproject READ, in the one order that does
- * not leak: membership first (a stranger gets 404 and learns nothing), then the
- * flag, then the capability.
- *
- * Returns either the resolved scope or the response to send. A discriminated
- * result rather than a throw, so each route's control flow stays readable and
- * the 404/403 bodies stay identical across all of them.
- */
-async function requireSubprojectReadScope(
-  c: any,
-): Promise<
-  | { projectId: string; loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>> }
-  | { response: Response }
-> {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
-  const gate = requireFeatureFlag(c, loaded.row.metadata, 'subprojects');
-  if (gate) return { response: gate };
-  await assertProjectCapability(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_READ,
-  );
-  return { projectId, loaded };
-}
-
 // ── GET /:projectId/subprojects ──────────────────────────────────────────────────
 
 projectsApp.openapi(
@@ -133,9 +83,21 @@ projectsApp.openapi(
     },
   }),
   async (c: any) => {
-    const scoped = await requireSubprojectReadScope(c);
-    if ('response' in scoped) return scoped.response;
-    const { projectId, loaded } = scoped;
+    const projectId = c.req.param('projectId');
+    // Membership authz BEFORE the flag gate, so a stranger gets 404 rather than
+    // learning whether this project has subprojects enabled. Same order as
+    // install-session below; only the capability leaf differs.
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const gate = requireFeatureFlag(c, loaded.row.metadata, 'subprojects');
+    if (gate) return gate;
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_READ,
+    );
 
     const project = await loadGitProject(loaded);
     let manifest: Awaited<ReturnType<typeof readManifest>> = null;
@@ -158,29 +120,20 @@ projectsApp.openapi(
     if (manifest) await ensureProjectSubprojects(projectId, specs);
 
     return c.json({
-      subprojects: specs.map((spec) => {
-        // Activation is DERIVED from the subproject's trigger entries in this same
-        // manifest — there is no stored "this subproject is on" flag, and a second
-        // copy is how the switch and the trigger list end up disagreeing.
-        // `enabled: null` means mixed, or no triggers at all; a UI must render
-        // that as indeterminate rather than guessing on or off.
-        const activation = manifest
-          ? subprojectTriggerActivation(manifest, spec.slug)
-          : { enabled: null, triggerCount: 0, enabledCount: 0 };
-        return {
-          slug: spec.slug,
-          repo: `${spec.repoOwner}/${spec.repoName}`,
-          git_ref: spec.gitRef,
-          sha: spec.resolvedSha,
-          version: spec.version,
-          title: spec.title,
-          installed_at: spec.installedAt,
-          owns: spec.owns,
-          enabled: activation.enabled,
-          trigger_count: activation.triggerCount,
-          enabled_trigger_count: activation.enabledCount,
-        };
-      }),
+      // `owns` is the whole per-subproject payload. No `enabled` and no trigger
+      // counts: a subproject has no on/off state, so a count of enabled triggers
+      // here would be a second copy of what the Triggers page already reads from
+      // the same manifest — and two copies is how they end up disagreeing.
+      subprojects: specs.map((spec) => ({
+        slug: spec.slug,
+        repo: `${spec.repoOwner}/${spec.repoName}`,
+        git_ref: spec.gitRef,
+        sha: spec.resolvedSha,
+        version: spec.version,
+        title: spec.title,
+        installed_at: spec.installedAt,
+        owns: spec.owns,
+      })),
       errors: errorsOut,
     });
   },
@@ -226,7 +179,9 @@ projectsApp.openapi(
 
     const subproject = await getSubprojectById(subprojectId);
     // Same 404-not-403 rule as the index: a 403 would confirm the id exists.
-    if (!subproject || !subprojectVisibleTo(subproject, loaded.row.accountId)) {
+    // `loaded.userId` is what makes `private` mean "the submitter", so a
+    // colleague in the same account cannot install a subproject they cannot see.
+    if (!subproject || !subprojectVisibleTo(subproject, loaded.row.accountId, loaded.userId)) {
       return c.json({ error: 'Not found' }, 404);
     }
     if (subproject.status !== 'active') {
@@ -418,91 +373,14 @@ projectsApp.openapi(
   },
 );
 
-// ── GET /:projectId/subprojects/runs ─────────────────────────────────────────────
-//
-// Registered BEFORE `/{projectId}/subprojects/{slug}/runs` so `runs` is never eaten
-// as a subproject slug. (`activation` vs `{slug}` in r4.ts is the same ordering
-// hazard, and carries the same note.)
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/subprojects/runs',
-    tags: ['subprojects'],
-    summary: "GET /:projectId/subprojects/runs — every subproject's runs",
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      query: z.object({ limit: z.string().optional(), offset: z.string().optional() }),
-    },
-    responses: {
-      200: json(z.any(), 'Runs across every installed subproject'),
-      ...errors(401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const scoped = await requireSubprojectReadScope(c);
-    if ('response' in scoped) return scoped.response;
-    const { limit, offset } = runPaging(c);
-    const { runs, total } = await listSubprojectRuns({
-      projectId: scoped.projectId,
-      limit,
-      offset,
-    });
-    return c.json({ runs, total, limit, offset });
-  },
-);
-
-// ── GET /:projectId/subprojects/{slug}/runs ──────────────────────────────────────
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/subprojects/{slug}/runs',
-    tags: ['subprojects'],
-    summary: 'GET /:projectId/subprojects/:slug/runs',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), slug: z.string() }),
-      query: z.object({ limit: z.string().optional(), offset: z.string().optional() }),
-    },
-    responses: {
-      200: json(z.any(), 'Runs for one subproject, with aggregate stats'),
-      ...errors(401, 403, 404),
-    },
-  }),
-  async (c: any) => {
-    const scoped = await requireSubprojectReadScope(c);
-    if ('response' in scoped) return scoped.response;
-    const slug = c.req.param('slug');
-    const { limit, offset } = runPaging(c);
-    const { runs, total } = await listSubprojectRuns({
-      projectId: scoped.projectId,
-      subprojectSlug: slug,
-      limit,
-      offset,
-    });
-    // Stats are over the RETURNED page, not the whole history, and the response
-    // says so via `total`. Aggregating every execution ever would be a second
-    // full scan for a number the report shows beside a 12-run strip.
-    return c.json({
-      subproject_slug: slug,
-      runs,
-      total,
-      limit,
-      offset,
-      stats: summarizeSubprojectRuns(runs),
-    });
-  },
-);
-
 // ── POST /:projectId/subprojects/author-session ──────────────────────────────────
 //
-// No ordering hazard here, unlike `subprojects/runs`: `author-session` is a
-// two-segment path (`subprojects/author-session`) and every `{slug}` route has three
-// (`subprojects/{slug}/runs`), so no pattern can capture it. `subprojects/runs` needed the
-// explicit ordering because `subprojects/{slug}` would have matched it at the same
-// depth.
+// No ordering hazard: `author-session` is a two-segment path
+// (`subprojects/author-session`) and the only `{slug}` route is three
+// (`subprojects/{slug}/uninstall-session`), so no pattern can capture it. Keep
+// that invariant if a literal ever lands at the same depth as a `{slug}` — a
+// literal must be registered FIRST or the parameter eats it. (`activation` vs
+// `{slug}` in r4.ts carries the same note.)
 
 projectsApp.openapi(
   createRoute({
@@ -578,114 +456,5 @@ projectsApp.openapi(
     if (!result.row) return c.json({ error: 'Session creation returned no row' }, 500);
 
     return c.json({ session_id: result.row.sessionId }, 201);
-  },
-);
-
-// ── PATCH /:projectId/subprojects/:slug/activation ───────────────────────────────
-//
-// Turn one subproject's triggers on or off. NOT `setProjectTriggersActivation`: that
-// is the project-wide pause kill switch, and a subproject owns a subset. This writes
-// the manifest — a subproject's activation is part of the project's committed
-// configuration, so it survives a redeploy and shows up in `git log` like every
-// other config change.
-//
-// A subproject installs with every trigger `enabled: false` (see
-// `buildSubprojectInstallPrompt`), so this is the route that actually starts a
-// subproject working.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'patch',
-    path: '/{projectId}/subprojects/{slug}/activation',
-    tags: ['subprojects'],
-    summary: "PATCH /:projectId/subprojects/:slug/activation — enable a subproject's triggers",
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string(), slug: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.any(), 'OK'),
-      ...errors(400, 401, 403, 404, 409, 502),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    const slug = c.req.param('slug');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const gate = requireFeatureFlag(c, loaded.row.metadata, 'subprojects');
-    if (gate) return gate;
-    // `project.trigger.update`, not `project.write`: this changes whether
-    // triggers fire, which is exactly what that leaf governs. The per-trigger
-    // PATCH asserts the same one.
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_TRIGGER_UPDATE,
-    );
-
-    const body = await readBody(c);
-    if (typeof body?.enabled !== 'boolean') {
-      return c.json({ error: 'enabled must be a boolean' }, 400);
-    }
-    const enabled = body.enabled as boolean;
-
-    let changed: string[] = [];
-    let installedTitle = slug;
-    const result = await mutateManifestWithRetry(
-      loaded.row,
-      `subproject ${slug} was being updated`,
-      (manifest) => {
-        const installed = extractSubprojects(manifest).specs.find((entry) => entry.slug === slug);
-        if (!installed) {
-          return {
-            ok: false,
-            error: `No subproject "${slug}" is installed in this project`,
-            status: 404,
-          };
-        }
-        installedTitle = installed.title;
-        const applied = setSubprojectTriggersEnabled(manifest, slug, enabled);
-        changed = applied.changed;
-        if (changed.length === 0) {
-          // Already in the requested state. `commitMessage: null` skips git
-          // entirely rather than landing an empty commit.
-          return { ok: true, commitMessage: null };
-        }
-        manifest.raw = applied.manifest.raw;
-        return {
-          ok: true,
-          commitMessage: `chore: ${enabled ? 'enable' : 'disable'} ${slug} subproject triggers`,
-        };
-      },
-    );
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
-    }
-
-    // The manifest is truth; the runtime catalog is the projection the cron
-    // sweep reads. Re-materialize it now so an enable takes effect on the next
-    // sweep rather than waiting for the leader's periodic reconcile.
-    const project = await loadGitProject(loaded);
-    const manifest = await readManifest(project).catch(() => null);
-    if (manifest) {
-      const triggers = extractTriggers(manifest);
-      await reconcileProjectTriggerRuntime(projectId, triggers.specs).catch((err) =>
-        console.warn('[subprojects] trigger runtime reconcile failed', projectId, slug, err),
-      );
-    }
-
-    return c.json({
-      ok: true,
-      subproject_slug: slug,
-      title: installedTitle,
-      enabled,
-      // Which triggers actually moved — an empty array means it was already in
-      // this state, which is a different answer from "it worked".
-      triggers: changed,
-    });
   },
 );

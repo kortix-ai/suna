@@ -195,22 +195,19 @@ const installed = kortix.project(projectId).subprojects;
 const { session_id } = await installed.install(subproject.subproject_id);
 // The subproject is NOT installed yet. Open that session — the agent reads both
 // manifests, merges, and opens a change request a human reviews.
-
-await installed.setActivation('seo-watch', true); // commits to the manifest
-const report = await installed.runsFor('seo-watch');
 ```
 
 `install`, `uninstall` and `author` each return a session id and change nothing themselves. `submitArchive({ file })` indexes a subproject from a `.zip` for a folder that is not a repository yet; that subproject is a snapshot and never re-crawls.
 
 Three shapes are worth knowing before you render any of it:
 
-- **A subproject installs with every trigger off.** `setActivation(slug, true)` is what starts it working. An empty `triggers` array in the result means it was already in that state and no commit was made — a different answer from "it worked". This is not the project-wide pause (`project(id).triggers.setActivation`).
-- **`InstalledSubproject.enabled` is three-valued.** `null` means some of its triggers are on, or it owns none. Activation is derived from the manifest, never stored, so a stored copy cannot drift from what actually fires. Render `null` as indeterminate.
-- **A run is one trigger fire**, joined through the trigger's manifest `subproject:` field. `SubprojectRunStatus` adds `retrying` and `skipped` to the session vocabulary, `stats.successRate` excludes `stopped` and `skipped` from both sides, and `session_id` is nullable — do not link a run that produced no session.
+- **A subproject has no on/off state and no runs of its own.** It is a set of entries in the project's manifest. There is no activation method and no runs method here: its triggers are enabled one at a time through `project(id).triggers`, and a run belongs to the **trigger** that fired, not to the subproject that contributed it. `InstalledSubproject` therefore carries no `enabled` field and no trigger counts.
+- **A subproject installs with every trigger off.** Enable them individually. A single switch over a whole subproject would be a second answer to "is this on", competing with each trigger's own `enabled` field and the project-wide pause (`project(id).triggers.setActivation`).
+- **Visibility has three values and a submission can write two.** `account` is the default, `private` is the submitter alone (compared against `submitted_by`, so an account co-member does not see it), and `public` — every Kortix user — is **not submittable**. `SubmittableSubprojectVisibility` is `Exclude<SubprojectVisibility, 'public'>`, and the route coerces any present non-`account` value to `private` rather than answering `400`.
 
 `subproject_slug`, `subproject_id`, `subproject_repo` and `subproject_sha` are server-managed session metadata: sending them on `POST /sessions` answers `400`, so a client cannot attribute its own session to someone else's subproject.
 
-React: `useSubprojects`, `useSubproject`, `useProjectSubprojects`, `useProjectSubprojectRuns`, `useSubprojectRuns`. Full reference: `/docs/sdk/subprojects`.
+React: `useSubprojects`, `useSubproject`, `useProjectSubprojects`. Full reference: `/docs/sdk/subprojects`.
 
 ### React runtime
 

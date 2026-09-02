@@ -7,58 +7,48 @@ const read = (relative: string) => readFileSync(join(root, relative), 'utf8');
 
 const DOT = 'src/components/projects/session-status-dot.tsx';
 const SIDEBAR = 'src/features/workspace/project-sidebar/project-session-list.tsx';
-const DOT_WRAPPER = 'src/features/subprojects/subproject-run-dot.tsx';
-const ROW = 'src/features/subprojects/subproject-report-row.tsx';
-const LEGEND = 'src/features/subprojects/subproject-run-legend.tsx';
-const DETAIL = 'src/features/subprojects/subproject-report-detail.tsx';
-
-/** Every subproject surface that paints a run's state, directly or through the
- *  run-dot wrapper. `subproject-run-dot.tsx` is the wrapper the strips share; it adds
- *  the link and the tooltip and owns no paint of its own. */
-const SUBPROJECT_SURFACES = [DOT_WRAPPER, ROW, LEGEND, DETAIL];
 
 /**
  * The status circle's paint table is a SINGLE source of truth. It lived inside
- * the sidebar's session list until the subproject run strips needed the same glyph;
- * two copies is exactly how `done` ends up a muted check on one screen and a
- * green ring on another.
+ * the sidebar's session list until a second surface needed the same glyph; two
+ * copies is exactly how `done` ends up a muted check on one screen and a green
+ * ring on another.
  *
  * These are source assertions, not render assertions, because the invariant
  * being protected is "there is only one of these" — which no amount of
  * rendering one of them can prove.
+ *
+ * The sidebar's session list is currently the ONLY consumer. The subproject run
+ * strips were the second one; they are deleted, because runs are no longer a
+ * subproject-scoped surface. The table keeps its two run-only rows anyway — see
+ * the `retrying`/`skipped` test below for why that is deliberate and not dead
+ * code to tidy away.
  */
 describe('session status dot is the only paint table', () => {
   test('only session-status-dot.tsx defines STATUS_DOT_STYLE', () => {
     expect(read(DOT)).toContain('const STATUS_DOT_STYLE');
-    for (const file of [SIDEBAR, ...SUBPROJECT_SURFACES]) {
-      expect(read(file)).not.toContain('STATUS_DOT_STYLE');
-    }
+    expect(read(SIDEBAR)).not.toContain('STATUS_DOT_STYLE');
   });
 
   test('every consumer imports the dot rather than drawing its own circle', () => {
-    // ROW reaches the glyph through `subproject-run-dot`, not directly — the link
-    // and tooltip wrapper is shared, so only the wrapper and the surfaces that
-    // render a bare glyph import the dot itself.
-    for (const file of [SIDEBAR, DOT_WRAPPER, LEGEND, DETAIL]) {
-      expect(read(file)).toContain("from '@/components/projects/session-status-dot'");
-    }
-    expect(read(ROW)).toContain("from './subproject-run-dot'");
-    for (const file of [SIDEBAR, ...SUBPROJECT_SURFACES]) {
-      // A hand-rolled <circle> here would be a second glyph by another name.
-      expect(read(file)).not.toContain('<circle');
-    }
+    expect(read(SIDEBAR)).toContain("from '@/components/projects/session-status-dot'");
+    // A hand-rolled <circle> here would be a second glyph by another name.
+    expect(read(SIDEBAR)).not.toContain('<circle');
   });
 
-  test('the two run-only states live in the same paint table, not a fork', () => {
-    // A subproject run is `retrying` or `skipped` and a session never is. Forking
-    // the table for two rows is how `done` ends up green on one screen.
+  test('the two run-only states stay in this table, ready for the next run surface', () => {
+    // A trigger run is `retrying` or `skipped` and a session never is. These two
+    // rows have no consumer right now — the subproject run strips that used them
+    // are gone. They stay because the run-monitoring surface that replaces those
+    // strips paints the same nine states, and re-deriving two of them in a new
+    // file is precisely how `done` ends up green on one screen.
     const source = read(DOT);
     expect(source).toContain("retrying: { color: 'var(--kortix-yellow)'");
     expect(source).toContain("skipped: { color: 'var(--muted-foreground)', glyph: 'dash'");
     // And they must NOT have been added to the session union: no session can be
     // either, so every session surface would gain two dead cases.
     expect(read('src/components/projects/session-label.ts')).not.toContain('retrying');
-    expect(read('src/components/projects/session-label.ts')).not.toContain("skipped");
+    expect(read('src/components/projects/session-label.ts')).not.toContain('skipped');
   });
 
   test('green is spent on exactly the two live/actionable states', () => {
@@ -82,7 +72,9 @@ describe('session status dot is the only paint table', () => {
     expect(source).toContain(
       "'needs-you': { color: 'var(--kortix-green)', glyph: 'ring', fill: false, ringWidth: 2.25 }",
     );
-    expect(source).toContain("running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true }");
+    expect(source).toContain(
+      "running: { color: 'var(--kortix-green)', glyph: 'ring', fill: true }",
+    );
     // And the radius ternary that encoded the invisible difference is gone.
     expect(source).not.toContain("'needs-you' ? 3.2");
   });
@@ -110,7 +102,11 @@ describe('session status dot is the only paint table', () => {
     const source = read(DOT);
     const table = source.slice(source.indexOf('const STATUS_DOT_STYLE'));
     const body = table.slice(table.indexOf('= {') + 3, table.indexOf('\n};'));
-    const rows = [...body.matchAll(/^\s*'?([\w-]+)'?:\s*\{\s*color:\s*'([^']+)',\s*glyph:\s*'(\w+)',\s*fill:\s*(true|false)/gm)];
+    const rows = [
+      ...body.matchAll(
+        /^\s*'?([\w-]+)'?:\s*\{\s*color:\s*'([^']+)',\s*glyph:\s*'(\w+)',\s*fill:\s*(true|false)/gm,
+      ),
+    ];
     // Every status must be matched, or this test is silently checking nothing.
     expect(rows.length).toBe(9);
     const seen = new Map<string, string>();

@@ -12,7 +12,16 @@ import { type SQL, and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import type { SubprojectCrawlResult } from './subproject-index';
 
-export type SubprojectVisibility = 'public' | 'private';
+/**
+ * Who may see one subproject. Mirrors the `subproject_visibility` DB enum.
+ *
+ *   public   every Kortix user, in every account. Curated: the submit route
+ *            cannot produce it (see `apps/api/src/subprojects/index.ts`), so a
+ *            public row came from a migration, a seeder or a direct insert.
+ *   account  everyone in the submitting account.
+ *   private  the submitter alone — `submitted_by`, inside their own account.
+ */
+export type SubprojectVisibility = 'public' | 'account' | 'private';
 export type SubprojectStatus = 'active' | 'unavailable' | 'yanked';
 
 /** One subproject as the store's list and detail views render it. */
@@ -44,6 +53,12 @@ export interface SubprojectRecord {
   skills: string[];
   env_required: string[];
   account_id: string | null;
+  /**
+   * The user who submitted it. Carried on the wire because `visibility =
+   * 'private'` means "this user", and a client rendering "only you" has to be
+   * able to tell whether "you" is the viewer. NULL on a seeded row.
+   */
+  submitted_by: string | null;
   last_crawled_at: string | null;
   last_error: string | null;
   created_at: string;
@@ -93,7 +108,6 @@ const SUBPROJECT_CARD_COLUMNS = {
     then jsonb_array_length(${subprojects.files}) else 0 end`,
 } as const;
 
-
 /** Serialize a row for the wire. `manifest` is deliberately NOT included: it is
  *  a whole kortix.yaml per row, and the list view has no use for it. The detail
  *  view reads it through {@link getSubprojectManifest} when it needs it. */
@@ -136,6 +150,7 @@ export function serializeSubproject(row: SubprojectRow & { fileCount?: number })
     skills: row.skills,
     env_required: row.envRequired,
     account_id: row.accountId,
+    submitted_by: row.submittedBy,
     last_crawled_at: row.lastCrawledAt?.toISOString() ?? null,
     last_error: row.lastError,
     created_at: row.createdAt.toISOString(),
@@ -144,8 +159,14 @@ export function serializeSubproject(row: SubprojectRow & { fileCount?: number })
 }
 
 export interface ListSubprojectsInput {
-  /** The account browsing. Its own private subprojects are visible to it. */
+  /** The account browsing. Its own account-scoped subprojects are visible to it. */
   accountId: string;
+  /**
+   * The user browsing, for `visibility = 'private'` rows. Omit it and this
+   * listing hides every private row in the account, including the caller's own
+   * — which is a wrong answer, not a safe one, so every route passes it.
+   */
+  userId?: string | null;
   /** Free-text match over title, description and `owner/repo`. */
   q?: string | null;
   limit: number;
@@ -153,7 +174,18 @@ export interface ListSubprojectsInput {
 }
 
 /**
- * The store listing: every public subproject, plus the caller's own private ones.
+ * The store listing: the curated public catalog, plus what the caller's own
+ * account contributes.
+ *
+ * Three scopes, and the SQL has to mirror {@link subprojectVisibleTo} exactly —
+ * a listing that shows a row the detail route then refuses is a worse bug than
+ * either behaviour alone:
+ *
+ *  - `public` + `active` — every account sees it.
+ *  - `account` — the submitting account sees it.
+ *  - `private` — only `submitted_by` sees it. A NULL `submitted_by` (a seeded
+ *    or hand-inserted row) stays account-visible rather than becoming visible
+ *    to nobody.
  *
  * A `yanked` subproject is withdrawn and never listed. An `unavailable` one (its
  * last crawl failed) is listed ONLY to its owner, carrying `last_error`, so the
@@ -163,9 +195,17 @@ export interface ListSubprojectsInput {
 export async function listSubprojects(
   input: ListSubprojectsInput,
 ): Promise<{ items: SubprojectRecord[]; total: number }> {
+  const ownAccount = and(
+    eq(subprojects.accountId, input.accountId),
+    or(
+      sql`${subprojects.visibility} <> 'private'`,
+      isNull(subprojects.submittedBy),
+      input.userId ? eq(subprojects.submittedBy, input.userId) : sql`false`,
+    ),
+  ) as SQL;
   const visible = or(
     and(eq(subprojects.visibility, 'public'), eq(subprojects.status, 'active')),
-    eq(subprojects.accountId, input.accountId),
+    ownAccount,
   ) as SQL;
   const notYanked = sql`${subprojects.status} <> 'yanked'`;
   const term = input.q?.trim();
@@ -197,7 +237,9 @@ export async function listSubprojects(
     db.select({ n: sql<number>`count(*)::int` }).from(subprojects).where(where),
   ]);
   return {
-    items: rows.map((row) => serializeSubproject(row as unknown as SubprojectRow & { fileCount: number })),
+    items: rows.map((row) =>
+      serializeSubproject(row as unknown as SubprojectRow & { fileCount: number }),
+    ),
     total: counted[0]?.n ?? 0,
   };
 }
@@ -216,7 +258,9 @@ export async function getSubprojectById(subprojectId: string): Promise<Subprojec
 }
 
 /** The cached manifest for one subproject — read only where it is actually needed. */
-export async function getSubprojectManifest(subprojectId: string): Promise<Record<string, unknown> | null> {
+export async function getSubprojectManifest(
+  subprojectId: string,
+): Promise<Record<string, unknown> | null> {
   const [row] = await db
     .select({ manifest: subprojects.manifest })
     .from(subprojects)
@@ -237,10 +281,27 @@ export async function getSubprojectFiles(
   return Array.isArray(row?.files) ? row.files : [];
 }
 
-/** True when the caller may see this subproject. */
-export function subprojectVisibleTo(subproject: SubprojectRecord, accountId: string): boolean {
-  if (subproject.account_id === accountId) return true;
-  return subproject.visibility === 'public' && subproject.status === 'active';
+/**
+ * True when the caller may see this subproject. The single gate — every
+ * subproject route runs it, and {@link listSubprojects}'s WHERE clause is the
+ * same three rules expressed in SQL.
+ *
+ * `status` is checked for `public` only. Inside their own account the submitter
+ * must still see an `unavailable` row: that row carries `last_error`, which is
+ * the only way they learn their subproject stopped crawling.
+ */
+export function subprojectVisibleTo(
+  subproject: SubprojectRecord,
+  accountId: string,
+  userId?: string | null,
+): boolean {
+  if (subproject.visibility === 'public') return subproject.status === 'active';
+  if (subproject.account_id !== accountId) return false;
+  if (subproject.visibility !== 'private') return true;
+  // `private` is "this user", not "this account". A NULL `submitted_by` — a
+  // seeded or hand-inserted row — has no user to be private to, so it falls
+  // back to account-visible instead of being visible to nobody at all.
+  return !subproject.submitted_by || subproject.submitted_by === userId;
 }
 
 export interface UpsertSubprojectInput {
@@ -261,7 +322,9 @@ export interface UpsertSubprojectInput {
  * `install_count` and `created_at` are never touched by a re-crawl: usage and
  * first-seen belong to the subproject's history, not to the current commit.
  */
-export async function upsertSubprojectFromCrawl(input: UpsertSubprojectInput): Promise<SubprojectRecord> {
+export async function upsertSubprojectFromCrawl(
+  input: UpsertSubprojectInput,
+): Promise<SubprojectRecord> {
   const { crawl } = input;
   // Raw SQL, deliberately: the conflict arbiter is the EXPRESSION index
   // `idx_subprojects_repo_ref (repo_owner, repo_name, coalesce(git_ref,''))`, and
@@ -418,7 +481,10 @@ function normalizeRawSubprojectRow(raw: Record<string, unknown>): SubprojectRow 
  * Mark a subproject's crawl as failed. Keeps the row and its previous card so the
  * store can tell its owner "this broke, here is why" rather than losing it.
  */
-export async function markSubprojectUnavailable(subprojectId: string, error: string): Promise<void> {
+export async function markSubprojectUnavailable(
+  subprojectId: string,
+  error: string,
+): Promise<void> {
   await db
     .update(subprojects)
     .set({

@@ -7488,292 +7488,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.subprojects": {
-      "name": "subprojects",
-      "schema": "kortix",
-      "columns": {
-        "subproject_id": {
-          "name": "subproject_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "slug": {
-          "name": "slug",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_kind": {
-          "name": "source_kind",
-          "type": "subproject_source_kind",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'github'"
-        },
-        "repo_owner": {
-          "name": "repo_owner",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "repo_name": {
-          "name": "repo_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "git_ref": {
-          "name": "git_ref",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_sha": {
-          "name": "resolved_sha",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "title": {
-          "name": "title",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "manifest": {
-          "name": "manifest",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "agents": {
-          "name": "agents",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "triggers": {
-          "name": "triggers",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "connectors": {
-          "name": "connectors",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "skills": {
-          "name": "skills",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "env_required": {
-          "name": "env_required",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "files": {
-          "name": "files",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "upload_name": {
-          "name": "upload_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "stars": {
-          "name": "stars",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "install_count": {
-          "name": "install_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "subproject_visibility",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'private'"
-        },
-        "account_id": {
-          "name": "account_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "submitted_by": {
-          "name": "submitted_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "subproject_status",
-          "typeSchema": "kortix",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'active'"
-        },
-        "last_crawled_at": {
-          "name": "last_crawled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_subprojects_repo_ref": {
-          "name": "idx_subprojects_repo_ref",
-          "columns": [
-            {
-              "expression": "repo_owner",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "repo_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"git_ref\", '')",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_subprojects_listing": {
-          "name": "idx_subprojects_listing",
-          "columns": [
-            {
-              "expression": "visibility",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_subprojects_account": {
-          "name": "idx_subprojects_account",
-          "columns": [
-            {
-              "expression": "account_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_subprojects_slug": {
-          "name": "idx_subprojects_slug",
-          "columns": [
-            {
-              "expression": "slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "subprojects_account_id_accounts_account_id_fk": {
-          "name": "subprojects_account_id_accounts_account_id_fk",
-          "tableFrom": "subprojects",
-          "tableTo": "accounts",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "account_id"
-          ],
-          "columnsTo": [
-            "account_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "kortix.credit_accounts": {
       "name": "credit_accounts",
       "schema": "kortix",
@@ -11623,194 +11337,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "kortix.project_subprojects": {
-      "name": "project_subprojects",
-      "schema": "kortix",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "slug": {
-          "name": "slug",
-          "type": "varchar(128)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subproject_id": {
-          "name": "subproject_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "repo_owner": {
-          "name": "repo_owner",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo_name": {
-          "name": "repo_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "git_ref": {
-          "name": "git_ref",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_sha": {
-          "name": "resolved_sha",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "title": {
-          "name": "title",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "install_session_id": {
-          "name": "install_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owns": {
-          "name": "owns",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "installed_at": {
-          "name": "installed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_project_subprojects_subproject": {
-          "name": "idx_project_subprojects_subproject",
-          "columns": [
-            {
-              "expression": "subproject_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_project_subprojects_install_session": {
-          "name": "idx_project_subprojects_install_session",
-          "columns": [
-            {
-              "expression": "install_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "project_subprojects_project_id_projects_project_id_fk": {
-          "name": "project_subprojects_project_id_projects_project_id_fk",
-          "tableFrom": "project_subprojects",
-          "tableTo": "projects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "project_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_subprojects_subproject_id_subprojects_subproject_id_fk": {
-          "name": "project_subprojects_subproject_id_subprojects_subproject_id_fk",
-          "tableFrom": "project_subprojects",
-          "tableTo": "subprojects",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "subproject_id"
-          ],
-          "columnsTo": [
-            "subproject_id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "project_subprojects_install_session_fk": {
-          "name": "project_subprojects_install_session_fk",
-          "tableFrom": "project_subprojects",
-          "tableTo": "project_sessions",
-          "schemaTo": "kortix",
-          "columnsFrom": [
-            "install_session_id"
-          ],
-          "columnsTo": [
-            "session_id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "project_subprojects_project_id_slug_pk": {
-          "name": "project_subprojects_project_id_slug_pk",
-          "columns": [
-            "project_id",
-            "slug"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "kortix.project_git_connections": {
       "name": "project_git_connections",
       "schema": "kortix",
@@ -14508,6 +14034,194 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "kortix.project_subprojects": {
+      "name": "project_subprojects",
+      "schema": "kortix",
+      "columns": {
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subproject_id": {
+          "name": "subproject_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "repo_owner": {
+          "name": "repo_owner",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "git_ref": {
+          "name": "git_ref",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_sha": {
+          "name": "resolved_sha",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enabled": {
+          "name": "enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "install_session_id": {
+          "name": "install_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "owns": {
+          "name": "owns",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "installed_at": {
+          "name": "installed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_project_subprojects_subproject": {
+          "name": "idx_project_subprojects_subproject",
+          "columns": [
+            {
+              "expression": "subproject_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_project_subprojects_install_session": {
+          "name": "idx_project_subprojects_install_session",
+          "columns": [
+            {
+              "expression": "install_session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "project_subprojects_project_id_projects_project_id_fk": {
+          "name": "project_subprojects_project_id_projects_project_id_fk",
+          "tableFrom": "project_subprojects",
+          "tableTo": "projects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "project_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "project_subprojects_subproject_id_subprojects_subproject_id_fk": {
+          "name": "project_subprojects_subproject_id_subprojects_subproject_id_fk",
+          "tableFrom": "project_subprojects",
+          "tableTo": "subprojects",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "subproject_id"
+          ],
+          "columnsTo": [
+            "subproject_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "project_subprojects_install_session_fk": {
+          "name": "project_subprojects_install_session_fk",
+          "tableFrom": "project_subprojects",
+          "tableTo": "project_sessions",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "install_session_id"
+          ],
+          "columnsTo": [
+            "session_id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "project_subprojects_project_id_slug_pk": {
+          "name": "project_subprojects_project_id_slug_pk",
+          "columns": [
+            "project_id",
+            "slug"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -18788,6 +18502,292 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "kortix.subprojects": {
+      "name": "subprojects",
+      "schema": "kortix",
+      "columns": {
+        "subproject_id": {
+          "name": "subproject_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "subproject_source_kind",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'github'"
+        },
+        "repo_owner": {
+          "name": "repo_owner",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "repo_name": {
+          "name": "repo_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "git_ref": {
+          "name": "git_ref",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_sha": {
+          "name": "resolved_sha",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "manifest": {
+          "name": "manifest",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "agents": {
+          "name": "agents",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "triggers": {
+          "name": "triggers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "connectors": {
+          "name": "connectors",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "skills": {
+          "name": "skills",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "env_required": {
+          "name": "env_required",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "files": {
+          "name": "files",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "upload_name": {
+          "name": "upload_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stars": {
+          "name": "stars",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "install_count": {
+          "name": "install_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "visibility": {
+          "name": "visibility",
+          "type": "subproject_visibility",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'account'"
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submitted_by": {
+          "name": "submitted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "subproject_status",
+          "typeSchema": "kortix",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "last_crawled_at": {
+          "name": "last_crawled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_subprojects_repo_ref": {
+          "name": "idx_subprojects_repo_ref",
+          "columns": [
+            {
+              "expression": "repo_owner",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "repo_name",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "coalesce(\"git_ref\", '')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_subprojects_listing": {
+          "name": "idx_subprojects_listing",
+          "columns": [
+            {
+              "expression": "visibility",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_subprojects_account": {
+          "name": "idx_subprojects_account",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_subprojects_slug": {
+          "name": "idx_subprojects_slug",
+          "columns": [
+            {
+              "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "subprojects_account_id_accounts_account_id_fk": {
+          "name": "subprojects_account_id_accounts_account_id_fk",
+          "tableFrom": "subprojects",
+          "tableTo": "accounts",
+          "schemaTo": "kortix",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "account_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "kortix.suna_account_migrations": {
       "name": "suna_account_migrations",
       "schema": "kortix",
@@ -20805,31 +20805,6 @@
         "error"
       ]
     },
-    "kortix.subproject_source_kind": {
-      "name": "subproject_source_kind",
-      "schema": "kortix",
-      "values": [
-        "github",
-        "upload"
-      ]
-    },
-    "kortix.subproject_status": {
-      "name": "subproject_status",
-      "schema": "kortix",
-      "values": [
-        "active",
-        "unavailable",
-        "yanked"
-      ]
-    },
-    "kortix.subproject_visibility": {
-      "name": "subproject_visibility",
-      "schema": "kortix",
-      "values": [
-        "public",
-        "private"
-      ]
-    },
     "kortix.gateway_budget_action": {
       "name": "gateway_budget_action",
       "schema": "kortix",
@@ -21084,6 +21059,32 @@
         "stopped",
         "error",
         "archived"
+      ]
+    },
+    "kortix.subproject_source_kind": {
+      "name": "subproject_source_kind",
+      "schema": "kortix",
+      "values": [
+        "github",
+        "upload"
+      ]
+    },
+    "kortix.subproject_status": {
+      "name": "subproject_status",
+      "schema": "kortix",
+      "values": [
+        "active",
+        "unavailable",
+        "yanked"
+      ]
+    },
+    "kortix.subproject_visibility": {
+      "name": "subproject_visibility",
+      "schema": "kortix",
+      "values": [
+        "public",
+        "account",
+        "private"
       ]
     },
     "kortix.tunnel_capability": {

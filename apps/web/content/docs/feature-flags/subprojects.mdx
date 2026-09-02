@@ -1,14 +1,13 @@
 ---
 title: Subprojects
-description: Install a Kortix project into another project — publish, install by change request, activate, and read run history.
+description: Install a Kortix project into another project — publish to the catalog, then install by change request.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A **subproject** is a Kortix project you install into another project: a repository
 whose own `kortix.yaml` declares agents, skills, connectors and triggers.
-Installing one merges that declaration into the target project. Its triggers
-then fire on their own schedule, and each fire is a **run**.
+Installing one merges that declaration into the target project.
 
 Subprojects is a [feature flag](/docs/feature-flags). Its stability is
 **experimental**, and it is off by default. Turn it on per project before you
@@ -36,19 +35,24 @@ The account-scoped catalog routes (`GET /v1/subprojects`, `POST /v1/subprojects`
 `GET|DELETE /v1/subprojects/:subprojectId`) are **not** flag-gated. Publishing and
 browsing are account-level; only what a project installs is gated.
 
-## The four steps
+## The two steps
 
 Subprojects has one lifecycle, and each step is a separate decision:
 
 1. **Publish** — index a repo or an archive into the catalog.
 2. **Install** — an agent session merges the subproject and opens a change request.
-3. **Activate** — turn the subproject's triggers on. Nothing fires before this.
-4. **Read runs** — every trigger fire, with a derived status.
 
 <Callout type="warn" title="Install does not install. It opens a change request.">
   Install starts an agent session that reads both manifests, resolves name collisions, and opens a
   **change request**. The subproject is not installed until that CR merges to the default branch.
   Uninstall works the same way. Neither call commits on its own.
+</Callout>
+
+<Callout type="info" title="A subproject has no on/off state and no runs of its own">
+  It is a set of entries in the project's manifest. Its triggers arrive **off** and are enabled one
+  at a time under [Triggers](/docs/connect/triggers) — there is no switch over a whole subproject. A
+  run belongs to the **trigger** that fired, not to the subproject that contributed it, so runs are
+  read from the trigger surface.
 </Callout>
 
 ## Publish a subproject
@@ -60,8 +64,24 @@ A subproject comes from one of two sources, and they behave differently.
 | A GitHub repo      | yes — `owner/repo`, optionally `@branch-or-tag` | yes                     | Web and CLI |
 | An uploaded `.zip` | no — the files are a snapshot                   | never                   | Web only    |
 
-A subproject is **private** by default. It goes public on purpose, with
-`--public` on the CLI or the visibility control in **Add a subproject**.
+### Who can see it
+
+Visibility has three values, and a submission can write two of them:
+
+| Value     | Who sees it                         | How a row gets it                                                      |
+| --------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| `account` | Everyone in the submitting account  | The **default**. Choose nothing                                        |
+| `private` | The submitter alone                 | The visibility control in **Add a subproject**, `--private` on the CLI |
+| `public`  | Every Kortix user, in every account | **Not submittable.** Migration, seeder or direct insert only           |
+
+`private` is enforced by identity, not by account: the read path compares against
+`submitted_by`, so a private subproject is invisible to an account co-member too.
+
+<Callout type="warn" title="You cannot publish a globally visible subproject">
+  The global catalog is curated. There is no role, flag, control or CLI option that promotes a
+  submission into it. Asking for `visibility: 'public'` on the route is **coerced to `private`**,
+  not answered `400` — a rejection naming the value would confirm the value exists.
+</Callout>
 
 Publishing derives the card — title, description, and what the subproject declares —
 from the manifest at the resolved commit. The response carries `warnings`, which
@@ -128,70 +148,46 @@ still appears in the project with its own recorded title and pinned `sha`.
 Full field reference and validation rules:
 [Manifest → `subprojects:`](/docs/project/manifest#subprojects).
 
-## Activation
+## After an install merges, enable the triggers
 
 <Callout type="warn" title="A subproject installs with every trigger OFF">
   That is deliberate: a subproject that starts firing the moment it lands is a subproject nobody
-  trusts. Enabling it is a separate, explicit step.
+  trusts.
 </Callout>
 
-Enabling a subproject **commits to the manifest** — a subproject's activation is
-configuration, visible in `git log`. It is not the project-wide pause switch,
-which is `kortix triggers pause`.
+Enabling a trigger **commits to the manifest** — a trigger's `enabled` field is
+configuration, visible in `git log`. Enable them one at a time, on the
+**Triggers** tab or with `kortix triggers enable <slug>`.
 
-There is no "this subproject is on" flag. A subproject is on exactly when its triggers
-are, so its state is three-valued:
+There is no switch over a whole subproject, and that is not a gap. A trigger has
+exactly two switches — its own `enabled` field, and the project-wide pause
+(`kortix triggers pause`). A third, subproject-shaped switch would be a second
+answer to "is this on", and two answers is how they end up disagreeing.
 
-| State         | Meaning                                     |
-| ------------- | ------------------------------------------- |
-| On            | Every trigger it owns is enabled            |
-| Off           | None are                                    |
-| Indeterminate | **Some** are, or it owns no triggers at all |
+## The Subprojects page
 
-Render the third state as indeterminate. A two-state switch that rounds it to
-on or off hides the other half.
-
-## Runs
-
-A run is **one trigger fire** — one row of the project's own execution history.
-The join is the trigger's manifest `subproject:` field. A hand-authored trigger has
-no `subproject:`, so its fires never appear in a subproject report.
-
-Run status is derived from the session's last ended turn, not stored. Seven
-values: `starting`, `retrying`, `running`, `done`, `failed`, `stopped`,
-`skipped`. Two of them are why a subproject report needs its own legend:
-
-- **`retrying`** — the fire failed and will be attempted again. A failed
-  attempt returns to the queue and only becomes terminal after five tries.
-- **`skipped`** — a filter or the pause switch declined the fire. Nothing ran,
-  and nothing is wrong.
-
-Success rate is `done / (done + failed)`. `stopped` and `skipped` count on
-neither side: a reaped sandbox is not the subproject failing.
-
-## The Subprojects pages
-
-| Page                                     | What it shows                                                                                                                                                 |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/projects/<id>/marketplace`             | The store — the **Marketplace** tab under Customize. Installed subprojects first, then the catalog with `All` / `Installed` / `Available` filters and search. |
-| `/projects/<id>/subprojects/runs`        | Subproject runs across every installed subproject.                                                                                                            |
-| `/projects/<id>/subprojects/runs/<slug>` | One subproject's runs, with aggregate stats.                                                                                                                  |
+One page: `/projects/<id>/marketplace`, the **Marketplace** tab under Customize.
+It lists the catalog with `All` / `Installed` / `Available` filters and search,
+marks the project's installed subprojects with a pill, and holds **Add a
+subproject** and **Grow your subprojects**.
 
 The store used to live at `/projects/<id>/subprojects`. That URL still resolves
 — it is a server redirect to the Marketplace tab — so an old bookmark works.
+Nothing lives deeper under either segment: the run report that was at
+`/projects/<id>/subprojects/runs` is gone, because a run belongs to the trigger
+that fired.
 
-The project home carries two previews above the composer: the five
-most-recently-run subprojects with their recent runs as status circles, and a grid
-of subprojects you can install. Each self-hides when it has nothing to show.
+The project home carries **no** subproject surface. It is the page you start
+work from, and a store grid or a run strip answers a different question.
 
 ## From the CLI
 
 ```bash
-kortix subprojects publish acme/seo-subproject --ref v1.2.0 --public
+kortix subprojects publish acme/seo-subproject --ref v1.2.0 --private
 kortix subprojects list --query seo
 kortix subprojects install seo-watch     # opens a change request
-kortix subprojects enable seo-watch      # now it fires
-kortix subprojects runs seo-watch
+kortix subprojects uninstall seo-watch   # also a change request
+kortix triggers enable seo-daily         # now it fires
 ```
 
 Full subcommand and option reference: [CLI → Subprojects](/docs/cli#subprojects).
@@ -203,7 +199,7 @@ project has installed:
 
 ```ts
 kortix.subprojects; // the catalog
-kortix.project(projectId).subprojects; // installed, activation, runs
+kortix.project(projectId).subprojects; // installed, plus install/uninstall/author
 ```
 
 See [SDK → Subprojects](/docs/sdk/subprojects) for every method, the React hooks, and the

@@ -94,16 +94,20 @@ const STATUS_DOT_STYLE: Record<
 
 /**
  * The 16px session status circle. ONE implementation for every surface that
- * paints a session's state — the project sidebar's session rows and the subproject
- * run strips on the subproject-report surfaces. It lived inside
- * `project-session-list.tsx` until the subproject reports needed the same glyph;
- * two copies of this paint table is exactly how a `done` check ends up green
- * on one screen and muted on another.
+ * paints a session's or a run's state. It lived inside
+ * `project-session-list.tsx` until a second surface needed the same glyph; two
+ * copies of this paint table is exactly how a `done` check ends up green on one
+ * screen and muted on another.
  *
  * It takes a resolved {@link StatusDotStatus}, not a `ProjectSession`, so a
- * surface with no session payload (a subproject run) renders the identical dot.
- * Callers holding a session resolve it with `sessionDisplayStatus`; a subproject run
- * passes its own status, which is that union plus `retrying` and `skipped`.
+ * surface with no session payload (a trigger run) renders the identical dot.
+ * Callers holding a session resolve it with `sessionDisplayStatus`; a run passes
+ * its own status, which is that union plus `retrying` and `skipped`.
+ *
+ * The project sidebar's session rows are the only caller today. The subproject
+ * run strips were the second; they are deleted, because runs are no longer a
+ * subproject-scoped surface. `retrying` and `skipped` stay in the table for the
+ * run-monitoring surface that replaces them.
  */
 export function SessionStatusDot({
   status,
@@ -176,12 +180,7 @@ export function SessionStatusDot({
               {style.glyph === 'dash' && (
                 // Inset from the ring by the same 1.5 stroke, so the bar reads
                 // as struck through the circle rather than touching it.
-                <path
-                  d="M5 8 H11"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
+                <path d="M5 8 H11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               )}
               {/* One radius: `running` and `failed` are the only filled states
                   and both use it. The `needs-you ? 3.2 : 4` ternary this

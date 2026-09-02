@@ -108,12 +108,14 @@ describe('activeCapabilityTab', () => {
     // The Settings tab's own segment, one level deeper — the overlay route is
     // `/settings/<tab>`, so `config` must not be claimed from there either.
     expect(activeCapabilityTab('/projects/p1/settings/config')).toBeNull();
-    // Why the Marketplace tab owns exactly one route. The subproject run
-    // report keeps its own URLs at `/projects/<id>/subprojects/runs*`, which
-    // report no tab — correct, they are not under Customize. A page added at
-    // `/marketplace/<anything>` would land here too and un-highlight both the
-    // tab and the sidebar's Customize row while it was open.
+    // Why the Marketplace tab owns exactly one route: a page added at
+    // `/marketplace/<anything>` lands here and un-highlights both the tab and
+    // the sidebar's Customize row while it is open. Keep the tab's content at
+    // `/projects/<id>/marketplace` with no deeper routes.
     expect(activeCapabilityTab('/projects/p1/marketplace/seo-watch')).toBeNull();
-    expect(activeCapabilityTab('/projects/p1/subprojects/runs')).toBeNull();
+    // `/projects/<id>/subprojects/*` is not a route at all any more — the store
+    // moved under Customize and the run report is gone. Pinned so a
+    // reintroduced page there cannot quietly claim a Customize tab.
+    expect(activeCapabilityTab('/projects/p1/subprojects')).toBeNull();
   });
 });

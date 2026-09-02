@@ -55,11 +55,17 @@ export const up = (pgm) => {
   // working correctly at the node-pg-migrate level. One statement per call.
   pgm.sql(`set lock_timeout = '180s'`);
   pgm.sql(`set statement_timeout = '30min'`);
-  // Serves the subproject-runs query: given (project_id, subproject_slug), find the
-  // trigger slugs this subproject owns, then join project_trigger_executions on
-  // (project_id, slug). Partial on `subproject_slug IS NOT NULL` because only a
-  // subproject-installed trigger carries one — a small fraction of the table, and
-  // nothing at all for a project that has installed no subproject.
+  // Serves the run-attribution query: given (project_id, subproject_slug), find
+  // the trigger slugs this subproject owns, then join
+  // project_trigger_executions on (project_id, slug). Partial on
+  // `subproject_slug IS NOT NULL` because only a subproject-installed trigger
+  // carries one — a small fraction of the table, and nothing at all for a
+  // project that has installed no subproject.
+  //
+  // No route reads this today. The column and this index exist because
+  // attribution can only be recorded AS a trigger is reconciled: stop writing
+  // it and the association is lost permanently for every run in the gap. The
+  // monitoring surface that reads it is a separate piece of work.
   pgm.sql(`
     create index concurrently if not exists idx_project_trigger_runtime_subproject
       on kortix.project_trigger_runtime (project_id, subproject_slug)

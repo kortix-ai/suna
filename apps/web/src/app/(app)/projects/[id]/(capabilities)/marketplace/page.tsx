@@ -26,8 +26,7 @@ import { SubprojectsStore } from '@/features/subprojects/subprojects-store';
  *
  * No deeper routes live under this segment. `activeCapabilityTab` matches
  * exactly three path segments, so a `/marketplace/<anything>` page would
- * un-highlight both this tab and the sidebar's Customize row while open. The
- * run report keeps its own URLs at `/projects/[id]/subprojects/runs*`.
+ * un-highlight both this tab and the sidebar's Customize row while open.
  */
 export default function ProjectMarketplacePage() {
   const { id: projectId } = useParams<{ id: string }>();

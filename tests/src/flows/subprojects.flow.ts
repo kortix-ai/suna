@@ -19,8 +19,10 @@
  *     `503 KORTIX_URL_UNREACHABLE` past the gate is the pass condition, and
  *     every 4xx boundary before it is asserted exactly.
  *
- * Activation IS driven for real, end to end, because it is pure git + manifest
- * with no sandbox in the path — see SUBPROJ-5.
+ * There is no activation flow and no runs flow. A subproject has no on/off
+ * state: it is a set of entries in a project's manifest. Its triggers are
+ * enabled one at a time by the Triggers flows, and a run belongs to the trigger
+ * that fired, not to the subproject that contributed it.
  *
  * Maps to spec §SUBPROJECT.
  */
@@ -183,17 +185,59 @@ flow(
         if (body.subproject.source_kind !== 'upload') {
           throw new Error(`expected source_kind=upload, got ${body.subproject.source_kind}`);
         }
-        if (body.subproject.triggers?.length !== 1 || body.subproject.triggers[0].slug !== 'seo-weekly') {
+        if (
+          body.subproject.triggers?.length !== 1 ||
+          body.subproject.triggers[0].slug !== 'seo-weekly'
+        ) {
           throw new Error(`triggers not derived: ${JSON.stringify(body.subproject.triggers)}`);
         }
-        if (body.subproject.agents?.length !== 1 || body.subproject.agents[0].name !== 'seo-writer') {
+        if (
+          body.subproject.agents?.length !== 1 ||
+          body.subproject.agents[0].name !== 'seo-writer'
+        ) {
           throw new Error(`agents not derived: ${JSON.stringify(body.subproject.agents)}`);
         }
+        // The form asked for `private` (see `subprojectArchive`), so this proves
+        // the field is honored — not that it is the default. The default is
+        // `account`, asserted below.
         if (body.subproject.visibility !== 'private') {
-          throw new Error(`visibility should default private, got ${body.subproject.visibility}`);
+          throw new Error(`visibility not honored, got ${body.subproject.visibility}`);
         }
       },
     );
+
+    await ctx.step('a submission with no visibility defaults to `account`', async () => {
+      const form = subprojectArchive(`${slug}-default`);
+      form.delete('visibility');
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/subprojects', form);
+      r.status(201);
+      const got = r.json().subproject?.visibility;
+      if (got !== 'account') throw new Error(`expected visibility=account, got ${got}`);
+      await ctx.client.as(ctx.P.OWNER).del(`/v1/subprojects/${r.json().subproject.subproject_id}`);
+    });
+
+    await ctx.step('asking for `public` is COERCED to `private`, not honored', async () => {
+      // `public` means every Kortix user in every account. It is a curation
+      // decision, so a row only becomes public by migration, seeder or direct
+      // insert. The multipart path reads `visibility` from the form itself, so
+      // it reaches the handler and the handler narrows it: any present value
+      // that is not `account` lands on the submitter alone. It coerces instead
+      // of answering 400 because a rejection naming the value confirms the
+      // value exists.
+      const form = subprojectArchive(`${slug}-public`);
+      form.set('visibility', 'public');
+      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/subprojects', form);
+      r.status(201);
+      const got = r.json().subproject?.visibility;
+      if (got === 'public') throw new Error('a user published a globally visible subproject');
+      if (got !== 'private') throw new Error(`expected coercion to private, got ${got}`);
+      const publicId = r.json().subproject.subproject_id;
+
+      // The proof that matters is the read side: another account must not see it.
+      const other = await ctx.client.as(ctx.P.NONMEMBER).get(`/v1/subprojects/${publicId}`);
+      other.status(404);
+      await ctx.client.as(ctx.P.OWNER).del(`/v1/subprojects/${publicId}`);
+    });
 
     await ctx.step('re-uploading the same slug REPLACES it rather than duplicating', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post('/v1/subprojects', subprojectArchive(slug));
@@ -267,13 +311,18 @@ flow(
       }
     });
 
-    await ctx.step('a PRIVATE subproject is invisible to another account → not listed', async () => {
-      const r = await ctx.client.as(ctx.P.NONMEMBER).get('/v1/subprojects', { query: { q: slug } });
-      r.status(200);
-      if (r.json().subprojects?.some((c: any) => c.subproject_id === subprojectId)) {
-        throw new Error('a private subproject leaked into another account listing');
-      }
-    });
+    await ctx.step(
+      'a PRIVATE subproject is invisible to another account → not listed',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .get('/v1/subprojects', { query: { q: slug } });
+        r.status(200);
+        if (r.json().subprojects?.some((c: any) => c.subproject_id === subprojectId)) {
+          throw new Error('a private subproject leaked into another account listing');
+        }
+      },
+    );
 
     await ctx.step('and reading it directly by id → 404, never 403', async () => {
       // A 403 would confirm the id exists, which is itself the leak.
@@ -520,128 +569,6 @@ flow(
     await ctx.step('cleanup: withdraw the subproject', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del(`/v1/subprojects/${subprojectId}`);
       r.status(200);
-    });
-  },
-);
-
-// ─── SUBPROJ-5 — activation, driven for real ────────────────────────────────
-//
-// The one lifecycle step with no sandbox in its path: it is a manifest read, a
-// transform, and a commit. So unlike install, this is driven end to end and the
-// assertions are on the state a second read reports back.
-flow(
-  'SUBPROJ-5',
-  { domain: 'projects', routes: ['PATCH /v1/projects/:projectId/subprojects/:slug/activation'] },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({
-      managedGit: true,
-      metadata: { experimental: { subprojects: true } },
-    });
-
-    await ctx.step('ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .patch(
-          '/v1/projects/:projectId/subprojects/:slug/activation',
-          { enabled: true },
-          { params: { projectId: project.id, slug: 'seo-watch' } },
-        );
-      r.status(401);
-    });
-
-    await ctx.step('a non-boolean enabled → 400, before any manifest read', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/subprojects/:slug/activation',
-          { enabled: 'yes' },
-          { params: { projectId: project.id, slug: 'seo-watch' } },
-        );
-      r.status(400);
-    });
-
-    await ctx.step('a subproject this project does not have → 404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .patch(
-          '/v1/projects/:projectId/subprojects/:slug/activation',
-          { enabled: true },
-          { params: { projectId: project.id, slug: 'never-installed' } },
-        );
-      r.status(404);
-    });
-
-    await ctx.step('a NONMEMBER cannot activate → 403/404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .patch(
-          '/v1/projects/:projectId/subprojects/:slug/activation',
-          { enabled: true },
-          { params: { projectId: project.id, slug: 'seo-watch' } },
-        );
-      r.status([403, 404]);
-    });
-  },
-);
-
-// ─── SUBPROJ-6 — runs ───────────────────────────────────────────────────────
-flow(
-  'SUBPROJ-6',
-  {
-    domain: 'projects',
-    routes: [
-      'GET /v1/projects/:projectId/subprojects/runs',
-      'GET /v1/projects/:projectId/subprojects/:slug/runs',
-    ],
-  },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({
-      managedGit: true,
-      metadata: { experimental: { subprojects: true } },
-    });
-
-    await ctx.step('ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/projects/:projectId/subprojects/runs', { params: { projectId: project.id } });
-      r.status(401);
-    });
-
-    await ctx.step('no subproject has run → 200 with an empty list, never an error', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/subprojects/runs', { params: { projectId: project.id } });
-      r.status(200).body().exists('$.runs').exists('$.total');
-      if (r.json().runs.length !== 0) throw new Error('expected no runs');
-    });
-
-    await ctx.step('`runs` is not eaten as a subproject slug — the two routes differ', async () => {
-      // `subprojects/runs` and `subprojects/:slug/runs` sit at the same depth in the
-      // router. Registered the wrong way round, every all-subprojects request would
-      // resolve as a subproject literally named "runs".
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/subprojects/:slug/runs', {
-        params: { projectId: project.id, slug: 'seo-watch' },
-      });
-      r.status(200).body().exists('$.subproject_slug').exists('$.stats');
-      if (r.json().subproject_slug !== 'seo-watch') {
-        throw new Error(`expected subproject_slug=seo-watch, got ${r.json().subproject_slug}`);
-      }
-    });
-
-    await ctx.step('runs paginate, bounded', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/subprojects/runs', {
-        params: { projectId: project.id },
-        query: { limit: '5', offset: '0' },
-      });
-      r.status(200);
-      if (r.json().limit !== 5) throw new Error(`limit not honored: ${r.json().limit}`);
-    });
-
-    await ctx.step('a NONMEMBER cannot read runs → 403/404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/projects/:projectId/subprojects/runs', { params: { projectId: project.id } });
-      r.status([403, 404]);
     });
   },
 );

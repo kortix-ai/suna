@@ -1,28 +1,34 @@
 ---
 title: Subprojects
-description: Publish, install, and operate subprojects from the SDK and from React.
+description: Publish, install and uninstall subprojects from the SDK and from React.
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A **subproject** is a Kortix project you install into another project: a repository
 whose `kortix.yaml` declares agents, skills, connectors and triggers. Installing
-one merges that declaration into the target project. Its triggers then fire on
-their own schedule, and each fire is a **run**.
+one merges that declaration into the target project.
 
 There are two surfaces, and they are deliberately separate:
 
 - `kortix.subprojects` — the **catalog**, account-scoped. What exists to install.
 - `kortix.project(projectId).subprojects` — what **one project** has installed, plus
-  install, uninstall, activation, and runs.
+  install, uninstall and author.
+
+<Callout type="info" title="A subproject has no on/off state and no runs">
+  It is a set of entries in a project's manifest. Its triggers are enabled one at a time through
+  `project(id).triggers`, and a run belongs to the **trigger** that fired, not to the subproject
+  that contributed it. So there is no activation call and no runs call here. Read runs through
+  [Triggers](/docs/connect/triggers).
+</Callout>
 
 ```ts
 const catalog = kortix.subprojects;
 const installed = kortix.project(projectId).subprojects;
 ```
 
-This page is the client surface. For the product — the flag, the four steps, the
-pages — see [Subprojects](/docs/feature-flags/subprojects). For what an install writes to
+This page is the client surface. For the product — the flag, the two steps, the
+page — see [Subprojects](/docs/feature-flags/subprojects). For what an install writes to
 `kortix.yaml`, see [Manifest → `subprojects:`](/docs/project/manifest#subprojects).
 
 <Callout type="info" title="Subprojects is a feature flag">
@@ -33,21 +39,21 @@ Subprojects on. Use `isFeatureDisabledError(error)` to branch on it. See
 </Callout>
 
 <Callout type="warn" title="Install and uninstall return a SESSION, not a result">
-Neither call changes the project. Each starts an agent session that reads both
-manifests, resolves name collisions, and opens a **change request** a human
-reviews. The subproject is not installed until that CR merges. A UI that closes with
-"Installed" after the call resolves is claiming a merge nobody approved.
+  Neither call changes the project. Each starts an agent session that reads both manifests, resolves
+  name collisions, and opens a **change request** a human reviews. The subproject is not installed
+  until that CR merges. A UI that closes with "Installed" after the call resolves is claiming a
+  merge nobody approved.
 </Callout>
 
 ## The catalog
 
-| Method | Wraps | What it does |
-|---|---|---|
-| `subprojects.list(options?)` | `GET /subprojects` | Every public subproject, plus your own private ones. `options.q` filters over title, description and the repo or archive name |
-| `subprojects.get(subprojectId)` | `GET /subprojects/:id` | One subproject |
-| `subprojects.submit(input)` | `POST /subprojects` | Indexes a subproject from a GitHub repo |
-| `subprojects.submitArchive(input)` | `POST /subprojects` | Indexes a subproject from an uploaded `.zip` |
-| `subprojects.remove(subprojectId)` | `DELETE /subprojects/:id` | Withdraws it from the catalog |
+| Method                             | Wraps                     | What it does                                                                                                                                                                        |
+| ---------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subprojects.list(options?)`       | `GET /subprojects`        | Everything you can see: the curated global catalog, your account's subprojects, and your own private ones. `options.q` filters over title, description and the repo or archive name |
+| `subprojects.get(subprojectId)`    | `GET /subprojects/:id`    | One subproject                                                                                                                                                                      |
+| `subprojects.submit(input)`        | `POST /subprojects`       | Indexes a subproject from a GitHub repo                                                                                                                                             |
+| `subprojects.submitArchive(input)` | `POST /subprojects`       | Indexes a subproject from an uploaded `.zip`                                                                                                                                        |
+| `subprojects.remove(subprojectId)` | `DELETE /subprojects/:id` | Withdraws it from the catalog                                                                                                                                                       |
 
 ### Submitting from a repo
 
@@ -59,7 +65,7 @@ manifest at that commit.
 ```ts
 const { subproject, warnings } = await kortix.subprojects.submit({
   repo: 'acme/seo-subproject@v1.2.0',
-  visibility: 'public', // defaults to `private` — a subproject goes public on purpose
+  visibility: 'private', // omit for `account`, the default
 });
 ```
 
@@ -78,6 +84,29 @@ parseSubprojectRepo('https://github.com/acme/seo-subproject.git@v1');
 parseSubprojectRepo('https://gitlab.com/acme/x'); // → null
 ```
 
+### Visibility has three values and you can write two
+
+| Value     | Who sees it                         | How a row gets it                                            |
+| --------- | ----------------------------------- | ------------------------------------------------------------ |
+| `account` | Everyone in the submitting account  | The **default**. Omit `visibility`                           |
+| `private` | The submitter alone                 | Pass `visibility: 'private'`                                 |
+| `public`  | Every Kortix user, in every account | **Not submittable.** Migration, seeder or direct insert only |
+
+`SubmittableSubprojectVisibility` is `Exclude<SubprojectVisibility, 'public'>`,
+so the type refuses `public` before a request is built. The route refuses it too,
+and it **coerces rather than answering `400`**: any present value that is not
+`account` lands on `private`. A rejection naming the value would confirm the
+value exists.
+
+`private` is enforced by identity, not by account. The submitter is recorded in
+`submitted_by`, and that is what the read path compares against — so a private
+subproject is invisible to an account co-member, not just to strangers.
+
+<Callout type="warn" title="You cannot publish a globally visible subproject">
+  The global catalog is curated. There is no role, flag or parameter that promotes a submission into
+  it.
+</Callout>
+
 ### Submitting an archive
 
 For a subproject that is not a repository yet. An uploaded subproject is a **snapshot**:
@@ -93,12 +122,12 @@ const { subproject } = await kortix.subprojects.submitArchive({
 
 Bounded server-side on two axes, because they answer different questions:
 
-| Bound | Value | Checked |
-|---|---|---|
-| Archive envelope | 10 MB | On the declared size, before anything is read |
-| Extracted text | 5 MB | While unzipping; non-text entries are skipped, not rejected |
-| Per file | 256 KB | Per entry |
-| Subproject files | 1000 | Counted **after** the content filter below |
+| Bound            | Value  | Checked                                                     |
+| ---------------- | ------ | ----------------------------------------------------------- |
+| Archive envelope | 10 MB  | On the declared size, before anything is read               |
+| Extracted text   | 5 MB   | While unzipping; non-text entries are skipped, not rejected |
+| Per file         | 256 KB | Per entry                                                   |
+| Subproject files | 1000   | Counted **after** the content filter below                  |
 
 Over any of them and the route answers `400 archive_refused` with a message
 naming which one. A compressed archive under the envelope can still exceed the
@@ -110,15 +139,15 @@ the server's message rather than guessing.
 You can zip a whole project folder. The crawl keeps the subproject and leaves the
 repository around it behind:
 
-| Kept | Left behind |
-|---|---|
-| `kortix.yaml` / `.yml` / `.toml`, at the archive root | `src/**`, tests, build scripts |
+| Kept                                                                              | Left behind                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------ |
+| `kortix.yaml` / `.yml` / `.toml`, at the archive root                             | `src/**`, tests, build scripts             |
 | Anything under a `.kortix/` directory — agents, skills, and files a skill bundles | `package.json`, `tsconfig.json`, lockfiles |
-| `README.md` at the root | `docs/**` |
-| `.env.example` at the root | everything else |
+| `README.md` at the root                                                           | `docs/**`                                  |
+| `.env.example` at the root                                                        | everything else                            |
 
-This is not only about size. The install prompt tells the agent *"these files
-ARE the subproject — copy from here"*, so a stored `src/server.ts` would become a file
+This is not only about size. The install prompt tells the agent _"these files
+ARE the subproject — copy from here"_, so a stored `src/server.ts` would become a file
 the agent writes into **someone else's** repository. Filtering is what keeps an
 install an install rather than a repo copy.
 
@@ -128,12 +157,11 @@ sample, so you can tell whether the filter did what you expected. A GitHub-style
 "Download ZIP" archives work unchanged.
 
 <Callout type="warn" title="An install embeds an upload's files in the prompt">
-An uploaded subproject has no repository, so its files reach the install agent inside
-the prompt — a tighter bound than the archive cap, at 400 KB of text. A subproject
-over that budget is still indexed, and `submitSubprojectArchive` returns a `warnings`
-entry saying so; its install embeds what fits, names the files it omitted, and
-instructs the agent to stop and report the subproject incomplete rather than invent
-them. Publish from a GitHub repo to install a subproject that large.
+  An uploaded subproject has no repository, so its files reach the install agent inside the prompt —
+  a tighter bound than the archive cap, at 400 KB of text. A subproject over that budget is still
+  indexed, and `submitSubprojectArchive` returns a `warnings` entry saying so; its install embeds
+  what fits, names the files it omitted, and instructs the agent to stop and report the subproject
+  incomplete rather than invent them. Publish from a GitHub repo to install a subproject that large.
 </Callout>
 
 ### Rejections worth handling
@@ -141,123 +169,56 @@ them. Publish from a GitHub repo to install a subproject that large.
 Each carries a machine `code`, so a UI can say what to do next rather than
 printing a generic failure.
 
-| `code` | What happened |
-|---|---|
-| `manifest_not_found` | No `kortix.yaml` in the repo or archive |
-| `manifest_invalid` | It did not validate. `issues[]` carries the offending `path` |
-| `ref_not_found` | That branch or tag does not exist |
-| `repo_not_found` | Not reachable by this account |
-| `upstream_unavailable` | GitHub did not answer |
-| `invalid_archive` | Not a readable `.zip` |
-| `archive_refused` | Over the size or file-count limits |
+| `code`                 | What happened                                                |
+| ---------------------- | ------------------------------------------------------------ |
+| `manifest_not_found`   | No `kortix.yaml` in the repo or archive                      |
+| `manifest_invalid`     | It did not validate. `issues[]` carries the offending `path` |
+| `ref_not_found`        | That branch or tag does not exist                            |
+| `repo_not_found`       | Not reachable by this account                                |
+| `upstream_unavailable` | GitHub did not answer                                        |
+| `invalid_archive`      | Not a readable `.zip`                                        |
+| `archive_refused`      | Over the size or file-count limits                           |
 
 ## What a project has installed
 
-| Method | Wraps | What it does |
-|---|---|---|
-| `subprojects.list()` | `GET /projects/:pid/subprojects` | The project's installed subprojects, read from its manifest |
-| `subprojects.install(subprojectId)` | `POST …/subprojects/install-session` | Starts the install session |
-| `subprojects.uninstall(slug)` | `POST …/subprojects/:slug/uninstall-session` | Starts the uninstall session |
-| `subprojects.author(description)` | `POST …/subprojects/author-session` | Describe a subproject; the agent builds and publishes it |
-| `subprojects.setActivation(slug, enabled)` | `PATCH …/subprojects/:slug/activation` | Turns this subproject's triggers on or off |
+| Method                              | Wraps                                        | What it does                                                |
+| ----------------------------------- | -------------------------------------------- | ----------------------------------------------------------- |
+| `subprojects.list()`                | `GET /projects/:pid/subprojects`             | The project's installed subprojects, read from its manifest |
+| `subprojects.install(subprojectId)` | `POST …/subprojects/install-session`         | Starts the install session                                  |
+| `subprojects.uninstall(slug)`       | `POST …/subprojects/:slug/uninstall-session` | Starts the uninstall session                                |
+| `subprojects.author(description)`   | `POST …/subprojects/author-session`          | Describe a subproject; the agent builds and publishes it    |
 
-The installed list comes from the project's **manifest**, not the catalog. That
-matters: an install outlives its catalog entry, so a subproject withdrawn from the
-store still appears here with its own recorded title and pinned sha.
+That is the whole per-project surface. The installed list comes from the
+project's **manifest**, not the catalog. That matters: an install outlives its
+catalog entry, so a subproject withdrawn from the store still appears here with
+its own recorded title and pinned sha.
 
-`uninstall` and `setActivation` are keyed on the **slug**, not a subproject id, for
-the same reason — the slug is what the manifest records.
+`uninstall` is keyed on the **slug**, not a subproject id, for the same reason —
+the slug is what the manifest records.
 
-### Activation is derived, not stored
-
-There is no "this subproject is on" flag. A subproject is on exactly when its triggers
-are, and the triggers live in the manifest. `InstalledSubproject.enabled` is
-therefore three-valued:
-
-| Value | Meaning |
-|---|---|
-| `true` | Every trigger it owns is enabled |
-| `false` | None are |
-| `null` | **Some** are, or it owns no triggers at all |
-
-`trigger_count` and `enabled_trigger_count` say which half. Render `null` as
-indeterminate — a two-state switch that rounds it to on or off hides the other
-half.
+Each entry carries `slug`, `repo`, `git_ref`, `sha`, `version`, `title`,
+`installed_at` and `owns`. There is no `enabled` field and no trigger counts: a
+subproject has no on/off state, and a count of enabled triggers here would be a
+second copy of what the Triggers surface reads from the same manifest — two
+copies is how they end up disagreeing.
 
 <Callout type="warn" title="A subproject installs with every trigger OFF">
-That is deliberate: a subproject that starts firing the moment it lands is a subproject
-nobody trusts. `setActivation(slug, true)` is what starts it working, and it
-**commits to the manifest** — a subproject's activation is configuration, visible in
-`git log`. It is not the project-wide pause, which is
-`project(id).triggers.setActivation`.
+  That is deliberate: a subproject that starts firing the moment it lands is a subproject nobody
+  trusts. Enable its triggers one at a time through `project(id).triggers`. There is no bulk switch,
+  because a subproject is not a thing that runs.
 </Callout>
-
-An empty `triggers` array in the result means the subproject was **already** in that
-state; the route landed no commit. That is a different answer from "it worked".
-
-```ts
-const result = await kortix.project(projectId).subprojects.setActivation('seo-watch', true);
-if (result.triggers.length === 0) {
-  // already on — nothing was committed
-} else {
-  // result.triggers names each trigger that moved
-}
-```
-
-## Runs
-
-A run is **one trigger fire**: one row of the project's own execution history.
-Nothing here writes a run; both calls are pure reads.
-
-| Method | Wraps | What it does |
-|---|---|---|
-| `subprojects.runs(options?)` | `GET …/subprojects/runs` | Runs across every installed subproject, newest first |
-| `subprojects.runsFor(slug, options?)` | `GET …/subprojects/:slug/runs` | One subproject's runs, plus aggregate `stats` |
-
-The join is `project_trigger_runtime.subproject_slug`, materialized from each
-trigger's manifest `subproject:` field. A hand-authored trigger has no `subproject:`, so
-its executions never appear in a subproject report.
-
-### Run status is derived
-
-`SubprojectRunStatus` is `starting | retrying | running | done | failed | stopped |
-skipped`. There is no stored success flag, and the two obvious candidates both
-lie: the execution's own status is the **dispatch** outcome ("did we manage to
-start a session"), and `project_sessions.status = 'completed'` is only ever
-written by a migration backfill. The verdict comes from the session's last ended
-turn.
-
-Two statuses have no session equivalent and are the reason a run report needs
-its own legend:
-
-- **`retrying`** — the fire failed and will be attempted again. There is no
-  `failed` dispatch state; a failed attempt returns to the queue and only becomes
-  terminal after five tries. Collapsing this into `starting` would show a subproject
-  failing every attempt as perpetually starting.
-- **`skipped`** — a filter or the pause switch declined the fire. Nothing ran,
-  and nothing is wrong.
-
-`stats.successRate` is `done / (done + failed)`, or `null` with no settled
-verdict. `stopped` and `skipped` count on **neither** side: a reaped sandbox is
-not the subproject failing, and `0%` would read as "everything failed".
-
-`session_id` is nullable. A queued fire has not created one, a skipped fire never
-will, and the FK is `ON DELETE SET NULL` — so a cleaned-up session leaves the run
-behind. Do not render a link for a run without one.
 
 ## React
 
 ```tsx
-import { useSubproject, useSubprojects, useSubprojectRuns, useProjectSubprojectRuns, useProjectSubprojects } from '@kortix/sdk/react';
+import { useSubproject, useSubprojects, useProjectSubprojects } from '@kortix/sdk/react';
 ```
 
-| Hook | Returns |
-|---|---|
-| `useSubprojects(options?)` | The catalog, plus `submit`, `submitArchive`, `remove` mutations |
-| `useSubproject(subprojectId)` | One subproject |
-| `useProjectSubprojects(projectId)` | The installed list, plus `install`, `uninstall`, `author`, `setActivation` |
-| `useProjectSubprojectRuns(projectId, options?)` | Runs across every subproject |
-| `useSubprojectRuns(projectId, slug, options?)` | One subproject's runs and stats |
+| Hook                               | Returns                                                         |
+| ---------------------------------- | --------------------------------------------------------------- |
+| `useSubprojects(options?)`         | The catalog, plus `submit`, `submitArchive`, `remove` mutations |
+| `useSubproject(subprojectId)`      | One subproject                                                  |
+| `useProjectSubprojects(projectId)` | The installed list, plus `install`, `uninstall`, `author`       |
 
 `install`, `uninstall` and `author` invalidate rather than writing optimistically:
 each resolves to a session id, and the installed list changes when that session's
@@ -288,22 +249,25 @@ function SubprojectCard({ projectId, subproject }: { projectId: string; subproje
 `subproject_slug`, `subproject_id`, `subproject_repo` and `subproject_sha` are in
 `SERVER_MANAGED_SESSION_METADATA_KEYS`. Sending any of them on
 `POST /projects/:id/sessions` answers `400`. Without that, a client could
-attribute its own session to someone else's subproject and appear in that subproject's run
-history.
+attribute its own session to someone else's subproject. Attribution is a
+provenance record — which installed subproject a session came from — so it is
+written by the server that resolved the subproject, never by the caller.
 
 ## CLI
 
 The same surface from a terminal:
 
 ```bash
-kortix subprojects publish acme/seo-subproject --ref v1.2.0 --public
+kortix subprojects publish acme/seo-subproject --ref v1.2.0 --private
 kortix subprojects list --query seo
 kortix subprojects show seo-watch
 kortix subprojects install seo-watch
-kortix subprojects enable seo-watch
-kortix subprojects runs seo-watch
 kortix subprojects uninstall seo-watch
 ```
+
+`publish` indexes for your whole account; `--private` narrows it to you. There is
+no flag that publishes globally. After an install merges, enable the subproject's
+triggers one at a time with `kortix triggers enable <slug>`.
 
 `kortix subprojects` does not upload an archive: by the time you are at a terminal you
 have a repository, and a subproject that tracks one gets re-crawled when it moves.

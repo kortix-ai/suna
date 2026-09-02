@@ -1,25 +1,21 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from '@playwright/test';
 
-import { loadEnv } from "../../src/core/env";
-import {
-  createDatabaseProject,
-  deleteDatabaseProject,
-} from "../../src/fixtures/database-project";
-import { createLocalGitRepository } from "../../src/fixtures/local-git";
-import { createApiJsonClient } from "../helpers/http";
+import { loadEnv } from '../../src/core/env';
+import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import { createLocalGitRepository } from '../../src/fixtures/local-git';
+import { createApiJsonClient } from '../helpers/http';
 import {
   createAuthUser,
   deleteAuthUser,
   installBrowserSessionDirect,
   signIn,
-} from "../helpers/session-auth";
-import { selectAccountForUi } from "../helpers/ui";
+} from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
-const apiBase = process.env.E2E_API_URL || "http://localhost:13738/v1";
-const supabaseUrl = process.env.E2E_SUPABASE_URL || "http://localhost:13740";
-const databaseUrl =
-  process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
-const password = "E2eSubprojectsUi123!";
+const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
+const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
+const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
+const password = 'E2eSubprojectsUi123!';
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
@@ -55,8 +51,8 @@ function storedZip(files: Array<{ name: string; body: string }>): Buffer {
   const centrals: Buffer[] = [];
   let offset = 0;
   for (const file of files) {
-    const name = Buffer.from(file.name, "utf8");
-    const data = Buffer.from(file.body, "utf8");
+    const name = Buffer.from(file.name, 'utf8');
+    const data = Buffer.from(file.body, 'utf8');
     const crc = crc32(data);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
@@ -107,16 +103,14 @@ triggers:
 async function dismissOnboarding(page: Page): Promise<void> {
   await page.waitForTimeout(2_000);
   for (let step = 0; step < 12; step += 1) {
-    const onboarding = page.getByRole("dialog").last();
+    const onboarding = page.getByRole('dialog').last();
     if (!(await onboarding.isVisible().catch(() => false))) break;
-    const skip = onboarding
-      .getByRole("button", { name: /^(Skip|Not now|Maybe later)/i })
-      .last();
+    const skip = onboarding.getByRole('button', { name: /^(Skip|Not now|Maybe later)/i }).last();
     if (await skip.isVisible().catch(() => false)) {
       await skip.click();
     } else {
       const primary = onboarding
-        .getByRole("button", {
+        .getByRole('button', {
           name: /^(Continue|Done|Open project|Start building|Get started)$/i,
         })
         .last();
@@ -127,7 +121,7 @@ async function dismissOnboarding(page: Page): Promise<void> {
   }
 }
 
-test.describe("26 — Subprojects UI", () => {
+test.describe('26 — Subprojects UI', () => {
   /**
    * The mock this surface replaced had two specific defects that a screenshot
    * would not catch, so both are asserted as DOM + NETWORK facts here:
@@ -139,10 +133,8 @@ test.describe("26 — Subprojects UI", () => {
    *      assertion is the outgoing POST body and the navigation to the session
    *      route it returns — not the toast.
    */
-  test("renders the store from the API and installs through a real session", async ({
-    page,
-  }) => {
-    test.skip(!databaseUrl, "KE2E_DATABASE_URL is required");
+  test('renders the store from the API and installs through a real session', async ({ page }) => {
+    test.skip(!databaseUrl, 'KE2E_DATABASE_URL is required');
     test.setTimeout(180_000);
 
     const runId = Date.now().toString(36);
@@ -159,29 +151,19 @@ test.describe("26 — Subprojects UI", () => {
     let repository: Awaited<ReturnType<typeof createLocalGitRepository>> | null = null;
     const pageErrors: string[] = [];
     const installPosts: Array<{ url: string; body: string | null }> = [];
-    page.on("pageerror", (error) => pageErrors.push(error.message));
-    page.on("request", (request) => {
-      if (
-        request.method() === "POST" &&
-        request.url().includes("/subprojects/install-session")
-      ) {
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && request.url().includes('/subprojects/install-session')) {
         installPosts.push({ url: request.url(), body: request.postData() });
       }
     });
 
     try {
-      const accounts = await api<AccountSummary[]>(
-        session.access_token,
-        "GET",
-        "/accounts",
-      );
+      const accounts = await api<AccountSummary[]>(session.access_token, 'GET', '/accounts');
       const account = accounts.find(
-        (item) =>
-          item.personal_account ||
-          item.is_primary_owner ||
-          item.account_role === "owner",
+        (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
       );
-      if (!account) throw new Error("the seeded user owns no account");
+      if (!account) throw new Error('the seeded user owns no account');
 
       // `subprojects` is flag-gated, and the sidebar row plus the store page both
       // fail closed. Seeding the flag with the project keeps the spec on the
@@ -200,23 +182,23 @@ test.describe("26 — Subprojects UI", () => {
       const title = `SEO watch ui ${runId}`;
       const zip = storedZip([
         {
-          name: "seo-watch-ui/kortix.yaml",
-          body: SUBPROJECT_MANIFEST.replace("name: seo-watch-ui", `name: ${title}`),
+          name: 'seo-watch-ui/kortix.yaml',
+          body: SUBPROJECT_MANIFEST.replace('name: seo-watch-ui', `name: ${title}`),
         },
         {
-          name: "seo-watch-ui/.kortix/opencode/agents/seo-writer.md",
-          body: "---\ndescription: writes the SEO digest\n---\n\nSweep the site.\n",
+          name: 'seo-watch-ui/.kortix/opencode/agents/seo-writer.md',
+          body: '---\ndescription: writes the SEO digest\n---\n\nSweep the site.\n',
         },
       ]);
       const form = new FormData();
       form.append(
-        "file",
-        new Blob([zip], { type: "application/zip" }),
+        'file',
+        new Blob([zip], { type: 'application/zip' }),
         `seo-watch-ui-${runId}.zip`,
       );
-      form.append("visibility", "private");
+      form.append('visibility', 'private');
       const submitted = await fetch(`${apiBase}/subprojects`, {
-        method: "POST",
+        method: 'POST',
         headers: { authorization: `Bearer ${session.access_token}` },
         body: form,
       });
@@ -228,50 +210,51 @@ test.describe("26 — Subprojects UI", () => {
       // manifest rather than echoing the filename.
       expect(submittedBody.subproject.triggers).toHaveLength(1);
 
-      await installBrowserSessionDirect(
-        page,
-        session,
-        `/projects/${project.id}`,
-        authOptions,
-      );
+      await installBrowserSessionDirect(page, session, `/projects/${project.id}`, authOptions);
       await selectAccountForUi(page, account.account_id);
       await page.goto(`/projects/${project.id}`, {
-        waitUntil: "domcontentloaded",
+        waitUntil: 'domcontentloaded',
       });
       await dismissOnboarding(page);
 
       // ── the store renders from the network, not a fixture ────────────────
       const listResponse = page.waitForResponse(
         (response) =>
-          response.url().includes("/v1/subprojects") &&
-          response.request().method() === "GET" &&
+          response.url().includes('/v1/subprojects') &&
+          response.request().method() === 'GET' &&
           response.status() === 200,
         { timeout: 60_000 },
       );
-      await page.goto(`/projects/${project.id}/subprojects`, {
-        waitUntil: "domcontentloaded",
+      // The store is the Marketplace capability tab. The old top-level
+      // `/projects/<id>/subprojects` segment still resolves — it server-redirects
+      // here — but the canonical URL is what the product links to, so that is
+      // what this drives.
+      await page.goto(`/projects/${project.id}/marketplace`, {
+        waitUntil: 'domcontentloaded',
       });
       const listed = await listResponse;
       const listedBody = (await listed.json()) as {
         subprojects: Array<{ subproject_id: string; title: string }>;
       };
       expect(
-        listedBody.subprojects.some((c) => c.subproject_id === submittedBody.subproject.subproject_id),
+        listedBody.subprojects.some(
+          (c) => c.subproject_id === submittedBody.subproject.subproject_id,
+        ),
       ).toBe(true);
 
-      await expect(
-        page.getByRole("heading", { name: "Subprojects", exact: true }),
-      ).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('heading', { name: 'Subprojects', exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
 
       // The card, addressed by the aria-label the card actually renders.
-      const card = page.getByRole("button", {
+      const card = page.getByRole('button', {
         name: `Install ${submittedBody.subproject.title}`,
       });
       await expect(card).toBeVisible({ timeout: 30_000 });
 
       // ── the install modal shows the subproject's real requirements ────────────
       await card.click();
-      const modal = page.getByRole("dialog");
+      const modal = page.getByRole('dialog');
       await expect(modal).toBeVisible();
       await expect(
         modal.getByText(submittedBody.subproject.title, { exact: false }).first(),
@@ -296,16 +279,16 @@ test.describe("26 — Subprojects UI", () => {
       // in `tests/src/flows/subprojects.flow.ts`.
       const installResponse = page.waitForResponse(
         (response) =>
-          response.url().includes("/subprojects/install-session") &&
-          response.request().method() === "POST",
+          response.url().includes('/subprojects/install-session') &&
+          response.request().method() === 'POST',
         { timeout: 60_000 },
       );
-      await modal.getByRole("button", { name: "Install", exact: true }).click();
+      await modal.getByRole('button', { name: 'Install', exact: true }).click();
       const installed = await installResponse;
 
       // The OUTGOING payload, not just that a request happened.
       expect(installPosts).toHaveLength(1);
-      expect(JSON.parse(installPosts[0].body ?? "{}")).toEqual({
+      expect(JSON.parse(installPosts[0].body ?? '{}')).toEqual({
         subproject_id: submittedBody.subproject.subproject_id,
       });
 
@@ -319,7 +302,7 @@ test.describe("26 — Subprojects UI", () => {
       };
       expect([201, 503]).toContain(installed.status());
       if (installed.status() === 503) {
-        expect(installBody.code).toBe("KORTIX_URL_UNREACHABLE");
+        expect(installBody.code).toBe('KORTIX_URL_UNREACHABLE');
       } else {
         expect(installBody.session_id).toBeTruthy();
         // The mock's circles all pointed at `mock-<id>-00` and 404'd. This
@@ -329,18 +312,6 @@ test.describe("26 — Subprojects UI", () => {
           { timeout: 60_000 },
         );
       }
-
-      // ── the runs page renders, with no subproject having run yet ──────────────
-      await page.goto(`/projects/${project.id}/subprojects/runs`, {
-        waitUntil: "domcontentloaded",
-      });
-      await expect(
-        page.getByRole("heading", { name: "Subproject runs", exact: true }),
-      ).toBeVisible({ timeout: 30_000 });
-      // Honest empty state, not a fabricated report.
-      await expect(page.getByText("No subproject has run yet")).toBeVisible({
-        timeout: 30_000,
-      });
 
       expect(pageErrors).toEqual([]);
     } finally {

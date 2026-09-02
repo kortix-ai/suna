@@ -8,6 +8,7 @@ import { listConnectors, type Subproject } from '@kortix/sdk';
 import { qk, useProjectSubprojects, useSubprojects } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
@@ -23,7 +24,6 @@ import { cn } from '@/lib/utils';
 import { AddSubprojectModal } from './add-subproject-modal';
 import { AuthorSubprojectModal } from './author-subproject-modal';
 import { SubprojectInstallModal } from './install-modal';
-import { InstalledSubprojects } from './installed-subprojects';
 import { SubprojectBuildCard, SubprojectCard } from './subprojects-card';
 import { countLabel, subprojectMatchesQuery } from './subprojects-catalog';
 
@@ -31,16 +31,33 @@ import { countLabel, subprojectMatchesQuery } from './subprojects-catalog';
  * The project-scoped subprojects store — the **Marketplace** capability tab at
  * `/projects/[id]/marketplace`. (`/projects/[id]/subprojects` redirects here.)
  *
- * It draws its own header rather than using `CapabilityPageShell`, because the
- * shell renders search and filters ABOVE its children and this page's first
- * section is `InstalledSubprojects` — a search box over that list, filtering
- * only the catalog below it, is a control that appears to do something it does
- * not. What it DOES borrow from the shell is every container and type token:
- * the `min-h-0 flex-1 overflow-y-auto` scroll root, `max-w-5xl`, the
+ * One page, one job: browse the catalog and install. It used to open with an
+ * "Installed · N" list carrying each subproject's run counts, a link to its run
+ * report and an on/off switch over its triggers. All three are gone. A
+ * marketplace is where you get things, not where you operate them: enabling an
+ * individual trigger already belongs to the Triggers capability page, and run
+ * monitoring is not a subproject-scoped surface at all. What survives of the
+ * installed state is the per-card `Installed` pill and the All/Installed/
+ * Available filter — enough to answer "do I already have this?" without turning
+ * the page into a console.
+ *
+ * Two things that list DID own had to land somewhere:
+ *  - **Uninstall** moved into {@link SubprojectInstallModal}. That modal already
+ *    shows what a subproject brings in, so it is where a person can judge what
+ *    removing it takes out.
+ *  - **The unreadable-manifest banner** stayed here. It is a diagnostic, not an
+ *    operating control, and it cannot live on a card: a subproject the API could
+ *    not parse has no card.
+ *
+ * It draws its own header rather than using `CapabilityPageShell` because the
+ * page's own search sits BETWEEN two headed sections (the catalog and "Make your
+ * own"), while the shell renders search above all of its children. What it DOES
+ * borrow from the shell is every container and type token: the
+ * `min-h-0 flex-1 overflow-y-auto` scroll root, `max-w-5xl`, the
  * `py-10 pb-20 lg:py-14` block, and `text-xl font-medium` on the `h1`. Those
  * are what a person compares when they switch tabs, so they match exactly.
  * `space-y-8` is the one departure from the shell's `space-y-5`: this body is
- * three sections each under its own heading, not a header over one list.
+ * two sections each under its own heading, not a header over one list.
  *
  * Reads the real index through `useSubprojects()` and the project's installed set
  * through `useProjectSubprojects()`. The two are separate on purpose: the index is
@@ -73,6 +90,9 @@ export function SubprojectsStore({ projectId }: { projectId: string }) {
     () => new Set((installedQuery.data?.subprojects ?? []).map((entry) => entry.slug)),
     [installedQuery.data],
   );
+
+  /** Installed subprojects whose manifest would not parse. */
+  const errors = installedQuery.data?.errors ?? [];
 
   // The apps the project already has connected, for the install modal's consent
   // panel. Its own query rather than a prop: the store does not otherwise need
@@ -169,9 +189,20 @@ export function SubprojectsStore({ projectId }: { projectId: string }) {
           )}
         </header>
 
-        {/* What this project already has, above the catalog: someone arriving here
-          is far more often checking on their own subprojects than shopping. */}
-        <InstalledSubprojects projectId={projectId} />
+        {/* A subproject whose manifest will not parse. This is the one piece of
+            installed state that has to stay on the page: it is a diagnostic, not
+            an operating control, and the card grid cannot show it — a subproject
+            the API could not read has no card to carry the message. It sits above
+            the catalog because it explains why the catalog may be short. */}
+        {errors.length > 0 ? (
+          <InfoBanner tone="warning" title="Some subprojects could not be read">
+            {errors.map((entry) => (
+              <span key={entry.slug} className="block">
+                <span className="font-mono">{entry.slug}</span>: {entry.error}
+              </span>
+            ))}
+          </InfoBanner>
+        ) : null}
 
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -286,6 +317,7 @@ export function SubprojectsStore({ projectId }: { projectId: string }) {
             installed={installedSlugs.has(open.slug)}
             connectedApps={connectedApps}
             installing={installedQuery.install.isPending}
+            uninstalling={installedQuery.uninstall.isPending}
             onInstall={async (subprojectId) => {
               try {
                 const result = await installedQuery.install.mutateAsync(subprojectId);
@@ -293,6 +325,17 @@ export function SubprojectsStore({ projectId }: { projectId: string }) {
               } catch (error) {
                 errorToast(
                   error instanceof Error ? error.message : 'Could not start the install session',
+                );
+                return null;
+              }
+            }}
+            onUninstall={async (slug) => {
+              try {
+                const result = await installedQuery.uninstall.mutateAsync(slug);
+                return result.session_id;
+              } catch (error) {
+                errorToast(
+                  error instanceof Error ? error.message : 'Could not start the uninstall session',
                 );
                 return null;
               }

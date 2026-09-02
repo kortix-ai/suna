@@ -1,10 +1,11 @@
 /**
- * `kortix subprojects <subcommand>` — publish, browse, install and operate subprojects.
+ * `kortix subprojects <subcommand>` — publish, browse, install and uninstall
+ * subprojects.
  *
  * A subproject is a Kortix project you install into another project: a repository
  * whose `kortix.yaml` declares agents, skills, connectors and triggers.
  *
- * Two things this command deliberately does NOT do:
+ * Three things this command deliberately does NOT do:
  *
  *  - **It does not merge anything.** `install` starts an agent session that
  *    reads both manifests, resolves name collisions, and opens a change
@@ -14,6 +15,10 @@
  *    web, for a folder that is not a repo yet. By the time you are at a
  *    terminal you have a repo, and a subproject that tracks one gets re-crawled when
  *    it moves; an uploaded snapshot never does.
+ *  - **It does not run, enable or report on anything.** A subproject has no
+ *    on/off state: it is a set of entries in a project's manifest. Its triggers
+ *    are enabled one at a time under `kortix triggers`, and their runs belong
+ *    to the trigger that fired, not to the subproject that contributed it.
  */
 
 import type { ApiClient } from '../api/client.ts';
@@ -39,7 +44,11 @@ interface Subproject {
   description: string | null;
   stars: number | null;
   install_count: number;
-  visibility: 'public' | 'private';
+  /**
+   * `public` rows come from a migration, a seeder or a direct insert — `publish`
+   * cannot ask for one. So this reads three values but writes two.
+   */
+  visibility: 'public' | 'account' | 'private';
   status: 'active' | 'unavailable' | 'yanked';
   agents: Array<{ name: string }>;
   triggers: Array<{ slug: string; cron: string | null; enabled: boolean }>;
@@ -59,38 +68,26 @@ interface InstalledSubproject {
   owns: Partial<Record<'agents' | 'skills' | 'connectors' | 'triggers', string[]>>;
 }
 
-interface SubprojectRun {
-  execution_id: string;
-  subproject_slug: string;
-  trigger_slug: string;
-  status: string;
-  created_at: string;
-  session_id: string | null;
-  summary: string | null;
-  duration_ms: number | null;
-  last_error: string | null;
-}
-
 interface SubprojectFlags {
   host?: string;
   project?: string;
   query?: string;
   ref?: string;
-  public: boolean;
+  private: boolean;
   json: boolean;
   limit?: string;
 }
 
 const HELP = help`Usage: kortix subprojects <subcommand> [options]
 
-Publish, browse, install and operate subprojects. A subproject is a Kortix project — a
-repository whose kortix.yaml declares agents, skills, connectors and triggers —
-that you install into another project.
+Publish, browse, install and uninstall subprojects. A subproject is a Kortix
+project — a repository whose kortix.yaml declares agents, skills, connectors and
+triggers — that you install into another project.
 
 Subcommands:
-  publish <owner/repo>   Index a subproject from a GitHub repo. Private by default.
+  publish <owner/repo>   Index a subproject. Your whole account can see it.
     --ref <branch|tag>   Pin a branch or tag. Default: the default branch.
-    --public             List it in the public catalog.
+    --private            Only you can see it.
   list | ls              Browse the catalog. --query to filter.
   show <id|slug>         One subproject: what it declares and what it needs.
   remove <id>            Withdraw from the catalog. Does NOT uninstall it.
@@ -98,9 +95,6 @@ Subcommands:
   installed              What the linked project has installed.
   install <id|slug>      Start the agent session that installs it.
   uninstall <slug>       Start the agent session that removes it.
-  enable <slug>          Turn this subproject's triggers on.
-  disable <slug>         Turn this subproject's triggers off.
-  runs [slug]            Run history. Omit the slug for every subproject.
 
 Options:
   --project <id>         Target project (default: the linked one).
@@ -109,8 +103,12 @@ Options:
   --json                 Machine-readable output.
   -h, --help             Show this help.
 
-A subproject installs with every trigger OFF. \`enable\` is what starts it working.
 Install and uninstall are agent-driven: each opens a change request you review.
+A subproject installs with every trigger OFF. Turn them on one at a time with
+\`kortix triggers enable <slug>\` — a subproject has no on/off of its own.
+
+There is no way to publish a subproject every Kortix user can see. Those rows
+are curated, and only a migration, a seeder or a direct insert creates one.
 `;
 
 function parseFlags(argv: string[]): SubprojectFlags {
@@ -120,7 +118,7 @@ function parseFlags(argv: string[]): SubprojectFlags {
     query: takeFlagValue(argv, ['--query', '-q']),
     ref: takeFlagValue(argv, ['--ref', '--branch', '--tag']),
     limit: takeFlagValue(argv, ['--limit']),
-    public: takeFlagBool(argv, ['--public']),
+    private: takeFlagBool(argv, ['--private']),
     json: takeFlagBool(argv, ['--json']),
   };
 }
@@ -151,17 +149,6 @@ function limitOf(flags: SubprojectFlags): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 200) : 50;
 }
 
-function ago(iso: string | null): string {
-  if (!iso) return '-';
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return '-';
-  const minutes = Math.max(0, Math.round((Date.now() - then) / 60_000));
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}
-
 // ── publishing ──────────────────────────────────────────────────────────────
 
 async function subprojectsPublish(argv: string[], flags: SubprojectFlags): Promise<number> {
@@ -178,10 +165,15 @@ async function subprojectsPublish(argv: string[], flags: SubprojectFlags): Promi
   // than being a second field the server has to reconcile with it.
   const address = flags.ref ? `${repo}@${flags.ref}` : repo;
   try {
-    const result = await ctx.client.post<{ subproject: Subproject; warnings: string[] }>('/subprojects', {
-      repo: address,
-      visibility: flags.public ? 'public' : 'private',
-    });
+    // Only sent when narrowing. The server defaults to `account`, and `public`
+    // is not a value this route accepts from anybody.
+    const result = await ctx.client.post<{ subproject: Subproject; warnings: string[] }>(
+      '/subprojects',
+      {
+        repo: address,
+        ...(flags.private ? { visibility: 'private' } : {}),
+      },
+    );
     if (flags.json) {
       emitJson(result);
       return 0;
@@ -243,14 +235,18 @@ async function subprojectsList(argv: string[], flags: SubprojectFlags): Promise<
   const params = new URLSearchParams({ limit: String(limitOf(flags)) });
   if (query) params.set('q', query);
   try {
-    const res = await ctx.client.get<{ subprojects: Subproject[]; total: number }>(`/subprojects?${params}`);
+    const res = await ctx.client.get<{ subprojects: Subproject[]; total: number }>(
+      `/subprojects?${params}`,
+    );
     if (flags.json) {
       emitJson(res);
       return 0;
     }
     const subprojects = res.subprojects ?? [];
     if (subprojects.length === 0) {
-      process.stdout.write(`${status.info(query ? 'No subproject matched.' : 'No subprojects yet.')}\n`);
+      process.stdout.write(
+        `${status.info(query ? 'No subproject matched.' : 'No subprojects yet.')}\n`,
+      );
       process.stdout.write(
         `\n  ${C.dim}Publish one:${C.reset} ${C.cyan}kortix subprojects publish <owner/repo>${C.reset}\n`,
       );
@@ -260,11 +256,18 @@ async function subprojectsList(argv: string[], flags: SubprojectFlags): Promise<
       `\n  ${C.bold}Subprojects${C.reset} ${C.faded}- ${subprojects.length} of ${res.total}${C.reset}\n\n`,
     );
     for (const subproject of subprojects) {
+      // `account` is the default scope and carries no badge — badging the
+      // common case is noise. The two ends of the range are worth naming:
+      // `private` is yours alone, `global` is curated by Kortix.
+      const visibilityFlag =
+        subproject.visibility === 'private'
+          ? ` ${C.faded}[private]${C.reset}`
+          : subproject.visibility === 'public'
+            ? ` ${C.faded}[global]${C.reset}`
+            : '';
       const flag =
         subproject.status === 'active'
-          ? subproject.visibility === 'private'
-            ? ` ${C.faded}[private]${C.reset}`
-            : ''
+          ? visibilityFlag
           : ` ${C.faded}[${subproject.status}]${C.reset}`;
       process.stdout.write(`  ${C.cyan}${subproject.slug}${C.reset}${flag}\n`);
       process.stdout.write(`    ${subproject.title} ${C.faded}- ${subproject.repo}${C.reset}\n`);
@@ -287,7 +290,9 @@ async function subprojectsList(argv: string[], flags: SubprojectFlags): Promise<
 /** Resolve `<id|slug>` to one subproject. An id hits the detail route directly. */
 async function findSubproject(client: ApiClient, raw: string): Promise<Subproject | null> {
   try {
-    const res = await client.get<{ subproject: Subproject }>(`/subprojects/${encodeURIComponent(raw)}`);
+    const res = await client.get<{ subproject: Subproject }>(
+      `/subprojects/${encodeURIComponent(raw)}`,
+    );
     return res.subproject;
   } catch {
     // Not an id, or not visible. Fall back to a slug search — the slug is what
@@ -297,7 +302,10 @@ async function findSubproject(client: ApiClient, raw: string): Promise<Subprojec
         `/subprojects?q=${encodeURIComponent(raw)}&limit=50`,
       );
       const subprojects = res.subprojects ?? [];
-      return subprojects.find((c) => c.slug === raw) ?? (subprojects.length === 1 ? subprojects[0] : null);
+      return (
+        subprojects.find((c) => c.slug === raw) ??
+        (subprojects.length === 1 ? subprojects[0] : null)
+      );
     } catch {
       return null;
     }
@@ -307,7 +315,9 @@ async function findSubproject(client: ApiClient, raw: string): Promise<Subprojec
 async function subprojectsShow(argv: string[], flags: SubprojectFlags): Promise<number> {
   const raw = positional(argv);
   if (!raw) {
-    process.stderr.write(`${status.err('pass a subproject id or slug: kortix subprojects show <slug>')}\n`);
+    process.stderr.write(
+      `${status.err('pass a subproject id or slug: kortix subprojects show <slug>')}\n`,
+    );
     return 2;
   }
   const ctx = resolveCatalogClient(flags.host);
@@ -321,7 +331,9 @@ async function subprojectsShow(argv: string[], flags: SubprojectFlags): Promise<
     emitJson(subproject);
     return 0;
   }
-  process.stdout.write(`\n  ${C.bold}${subproject.title}${C.reset} ${C.faded}(${subproject.slug})${C.reset}\n`);
+  process.stdout.write(
+    `\n  ${C.bold}${subproject.title}${C.reset} ${C.faded}(${subproject.slug})${C.reset}\n`,
+  );
   process.stdout.write(`  ${C.dim}${subproject.subproject_id}${C.reset}\n`);
   if (subproject.description) process.stdout.write(`\n  ${subproject.description}\n`);
   process.stdout.write(
@@ -359,7 +371,8 @@ async function subprojectsShow(argv: string[], flags: SubprojectFlags): Promise<
   }
   if (subproject.status !== 'active') {
     process.stdout.write(`\n  ${status.warn(`This subproject is ${subproject.status}.`)}\n`);
-    if (subproject.last_error) process.stdout.write(`  ${C.dim}${subproject.last_error}${C.reset}\n`);
+    if (subproject.last_error)
+      process.stdout.write(`  ${C.dim}${subproject.last_error}${C.reset}\n`);
   }
   process.stdout.write(
     `\n  ${C.dim}Install:${C.reset} ${C.cyan}kortix subprojects install ${subproject.slug}${C.reset}\n`,
@@ -392,7 +405,9 @@ async function subprojectsInstalled(flags: SubprojectFlags): Promise<number> {
         `\n  ${C.bold}Installed${C.reset} ${C.faded}- ${subprojects.length} subproject${subprojects.length === 1 ? '' : 's'}${C.reset}\n\n`,
       );
       for (const subproject of subprojects) {
-        process.stdout.write(`  ${C.cyan}${subproject.slug}${C.reset} ${C.faded}${subproject.repo}${C.reset}\n`);
+        process.stdout.write(
+          `  ${C.cyan}${subproject.slug}${C.reset} ${C.faded}${subproject.repo}${C.reset}\n`,
+        );
         process.stdout.write(
           `    ${subproject.title}${subproject.sha ? ` ${C.faded}(${subproject.sha.slice(0, 7)})${C.reset}` : ''}\n`,
         );
@@ -444,8 +459,8 @@ async function subprojectsInstall(argv: string[], flags: SubprojectFlags): Promi
         `  ${C.dim}Subproject:${C.reset} ${subproject.title} (${subproject.slug})\n` +
         `\n  ${C.dim}The agent merges it and opens a change request. Follow along:${C.reset}\n` +
         `  ${C.cyan}kortix sessions logs ${result.session_id}${C.reset}\n` +
-        `\n  ${C.dim}Its triggers ship OFF. After the CR merges:${C.reset}\n` +
-        `  ${C.cyan}kortix subprojects enable ${subproject.slug}${C.reset}\n`,
+        `\n  ${C.dim}Its triggers ship OFF. After the CR merges, turn them on:${C.reset}\n` +
+        `  ${C.cyan}kortix triggers list${C.reset}\n`,
     );
     return 0;
   } catch (error) {
@@ -474,101 +489,6 @@ async function subprojectsUninstall(argv: string[], flags: SubprojectFlags): Pro
         `${status.ok(`Started uninstall session ${C.bold}${result.session_id}${C.reset}`)}\n` +
           `  ${C.dim}Subproject:${C.reset} ${slug}\n` +
           `\n  ${C.dim}It opens a change request that removes what the subproject contributed.${C.reset}\n`,
-      );
-    }
-    return 0;
-  } catch (error) {
-    return surfaceApiError(error);
-  }
-}
-
-async function subprojectsActivation(
-  argv: string[],
-  flags: SubprojectFlags,
-  enabled: boolean,
-): Promise<number> {
-  const slug = positional(argv);
-  if (!slug) {
-    process.stderr.write(
-      `${status.err(`pass an installed slug: kortix subprojects ${enabled ? 'enable' : 'disable'} <slug>`)}\n`,
-    );
-    return 2;
-  }
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  try {
-    const result = await ctx.client.patch<{
-      subproject_slug: string;
-      title: string;
-      enabled: boolean;
-      triggers: string[];
-    }>(`/projects/${ctx.projectId}/subprojects/${encodeURIComponent(slug)}/activation`, { enabled });
-    if (flags.json) {
-      emitJson(result);
-      return 0;
-    }
-    // An empty list is a real, distinct outcome: nothing moved because it was
-    // already in this state. Reporting "enabled" for both would be a lie.
-    if (result.triggers.length === 0) {
-      process.stdout.write(
-        `${status.info(`${result.title} was already ${enabled ? 'enabled' : 'disabled'}`)}\n`,
-      );
-      return 0;
-    }
-    process.stdout.write(
-      `${status.ok(`${enabled ? 'Enabled' : 'Disabled'} ${C.bold}${result.title}${C.reset}`)}\n` +
-        `  ${C.dim}Triggers:${C.reset} ${result.triggers.join(', ')}\n`,
-    );
-    return 0;
-  } catch (error) {
-    return surfaceApiError(error);
-  }
-}
-
-async function subprojectsRuns(argv: string[], flags: SubprojectFlags): Promise<number> {
-  const slug = positional(argv);
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  const params = new URLSearchParams({ limit: String(limitOf(flags)) });
-  const path = slug
-    ? `/projects/${ctx.projectId}/subprojects/${encodeURIComponent(slug)}/runs?${params}`
-    : `/projects/${ctx.projectId}/subprojects/runs?${params}`;
-  try {
-    const res = await ctx.client.get<{
-      runs: SubprojectRun[];
-      total: number;
-      stats?: { total: number; done: number; failed: number; successRate: number | null };
-    }>(path);
-    if (flags.json) {
-      emitJson(res);
-      return 0;
-    }
-    const runs = res.runs ?? [];
-    if (runs.length === 0) {
-      process.stdout.write(
-        `${status.info(slug ? `No run yet for "${slug}".` : 'No subproject has run in this project.')}\n`,
-      );
-      return 0;
-    }
-    process.stdout.write(
-      `\n  ${C.bold}Subproject runs${C.reset} ${C.faded}- ${runs.length} of ${res.total}${C.reset}\n\n`,
-    );
-    for (const run of runs) {
-      const tone = run.status === 'failed' ? C.red : run.status === 'done' ? C.dim : C.cyan;
-      process.stdout.write(
-        `  ${tone}${run.status.padEnd(9)}${C.reset} ${C.faded}${ago(run.created_at).padStart(4)}${C.reset}  ` +
-          `${run.subproject_slug}/${run.trigger_slug}\n`,
-      );
-      const detail = run.summary ?? run.last_error;
-      if (detail) process.stdout.write(`    ${C.dim}${detail}${C.reset}\n`);
-      if (run.session_id) {
-        process.stdout.write(`    ${C.faded}session ${run.session_id}${C.reset}\n`);
-      }
-    }
-    if (res.stats) {
-      process.stdout.write(
-        `\n  ${C.dim}${res.stats.done} done, ${res.stats.failed} failed` +
-          `${res.stats.successRate === null ? '' : `, ${res.stats.successRate}% success`}${C.reset}\n`,
       );
     }
     return 0;
@@ -615,12 +535,6 @@ export async function runSubprojects(argv: string[]): Promise<number> {
       return subprojectsInstall(rest, flags);
     case 'uninstall':
       return subprojectsUninstall(rest, flags);
-    case 'enable':
-      return subprojectsActivation(rest, flags, true);
-    case 'disable':
-      return subprojectsActivation(rest, flags, false);
-    case 'runs':
-      return subprojectsRuns(rest, flags);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;

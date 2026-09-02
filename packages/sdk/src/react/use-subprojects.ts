@@ -4,21 +4,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   type Subproject,
   type SubprojectListing,
-  type SubprojectRunListing,
-  type SubprojectRunReport,
   type InstalledSubprojectListing,
-  type ListSubprojectRunsOptions,
   type ListSubprojectsOptions,
   createSubprojectAuthorSession,
   createSubprojectInstallSession,
   createSubprojectUninstallSession,
   deleteSubproject,
   getSubproject,
-  listSubprojectRuns,
   listSubprojects,
-  listProjectSubprojectRuns,
   listProjectSubprojects,
-  setSubprojectActivation,
   submitSubproject,
   submitSubprojectArchive,
 } from '../core/rest/projects-client';
@@ -30,12 +24,6 @@ export const subprojectsKey = (options?: ListSubprojectsOptions) => qk.subprojec
 export const subprojectKey = (subprojectId: string) => qk.subprojects.detail(subprojectId);
 export const projectSubprojectsKey = (projectId: string | null | undefined) =>
   qk.project.subprojects(projectId ?? '');
-export const subprojectRunsKey = (
-  projectId: string | null | undefined,
-  slug: string | null | undefined,
-) => qk.project.subprojectRuns(projectId ?? '', slug ?? '');
-export const projectSubprojectRunsKey = (projectId: string | null | undefined) =>
-  qk.project.subprojectRunsAll(projectId ?? '');
 
 /**
  * The subproject store. Browse plus submit (from a repo or an uploaded `.zip`) and
@@ -62,7 +50,8 @@ export function useSubprojects(options?: ListSubprojectsOptions) {
   });
 
   const submitArchive = useMutation({
-    mutationFn: (input: Parameters<typeof submitSubprojectArchive>[0]) => submitSubprojectArchive(input),
+    mutationFn: (input: Parameters<typeof submitSubprojectArchive>[0]) =>
+      submitSubprojectArchive(input),
     onSuccess: invalidateStore,
   });
 
@@ -91,6 +80,10 @@ export function useSubproject(subprojectId: string | null | undefined) {
  * lands a change request, so neither has finished when the promise resolves.
  * That is why they invalidate rather than write optimistically: the installed
  * list changes when the CR merges, not when this call returns.
+ *
+ * There is no activation mutation. An installed subproject is a set of entries
+ * in the manifest, not a running thing, and its triggers are enabled one at a
+ * time through `useProjectTriggers` — the page that shows what each one does.
  */
 export function useProjectSubprojects(projectId: string | null | undefined) {
   const queryClient = useQueryClient();
@@ -104,7 +97,8 @@ export function useProjectSubprojects(projectId: string | null | undefined) {
   });
 
   const install = useMutation({
-    mutationFn: (subprojectId: string) => createSubprojectInstallSession(projectId as string, subprojectId),
+    mutationFn: (subprojectId: string) =>
+      createSubprojectInstallSession(projectId as string, subprojectId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
       // The store card carries an install count and an installed pill, so a
@@ -115,13 +109,11 @@ export function useProjectSubprojects(projectId: string | null | undefined) {
 
   const uninstall = useMutation({
     mutationFn: (slug: string) => createSubprojectUninstallSession(projectId as string, slug),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      // Removing a subproject removes its runs from the report.
-      queryClient.invalidateQueries({
-        queryKey: qk.project.subprojectRunsScope(projectId ?? ''),
-      });
-    },
+    // Only the installed list. Uninstall removes the subproject's manifest
+    // entries, and the triggers page reads triggers straight from the manifest
+    // through its own key, which this session's change request invalidates when
+    // it merges — not when this call resolves.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey }),
   });
 
   /**
@@ -137,50 +129,5 @@ export function useProjectSubprojects(projectId: string | null | undefined) {
       createSubprojectAuthorSession(projectId as string, description),
   });
 
-  /**
-   * Enable or disable one subproject's triggers.
-   *
-   * Invalidates the project's TRIGGERS as well as its subprojects: this writes the
-   * manifest, so the triggers page is showing stale `enabled` values the moment
-   * it resolves. That is the one thing a caller cannot be expected to know.
-   */
-  const setActivation = useMutation({
-    mutationFn: (input: { slug: string; enabled: boolean }) =>
-      setSubprojectActivation(projectId as string, input.slug, input.enabled),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId ?? '') });
-    },
-  });
-
-  return { ...query, install, uninstall, author, setActivation };
-}
-
-/** Runs across every installed subproject, newest first. */
-export function useProjectSubprojectRuns(
-  projectId: string | null | undefined,
-  options?: ListSubprojectRunsOptions,
-) {
-  return useQuery<SubprojectRunListing>({
-    queryKey: projectSubprojectRunsKey(projectId),
-    queryFn: () => listProjectSubprojectRuns(projectId as string, options),
-    enabled: !!projectId,
-    // `inventory`, not `config`: a run list changes whenever a trigger fires,
-    // which is on the subproject's schedule and not on any user action here.
-    ...contract('inventory'),
-  });
-}
-
-/** One subproject's runs, with aggregate stats. */
-export function useSubprojectRuns(
-  projectId: string | null | undefined,
-  slug: string | null | undefined,
-  options?: ListSubprojectRunsOptions,
-) {
-  return useQuery<SubprojectRunReport>({
-    queryKey: subprojectRunsKey(projectId, slug),
-    queryFn: () => listSubprojectRuns(projectId as string, slug as string, options),
-    enabled: !!projectId && !!slug,
-    ...contract('inventory'),
-  });
+  return { ...query, install, uninstall, author };
 }

@@ -33,6 +33,7 @@ kortix triggers add daily-digest --type cron \
 ```
 
 `cron` is a 6-field expression: second, minute, hour, day, month, weekday. This command edits your local `kortix.yaml` only.
+
 </Step>
 
 <Step>
@@ -43,6 +44,7 @@ kortix ship
 ```
 
 `kortix ship` commits `kortix.yaml` and pushes it. The schedule goes live once this lands on your project's default branch.
+
 </Step>
 
 <Step>
@@ -53,6 +55,7 @@ kortix triggers ls
 ```
 
 The list shows each trigger's slug, state, and when it last fired. To fire it now instead of waiting for the schedule, run `kortix triggers fire daily-digest`.
+
 </Step>
 
 </Steps>
@@ -71,6 +74,7 @@ kortix secrets set WEBHOOK_SECRET=<a-random-value>
 ```
 
 See [Secrets](/docs/project/secrets) for more on secrets.
+
 </Step>
 
 <Step>
@@ -83,6 +87,7 @@ kortix triggers add new-lead --type webhook \
 ```
 
 `--secret-env` names the secret that signs requests to this trigger.
+
 </Step>
 
 <Step>
@@ -91,6 +96,7 @@ kortix triggers add new-lead --type webhook \
 ```sh
 kortix ship
 ```
+
 </Step>
 
 <Step>
@@ -103,6 +109,7 @@ POST /v1/webhooks/projects/<project-id>/<slug>
 ```
 
 Send a signed `POST` request to this URL from the external service. Kortix checks the signature against `WEBHOOK_SECRET`, then starts a session with the request body available in the prompt. See [Webhook signature](#webhook-signature) below for the exact header and format.
+
 </Step>
 
 </Steps>
@@ -135,6 +142,7 @@ kortix triggers add checkout-errors --type monitor \
 ```
 
 `--mode poll` re-runs the command every `--interval` and expects it to exit. `--mode stream` runs it once and keeps it alive; a stream takes no `--interval`. Both shapes produce lines, and nothing downstream can tell them apart. `cron`, `run_at`, `timezone`, and `secret_env` are rejected on a monitor.
+
 </Step>
 
 <Step>
@@ -145,6 +153,7 @@ kortix ship
 ```
 
 The platform starts the monitor box once this lands on the default branch.
+
 </Step>
 
 <Step>
@@ -156,6 +165,7 @@ kortix triggers info checkout-errors
 ```
 
 `ls` shows a monitor's mode and interval where a cron shows its schedule. `info` shows `run`, `mode`, `interval`, and `expect_event_within`.
+
 </Step>
 
 </Steps>
@@ -164,16 +174,16 @@ kortix triggers info checkout-errors
 
 Every bound below is enforced by the platform.
 
-| Bound | Value |
-| --- | --- |
-| Monitors per project | 10 enabled |
-| Poll interval | at least 30s |
-| `expect_event_within` | at least 5m |
+| Bound                  | Value                                                                                                                |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Monitors per project   | 10 enabled                                                                                                           |
+| Poll interval          | at least 30s                                                                                                         |
+| `expect_event_within`  | at least 5m                                                                                                          |
 | Event rate per monitor | 60/hour sustained, burst 30. Overflow suppresses the monitor for 10 minutes; 3 suppressions in 24 hours disables it. |
-| Line length | 8 KiB, truncated with a `truncated: true` marker |
-| Restart budget | 5 restarts / 10 minutes, then a `restart_budget_exhausted` lifecycle event and 15-minute backoff |
-| Event retention | 30 days |
-| Monthly box budget | $75 by default. Past it, the box stops and one `budget_exceeded` lifecycle event fires. |
+| Line length            | 8 KiB, truncated with a `truncated: true` marker                                                                     |
+| Restart budget         | 5 restarts / 10 minutes, then a `restart_budget_exhausted` lifecycle event and 15-minute backoff                     |
+| Event retention        | 30 days                                                                                                              |
+| Monthly box budget     | $75 by default. Past it, the box stops and one `budget_exceeded` lifecycle event fires.                              |
 
 The monitor box needs a provider that supports a persistent sandbox. Where the project's provider cannot hold one, the `monitors` flag reports itself unavailable.
 
@@ -188,12 +198,12 @@ triggers:
     agent: kortix # optional, defaults to "default"
     model: anthropic/claude-sonnet-4-5 # optional, resolves at fire time if unset
     enabled: true # optional, default true
-    cron: "0 0 9 * * 1-5" # 6-field expression, mutually exclusive with run_at
+    cron: '0 0 9 * * 1-5' # 6-field expression, mutually exclusive with run_at
     timezone: America/Los_Angeles # IANA name, default UTC
     session_mode: reuse # "fresh" | "reuse" | "pinned" | "keyed", default "fresh"
     filter: # optional, webhook payload guard
-      "body.data.direction": "inbound"
-    prompt: "Summarize {{ body.text }}" # required, template string
+      'body.data.direction': 'inbound'
+    prompt: 'Summarize {{ body.text }}' # required, template string
 ```
 
 A monitor replaces the schedule fields with its command and shape:
@@ -210,36 +220,36 @@ triggers:
     agent: oncall
     session_mode: reuse # the monitor default
     filter: # optional, same guard a webhook uses
-      "line.severity": "error"
-    prompt: "Checkout monitor emitted: {{ line }}"
+      'line.severity': 'error'
+    prompt: 'Checkout monitor emitted: {{ line }}'
 ```
 
 Legacy `kortix.toml` uses the same fields in a different container; see [legacy TOML](/docs/project/legacy-toml).
 
 ## Fields
 
-| Field | Required | Default | Notes |
-| --- | --- | --- | --- |
-| `slug` | yes | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. |
-| `type` | yes | — | `cron`, `webhook`, or `monitor`. |
-| `prompt` | yes | — | Template string. Renders as the session's first message. |
-| `name` | no | `slug` | Human label. |
-| `agent` | no | `default_agent` | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`. |
-| `model` | no | resolves at fire time | Wire form `provider/model`, for example `anthropic/claude-sonnet-4-5`. |
-| `enabled` | no | `true` | When `false`, the scheduler and the webhook receiver skip the entry. |
-| `session_mode` | no | `fresh`, or `reuse` on a monitor | See [Session strategy](#session-strategy). |
-| `session_id` | required for `pinned` | — | Exact session to re-prompt. |
-| `session_key` | required for `keyed` | — | Template string. Setting it alone implies `session_mode: keyed`. |
-| `filter` | no | — | Dotted path → expected string. A webhook delivery that does not match returns `200` and fires no session. |
-| `cron` | one of `cron`/`run_at`, on `type: cron` | — | 6-field expression: second minute hour day month weekday. |
-| `run_at` | one of `cron`/`run_at`, on `type: cron` | — | ISO-8601 timestamp. Fires once, then stays dormant. |
-| `timezone` | no, cron only | `UTC` | IANA name. |
-| `secret_env` | required, webhook only | — | Name of a project secret holding the signing key. The secret must use `broker` delivery with the `connector` consumer. |
-| `run` | required, monitor only | — | Repo-relative command whose stdout lines are the events. One line, at most 1024 characters. |
-| `mode` | required, monitor only | — | `poll` re-runs `run` every `interval`; `stream` runs it once and keeps it alive. |
-| `interval` | required for `mode: poll` | — | Duration literal (`30s`, `5m`, `24h`, `7d`), minimum `30s`. Invalid on `mode: stream`. |
-| `expect_event_within` | no, monitor only | — | Duration literal, minimum `5m`. Silence longer than this fires a lifecycle event. |
-| `subproject` | no | — | The subproject that contributed this trigger. Written by a subproject install, never by hand. See [Subproject-owned triggers](#subproject-owned-triggers). |
+| Field                 | Required                                | Default                          | Notes                                                                                                                                                      |
+| --------------------- | --------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `slug`                | yes                                     | —                                | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project.                                                                                                           |
+| `type`                | yes                                     | —                                | `cron`, `webhook`, or `monitor`.                                                                                                                           |
+| `prompt`              | yes                                     | —                                | Template string. Renders as the session's first message.                                                                                                   |
+| `name`                | no                                      | `slug`                           | Human label.                                                                                                                                               |
+| `agent`               | no                                      | `default_agent`                  | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.                                                          |
+| `model`               | no                                      | resolves at fire time            | Wire form `provider/model`, for example `anthropic/claude-sonnet-4-5`.                                                                                     |
+| `enabled`             | no                                      | `true`                           | When `false`, the scheduler and the webhook receiver skip the entry.                                                                                       |
+| `session_mode`        | no                                      | `fresh`, or `reuse` on a monitor | See [Session strategy](#session-strategy).                                                                                                                 |
+| `session_id`          | required for `pinned`                   | —                                | Exact session to re-prompt.                                                                                                                                |
+| `session_key`         | required for `keyed`                    | —                                | Template string. Setting it alone implies `session_mode: keyed`.                                                                                           |
+| `filter`              | no                                      | —                                | Dotted path → expected string. A webhook delivery that does not match returns `200` and fires no session.                                                  |
+| `cron`                | one of `cron`/`run_at`, on `type: cron` | —                                | 6-field expression: second minute hour day month weekday.                                                                                                  |
+| `run_at`              | one of `cron`/`run_at`, on `type: cron` | —                                | ISO-8601 timestamp. Fires once, then stays dormant.                                                                                                        |
+| `timezone`            | no, cron only                           | `UTC`                            | IANA name.                                                                                                                                                 |
+| `secret_env`          | required, webhook only                  | —                                | Name of a project secret holding the signing key. The secret must use `broker` delivery with the `connector` consumer.                                     |
+| `run`                 | required, monitor only                  | —                                | Repo-relative command whose stdout lines are the events. One line, at most 1024 characters.                                                                |
+| `mode`                | required, monitor only                  | —                                | `poll` re-runs `run` every `interval`; `stream` runs it once and keeps it alive.                                                                           |
+| `interval`            | required for `mode: poll`               | —                                | Duration literal (`30s`, `5m`, `24h`, `7d`), minimum `30s`. Invalid on `mode: stream`.                                                                     |
+| `expect_event_within` | no, monitor only                        | —                                | Duration literal, minimum `5m`. Silence longer than this fires a lifecycle event.                                                                          |
+| `subproject`          | no                                      | —                                | The subproject that contributed this trigger. Written by a subproject install, never by hand. See [Subproject-owned triggers](#subproject-owned-triggers). |
 
 A cron trigger needs `cron` or `run_at`, never both. A webhook trigger without `secret_env` is rejected — there is no unauthenticated webhook. A monitor needs `run` and `mode`, and rejects `cron`, `run_at`, `timezone`, and `secret_env` outright — a manifest that claims a schedule the monitor runner never reads is a lie.
 
@@ -300,12 +310,12 @@ fallback session, the trigger policy applies to that new session.
 
 Every fire also gets `{{ trigger.slug }}`, `{{ trigger.type }}`, and `{{ trigger.kind }}` (always `git`). The rest of the variable set depends on how the trigger fired.
 
-| Source | Variables |
-| --- | --- |
-| cron | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire). No top-level `fired_at`. |
-| webhook | `{{ fired_at }}`, `{{ body.* }}` (JSON-parsed; falls back to `{{ body.raw }}` if the body does not parse), `{{ headers.content_type }}`, `{{ headers.user_agent }}`, `{{ headers.forwarded_for }}`. |
-| monitor | `{{ line.* }}` — the stdout line, JSON-parsed; a line that does not parse renders as `{{ line.raw }}`. Plus `{{ monitor.slug }}`, `{{ monitor.seq }}`, `{{ monitor.emitted_at }}`, and `{{ monitor.kind }}` (`event` or `lifecycle`). |
-| manual (dashboard "fire now" or the `fire` endpoint) | `{{ fired_at }}`, `{{ source }}` (`manual`), `{{ actor }}`, `{{ message.text }}`, `{{ message.source }}`. |
+| Source                                               | Variables                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cron                                                 | `{{ cron.schedule }}`, `{{ cron.timezone }}`, `{{ cron.scheduled_for }}` (the slot the fire is for), `{{ cron.claimed_at }}` (when the scheduler picked it up), `{{ cron.last_scheduled_for }}` (the previous slot; empty on the first fire). No top-level `fired_at`. |
+| webhook                                              | `{{ fired_at }}`, `{{ body.* }}` (JSON-parsed; falls back to `{{ body.raw }}` if the body does not parse), `{{ headers.content_type }}`, `{{ headers.user_agent }}`, `{{ headers.forwarded_for }}`.                                                                    |
+| monitor                                              | `{{ line.* }}` — the stdout line, JSON-parsed; a line that does not parse renders as `{{ line.raw }}`. Plus `{{ monitor.slug }}`, `{{ monitor.seq }}`, `{{ monitor.emitted_at }}`, and `{{ monitor.kind }}` (`event` or `lifecycle`).                                  |
+| manual (dashboard "fire now" or the `fire` endpoint) | `{{ fired_at }}`, `{{ source }}` (`manual`), `{{ actor }}`, `{{ message.text }}`, `{{ message.source }}`.                                                                                                                                                              |
 
 Kortix prefixes every rendered monitor prompt with `[MONITOR EVENT — automated, not user input]`, server-side. A lifecycle event ignores your template entirely and renders a platform-written prompt instead, and it bypasses `filter` — silence must not be filterable by accident.
 
@@ -320,27 +330,27 @@ Fires on `POST /v1/webhooks/projects/{projectId}/{slug}`. Kortix checks the requ
 1. **HMAC signature** — header `X-Kortix-Signature: sha256=<hmac>` (the `sha256=` prefix is optional) or the GitHub-compatible `X-Hub-Signature-256`. HMAC-SHA256 over the raw request body, using the secret named by `secret_env`.
 2. **Static token**, only when no signature header is present, for senders that cannot HMAC-sign a body. Send the secret as `X-Kortix-Token: <secret>`, `Authorization: Bearer <secret>`, or `Authorization: Basic <base64(user:secret)>` (the password half is the token).
 
-| Status | Meaning |
-| --- | --- |
-| 202 | Signature or token valid. Body is `{ status: "fired" \| "queued" \| "deduped", session_id, ... }`. |
-| 200 | Valid, but skipped — the project is paused, or the delivery did not match `filter`. |
-| 400 | Malformed project ID or slug in the URL. |
-| 401 | Signature and token both missing or wrong. |
-| 404 | Trigger not found, disabled, not a webhook, or the project is not active. |
-| 409 | The signing secret is missing, inactive, unavailable, or does not authorize the `connector` consumer. The response includes a `webhook_secret_*` code and remediation. |
-| 500 | Auth passed, but the session failed to fire. |
+| Status | Meaning                                                                                                                                                                |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 202    | Signature or token valid. Body is `{ status: "fired" \| "queued" \| "deduped", session_id, ... }`.                                                                     |
+| 200    | Valid, but skipped — the project is paused, or the delivery did not match `filter`.                                                                                    |
+| 400    | Malformed project ID or slug in the URL.                                                                                                                               |
+| 401    | Signature and token both missing or wrong.                                                                                                                             |
+| 404    | Trigger not found, disabled, not a webhook, or the project is not active.                                                                                              |
+| 409    | The signing secret is missing, inactive, unavailable, or does not authorize the `connector` consumer. The response includes a `webhook_secret_*` code and remediation. |
+| 500    | Auth passed, but the session failed to fire.                                                                                                                           |
 
 ## Endpoints
 
-| Method + path | Needs | Notes |
-| --- | --- | --- |
-| `GET /v1/projects/{projectId}/triggers` | `project.trigger.read` | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
-| `POST /v1/projects/{projectId}/triggers` | `project.trigger.create` | Creates a trigger. Commits to the manifest directly. |
-| `PATCH /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.update` | Partial update, merged onto the current entry. |
-| `DELETE /v1/projects/{projectId}/triggers/{slug}` | `project.trigger.delete` | Also clears the trigger's runtime state. |
-| `PATCH /v1/projects/{projectId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume). |
-| `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire` | Manual fire. The built-in project `member` role holds `project.trigger.fire`, so an ordinary member can fire a trigger. |
-| `POST /v1/webhooks/projects/{projectId}/{slug}` | signature or token | Public URL, gated by the webhook secret. |
+| Method + path                                        | Needs                    | Notes                                                                                                                              |
+| ---------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/projects/{projectId}/triggers`              | `project.trigger.read`   | Lists triggers, runtime state, and manifest parse errors. A bad entry appears in `errors[]`; it does not break the other triggers. |
+| `POST /v1/projects/{projectId}/triggers`             | `project.trigger.create` | Creates a trigger. Commits to the manifest directly.                                                                               |
+| `PATCH /v1/projects/{projectId}/triggers/{slug}`     | `project.trigger.update` | Partial update, merged onto the current entry.                                                                                     |
+| `DELETE /v1/projects/{projectId}/triggers/{slug}`    | `project.trigger.delete` | Also clears the trigger's runtime state.                                                                                           |
+| `PATCH /v1/projects/{projectId}/triggers/activation` | `project.trigger.update` | Body `{ paused: boolean }`. See [Pause and resume](#pause-and-resume).                                                             |
+| `POST /v1/projects/{projectId}/triggers/{slug}/fire` | `project.trigger.fire`   | Manual fire. The built-in project `member` role holds `project.trigger.fire`, so an ordinary member can fire a trigger.            |
+| `POST /v1/webhooks/projects/{projectId}/{slug}`      | signature or token       | Public URL, gated by the webhook secret.                                                                                           |
 
 ## Pause and resume
 
@@ -350,10 +360,9 @@ A project-level switch stops every trigger in the project at once, independent o
 
 Installing a [subproject](/docs/feature-flags/subprojects) merges its triggers into this project's `kortix.yaml`. Each one carries `subproject: <slug>`, naming the subproject it came from. A hand-authored trigger has no `subproject:` field.
 
-That field does two things:
+The field records **provenance**: which installed subproject contributed this trigger. It is materialized into `project_trigger_runtime.subproject_slug` when the manifest reconciles, so a query can attribute a fire back to its subproject.
 
-- **It groups activation.** Enabling or disabling one subproject flips every trigger it owns, in one commit. A subproject installs with every trigger **off**, so nothing fires until someone enables it. This is a third switch, distinct from a trigger's own `enabled` field and from the project-wide pause above.
-- **It joins the run history.** The subproject-run report reads `project_trigger_runtime.subproject_slug`, materialized from this field. A trigger without `subproject:` never appears in a subproject report; its fires are still in the project's own trigger history.
+It is not a switch. There are exactly **two** switches over a trigger — its own `enabled` field, and the project-wide pause above. A subproject installs with every trigger **off**, and each one is enabled individually, through this page's surface. Nothing enables or disables a whole subproject at once.
 
 Subproject-owned triggers are ordinary triggers otherwise. They obey the same scheduler, the same session strategy, the same limits, and the same project pause. Field reference: [Manifest → `subprojects:`](/docs/project/manifest#subprojects).
 
