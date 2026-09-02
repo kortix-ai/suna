@@ -397,7 +397,8 @@ By surface: 4 api-session, 3 auth/credential, 2 proxy, 8 lifecycle, 4 SDK,
    `('session','app','monitor')`, so `'environment'` is not representable
    without a migration — this one is design-needed, not a join.
 
-2. **A stopped environment wedges its session permanently.** The provider's
+2. **A stopped environment wedges its session permanently — FIXED this session.**
+   The provider's
    `autoStopInterval: 60` powers an idle environment off, but nothing writes
    `stopped` to its row — `applyStoppedState` is keyed on the worker's
    `session_sandboxes` row and the provider webhook keys on an `externalId` the
@@ -405,6 +406,9 @@ By surface: 4 api-session, 3 auth/credential, 2 proxy, 8 lifecycle, 4 SDK,
    line 182 on `status === 'active' && externalId` before the re-claim, so it
    returns a box that is off, and every tool call fails with nothing to repair
    it. On pi, 20 of 21 environment rows read `active` with a box attached.
+   `ensure` now asks the provider and writes what it hears, which makes the
+   resume path that already existed reachable; `unknown` still serves, because
+   uncertainty must not authorize a teardown.
 
 3. **The automatic stop paths never touch the environment.**
    `stopSessionEnvironment` has two call sites, both manual (`stop.ts:129` and
@@ -445,11 +449,11 @@ design correction found by measuring:
 > before the redesign. **Not verified live:** no reap has been observed on a
 > deployed API — the short horizon is 24 h.
 
-**Recommended order for the remaining 28**, since they are not equal: (1) the
-wedged-session bug, because it is user-facing and live on pi today; (2) the
-automatic stop paths, which are mechanical and stop the bleeding; (3) billing,
-which needs a migration and belongs in one deliberate change; (4) the SDK and
-proxy items, which are genuinely P2.5/P2.6 work and should move with them.
+**Recommended order for the remaining 26**, since they are not equal: (1) the
+automatic stop paths, which are mechanical and stop the bleeding; (2) billing,
+which needs a `workload_type` CHECK migration and belongs in one deliberate
+change; (3) the SDK and proxy items, which are genuinely P2.5/P2.6 work and
+should move with them.
 
 ### P2.5 — Two lifecycles that can disagree
 
