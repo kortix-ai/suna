@@ -294,21 +294,36 @@ the cost. Nothing built on `bootMark()` could have produced the row above.
 > one — the worker makes warm-path latency the *default and deterministic*
 > case rather than a probabilistic cache hit.
 
-### P2.2 — Environment readiness, before a user meets it
+### P2.2 — Environment readiness — **partly done, and the limit is stated**
 
-Risk 2 in the doc, and **it has already been observed failing**: on
-pi.kortix.com a first `bash` call returned
-`could not attach environment: environment status: provisioning` — the tool
-errored rather than waiting, exactly the "cost moved in front of the user"
-failure the doc predicted. It fails safely (the isolation test proves no local
-fallback), but it fails.
+**Measured, same cold session on pi.kortix.com:** first token **4.25s**, first
+`bash` call **37.5s**. The environment's cold start did not go away with the
+split; it moved out of session setup and into the middle of the first answer.
+An earlier probe failed outright with
+`could not attach environment: environment status: provisioning`, so this is
+not only slow, it has been seen to break.
 
-* Speculative pre-warm at session start, **gated on whether the agent's declared
-  toolset can even reach compute** — an agent that only reasons must still
-  provision nothing.
-* An attach that waits with a deadline and a progress signal, rather than
-  erroring at the first not-ready.
-* A test that asserts the first compute call of a cold session succeeds.
+**Shipped:** `LazyKortixEnv.prewarm()`, triggered when the PROMPT arrives.
+Not at session create — that would provision for sessions nobody ever prompts,
+and a session which never touches compute being dramatically cheaper is part of
+what the split is sold on. Not at the first tool call — that is the 37.5s.
+`publishUserMessage` runs three lines before `agent.prompt`, so provisioning
+overlaps the whole reasoning turn.
+
+It is safe by construction rather than by care: the existing `attaching`
+promise makes a tool call arriving mid-prewarm JOIN it instead of starting a
+second provision, and a failed prewarm is swallowed because the tool call that
+actually needs the environment attaches again and reports it as its own Result.
+
+> **What this does NOT do.** It shortens the wait by roughly the time the model
+> spends before its first tool call. It does not remove it. The residual is
+> provisioning time minus that overlap, and closing it properly needs a **warm
+> pool for environments** — the same idea the session pool already implements
+> for the old path, applied to the new one. That is the real P2.2 finish line
+> and it is not built.
+>
+> Not yet verified live: the branch environment is frozen, so the before/after
+> on a deployed box is owed.
 
 ### P2.3 — Take the transport that was already measured best
 
