@@ -452,7 +452,10 @@ export async function buildHarness(cfg: WorkerConfig) {
     void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle', identity);
   });
 
-  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity };
+  // `lazy` is returned because startWorker prewarms it when a prompt arrives.
+  // It was NOT, and the reference there compiled to a binding that does not
+  // exist at runtime — every turn answered `lazy is not defined`.
+  return { agent, env, lazy, faux, models, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -461,7 +464,7 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity } =
+  const { agent, env, lazy, faux, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity } =
     await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
