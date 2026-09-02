@@ -23,6 +23,13 @@ import { createHash } from 'node:crypto';
 
 export type BlobStorageKind = 'pg' | 's3';
 
+/**
+ * Only what this module calls. `typeof fetch` also carries `preconnect` in
+ * Bun's lib, which would force every test double to implement a method the
+ * store never uses.
+ */
+export type FetchLike = (input: Request, init?: RequestInit) => Promise<Response>;
+
 export interface BlobStore {
   readonly kind: BlobStorageKind;
   /** Idempotent: the key IS the content, so a repeat write is a no-op. */
@@ -74,7 +81,7 @@ export interface S3BlobStoreOptions {
    * by any endpoint without wildcard DNS; AWS accepts it too.
    */
   forcePathStyle?: boolean;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: FetchLike;
   timeoutMs?: number;
 }
 
@@ -82,7 +89,7 @@ export interface S3BlobStoreOptions {
 export class S3BlobStore implements BlobStore {
   readonly kind = 's3' as const;
   private readonly prefix: string;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: FetchLike;
   private readonly timeoutMs: number;
 
   constructor(private readonly opts: S3BlobStoreOptions) {
@@ -136,7 +143,7 @@ export class S3BlobStore implements BlobStore {
     return new Request(url, {
       method,
       headers: signedReq.headers as Record<string, string>,
-      body: method === 'GET' || method === 'DELETE' ? undefined : payload,
+      body: method === 'GET' || method === 'DELETE' ? undefined : (payload as BodyInit),
     });
   }
 
@@ -199,7 +206,7 @@ export function s3ConfigComplete(cfg: Partial<FilesystemStorageConfig>): boolean
 export function createBlobStore(
   cfg: Partial<FilesystemStorageConfig>,
   rows: BlobRows,
-  overrides?: { fetchImpl?: typeof fetch },
+  overrides?: { fetchImpl?: FetchLike },
 ): BlobStore {
   if (!s3ConfigComplete(cfg)) return new PostgresBlobStore(rows);
   return new S3BlobStore({

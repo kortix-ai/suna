@@ -530,6 +530,17 @@ const envSchema = z.object({
   // on dev 2026-08-27). 0 = off. Pure accelerator: claim failure falls back to
   // an ordinary cold create.
   KORTIX_PI_WORKER_POOL_TARGET: optInt(0),
+
+  // Shared filesystems (docs: the "Google Drive between agents"). S3 is used
+  // only when bucket+region+key+secret are ALL set; anything less falls back to
+  // PostgreSQL, which every environment has — including self-host, which has no
+  // S3 at all. KORTIX_FS_S3_ENDPOINT points at R2/MinIO/any S3-compatible host.
+  KORTIX_FS_S3_BUCKET: optStr,
+  KORTIX_FS_S3_REGION: optStr,
+  KORTIX_FS_S3_ENDPOINT: optStr,
+  KORTIX_FS_S3_PREFIX: optStr,
+  KORTIX_FS_S3_ACCESS_KEY_ID: optStr,
+  KORTIX_FS_S3_SECRET_ACCESS_KEY: optStr,
   // Parked boxes older than this are reaped and replaced; also the Daytona
   // auto-stop backstop a parked box is created with, so an orphaned box
   // reclaims itself even if every API instance dies.
@@ -1164,6 +1175,12 @@ export const config = {
   DAYTONA_WEBHOOK_SECRET: env.DAYTONA_WEBHOOK_SECRET,
   KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
   KORTIX_PI_WORKER_POOL_TARGET: env.KORTIX_PI_WORKER_POOL_TARGET,
+  KORTIX_FS_S3_BUCKET: env.KORTIX_FS_S3_BUCKET,
+  KORTIX_FS_S3_REGION: env.KORTIX_FS_S3_REGION,
+  KORTIX_FS_S3_ENDPOINT: env.KORTIX_FS_S3_ENDPOINT,
+  KORTIX_FS_S3_PREFIX: env.KORTIX_FS_S3_PREFIX,
+  KORTIX_FS_S3_ACCESS_KEY_ID: env.KORTIX_FS_S3_ACCESS_KEY_ID,
+  KORTIX_FS_S3_SECRET_ACCESS_KEY: env.KORTIX_FS_S3_SECRET_ACCESS_KEY,
   KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES: env.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES,
   KORTIX_FAST_COLD_BOOT_ENABLED: env.KORTIX_FAST_COLD_BOOT_ENABLED ?? false,
   KORTIX_FAST_GIT_BOOT_ENABLED: env.KORTIX_FAST_GIT_BOOT_ENABLED,

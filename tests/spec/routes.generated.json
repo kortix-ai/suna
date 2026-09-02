@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 634,
+  "count": 643,
   "routes": [
     {
       "method": "GET",
@@ -1684,6 +1684,34 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/filesystems"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/filesystems"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/filesystems/:name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/filesystems/:name/files"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/filesystems/:name/files/:path"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/filesystems/:name/files/:path"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/filesystems/:name/files/:path"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/gateway/breakdown"
     },
     {
@@ -2009,6 +2037,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
     },
     {
       "method": "PUT",

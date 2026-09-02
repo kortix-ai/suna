@@ -328,6 +328,20 @@ Repo files are read-only over the project API; live edits happen in the sandbox 
 `FILE-8` `GET /projects/:id/version-diff?from=|head=&into=|base=` → diff between two refs (params are `from`/`head` and `into`/`base` — there is **no `to`**).
 `FILE-9` live file CRUD inside sandbox → through proxy to OpenCode file API on `:8000` (create/read/update/delete/list). Durable truth = git repo; sandbox tree is ephemeral.
 
+### Shared filesystems (`/projects/:id/filesystems`)
+
+A named volume of state shared between the agents of one project — "a Google
+Drive between the agents". Distinct from `FILE-*` above, which reads the project
+REPO: that is config, cloned per session and versioned by git; a filesystem is
+state, mutable, and alive whether or not any sandbox is. Bytes are
+content-addressed by sha256 and stored in S3 when it is configured, PostgreSQL
+otherwise (self-host has no S3).
+
+`FS-1` `POST /projects/:id/filesystems` → create, **idempotent by name** (201 first, 200 after); `GET /projects/:id/filesystems` → list; `DELETE /projects/:id/filesystems/:name` → 204, cascading its files.
+`FS-2` `PUT /projects/:id/filesystems/:name/files/*path` → write bytes (201 create / 200 replace); `GET …/files/*path` → the SAME bytes back, with `etag` = sha256 and the stored `content-type`.
+`FS-3` `GET /projects/:id/filesystems/:name/files?prefix=` → list metadata under a prefix, matching only on segment boundaries; `DELETE …/files/*path` → 204, and the path is then 404.
+`FS-4` path traversal is REFUSED, never rewritten: `..`, percent-encoded `%2e%2e`, and backslash forms all → 400. A non-member gets 403/404 and ANON 401 on every route.
+
 ---
 
 ## 11. Change Requests (mandatory path to land branch work on main)

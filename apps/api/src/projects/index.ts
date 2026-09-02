@@ -43,6 +43,7 @@ import './routes/session-scope';
 import './routes/session-config';
 import './routes/public-shares';
 import './routes/r8';
+import './routes/filesystems';
 import './routes/r9';
 import './routes/r10';
 import './routes/r11';
