@@ -1,0 +1,53 @@
+name: Rust
+
+on:
+  pull_request:
+    branches: [main, staging, prod]
+    paths:
+      - "rust/**"
+      - ".github/workflows/rust.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Format, lint, test, and dependency policy
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace --all-features
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Check dependency policy
+        run: cargo deny --config deny.toml check

@@ -1,0 +1,36 @@
+name: Kortix Swift
+
+# Validate the Swift package without signing or building an Xcode app archive.
+
+on:
+  pull_request:
+    branches: [main, staging, prod]
+    paths:
+      - "packages/kortix-swift/**"
+      - ".github/workflows/kortix-swift.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: kortix-swift-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Swift package tests
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/kortix-swift
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Run Swift package tests
+        run: swift test
