@@ -1,36 +1,14 @@
 import { Reveal } from '@/components/home/reveal';
-import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import {
-  agent,
-  hero,
-  marketplace,
-  reach,
-  repo,
-  skill,
-} from '@/features/marketing/agents-and-skills/content';
+import { agent, hero, reach, repo, skill } from '@/features/marketing/agents-and-skills/content';
+import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
 import { MdPanel } from '@/features/marketing/agents-and-skills/md-panel';
 import { RepoTree } from '@/features/marketing/agents-and-skills/repo-tree';
-import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
-import Link from 'next/link';
 import type { ReactNode } from 'react';
-
-/**
- * Hairlines for a 4-up grid that reflows 1 → 2 → 4 columns. Written per index
- * because the divider a cell needs changes with the breakpoint: cell 3 is a new
- * row at `sm` (top rule) and a new column at `lg` (left rule). Same table as
- * `/agent-computer`, so the capability pages share one rhythm.
- */
-const GRID_4_RULES = [
-  '',
-  'border-t sm:border-t-0 sm:border-l',
-  'border-t lg:border-t-0 lg:border-l',
-  'border-t sm:border-l lg:border-t-0',
-] as const;
 
 function SectionDivider(): ReactNode {
   return (
@@ -44,10 +22,12 @@ function SectionDivider(): ReactNode {
  * `/agents-and-skills` — the part of the product that compounds.
  *
  * Copy lives in `features/marketing/agents-and-skills/content.ts`, whose header
- * carries the accuracy gate. Two claims are easy to get wrong: the scoping field
- * is `permission` (never `tools`, which is a hard error), and the marketplace
- * has no deterministic installer — adding an item runs an agent import that
- * opens a change request.
+ * carries the accuracy gate. The claim easiest to get wrong: the scoping field
+ * is `permission`, never `tools`, which is a hard error in the schema.
+ *
+ * There used to be a §5 "Marketplace" section here, with a `/marketplace` CTA.
+ * It went when the skills marketplace left the product — see that header's
+ * gate for what may and may not replace it.
  */
 export default function AgentsAndSkillsPage(): ReactNode {
   return (
@@ -217,45 +197,6 @@ export default function AgentsAndSkillsPage(): ReactNode {
               </div>
             ))}
           </dl>
-        </Reveal>
-      </section>
-
-      <SectionDivider />
-
-      {/* ── 5 · starting from someone else's work ───────────────────────── */}
-      <section id="marketplace" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader
-          eyebrow={marketplace.eyebrow}
-          title={marketplace.title}
-          description={marketplace.sub}
-        />
-
-        <Reveal delay={0.06}>
-          <ol className="border-border mt-10 grid overflow-hidden rounded-sm border sm:grid-cols-2 lg:grid-cols-4">
-            {marketplace.steps.map((step, i) => (
-              <li
-                key={step.n}
-                className={cn('border-border bg-card flex flex-col p-6 sm:p-7', GRID_4_RULES[i])}
-              >
-                <span className="text-muted-foreground/45 font-mono text-xs tracking-widest tabular-nums">
-                  {step.n}
-                </span>
-                <h3 className="text-foreground mt-6 text-lg leading-tight font-medium">
-                  {step.title}
-                </h3>
-                <p className="text-muted-foreground mt-3 text-sm leading-relaxed">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </Reveal>
-
-        <Reveal delay={0.1}>
-          <p className="border-border text-muted-foreground mt-6 max-w-3xl border-t pt-4 text-sm leading-relaxed">
-            {marketplace.footnote}
-          </p>
-          <Button size="lg" variant="secondary" asChild className="mt-6 w-fit">
-            <Link href={marketplace.ctaHref}>{marketplace.ctaLabel}</Link>
-          </Button>
         </Reveal>
       </section>
     </div>

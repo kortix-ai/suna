@@ -47,25 +47,26 @@ import {
   QuestionIcon,
   ScrollIcon,
   ShieldCheckIcon,
-  StorefrontIcon,
   Sun,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
-import Link from 'next/link';
 import * as React from 'react';
 import { useState } from 'react';
 
+/**
+ * Every row here is somewhere you READ — help, docs, blog, contact, support,
+ * the legal pages. That is why the renderer below has one branch and opens a
+ * new tab unconditionally: losing your workspace to go read something is the
+ * wrong trade, and there is no row left that you go and *act* in.
+ *
+ * (There was one. Marketplace navigated in place, and carried an `internal`
+ * flag to say so. It went with the skills marketplace, and the flag with it —
+ * a one-producer field is not worth keeping warm for a hypothetical second.)
+ */
 export type MenuLink = {
   label: string;
   href: string;
   Icon: React.ComponentType<{ className?: string }>;
-  /**
-   * Navigate in place instead of opening a new tab. Only Marketplace: it is
-   * somewhere you go and act — browse, install — so it belongs in the session
-   * you are already in. Everything else under Help is something you read, and
-   * losing your workspace to go read it is the wrong trade.
-   */
-  internal?: boolean;
 };
 
 /**
@@ -79,7 +80,6 @@ export const HELP_LINKS: MenuLink[] = [
   { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
   { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
   { label: 'Blog', href: '/blog', Icon: ArticleIcon },
-  { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
   { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
   { label: 'Support', href: '/support', Icon: HeadsetIcon },
 ];
@@ -139,46 +139,33 @@ export function ThemeSubmenu() {
  * Every reference and legal page collapsed into one submenu, so the top level
  * only carries things you act on rather than eight links.
  *
- * External rows render a real `<a target="_blank">` rather than calling
- * `window.open` from a handler. Three reasons: the browser opens the tab inside
- * the click's own user-gesture window, so no popup blocker can eat it — a
- * deferred close is exactly the kind of gap that trips one; cmd-click and
- * middle-click keep working; and it is a link, so it reads as one to a screen
- * reader.
+ * Rows render a real `<a target="_blank">` rather than calling `window.open`
+ * from a handler. Three reasons: the browser opens the tab inside the click's
+ * own user-gesture window, so no popup blocker can eat it — a deferred close is
+ * exactly the kind of gap that trips one; cmd-click and middle-click keep
+ * working; and it is a link, so it reads as one to a screen reader.
  *
  * In the desktop shell `openExternalRoute` fires first and returns true — it
  * hands the URL to the system browser — so the anchor's own navigation is
  * cancelled to avoid opening the page twice.
  */
 export function HelpSubmenu({ onClose }: { onClose: () => void }) {
-  const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
-    internal ? (
-      // An anchor, exactly like the external branch below. `router.push` from a
-      // menu row runs the RSC fetch cold at click time, and that fetch degrades
-      // into a full document load whenever it answers wrong — a build-id skew
-      // mid-deploy, a maintenance redirect, a network blip.
-      <DropdownMenuItem key={href} asChild onClick={onClose}>
-        <Link href={href} prefetch>
-          <Icon />
-          {label}
-        </Link>
-      </DropdownMenuItem>
-    ) : (
-      <DropdownMenuItem key={href} asChild>
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => {
-            if (openExternalRoute(href)) event.preventDefault();
-            onClose();
-          }}
-        >
-          <Icon />
-          {label}
-        </a>
-      </DropdownMenuItem>
-    );
+  const renderMenuLink = ({ label, href, Icon }: MenuLink) => (
+    <DropdownMenuItem key={href} asChild>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(event) => {
+          if (openExternalRoute(href)) event.preventDefault();
+          onClose();
+        }}
+      >
+        <Icon />
+        {label}
+      </a>
+    </DropdownMenuItem>
+  );
 
   return (
     <DropdownMenuSub>

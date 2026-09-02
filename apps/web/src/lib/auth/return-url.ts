@@ -23,8 +23,11 @@ const LEGACY_AUTH_RETURN_PREFIXES = [
  *    invite, a CLI pairing code, an OAuth consent screen). Dropping these
  *    strands the very flow that sent the user to sign up.
  *  - *public* pages — nothing behind them is account-scoped, so a brand-new
- *    identity renders them exactly like an old one. These are the marketplace
- *    and use-case CTAs that started the signup in the first place.
+ *    identity renders them exactly like an old one. `/use-cases` is the live
+ *    one: its CTA is what started the signup. `/marketplace` is held for the
+ *    public subproject catalog and has no page yet, so a return there answers
+ *    `404` rather than being blocked — the right failure, and the reason the
+ *    prefix stays rather than being removed and re-added.
  *
  * Everything else is account-scoped, and a brand-new account cannot own a
  * resource that existed before it did. See `resolveNewAccountReturnUrl`.

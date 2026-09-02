@@ -35,7 +35,20 @@ const MANIFEST_PATH = join(APPS_WEB, 'src', 'lib', 'seo', 'content-timestamps.js
 
 // Marketing slug -> source page.tsx path (relative to repo root). Mirrors the
 // MARKETING_RECORDS mapping in src/lib/seo/public-content.ts; both lists must
-// stay in sync. A slug without a backing page.tsx (none today) is skipped.
+// stay in sync.
+//
+// A DELETED page does not drop out of here on its own, and that is worth being
+// exact about, because it looks like it should. `lastCommitIso` runs
+// `git log -1 --format=%cI -- <path>`, and for a removed file git answers with
+// the commit that removed it — a real, recent ISO timestamp. The value is
+// non-empty, so the `existsSync` fallback below never runs and the manifest
+// keeps emitting a fresh-looking date for a page that is gone. Removing the
+// skills marketplace hit exactly this: `marketplace` survived a regeneration
+// with a NEWER timestamp than before.
+//
+// So: when a marketing page is deleted, delete its entry here as well, in the
+// same commit. The only thing skipped automatically is a slug whose page never
+// existed at all.
 const MARKETING_SOURCES = {
   index: 'apps/web/src/app/(public)/(marketing)/(home)/page.tsx',
   about: 'apps/web/src/app/(public)/(seo)/about/page.tsx',
@@ -43,7 +56,6 @@ const MARKETING_SOURCES = {
   developers: 'apps/web/src/app/(public)/(marketing)/developers/page.tsx',
   enterprise: 'apps/web/src/app/(public)/(marketing)/enterprise/page.tsx',
   pricing: 'apps/web/src/app/(public)/(marketing)/pricing/page.tsx',
-  marketplace: 'apps/web/src/app/(public)/(marketing)/marketplace/page.tsx',
   support: 'apps/web/src/app/(public)/(marketing)/support/page.tsx',
   legal: 'apps/web/src/app/(public)/(seo)/legal/page.tsx',
   'agent-computer': 'apps/web/src/app/(public)/(marketing)/agent-computer/page.tsx',

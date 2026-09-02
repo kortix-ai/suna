@@ -68,7 +68,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/help/credits',
   '/connectors',
   '/legal',
-  '/marketplace',
   '/pricing',
   '/security',
   '/self-hosted',
@@ -108,14 +107,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     title: 'Kortix legal',
     description: 'Kortix terms of service and privacy policy.',
     htmlPath: '/legal',
-  },
-  {
-    kind: 'marketing',
-    slug: 'marketplace',
-    title: 'Kortix Marketplace',
-    description:
-      'Browse skills, agents, and commands from every source. Add them to a Kortix project in one click.',
-    htmlPath: '/marketplace',
   },
   {
     kind: 'marketing',

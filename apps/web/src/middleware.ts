@@ -67,7 +67,7 @@ const PUBLIC_ROUTES = [
   '/legal',
   '/api/auth',
   '/share', // Shared content should be public
-  '/marketplace', // Public read-only marketplace directory; installs still require auth
+  '/marketplace', // Held for the public subproject catalog; no page behind it yet. Kept public deliberately: an unauthenticated hit should 404, not bounce through /auth and land on the same 404
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
