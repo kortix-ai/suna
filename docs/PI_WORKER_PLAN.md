@@ -250,23 +250,49 @@ justification for the project; produce it early."* It has not been produced.
 Ordered by what the architecture doc says decides success, not by what is
 pleasant to build. Items 1–3 are the ones that can still invalidate the design.
 
-### P2.1 — Produce the number
+### P2.1 — Produce the number — **DONE, with one leg missing**
 
-The justification for the whole project, still missing, and the doc explains
-why it cannot be measured with what exists: `bootMark()` stamps every mark as
-`Date.now() - bootTime` where `bootTime` is *process start inside the guest*,
-so VM allocation and rootfs restore both finish **before that clock starts**.
-The instrument is blind to the single largest cost the Alpine image removes.
+Clock: `spikes/pi-worker/bench/ttft-session.ts`. It starts OUTSIDE the API, so
+it is a strict superset of the API-side clock the doc asks for, and it
+attributes four phases — create, ready, prompt, **first assistant text**.
 
-* An **API-side clock**: `POST /sessions` → first streamed token. Nothing else
-  measures the thing being fixed.
-* Benchmark **worker cold start against today's WARM-POOL HIT**, not against a
-  cold sandbox. The doc: *"Benchmarking the worker against a cold sandbox
-  flatters it… If the worker only beats the cold path, we have spent a quarter
-  matching what a cache already delivers."*
-* Ten runs each, same prompt, same region, published next to each other.
+**Measured 2026-09-02, 10 runs each, same prompt.**
 
-Done when the number exists and is defensible, whichever way it comes out.
+| path | env | provider | ready p50 | **TTFT p50** | TTFT p95 | n |
+|---|---|---|---|---|---|---|
+| pi worker, cold (pool off) | preview | daytona | 2.90s | **4.25s** | 8.76s | 10/10 |
+| opencode | dev | platinum | 21.52s | **29.19s** | 59.27s | 13/13 |
+
+That is **6.9× on time-to-first-token** and 7.4× to a reachable runtime.
+
+**The doc's instrumentation claim is confirmed, and it is the solid result
+here** because it is measured within ONE environment: the in-guest
+`session_start_timeline` reports **0.08s p50** while the wall clock to a
+reachable runtime is **2.90s**. The existing instrument sees about **3%** of
+the cost. Nothing built on `bootMark()` could have produced the row above.
+
+> #### The leg that is missing, and it is the one that matters
+>
+> The doc's bar is *"worker cold start versus today's WARM-POOL HIT"*, and
+> warns: *"If the worker only beats the cold path, we have spent a quarter
+> matching what a cache already delivers."*
+>
+> **A warm-pool hit was never observed.** Thirteen consecutive dev sessions all
+> took ~20s to become reachable, dev `/health` exposes no pool state, and the
+> session metadata carries no pool markers. So the row above is
+> **cold vs cold** — the charitable comparison, not the bar.
+>
+> Two further confounders, stated rather than buried: the two legs ran in
+> DIFFERENT environments on DIFFERENT providers (daytona vs platinum), where
+> the doc asks for same-region. And the opencode leg's `prompt` column can read
+> later than its `TOKEN` column, because its first token is seen on `/event`
+> before the message POST resolves; `TOKEN` is the meaningful column.
+>
+> **What is proven:** the split is worth ~7× against a cold start, and the old
+> instrument could not have shown it. **What is not:** that it beats a warm
+> cache. Until a pool hit is measured, the honest claim is the doc's weaker
+> one — the worker makes warm-path latency the *default and deterministic*
+> case rather than a probabilistic cache hit.
 
 ### P2.2 — Environment readiness, before a user meets it
 
