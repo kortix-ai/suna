@@ -236,15 +236,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
-              {/* Stays ABOVE the permanent nav. The group is `mt-auto`, so it
-                  grows upward: a billing row mounts late (it waits on account
-                  state) and everything ABOVE it shifts up when it appears.
-                  Below Files, that shift is Files and Connect GPT visibly
-                  jumping the moment the wallet resolves. Pinned by
-                  `project-sidebar-footer-order.test.ts`. */}
-              <SidebarUpgradeButton accountId={accountId} />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              {/* Last (Jay, 2026-09-03). It is the only paid call to action in
+                  this group, and above the nav rows it put a sell between the
+                  user and the links they actually use. */}
+              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>
