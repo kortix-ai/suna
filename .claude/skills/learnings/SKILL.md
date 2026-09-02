@@ -21,6 +21,41 @@ linked, not inlined.
 
 ## Register
 
+### A `[skip ci]` release-prep commit deadlocks the lane that ships releases (2026-09-02)
+
+**When:** adding `[skip ci]` to any commit that lands on a branch whose deploy
+resolves an artifact BY that commit's SHA. `chore(release): staging VERSION ->
+0.13.10 [skip ci]` landed on `staging`, so `Build Staging Artifacts` never ran
+for it, so no `staging-e2586057` image existed — and `Deploy Staging` resolves
+staging HEAD and pulls that exact tag. Every staging deploy then failed with
+`docker.io/kortix/kortix-api:staging-e2586057: not found`, and staging served
+Aug-30 code for three days while the branch said otherwise. Nothing alerted:
+the deploy failure is one red run in a list, and staging's own `/health` keeps
+answering `ok` on the stale build. **The rule:** a commit that a deploy will
+resolve an image for must build. Either drop `[skip ci]` from release-prep
+commits, or make the deploy resolve the last BUILT ancestor instead of HEAD.
+*Blast radius:* prod could not have shipped wrong — `tests-release` asserts
+staging is serving `RELEASE_SOURCE_SHA` — but no release could ship at all,
+and a security fix (CVE-2026-56854, merged to `main` 2026-09-01) sat unshippable
+until an unrelated commit unwedged the lane. *Enforcement:* none yet — this is
+a TODO to build the enforcer. Related: [[a-read-that-fails-is-not-an-admin-decision]].
+
+### One health read during a rolling deploy proves nothing (2026-09-02)
+
+**When:** gating ANY promote, verification, or "is it deployed?" check on an
+HTTP health response. ECS rolls tasks gradually behind one load balancer, so
+old and new answer the same URL concurrently. Measured mid-roll on staging:
+10 consecutive `/v1/health` reads returned `8d5cf2ac, 8d5cf2ac, 8d5cf2ac,
+3693c556, 3693c556, 3693c556, 3693c556, 3693c556, 3693c556, 8d5cf2ac`. A
+single read had already fired a promote gate that then had to be revoked.
+**The rule:** require the deploy run to be `completed/success` AND N
+consecutive reads (>=8) agreeing on the expected SHA. The same shape applies to
+browser assertions: a redirect chain commits only its FINAL url, so
+`framenavigated` cannot see an intermediate hop — observe navigation REQUESTS.
+And any negative assertion ("it did NOT redirect") needs a positive control arm
+proving the mechanism fires at all, or it passes against dead code.
+*Incident:* caught pre-promote during the v0.13.10 release; no outage.
+
 ### A read that fails is not an admin decision — health flags fail open (2026-09-02)
 
 **When:** writing any code path that answers "is the platform in maintenance /
