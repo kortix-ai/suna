@@ -212,6 +212,132 @@ accepts anything.
 
 ---
 
+---
+
+## Where we are against "Splitting the Harness"
+
+The architecture read (huddle 2026-08-26) set Phase 0, gate G0 and Phase 1.
+Status against its own criteria, not against a summary of them.
+
+**Phase 0 — the Pi spike. Cleared, all five proofs.** Tool replacement holds,
+the gateway works, it bundles and boots fast, history survives the process, and
+the event stream is enough. `spikes/pi-worker/README.md` carries the numbers.
+
+**Gate G0 — the RPC tax. Measured: WARN.** Multiplexed WebSocket 16.0 ms p50
+vs pooled keep-alive 19.2 ms vs per-call fetch 20.3 ms. The finding that
+matters is the second one: the tax is set by the provider's topology, not by
+us — both sandboxes sit in one Daytona region yet traffic leaves through the
+public edge. The split wins clearly to ~100 tool calls per turn and is
+break-even beyond.
+
+**Phase 1 — the worker. Four of five pieces done.**
+
+| # | Piece | State |
+|---|---|---|
+| 1 | `apps/kortix-worker` — HTTP+SSE around Pi, SDK-backed tools only | done, and the isolation invariant is pinned by a test |
+| 2 | Compile pipeline: `kortix.yaml`@sha → one `.mjs`, content-addressed | done — `pi_runtime_artifacts`, one bundle per agent per commit |
+| 3 | Worker template — Alpine + supervisor that fetches and execs | done — pi-worker snapshot, entrypoint, `fetch-runtime.mjs` |
+| 4 | Session start on the worker, **with the before/after number** | half — sessions start and answer; **the number does not exist** |
+| 5 | Tool RPC into a lazily-provisioned environment | half — lazy env works; transport is not the multiplexed one |
+
+The doc is unambiguous about what piece 4 is for: *"That number is the entire
+justification for the project; produce it early."* It has not been produced.
+
+---
+
+## Phase 2 — the plan
+
+Ordered by what the architecture doc says decides success, not by what is
+pleasant to build. Items 1–3 are the ones that can still invalidate the design.
+
+### P2.1 — Produce the number
+
+The justification for the whole project, still missing, and the doc explains
+why it cannot be measured with what exists: `bootMark()` stamps every mark as
+`Date.now() - bootTime` where `bootTime` is *process start inside the guest*,
+so VM allocation and rootfs restore both finish **before that clock starts**.
+The instrument is blind to the single largest cost the Alpine image removes.
+
+* An **API-side clock**: `POST /sessions` → first streamed token. Nothing else
+  measures the thing being fixed.
+* Benchmark **worker cold start against today's WARM-POOL HIT**, not against a
+  cold sandbox. The doc: *"Benchmarking the worker against a cold sandbox
+  flatters it… If the worker only beats the cold path, we have spent a quarter
+  matching what a cache already delivers."*
+* Ten runs each, same prompt, same region, published next to each other.
+
+Done when the number exists and is defensible, whichever way it comes out.
+
+### P2.2 — Environment readiness, before a user meets it
+
+Risk 2 in the doc, and **it has already been observed failing**: on
+pi.kortix.com a first `bash` call returned
+`could not attach environment: environment status: provisioning` — the tool
+errored rather than waiting, exactly the "cost moved in front of the user"
+failure the doc predicted. It fails safely (the isolation test proves no local
+fallback), but it fails.
+
+* Speculative pre-warm at session start, **gated on whether the agent's declared
+  toolset can even reach compute** — an agent that only reasons must still
+  provision nothing.
+* An attach that waits with a deadline and a progress signal, rather than
+  erroring at the first not-ready.
+* A test that asserts the first compute call of a cold session succeeds.
+
+### P2.3 — Take the transport that was already measured best
+
+`WebSocketTransport` exists and wins on both counts, yet the default is
+`keepalive`. The doc's own reason to switch is correctness before speed:
+*"per-call HTTP already produced a correctness bug in this spike when a
+keep-alive socket was retired between calls."*
+
+* Default the env transport to `ws`, keep `keepalive` as the fallback.
+* Record **co-location as a provider-selection criterion** — G0's real finding,
+  and a criterion the plan did not previously have.
+
+### P2.4 — `session_id == sandbox_id` stops being true
+
+Still asserted as "the platform invariant" in `project-sessions.ts`,
+`git.ts`, and `session-sandbox-credential.ts`. A session is now one worker and
+zero-or-more environments. The doc calls this *"a wide, mechanical, unglamorous
+refactor"* that *"should be scoped honestly"* — so scope it before starting,
+and land it in one branch rather than in pieces.
+
+### P2.5 — Two lifecycles that can disagree
+
+Reaping, idle timeouts, wake fences and billing all assume one runtime per
+session. **A live worker with a reaped environment must be a defined state, not
+a discovered one** — including what the next tool call does when it finds one.
+
+### P2.6 — The secret boundary follows the worker
+
+The session credential is pinned to its sandbox and rejects mismatched egress.
+The worker now holds the model keys and the Kortix credential, so that pinning
+has to move with it, and the environment becomes a second, separately-scoped
+principal.
+
+### P2.7 — Ship it where nobody is watching
+
+The doc's own rollout: triggers, schedules and channel-started sessions run
+with no human waiting on a first token, so a regression there costs latency,
+not a customer's live demo. Ship the worker path to those before any
+interactive traffic.
+
+---
+
+## What is NOT in Phase 2, deliberately
+
+* **Filesystem versioning** — deferred in the huddle; content addressing makes
+  it cheap whenever it is wanted.
+* **Compaction** — rewind ships the removal events it would ride on, but
+  nothing summarises yet.
+* **Durable Objects** — explicitly deferred in the doc; micro-VM first, and the
+  program does not change.
+* **Closing the custom-tool leak completely** — the doc's honest position is
+  that arbitrary in-process code can always find a writable path. The four
+  mitigations remove the accidental cases; the deliberate case stays a user
+  error with a recovery story.
+
 ## Rules this branch paid for
 
 Each of these is in `.claude/skills/learnings/SKILL.md` with its incident:
