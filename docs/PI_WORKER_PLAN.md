@@ -410,11 +410,27 @@ By surface: 4 api-session, 3 auth/credential, 2 proxy, 8 lifecycle, 4 SDK,
    resume path that already existed reachable; `unknown` still serves, because
    uncertainty must not authorize a teardown.
 
-3. **The automatic stop paths never touch the environment.**
+3. **The automatic stop paths never touch the environment — FIXED this session.**
    `stopSessionEnvironment` has two call sites, both manual (`stop.ts:129` and
    the explicit route). The dominant path — `deadline_expired` →
    `stopExpiredBox` — stops the worker only, so a reaped session leaves its
    environment running for up to another hour.
+
+   A dedicated audit of this surface found **thirteen** automatic stop/remove
+   paths, and — the finding that decided the design — **six of them bypass
+   `applyStoppedState` entirely.** There are really two stop writers,
+   `applyStoppedState` and `preserveEstablishedRuntime`, and neither touches
+   `session_environments`. So there is no choke point: hooking "the one stop
+   writer" would still have missed provider-removed, the wake fence,
+   parked-runtime verification, account deletion and the provision-race
+   cleanup.
+
+   Fixed by DERIVING instead of pushing. Every path that durably parks a
+   session writes `project_sessions.status` in the same transaction, and the
+   environment sweep already joins that table, so one rule covers all thirteen
+   and cannot drift out of sync with a stop path nobody remembered to update.
+   Stop, never delete; a 5-minute settle window keeps it off `restartSession`
+   and wakes; an environment already `stopped` is skipped.
 
 **What landed in this session** is the reaper tie-in the code records against
 itself (*"Metering + reaper tie-in is the recorded fast-follow"*), plus one
@@ -459,11 +475,41 @@ design correction found by measuring:
 > (21 environment rows, 20 reading `active`) is not evidence about production —
 > nothing was ever going to reconcile it.
 
-**Recommended order for the remaining 26**, since they are not equal: (1) the
-automatic stop paths, which are mechanical and stop the bleeding; (2) billing,
-which needs a `workload_type` CHECK migration and belongs in one deliberate
-change; (3) the SDK and proxy items, which are genuinely P2.5/P2.6 work and
-should move with them.
+### What the design audit found that is NOT yet fixed
+
+A second workflow (11 agents: map → three independent designs → judge → four
+adversarial refutations) designed the billing tie-in and then tried to refute
+it. Two things came out of that worth recording, because both are load-bearing
+for whoever picks this up.
+
+**The design's own migration rationale was refuted.** It proposed
+`ADD CONSTRAINT ... NOT VALID` followed by a separate `VALIDATE` so the
+full-table scan would not hold `ACCESS EXCLUSIVE` on the hot
+`sandbox_compute_sessions`. Two independent verifiers found the same defect:
+node-pg-migrate wraps **every pending migration of one `pnpm migrate`
+invocation in a single transaction**, so splitting them across `.sql` files
+changes nothing — the lock is held across the validation scan either way. Any
+billing migration here needs that solved first.
+
+**One live bug from that audit IS fixed** (in the commit above):
+`markEnvironmentError` assigned `metadata` wholesale, wiping `environmentId`
+— the compute ledger's key — along with `snapshot` and `providerMetadata`.
+With the key gone, `endComputeSession` could never close the open window and
+the resume path opened none, so a single error left an environment running and
+metered nowhere, permanently.
+
+**Still open on billing**, and deliberately not attempted here because it needs
+a migration and a deploy-ordering plan: `workload_type` is CHECK-constrained to
+`('session','app','monitor')`, so `'environment'` is not representable; the
+invariant sweep needs a fourth join; nothing stamps `lastAliveAt` for an
+environment, so even after a join its window is clamped to the liveness grace.
+The measured symptom stands: 21 environments, one compute row, 88.5 s,
+$0.0049.
+
+**Recommended order for the remaining 24**, since they are not equal: (1) billing,
+which needs a `workload_type` CHECK migration, the node-pg-migrate lock
+problem solved, and belongs in one deliberate change; (2) the SDK and proxy
+items, which are genuinely P2.5/P2.6 work and should move with them.
 
 ### P2.5 — Two lifecycles that can disagree
 
