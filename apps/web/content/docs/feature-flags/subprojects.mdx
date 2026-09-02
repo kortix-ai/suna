@@ -27,8 +27,10 @@ While the flag is off:
 - Every project-scoped subproject route answers `403` with
   `{ error, code: "feature_disabled", feature: "subprojects" }`.
 - Every project-scoped `kortix subprojects` subcommand prints `Subprojects is not enabled
-  for this project. Enable it in Settings → Feature flags.` and exits `1`.
-- The **Subprojects** row does not appear in the project sidebar.
+for this project. Enable it in Settings → Feature flags.` and exits `1`.
+- The **Marketplace** tab does not appear in the Customize tab bar, and
+  **Customize** does not list a Marketplace row. `Cmd`+`K` does not offer it
+  either.
 
 The account-scoped catalog routes (`GET /v1/subprojects`, `POST /v1/subprojects`,
 `GET|DELETE /v1/subprojects/:subprojectId`) are **not** flag-gated. Publishing and
@@ -44,20 +46,19 @@ Subprojects has one lifecycle, and each step is a separate decision:
 4. **Read runs** — every trigger fire, with a derived status.
 
 <Callout type="warn" title="Install does not install. It opens a change request.">
-Install starts an agent session that reads both manifests, resolves name
-collisions, and opens a **change request**. The subproject is not installed until
-that CR merges to the default branch. Uninstall works the same way. Neither
-call commits on its own.
+  Install starts an agent session that reads both manifests, resolves name collisions, and opens a
+  **change request**. The subproject is not installed until that CR merges to the default branch.
+  Uninstall works the same way. Neither call commits on its own.
 </Callout>
 
 ## Publish a subproject
 
 A subproject comes from one of two sources, and they behave differently.
 
-| Source | Tracks the source | Re-crawls when it moves | Where |
-|---|---|---|---|
-| A GitHub repo | yes — `owner/repo`, optionally `@branch-or-tag` | yes | Web and CLI |
-| An uploaded `.zip` | no — the files are a snapshot | never | Web only |
+| Source             | Tracks the source                               | Re-crawls when it moves | Where       |
+| ------------------ | ----------------------------------------------- | ----------------------- | ----------- |
+| A GitHub repo      | yes — `owner/repo`, optionally `@branch-or-tag` | yes                     | Web and CLI |
+| An uploaded `.zip` | no — the files are a snapshot                   | never                   | Web only    |
 
 A subproject is **private** by default. It goes public on purpose, with
 `--public` on the CLI or the visibility control in **Add a subproject**.
@@ -79,8 +80,8 @@ You can zip a whole project folder. The crawl keeps `kortix.yaml`, anything
 under `.kortix/`, a root `README.md`, and a root `.env.example`. It leaves
 `src/**`, tests, lockfiles, and `docs/**` behind.
 
-That filter is not only about size. The install prompt tells the agent *these
-files ARE the subproject — copy from here*, so a stored `src/server.ts` would become
+That filter is not only about size. The install prompt tells the agent _these
+files ARE the subproject — copy from here_, so a stored `src/server.ts` would become
 a file the agent writes into **someone else's** repository.
 
 Archive bounds, all server-side: 10 MB envelope, 5 MB of extracted text,
@@ -130,8 +131,8 @@ Full field reference and validation rules:
 ## Activation
 
 <Callout type="warn" title="A subproject installs with every trigger OFF">
-That is deliberate: a subproject that starts firing the moment it lands is a subproject
-nobody trusts. Enabling it is a separate, explicit step.
+  That is deliberate: a subproject that starts firing the moment it lands is a subproject nobody
+  trusts. Enabling it is a separate, explicit step.
 </Callout>
 
 Enabling a subproject **commits to the manifest** — a subproject's activation is
@@ -141,10 +142,10 @@ which is `kortix triggers pause`.
 There is no "this subproject is on" flag. A subproject is on exactly when its triggers
 are, so its state is three-valued:
 
-| State | Meaning |
-|---|---|
-| On | Every trigger it owns is enabled |
-| Off | None are |
+| State         | Meaning                                     |
+| ------------- | ------------------------------------------- |
+| On            | Every trigger it owns is enabled            |
+| Off           | None are                                    |
 | Indeterminate | **Some** are, or it owns no triggers at all |
 
 Render the third state as indeterminate. A two-state switch that rounds it to
@@ -170,11 +171,14 @@ neither side: a reaped sandbox is not the subproject failing.
 
 ## The Subprojects pages
 
-| Page | What it shows |
-|---|---|
-| `/projects/<id>/subprojects` | The store. Installed subprojects first, then the catalog with `All` / `Installed` / `Available` filters and search. |
-| `/projects/<id>/subprojects/runs` | Subproject runs across every installed subproject. |
-| `/projects/<id>/subprojects/runs/<slug>` | One subproject's runs, with aggregate stats. |
+| Page                                     | What it shows                                                                                                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/projects/<id>/marketplace`             | The store — the **Marketplace** tab under Customize. Installed subprojects first, then the catalog with `All` / `Installed` / `Available` filters and search. |
+| `/projects/<id>/subprojects/runs`        | Subproject runs across every installed subproject.                                                                                                            |
+| `/projects/<id>/subprojects/runs/<slug>` | One subproject's runs, with aggregate stats.                                                                                                                  |
+
+The store used to live at `/projects/<id>/subprojects`. That URL still resolves
+— it is a server redirect to the Marketplace tab — so an old bookmark works.
 
 The project home carries two previews above the composer: the five
 most-recently-run subprojects with their recent runs as status circles, and a grid
@@ -198,8 +202,8 @@ Two surfaces, deliberately separate — the account-scoped catalog, and what one
 project has installed:
 
 ```ts
-kortix.subprojects;                        // the catalog
-kortix.project(projectId).subprojects;     // installed, activation, runs
+kortix.subprojects; // the catalog
+kortix.project(projectId).subprojects; // installed, activation, runs
 ```
 
 See [SDK → Subprojects](/docs/sdk/subprojects) for every method, the React hooks, and the

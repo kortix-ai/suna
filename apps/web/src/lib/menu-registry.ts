@@ -48,6 +48,7 @@ import {
   LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
+  PaintBrushIcon as PaintBrush,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
@@ -57,13 +58,13 @@ import {
   MagnifyingGlassIcon as Search,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
+  StorefrontIcon as Storefront,
   TerminalIcon as Terminal,
   TextAlignLeftIcon as TextAlignLeft,
   TrayIcon as Tray,
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
-  PaintBrushIcon as PaintBrush,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -608,6 +609,28 @@ export const menuRegistry: MenuItemDef[] = [
       'schedules schedule cron scheduled tasks webhooks webhook http endpoint incoming request triggers timed recurring',
   },
   {
+    id: 'proj-marketplace',
+    label: 'Marketplace',
+    icon: Storefront,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/marketplace',
+    requiresProject: true,
+    // Same gate the tab itself carries (`CAPABILITY_TABS` → `flag:
+    // 'subprojects'`), so the row cannot outlive the page. Without it the
+    // palette would offer a destination whose every read answers
+    // `403 feature_disabled`.
+    requiresFlag: 'subprojects',
+    // "subprojects" is the noun the product uses; "marketplace" and "store"
+    // are what a person types when they want to find one. Both must answer,
+    // plus the verb ("install") and what a subproject brings with it. The
+    // plural alone — the match is a substring, so it already answers the
+    // singular, and a bag that lists both says nothing more.
+    keywords:
+      'marketplace store subprojects install catalog browse open source repo template starter setup bundle',
+  },
+  {
     id: 'proj-secrets',
     label: 'Secrets',
     icon: LockKey,
@@ -1130,7 +1153,8 @@ export const menuRegistry: MenuItemDef[] = [
     // like its enterprise siblings (roles, identity): the pane itself explains
     // the entitlement.
     href: '/accounts/{accountId}?tab=branding',
-    keywords: 'branding logo icon favicon product name app name white label whitelabel theme identity',
+    keywords:
+      'branding logo icon favicon product name app name white label whitelabel theme identity',
   },
   {
     id: 'account-audit',

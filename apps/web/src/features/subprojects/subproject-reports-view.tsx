@@ -6,14 +6,15 @@ import { useMemo } from 'react';
 import { useProjectSubprojectRuns, useProjectSubprojects } from '@kortix/sdk/react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { useNow } from '@/hooks/use-now';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { useNow } from '@/hooks/use-now';
+import { subprojectReportGroups } from './subproject-report-groups';
 import { SubprojectReportRow } from './subproject-report-row';
 import { SubprojectRunLegend } from './subproject-run-legend';
-import { subprojectReportGroups } from './subproject-report-groups';
+import { subprojectsHref } from './subproject-runs';
 import { countLabel } from './subprojects-catalog';
 
 /** The index shows a wider window than the home panel — this page exists to
@@ -51,17 +52,23 @@ export function SubprojectReportsView({ projectId }: { projectId: string }) {
   const now = useNow();
 
   return (
-    <div data-subproject-reports className="mx-auto w-full max-w-4xl space-y-8 px-4 pt-8 pb-16 sm:px-6">
+    <div
+      data-subproject-reports
+      className="mx-auto w-full max-w-4xl space-y-8 px-4 pt-8 pb-16 sm:px-6"
+    >
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-foreground text-2xl font-semibold tracking-tight">Subproject runs</h1>
           <p className="text-muted-foreground max-w-xl text-sm text-balance">
-            Every run each subproject has made in this project. Open a circle to read the session it came
-            from, or open a subproject for its full history.
+            Every run each subproject has made in this project. Open a circle to read the session it
+            came from, or open a subproject for its full history.
           </p>
         </div>
+        {/* The store, which is the Marketplace tab under Customize — this page
+            is the only entry point back to it from a run report, so it goes
+            through `subprojectsHref` rather than naming the segment. */}
         <HoverPrefetchLink
-          href={`/projects/${projectId}/subprojects`}
+          href={subprojectsHref(projectId)}
           className="group text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-sm font-medium transition-colors duration-150"
         >
           Browse subprojects
@@ -86,10 +93,10 @@ export function SubprojectReportsView({ projectId }: { projectId: string }) {
           title="Could not load subproject runs"
           description={runsQuery.error instanceof Error ? runsQuery.error.message : undefined}
           action={
-              <Button variant="outline" size="sm" onClick={() => void runsQuery.refetch()}>
-                Retry
-              </Button>
-            }
+            <Button variant="outline" size="sm" onClick={() => void runsQuery.refetch()}>
+              Retry
+            </Button>
+          }
         />
       ) : groups.length === 0 ? (
         <EmptyState

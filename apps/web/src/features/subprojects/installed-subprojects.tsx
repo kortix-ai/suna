@@ -17,21 +17,21 @@ import { useProjectSubprojects } from '@kortix/sdk/react';
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
+import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
 import { Switch } from '@/components/ui/switch';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { prepareInstallSessionNavigation } from '../session/install-session-navigation';
-import { subprojectReportHref } from './subproject-runs';
-import { countLabel, subprojectOwnsLabel } from './subprojects-catalog';
+import { subprojectReportHref, subprojectReportsHref } from './subproject-runs';
 import { subprojectVisual } from './subproject-visual';
+import { countLabel, subprojectOwnsLabel } from './subprojects-catalog';
 
 /**
  * What the switch says, and what it does next.
@@ -217,9 +217,7 @@ export function InstalledSubprojects({ projectId }: { projectId: string }) {
       );
       if (href) router.push(href);
     } catch (error) {
-      errorToast(
-        error instanceof Error ? error.message : 'Could not start the uninstall session',
-      );
+      errorToast(error instanceof Error ? error.message : 'Could not start the uninstall session');
     }
   };
 
@@ -251,7 +249,7 @@ export function InstalledSubprojects({ projectId }: { projectId: string }) {
         </h2>
         {subprojects.length > 0 ? (
           <HoverPrefetchLink
-            href={`/projects/${projectId}/subprojects/runs`}
+            href={subprojectReportsHref(projectId)}
             className="group text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium transition-colors duration-150"
           >
             View all runs
@@ -299,8 +297,8 @@ export function InstalledSubprojects({ projectId }: { projectId: string }) {
         title={`Uninstall ${confirming?.title ?? ''}?`}
         description={
           <>
-            This starts a session where the agent removes what this subproject contributed and opens a
-            change request. Nothing is removed until you merge it.
+            This starts a session where the agent removes what this subproject contributed and opens
+            a change request. Nothing is removed until you merge it.
             {(confirming?.owns.connectors?.length ?? 0) > 0 ? (
               <span className="mt-2 block">
                 Its connectors may hold credentials. The agent removes the manifest entries only —

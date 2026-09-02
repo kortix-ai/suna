@@ -98,14 +98,22 @@ function formatBytes(bytes: number): string {
  * archive. Rendering the raw code would be honest but useless; rendering a
  * generic "something went wrong" would be useless AND vague. So each code gets
  * the sentence that says what to do next.
+ *
+ * `mode` is passed because one code — `manifest_not_found`, the most common
+ * rejection — has two different next steps. `kortix init` is the answer for a
+ * repo and nonsense for a `.zip`, which the user has to rebuild instead.
  */
-function submitErrorMessage(error: unknown): string {
+function submitErrorMessage(error: unknown, mode: 'repo' | 'upload'): string {
   const detail = error as { code?: string; message?: string } | null;
   switch (detail?.code) {
     case 'manifest_not_found':
-      return 'No kortix.yaml in that repository. A subproject is a Kortix project — run `kortix init` in it first.';
+      return mode === 'upload'
+        ? 'No kortix.yaml at the root of that archive. A subproject is a Kortix project — zip it from the project directory so kortix.yaml sits at the top level.'
+        : 'No kortix.yaml in that repository. A subproject is a Kortix project — run `kortix init` in it first.';
     case 'manifest_invalid':
-      return detail.message ?? 'That kortix.yaml did not validate. Run `kortix validate` against it.';
+      return (
+        detail.message ?? 'That kortix.yaml did not validate. Run `kortix validate` against it.'
+      );
     case 'ref_not_found':
       return 'That branch or tag does not exist in the repository.';
     case 'repo_not_found':
@@ -178,7 +186,9 @@ export function AddSubprojectModal({
   // Echo the parsed address only when it tells the user something the field
   // does not already show — a pasted URL resolves to `owner/repo`, a typed
   // `owner/repo` would just repeat itself.
-  const normalized = parsed ? `${parsed.owner}/${parsed.repo}${parsed.ref ? `@${parsed.ref}` : ''}` : null;
+  const normalized = parsed
+    ? `${parsed.owner}/${parsed.repo}${parsed.ref ? `@${parsed.ref}` : ''}`
+    : null;
   const echo = normalized && url.trim() !== normalized ? normalized : null;
 
   const oversize = !!file && file.size > MAX_ARCHIVE_BYTES;
@@ -213,7 +223,7 @@ export function AddSubprojectModal({
     } catch (caught) {
       // Stay open. The message belongs beside the input that caused it, and
       // closing would discard what the user pasted.
-      setError(submitErrorMessage(caught));
+      setError(submitErrorMessage(caught, mode));
     }
   };
 
@@ -229,8 +239,8 @@ export function AddSubprojectModal({
         <ModalHeader>
           <ModalTitle>Add a subproject</ModalTitle>
           <ModalDescription>
-            A subproject is a Kortix project — a <span className="font-mono">kortix.yaml</span> with its
-            agents, skills, connectors and triggers.
+            A subproject is a Kortix project — a <span className="font-mono">kortix.yaml</span> with
+            its agents, skills, connectors and triggers.
           </ModalDescription>
         </ModalHeader>
         <form onSubmit={onSubmit}>
@@ -279,7 +289,9 @@ export function AddSubprojectModal({
                       the reason on failure, the accepted forms before anything
                       is typed. */}
                   {echo ? (
-                    <FieldDescription className="text-foreground font-mono">{echo}</FieldDescription>
+                    <FieldDescription className="text-foreground font-mono">
+                      {echo}
+                    </FieldDescription>
                   ) : invalid ? (
                     <FieldDescription className="text-kortix-red">
                       Paste a GitHub repository link, like github.com/owner/repo.

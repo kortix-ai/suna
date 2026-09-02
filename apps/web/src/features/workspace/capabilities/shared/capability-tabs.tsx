@@ -10,8 +10,8 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
-import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { getProjectDetail, type FeatureFlagKey } from '@kortix/sdk';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
@@ -35,10 +35,27 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
 ];
 
 /**
+ * The per-project feature flags the tab list reads, resolved once.
+ *
+ * ENUMERATED, never derived by looping `CAPABILITY_TABS`. `useFeatureFlag` is a
+ * hook, so a loop would make the number of hook calls depend on how many tabs
+ * carry a `flag:` — React's rule of hooks forbids exactly that. When you add a
+ * `flag:` to a tab, add its line here by hand.
+ *
+ * Both consumers of {@link visibleCapabilityTabs} that run in a component call
+ * this: the bar below and the Customize index page. The `useFeatureFlag` cache
+ * is shared, so the second caller costs no request.
+ */
+export function useCapabilityTabFlags(projectId: string): Partial<Record<FeatureFlagKey, boolean>> {
+  const subprojects = useFeatureFlag(projectId, 'subprojects');
+  return { subprojects: subprojects.enabled };
+}
+
+/**
  * Which tabs to draw for this caller.
  *
- * Two gates, the same two the sidebar's Customize row applies, because this
- * bar IS that row's destination:
+ * Three gates, the first two shared with the sidebar's Customize row because
+ * this bar IS that row's destination:
  *
  *  1. `project.customize.read` — the whole Customize surface. It moved out of
  *     the member floor role in #6522 (`apps/api/src/iam/role-perms.ts`), so a
@@ -48,16 +65,29 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  *     openable" surface this gate exists to remove.
  *  2. Each tab's own read leaf — a custom role can hold the surface and still
  *     have one capability deactivated.
+ *  3. The tab's `flag`, when it declares one — whether the project has that
+ *     surface at all.
  *
- * Optimistic while a probe is in flight: a tab disappears only on a denial we
- * actually received, so a slow `/effective` never blanks the bar for a
- * manager mid-navigation.
+ * Gates 1 and 2 are OPTIMISTIC while a probe is in flight: a tab disappears
+ * only on a denial we actually received, so a slow `/effective` never blanks
+ * the bar for a manager mid-navigation. Gate 3 is the opposite, FAIL-CLOSED,
+ * and the asymmetry is deliberate. An unresolved IAM probe is the common case
+ * on every navigation and the tab is almost always allowed; an unresolved flag
+ * is the rare case and the surface is almost always off (`platformDefault:
+ * () => false` for every gated flag). Guessing "on" there flashes a tab whose
+ * route answers `403 feature_disabled`.
+ *
+ * `flags` is REQUIRED, not optional with an all-on default, for the same
+ * reason: a caller that forgets to pass it must lose the gated tabs, not gain
+ * them.
  */
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
+  flags: Partial<Record<FeatureFlagKey, boolean>>,
 ): readonly CapabilityTab[] {
   if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
   return CAPABILITY_TABS.filter((tab) => {
+    if (tab.flag && flags[tab.flag] !== true) return false;
     const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
     return pref ? caps[pref.action]?.allowed !== false : true;
   });
@@ -158,7 +188,8 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const tabs = visibleCapabilityTabs(caps);
+  const flags = useCapabilityTabFlags(projectId);
+  const tabs = visibleCapabilityTabs(caps, flags);
 
   return (
     <div
@@ -173,21 +204,35 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           size="lg"
           className="h-auto w-full justify-start gap-5 border-b-0 px-2"
         >
-          {tabs.filter((tab) => !TRAILING_TABS.includes(tab.key)).map((tab) => (
-            <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
-              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                {tab.label}
-              </Link>
-            </TabsTrigger>
-          ))}
+          {tabs
+            .filter((tab) => !TRAILING_TABS.includes(tab.key))
+            .map((tab) => (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                asChild
+                className="w-fit flex-none px-1 py-3"
+              >
+                <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+                  {tab.label}
+                </Link>
+              </TabsTrigger>
+            ))}
           <MembersLaunchLink projectId={projectId} />
-          {tabs.filter((tab) => TRAILING_TABS.includes(tab.key)).map((tab) => (
-            <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
-              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                {tab.label}
-              </Link>
-            </TabsTrigger>
-          ))}
+          {tabs
+            .filter((tab) => TRAILING_TABS.includes(tab.key))
+            .map((tab) => (
+              <TabsTrigger
+                key={tab.key}
+                value={tab.key}
+                asChild
+                className="w-fit flex-none px-1 py-3"
+              >
+                <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+                  {tab.label}
+                </Link>
+              </TabsTrigger>
+            ))}
         </TabsList>
       </Tabs>
     </div>

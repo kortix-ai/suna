@@ -29,7 +29,13 @@
  * 2026-08-19). The tab bar is text-only anyway (Marko, 2026-08-19: eight mixed
  * 16px glyphs in one row read as clutter); the sidebar Customize row and the
  * index cards keep their own icons in their own client files.
+ *
+ * `import type` is the ONLY import allowed for the same reason — a type
+ * annotation is erased at compile time, so `FeatureFlagKey` below adds no
+ * module-load side effect and the server-component rule above still holds.
  */
+import type { FeatureFlagKey } from '@kortix/sdk';
+
 export interface CapabilityTab {
   key:
     | 'agent'
@@ -37,9 +43,21 @@ export interface CapabilityTab {
     | 'skills'
     | 'triggers'
     | 'models'
+    | 'marketplace'
     | 'secrets'
     | 'config';
   label: string;
+  /**
+   * When set, the tab exists only while this per-project feature flag is on.
+   * Fail-closed: loading counts as off, so an unresolved flag hides the tab
+   * rather than flashing one that 403s on click.
+   *
+   * A flag gate is NOT the same gate as the IAM leaf in `TAB_PREFERENCE`. The
+   * leaf answers "may this member see it"; the flag answers "does this project
+   * have the surface at all". Both must pass, and they fail for different
+   * reasons, so they stay two fields.
+   */
+  flag?: FeatureFlagKey;
 }
 
 /**
@@ -64,6 +82,12 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'triggers', label: 'Triggers' },
+  // Marketplace installs the four tabs above it — a subproject delivers agents,
+  // skills, connectors and triggers in one commit — so it reads as the last of
+  // the "what this project can do" group, ahead of the Secrets/Settings pair.
+  // Not first: `CAPABILITY_TABS[0]` is the landing tab, and landing on a store
+  // would answer a question nobody asked.
+  { key: 'marketplace', label: 'Marketplace', flag: 'subprojects' },
   { key: 'secrets', label: 'Secrets' },
   { key: 'config', label: 'Settings' },
 ];

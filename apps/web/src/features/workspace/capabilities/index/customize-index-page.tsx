@@ -10,6 +10,7 @@ import {
   LockKeyIcon as Lock,
   PlugIcon as Plug,
   GearSixIcon as Settings,
+  StorefrontIcon as Storefront,
   type Icon,
 } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
@@ -24,6 +25,7 @@ import {
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
   CAPABILITY_TAB_GATE_ACTIONS,
+  useCapabilityTabFlags,
   visibleCapabilityTabs,
 } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { useProjectCans } from '@/lib/use-project-can';
@@ -49,8 +51,10 @@ import { cn } from '@/lib/utils';
  * row clickable, with the number and the arrow doing the work a card's border
  * used to do.
  *
- *  - **The number** (`01`…`07`) is mono and tabular. It gives the set a spine
+ *  - **The number** (`01`…`0n`) is mono and tabular. It gives the set a spine
  *    and tells you how many decisions there are before you start reading them.
+ *    It counts the VISIBLE bands, so a caller who cannot open Secrets, or whose
+ *    project has `subprojects` off, still reads a gapless run.
  *  - **The arrow** slides in from -4px on hover and focus. It is the only
  *    moving part, so "this row is the one" is unambiguous.
  *  - **The tile** tints to `bg-primary/[0.08]` — the system's selection fill,
@@ -93,6 +97,15 @@ const CARD_COPY: Record<CapabilityTab['key'], { icon: Icon; description: string 
     icon: Boxes,
     description: 'Which providers and models this project can use.',
   },
+  // Says what a subproject IS, because "marketplace" alone does not: the word
+  // has to survive next to Connectors, which is also a catalogue of things you
+  // add. What separates them is scope — a connector grants one app, a
+  // subproject installs a whole working setup in one commit.
+  marketplace: {
+    icon: Storefront,
+    description:
+      'Install a ready-made setup — its agents, skills, connectors and triggers — from an open-source repo.',
+  },
   secrets: {
     icon: KeyRound,
     description: 'Store encrypted values and control where each value can be used.',
@@ -113,7 +126,7 @@ function DotGrid() {
     <div
       aria-hidden
       className={cn(
-        'pointer-events-none absolute inset-x-0 top-0 h-56 select-none opacity-70',
+        'pointer-events-none absolute inset-x-0 top-0 h-56 opacity-70 select-none',
         '[background-image:radial-gradient(circle_at_center,var(--color-border)_1px,transparent_1px)]',
         '[background-size:22px_22px]',
         '[mask-image:radial-gradient(ellipse_75%_100%_at_50%_0%,#000_0%,transparent_72%)]',
@@ -133,7 +146,12 @@ export function CustomizeIndexPage({ projectId }: { projectId: string }) {
   // three leaves they DO hold (Models, Agents, Triggers) on a page they cannot
   // use, reachable by URL.
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const visible = visibleCapabilityTabs(caps);
+  // Same flags the bar reads, from the same hook, so a card here and a tab
+  // there can never disagree about whether a flagged surface exists. The
+  // `useFeatureFlag` cache is shared with the bar above this page, so this
+  // costs no extra request.
+  const flags = useCapabilityTabFlags(projectId);
+  const visible = visibleCapabilityTabs(caps, flags);
 
   const cards = CAPABILITY_TABS.filter((tab) => visible.includes(tab)).map((tab) => ({
     tab,
@@ -189,8 +207,8 @@ export function CustomizeIndexPage({ projectId }: { projectId: string }) {
                   key={tab.key}
                   initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  /* 45ms, not the polish skill's ~100ms: seven rows at 100ms
-                     is a 700ms wait before the last option exists. At 45 the
+                  /* 45ms, not the polish skill's ~100ms: eight rows at 100ms
+                     is an 800ms wait before the last option exists. At 45 the
                      set lands as one sweep and every row is pickable in under
                      half a second. */
                   transition={{

@@ -38,7 +38,11 @@ import {
   getSubprojectFiles,
   getSubprojectManifest,
 } from '../subproject-store';
-import { subprojectTriggerActivation, extractSubprojects, setSubprojectTriggersEnabled } from '../subprojects';
+import {
+  subprojectTriggerActivation,
+  extractSubprojects,
+  setSubprojectTriggersEnabled,
+} from '../subprojects';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { readManifestFromRepo } from '../git/files';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -236,6 +240,30 @@ projectsApp.openapi(
       );
     }
 
+    // `kortix.yaml` IS the subproject: it declares the agents, skills,
+    // connectors and triggers the install merges. So it is a REQUIREMENT here,
+    // not a field with a fallback. The `?? {}` this replaced would start a real
+    // session, hand the agent an empty manifest, and report success for an
+    // install that merged nothing.
+    //
+    // The crawl already refuses a source with no manifest
+    // (`manifest_not_found`) and one that declares nothing
+    // (`manifest_invalid`), both 400, so an `active` row always carries one.
+    // This gate covers what the crawl cannot: the row being deleted between
+    // the read above and this one, and any future writer that skips the
+    // column — it is `jsonb DEFAULT '{}' NOT NULL`, so a missed write reads
+    // back as `{}` rather than NULL and no type would catch it.
+    const subprojectManifest = await getSubprojectManifest(subprojectId);
+    if (!subprojectManifest || Object.keys(subprojectManifest).length === 0) {
+      return c.json(
+        {
+          error: `"${subproject.title}" has no kortix.yaml — a subproject must declare one before it can be installed`,
+          code: 'manifest_not_found',
+        },
+        400,
+      );
+    }
+
     const project = await loadGitProject(loaded);
     const subject: SubprojectInstallSubject = {
       slug: subproject.slug,
@@ -253,7 +281,8 @@ projectsApp.openapi(
       files: subproject.source_kind === 'upload' ? await getSubprojectFiles(subprojectId) : [],
       // The cached manifest, so the agent reads one authoritative copy rather
       // than fetching and possibly disagreeing with the card it was shown.
-      manifest: (await getSubprojectManifest(subprojectId)) ?? {},
+      // Non-empty by the gate above.
+      manifest: subprojectManifest,
       agents: (subproject.agents as Array<{ name: string }>) ?? [],
       triggers: (subproject.triggers as Array<{ slug: string }>) ?? [],
       connectors: (subproject.connectors as Array<{ slug: string }>) ?? [],
@@ -343,7 +372,9 @@ projectsApp.openapi(
     // The manifest is the source of truth for what is installed — not
     // `project_subprojects`, which is a projection that a stale read could lag.
     const manifest = await readManifest(project).catch(() => null);
-    const installed = manifest ? extractSubprojects(manifest).specs.find((s) => s.slug === slug) : null;
+    const installed = manifest
+      ? extractSubprojects(manifest).specs.find((s) => s.slug === slug)
+      : null;
     if (!installed) {
       return c.json({ error: `No subproject "${slug}" is installed in this project` }, 404);
     }
@@ -610,7 +641,11 @@ projectsApp.openapi(
       (manifest) => {
         const installed = extractSubprojects(manifest).specs.find((entry) => entry.slug === slug);
         if (!installed) {
-          return { ok: false, error: `No subproject "${slug}" is installed in this project`, status: 404 };
+          return {
+            ok: false,
+            error: `No subproject "${slug}" is installed in this project`,
+            status: 404,
+          };
         }
         installedTitle = installed.title;
         const applied = setSubprojectTriggersEnabled(manifest, slug, enabled);

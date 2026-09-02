@@ -3,13 +3,14 @@
 import { ArrowRightIcon } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
-import { useSubprojects, useProjectSubprojects } from '@kortix/sdk/react';
+import { useProjectSubprojects, useSubprojects } from '@kortix/sdk/react';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { errorToast } from '@/components/ui/toast';
 import { AuthorSubprojectModal } from './author-subproject-modal';
-import { SubprojectBuildCard, SubprojectCard } from './subprojects-card';
 import { SubprojectInstallModal } from './install-modal';
+import { subprojectsHref } from './subproject-runs';
+import { SubprojectBuildCard, SubprojectCard } from './subprojects-card';
 
 /**
  * The project-home subprojects preview — the installable card grid, plus the dashed
@@ -45,10 +46,10 @@ export function SubprojectsHomePreview({ projectId }: { projectId: string }) {
     [installedQuery.data],
   );
   const open = subprojects.find((subproject) => subproject.subproject_id === openId) ?? null;
-  const storeHref = `/projects/${projectId}/subprojects`;
+  const storeHref = subprojectsHref(projectId);
 
   // Nothing to install and nothing loaded — the panel would be a heading over
-  // one dashed card. The store page is still one click away from the sidebar.
+  // one dashed card. The store is still reachable, at Customize → Marketplace.
   if (subprojects.length === 0) return null;
 
   return (

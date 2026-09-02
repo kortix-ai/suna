@@ -1,5 +1,7 @@
 import type { SubprojectRun, SubprojectRunStats, SubprojectRunStatus } from '@kortix/sdk';
 
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+
 /**
  * Subproject-run presentation helpers.
  *
@@ -40,7 +42,8 @@ const STATUS_LABELS: Record<SubprojectRunStatus, string> = {
   skipped: 'Skipped',
 };
 
-export const subprojectRunStatusLabel = (status: SubprojectRunStatus): string => STATUS_LABELS[status];
+export const subprojectRunStatusLabel = (status: SubprojectRunStatus): string =>
+  STATUS_LABELS[status];
 
 /** The run a strip or a row is anchored on. Newest first, as the API returns. */
 export const latestRun = (runs: readonly SubprojectRun[]): SubprojectRun | null => runs[0] ?? null;
@@ -58,7 +61,9 @@ export function subprojectRunStrip(runs: readonly SubprojectRun[], limit: number
 }
 
 /** Group a flat run list by subproject, preserving the API's newest-first order. */
-export function groupRunsBySubproject(runs: readonly SubprojectRun[]): Map<string, SubprojectRun[]> {
+export function groupRunsBySubproject(
+  runs: readonly SubprojectRun[],
+): Map<string, SubprojectRun[]> {
   const bySubproject = new Map<string, SubprojectRun[]>();
   for (const run of runs) {
     const existing = bySubproject.get(run.subproject_slug);
@@ -140,5 +145,26 @@ export const subprojectReportHref = (projectId: string, slug: string): string =>
 export const subprojectReportsHref = (projectId: string): string =>
   `/projects/${projectId}/subprojects/runs`;
 
-/** The store. */
-export const subprojectsHref = (projectId: string): string => `/projects/${projectId}/subprojects`;
+/**
+ * The store — the **Marketplace** capability tab, not `/subprojects`.
+ *
+ * The store moved under Customize (`CAPABILITY_TABS`, key `marketplace`) so it
+ * sits beside Models / Connectors / Agents / Skills / Triggers instead of
+ * carrying its own sidebar row. `/projects/<id>/subprojects` still resolves —
+ * it is a server redirect to this href — but nothing in the app should link at
+ * it, or a click costs a redirect hop it does not need.
+ *
+ * Every link to the store goes through this function. Two call sites hand-built
+ * the URL before the move (`subprojects-home-preview.tsx`,
+ * `subproject-reports-view.tsx`) and both silently kept pointing at the old
+ * segment; they call this now. Keep it that way — the next move is then one
+ * line, not a grep.
+ *
+ * Built by `capabilityTabHref`, not by interpolation, for the same reason
+ * `channelsHref` is: the key is typed as `CapabilityTab['key']`, so renaming or
+ * dropping the tab fails THIS line at compile time instead of leaving a link to
+ * a 404. That import is type-safe for a server component — `capability-tab-routes`
+ * is pure data with no icon import, which is why it may be imported here at all.
+ */
+export const subprojectsHref = (projectId: string): string =>
+  capabilityTabHref(projectId, 'marketplace');
