@@ -10,6 +10,7 @@ type Config = {
 let databaseConfig: Config;
 let edgeConfig: Config | null;
 let databaseReadFails = false;
+let edgeReadFails = false;
 let events: string[] = [];
 
 mock.module('@kortix/sdk', () => ({
@@ -29,6 +30,7 @@ mock.module('@vercel/edge-config', () => ({
   createClient: () => ({
     get: async (_key: string, options?: { consistentRead?: boolean }) => {
       events.push(options?.consistentRead ? 'edge-read-consistent' : 'edge-read');
+      if (edgeReadFails) throw new Error('Edge Config unavailable');
       return edgeConfig;
     },
   }),
@@ -39,8 +41,12 @@ process.env.EDGE_CONFIG = 'https://edge-config.example.test?token=redacted';
 process.env.EDGE_CONFIG_ID = 'ecfg_test';
 process.env.VERCEL_API_TOKEN = 'vercel-test-token';
 
-const { getMaintenanceConfig, setMaintenanceConfig, __resetMaintenanceCacheForTests } =
-  await import('./maintenance-store');
+const {
+  getMaintenanceConfig,
+  getEdgeMaintenanceConfig,
+  setMaintenanceConfig,
+  __resetMaintenanceCacheForTests,
+} = await import('./maintenance-store');
 
 beforeEach(() => {
   __resetMaintenanceCacheForTests();
@@ -57,6 +63,7 @@ beforeEach(() => {
     updatedAt: 'edge-old',
   };
   databaseReadFails = false;
+  edgeReadFails = false;
   events = [];
   globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     events.push('edge-write');
@@ -164,5 +171,29 @@ describe('maintenance store', () => {
     await getMaintenanceConfig();
 
     expect(events).toContain('database-read');
+  });
+
+  test('getEdgeMaintenanceConfig returns the persisted Edge Config value', async () => {
+    const config = await getEdgeMaintenanceConfig();
+
+    expect(config).toEqual(edgeConfig);
+  });
+
+  test('getEdgeMaintenanceConfig fails open when Edge Config is empty', async () => {
+    edgeConfig = null;
+
+    const config = await getEdgeMaintenanceConfig();
+
+    // Fail open: an empty Edge Config must not lock the edge down. Only an
+    // explicitly persisted blocking level blocks the edge write gate.
+    expect(config.level).toBe('none');
+  });
+
+  test('getEdgeMaintenanceConfig fails open when the Edge Config read throws', async () => {
+    edgeReadFails = true;
+
+    const config = await getEdgeMaintenanceConfig();
+
+    expect(config.level).toBe('none');
   });
 });
