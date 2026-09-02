@@ -74,6 +74,32 @@ export function normalizeFilePath(raw: string): PathResult {
   return { ok: true, path };
 }
 
+/**
+ * Names that would un-bound the request deadline if used.
+ *
+ * A filesystem name is CALLER-CHOSEN and lands in the URL path
+ * (`/filesystems/<name>/files/content`), and `middleware/request-deadline.ts`
+ * matches its exemptions with `path.includes()`. So a filesystem named `start`
+ * produces a path containing `/start` and every request to it becomes exempt
+ * from the 25 s deadline — a caller-controlled way to remove a guard nobody
+ * meant to remove. Refusing a handful of names is cheaper than widening a
+ * shared middleware, and costs a user almost nothing.
+ *
+ * `filesystem-reserved-names.test.ts` fails if a new single-segment exemption
+ * is added to that middleware without appearing here.
+ */
+export const RESERVED_FILESYSTEM_NAMES = new Set([
+  'turn-question',
+  'provision-stream',
+  'provision',
+  'start',
+  'commit-push',
+  'snapshots',
+  'suna-migration',
+  'legacy-migration',
+  'oauth',
+]);
+
 /** Filesystem names are addressed in URLs and by agents, so keep them plain. */
 export function normalizeFilesystemName(raw: string): PathResult {
   if (typeof raw !== 'string') return { ok: false, reason: 'name must be a string' };
@@ -85,6 +111,9 @@ export function normalizeFilesystemName(raw: string): PathResult {
       ok: false,
       reason: 'name must start alphanumeric and contain only letters, digits, dot, dash, underscore',
     };
+  }
+  if (RESERVED_FILESYSTEM_NAMES.has(name.toLowerCase())) {
+    return { ok: false, reason: `"${name}" is reserved and cannot be a filesystem name` };
   }
   return { ok: true, path: name };
 }

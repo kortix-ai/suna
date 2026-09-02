@@ -215,6 +215,48 @@ projectsApp.openapi(
  */
 const filePath = (c: any): string => String(c.req.query('path') ?? '');
 
+/**
+ * Read a request body, aborting the moment it exceeds `limit`.
+ *
+ * The counter is the only guard: this route has no ambient memory ceiling to
+ * fall back on, so reading first and measuring second is how one request OOMs
+ * the shared pod for every tenant.
+ */
+async function readBodyAtMost(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<Uint8Array> {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      total += value.byteLength;
+      if (total > limit) throw new Error('body too large');
+      // COPY: the reader may reuse the backing ArrayBuffer.
+      parts.push(new Uint8Array(value));
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      // already gone
+    }
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.byteLength;
+  }
+  return out;
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'put',
@@ -240,17 +282,24 @@ projectsApp.openapi(
     const fs = await findFilesystem(projectId, c.req.param('name'));
     if (!fs) return c.json({ error: 'filesystem not found' }, 404);
 
-    // Refuse on the DECLARED length before reading a byte. `arrayBuffer()`
-    // runs to completion first, so checking only afterwards means an oversized
-    // (or chunked, unbounded) upload is already resident in the API process —
-    // and this runtime applies no ambient body ceiling of its own.
+    // Refuse on the DECLARED length first — cheapest rejection when it is there.
     const declared = Number(c.req.header('content-length') ?? '');
     if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) {
       return c.json({ error: `file exceeds the ${MAX_FILE_BYTES} byte limit` }, 413);
     }
-    const buf = new Uint8Array(await c.req.arrayBuffer());
-    // A chunked request declares no length, so the read is still bounded here.
-    if (buf.byteLength > MAX_FILE_BYTES) {
+    // Then COUNT while reading, never `arrayBuffer()`. A chunked request
+    // declares no length, so an oversized body would otherwise be fully
+    // resident before any check ran — and the image that ships pins
+    // `BUN_VERSION=1.2` (apps/api/Dockerfile), where Bun applies NO
+    // maxRequestBodySize to a chunked body. Reproduced on bun 1.2.23: a
+    // 1600 MiB chunked PUT in a 2 GB cgroup killed the process, while the same
+    // probe on a laptop's bun 1.3.14 answered 413 — the protection exists in
+    // dev and not in production. Same counting-reader shape as
+    // `readAtMost` in routes/secret-relay.ts, for the same reason.
+    let buf: Uint8Array;
+    try {
+      buf = await readBodyAtMost(c.req.raw.body, MAX_FILE_BYTES);
+    } catch {
       return c.json({ error: `file exceeds the ${MAX_FILE_BYTES} byte limit` }, 413);
     }
 
