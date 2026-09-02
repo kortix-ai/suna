@@ -95,6 +95,41 @@ trap 'code=$?; finish "$code"' EXIT
 printf 'checkout\n' > "$PHASE"
 test -d "$ROOT/.git"
 git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
+
+# Authenticate the fetch when we were given a token.
+#
+# GitHub answers this sandbox's ref advertisement anonymously and then REFUSES
+# the fetch that follows. Measured 2026-09-02 from the pi.kortix.com sandbox:
+# GET /info/refs?service=git-upload-pack returned 200 ten times out of ten while
+# POST /git-upload-pack returned 401 with www-authenticate: Basic realm="GitHub",
+# and \`git ls-remote\` failed 10 times out of 10. The repository is PUBLIC —
+# GitHub throttles unauthenticated fetches from that datacenter range, and it
+# does it on the expensive request only, which is why a plain curl of the GET
+# looks perfectly healthy. The checkout phase exited 128 and every deploy went
+# red while pi.kortix.com sat on an older commit.
+#
+# The helper is written as its own FILE rather than inlined into
+# \`git config credential.helper "!f() { ... }"\`. That inline form is a quoting
+# trap: the nested double quotes collapse, the shell expands the \$(cat ...) at
+# config time, and git stores the literal token in .git/config — verified by
+# doing exactly that. A file keeps the token out of .git/config, out of this
+# script (which lands in the sandbox mode 0755), and out of the remote URL.
+#
+# No token => anonymous, exactly as before. Most sandboxes are not throttled and
+# a preview must not start REQUIRING a credential it never needed.
+if [ -s "$STATE/.checkout-token" ]; then
+  cat > "$STATE/.checkout-credential-helper" <<'KORTIX_CRED_HELPER'
+#!/bin/sh
+# Only the "get" operation returns anything; store/erase are no-ops.
+[ "$1" = get ] || exit 0
+echo username=x-access-token
+echo "password=$(cat /workspace/kortix-preview/.checkout-token)"
+KORTIX_CRED_HELPER
+  chmod 0700 "$STATE/.checkout-credential-helper"
+  git -C "$ROOT" config credential.helper "$STATE/.checkout-credential-helper"
+else
+  git -C "$ROOT" config --unset-all credential.helper 2>/dev/null || true
+fi
 git -C "$ROOT" fetch --depth=1 origin ${shellQuote(input.ref)}
 git -C "$ROOT" checkout --detach --force FETCH_HEAD
 git -C "$ROOT" clean -ffd

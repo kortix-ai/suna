@@ -135,6 +135,11 @@ if (action === 'deploy') {
     root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
     lockfileHash: required('PREVIEW_LOCKFILE_SHA256'),
     secrets: runtimeSecrets(),
+    // The runner already holds a token good for reading this repo; the sandbox
+    // never got one, and GitHub throttles unauthenticated fetches from
+    // datacenter ranges by 401-ing the upload-pack POST. Optional by design:
+    // absent, the fetch stays anonymous.
+    checkoutToken: value('GH_TOKEN') || value('GITHUB_TOKEN'),
     platinum,
     daytona,
   };
