@@ -543,6 +543,16 @@ export async function startWorker(cfg = configFromEnv()) {
   // `messageID`): the worker MUST reuse it so the transcript, the API's inbox
   // placement, and the turn oracle all key on the same id.
   const publishUserMessage = (text: string, explicitId?: string): string => {
+    // Start the environment NOW, in parallel with the model's first token.
+    // Measured on pi.kortix.com: first token 4.25s, first `bash` on that same
+    // cold session 37.5s — the environment's cold start did not go away, it
+    // moved into the middle of the first answer. Kicking it here overlaps it
+    // with the model's own thinking; a session nobody prompts still provisions
+    // nothing, which is the cost argument the split is partly sold on.
+    // Fire-and-forget: a failed prewarm is the tool call's problem to report,
+    // not the prompt's.
+    if (lazy) lazy.prewarm();
+
     // A new prompt COMMITS a staged rewind: this is the new path, and the
     // branch the user rewound past is now unreachable. The SDK's `rewind()`
     // documents exactly this ("The next prompt commits the new path"), and

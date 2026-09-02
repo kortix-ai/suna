@@ -118,6 +118,30 @@ export class LazyKortixEnv {
     return body;
   }
 
+  /**
+   * Start provisioning now, without waiting for it.
+   *
+   * Called when a PROMPT arrives, not when the session is created and not when
+   * the first tool runs. Measured on pi.kortix.com: first token 4.25s, first
+   * `bash` on that same cold session 37.5s — the split moved the environment's
+   * cold start out of session setup and into the middle of the first answer.
+   * A prompt means a turn is happening, so provisioning overlaps the model's
+   * own thinking instead of queueing behind it, while a session nobody ever
+   * prompts still provisions nothing.
+   *
+   * Fire-and-forget by contract: a failed prewarm is swallowed here, because
+   * the tool call that actually needs the environment will attach again and
+   * report the failure as its own Result. Surfacing it twice would turn one
+   * provider hiccup into an error the user sees before they asked for
+   * anything.
+   */
+  prewarm(): void {
+    if (this.inner || this.attaching) return;
+    void this.attach().catch(() => {
+      // Deliberately ignored — see above.
+    });
+  }
+
   private async attach(): Promise<KortixExecutionEnv> {
     if (this.inner) return this.inner;
     if (this.attaching) return this.attaching;
