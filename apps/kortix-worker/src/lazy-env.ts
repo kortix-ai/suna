@@ -17,6 +17,7 @@
  */
 import { createHmac } from 'node:crypto';
 import { KortixExecutionEnv } from './kortix-env.ts';
+import { isEnvironmentUnreachable } from './env-reattach.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
@@ -210,11 +211,46 @@ export class LazyKortixEnv {
     }
   }
 
-  /** Delegate an operation, converting attach failures into Results. */
+  /**
+   * Forget the environment we are attached to.
+   *
+   * Nothing else ever cleared `inner`, which made the client minted on the
+   * first tool call the client used for the worker's whole life — pinned to one
+   * provider-edge URL and one external_id. That was survivable while nothing
+   * stopped an environment out from under a live worker; the sweeps on this
+   * branch now do exactly that (idle-stop at 24h, worker-stopped, and a removed
+   * box reprovisioned under a NEW id).
+   */
+  private discardEnvironment(): void {
+    this.inner = null;
+    this.attaching = null;
+    this.externalId = null;
+  }
+
+  /**
+   * Delegate an operation, converting attach failures into Results.
+   *
+   * P2.5: *"A live worker with a reaped environment must be a DEFINED state,
+   * not a DISCOVERED one — including what the next tool call does when it finds
+   * one."* This is that definition. When an operation comes back saying nothing
+   * on the far side answered, the environment is discarded and re-attached
+   * ONCE, and the operation is retried against the new one. `ensure` resumes a
+   * stopped box or rebuilds a removed one, so the recovery is the control
+   * plane's ordinary path — the worker's only job is to ask again.
+   *
+   * Exactly one retry. `attach()` already retries to its own deadline, so
+   * looping here would multiply that deadline by every tool call in the turn
+   * and tell the model nothing it did not already know.
+   */
   private async op<T>(run: (env: KortixExecutionEnv) => Promise<Result<T, unknown>>): Promise<Result<T, unknown>> {
     try {
-      const env = await this.attach();
-      return await run(env);
+      const first = await run(await this.attach());
+      if (first.ok || !isEnvironmentUnreachable(first.error)) return first;
+      // Nothing answered. The box may have been stopped, deleted, or rebuilt
+      // under a new id since we attached — all three are states the control
+      // plane creates deliberately and can serve us out of.
+      this.discardEnvironment();
+      return await run(await this.attach());
     } catch (e) {
       return err(e instanceof Error ? e : new EnvUnavailableError(String(e)));
     }
