@@ -126,6 +126,29 @@ PREVIEW_SECRETS_FILE="$SECRETS" \
 bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
+
+# Reclaim BEFORE pulling, not only after.
+#
+# There is a prune at the end of this script, and it is the right steady-state
+# one: it runs once the new stack is proven healthy, when the running
+# containers pin exactly the images worth keeping. But it is gated on that
+# health check, and a full disk is precisely the condition under which the
+# stack never becomes healthy — supabase-db crash-loops on \`could not write
+# lock file "postmaster.pid": No space left on device\`, preview-edge never
+# starts, and the deploy dies before reaching the cleanup that would have
+# fixed it. The cleanup sat behind the failure it was meant to prevent.
+#
+# So: a second prune, ahead of a ~3 GB pull, gated on the disk actually being
+# tight. \`image prune -af\` spares any image a container references — running,
+# created or exited — so the stack still standing here keeps everything it
+# needs, and this only reclaims what previous deploys superseded.
+used="$(df --output=pcent / | tail -1 | tr -dc '0-9')"
+echo "disk before pull: $used%" >&2
+if [ "\${used:-0}" -ge 80 ]; then
+  docker image prune -af >/dev/null 2>&1 || true
+  docker builder prune -af >/dev/null 2>&1 || true
+  df -h / | tail -1 >&2
+fi
 ${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
 
 # Restart anything RUNNING-BUT-UNHEALTHY before waiting on it.
