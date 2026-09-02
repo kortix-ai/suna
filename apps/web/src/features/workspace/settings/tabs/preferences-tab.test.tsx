@@ -56,6 +56,16 @@ describe('PreferencesTabView', () => {
     expect(out).toContain('Ctrl+K');
   });
 
+  test('lists the shortcut that opens this very panel', () => {
+    // Mod+, had no keycap anywhere in the app after the sidebar Settings row
+    // was removed — the handler worked and nothing said so. This list is the
+    // one place that documents every shortcut, so it is the one that must
+    // name it. `modifierLabel` defaults to `Ctrl` in the pure view.
+    const out = html();
+    expect(out).toContain('>Settings<');
+    expect(out).toContain('Ctrl+,');
+  });
+
   test('every locale the app ships is offered by default', () => {
     // `SelectContent` portals its items and renders nothing statically, so the
     // list is asserted through the prop default rather than the markup.

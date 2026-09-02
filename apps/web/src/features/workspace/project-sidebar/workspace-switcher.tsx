@@ -45,6 +45,7 @@ import {
   DropdownMenuItem,
   DropdownMenuPortal,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -59,6 +60,7 @@ import {
 } from '@/components/ui/sidebar';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { cn } from '@/lib/utils';
@@ -221,6 +223,20 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
                 Settings
+                {/* The keycap sits on this row because this row is what the
+                    keystroke does — `useSettingsKeyboardShortcut` calls the
+                    same `openSettings()`. It is the only row in the app that
+                    opens the overlay, so it is the only honest place to
+                    advertise Mod+, (the old sidebar Settings row that carried
+                    it was removed on 2026-08-17, and the shortcut has been
+                    undiscoverable since). The symbol follows the platform;
+                    the handler accepts Cmd and Ctrl on all of them.
+
+                    `DropdownMenuShortcut` (plain muted text, `MENU_SHORTCUT`)
+                    rather than `<Kbd>` chips: this is a menu row, and that is
+                    the recipe every menu row in the design system uses for a
+                    trailing keystroke. */}
+                <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
               {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits

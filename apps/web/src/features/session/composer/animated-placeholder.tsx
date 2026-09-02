@@ -43,7 +43,7 @@ const FADE_SWAP = {
  *  - `/` and `@`      → editor/composer-editor.tsx suggestion extensions
  *  - ⌘K / Ctrl+K      → workspace/command-palette.tsx
  *  - Tab              → `cycleAgent` in composer.tsx
- *  - ⌘, / Ctrl+,      → `useSettingsKeyboardShortcut` (project-settings-nav.tsx)
+ *  - ⌘, / Ctrl+,      → `useSettingsKeyboardShortcut` (settings/use-settings-shortcut.ts)
  *  - Shift+Enter      → hard break in editor/extensions.ts
  *  - drag & drop      → `handleDropFiles` in composer.tsx
  *

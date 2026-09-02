@@ -36,6 +36,7 @@ import { ArrowLeftIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { isRailItemActive, railGroups } from './rail';
+import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { AppearanceTab } from './tabs/appearance-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
@@ -190,6 +191,11 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     [open, tab, membersTab],
   );
   const isMobile = useIsMobile();
+
+  // Mod+, lives with the panel, not with whatever row happens to link to it —
+  // binding it here is what makes the keystroke work on every surface that
+  // mounts this component, and impossible to advertise on one that doesn't.
+  useSettingsKeyboardShortcut();
 
   const detail = useQuery({
     queryKey: qk.project.detail(projectId ?? ''),

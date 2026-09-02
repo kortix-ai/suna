@@ -35,6 +35,7 @@ import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-he
 import { useLanguage } from '@/hooks/use-language';
 import { locales, type Locale } from '@/i18n/config';
 import { useUserPreferencesStore, type TabSwitchModifier } from '@/stores/user-preferences-store';
+import { SETTINGS_SHORTCUT_KEY } from '../settings-shortcut';
 import { SettingsTabHeader } from '../settings-tab-header';
 
 const LANGUAGE_NAMES: Record<Locale, string> = {
@@ -67,6 +68,13 @@ function shortcutList(modLabel: string): { label: string; keys: string }[] {
     { label: 'New session', keys: 'Ctrl+J' },
     { label: 'Command palette', keys: 'Ctrl+K' },
     { label: 'Switch workspace', keys: 'Ctrl+O' },
+    // The one shortcut that opens THIS panel, so a person reading the list is
+    // holding proof it works. `SETTINGS_SHORTCUT_KEY` rather than a literal
+    // comma: the handler and the row that prints it read the same constant
+    // (`settings/settings-shortcut.ts`), so the advertised key cannot drift
+    // from the handled one. Either modifier works — the label shows the one
+    // the reader picked above.
+    { label: 'Settings', keys: `${modLabel}+${SETTINGS_SHORTCUT_KEY}` },
     { label: 'Toggle left sidebar', keys: 'Ctrl+B' },
     { label: 'Toggle right sidebar', keys: 'Ctrl+Shift+B' },
     { label: 'Toggle session action panel', keys: `${modLabel}+I` },
