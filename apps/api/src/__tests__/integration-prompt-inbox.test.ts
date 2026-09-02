@@ -36,6 +36,7 @@ import {
   enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandForwarded,
+  promoteNextInboxRow,
   requeueForAdmission,
 } from '../projects/session-lifecycle/store';
 import { db } from '../shared/db';
@@ -48,7 +49,7 @@ const WIRE_ID = 'msg_0198f3a1b2c4AbCdEfGhIjKlMn';
 
 async function enqueue(
   clientMessageId: string,
-  overrides: { wireMessageId?: string; createdAt?: string } = {},
+  overrides: { wireMessageId?: string; createdAt?: string; clientSentAtMs?: number } = {},
 ): Promise<SessionLifecycleCommandRow> {
   const { row } = await enqueueContinueSessionCommand({
     source: 'ui',
@@ -60,6 +61,7 @@ async function enqueue(
     idempotencyKey: `prompt:${SESSION_ID}:${clientMessageId}`,
     clientMessageId,
     wireMessageId: overrides.wireMessageId ?? WIRE_ID,
+    clientSentAtMs: overrides.clientSentAtMs,
     parts: [{ type: 'text', text: 'say hi' }],
     overrides: { agent: 'build', model: null, variant: null, directory: '/workspace' },
   });
@@ -160,6 +162,42 @@ describe('the inbox row', () => {
     // And nothing was overwritten: the first submission still owns the row.
     expect((second.row.payload as Record<string, unknown>).text).toBe('say hi');
   });
+
+  test('one send order governs listing, admission, and terminal promotion', async () => {
+    const sentAt = Date.now();
+    // The first Enter loses the HTTP/insert race. This is the screenshot's
+    // exact shape: the first optimistic bubble is correct, but a refresh reads
+    // the rows back in the opposite database creation order.
+    const first = await enqueue('q_interstellar', {
+      wireMessageId: 'msg_000000000001FirstPromptWire',
+      clientSentAtMs: sentAt,
+      createdAt: '2026-08-02T00:00:00.000Z',
+    });
+    const second = await enqueue('q_raju', {
+      wireMessageId: 'msg_000000000002SecondPromptWir',
+      clientSentAtMs: sentAt + 1,
+      createdAt: '2026-08-01T00:00:00.000Z',
+    });
+    await setBox('stopped', {});
+
+    expect((await listInboxPrompts(SESSION_ID, 200)).map((row) => row.commandId)).toEqual([
+      first.commandId,
+      second.commandId,
+    ]);
+    expect(await admitInboxPrompt(first)).toEqual({ admit: true });
+    expect(await admitInboxPrompt(second)).toEqual({
+      admit: false,
+      reason: 'older_prompt_pending',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+
+    await db.execute(sql`
+      UPDATE kortix.session_lifecycle_commands
+         SET available_at = now() + interval '5 minutes',
+             result = '{"admission_reason":"turn_active"}'::jsonb
+       WHERE command_id IN (${first.commandId}::uuid, ${second.commandId}::uuid)`);
+    expect(await promoteNextInboxRow(SESSION_ID)).toBe(first.idempotencyKey);
+  });
 });
 
 describe('requeueForAdmission against real Postgres', () => {
@@ -250,14 +288,17 @@ describe('admitInboxPrompt against real rows', () => {
     },
   };
 
-  test('a live turn on a RUNNING box no longer holds a prompt back', async () => {
-    // The turn-active refusal is deleted. OpenCode persists a mid-turn prompt
-    // and runs it in arrival order after the turn in flight ends
-    // (`integration-inbox-midturn-forward.test.ts`), so the row goes straight
-    // out instead of costing the user up to 10s of dead air.
+  test('a live turn on a RUNNING box holds the prompt until terminal promotion', async () => {
+    // One completed turn promotes exactly one queued prompt. Forwarding into
+    // the live turn makes runtime arrival order authoritative and lets two
+    // user sends share one answer.
     const row = await enqueue('q_admit');
     await setBox('active', turn);
-    expect(await admitInboxPrompt(row)).toEqual({ admit: true });
+    expect(await admitInboxPrompt(row)).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
 
     // The authority itself is unchanged — this is a change to ADMISSION only.
     // `GET .../turn` and `settleOrphanedSandboxTurns` read the same predicate
@@ -577,7 +618,14 @@ describe('holding the queue — what the Stop button now writes', () => {
 
     const after = await readRow(held.commandId);
     expect(after.result).toEqual({});
-    const claimed = await claimDueLifecycleCommands({ workerId: 'w-release', limit: 10 });
+    // Target this row. A developer database can contain unrelated due commands,
+    // so a global ten-row claim does not prove whether this row became due.
+    if (!held.idempotencyKey) throw new Error('inbox row has no idempotency key');
+    const claimed = await claimDueLifecycleCommands({
+      workerId: 'w-release',
+      limit: 1,
+      idempotencyKey: held.idempotencyKey,
+    });
     expect(claimed.map((r) => r.commandId)).toContain(held.commandId);
   });
 

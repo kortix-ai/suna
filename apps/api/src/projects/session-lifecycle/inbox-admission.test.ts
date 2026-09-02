@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import type { SessionLifecycleCommandRow } from './store';
 import {
   INBOX_BACKOFF_FREE_REFUSALS,
   INBOX_ORDER_BACKOFF_MS,
@@ -8,6 +7,7 @@ import {
   admitInboxPrompt,
   sessionHoldsTurnAuthority,
 } from './inbox-admission';
+import type { SessionLifecycleCommandRow } from './store';
 
 const activeTurn = (token: string) => ({
   [token]: { token, state: 'active', opencodeSessionId: 'ses_1', messageId: 'msg_1', startedAtMs: 1 },
@@ -93,12 +93,12 @@ describe('admitInboxPrompt', () => {
     // ORDER is the one thing admission still enforces: OpenCode queues by
     // ARRIVAL, so two concurrent forwards of one session would put the user's
     // own messages on the wire out of the order they typed them.
-    const seen: Array<{ sessionId: string; before: Date; exceptCommandId: string }> = [];
+    const seen: Array<{ sessionId: string; row: SessionLifecycleCommandRow }> = [];
     const admission = await admitInboxPrompt(row(), {
       readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async (sessionId, before, exceptCommandId) => {
-        seen.push({ sessionId, before, exceptCommandId });
+      hasOlderPendingPrompt: async (sessionId, candidate) => {
+        seen.push({ sessionId, row: candidate });
         return true;
       },
     });
@@ -112,8 +112,7 @@ describe('admitInboxPrompt', () => {
     expect(seen).toEqual([
       {
         sessionId: 'sess-1',
-        before: new Date('2026-08-18T00:00:00.000Z'),
-        exceptCommandId: 'cmd-1',
+        row: row(),
       },
     ]);
   });
@@ -170,8 +169,8 @@ describe('admitInboxPrompt', () => {
   });
 
   test('the ordering backoff starts at 300ms and is capped at 2s — a refused row waits for the KICK, not the clock', async () => {
-    // A refused row does not poll out a cold boot any more: the moment its
-    // sibling lands, `promoteNextInboxRow` makes it due and drains it. This
+    // A refused row does not poll out a cold boot any more: the terminal relay
+    // calls `promoteNextInboxRow`, which makes it due and drains it. This
     // curve only covers the gap a lost kick would leave, so it stays cheap and
     // never grows into the 27s / 45s / 75s of dead air a 30s ceiling produced
     // for three quick messages behind ~1s deliveries (dev, 2026-08-18).

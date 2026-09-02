@@ -57,7 +57,6 @@ import {
   markCommandFailed,
   parkPromptForUnreachableRuntime,
   markCommandForwarded,
-  promoteNextInboxRow,
   markCommandQueued,
   markCommandSucceeded,
   requeueForAdmission,
@@ -76,6 +75,7 @@ import {
   sessionHoldsLiveTurn,
 } from './inbox-admission';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
+import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
 import {
   type PlacementTipMessage,
   boxClockSkewMs,
@@ -790,14 +790,7 @@ export async function drainSessionLifecycleQueue(
         }
         let j = i + 1;
         while (j < lane.length && isInboxRow(lane[j])) j += 1;
-        const sendOrder = (row: SessionLifecycleCommandRow): number => {
-          const at = (row.payload as { clientSentAtMs?: unknown } | null)?.clientSentAtMs;
-          // The sender tab's Enter instant when it was supplied: the POSTs of
-          // two surfaces race across the boot-shell crossfade, and row
-          // creation order is the race's outcome, not the user's.
-          return typeof at === 'number' ? at : row.createdAt.getTime();
-        };
-        const batch = lane.slice(i, j).sort((a, b) => sendOrder(a) - sendOrder(b));
+        const batch = lane.slice(i, j).sort(compareInboxSendOrder);
         i = j;
         // Claims mark every sibling `running`. Release the tail before the
         // head reaches admission, or `hasInFlightPrompt` sees that tail and
@@ -1267,7 +1260,7 @@ async function hasLaterForwardedSibling(row: SessionLifecycleCommandRow): Promis
           eq(sessionLifecycleCommands.sessionId, row.sessionId),
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
           sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
-          sql`${sessionLifecycleCommands.createdAt} > ${row.createdAt.toISOString()}::timestamptz`,
+          inboxFollowsRow(row),
           or(
             inArray(sessionLifecycleCommands.status, ['queued', 'running']),
             sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
@@ -1807,14 +1800,11 @@ export async function executeQueuedContinue(
       wireMessageId = replaced;
     }
     if (delivery === 'delivered') {
-      // CHAIN. This row is on the wire, so the session's next queued row is
-      // admissible NOW — do not leave it to the scheduler tick or to whatever
-      // `requeueForAdmission` backoff it accrued while waiting on this one.
-      // Fire-and-forget: the drain re-runs admission itself, so a kick that
-      // loses a race is a no-op, and a lost kick falls back to the tick.
-      void promoteNextInboxRow(row.sessionId)
-        .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
-        .catch(() => undefined);
+      // A successful POST starts a turn. The terminal relay owns promotion of
+      // the next row. Promoting here can claim that row while the current turn
+      // is still active, then requeue it after the terminal relay already
+      // checked the queue. That lost wake adds the admission backoff between
+      // prompts and can grow to two seconds.
       tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }

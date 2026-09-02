@@ -66,6 +66,7 @@ let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
+let promotionCalls: string[] = [];
 // Models the real database state after a drain claims same-session siblings:
 // every claimed row is `running` until the drain releases the tail.
 const simulatedInFlightCommands = new Set<string>();
@@ -161,7 +162,10 @@ mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
-  promoteNextInboxRow: async () => null,
+  promoteNextInboxRow: async (sessionId: string) => {
+    promotionCalls.push(sessionId);
+    return null;
+  },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
     simulatedInFlightCommands.delete(commandId);
@@ -294,6 +298,7 @@ beforeEach(() => {
   claimed = [];
   openDelayBySession = {};
   events = [];
+  promotionCalls = [];
   simulatedInFlightCommands.clear();
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
@@ -599,5 +604,12 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
+    // A successful POST starts a turn. The next prompt must wait for the
+    // terminal relay to promote it. Promoting here races that relay: it can
+    // claim the next row while the previous turn is still active, then requeue
+    // it after the terminal relay already looked for a queued row. The result
+    // is a backoff-sized pause between prompts.
+    await Bun.sleep(0);
+    expect(promotionCalls).toEqual([]);
   });
 });

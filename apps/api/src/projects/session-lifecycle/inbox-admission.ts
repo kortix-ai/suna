@@ -1,7 +1,8 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { inboxPrecedesRow } from './inbox-order';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
 /**
@@ -18,8 +19,8 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * they were typed.
  *
  * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
- * instant the blocking delivery lands (engine) or a turn ends (turn-stream),
- * `promoteNextInboxRow` makes the session's next row due and drains it. The
+ * instant a turn ends (turn-stream), `promoteNextInboxRow` makes the session's
+ * next row due and drains it. The
  * backoff below only covers the gap a lost kick would leave, so it stays cheap
  * and capped — 30s here compounded to 27s / 45s / 75s of dead air behind ~1s
  * deliveries (dev, 2026-08-18).
@@ -30,8 +31,8 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: the moment its sibling lands, `promoteNextInboxRow` (engine)
- * makes the session's next queued row due NOW and kicks a targeted drain, so
+ * boot any more: the terminal relay or reaper calls `promoteNextInboxRow` and
+ * makes the session's next queued row due NOW, then kicks a targeted drain. So
  * this backoff only ever covers the gap a lost kick would leave. 30s here was
  * the entire "queue does not send between turns" experience: three quick
  * messages compounded to 27s / 45s / 75s of dead air behind ~1s deliveries.
@@ -106,8 +107,7 @@ export interface InboxAdmissionDeps {
   ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
   hasOlderPendingPrompt: (
     sessionId: string,
-    before: Date,
-    exceptCommandId: string,
+    row: SessionLifecycleCommandRow,
   ) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
@@ -123,7 +123,7 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return box ?? null;
   },
-  async hasOlderPendingPrompt(sessionId, before, exceptCommandId) {
+  async hasOlderPendingPrompt(sessionId, row) {
     const [older] = await db
       .select({ commandId: sessionLifecycleCommands.commandId })
       .from(sessionLifecycleCommands)
@@ -136,12 +136,11 @@ const liveDeps: InboxAdmissionDeps = {
           // Counting it would wedge every prompt they send afterwards behind a
           // row that is, by construction, never due.
           sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
-          lt(sessionLifecycleCommands.createdAt, before),
-          // Explicitly not itself. `created_at < created_at` already excludes
-          // this row, but the caller's `before` comes from an in-memory copy of
-          // it — one that a concurrent writer can have moved — and a row that
-          // blocks on itself waits for ever.
-          ne(sessionLifecycleCommands.commandId, exceptCommandId),
+          inboxPrecedesRow(row),
+          // Explicitly not itself. The tuple predicate already excludes this
+          // row, but a row that blocks on itself waits for ever if a concurrent
+          // writer changes one of its ordering fields.
+          ne(sessionLifecycleCommands.commandId, row.commandId),
         ),
       )
       .limit(1);
@@ -200,7 +199,7 @@ export async function admitInboxPrompt(
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (
     !promoted &&
-    (await deps.hasOlderPendingPrompt(row.sessionId, row.createdAt, row.commandId))
+    (await deps.hasOlderPendingPrompt(row.sessionId, row))
   ) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }

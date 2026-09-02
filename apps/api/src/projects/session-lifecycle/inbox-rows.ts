@@ -1,6 +1,7 @@
 import { sessionLifecycleCommands } from '@kortix/db';
-import { and, asc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
+import { inboxOrderBy } from './inbox-order';
 import { type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
 
 /**
@@ -66,7 +67,7 @@ export async function listInboxPrompts(
         ),
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(limit);
 }
 
@@ -479,7 +480,7 @@ export async function claimDueSessionInboxSiblings(input: {
         // rows are ordered by the batch itself; held rows stay excluded.
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(input.limit ?? 20);
   const claimed: SessionLifecycleCommandRow[] = [];
   for (const row of rows) {
