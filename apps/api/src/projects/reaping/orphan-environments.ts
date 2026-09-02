@@ -25,7 +25,7 @@
  * sweeps decline it for reasons that are individually correct. This pass is the
  * one that reads the session.
  */
-import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionEnvironments } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
@@ -69,6 +69,23 @@ export const ENVIRONMENT_DELETE_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
  */
 export const DELETED_SESSION_GRACE_MS = 5 * 60 * 1000;
 
+/**
+ * How long a worker must have been parked before its environment follows.
+ *
+ * `restartSession` and a wake both move a session out of a terminal status;
+ * acting inside this window would stop the environment out from under a
+ * session that is coming straight back.
+ */
+export const WORKER_STOP_SETTLE_MS = 5 * 60 * 1000;
+
+/**
+ * The worker statuses that mean "this session is parked".
+ *
+ * Deliberately the same three `maintenance.ts` calls TERMINAL_SESSION_STATUSES.
+ * `queued`/`branching`/`provisioning`/`running` are all live.
+ */
+const PARKED_WORKER_STATUSES = new Set(['stopped', 'failed', 'completed']);
+
 export interface EnvironmentReapCandidate {
   sessionId: string;
   /** `metadata.deletedAt` on the session, if it is soft-deleted. */
@@ -76,6 +93,12 @@ export interface EnvironmentReapCandidate {
   /** True when no `project_sessions` row exists at all. */
   sessionMissing: boolean;
   lastUsedAt: Date | null;
+  /** `project_sessions.status` — the worker's state, not the environment's. */
+  workerStatus: string | null;
+  /** When that status last moved, for the settle window. */
+  workerUpdatedAt: Date | null;
+  /** `session_environments.status`, so an already-parked box is not re-stopped. */
+  environmentStatus: string | null;
 }
 
 /** What to do with one environment. */
@@ -85,7 +108,7 @@ export interface EnvironmentReapDecision {
   sessionId: string;
   action: EnvironmentReapAction;
   /** Why, for the log — a reaper that cannot explain itself cannot be trusted. */
-  reason: 'session-missing' | 'session-deleted' | 'idle-delete' | 'idle-stop';
+  reason: 'session-missing' | 'session-deleted' | 'worker-stopped' | 'idle-delete' | 'idle-stop';
 }
 
 /**
@@ -106,11 +129,13 @@ export function decideEnvironmentReaping(
     idleHorizonMs?: number;
     deleteHorizonMs?: number;
     deletedGraceMs?: number;
+    workerSettleMs?: number;
   },
 ): EnvironmentReapDecision[] {
   const idleHorizon = options?.idleHorizonMs ?? ENVIRONMENT_IDLE_HORIZON_MS;
   const deleteHorizon = options?.deleteHorizonMs ?? ENVIRONMENT_DELETE_HORIZON_MS;
   const deletedGrace = options?.deletedGraceMs ?? DELETED_SESSION_GRACE_MS;
+  const workerSettle = options?.workerSettleMs ?? WORKER_STOP_SETTLE_MS;
   const t = now.getTime();
   const out: EnvironmentReapDecision[] = [];
 
@@ -126,6 +151,26 @@ export function decideEnvironmentReaping(
       if (t - c.sessionDeletedAt.getTime() > deletedGrace) {
         out.push({ sessionId: c.sessionId, action: 'delete', reason: 'session-deleted' });
       }
+      continue;
+    }
+    // The worker is parked, so the environment has nothing left to serve.
+    //
+    // This is the tie-in for all THIRTEEN automatic stop paths at once. Six of
+    // them bypass `applyStoppedState`, and `stopSessionEnvironment` is called
+    // from only two places, both user-triggered — so there is no funnel to hook.
+    // What every durable park DOES share is a write to `project_sessions.status`
+    // in the same transaction, and this sweep already joins that table. Deriving
+    // the state cannot drift out of sync with a stop path nobody updated.
+    //
+    // Stop, never delete: a parked worker is an ordinary resumable state.
+    if (
+      c.workerStatus &&
+      PARKED_WORKER_STATUSES.has(c.workerStatus) &&
+      c.environmentStatus !== 'stopped' &&
+      c.workerUpdatedAt &&
+      t - c.workerUpdatedAt.getTime() > workerSettle
+    ) {
+      out.push({ sessionId: c.sessionId, action: 'stop', reason: 'worker-stopped' });
       continue;
     }
     // Live. A NULL lastUsedAt is "unknown", never "ancient" — reading it as
@@ -174,6 +219,8 @@ export async function reapOrphanEnvironments(options?: {
       lastUsedAt: sessionEnvironments.lastUsedAt,
       status: sessionEnvironments.status,
       sessionRowId: projectSessions.sessionId,
+      workerStatus: projectSessions.status,
+      workerUpdatedAt: projectSessions.updatedAt,
       deletedAt: sql<string | null>`${projectSessions.metadata}->>'deletedAt'`,
     })
     .from(sessionEnvironments)
@@ -182,6 +229,14 @@ export async function reapOrphanEnvironments(options?: {
       or(
         isNull(projectSessions.sessionId),
         sql`(${projectSessions.metadata}->>'deletedAt') is not null`,
+        // A parked worker qualifies regardless of how recently the environment
+        // was used — that is the whole point of the tie-in. Bounded by the
+        // environment not already being stopped, so a fleet of parked sessions
+        // does not re-enter this set every tick forever.
+        and(
+          inArray(projectSessions.status, ['stopped', 'failed', 'completed']),
+          ne(sessionEnvironments.status, 'stopped'),
+        ),
         and(
           // Drizzle operators, not a raw `sql` fragment. Interpolating a JS Date
           // into `sql` hands the postgres driver an unmapped value and the query
@@ -205,6 +260,9 @@ export async function reapOrphanEnvironments(options?: {
       sessionDeletedAt: r.deletedAt ? new Date(r.deletedAt) : null,
       sessionMissing: r.sessionRowId === null,
       lastUsedAt: r.lastUsedAt ?? null,
+      workerStatus: r.workerStatus ?? null,
+      workerUpdatedAt: r.workerUpdatedAt ?? null,
+      environmentStatus: r.status ?? null,
     })),
     now,
     { idleHorizonMs, deleteHorizonMs },

@@ -25,7 +25,7 @@
  *   without an OpenCode session.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { getDaytona } from '../../shared/daytona';
@@ -354,7 +354,14 @@ async function markEnvironmentError(sessionId: string, err: unknown): Promise<vo
     .update(sessionEnvironments)
     .set({
       status: 'error',
-      metadata: { lastError: message.slice(0, 500) },
+      // MERGE, never replace. A whole-object assign here wiped `environmentId`
+      // — the compute ledger's key for this box — along with `snapshot` and
+      // `providerMetadata`. With the key gone, `endComputeSession` can never
+      // close the open window and the resume path opens none, so one error left
+      // an environment running and metered nowhere, permanently.
+      metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify(
+        { lastError: message.slice(0, 500) },
+      )}::jsonb`,
       updatedAt: new Date(),
     })
     .where(eq(sessionEnvironments.sessionId, sessionId))

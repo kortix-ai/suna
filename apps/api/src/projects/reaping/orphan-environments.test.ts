@@ -33,6 +33,9 @@ const base: EnvironmentReapCandidate = {
   sessionDeletedAt: null,
   sessionMissing: false,
   lastUsedAt: ago(2 * DAY),
+  workerStatus: 'running',
+  workerUpdatedAt: ago(1 * HOUR),
+  environmentStatus: 'active',
 };
 
 const decide = (c: Partial<EnvironmentReapCandidate>) =>
@@ -122,4 +125,79 @@ test('mixed input: each row gets its own verdict', () => {
     { sessionId: 'deleted', action: 'delete', reason: 'session-deleted' },
     { sessionId: 'orphan', action: 'delete', reason: 'session-missing' },
   ]);
+});
+
+/**
+ * The environment must not outlive the worker that was stopped.
+ *
+ * A 6-surface audit mapped THIRTEEN automatic paths that stop or remove a
+ * session's worker box. `stopSessionEnvironment` is called from exactly two
+ * places and BOTH are user-triggered (`stop.ts:129` and the explicit route).
+ * Six of the thirteen bypass `applyStoppedState` entirely — there are really
+ * two stop writers, `applyStoppedState` and `preserveEstablishedRuntime` — so
+ * there is no choke point to hang the environment off. Hooking "the one stop
+ * writer" would still miss the provider-removed, wake-fence, parked-runtime,
+ * account-deletion and provision-race paths.
+ *
+ * So DERIVE it instead. Every path that durably parks a session writes
+ * `project_sessions.status` in the same transaction, and this sweep already
+ * joins that table. One rule covers all thirteen, and it cannot drift out of
+ * sync with a stop path nobody remembered to update.
+ *
+ * Stop only — never delete. A stopped worker is an ordinary, resumable state.
+ */
+describe("the environment follows its worker's stop", () => {
+  const workerStopped = (extra: Partial<EnvironmentReapCandidate> = {}) =>
+    decideEnvironmentReaping(
+      [{ ...base, lastUsedAt: ago(10 * 60_000), workerStatus: 'stopped', workerUpdatedAt: ago(HOUR), ...extra }],
+      NOW,
+    );
+
+  test('a stopped worker stops the environment, even when it was just used', () => {
+    // lastUsedAt is 10 minutes old — nowhere near the idle horizon. Without
+    // this rule the environment would run on for up to 24h after its worker
+    // was reaped, and the provider's own 60-minute auto-stop was the only
+    // thing that ever powered it off.
+    expect(workerStopped()).toEqual([
+      { sessionId: 's1', action: 'stop', reason: 'worker-stopped' },
+    ]);
+  });
+
+  test.each(['failed', 'completed'])('a %s worker also stops it', (status) => {
+    expect(workerStopped({ workerStatus: status })[0]?.action).toBe('stop');
+  });
+
+  /**
+   * The settle window is what keeps this off a restart. `restartSession` and
+   * a wake both move the session out of a terminal status; acting inside the
+   * window would stop the environment out from under a session coming back.
+   */
+  test('a worker stopped seconds ago is left alone', () => {
+    expect(workerStopped({ workerUpdatedAt: ago(30_000) })).toEqual([]);
+  });
+
+  test.each(['running', 'queued', 'provisioning', 'branching'])(
+    'a %s worker is not a stop signal',
+    (status) => {
+      expect(workerStopped({ workerStatus: status })).toEqual([]);
+    },
+  );
+
+  test('an environment already stopped is not stopped again', () => {
+    // Otherwise every tick issues a pointless provider call for every parked
+    // session, forever.
+    expect(workerStopped({ environmentStatus: 'stopped' })).toEqual([]);
+  });
+
+  /**
+   * Evidence that the session is GONE still outranks evidence that it merely
+   * stopped: delete beats stop.
+   */
+  test('a deleted session still deletes, not stops', () => {
+    expect(workerStopped({ sessionDeletedAt: ago(2 * HOUR) })[0]).toEqual({
+      sessionId: 's1',
+      action: 'delete',
+      reason: 'session-deleted',
+    });
+  });
 });
