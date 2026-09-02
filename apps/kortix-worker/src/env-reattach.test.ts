@@ -157,19 +157,31 @@ describe('a tool call whose environment went away', () => {
    * THE case. The first client is dead; the second one works. Without this the
    * call returns the transport error and every later call does too.
    */
-  test('re-attaches and the call SUCCEEDS on the new environment', async () => {
+  test('re-attaches and a READ succeeds on the new environment', async () => {
+    // A read, deliberately. Seamless recovery is only correct where replaying
+    // the operation is free — see 'what may be retried, and what may not'.
+    const h = harness();
+    h.setBehaviour((n) => (n === 1 ? 'gone' : 'ok'));
+    const r = await h.env.readTextFile('/etc/hostname');
+    expect(r).toEqual({ ok: true, value: 'served-by-attach-2' });
+    expect(h.attaches()).toBe(2);
+  });
+
+  test('a mutating call re-attaches but is NOT replayed', async () => {
     const h = harness();
     h.setBehaviour((n) => (n === 1 ? 'gone' : 'ok'));
     const r = await h.env.exec('echo hi');
-    expect(r).toEqual({ ok: true, value: 'served-by-attach-2' });
+    // The environment is healthy again for the next call...
     expect(h.attaches()).toBe(2);
+    // ...but this command was not run a second time to find out.
+    expect(r.ok).toBe(false);
   });
 
   test('the dead client is discarded, not reused by the next call', async () => {
     const h = harness();
     h.setBehaviour((n) => (n === 1 ? 'gone' : 'ok'));
-    await h.env.exec('first');
-    const second = await h.env.exec('second');
+    await h.env.readTextFile('first');
+    const second = await h.env.readTextFile('second');
     expect(second).toEqual({ ok: true, value: 'served-by-attach-2' });
     // Still 2: the second call reuses the healthy client rather than probing.
     expect(h.attaches()).toBe(2);
@@ -183,7 +195,7 @@ describe('a tool call whose environment went away', () => {
   test('gives up after ONE re-attach and returns the error', async () => {
     const h = harness();
     h.setBehaviour(() => 'gone');
-    const r = await h.env.exec('echo hi');
+    const r = await h.env.readTextFile('/x');
     expect(r.ok).toBe(false);
     expect(h.attaches()).toBe(2);
   });
@@ -198,5 +210,87 @@ describe('a tool call whose environment went away', () => {
     expect(r.ok).toBe(false);
     // Zero attaches: inner was already set, and a tool error must not discard it.
     expect(h.attaches()).toBe(0);
+  });
+})
+
+/**
+ * NEVER silently re-run a mutating operation.
+ *
+ * The first version of the re-attach retried whatever failed. That is safe for
+ * a read and unsafe for everything else, and the danger compounds: `rpc()`
+ * ALREADY retries once on a socket-shaped error (kortix-env.ts:153-157), so an
+ * outer retry nests inside it and one `bash` could execute FOUR times.
+ *
+ * And the trigger set makes it likely rather than theoretical. `rpc timeout`
+ * and `fetch failed` are exactly what a connection that dropped AFTER the
+ * daemon started the command looks like — the command ran, we just never heard
+ * the answer. Re-running `echo hi` is free; re-running `rm -rf`, `git push`, or
+ * a migration is not.
+ *
+ * So the contract splits. Re-attaching is what unwedges the session, and it
+ * always happens. Re-RUNNING is a separate convenience that only reads get.
+ */
+describe('what may be retried, and what may not', () => {
+  interface H { env: LazyKortixEnv; attaches: () => number; runs: () => number }
+  function harness(): H {
+    let attaches = 0;
+    let runs = 0;
+    const env = new LazyKortixEnv({
+      apiUrl: 'http://127.0.0.1:1/v1', token: 't', projectId: 'p', sessionId: 's',
+      cwd: '/workspace', ensureTimeoutMs: 50,
+    });
+    (env as unknown as { attach: () => Promise<unknown> }).attach = async function attach(this: {
+      inner: unknown;
+    }) {
+      if (this.inner) return this.inner;
+      attaches += 1;
+      const answer = async () => {
+        runs += 1;
+        // Always "unreachable": the point is to count executions, not recover.
+        return { ok: false as const, error: { code: 'unknown', message: 'rpc timeout' } };
+      };
+      this.inner = { exec: answer, writeFile: answer, remove: answer, readTextFile: answer, listDir: answer, calls: [] };
+      return this.inner;
+    };
+    return { env, attaches: () => attaches, runs: () => runs };
+  }
+
+  test('exec runs EXACTLY ONCE — a shell command is never replayed', async () => {
+    const h = harness();
+    const r = await h.env.exec('rm -rf /important');
+    expect(h.runs()).toBe(1);
+    expect(r.ok).toBe(false);
+    // It still re-attached, so the NEXT call has a working environment.
+    expect(h.attaches()).toBe(2);
+  });
+
+  test.each(['writeFile', 'remove'])('%s runs exactly once too', async (name) => {
+    const h = harness();
+    await (h.env as unknown as Record<string, (a: string, b?: unknown) => Promise<unknown>>)[name]('/x', 'y');
+    expect(h.runs()).toBe(1);
+  });
+
+  test('a mutating failure says the outcome is UNKNOWN, not that it failed', async () => {
+    // The model has to be able to tell "the command did not run" from "the
+    // command may have run and we lost the answer" — they call for different
+    // next moves.
+    const h = harness();
+    const r = await h.env.exec('git push');
+    expect(r.ok).toBe(false);
+    const error = (r as { error: { code?: string; message?: string } }).error;
+    expect(error.code).toBe('environment_recovered');
+    expect(String(error.message)).toMatch(/unknown|may have/i);
+  });
+
+  test('a READ is retried, because replaying it costs nothing', async () => {
+    const h = harness();
+    await h.env.readTextFile('/etc/hostname');
+    expect(h.runs()).toBe(2);
+  });
+
+  test.each(['listDir'])('%s is retried too', async (name) => {
+    const h = harness();
+    await (h.env as unknown as Record<string, (a: string) => Promise<unknown>>)[name]('/tmp');
+    expect(h.runs()).toBe(2);
   });
 });

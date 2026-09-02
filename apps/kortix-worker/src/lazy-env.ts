@@ -24,6 +24,18 @@ type Err<E> = { ok: false; error: E };
 type Result<T, E> = Ok<T> | Err<E>;
 const err = <E,>(error: E): Err<E> => ({ ok: false, error });
 
+/**
+ * The environment went away mid-operation and has been re-attached, but the
+ * operation was NOT repeated because repeating it could act twice.
+ */
+class EnvironmentRecoveredError extends Error {
+  code = 'environment_recovered';
+  constructor(message: string) {
+    super(message);
+    this.name = 'EnvironmentRecoveredError';
+  }
+}
+
 class EnvUnavailableError extends Error {
   code = 'environment_unavailable';
   constructor(message: string) {
@@ -242,55 +254,87 @@ export class LazyKortixEnv {
    * looping here would multiply that deadline by every tool call in the turn
    * and tell the model nothing it did not already know.
    */
-  private async op<T>(run: (env: KortixExecutionEnv) => Promise<Result<T, unknown>>): Promise<Result<T, unknown>> {
+  private async op<T>(
+    run: (env: KortixExecutionEnv) => Promise<Result<T, unknown>>,
+    /**
+     * Does this operation CHANGE the environment? Reads may be replayed for
+     * free; nothing else may be replayed at all. See the note in `op` below.
+     */
+    mutating: boolean,
+  ): Promise<Result<T, unknown>> {
     try {
       const first = await run(await this.attach());
       if (first.ok || !isEnvironmentUnreachable(first.error)) return first;
+
       // Nothing answered. The box may have been stopped, deleted, or rebuilt
       // under a new id since we attached — all three are states the control
-      // plane creates deliberately and can serve us out of.
+      // plane creates deliberately and can serve us out of. Re-attaching is
+      // what unwedges the session, and it happens either way.
       this.discardEnvironment();
-      return await run(await this.attach());
+      await this.attach();
+
+      if (!mutating) return await run(await this.attach());
+
+      // A mutating operation is NEVER replayed.
+      //
+      // `rpc()` already retries once on a socket-shaped error
+      // (kortix-env.ts:153-157), so a retry here nests inside that one and a
+      // single `bash` could execute up to four times. And the triggers make it
+      // likely rather than theoretical: `rpc timeout` and `fetch failed` are
+      // exactly what a connection dropping AFTER the daemon started the command
+      // looks like — it ran, we just never heard the answer. Replaying
+      // `echo hi` is free; replaying `rm -rf`, `git push` or a migration is not.
+      //
+      // So the model is told the truth instead: the environment is healthy
+      // again, and this command's outcome is unknown. That is a different
+      // situation from "it failed", and it calls for a different next move.
+      return err(
+        new EnvironmentRecoveredError(
+          'the environment became unreachable during this operation and has been ' +
+            'recovered. Whether the operation ran is unknown, so it was not ' +
+            'repeated — repeating it could act twice.',
+        ),
+      );
     } catch (e) {
       return err(e instanceof Error ? e : new EnvUnavailableError(String(e)));
     }
   }
 
   // ---- FileSystem (same surface as KortixExecutionEnv) --------------------
-  absolutePath(path: string) { return this.op((env) => env.absolutePath(path)); }
-  joinPath(parts: string[]) { return this.op((env) => env.joinPath(parts)); }
-  readTextFile(path: string) { return this.op((env) => env.readTextFile(path)); }
+  absolutePath(path: string) { return this.op((env) => env.absolutePath(path), false); }
+  joinPath(parts: string[]) { return this.op((env) => env.joinPath(parts), false); }
+  readTextFile(path: string) { return this.op((env) => env.readTextFile(path), false); }
   readTextLines(path: string, options?: { maxLines?: number }) {
-    return this.op((env) => env.readTextLines(path, options));
+    return this.op((env) => env.readTextLines(path, options), false);
   }
-  readBinaryFile(path: string) { return this.op((env) => env.readBinaryFile(path)); }
+  readBinaryFile(path: string) { return this.op((env) => env.readBinaryFile(path), false); }
   writeFile(path: string, content: string | Uint8Array) {
-    return this.op((env) => env.writeFile(path, content));
+    return this.op((env) => env.writeFile(path, content), true);
   }
   appendFile(path: string, content: string | Uint8Array) {
-    return this.op((env) => env.appendFile(path, content));
+    return this.op((env) => env.appendFile(path, content), true);
   }
   renameFile(sourcePath: string, destinationPath: string) {
-    return this.op((env) => env.renameFile(sourcePath, destinationPath));
+    return this.op((env) => env.renameFile(sourcePath, destinationPath), true);
   }
-  fileInfo(path: string) { return this.op((env) => env.fileInfo(path)); }
-  listDir(path: string) { return this.op((env) => env.listDir(path)); }
-  canonicalPath(path: string) { return this.op((env) => env.canonicalPath(path)); }
-  exists(path: string) { return this.op((env) => env.exists(path)); }
+  fileInfo(path: string) { return this.op((env) => env.fileInfo(path), false); }
+  listDir(path: string) { return this.op((env) => env.listDir(path), false); }
+  canonicalPath(path: string) { return this.op((env) => env.canonicalPath(path), false); }
+  exists(path: string) { return this.op((env) => env.exists(path), false); }
   createDir(path: string, options?: { recursive?: boolean }) {
-    return this.op((env) => env.createDir(path, options));
+    return this.op((env) => env.createDir(path, options), true);
   }
   remove(path: string, options?: { recursive?: boolean; force?: boolean }) {
-    return this.op((env) => env.remove(path, options));
+    return this.op((env) => env.remove(path, options), true);
   }
-  createTempDir(prefix?: string) { return this.op((env) => env.createTempDir(prefix)); }
+  createTempDir(prefix?: string) { return this.op((env) => env.createTempDir(prefix), true); }
   createTempFile(options?: { prefix?: string; suffix?: string }) {
-    return this.op((env) => env.createTempFile(options));
+    return this.op((env) => env.createTempFile(options), true);
   }
 
   // ---- Shell --------------------------------------------------------------
   exec(command: string, options?: unknown) {
-    return this.op((env) => env.exec(command, options));
+    return this.op((env) => env.exec(command, options), true);
   }
 
   async cleanup(): Promise<void> {
