@@ -361,66 +361,95 @@ between calls.
 > reaches only newly baked images regardless — so this is the first item whose
 > verification needs an image rebuild, not just a deploy.
 
-### P2.4 — `session_id == sandbox_id` stops being true — **the refactor was already done; one gap closed**
+### P2.4 — `session_id == sandbox_id` stops being true — **scoped: 28 sites, not done**
 
-Scoped before starting, as the item asked. The honest outcome is that the
-"wide, mechanical, unglamorous refactor" the architecture doc predicted **is not
-pending — P1.7 did it**, and the plan item was written against a stale reading
-of the code. What it described as work to schedule is already true:
+The item said to scope this honestly before starting. Scoped. **The honest
+answer is that it is much bigger than this plan assumed, and my first reading of
+it was wrong.**
 
-| The item assumed | What the code does |
-|---|---|
-| environments share the session's sandbox row | `session_environments` is its own table, `sessionId` the primary key — one environment per session, enforced by the PK (`packages/db/src/schema/kortix.ts:2030`) |
-| the identity refactor is unscheduled | `ensure` claims with `INSERT … ON CONFLICT DO NOTHING`; the loser polls rather than waiting, because the provision outlives the request |
-| the worker reaches the environment through the session proxy | it does not — the ensure response carries a provider-edge preview URL + token, deliberately, since per-call proxied HTTP is the tax the split exists to avoid |
-| a second credential surface has to be designed | already decided: *"the environment IS the session, credential-wise"* — its `KORTIX_TOKEN` is the session's own service key, so git access, secret handles and callback rights are exactly the session's. **This also pre-answers most of P2.6.** |
-| the lifecycle does not know about environments | it does: `deleteSessionEnvironment` ← `session-lifecycle/actions.ts:95`, `stopSessionEnvironment` ← `session-lifecycle/stop.ts:129`, both pinned by source-reading tests |
-| billing does not know about environments | `startComputeSession` / `endComputeSession` bracket the box, attributed to the PARENT session id |
+What I concluded first, from reading the storage layer: *"P1.7 already did the
+refactor."* That is true of the storage and only the storage —
+`session_environments` is its own table with `sessionId` as the primary key, the
+claim is an `INSERT … ON CONFLICT DO NOTHING`, the worker reaches the box over
+the provider edge rather than the session proxy, the credential question is
+settled (*"the environment IS the session, credential-wise"*), and stop/delete
+are wired into the session lifecycle with metering brackets.
 
-`session_id == sandbox_id` remains true **for the session's own sandbox**, which
-is what `project-sessions.ts`, `git.ts` and `session-sandbox-credential.ts`
-assert. An environment is a different box with a different id in a different
-table, and nothing in those three claims otherwise.
+What that reading missed is that **the split leaked into every consumer that
+assumed one runtime per session, and none of them were updated.** A 55-agent
+audit of six surfaces found 49 candidate sites and confirmed 28 (21 dismissed).
+Full detail: [`PI_P24_SCOPE.md`](./PI_P24_SCOPE.md).
 
-**The one thing genuinely missing** was the fast-follow
-`session-environment.ts` records against itself: *"Environments have no
-session_sandboxes row, so the box reaper does not manage them yet… Metering +
-reaper tie-in is the recorded fast-follow."* Metering had landed; the reaper had
-not. The gap is narrow but it does not self-heal:
+By surface: 4 api-session, 3 auth/credential, 2 proxy, 8 lifecycle, 4 SDK,
+7 DB/tests. By effort: 11 mechanical, 17 design-needed.
 
-- Stop and delete are wired, so the ordinary paths are covered.
-- A session that gets **neither** — abandoned, or a crash between the two —
-  keeps its environment row forever, and both existing sweeps decline it for
-  reasons that are individually correct. `reapAndReconcileSandboxes` is driven
-  by `session_sandboxes` and an environment has no row there. `reapOrphanProviderBoxes`
-  holds every active environment row in its keepSet — deliberately, or it would
-  stop the box under a live pi session — but with **no age bound**, so an
-  abandoned row pins its box out of reach permanently. A row that has gone
-  `stopped` escapes the keepSet yet is still invisible there, because that sweep
-  lists only RUNNING boxes.
+**The three that matter most, and the first is verified live:**
 
-Closed by `reaping/orphan-environments.ts`, wired into the maintenance tick:
-reaps an environment whose session row is gone, whose session was soft-deleted
-past a 5-minute grace (so it never races the inline teardown), or which has sat
-unused past a 24-hour idle horizon. `selectReapableEnvironments` is the pure
-rule, tested separately from the query — mutation-checked on all three branches
-(null `lastUsedAt` read as ancient, delete grace removed, horizon comparison
-flipped: 1, 1 and 3 tests go red respectively).
+1. **Environment compute is not billed.** `startComputeSession` is called with
+   `sandboxId: environmentId` (a fresh `randomUUID`) and no `workloadType`, so
+   it defaults to `'session'`; the billing invariant sweep joins
+   `session_sandboxes` on `sandboxId`, finds nothing, and
+   `decideComputeClose` returns `sandbox-row-missing` on its first pass — every
+   5 minutes. Measured on pi.kortix.com: **21 environments hold an
+   `environmentId`, exactly ONE has a compute row at all, it ran 88.5 s, and the
+   total billed is $0.0049.** The 20 missing rows are not explained by the sweep
+   alone and want their own look. `workload_type` is also CHECK-constrained to
+   `('session','app','monitor')`, so `'environment'` is not representable
+   without a migration — this one is design-needed, not a join.
 
-Teardown also moved to `platform/services/session-environment-teardown.ts`. It
-is not cosmetic: importing `deleteSessionEnvironment` from the service pulled
-the whole provisioning graph (image builder, git layer, manifest schema,
-agent-config compiler) into every API process to run a delete — and broke
-`e2e-project-maintenance.test.ts` with a `mock.module` cascade, exactly the
-2026-08-27 learning. Fixing the import rather than the mocks cost one new module
-and zero mock edits. `session-environment.ts` re-exports both functions, so no
-call site changed.
+2. **A stopped environment wedges its session permanently.** The provider's
+   `autoStopInterval: 60` powers an idle environment off, but nothing writes
+   `stopped` to its row — `applyStoppedState` is keyed on the worker's
+   `session_sandboxes` row and the provider webhook keys on an `externalId` the
+   environment does not have. `ensureSessionEnvironment` then short-circuits at
+   line 182 on `status === 'active' && externalId` before the re-claim, so it
+   returns a box that is off, and every tool call fails with nothing to repair
+   it. On pi, 20 of 21 environment rows read `active` with a box attached.
 
-> Verified: 7 + 15 + 6 + 3 + 149 tests pass across `orphan-environments`,
+3. **The automatic stop paths never touch the environment.**
+   `stopSessionEnvironment` has two call sites, both manual (`stop.ts:129` and
+   the explicit route). The dominant path — `deadline_expired` →
+   `stopExpiredBox` — stops the worker only, so a reaped session leaves its
+   environment running for up to another hour.
+
+**What landed in this session** is the reaper tie-in the code records against
+itself (*"Metering + reaper tie-in is the recorded fast-follow"*), plus one
+design correction found by measuring:
+
+- `reaping/orphan-environments.ts`, wired into the maintenance tick. Session
+  gone (no row, or soft-deleted past a 5-minute grace so it never races the
+  inline teardown) → delete. Idle a week → delete. Merely idle a day → **stop,
+  never delete.**
+- That last distinction is the correction. The first version deleted on a 24h
+  idle horizon. Then I measured pi: **16 of 21 environments are idle past a day
+  while their sessions are alive.** An environment holds the session's WORKING
+  TREE — committed work is safe on the session branch in the git mirror, but
+  uncommitted changes exist only in that box. Deleting on the short horizon
+  would have destroyed sixteen live sessions' uncommitted work, to reclaim
+  compute the provider's own auto-stop had already stopped billing for. A week
+  of silence is evidence nobody is coming back; a day is not.
+- It also happens to unwedge failure (2) after 24 h, because writing `stopped`
+  is exactly what lets `ensure` resume. That is a side effect, not the fix.
+- Teardown split into `platform/services/session-environment-teardown.ts`.
+  Importing `deleteSessionEnvironment` from the service pulled the whole
+  provisioning graph (image builder, git, manifest schema, agent-config
+  compiler) into every API process to run a delete, and broke
+  `e2e-project-maintenance.test.ts` with a `mock.module` cascade — the
+  2026-08-27 learning. Fixing the import rather than the mocks cost one module
+  and zero mock edits.
+
+> Verified: 10 + 15 + 6 + 3 + 149 tests pass across `orphan-environments`,
 > `routes/session-environment`, `maintenance`, `e2e-project-maintenance` and
-> `sandbox-reaper` (run per-file — co-running them hits the known apps/api
-> `mock.module` leak). `tsc --noEmit` clean. Not verified live: reaping a real
-> abandoned environment needs a deployed API and a 24h-old row.
+> `sandbox-reaper`, run per-file (co-running hits the known apps/api
+> `mock.module` leak). `tsc --noEmit` clean. The reap rule was mutation-checked
+> before the redesign. **Not verified live:** no reap has been observed on a
+> deployed API — the short horizon is 24 h.
+
+**Recommended order for the remaining 28**, since they are not equal: (1) the
+wedged-session bug, because it is user-facing and live on pi today; (2) the
+automatic stop paths, which are mechanical and stop the bleeding; (3) billing,
+which needs a migration and belongs in one deliberate change; (4) the SDK and
+proxy items, which are genuinely P2.5/P2.6 work and should move with them.
 
 ### P2.5 — Two lifecycles that can disagree
 
