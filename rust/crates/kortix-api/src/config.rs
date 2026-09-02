@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
@@ -12,12 +12,19 @@ pub struct Config {
     pub version: String,
     pub commit: String,
     pub instance: String,
+    pub max_event_loop_lag_ms: u64,
+    pub cors_allowed_origins: Vec<String>,
+    pub advertised_drain: Duration,
+    pub max_graceful_drain: Duration,
 }
 
 impl Config {
     pub fn from_process_env() -> Result<Self> {
-        let env = hydrate_environment(std::env::vars().collect())?;
-        Self::from_environment(&env)
+        let original: HashMap<String, String> = std::env::vars().collect();
+        let hydrated = hydrate_environment(original.clone())?;
+        let config = Self::from_environment(&hydrated)?;
+        apply_process_environment(&original, &hydrated);
+        Ok(config)
     }
 
     pub fn from_environment(env: &HashMap<String, String>) -> Result<Self> {
@@ -29,6 +36,9 @@ impl Config {
         let port: u16 = port
             .parse()
             .context("PORT must be an integer from 0 to 65535")?;
+        let max_event_loop_lag_ms = parse_u64(env, "HEALTH_MAX_EVENT_LOOP_LAG_MS", 5_000)?;
+        let advertised_drain_ms = parse_u64(env, "SHUTDOWN_ADVERTISED_DRAIN_MS", 30_000)?;
+        let max_graceful_drain_ms = parse_u64(env, "SHUTDOWN_MAX_GRACEFUL_DRAIN_MS", 30_000)?;
 
         Ok(Self {
             bind_addr: format!("{host}:{port}"),
@@ -48,8 +58,42 @@ impl Config {
                 .get("HOSTNAME")
                 .cloned()
                 .unwrap_or_else(|| "unknown".to_owned()),
+            max_event_loop_lag_ms,
+            cors_allowed_origins: env
+                .get("CORS_ALLOWED_ORIGINS")
+                .map(|origins| {
+                    origins
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|origin| !origin.is_empty())
+                        .map(str::to_owned)
+                        .collect()
+                })
+                .unwrap_or_default(),
+            advertised_drain: Duration::from_millis(advertised_drain_ms),
+            max_graceful_drain: Duration::from_millis(max_graceful_drain_ms),
         })
     }
+}
+
+fn parse_u64(env: &HashMap<String, String>, key: &str, default: u64) -> Result<u64> {
+    env.get(key).map_or(Ok(default), |value| {
+        value
+            .parse()
+            .with_context(|| format!("{key} must be a non-negative integer"))
+    })
+}
+
+fn apply_process_environment(
+    original: &HashMap<String, String>,
+    hydrated: &HashMap<String, String>,
+) {
+    for (key, value) in hydrated {
+        if !original.contains_key(key) {
+            std::env::set_var(key, value);
+        }
+    }
+    std::env::remove_var(AGGREGATE_ENV_KEY);
 }
 
 /// Expands the aggregate ECS secret into an environment snapshot.
@@ -73,6 +117,12 @@ pub fn hydrate_environment(mut env: HashMap<String, String>) -> Result<HashMap<S
         let Some(value) = value.as_str() else {
             bail!(r#"{AGGREGATE_ENV_KEY} key "{key}" must be a string"#);
         };
+        if key.is_empty() || key.contains(['=', '\0']) {
+            bail!(r#"{AGGREGATE_ENV_KEY} key "{key}" is not a valid environment variable name"#);
+        }
+        if value.contains('\0') {
+            bail!(r#"{AGGREGATE_ENV_KEY} key "{key}" contains a null byte"#);
+        }
         hydrated.push((key.clone(), value.to_owned()));
     }
 
@@ -126,6 +176,100 @@ mod tests {
                 "KORTIX_ENV_JSON must contain a JSON object"
             );
         }
+    }
+
+    #[test]
+    fn rejects_entries_that_cannot_be_process_variables() {
+        for (raw, expected) in [
+            (
+                r#"{"":"value"}"#,
+                r#"KORTIX_ENV_JSON key "" is not a valid environment variable name"#,
+            ),
+            (
+                r#"{"BAD=KEY":"value"}"#,
+                r#"KORTIX_ENV_JSON key "BAD=KEY" is not a valid environment variable name"#,
+            ),
+            (
+                r#"{"KEY":"bad\u0000value"}"#,
+                r#"KORTIX_ENV_JSON key "KEY" contains a null byte"#,
+            ),
+        ] {
+            assert_eq!(
+                hydrate_environment(env(&[(AGGREGATE_ENV_KEY, raw)]))
+                    .unwrap_err()
+                    .to_string(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn parses_health_and_shutdown_limits() {
+        let config = Config::from_environment(&env(&[
+            ("HEALTH_MAX_EVENT_LOOP_LAG_MS", "123"),
+            ("SHUTDOWN_ADVERTISED_DRAIN_MS", "456"),
+            ("SHUTDOWN_MAX_GRACEFUL_DRAIN_MS", "789"),
+        ]))
+        .unwrap();
+        assert_eq!(config.max_event_loop_lag_ms, 123);
+        assert_eq!(config.advertised_drain, Duration::from_millis(456));
+        assert_eq!(config.max_graceful_drain, Duration::from_millis(789));
+    }
+
+    #[test]
+    fn process_hydration_subprocess_proves_mutation_and_removal() {
+        const CHILD: &str = "KORTIX_PROCESS_HYDRATION_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            Config::from_process_env().unwrap();
+            assert_eq!(std::env::var("HYDRATED_ONLY").unwrap(), "from-json");
+            assert_eq!(std::env::var("EXPLICIT_WINS").unwrap(), "explicit");
+            assert!(std::env::var_os(AGGREGATE_ENV_KEY).is_none());
+            return;
+        }
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("config::tests::process_hydration_subprocess_proves_mutation_and_removal")
+            .arg("--exact")
+            .arg("--nocapture")
+            .env(CHILD, "1")
+            .env("EXPLICIT_WINS", "explicit")
+            .env(
+                AGGREGATE_ENV_KEY,
+                r#"{"HYDRATED_ONLY":"from-json","EXPLICIT_WINS":"aggregate"}"#,
+            )
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "child failed:
+stdout: {}
+stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn invalid_config_does_not_partially_hydrate_process() {
+        const CHILD: &str = "KORTIX_INVALID_CONFIG_CHILD";
+        if std::env::var_os(CHILD).is_some() {
+            assert!(Config::from_process_env().is_err());
+            assert!(std::env::var_os("MUST_NOT_BE_SET").is_none());
+            assert!(std::env::var_os(AGGREGATE_ENV_KEY).is_some());
+            return;
+        }
+
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("config::tests::invalid_config_does_not_partially_hydrate_process")
+            .arg("--exact")
+            .env(CHILD, "1")
+            .env(
+                AGGREGATE_ENV_KEY,
+                r#"{"PORT":"invalid","MUST_NOT_BE_SET":"value"}"#,
+            )
+            .output()
+            .unwrap();
+        assert!(output.status.success());
     }
 
     #[test]

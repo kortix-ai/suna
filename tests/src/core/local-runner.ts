@@ -26,6 +26,7 @@ export interface LocalTestPlan {
     | 'core'
     | 'flows'
     | 'sdk'
+    | 'swift'
     | 'browser'
     | 'packages'
     | 'target'
@@ -89,6 +90,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const full = args.includes('--full');
   const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
   const sdkOnly = args.includes('--sdk-only');
+  const swiftOnly = args.includes('--swift-only');
   const browserOnly = args.includes('--browser-only');
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
@@ -105,6 +107,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     full,
     flowsOnly,
     sdkOnly,
+    swiftOnly,
     browserOnly,
     packagesOnly,
     targetSmoke,
@@ -114,7 +117,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
+      'choose only one of --full, --flows-only, --sdk-only, --swift-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, or --target-browser-full',
     );
   }
   if (browserShardArgs.length > 1) {
@@ -143,6 +146,7 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--full' &&
       arg !== '--flows-only' &&
       arg !== '--sdk-only' &&
+      arg !== '--swift-only' &&
       arg !== '--browser-only' &&
       arg !== '--packages-only' &&
       arg !== '--target-smoke' &&
@@ -159,6 +163,28 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const sdk: LocalTestLane = {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
+  };
+  const swiftFormat: LocalTestLane = {
+    name: 'swift-format',
+    command: ['swift', 'format', 'lint', '--recursive', '--strict', 'Sources', 'Tests'],
+    cwd: 'packages/kortix-swift',
+  };
+  const swiftTests: LocalTestLane = {
+    name: 'swift-tests',
+    command: ['swift', 'test'],
+    cwd: 'packages/kortix-swift',
+  };
+  const swiftIosSimulatorBuild: LocalTestLane = {
+    name: 'swift-ios-simulator-build',
+    command: [
+      'xcodebuild',
+      'build',
+      '-scheme',
+      'KortixSwift-Package',
+      '-destination',
+      'generic/platform=iOS Simulator',
+    ],
+    cwd: 'packages/kortix-swift',
   };
   const runnerUnit: LocalTestLane = {
     name: 'flow-runner-unit',
@@ -235,14 +261,20 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
-      ...(process.env.KE2E_TARGET === 'preview'
-        ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' }
-        : {}),
+      ...(process.env.KE2E_TARGET === 'preview' ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' } : {}),
     },
   };
 
   if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
   if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
+  if (swiftOnly) {
+    const lanes = [swiftFormat, swiftTests, swiftIosSimulatorBuild];
+    return {
+      mode: 'swift',
+      lanes,
+      stages: [[swiftFormat], [swiftTests], [swiftIosSimulatorBuild]],
+    };
+  }
   if (browserOnly) return { mode: 'browser', lanes: [browser], stages: [[browser]] };
   if (packagesOnly) {
     return { mode: 'packages', lanes: [packageQuality], stages: [[packageQuality]] };
@@ -372,9 +404,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
     const deployedLane = lane.name.startsWith('target-');
     let env: Record<string, string | undefined> = {
       ...process.env,
-      ...(deployedLane
-        ? {}
-        : { KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET }),
+      ...(deployedLane ? {} : { KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET }),
       ...(lane.env ?? {}),
     };
     if (lane.name === 'browser') {
@@ -414,10 +444,7 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         'KE2E_STRIPE_WEBHOOK_SECRET',
       ] as const;
       const missing = required.filter((name) => !process.env[name]?.trim());
-      if (
-        !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
-        !process.env.E2E_MAILPIT_URL?.trim()
-      ) {
+      if (!process.env.E2E_AGENTMAIL_API_KEY?.trim() && !process.env.E2E_MAILPIT_URL?.trim()) {
         missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
       }
       if (missing.length > 0) {

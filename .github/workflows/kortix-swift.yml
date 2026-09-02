@@ -1,13 +1,18 @@
 name: Kortix Swift
 
-# Validate the Swift package without signing or building an Xcode app archive.
+# Test the Swift package on macOS and build it for iOS Simulator through the single
+# root test runner. The matrix keeps the runner replaceable without changing the job.
 
 on:
   pull_request:
-    branches: [main, staging, prod]
+    branches: [main, staging]
     paths:
-      - "packages/kortix-swift/**"
-      - ".github/workflows/kortix-swift.yml"
+      - 'packages/kortix-swift/**'
+      - 'tests/bin/local.ts'
+      - 'tests/src/core/local-runner.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/kortix-swift.yml'
   workflow_dispatch:
 
 concurrency:
@@ -19,18 +24,38 @@ permissions:
 
 jobs:
   test:
-    name: Swift package tests
-    runs-on: macos-15
+    name: Swift package validation (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: packages/kortix-swift
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install workspace dependencies
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: 'false'
+
       - name: Show Swift version
         run: swift --version
 
-      - name: Run Swift package tests
-        run: swift test
+      - name: Validate Swift package through the root runner
+        run: pnpm test -- --swift-only

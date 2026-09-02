@@ -68,13 +68,7 @@ describe('local test runner', () => {
     const plan = buildLocalTestPlan(['--browser-only', '--browser-shard=1/2']);
 
     expect(plan.mode).toBe('browser');
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'run',
-      'test:browser',
-      '--',
-      '--shard=1/2',
-    ]);
+    expect(plan.lanes[0]?.command).toEqual(['bun', 'run', 'test:browser', '--', '--shard=1/2']);
   });
 
   it('rejects invalid browser shards', () => {
@@ -87,9 +81,7 @@ describe('local test runner', () => {
     expect(() => buildLocalTestPlan(['--browser-only', '--browser-shard=3/2'])).toThrow(
       'CURRENT/TOTAL',
     );
-    expect(() => buildLocalTestPlan(['--browser-shard=1/2'])).toThrow(
-      'requires --browser-only',
-    );
+    expect(() => buildLocalTestPlan(['--browser-shard=1/2'])).toThrow('requires --browser-only');
   });
 
   it('uses one CI browser worker and preserves explicit concurrency', () => {
@@ -108,6 +100,36 @@ describe('local test runner', () => {
         command: ['bun', 'tests/bin/package-quality.ts'],
       },
     ]);
+  });
+
+  it('tests Swift on macOS and builds the package for an iOS Simulator', () => {
+    const plan = buildLocalTestPlan(['--swift-only']);
+    const swiftFormat = {
+      name: 'swift-format',
+      command: ['swift', 'format', 'lint', '--recursive', '--strict', 'Sources', 'Tests'],
+      cwd: 'packages/kortix-swift',
+    };
+    const swiftTests = {
+      name: 'swift-tests',
+      command: ['swift', 'test'],
+      cwd: 'packages/kortix-swift',
+    };
+    const iosSimulatorBuild = {
+      name: 'swift-ios-simulator-build',
+      command: [
+        'xcodebuild',
+        'build',
+        '-scheme',
+        'KortixSwift-Package',
+        '-destination',
+        'generic/platform=iOS Simulator',
+      ],
+      cwd: 'packages/kortix-swift',
+    };
+
+    expect(plan.mode).toBe('swift');
+    expect(plan.lanes).toEqual([swiftFormat, swiftTests, iosSimulatorBuild]);
+    expect(plan.stages).toEqual([[swiftFormat], [swiftTests], [iosSimulatorBuild]]);
   });
 
   it('runs deployed API and browser smoke through the same root command', () => {
@@ -239,13 +261,7 @@ describe('local test runner', () => {
 
     expect(plan.mode).toBe('target-browser-full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-browser-full']);
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'run',
-      'test:browser',
-      '--',
-      '--shard=3/3',
-    ]);
+    expect(plan.lanes[0]?.command).toEqual(['bun', 'run', 'test:browser', '--', '--shard=3/3']);
     expect(plan.lanes[0]?.env?.E2E_REQUIRE_ALL_BROWSER).toBe('1');
   });
 

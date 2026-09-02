@@ -81,6 +81,13 @@ jobs:
         if: inputs.mode == 'full' || inputs.mode == matrix.mode
         with:
           bun-version: 1.3.14
+      - name: Install pinned Rust quality tools
+        if: matrix.mode == 'packages' && (inputs.mode == 'full' || inputs.mode == matrix.mode)
+        run: |
+          rustup toolchain install 1.85.0 --profile minimal --component rustfmt,clippy
+          rustup toolchain install 1.88.0 --profile minimal
+          cargo +1.88.0 install cargo-deny --version 0.20.2 --locked
+          rustup override set 1.85.0
       - name: Install workspace dependencies
         if: inputs.mode == 'full' || inputs.mode == matrix.mode
         run: |

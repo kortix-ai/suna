@@ -41,13 +41,23 @@ pnpm test                       # Local REST/CLI flows + SDK + runner units + co
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One domain
 pnpm test -- --sdk-only        # SDK only
+pnpm test -- --swift-only      # Swift tests + iOS Simulator package build (requires macOS + Xcode)
 pnpm test -- --browser-only    # Browser only; owns the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/2 # One browser shard
-pnpm test -- --packages-only   # Every app/package test and publish contract
+pnpm test -- --packages-only   # Every app/package test, Rust check, and publish contract
 pnpm test -- --full            # Browser plus all app/package tests
 pnpm test -- --target-smoke    # Deployed staging API SHA and Playwright smoke
 pnpm test -- --target-full     # Every deployed staging flow and browser journey
 ```
+
+`--swift-only` runs strict `swift format` lint and `swift test` first. It then
+runs `xcodebuild build` with
+the `KortixSwift-Package` SwiftPM scheme and the `generic/platform=iOS Simulator`
+destination. The root runner owns both commands.
+
+`--packages-only` requires Docker and `cargo-deny 0.20.2`. The Rust workspace
+pins Rust `1.85.0`. CI installs the policy tool with pinned Rust `1.88.0`, then
+runs project checks with the workspace toolchain.
 
 Full mode also builds, dry-packs, and install-smokes publishable npm packages.
 Do not replace this package contract with a separate CI workflow.

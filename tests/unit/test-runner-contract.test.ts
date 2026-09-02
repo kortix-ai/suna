@@ -25,6 +25,7 @@ describe('local test runner contract', () => {
       '.github/workflows/package-tests.yml',
       '.github/workflows/e2e.yml',
       '.github/workflows/qa-nightly.yml',
+      '.github/workflows/rust.yml',
       'Makefile',
       'tests/bin/kortix.ts',
       // Cloud-sandbox CI workers (Platinum/Daytona) — lanes run natively on
@@ -80,6 +81,14 @@ describe('local test runner contract', () => {
     expect(source).toContain("'!kortix-api'");
     expect(source).toContain("'!@kortix/db'");
     expect(source).toContain("skipSdkTests ? ['!@kortix/sdk'] : []");
+    expect(source).toContain("['cargo', 'fmt', '--all', '--', '--check']");
+    expect(source).toContain(
+      "['cargo', 'clippy', '--workspace', '--all-targets', '--all-features', '--', '-D', 'warnings']",
+    );
+    expect(source).toContain("['cargo', 'test', '--workspace', '--all-features']");
+    expect(source).toContain("'cargo-deny 0.20.2'");
+    expect(source).toContain("['cargo', 'deny', '--config', 'deny.toml', 'check']");
+    expect(source).toContain("['docker', 'build', '--tag', 'kortix-api-rust:test', '.']");
   });
 
   it('runs isolated API test files through a bounded parallel worker pool', () => {

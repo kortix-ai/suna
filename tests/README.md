@@ -21,6 +21,7 @@ pnpm test                       # Fast local core
 pnpm test -- --id ACC-4        # One flow
 pnpm test -- --domain access   # One flow domain
 pnpm test -- --sdk-only        # SDK only
+pnpm test -- --swift-only      # Swift tests + iOS Simulator package build (requires macOS + Xcode)
 pnpm test -- --browser-only    # Browser journeys with the deterministic local stack
 pnpm test -- --browser-only --browser-shard=1/2 # One deterministic browser shard
 pnpm test -- --packages-only   # Every app/package test and publish contract
@@ -30,6 +31,15 @@ pnpm test -- --target-full     # Every deployed staging API flow and browser jou
 pnpm test -- --target-api-full --api-shard=1/6     # One deployed API shard
 pnpm test -- --target-browser-full --browser-shard=1/3 # One deployed browser shard
 ```
+
+`--swift-only` runs strict `swift format` lint and `swift test` first. It then
+runs `xcodebuild build` with
+the `KortixSwift-Package` SwiftPM scheme and the `generic/platform=iOS Simulator`
+destination. The root runner owns both commands.
+
+`--packages-only` requires Docker and `cargo-deny 0.20.2`. The Rust workspace
+pins Rust `1.85.0`. CI installs `cargo-deny 0.20.2` with Rust `1.88.0`, then runs
+all project checks with the pinned `1.85.0` workspace toolchain.
 
 `--target-full` runs both deployed lanes in one process. The two per-lane modes
 run one lane each, so the release gate can run them as parallel GitHub jobs.
@@ -58,7 +68,8 @@ GitHub Actions uses `.github/workflows/tests.yml` for local-profile PR tests.
 `tests-pr.yml` calls it once for pull requests into `main` or `staging`. Full
 mode runs four lanes in parallel, each natively on one Blacksmith runner
 (`CI_RUNNER_L`, 8 vCPU / 32 GB — see `docs/runbooks/ci-runners.md`). Core and
-package lanes run `pnpm test` and `pnpm test -- --packages-only`. Two browser
+package lanes run `pnpm test` and `pnpm test -- --packages-only`. The package
+lane includes Rust format, Clippy, test, and dependency-policy checks. Two browser
 lanes run shards `1/2` and `2/2` through
 `pnpm test -- --browser-only --browser-shard=CURRENT/TOTAL`. The four lanes are
 the parallel equivalent of `pnpm test -- --full`. Each lane checks out the exact

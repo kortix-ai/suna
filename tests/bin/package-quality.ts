@@ -113,6 +113,30 @@ async function verifyAgentTunnelCli(): Promise<void> {
   }
 }
 
+async function runRustQuality(): Promise<void> {
+  const cwd = resolve(root, 'rust');
+  const versionProcess = Bun.spawn(['cargo', 'deny', '--version'], {
+    cwd,
+    stdout: 'pipe',
+    stderr: 'inherit',
+  });
+  const version = (await new Response(versionProcess.stdout).text()).trim();
+  const versionCode = await versionProcess.exited;
+  if (versionCode !== 0 || version !== 'cargo-deny 0.20.2') {
+    throw new Error(
+      `cargo-deny 0.20.2 is required; found ${version || `exit code ${versionCode}`}`,
+    );
+  }
+  await run(['cargo', 'fmt', '--all', '--', '--check'], { cwd });
+  await run(
+    ['cargo', 'clippy', '--workspace', '--all-targets', '--all-features', '--', '-D', 'warnings'],
+    { cwd },
+  );
+  await run(['cargo', 'test', '--workspace', '--all-features'], { cwd });
+  await run(['cargo', 'deny', '--config', 'deny.toml', 'check'], { cwd });
+  await run(['docker', 'build', '--tag', 'kortix-api-rust:test', '.'], { cwd });
+}
+
 async function runWorkspaceTests(
   filters: string[],
   workspaceConcurrency: number,
@@ -142,6 +166,7 @@ async function runWorkspaceTests(
 await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
+  runRustQuality(),
 ]);
 await rejectFocusedTests();
 await runAll([

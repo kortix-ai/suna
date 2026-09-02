@@ -9,10 +9,10 @@ rust-version.workspace = true
 anyhow.workspace = true
 axum.workspace = true
 chrono.workspace = true
+getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
-tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

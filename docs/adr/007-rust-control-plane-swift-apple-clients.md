@@ -13,12 +13,14 @@ responsibilities. The repository also contains TypeScript workers, an LLM
 gateway, a sandbox agent server, a published TypeScript SDK, a Next.js web app,
 an Expo/React Native mobile app, and an Electron desktop wrapper.
 
-This is a live contract, not a greenfield system. At this ADR's baseline:
+This is a live contract, not a greenfield system. At Git baseline `488f774e487cf674401a4193156795627e88e4b0`:
 
 - `tests/src/flows/*.flow.ts` registers **454 end-to-end flows**;
 - `tests/spec/routes.generated.json` records **635 HTTP routes**;
-- `@kortix/sdk` is the public TypeScript client and the source of truth for
-  backend access by JavaScript hosts;
+- `@kortix/api-contract` is the wire-schema authority for API payloads;
+- `@kortix/sdk` is the intended public TypeScript access boundary for
+  JavaScript hosts, but the mobile app still contains direct API and sandbox
+  `fetch` calls that require inventory and migration;
 - PostgreSQL schema and migrations live in `packages/db` and use Drizzle plus
   `node-pg-migrate` tooling;
 - Supabase supplies authentication and storage contracts;
@@ -66,7 +68,7 @@ The target Rust workspace has these logical boundaries:
 ```text
 clients
   web / Android / Windows / Linux -> @kortix/sdk -> public API
-  iOS / macOS                     -> KortixKit   -> public API
+  iOS / macOS                     -> KortixSDK   -> public API
 
 edge
   ingress -> compatibility router -> Rust route owner
@@ -85,37 +87,40 @@ Rust workspace
   kortix-telemetry   logs, metrics, traces, and request correlation
 ```
 
-These are architectural boundaries, not a requirement for nine independently
-deployed services. Start with a Cargo workspace and a small number of binaries.
+These are architectural boundaries, not a requirement for independently deployed
+services. Start with a Cargo workspace and a small number of binaries.
 Split a deployable only when it needs independent scaling, isolation, or release
 control. Do not replace one monolith with a distributed monolith.
 
-Rust contract types do not replace `@kortix/sdk`. Generate or validate both from
-one reviewed wire schema where practical. The published JavaScript names and
-behavior remain public API contracts. The web and other JavaScript hosts remain
-thin SDK consumers.
+Rust contract types do not replace `@kortix/api-contract` or `@kortix/sdk`.
+`@kortix/api-contract` remains authoritative for wire schemas. Generate Rust and
+Swift models from it, or validate them against it, where practical. The
+published JavaScript names and behavior remain public API contracts. The web and
+white-label hosts remain thin SDK consumers. Mobile becomes a thin consumer only
+after Phase 0 removes its inventoried direct API and runtime transport calls.
 
 ### Swift target
 
-Create a Swift package, provisionally `KortixKit`, with these modules:
+Extend the existing Swift package `KortixSwift` at `packages/kortix-swift`.
+The first slice exposes the products and modules that exist now:
 
-- **KortixCore:** wire models, stable identifiers, errors, pagination, and
-  capability negotiation;
-- **KortixTransport:** HTTP, SSE, WebSocket, retry, cancellation, and request
-  correlation built on Apple platform networking;
-- **KortixAuth:** token storage and refresh interfaces, with Keychain-backed
-  application adapters;
-- **KortixSession:** one session lifecycle that matches the server session and
-  streaming contracts;
-- **KortixUI support:** optional, small platform-neutral view models. Product UI
-  remains in the native applications.
+- **KortixTransport:** HTTP transport, cancellation, and one authentication retry
+  after a `401`, built on Apple platform networking;
+- **KortixAuth:** token-provider and authentication interfaces;
+- **KortixSDK:** wire models and the public client surface;
+- **KortixDemo:** the `kortix-swift-demo` executable used for a real account-list
+  request.
+
+Add SSE, WebSocket, Keychain adapters, session lifecycle, capability negotiation,
+and optional view models in later reviewed slices. Do not document a module name
+before `Package.swift` exports it.
 
 Use Swift structured concurrency. Treat cancellation, background suspension,
 reconnection, and duplicate event delivery as normal states. Keep credentials
 out of models, logs, and persistent caches. Do not put business authorization in
 the client.
 
-Build native iOS and macOS shells only after `KortixKit` passes contract tests
+Build native iOS and macOS shells only after `KortixSDK` passes contract tests
 against the unchanged production-compatible API. Client migration must not
 force a server migration.
 
@@ -126,6 +131,8 @@ force a server migration.
 - **Published JavaScript SDK:** Keep `@kortix/sdk`. Preserve its exports and wire
   behavior. Rust may generate fixtures or schemas, but it does not become an
   app-local transport through WebAssembly.
+- **White-label reference:** Keep `apps/whitelabel-demo` as the complete
+  reference consumer of `@kortix/sdk`. Include it in compatibility and release gates.
 - **Android:** Keep the Expo/React Native Android application for this program.
   Do not start an unrelated Kotlin rewrite. It continues to use
   `@kortix/sdk`. A native Android decision requires a separate ADR.
@@ -155,12 +162,14 @@ This program does not:
 
 ## Contract authority
 
-Migration work must distinguish three sources of truth:
+Migration work must distinguish four sources of truth:
 
 1. **Product behavior:** `tests/spec/end-to-end.md` and its registered flows.
 2. **HTTP inventory:** `tests/spec/routes.generated.json`, regenerated from the
    actual router after route changes.
-3. **Client contract:** `@kortix/sdk`, its documentation, and its public exports.
+3. **Wire schema:** `@kortix/api-contract`. Its reviewed schemas define payload
+   shape for generators, validators, OpenAPI, and cross-language fixtures.
+4. **Client contract:** `@kortix/sdk`, its documentation, and its public exports.
 
 The old implementation is evidence, not an ideal specification. When tests,
 documentation, and production behavior disagree, resolve the contract before
@@ -241,16 +250,32 @@ they do not share a mutable contract or data owner.
 
 ### Phase 0: Freeze the baseline and install the seam
 
-- Record the 454-flow and 635-route inventories at a named Git SHA.
+- Record the 454-flow and 635-route inventories at Git SHA
+  `488f774e487cf674401a4193156795627e88e4b0`.
+- Change `.github/workflows/deploy-staging.yml` to prevent an in-progress deploy
+  or migration from cancellation. Add a test that rejects
+  `cancel-in-progress: true` on stateful deploy workflows. No migration tranche
+  starts until this prerequisite lands and passes.
 - Map each route, job, stream, database table, external integration, and client
   to an owner and test coverage.
+- Inventory `apps/kortix-app-runtime` and its Caddy module, the TypeScript
+  `apps/kortix-sandbox-agent-server`, `apps/kortix-worker`, and
+  `apps/sandbox/Dockerfile`. Keep all four in their current languages during
+  Phases 0-4. Phase 5 may propose bounded Rust ports for the agent and worker.
+  Keep the Go app runtime and sandbox image format until a separate measured
+  decision proves a replacement.
+- Inventory every direct `fetch` in `apps/mobile`. Classify each call as public
+  API, sandbox runtime, third-party, or local-resource access. Move public API
+  and runtime transport exceptions into `@kortix/sdk` before calling the mobile
+  host a thin SDK consumer.
 - Capture production-compatible golden requests, responses, and events with
   secrets and personal data removed.
 - Add a compatibility router that selects exactly one implementation per
   request. The routing decision must be observable and controlled by an
-  independent kill switch.
-- Establish a Rust workspace, toolchain lock, dependency policy, SBOM, security
-  scan, formatting, lint, test, and cross-compilation gates.
+  independent runtime kill switch.
+- Define and test the Rust toolchain lock, dependency policy, SBOM generation,
+  security scan, formatting, lint, tests, and Linux cross-compilation before any
+  Rust artifact deploys. The current scaffold does not prove these gates exist.
 - Establish cross-language contract fixtures for TypeScript, Rust, and Swift.
 
 **Exit:** Zero product routes need Rust. The seam can route a synthetic probe to
@@ -285,10 +310,18 @@ sample and duration. Full gates and operational budgets pass.
 
 - Port one bounded business capability at a time, including its validation,
   authorization, transaction, audit, billing, and read-back path.
-- A request has one writer. Do not dual-write to Bun and Rust.
-- Use idempotency and database constraints to make retries safe.
-- Give every scheduled job one elected owner. A mixed deployment must not run
-  the same cron or queue consumer twice.
+- A request has one writer. Do not dual-write to Bun and Rust. Dual-write is
+  prohibited unless a separate ADR approves a durable transactional outbox, its
+  ordering contract, replay behavior, and automated reconciler.
+- Use idempotency, database constraints, and a monotonic fencing token for every
+  write. A stale owner must fail before it mutates the database or calls an
+  external side effect.
+- Give every scheduled job one elected owner. Each lease carries an epoch or
+  fencing token that is checked in the same transaction as every job write. A
+  mixed deployment must not run the same cron or queue consumer twice.
+- During rollback, stop lease admission, wait for active leases to finish or
+  expire, fence the old epoch, then enable the legacy owner. Never enable the
+  replacement owner before the old owner is fenced.
 - Reconcile row counts, ledger sums, audit events, and external side effects
   before increasing traffic.
 
@@ -326,12 +359,12 @@ owner remains deployable for the rollback window.
 **Exit:** Rust owns every server, CLI, and systems surface selected in Scope.
 No production request or background job requires the legacy Bun implementation.
 
-### Phase 6: Ship `KortixKit` and native Apple clients
+### Phase 6: Ship `KortixSwift` and native Apple clients
 
 This phase can begin after Phase 0 contract fixtures stabilize. It need not wait
 for Rust server completion.
 
-- Implement `KortixKit` against the existing API first.
+- Extend `KortixSDK` against the existing API first.
 - Run the same network fixtures against Bun and Rust deployments.
 - Deliver native iOS behind controlled distribution. Preserve deep links, push
   notifications, authentication, purchases, background behavior, files, and
@@ -379,9 +412,9 @@ owners, not database identity.
 5. **Mixed-version safety.** Schema changes must support the deployed legacy and
    Rust versions for the complete rollout and rollback window. A Rust deploy
    cannot require a destructive migration in the same step.
-6. **Single writer.** Route ownership selects one write implementation. If a
-   temporary dual-write is unavoidable, require idempotency, durable outbox
-   semantics, ordering rules, and an automated reconciler before use.
+6. **Single writer.** Route ownership selects one write implementation. This
+   ADR prohibits dual-write. A separate ADR must approve any transactional
+   outbox, including idempotency, ordering, replay, and reconciliation.
 7. **Transaction parity.** Preserve isolation, locking, constraint, audit,
    billing settlement, and retry boundaries. Equivalent rows are insufficient
    if failure atomicity changes.
@@ -399,6 +432,22 @@ owners, not database identity.
     rollback plan.
 12. **Secrets and personal data.** Do not copy production secrets or raw personal
     data into fixtures, diff logs, preview databases, or client test bundles.
+13. **Large backfills.** Never run a large backfill inside a single-transaction
+    SQL migration or service startup. Use incrementally committed,
+    resumable `.concurrent.ts` batches or a supervised runbook. Run concurrent
+    index builds serially per table. Detect and remove invalid index shells
+    before retry.
+14. **Migration ledger and cost.** Before each promote, diff the target
+    `kortix_migrations.pgmigrations` ledger against the release tree. Cost every
+    pending migration at target row counts. A file in a tag does not prove the
+    target applied it. Preserve filename order in the ledger.
+15. **Constraint validation.** Before `VALIDATE CONSTRAINT`, reconcile the target
+    environment's old rows in an idempotent step. Remap renamed values instead
+    of deleting their meaning. Validate only after the target data reports zero
+    unexplained violations.
+16. **Store swaps.** Rewire every writer in release N before release N+1 replaces
+    its table with a compatibility view. Inventory `ON CONFLICT`, foreign keys,
+    and `ON DELETE` behavior before the swap.
 
 A database migration may be forward-only when reversing it would lose valid new
 data. In that case, application rollback means deploying compatible old code
@@ -420,31 +469,75 @@ groups. It must support these controls independently:
 - job-owner election;
 - long-lived connection drain.
 
+The runtime kill-switch system must meet these properties before canary traffic:
+
+- It is external to the Rust deployable and can return traffic to Bun without a
+  build or deploy.
+- Global, route-group, job-owner, and stream-drain controls propagate to every
+  router and worker within a declared maximum interval. The rollout plan records
+  that interval and tests it under partial control-plane failure.
+- Missing, expired, unparsable, or unreachable control state fails closed to Bun
+  ownership and denies new Rust job leases. Cached state has a bounded TTL.
+- Every change records actor, reason, old value, new value, cohort version,
+  timestamp, and request or incident reference in an immutable audit trail.
+- Each ownership change increments a monotonic epoch. Routers attach the epoch,
+  and writers and job consumers reject a stale epoch at the mutation boundary.
+- Rollback tests prove stale Rust processes cannot write after ownership returns
+  to Bun.
+
 Use a new flag for each new default-on path. Do not reuse an experiment flag as
 a kill switch. Search every deploy workflow and deployment script for injected
 values before defining flag semantics.
 
 Traffic progression is `0% -> internal accounts -> bounded canary -> 25% -> 50%
 -> 100% -> observation window -> legacy removal`. Each step requires explicit
-metric and reconciliation approval. Stateful streams use account or session
-cohorts, not per-request percentages.
+metric and reconciliation approval. All canaries use stable, durable cohorts
+keyed by account or tenant. Stateful
+streams may add a stable session key. Do not assign a write request with a fresh
+random percentage. Persist the cohort version and ownership epoch so retries,
+restarts, and every related write resolve to the same owner until a controlled
+transition fences the old epoch.
 
-Preview orchestration executes from the default branch. Any new file that the
-preview workflow itself reads must land on the default branch before a feature
-branch depends on it. A preview's successful image build does not prove its
-orchestration contains branch-only changes.
+Preview orchestration executes from the default branch. Land required
+orchestration first as an inert PR that changes no production route or owner.
+Verify that deployment and teardown still work. Only then open the feature PR
+that uses the orchestration and run its full feature preview. A preview image
+build does not prove default-branch orchestration contains branch-only files.
+
+Before each deploy, calculate the PostgreSQL connection budget against the
+maximum rolling fleet, not steady state. Count old and new Rust and Bun tasks,
+every main and audit pool, job and leader connections, startup probes,
+migrations, Supabase, operators, and request-scoped clients. Block the deploy
+when the sum exceeds the server limit minus explicit reserves.
 
 Promote through local, preview, dev, staging, then production. Verify the
 artifact SHA at every deployed surface. Staging migrations run only against the
 staging data plane. Production release uses the existing staging-to-production
-process. This ADR does not authorize merging or promoting a tranche.
+process. The `prod` PR must contain the same Rust and Swift trees that passed the
+`staging` PR native gates. If release preparation changes either tree, stop the
+promotion and rerun the native gates before production. This ADR does not
+authorize merging or promoting a tranche.
 
 ### Apple clients
 
-Use phased App Store/TestFlight and signed macOS distribution cohorts. Keep the
-last compatible Expo iOS and Electron macOS artifacts available. Server changes
-must remain backward compatible for the declared mobile adoption window because
-installed clients cannot be recalled.
+Use phased TestFlight, App Store, and signed macOS distribution cohorts only
+after those distribution paths have independent evidence. This repository
+defines source and build scripts. It does not prove App Store, TestFlight, notarization,
+or update-channel readiness.
+
+Before the first external native build, publish a compatibility matrix with the
+minimum and current server versions for each Apple client version. Support the
+current and previous released server/client combinations. Keep each API addition
+additive for the declared adoption window. Do not remove a capability until
+telemetry shows the minimum supported Apple version has no active use for the
+approved retirement period.
+
+Keep the last compatible Expo iOS and Electron macOS artifacts and their signing
+inputs available for the declared rollback window. State the exact window before
+rollout. A native rollout can stop immediately, but an installed binary remains
+supported until the published minimum-version date. Emergency server controls
+may disable only optional behavior. They must preserve sign-in, account access,
+data export, and safe session termination.
 
 Native client telemetry must identify client family and version without
 recording credentials or user content. Crash-free sessions alone do not prove
@@ -484,7 +577,9 @@ Rollback is designed per tranche before traffic starts.
 
 1. Stop traffic progression.
 2. Set the route-group kill switch to legacy ownership.
-3. Stop new Rust job leases and confirm one legacy job owner.
+3. Stop new Rust job lease admission. Wait for active leases to finish or expire.
+   Fence the Rust lease epoch. Confirm no Rust lease can mutate state. Then
+   enable and confirm one legacy job owner.
 4. Drain Rust streams until the published deadline. Force clients to reconnect
    to the legacy owner only after the deadline.
 5. Verify health, error rate, queues, database pool, audit events, billing
@@ -619,15 +714,26 @@ macOS development and testing only.
 The baseline facts come from these files at the ADR's authoring branch:
 
 - `apps/api/package.json`: Bun/Hono API monolith and current dependencies;
+- `packages/api-contract/package.json` and `packages/api-contract/src`: the
+  authoritative wire schemas;
 - `packages/sdk/package.json`: published `@kortix/sdk` exports and client role;
 - `packages/db/package.json` and `packages/db/migrations`: current migration
   tooling and history;
-- `apps/mobile/package.json`: Expo/React Native iOS and Android surface;
-- `apps/desktop-electron/package.json`: macOS, Windows, and Linux builds;
+- `apps/mobile/package.json` and the direct `fetch` sites under `apps/mobile`:
+  Expo/React Native iOS and Android plus known SDK-boundary exceptions;
+- `apps/desktop-electron/package.json`: macOS, Windows, and Linux build scripts;
+  these scripts do not prove external distribution readiness;
+- `apps/whitelabel-demo`: the preserved `@kortix/sdk` reference consumer;
+- `apps/kortix-app-runtime`, `apps/kortix-sandbox-agent-server`,
+  `apps/kortix-worker`, and `apps/sandbox/Dockerfile`: Go runtime, TypeScript
+  sandbox daemon, TypeScript session worker, and sandbox-image surfaces;
 - `tests/src/flows/*.flow.ts`: 454 registered `flow(...)` declarations;
 - `tests/spec/routes.generated.json`: generated route count of 635;
-- `.github/workflows/deploy-dev.yml`, `deploy-staging.yml`, and
-  `deploy-prod.yml`: current environment promotion surfaces;
+- `.github/workflows/deploy-dev.yml` and `deploy-preview.yml`: dev and preview
+  deployment surfaces;
+- `.github/workflows/build-staging.yml` -> `deploy-staging.yml` ->
+  `promote.yml` -> release PR -> `tests-release.yml` -> reviewed `prod` PR
+  merge -> `deploy-prod.yml`: the complete staging-to-production release chain;
 - `docs/adr/006-local-sandbox-runtime.md`: ordinary Linux VPS sandbox decision;
 - `.claude/skills/learnings/SKILL.md`: incident-derived migration, preview,
   deployment, WebSocket, and release constraints.
