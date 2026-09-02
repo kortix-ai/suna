@@ -511,11 +511,72 @@ which needs a `workload_type` CHECK migration, the node-pg-migrate lock
 problem solved, and belongs in one deliberate change; (2) the SDK and proxy
 items, which are genuinely P2.5/P2.6 work and should move with them.
 
-### P2.5 — Two lifecycles that can disagree
+### P2.5 — Two lifecycles that can disagree — **the recovery contract landed**
 
 Reaping, idle timeouts, wake fences and billing all assume one runtime per
 session. **A live worker with a reaped environment must be a defined state, not
 a discovered one** — including what the next tool call does when it finds one.
+
+It was discovered, and the answer was: **it fails forever.**
+`LazyKortixEnv.attach()` opens with `if (this.inner) return this.inner`, and
+nothing anywhere cleared `inner` — so the client minted on the first tool call
+served the worker's entire life, pinned to one provider-edge URL and one
+`external_id`.
+
+That was survivable while nothing stopped an environment out from under a live
+worker. **The sweeps landed in P2.4 do exactly that**, so this item stopped
+being hypothetical the moment they shipped:
+
+| what the control plane does | what the worker saw before |
+|---|---|
+| idle 24h → stop | every later tool call fails on a dead edge |
+| worker parked → stop | same |
+| removed box → rebuilt under a NEW `external_id` | still talking to the old one |
+
+In all three the control plane is behaving correctly and `ensure` would hand
+back a working box. The worker simply never asked again.
+
+**The contract** (`apps/kortix-worker/src/env-reattach.ts`, wired into
+`lazy-env.ts`): when an operation reports that nothing on the far side
+answered, discard the environment, re-attach ONCE, retry the operation.
+Recovery is then the control plane's ordinary path — `ensure` resumes a stopped
+box or rebuilds a removed one — and the worker's only job is to ask again.
+
+Two details decide whether it works:
+
+- **It keys off the ERROR, because there is no exception to key off.**
+  `rpcOnce` catches everything — *"Never throw. A dead environment is a Result,
+  not an exception."* — so an unreachable box and a missing file arrive in the
+  same shape. What separates them is that the daemon, when it answers at all,
+  answers with a MAPPED code; `unknown` plus a transport-shaped message means
+  nothing spoke.
+- **The code check is load-bearing, not decorative.**
+  `/var/run/docker.sock: no such file` is an ordinary tool failure whose
+  message contains a transport word. On message alone it would discard a
+  healthy environment on every failed stat of a socket path. The first version
+  of the test suite did not catch this — removing the code guard still passed —
+  so the traps were added until it did.
+
+Exactly one re-attach per operation: `attach()` already retries to its own
+deadline, and looping would multiply that by every tool call in the turn.
+
+> Verified: 23 tests, all four mutations red (no re-attach; unbounded loop;
+> discard that forgets nothing; tool errors re-attaching). **Delivery verified
+> live** — the worker is bundled into the API image at build time
+> (`apps/api/Dockerfile:115`, copied at `:268`), not baked into sandbox images,
+> so it ships with the API. `EHOSTUNREACH` and `unable to connect` had ZERO
+> occurrences in the worker source before this change and are present in the
+> deployed 917 KB bundle on pi.
+>
+> **Not yet verified end-to-end:** no session has been observed recovering from
+> a reap mid-turn. That needs a live prompt, a reap behind its back, and a
+> second tool call.
+
+**Still open on this item:** the state matrix itself. The recovery contract
+answers "what does the next tool call do"; it does not yet enumerate every
+reachable (worker × environment) pair and say which are legal. Wake fences and
+turn accounting — which box's clock settles a turn, and whether a busy
+environment keeps its worker alive — are unexamined.
 
 ### P2.6 — The secret boundary follows the worker
 
