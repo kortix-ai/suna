@@ -325,16 +325,41 @@ actually needs the environment attaches again and reports it as its own Result.
 > Not yet verified live: the branch environment is frozen, so the before/after
 > on a deployed box is owed.
 
-### P2.3 — Take the transport that was already measured best
+### P2.3 — The transport — **done, and the plan item was wrong**
 
-`WebSocketTransport` exists and wins on both counts, yet the default is
-`keepalive`. The doc's own reason to switch is correctness before speed:
-*"per-call HTTP already produced a correctness bug in this spike when a
-keep-alive socket was retired between calls."*
+The item said "take the transport already measured best". It could not be done
+as written: **gate G0's 16.0ms multiplexed-socket number came from the spike's
+STUB environment.** The real daemon served only `POST /` and `POST /rpc` —
+there was no `/rpc-ws` anywhere in `apps/kortix-sandbox-agent-server`.
+Defaulting the worker to `ws` would have broken every tool call in production.
+G0's own record should be read with that in mind.
 
-* Default the env transport to `ws`, keep `keepalive` as the fallback.
-* Record **co-location as a provider-selection criterion** — G0's real finding,
-  and a criterion the plan did not previously have.
+**Shipped:**
+
+* The daemon upgrades `/kortix/env-rpc/rpc-ws`, reusing the pty websocket
+  machinery already in `Bun.serve`. Each frame is dispatched by re-entering the
+  app's own HTTP route with a synthetic request, so the ~250-line op switch is
+  not duplicated — a websocket tool call behaving differently from the same call
+  over POST is the bug nobody goes looking for.
+* The worker NEGOTIATES: one probe per session, then the socket for the rest of
+  it, or pooled keep-alive for the rest of it. Daemons are image-baked, so a
+  sandbox created before this endpoint exists will never serve it.
+* A failure *after* the socket has served a call is rethrown, not masked. That
+  is a dropped connection; switching quietly to HTTP would hide a broken
+  environment behind a slower one.
+* The API's WS proxy needed no change — `ws-proxy.ts` matches any path under
+  `/v1/p/<ext>/<port>/` and forwards the signed user context as a header and,
+  optionally, a query parameter. The daemon accepts either.
+
+**Keep G0's actual conclusion in view:** transport is worth 21%, not an order of
+magnitude, and **co-location is the lever** — a provider-selection criterion,
+not a code change. The reason to take the socket anyway is correctness: per-call
+HTTP already produced a bug in the spike when a keep-alive socket was retired
+between calls.
+
+> Not verified live. The branch environment is frozen, and a daemon change
+> reaches only newly baked images regardless — so this is the first item whose
+> verification needs an image rebuild, not just a deploy.
 
 ### P2.4 — `session_id == sandbox_id` stops being true
 
