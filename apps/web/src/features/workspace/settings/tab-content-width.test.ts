@@ -76,6 +76,7 @@ const FORM_TABS = [
   'general-tab.tsx',
   // Plan: `BillingTab`'s cards and rows, not a `<Table>` — the ledger with
   // the wide table is the account page's Usage tab, which is not mounted here.
+  'credits-tab.tsx',
   'plan-tab.tsx',
   'preferences-tab.tsx',
   'profile-tab.tsx',

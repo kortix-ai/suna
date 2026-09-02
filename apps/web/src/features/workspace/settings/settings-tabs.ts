@@ -60,6 +60,18 @@ export type SettingsTab =
   // `billing` is spent on an `ACCOUNT_GRADUATED` redirect to the account page
   // and a live tab under it would shadow every bookmark pointing there.
   | 'plan'
+  // What the account has left to spend, and what it spent (Jay, 2026-09-03:
+  // "it's difficult to get to know how many credits we still have pending").
+  // Read-only — every mutation stays on `plan`, which this pane's one action
+  // navigates to.
+  //
+  // The id is `credits`, not `usage`, for the same reason `plan` is not
+  // `billing`: `usage` is an ACCOUNT_GRADUATED key below, pointing at
+  // `/accounts/<id>?tab=transactions`, and `legacySectionRedirect` resolves
+  // that map BEFORE live tabs — a tab under `usage` would shadow every
+  // bookmark to the account page's usage surface. The word still reaches this
+  // pane through the command palette's keyword bag.
+  | 'credits'
   // The first PROJECT-scoped tab in an otherwise person-scoped overlay, and a
   // deliberate partial reversal of the graduation described below (Jay,
   // 2026-09-01). Everything else that configures a project genuinely belongs
@@ -123,6 +135,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'tokens',
+  'credits',
   'plan',
   // Project-scoped, so NOT in `ACCOUNT_SCOPED_SETTINGS_TABS`
   // (`settings-panel.tsx`): the overlay hides the whole Workspace group when it

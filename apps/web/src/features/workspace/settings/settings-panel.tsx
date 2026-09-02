@@ -40,6 +40,7 @@ import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { AppearanceTab } from './tabs/appearance-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
+import { CreditsTab } from './tabs/credits-tab';
 import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
 import { PlanTab } from './tabs/plan-tab';
@@ -79,6 +80,11 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
   'tokens',
+  // Same scope as `plan` below — one wallet per account, read through the same
+  // resolved id — so it renders wherever `plan` does. Listed before it, in the
+  // rail's own order, because `command-palette.test.tsx` asserts this array
+  // equals `PALETTE_ACCOUNT_SCOPED_TABS` element for element.
+  'credits',
   // The plan is the ACCOUNT's, and the account is resolved the same way the
   // Tokens pane resolves it (`useSettingsAccountId`), so it renders with or
   // without a project too.
@@ -601,6 +607,9 @@ function SettingsTabPane({
   }
   if (item.tab === 'tokens') {
     return <TokensTab accountId={accountId} />;
+  }
+  if (item.tab === 'credits') {
+    return <CreditsTab accountId={accountId} />;
   }
   if (item.tab === 'plan') {
     return <PlanTab accountId={accountId} />;

@@ -38,6 +38,7 @@ describe('SETTINGS_TABS', () => {
       'preferences',
       'connected',
       'tokens',
+      'credits',
       'plan',
       'workspace',
       'sandbox',

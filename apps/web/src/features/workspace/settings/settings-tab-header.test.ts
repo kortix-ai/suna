@@ -70,6 +70,7 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
   // project-settings registry rather than the rail.
   'experimental-tab.tsx': 'feature-flags',
   'general-tab.tsx': 'general',
+  'credits-tab.tsx': 'credits',
   'plan-tab.tsx': 'plan',
   'preferences-tab.tsx': 'preferences',
   'profile-tab.tsx': 'profile',

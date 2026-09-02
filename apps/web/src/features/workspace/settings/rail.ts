@@ -1,6 +1,7 @@
 import {
   ArrowCircleUpIcon as ArrowUpCircle,
   ChatCircleIcon as ChatCircle,
+  CoinsIcon as Coins,
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
@@ -143,10 +144,23 @@ const STATIC_GROUPS: readonly RailGroup[] = [
   {
     label: 'Account',
     items: [
+      // Credits FIRST, plan second: reading the balance is the frequent visit
+      // and changing the plan is the rare one. The row is in `Account`, not
+      // `Personal`, because a wallet belongs to the account — on a Team plan
+      // every seat spends the same balance, and filing it under "Personal"
+      // would claim otherwise. Jay asked for a Usage tab under Personal
+      // (2026-09-03); the scope is the one thing changed, and the word "usage"
+      // still finds this row through the command palette.
+      {
+        tab: 'credits',
+        label: 'Credits',
+        description: 'What this account has left to spend, and what it spent this period.',
+        icon: Coins,
+      },
       {
         tab: 'plan',
         label: 'Plan',
-        description: 'Your subscription, credits, and billing for this account.',
+        description: 'Your subscription, team seats, and billing for this account.',
         icon: CreditCard,
       },
     ],

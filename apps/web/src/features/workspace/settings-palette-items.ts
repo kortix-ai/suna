@@ -49,6 +49,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'tokens',
+  'credits',
   'plan',
 ];
 
@@ -124,9 +125,23 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // "account" owns the word).
   tokens:
     'api keys key tokens token personal access pat cli command line terminal secret credential authentication ci',
-  // The plan is the one account row in the overlay. Its rail description
+  // The row that answers "how much have I got left". It carries `usage`
+  // because that is the word Jay used for it and the id could not be
+  // (`settings-tabs.ts` explains why `usage` is spent), and `balance` /
+  // `wallet` because those moved OFF `plan` below — the Plan pane shows
+  // neither now.
+  credits:
+    'credits credit usage balance wallet spend spent remaining left quota allowance topup top up refresh daily monthly cost',
+  // The plan is the other account row in the overlay. Its rail description
   // says "for this account", so it answers "account" by a word the user reads.
-  plan: 'plan subscription billing credits upgrade invoice payment wallet',
+  //
+  // `credits` deliberately stays on BOTH rows: this is the pane that SELLS
+  // them (`CreditTopupSection`, auto top-up) and `credits` above is the pane
+  // that COUNTS them, so the word names a real subject of each. `wallet` and
+  // `balance` are gone from here — neither is rendered on this pane any more,
+  // and a word that names a different row's subject is the defect this file's
+  // header rule is about.
+  plan: 'plan subscription billing credits buy purchase upgrade downgrade invoice payment seat seats portal stripe',
   // Copy for the two Workspace rows that came back on 2026-09-02 — the words
   // `proj-sandbox` and `proj-feature-flags` carry in `lib/menu-registry.ts`.
   sandbox:
