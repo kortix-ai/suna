@@ -66,6 +66,9 @@ let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
+// Models the real database state after a drain claims same-session siblings:
+// every claimed row is `running` until the drain releases the tail.
+const simulatedInFlightCommands = new Set<string>();
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
@@ -89,6 +92,14 @@ mock.module('../../../shared/db', () => ({
             // floor row would make every send look like it lost the order race.
             if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
               return [{ newest: deliveredFloor === null ? null : deliveredFloor.toString() }];
+            }
+            if (
+              table === sessionLifecycleCommands &&
+              projection &&
+              'commandId' in projection &&
+              simulatedInFlightCommands.size > 0
+            ) {
+              return [{ commandId: [...simulatedInFlightCommands][0] }];
             }
             return [];
           },
@@ -153,6 +164,7 @@ mock.module('../store', () => ({
   promoteNextInboxRow: async () => null,
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
+    simulatedInFlightCommands.delete(commandId);
   },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
@@ -259,6 +271,7 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  requeues = [];
   sessionRow = {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
@@ -281,6 +294,7 @@ beforeEach(() => {
   claimed = [];
   openDelayBySession = {};
   events = [];
+  simulatedInFlightCommands.clear();
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
     // The staged-revert guard reads the session row; the re-mint and the
@@ -572,6 +586,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       baseRow({ commandId: 'cmd-1', sessionId: 'sess-ordered' }),
       baseRow({ commandId: 'cmd-2', sessionId: 'sess-ordered' }),
     ];
+    simulatedInFlightCommands.add('cmd-2');
 
     const drain = drainSessionLifecycleQueue({ limit: 10 });
     await Bun.sleep(20);
@@ -581,9 +596,8 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     releaseFirst();
     await drain;
     expect(capturedBodies).toHaveLength(1);
-    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toContainEqual({
-      commandId: 'cmd-2',
-      reason: 'older_prompt_pending',
-    });
+    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
+      { commandId: 'cmd-2', reason: 'older_prompt_pending' },
+    ]);
   });
 });

@@ -799,7 +799,9 @@ export async function drainSessionLifecycleQueue(
         };
         const batch = lane.slice(i, j).sort((a, b) => sendOrder(a) - sendOrder(b));
         i = j;
-        await runRow(batch[0]);
+        // Claims mark every sibling `running`. Release the tail before the
+        // head reaches admission, or `hasInFlightPrompt` sees that tail and
+        // rejects the head as if another delivery were already on the wire.
         for (const sibling of batch.slice(1)) {
           await requeueForAdmission(
             sibling.commandId,
@@ -808,6 +810,7 @@ export async function drainSessionLifecycleQueue(
           );
           out.queued += 1;
         }
+        await runRow(batch[0]);
       }
     }),
   );
