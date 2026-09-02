@@ -52,15 +52,6 @@ import {
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
-  buildWorkspacePaletteRows,
-  groupWorkspacePaletteRows,
-  recentWorkspaceRows,
-  rootWorkspaceResults,
-  workspacePageResults,
-  workspacePaletteValue,
-  type WorkspacePaletteRow,
-} from '@/features/workspace/workspace-palette';
-import {
   PALETTE_NO_PROJECT_DEFAULT_TAB,
   filterSettingsPaletteGroups,
   settingsPaletteGroups,
@@ -72,6 +63,15 @@ import {
   resolveSettingsOverlayHref,
 } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
+import {
+  type WorkspacePaletteRow,
+  buildWorkspacePaletteRows,
+  groupWorkspacePaletteRows,
+  recentWorkspaceRows,
+  rootWorkspaceResults,
+  workspacePageResults,
+  workspacePaletteValue,
+} from '@/features/workspace/workspace-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
@@ -106,26 +106,26 @@ import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user
 import { type TextPart, groupMessagesIntoTurns, isTextPart } from '@/ui';
 import {
   type FeatureFlagKey,
+  type KortixAccount,
+  type KortixProject,
+  type ProjectDetail,
+  type ProjectSession,
   featureFlags,
   getProject,
   getProjectDetail,
-  type KortixAccount,
-  type KortixProject,
   listProjectSessions,
   listProjectsForAccount,
   normalizeAppPathname,
-  type ProjectDetail,
-  type ProjectSession,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
 import {
+  agentScopedModelSelectionKey,
   contract,
   invalidateProject,
+  modelProviderMode,
   qk,
   refreshProjectProviderState,
-  agentScopedModelSelectionKey,
-  modelProviderMode,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
@@ -245,8 +245,11 @@ export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>
   // `kind: 'navigate'` rows pointed straight at the account page instead
   // (`account-billing`, `account-tokens`, `account-usage` in
   // `lib/menu-registry.ts`).
-  appearance: 'preferences',
-  sounds: 'preferences',
+  // Since 2026-09-02 each legacy id has a tab of its own name again:
+  // theme/wallpaper live on Appearance, sound packs on Sessions, and the
+  // shortcut list stayed on Preferences.
+  appearance: 'appearance',
+  sounds: 'sessions',
   shortcuts: 'preferences',
 };
 
@@ -312,10 +315,18 @@ export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   // `conversation-density`'s is — if this entry is ever removed the row still
   // opens the picker instead of dead-ending.
   'review-changes': 'changes',
-  // "Settings · Feature flags" lists every experimental feature with its
-  // stability and its switch, so a flag can be found and flipped by name
-  // without three navigations. The row's href is the routed fallback.
-  'proj-config-feature-flags': 'flags',
+};
+
+/**
+ * Same idea, for the rows the palette DERIVES from the Settings overlay's rail
+ * (`settingsPaletteGroups`) rather than reads from the registry. "Feature
+ * flags" opens the in-palette flag list — every experimental feature with its
+ * stability and its switch, so a flag can be found and flipped by name without
+ * three navigations. Selecting any other settings row opens the overlay on
+ * that tab, which is also this row's fallback if the map loses the key.
+ */
+export const SETTINGS_TAB_SUBMENU_PAGE: Partial<Record<SettingsTab, PalettePage>> = {
+  'feature-flags': 'flags',
 };
 
 /**
@@ -1338,9 +1349,9 @@ export function CommandPalette() {
     createSession
       .mutateAsync()
       .then((session) => {
-          // LEGACY, unreachable in the product: this branch runs only when
-          // there is NO projectId, and every authed route is `/projects/[id]/*`.
-          // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
+        // LEGACY, unreachable in the product: this branch runs only when
+        // there is NO projectId, and every authed route is `/projects/[id]/*`.
+        // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
           title: 'New session',
@@ -1451,9 +1462,10 @@ export function CommandPalette() {
     [accountsList, allWorkspaces, projectId],
   );
 
-  const rootSuggestionItems = useMemo(() => buildRootSuggestions(allPaletteItems), [
-    allPaletteItems,
-  ]);
+  const rootSuggestionItems = useMemo(
+    () => buildRootSuggestions(allPaletteItems),
+    [allPaletteItems],
+  );
 
   /** Whether a row should say which account it is in. One account, no noise. */
   const showWorkspaceAccount = (accountsList?.length ?? 0) > 1;
@@ -1591,9 +1603,6 @@ export function CommandPalette() {
     if (!open) return;
     if (page === 'accounts') router.prefetch(PROJECT_LANDING_PATH);
     if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
-    if (page === 'flags' && projectId) {
-      router.prefetch(`/projects/${projectId}/config?section=feature-flags`);
-    }
   }, [open, page, projectId, router]);
 
   // "Invite members" and "Workspace members". The account id arrives from
@@ -2032,14 +2041,12 @@ export function CommandPalette() {
     triggerBackScale();
   }, [triggerBackScale]);
 
-  /** The 'flags' page's fallback when the caller may not write feature flags. */
+  /** The 'flags' page's fallback when the caller may not write feature flags:
+   *  the Settings overlay's Feature flags tab, the pane the picker mirrors. */
   const handleOpenFeatureFlagsSection = useCallback(() => {
     if (!projectId) return;
-    // nav-contract: prefetch-only — a cmdk row activated by keyboard. The
-    // 'flags' page effect warms this one destination as the page opens.
-    router.push(`/projects/${projectId}/config?section=feature-flags`);
-    close();
-  }, [close, projectId, router]);
+    openSettingsTab('feature-flags');
+  }, [projectId, openSettingsTab]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {
@@ -2388,9 +2395,7 @@ export function CommandPalette() {
                                   {openChangeRequestCount}
                                 </span>
                               )}
-                              {item.shortcut && (
-                                <CommandShortcut>{item.shortcut}</CommandShortcut>
-                              )}
+                              {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                               {submenuPage && (
                                 <ChevronRight className="text-muted-foreground/30 size-3" />
                               )}
@@ -2632,6 +2637,7 @@ export function CommandPalette() {
                       >
                         {group.items.map((item) => {
                           const SettingsIcon = item.icon;
+                          const submenuPage = SETTINGS_TAB_SUBMENU_PAGE[item.tab];
                           return (
                             <CommandItem
                               key={item.id}
@@ -2641,7 +2647,9 @@ export function CommandPalette() {
                               value={sanitizeCmdkValue(
                                 `settings ${settingsPaletteSearchText(item)}`,
                               )}
-                              onSelect={() => openSettingsTab(item.tab)}
+                              onSelect={() =>
+                                submenuPage ? goToPage(submenuPage) : openSettingsTab(item.tab)
+                              }
                             >
                               <SettingsIcon className="size-4" />
                               <span className="flex-1">{item.label}</span>

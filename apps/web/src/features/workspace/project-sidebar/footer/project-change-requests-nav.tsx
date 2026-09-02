@@ -14,7 +14,7 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { relativeTime } from '@/lib/relative-time';
 
@@ -162,7 +162,7 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // popover in place and stays a button.
   const menuButton = reviewEnabled ? (
     <SidebarMenuButton asChild className="font-medium">
-      <Link href={projectSettingsSectionHref(projectId, 'review')} prefetch>
+      <Link href={capabilityTabHref(projectId, 'review')} prefetch>
         {rowContent}
       </Link>
     </SidebarMenuButton>

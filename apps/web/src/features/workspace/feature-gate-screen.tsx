@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { FlagIcon } from '@phosphor-icons/react';
 
 /**
@@ -53,7 +52,7 @@ export function FeatureGateScreen({
         </div>
         {projectId ? (
           <Button asChild size="sm" variant="secondary" className="shrink-0">
-            <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>Feature flags</Link>
+            <Link href={`/projects/${projectId}/settings/feature-flags`}>Feature flags</Link>
           </Button>
         ) : null}
       </div>

@@ -138,7 +138,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <SidebarMenuButton
                 aria-label="Switch workspace"
                 className={cn(
-                  'group/workspace relative hover:bg-card flex cursor-pointer items-center gap-2 rounded-md px-1',
+                  'group/workspace hover:bg-card relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
@@ -220,7 +220,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   header `UserMenu` has no such renderer and must navigate. */}
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
-                User Settings
+                Settings
               </DropdownMenuItem>
 
               {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits

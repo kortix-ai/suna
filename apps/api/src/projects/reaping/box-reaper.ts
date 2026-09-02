@@ -33,6 +33,7 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
+import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
@@ -102,6 +103,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
 };
 
 export interface SandboxReaperDependencies {
+  scheduleLegacyRuntimeBootstrap: typeof scheduleLegacyRuntimeBootstrap;
   renewActiveSandboxTurn: typeof renewActiveSandboxTurn;
   observeSandboxTurn: typeof observeSandboxTurn;
   reconcileSandboxTurnDelivery: typeof reconcileSandboxTurnDelivery;
@@ -112,6 +114,7 @@ export interface SandboxReaperDependencies {
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
+  scheduleLegacyRuntimeBootstrap,
   renewActiveSandboxTurn,
   observeSandboxTurn,
   reconcileSandboxTurnDelivery,
@@ -258,6 +261,19 @@ export async function reapAndReconcileSandboxes(
               err instanceof Error ? err.message : err,
             ),
           );
+          // A running box whose daemon predates runtime convergence can never
+          // update itself; give it a supervisor and a current daemon from here.
+          // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
+          // one health probe per box per 6 h on a converged fleet, never under
+          // a busy OpenCode, bounded attempts per API build.
+          dependencies.scheduleLegacyRuntimeBootstrap({
+            sandboxId: row.sandboxId,
+            sessionId: row.sessionId ?? null,
+            accountId: row.accountId ?? null,
+            provider: row.provider,
+            externalId: row.externalId,
+            metadata: (row.metadata ?? null) as Record<string, unknown> | null,
+          });
           // A running box has answered the pending-stop question. Dropping the
           // marker here is what keeps the confirmation about THIS provider
           // transition: an aged marker left on a healthy box would let the next

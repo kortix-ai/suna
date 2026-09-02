@@ -10,6 +10,7 @@ import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   buildSettingsPanelSettingsNav,
   isSettingsTabAllowed,
+  probeAdmits,
   SettingsPanelShell,
   type SettingsPanelShellProps,
   type SettingsTabAllowedParams,
@@ -148,15 +149,26 @@ describe('SettingsPanelShell — desktop rail', () => {
     expect(html).not.toContain('No settings match');
   });
 
-  test('the desktop rail closes the dialog with an icon button, not a Back to workspace row', () => {
+  /**
+   * The rail's exit is the `Back to app` row the account settings sidebar
+   * leads with (`accounts/hub/account-settings-sidebar.tsx`), so the overlay
+   * and `/accounts/**` read as one surface. It is a `ModalClose`: the app is
+   * what the dialog was covering.
+   */
+  test('the desktop rail leads with a Back to app row that closes the dialog', () => {
     const html = render();
+    expect(html).toContain('Back to app');
     expect(html).not.toContain('Back to workspace');
-    expect(html).toContain('aria-label="Close"');
+  });
+
+  test('the desktop content column carries a Settings breadcrumb bar', () => {
+    expect(render()).toContain('aria-label="breadcrumb"');
+    expect(render({ isMobile: true })).not.toContain('aria-label="breadcrumb"');
   });
 });
 
 /**
- * The dialog frame: compact and centred, not a full-screen mode.
+ * The dialog frame: full screen.
  *
  * `SettingsPanelView` renders through `ModalContent` -> `DialogPrimitive.Portal`,
  * which never mounts under `renderToStaticMarkup` (see this file's header), so
@@ -164,40 +176,35 @@ describe('SettingsPanelShell — desktop rail', () => {
  * against the source — the same technique `settings-panel-a11y.test.ts` uses
  * for `activationMode`.
  *
- * The overlay was `h-dvh w-screen max-w-none` with every rounding and border
- * stripped: a whole-app mode for what is a profile, a preference, and a list
- * of linked identities. Jay's call, restoring the shape the standalone user
- * settings modal had before the unification commit (`089acb9eb5`), was
- * `lg:max-w-4xl` over a fixed height.
+ * It is the account settings shell as an edge-to-edge overlay (Jay,
+ * 2026-09-02): `side="fullscreen"` plus the important-marked overrides the
+ * Apps modal uses, because `ModalContent` appends `rounded-xl` AFTER
+ * `className` and `ModalVariants` centres and caps the dialog at `lg:` — a
+ * plain `rounded-none` or `max-w-none` loses to both.
  */
 describe('SettingsPanelView — the dialog frame', () => {
   const SOURCE = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-  test('is capped at max-w-4xl, like the modal it is modelled on', () => {
-    expect(SOURCE).toContain('lg:max-w-4xl');
+  test('takes the fullscreen side', () => {
+    expect(SOURCE).toContain('side="fullscreen"');
   });
 
-  test('takes a fixed height that stays inside a short viewport', () => {
-    expect(SOURCE).toContain('lg:h-[min(660px,85dvh)]');
-  });
-
-  test('never goes back to the full-screen shape', () => {
-    for (const fullscreen of [
-      'h-dvh',
-      'w-screen',
-      'max-w-none',
-      'rounded-none',
-      'min-h-dvh',
-      'shadow-none',
-    ]) {
-      expect(SOURCE).not.toContain(fullscreen);
+  test('fills the viewport with important-marked overrides, not plain classes the modal chrome outranks', () => {
+    for (const cls of ['inset-0!', 'h-dvh!', 'max-w-none!', 'rounded-none!', 'border-0!']) {
+      expect(SOURCE).toContain(cls);
     }
   });
 
-  test('the desktop rail is one narrow column beside the content, not a 250px sidebar', () => {
-    expect(SOURCE).toContain('grid-cols-[13rem_1fr]');
+  test('never goes back to a capped, centred dialog', () => {
+    for (const capped of ['lg:max-w-4xl', 'lg:max-w-6xl', 'lg:h-[min(']) {
+      expect(SOURCE).not.toContain(capped);
+    }
+  });
+
+  test("the desktop rail is the account shell's sidebar column, from the shell's one constant", () => {
+    expect(SOURCE).toContain('SETTINGS_SIDEBAR_WIDTH_PX');
     expect(SOURCE).not.toContain('grid-cols-[250px_1fr]');
   });
 });
@@ -276,15 +283,37 @@ describe('SettingsPanelShell — real tab content gating', () => {
     expect(() => render()).not.toThrow();
   });
 
-  test('every surviving tab mounts a real view when it is the active one', () => {
-    for (const tab of SETTINGS_TABS) {
+  /**
+   * Appearance and Sessions read Zustand stores and `next-themes`, neither of
+   * which throws without a provider, so the throw signal cannot prove they
+   * mounted. For those two the proof is the pane heading: present when the
+   * tab is active, absent otherwise (`RailTriggerBody` renders the label too,
+   * so the heading is matched as the `h2` `SettingsTabHeader` emits).
+   */
+  const STORE_ONLY_TABS = ['appearance', 'sessions'] as const;
+  const QUERY_BACKED_TABS = SETTINGS_TABS.filter(
+    (tab) => !(STORE_ONLY_TABS as readonly string[]).includes(tab),
+  );
+
+  test('every query-backed tab mounts a real view when it is the active one', () => {
+    for (const tab of QUERY_BACKED_TABS) {
       expect(() => render({ tab, projectId: 'p1', accountId: 'a1' })).toThrow();
     }
   });
 
   test('each one mounts with no account id either — every pane resolves its own scope', () => {
-    for (const tab of SETTINGS_TABS) {
+    for (const tab of QUERY_BACKED_TABS) {
       expect(() => render({ tab, projectId: 'p1', accountId: undefined })).toThrow();
+    }
+  });
+
+  test('the store-backed tabs mount their pane heading only while active', () => {
+    for (const tab of STORE_ONLY_TABS) {
+      const label = allItems.find((item) => item.tab === tab)?.label ?? '';
+      expect(label).not.toBe('');
+      const heading = new RegExp(`<h2[^>]*>${label}</h2>`);
+      expect(render({ tab, projectId: 'p1' })).toMatch(heading);
+      expect(render()).not.toMatch(heading);
     }
   });
 
@@ -299,9 +328,11 @@ describe('SettingsPanelShell — real tab content gating', () => {
    * It is the exact inverse of the two loops above — same tab, same absence of
    * a `QueryClientProvider`, opposite outcome — so it cannot pass vacuously.
    */
-  test('the workspace pane does NOT mount without a project id', () => {
-    expect(() => render({ tab: 'workspace', projectId: undefined })).not.toThrow();
-    expect(() => render({ tab: 'workspace', projectId: 'p1' })).toThrow();
+  test('the workspace panes do NOT mount without a project id', () => {
+    for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
+      expect(() => render({ tab, projectId: undefined })).not.toThrow();
+      expect(() => render({ tab, projectId: 'p1' })).toThrow();
+    }
   });
 
   /**
@@ -433,16 +464,10 @@ describe('buildSettingsPanelSettingsNav', () => {
  *
  * `SettingsPanel` has two mounts: `ProjectShell` (with a `projectId`) and
  * `app/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
- * rows the rail may show on each. Every tab left in the overlay is
- * user-scoped, so the gate currently admits all of them on both mounts — the
- * point of these cases is that the RULE still holds, derived from
- * `SETTINGS_TABS`, so a project-scoped tab added later is covered without
- * anyone remembering to extend this file.
- *
- * The per-tab IAM gate that used to sit beside it went with the tabs it
- * gated: the project-scoped ones are gated by `/projects/[id]/config` over
- * the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves, the account-scoped
- * ones by `/accounts/[id]`.
+ * rows the rail may show on each, and — for the two Workspace rows that
+ * mount config-page panes — whether the caller's project capabilities admit
+ * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves
+ * `/projects/[id]/config` reads.
  */
 describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
   function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
@@ -454,22 +479,63 @@ describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
     expect([...allowed].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
   });
 
-  // `workspace` is the only project-scoped tab, and the gate is what hides it
-  // — and with it the whole `Workspace` rail group — on `/settings` and under
+  // The three project-scoped tabs, and the gate is what hides them — and
+  // with them the whole `Workspace` rail group — on `/settings` and under
   // `/accounts/**`, where there is no project to name. Asserted as an exact
-  // list so a second project-scoped tab cannot be added without a decision.
-  test('exactly one tab is project-scoped, and the gate hides it with no project', () => {
+  // list so a fourth project-scoped tab cannot be added without a decision.
+  test('exactly four tabs are project-scoped, and the gate hides them with no project', () => {
     const projectScoped = SETTINGS_TABS.filter(
       (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
     );
-    expect(projectScoped).toEqual(['workspace']);
-    expect(isSettingsTabAllowed('workspace', paramsFor())).toBe(false);
+    expect(projectScoped).toEqual(['workspace', 'sandbox', 'feature-flags', 'upgrades']);
+    for (const tab of projectScoped) {
+      expect(isSettingsTabAllowed(tab, paramsFor())).toBe(false);
+    }
     expect(isSettingsTabAllowed('workspace', paramsFor({ hasProject: true }))).toBe(true);
   });
 
-  test('with a project, the scope gate changes nothing — every tab is judged on its own gates', () => {
+  /**
+   * Sandbox templates and Feature flags gate on the same IAM read leaf the
+   * config page gates them on (`isCustomizeSectionVisible`). No capability
+   * answer yet — the probe in flight, or a caller that passed none — hides
+   * the row rather than showing a pane the API would refuse.
+   */
+  test('the IAM-gated workspace tabs follow the project capability answer', () => {
+    const allow = () => true;
+    const deny = () => false;
+    for (const tab of ['sandbox', 'feature-flags', 'upgrades'] as const) {
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(false);
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: deny }))).toBe(
+        false,
+      );
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: allow }))).toBe(
+        true,
+      );
+      // A capability grant never overrides the scope rule.
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: false, canProject: allow }))).toBe(
+        false,
+      );
+    }
+  });
+
+  /**
+   * The probe answer the container feeds the gate. Fail-open while loading
+   * is load-bearing: an in-flight probe reads `allowed: false`, and the
+   * panel bounces an active tab that is not in the rail — so `=== true`
+   * sent every `/settings/sandbox` deep link to Profile in CI.
+   */
+  test('an in-flight probe admits the row; only a received denial hides it', () => {
+    expect(probeAdmits(undefined)).toBe(true);
+    expect(probeAdmits({ allowed: false, isLoading: true })).toBe(true);
+    expect(probeAdmits({ allowed: true, isLoading: false })).toBe(true);
+    expect(probeAdmits({ allowed: false, isLoading: false })).toBe(false);
+  });
+
+  test('with a project and every capability, the scope gate admits every tab', () => {
     for (const tab of SETTINGS_TABS) {
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(true);
+      expect(
+        isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: () => true })),
+      ).toBe(true);
     }
   });
 

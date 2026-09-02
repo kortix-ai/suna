@@ -46,6 +46,7 @@ import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
+import { cn } from '@/lib/utils';
 import { NAV_GROUPS, type AccountNavItem } from './sections';
 import { useAccountHubSection } from './use-account-hub-access';
 import { useAccountMembers } from './use-account-members';
@@ -95,6 +96,12 @@ function NavRow({ entry }: { entry: NavEntry }) {
             // The mobile sidebar is a sheet over the page; a pick closes it.
             if (isMobile) setOpenMobile(false);
           }}
+          className={cn(
+            'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
+            'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
+            'data-[state=active]:bg-active data-[state=active]:font-medium',
+            '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
+          )}
         >
           {Glyph ? <Glyph className="size-4 shrink-0" /> : null}
           <span className="min-w-0 flex-1 truncate">{entry.label}</span>
@@ -220,7 +227,14 @@ function SettingsNav() {
 
 export function AccountSettingsSidebar() {
   return (
-    <Sidebar collapsible="offcanvas" variant="sidebar">
+    // `--surface` is this shell's pane color, one rung off canvas. The child
+    // variant is required: `className` lands on the positioning container,
+    // while the box that paints `bg-background` is `sidebar-inner` inside it.
+    <Sidebar
+      collapsible="offcanvas"
+      variant="sidebar"
+      className="bg-surface [&>[data-slot=sidebar-inner]]:bg-surface"
+    >
       <SidebarHeader className="gap-0 px-2 pt-0 pb-1">
         <div className="flex h-11 items-center justify-between py-2 pr-0.5">
           <Button
@@ -253,7 +267,7 @@ export function AccountSettingsSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="gap-0">
+      <SidebarContent className="gap-0 bg-inherit">
         <Suspense fallback={<NavSkeleton />}>
           <SettingsNav />
         </Suspense>

@@ -6,7 +6,6 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { useCallback, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -215,7 +214,9 @@ function SandboxAlertContent({
   // click time, and that fetch degrades into a full document load whenever it
   // answers wrong. This card only renders when the project is already
   // unhealthy, which is the worst moment to reboot the SPA.
-  const sandboxSectionHref = projectSettingsSectionHref(projectId, 'sandbox');
+  // The Settings overlay's Sandbox templates tab, via its deep-link route —
+  // the config page this pointed at was retired on 2026-09-02.
+  const sandboxSectionHref = `/projects/${projectId}/settings/sandbox`;
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   // The alert TEXT is information a plain member needs — "new sessions can't
   // start until this image builds" explains why the composer is refusing them.

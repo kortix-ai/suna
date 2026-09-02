@@ -4,10 +4,7 @@ import {
   channelsHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  projectSettingsSectionHref,
-  type ProjectSettingsSectionKey,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import type { ProjectSetupStepKey } from './setup-steps';
 
@@ -21,14 +18,12 @@ export type SetupTile = {
   desc: string;
   // Every tile is a route now. Agents, Connectors, Skills and Triggers are
   // capability tabs of their own (`capabilities/capability-tab-routes.ts`);
-  // Your team is a section of the Customize bar's Settings tab
-  // (`capabilities/project-settings/project-settings-sections.ts`).
+  // anything else is a tab of the Settings overlay (`settings/settings-tabs.ts`),
+  // reached through its `/projects/<id>/settings/<tab>` deep-link route.
   //
   // A tile is routed by `href` if it has one, then by `isCapabilityTabKey`,
-  // then by section key — so a key must be spelled exactly as its URL segment.
-  // A near-miss lands on the Settings tab's default section instead of the
-  // tile's own destination.
-  section: ProjectSettingsSectionKey | CapabilityTab['key'];
+  // then by overlay tab — so a key must be spelled exactly as its URL segment.
+  section: SettingsTab | CapabilityTab['key'];
   /**
    * The exact destination, for a tile whose target is not a bare route.
    * Slack needs it because Channels is a SCOPE of the Connectors page now
@@ -61,8 +56,9 @@ export type SetupTile = {
   actions: readonly string[];
 };
 
-export const isCapabilityTabKey = (section: SetupTile['section']): section is CapabilityTab['key'] =>
-  CAPABILITY_TABS.some((tab) => tab.key === section);
+export const isCapabilityTabKey = (
+  section: SetupTile['section'],
+): section is CapabilityTab['key'] => CAPABILITY_TABS.some((tab) => tab.key === section);
 
 /** Static navigation does not fetch counts before the user opens Customize. */
 export const PROJECT_SETUP_TILES: SetupTile[] = [
@@ -105,7 +101,7 @@ export const PROJECT_SETUP_TILES: SetupTile[] = [
     // routes through `href` (below), which needs the project's `account_id`.
     // `section` is unused for this tile but still has to satisfy the type;
     // 'general' is an arbitrary valid placeholder, never read.
-    section: 'general',
+    section: 'workspace',
     href: (projectId, accountId) =>
       accountId ? `/accounts/${accountId}?tab=access-projects&project=${projectId}` : undefined,
     actions: [PROJECT_ACTIONS.PROJECT_MEMBERS_READ],
@@ -132,7 +128,6 @@ export const PROJECT_SETUP_TILE_ACTIONS: readonly string[] = [
   ...new Set(PROJECT_SETUP_TILES.flatMap((tile) => tile.actions)),
 ];
 
-
 /**
  * The tile's destination, resolved during render so the row can be an anchor
  * Next prefetches rather than a click handler it cannot see into.
@@ -148,5 +143,5 @@ export function setupTileHref(
   if (tile.href) return tile.href(projectId, accountId);
   return isCapabilityTabKey(tile.section)
     ? capabilityTabHref(projectId, tile.section)
-    : projectSettingsSectionHref(projectId, tile.section);
+    : `/projects/${projectId}/settings/${tile.section}`;
 }

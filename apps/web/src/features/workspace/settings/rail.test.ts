@@ -23,24 +23,42 @@ describe('railGroups', () => {
   // Settings", but that row names its default TAB, not the rail's order — so
   // leading with the workspace's own identity costs the personal tabs nothing
   // and is what makes renaming findable again.
-  test('renders two groups: Workspace then You', () => {
-    expect(railGroups().map((g) => g.label)).toEqual(['Workspace', 'You']);
+  test('renders three groups: Workspace, Personal, Account', () => {
+    expect(railGroups().map((g) => g.label)).toEqual(['Workspace', 'Personal', 'Account']);
   });
 
-  test('holds the workspace tab first, then the person-scoped tabs, in order', () => {
-    // `tokens` (labelled "API keys") rejoined on 2026-08-18 — a person's own
-    // keys are person-scoped; only the service-account half is account
-    // configuration and it stayed on `/accounts/[id]`.
-    expect(tabsOf()).toEqual(['workspace', 'profile', 'preferences', 'connected', 'tokens']);
+  test('holds the workspace tabs first, then the person-scoped tabs, then the plan', () => {
+    // The 2026-09-02 segmentation (Jay): Security, Appearance and Sessions
+    // split out of Profile and Preferences; Sandbox templates and Feature
+    // flags back under Workspace; Plan as the one Account row.
+    expect(tabsOf()).toEqual([
+      'workspace',
+      'sandbox',
+      'feature-flags',
+      'upgrades',
+      'profile',
+      'security',
+      'appearance',
+      'sessions',
+      'preferences',
+      'connected',
+      'tokens',
+      'plan',
+    ]);
   });
 
   // The row says "General" while the id is `workspace`: the id is a URL segment
   // and `general` was already spent on a redirect, but "General" is what this
   // pane has always been called. Pinned so a future tidy-up cannot silently
   // rename the row to match the id and break the word people look for.
-  test('the workspace row is LABELLED General, under a Workspace group', () => {
+  test('the workspace rows are LABELLED as the config page labels them', () => {
     const group = railGroups().find((g) => g.label === 'Workspace');
-    expect(group?.items.map((i) => i.label)).toEqual(['General']);
+    expect(group?.items.map((i) => i.label)).toEqual([
+      'General',
+      'Sandbox templates',
+      'Feature flags',
+      'Upgrades',
+    ]);
   });
 
   test('every rail tab is a live SettingsTab, and every live SettingsTab has a rail row', () => {
@@ -64,13 +82,10 @@ describe('railGroups', () => {
       'channels',
       'repositories',
       'models',
-      'sandbox',
       'snapshots',
       'marketplace',
       'review',
       'experimental',
-      'feature-flags',
-      'upgrades',
     ]) {
       expect(tabs).not.toContain(gone);
     }
@@ -78,6 +93,8 @@ describe('railGroups', () => {
 
   test('the account-scoped and standalone-page tabs are gone too', () => {
     const tabs = tabsOf();
+    // `billing` stays gone as an ID even though the plan is back as a row: the
+    // row is `plan`, because `billing` is an `ACCOUNT_GRADUATED` redirect.
     for (const gone of [
       'organization',
       'billing',
@@ -127,6 +144,6 @@ describe('railItemForTab', () => {
 
   test('returns undefined for a tab that left the rail — the header renders nothing rather than a wrong title', () => {
     expect(railItemForTab('members' as never)).toBeUndefined();
-    expect(railItemForTab('upgrades' as never)).toBeUndefined();
+    expect(railItemForTab('review' as never)).toBeUndefined();
   });
 });

@@ -1,8 +1,12 @@
 'use client';
 
 /**
- * The Profile tab — profile picture, email, display name, two-factor
- * authentication, and account deletion.
+ * The Profile tab — profile picture, email, display name, the organizations
+ * you belong to, and account deletion.
+ *
+ * Two-factor authentication left for its own Security tab on 2026-09-02
+ * (`security-tab.tsx`, with `FactorRow` and `totpQrSrc`): "who am I" and "how
+ * is that protected" are different questions.
  *
  * **Layout: Linear's settings shape** (Jay's reference, 2026-08-11). The pane
  * opens on its heading and a hairline rule, then rows: label on the left, its
@@ -48,20 +52,10 @@
  * the active one — so opening the panel never fires this tab's fetches.
  */
 
-import {
-  KeyIcon as KeyRound,
-  PlusIcon as Plus,
-  ShieldCheckIcon as ShieldCheck,
-  ShieldWarningIcon as ShieldWarning,
-  DeviceMobileIcon as Smartphone,
-  TrashIcon as Trash2,
-  WarningIcon as Warning,
-} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -80,7 +74,6 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import {
   useAccountDeletionStatus,
@@ -88,10 +81,8 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
-import { type EnrollingFactor, useMfa } from '@/hooks/account/use-mfa';
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
-import type { FactorInfo } from '@/lib/supabase/mfa';
 import { cn } from '@/lib/utils';
 import { SettingsTabHeader } from '../settings-tab-header';
 import {
@@ -107,71 +98,6 @@ const deletionDateFormat = new Intl.DateTimeFormat('en-US', {
   month: 'long',
   day: 'numeric',
 });
-
-/** Supabase hands the TOTP QR back as an SVG data URL (or raw SVG in older
- *  versions) — normalize both into something an <img> can render. Moved
- *  here from `security-tab.tsx` (Task 10); this is its only consumer. */
-export function totpQrSrc(qr: string): string {
-  if (qr.startsWith('data:')) return qr;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(qr)}`;
-}
-
-/**
- * A section label between two groups — plain small text, optionally one line
- * of explanation, sitting above the next group. Not a card header: it carries
- * no border and no background, so the bordered group below it reads as the
- * thing being labelled. Still an `h2` so the pane keeps a real heading outline
- * (`profile-tab.test.tsx` reads these).
- *
- * Deliberately duplicated in `general-tab.tsx` rather than shared: the two
- * Linear restyles landed in parallel and neither should have edited the other
- * agent's file. Promote it to `components/ui/settings-row.tsx` once a third
- * pane needs it.
- */
-/** One enrolled factor row — pure view, exported for render tests. Moved
- *  here from `security-tab.tsx` (Task 10); this is its only consumer.
- *  Border-less: it is stacked inside a `SettingsRowGroup` with the
- *  two-factor row, and the group draws the border and the hairlines. */
-export function FactorRow({
-  factor,
-  onRemove,
-}: {
-  factor: { id: string; friendly_name?: string; factor_type?: string; status?: string };
-  onRemove: (id: string) => void;
-}) {
-  const Icon = factor.factor_type === 'phone' ? Smartphone : KeyRound;
-  return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-sm">
-          <Icon className="text-muted-foreground size-4" />
-        </span>
-        <div className="min-w-0">
-          <div className="text-foreground truncate text-sm">
-            {factor.friendly_name ||
-              (factor.factor_type === 'phone' ? 'Phone' : 'Authenticator app')}
-          </div>
-          <div className="text-muted-foreground text-xs">
-            {factor.factor_type === 'phone' ? 'SMS' : 'Authenticator app (TOTP)'}
-          </div>
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Badge variant={factor.status === 'verified' ? 'kortix' : 'outline'} size="xs">
-          {factor.status}
-        </Badge>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Remove factor"
-          onClick={() => onRemove(factor.id)}
-        >
-          <Trash2 className="size-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 function getInitials(name: string): string {
   return (
@@ -212,26 +138,6 @@ export interface ProfileTabViewProps {
   // `account-memberships.tsx` for why the list lives on this tab.
   accounts?: readonly AccountMembership[];
   accountsLoading?: boolean;
-
-  // Two-factor authentication
-  factors?: FactorInfo[];
-  factorsLoading?: boolean;
-  factorsError?: boolean;
-  onRetryFactors?: () => void;
-  sessionVerified?: boolean;
-  removeFactorTarget?: string | null;
-  onRequestRemoveFactor?: (id: string) => void;
-  onCancelRemoveFactor?: () => void;
-  onConfirmRemoveFactor?: () => void;
-  isRemovingFactor?: boolean;
-  enrolling?: EnrollingFactor | null;
-  enrollCode?: string;
-  onEnrollCodeChange?: (value: string) => void;
-  onStartEnroll?: () => void;
-  isStartingEnroll?: boolean;
-  onVerifyEnroll?: () => void;
-  isVerifyingEnroll?: boolean;
-  onCancelEnroll?: () => void;
 
   // Delete account
   accountDeletionSupported?: boolean;
@@ -278,24 +184,6 @@ export function ProfileTabView({
   userEmail = '',
   accounts = [],
   accountsLoading = false,
-  factors = [],
-  factorsLoading = false,
-  factorsError = false,
-  onRetryFactors = () => {},
-  sessionVerified = false,
-  removeFactorTarget = null,
-  onRequestRemoveFactor = () => {},
-  onCancelRemoveFactor = () => {},
-  onConfirmRemoveFactor = () => {},
-  isRemovingFactor = false,
-  enrolling = null,
-  enrollCode = '',
-  onEnrollCodeChange = () => {},
-  onStartEnroll = () => {},
-  isStartingEnroll = false,
-  onVerifyEnroll = () => {},
-  isVerifyingEnroll = false,
-  onCancelEnroll = () => {},
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
@@ -314,8 +202,6 @@ export function ProfileTabView({
   onConfirmCancelDeletion = () => {},
   isCancelingDeletion = false,
 }: ProfileTabViewProps) {
-  const verified = factors.filter((f) => f.status === 'verified');
-
   // The right-hand control of the Delete-account row, and the line under its
   // label. Three states, one row — an unavailable or already-scheduled
   // deletion changes what the row SAYS and what its control DOES, not which
@@ -420,162 +306,11 @@ export function ProfileTabView({
         </SettingsRow>
       </SettingsRowGroup>
 
-      {/* Organizations — directly under the identity group and ABOVE Security,
-          because it answers the same question those rows do ("who am I here")
-          and because Jay asked for it to be EASY to reach: no scrolling, no tab
-          to find first. `account-memberships.tsx` carries the full rationale,
-          including why it is not a fourth rail row. */}
+      {/* Organizations — directly under the identity group, because it
+          answers the same question those rows do ("who am I here") and because
+          Jay asked for it to be EASY to reach: no scrolling, no tab to find
+          first. `account-memberships.tsx` carries the full rationale. */}
       <AccountMembershipsSection accounts={accounts} isLoading={accountsLoading} />
-
-      {/* Security */}
-      <section className="space-y-3">
-        <SettingsSubsectionHeader title="Security" />
-
-        <SettingsRowGroup>
-          <SettingsRow
-            label="Two-factor authentication"
-            description="Add an authenticator app (TOTP) as a second factor."
-          >
-            {verified.length > 0 && (
-              <Badge
-                variant="secondary"
-                size="xs"
-                className={cn(
-                  'shrink-0 gap-1',
-                  sessionVerified
-                    ? 'bg-kortix-green/15 text-kortix-green border-transparent'
-                    : 'text-muted-foreground',
-                )}
-              >
-                <ShieldCheck className="size-3.5" />
-                {sessionVerified ? 'Session verified' : 'Enrolled'}
-              </Badge>
-            )}
-            {enrolling ? null : (
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={onStartEnroll}
-                disabled={isStartingEnroll}
-              >
-                {isStartingEnroll ? <Loading className="size-3.5" /> : <Plus className="size-4" />}
-                Add authenticator app
-              </Button>
-            )}
-          </SettingsRow>
-          {/* Enrolled factors stack under the row they belong to, inside the
-              same border — `divide-y` draws the hairline between them. While
-              the list is in flight, one shape-matched skeleton stands in for a
-              factor row, so the group does not jump when the answer lands. */}
-          {factorsLoading ? (
-            <div className="px-4 py-3">
-              <Skeleton className="h-8 w-full rounded-sm" />
-            </div>
-          ) : factorsError ? null : (
-            factors.map((f) => <FactorRow key={f.id} factor={f} onRemove={onRequestRemoveFactor} />)
-          )}
-        </SettingsRowGroup>
-
-        {/* The three answers the factor list can give, below the group so no
-            banner nests a second border inside it:
-            - it failed  → say so, in red, with a Retry. Never the empty-state
-              copy: "No second factor enrolled" is a claim about the account,
-              and a fetch that failed knows nothing about the account.
-            - it is empty → the enrollment nudge, in orange ("needs attention"
-              per the design system's status-token table — matches the same
-              copy's tone in mfa-step-up.tsx's step-up dialog).
-            - it has factors → nothing here; the rows above ARE the answer.
-            Loading outranks both: an in-flight list has no answer yet. */}
-        {!factorsLoading && factorsError ? (
-          <InfoBanner
-            tone="destructive"
-            icon={Warning}
-            title="Couldn’t load your authenticator apps"
-            action={
-              <Button variant="outline" size="sm" onClick={onRetryFactors}>
-                Retry
-              </Button>
-            }
-          >
-            Your two-factor settings are unchanged — this is only the list failing to load.
-          </InfoBanner>
-        ) : !factorsLoading && factors.length === 0 && !enrolling ? (
-          <InfoBanner tone="warning" icon={ShieldWarning} title="No second factor enrolled">
-            If your organization requires MFA, you’ll be blocked from gated actions until you enroll
-            an authenticator here.
-          </InfoBanner>
-        ) : null}
-
-        {enrolling ? (
-          <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
-            <div>
-              <h4 className="text-foreground text-sm font-medium">
-                Scan with your authenticator app
-              </h4>
-              <p className="text-muted-foreground mt-1 text-xs text-pretty">
-                Use 1Password, Google Authenticator, or any TOTP app — then enter the 6-digit code
-                it shows.
-              </p>
-            </div>
-            <div className="flex items-start gap-4">
-              {/* biome-ignore lint/performance/noImgElement: QR is an inline SVG data URL, next/image adds nothing */}
-              <img
-                src={totpQrSrc(enrolling.qr)}
-                alt="TOTP enrollment QR code"
-                className="border-border/60 size-36 shrink-0 rounded-md border bg-white p-2"
-              />
-              <div className="min-w-0 flex-1 space-y-3">
-                {enrolling.secret && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Manual entry secret</Label>
-                    <code className="border-border/60 bg-muted/30 block truncate rounded border px-2 py-1.5 font-mono text-xs">
-                      {enrolling.secret}
-                    </code>
-                  </div>
-                )}
-                <div className="space-y-1">
-                  <Label className="text-xs">6-digit code</Label>
-                  <Input
-                    value={enrollCode}
-                    onChange={(e) =>
-                      onEnrollCodeChange(e.target.value.replace(/\D/g, '').slice(0, 6))
-                    }
-                    placeholder="123456"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    className="w-32 font-mono tracking-widest"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={onVerifyEnroll}
-                    disabled={enrollCode.length !== 6 || isVerifyingEnroll}
-                    className="gap-1.5"
-                  >
-                    {isVerifyingEnroll && <Loading className="size-4" />}
-                    Verify and enable
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={onCancelEnroll}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <ConfirmDialog
-          open={removeFactorTarget !== null}
-          onOpenChange={(open) => !open && onCancelRemoveFactor()}
-          title="Remove this factor?"
-          description="If your organization requires MFA and this is your only verified factor, you will be locked out of gated actions until you enroll again."
-          confirmLabel="Remove factor"
-          confirmVariant="destructive"
-          onConfirm={onConfirmRemoveFactor}
-          isPending={isRemovingFactor}
-        />
-      </section>
 
       {/* Danger zone */}
       <section className="space-y-3">
@@ -837,12 +572,6 @@ export function ProfileTab() {
   // this costs no extra request inside a project shell.
   const { accounts, isLoading: accountsLoading } = useAccountMemberships();
 
-  // --- Two-factor authentication --------------------------------------
-  // See hooks/account/use-mfa.ts — the factors/aal queries and the enroll /
-  // verify / remove / cancel-enroll mutations live there now, shared with
-  // every other MFA-managing surface instead of re-implemented per tab.
-  const mfa = useMfa();
-
   // --- Delete account ---------------------------------------------------
   const { data: deletionStatus, isLoading: isCheckingDeletionStatus } = useAccountDeletionStatus();
   const requestDeletion = useRequestAccountDeletion();
@@ -911,24 +640,6 @@ export function ProfileTab() {
       userEmail={profileQuery.data?.email ?? ''}
       accounts={accounts}
       accountsLoading={accountsLoading}
-      factors={mfa.factors}
-      factorsLoading={mfa.factorsLoading}
-      factorsError={mfa.factorsError}
-      onRetryFactors={mfa.onRetryFactors}
-      sessionVerified={mfa.sessionVerified}
-      removeFactorTarget={mfa.removeFactorTarget}
-      onRequestRemoveFactor={mfa.setRemoveFactorTarget}
-      onCancelRemoveFactor={() => mfa.setRemoveFactorTarget(null)}
-      onConfirmRemoveFactor={mfa.confirmRemoveFactor}
-      isRemovingFactor={mfa.isRemovingFactor}
-      enrolling={mfa.enrolling}
-      enrollCode={mfa.enrollCode}
-      onEnrollCodeChange={mfa.setEnrollCode}
-      onStartEnroll={mfa.startEnroll}
-      isStartingEnroll={mfa.isStartingEnroll}
-      onVerifyEnroll={mfa.verifyEnroll}
-      isVerifyingEnroll={mfa.isVerifyingEnroll}
-      onCancelEnroll={mfa.cancelEnroll}
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}

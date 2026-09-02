@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import { VALID_TABS } from '@/features/accounts/hub/sections';
+import { describe, expect, test } from 'bun:test';
 
 import {
   CAPABILITY_TABS,
@@ -7,10 +7,9 @@ import {
   channelsHref,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
-  ALL_PROJECT_SETTINGS_SECTIONS,
-  projectSettingsSectionHref,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
-import { SUBMENU_PAGE_BY_ID } from '@/features/workspace/command-palette';
+  SETTINGS_TAB_SUBMENU_PAGE,
+  SUBMENU_PAGE_BY_ID,
+} from '@/features/workspace/command-palette';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { getItemsForSurface } from '@/lib/menu-registry';
 
@@ -86,22 +85,14 @@ describe('every capability tab has a palette row', () => {
   });
 });
 
-describe('every project settings section has a palette row', () => {
-  for (const section of ALL_PROJECT_SETTINGS_SECTIONS) {
-    test(`"${section.label}" (?section=${section.key}) is reachable`, () => {
-      const href = projectSettingsSectionHref(PROJECT_TOKEN, section.key);
-      expect({ section: section.key, href, hasRow: paletteHrefs.has(href) }).toEqual({
-        section: section.key,
-        href,
-        hasRow: true,
-      });
-    });
-  }
-
-  test('the flag-gated section carries the same flag its section does', () => {
-    expect(rowFor(projectSettingsSectionHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe(
-      'review_center',
-    );
+describe('the flag-gated capability tab', () => {
+  test('Review carries the same flag its tab does', () => {
+    // `/projects/<id>/config` and its `?section=` rows are gone (2026-09-02);
+    // its configuration sections are Settings-overlay tabs, whose palette rows
+    // are DERIVED from the rail and covered by `command-palette.test.tsx`.
+    // Review is the one section that became a capability tab, and its row
+    // must hide exactly when the tab does.
+    expect(rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe('review_center');
   });
 });
 
@@ -133,7 +124,8 @@ describe('the two rows that answer in-palette instead of navigating', () => {
     // instead. Pin both directions: every key names a live palette row, and
     // the two rows this change added map to the pages they promise.
     expect(SUBMENU_PAGE_BY_ID['review-changes']).toBe('changes');
-    expect(SUBMENU_PAGE_BY_ID['proj-config-feature-flags']).toBe('flags');
+    // Feature flags is a derived settings row now, keyed by overlay tab.
+    expect(SETTINGS_TAB_SUBMENU_PAGE['feature-flags']).toBe('flags');
     for (const id of Object.keys(SUBMENU_PAGE_BY_ID)) {
       expect({ id, isRow: paletteRows.some((item) => item.id === id) }).toEqual({
         id,

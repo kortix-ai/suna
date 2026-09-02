@@ -66,12 +66,11 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(view).not.toContain('updateFeatureFlag');
   expect(view).not.toContain('Enable Apps');
 
-  // The shared screen links to the one place a flag can be flipped. `main`
-  // authored this against the Customize overlay (`openCustomize('feature-
-  // flags')`); that overlay is gone, the settings overlay's Experimental tab
-  // that replaced it is gone too, and the single control is now a section of
-  // the Customize bar's Settings tab. A real link, not a store call.
-  expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
+  // The shared screen links to the one place a flag can be flipped: the
+  // Settings overlay's Feature flags tab, through its deep-link route (the
+  // config page that held it was retired on 2026-09-02). A real link, not a
+  // store call.
+  expect(gate).toContain('/settings/feature-flags');
   expect(gate).not.toContain('useCustomizeStore');
   expect(gate).not.toContain('useSettingsPanelStore');
   expect(gate).toContain('Feature flags');
@@ -141,9 +140,12 @@ test('an App card shows the App, not a stock glyph standing in for it', () => {
   expect(view).toContain("dot: live ? 'bg-kortix-green'");
 });
 
-test('a card caption is the App\'s name and its state — not its hostname', () => {
+test("a card caption is the App's name and its state — not its hostname", () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
-  const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
+  const card = view.slice(
+    view.indexOf('function AppCard('),
+    view.indexOf('function AppDetailModal('),
+  );
 
   // Every App's URL is the same `<key>.apps.<domain>` shape, so a column of
   // them differs only in a random token nobody reads or types — a third of the
@@ -183,7 +185,8 @@ test('the Apps row matches the row contract of the group it sits in', () => {
     'utf8',
   );
 
-  const ROW = 'group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!';
+  const ROW =
+    'group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!';
   // The same string the sibling rows in this group use — if that contract is
   // ever restyled, this fails rather than letting Apps silently drift out.
   expect(customize).toContain(ROW);
@@ -221,7 +224,9 @@ test('an active App never looks undeployed while its signed preview URL loads', 
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
 
   expect(view).toContain('if (!app.active_deployment_id)');
-  expect(view).toContain("data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}");
+  expect(view).toContain(
+    "data-testid={accessError ? 'app-preview-access-denied' : 'app-preview-loading'}",
+  );
   expect(view).toContain('Preparing preview');
   expect(view).not.toContain('if (!app.active_deployment_id || !url)');
 });
@@ -249,7 +254,7 @@ test('the App detail header is a title bar, not a debug readout', () => {
   expect(header.match(/\{status\.label\}/g)).toHaveLength(2);
 });
 
-test('the header separates the App\'s actions from the window\'s Close', () => {
+test("the header separates the App's actions from the window's Close", () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
   const header = view.slice(view.indexOf('<header'), view.indexOf('</header>'));
 
@@ -292,7 +297,10 @@ test('internal infrastructure names are not shown to App owners', () => {
 
 test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', () => {
   const view = readFileSync(resolve(root, 'features/apps/apps-view.tsx'), 'utf8');
-  const card = view.slice(view.indexOf('function AppCard('), view.indexOf('function AppDetailModal('));
+  const card = view.slice(
+    view.indexOf('function AppCard('),
+    view.indexOf('function AppDetailModal('),
+  );
 
   // The grid and the skeleton read the SAME chosen ladder, so nothing reflows
   // when data lands under a non-default choice. The skeleton takes it as a
@@ -308,7 +316,10 @@ test('the Apps grid is a gallery: bordered thumbnails, captions hanging below', 
   // A picker over the feature gate, the error state or the empty state is a
   // dead switch, so the header takes an explicit flag rather than always
   // rendering it.
-  const header = view.slice(view.indexOf('function AppsHeader('), view.indexOf('export function AppsView('));
+  const header = view.slice(
+    view.indexOf('function AppsHeader('),
+    view.indexOf('export function AppsView('),
+  );
   expect(header).toContain('showColumns');
   expect(header).toContain('{showColumns ? (');
 

@@ -26,7 +26,6 @@ import type { FeatureFlagKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
-  ArrowCircleUpIcon as ArrowUpCircle,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
@@ -34,7 +33,6 @@ import {
   GearSixIcon as CogOne,
   CoinsIcon as Coins,
   CompassIcon as Compass,
-  ShippingContainerIcon as Container,
   CpuIcon as Cpu,
   CreditCardIcon as CreditCardSolid,
   FlaskIcon as Flask,
@@ -48,6 +46,7 @@ import {
   LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
+  PaintBrushIcon as PaintBrush,
   SidebarSimpleIcon as PanelLeftClose,
   PlugIcon as Plug,
   PlusIcon as Plus,
@@ -63,7 +62,6 @@ import {
   UserPlusIcon as UserPlus,
   UsersIcon as UsersSolid,
   ImagesSquareIcon as WallpaperIcon,
-  PaintBrushIcon as PaintBrush,
 } from '@phosphor-icons/react';
 import type { ComponentType } from 'react';
 
@@ -662,45 +660,27 @@ export const menuRegistry: MenuItemDef[] = [
     requiresFlag: 'apps',
     keywords: 'apps deploy deployments serverless docker static hosting urls',
   },
+  // `proj-config-general`, `proj-config-sandbox`, `proj-config-feature-flags`
+  // are gone with `/projects/<id>/config` (retired 2026-09-02). General,
+  // Sandbox templates, Feature flags and Upgrades are Settings-overlay tabs
+  // now, and the palette derives those rows from the overlay's rail
+  // (`settings-palette-items.ts`) — a registry href would be a second,
+  // drifting copy. Feature flags' in-palette picker moved with it: see
+  // `SETTINGS_TAB_SUBMENU_PAGE` in `command-palette.tsx`.
   {
-    id: 'proj-config-general',
-    label: 'Settings · General',
-    icon: CogOne,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    // `projectSettingsSectionHref(id, 'general')` — the default section
-    // carries no query, so this is the bare `/config` the old `proj-customize`
-    // row pointed at. Same destination, honest label.
-    href: '/projects/{projectId}/config',
-    requiresProject: true,
-    keywords:
-      'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
-  },
-  {
-    id: 'proj-config-sandbox',
-    label: 'Settings · Sandbox templates',
-    icon: Container,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/config?section=sandbox',
-    requiresProject: true,
-    // Snapshots merged into this section — a snapshot is a sandbox template's
-    // build history — so both vocabularies answer here.
-    keywords: 'sandbox templates template image runtime machine snapshots builds recipe container',
-  },
-  {
-    id: 'proj-config-review',
-    label: 'Settings · Review',
+    // Not `proj-review` — that id named the old overlay tab and its absence
+    // is pinned (`command-palette.test.tsx`); this row is the capability page.
+    id: 'proj-review-inbox',
+    label: 'Review',
     icon: Tray,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/config?section=review',
+    // Its own capability tab since 2026-09-02, beside Agents and Triggers.
+    href: '/projects/{projectId}/review',
     requiresProject: true,
-    // Same gate the section itself carries (`REVIEW_SECTION` is pushed only
-    // when `reviewEnabled`), so the row cannot outlive the pane.
+    // Same gate the tab carries (`visibleCapabilityTabs` hides Review while
+    // `review_center` is off), so the row cannot outlive the page.
     requiresFlag: 'review_center',
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
   },
@@ -719,17 +699,6 @@ export const menuRegistry: MenuItemDef[] = [
     // consume this registry without that picker — same arrangement as
     // `proj-sessions` and `nav-accounts`.
     keywords: 'feature flags experimental beta labs toggles switches early access',
-  },
-  {
-    id: 'proj-config-upgrades',
-    label: 'Settings · Upgrades',
-    icon: ArrowUpCircle,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/config?section=upgrades',
-    requiresProject: true,
-    keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
   {
     id: 'proj-invite',
@@ -1130,7 +1099,8 @@ export const menuRegistry: MenuItemDef[] = [
     // like its enterprise siblings (roles, identity): the pane itself explains
     // the entitlement.
     href: '/accounts/{accountId}?tab=branding',
-    keywords: 'branding logo icon favicon product name app name white label whitelabel theme identity',
+    keywords:
+      'branding logo icon favicon product name app name white label whitelabel theme identity',
   },
   {
     id: 'account-audit',

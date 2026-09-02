@@ -60,18 +60,18 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), so every project
   // role that could open these panes in the Settings overlay still can here.
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
+  // Review — the inbox, on the bar since 2026-09-02 (it was a section of the
+  // retired `/config` page). Same read leaf `CUSTOMIZE_SECTION_ACCESS.review`
+  // gated the section on; the `review_center` flag is applied by the bar
+  // (`visibleCapabilityTabs`), not by this permission list.
+  { key: 'review', action: PROJECT_ACTIONS.PROJECT_REVIEW_READ },
   // Channels is NOT a row here any more. It is a scope of the Connectors page
   // (`channelsHref`), and it always gated on `project.connector.read` — the
   // same leaf the Connectors row above already probes, so folding it in
   // removed a duplicate probe rather than a gate.
   { key: 'secrets', action: PROJECT_ACTIONS.PROJECT_SECRET_READ },
-  // Settings (`/projects/<id>/config`) holds the project configuration that
-  // did not earn its own top-level tab. It reuses `project.customize.write`,
-  // the SAME leaf the row itself gates on above, rather than inventing a
-  // narrower one: anyone who can see the Customize row at all can open this
-  // tab, so a second, stricter probe here could only ever produce a row that
-  // leads nowhere.
-  { key: 'config', action: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
+  // No Settings entry: `/projects/<id>/config` was retired on 2026-09-02. Its
+  // sections are the Settings overlay's Workspace group (Cmd+,).
 ];
 
 /**

@@ -23,7 +23,7 @@
  * over the animated wallpaper (`ProjectHomeWallpaper`) and legibility outranks
  * flatness.
  */
-export const BAND_PANEL_CLASS = 'bg-background/70 w-full rounded-md pb-2 backdrop-blur-sm';
+export const BAND_PANEL_CLASS = 'w-full rounded-md pb-2';
 
 /** The band's header line: title on the left, anything else trailing. */
 export const BAND_HEADER_CLASS = 'flex items-center gap-2 py-2 pr-2 pl-4';

@@ -43,9 +43,13 @@ import type { RailItem } from '@/features/workspace/settings/type';
  */
 export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'profile',
+  'security',
+  'appearance',
+  'sessions',
   'preferences',
   'connected',
   'tokens',
+  'plan',
 ];
 
 /**
@@ -103,10 +107,13 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // "General"; "project" would put it in front of the two rows actually
   // called Projects.
   workspace:
-    'workspace general name rename title icon emoji glyph avatar picture logo archive delete repo git',
-  profile: 'profile name email avatar personal you account display',
-  preferences:
-    'preferences appearance theme color mode dark light wallpaper shader shaders background sounds audio volume notification sound effects mute shortcuts keyboard hotkeys keybindings',
+    'workspace general settings name rename title icon emoji glyph avatar picture logo archive delete danger zone repo git repository github clone branch remote',
+  profile: 'profile name email avatar personal you account display organizations',
+  security: 'security two-factor 2fa mfa totp authenticator factor devices sign out sessions',
+  appearance:
+    'appearance theme color mode dark light wallpaper shader shaders background density conversation',
+  sessions: 'sessions sounds audio volume notification notifications sound effects mute alerts',
+  preferences: 'preferences language locale translation shortcuts keyboard hotkeys keybindings',
   connected: 'connected accounts linked oauth google github identities social sign in providers',
   // The words a person types when they want to sign the CLI in. `pat` and
   // `personal access token` came off `nav:account-tokens` in
@@ -117,6 +124,16 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // "account" owns the word).
   tokens:
     'api keys key tokens token personal access pat cli command line terminal secret credential authentication ci',
+  // The plan is the one account row in the overlay. Its rail description
+  // says "for this account", so it answers "account" by a word the user reads.
+  plan: 'plan subscription billing credits upgrade invoice payment wallet',
+  // Copy for the two Workspace rows that came back on 2026-09-02 — the words
+  // `proj-sandbox` and `proj-feature-flags` carry in `lib/menu-registry.ts`.
+  sandbox:
+    'sandbox templates template snapshot snapshots builds recipe container machine runtime image',
+  'feature-flags':
+    'feature flags flag experimental beta preview labs toggles switches early access',
+  upgrades: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   // Every other bag is gone with the tab it named. Thirteen project-
   // configuration tabs (General, Members, Secrets, Channels, Repositories,
   // Models, Sandbox templates, Snapshots, Marketplace, Review, Voice, Feature
@@ -171,6 +188,10 @@ export interface SettingsPaletteParams {
  */
 export function isSettingsTabOfferable(tab: SettingsTab, params: SettingsPaletteParams): boolean {
   if (!params.hasProject && !PALETTE_ACCOUNT_SCOPED_TABS.includes(tab)) return false;
+  // Sandbox templates and Feature flags also gate on a project capability
+  // (`PROJECT_GATED_TABS` in `settings-panel.tsx`). The palette offers them
+  // without probing — the panel hides a denied row and falls back to a visible
+  // tab, exactly the offered-then-denied path this function's header describes.
   return true;
 }
 
