@@ -194,25 +194,27 @@ projectsApp.openapi(
 );
 
 /**
- * The path is the REST of the URL, so `notes/2026/plan.md` stays one readable
- * path instead of an opaque encoded segment. Hono gives it as a wildcard.
+ * The file path travels as `?path=`, not as a URL segment.
+ *
+ * A path like `notes/2026/plan.md` contains slashes, and an OpenAPI `{path}`
+ * parameter matches ONE segment — so a segment-based route 404s on every real
+ * nested path (measured against the deployed preview before this changed).
+ * `/v1/projects/:id/files/content?path=` already solves it the same way, so
+ * this follows the convention the API established rather than inventing a
+ * wildcard the typed router does not support.
  */
-const filePath = (c: any): string => {
-  const full = c.req.path as string;
-  const marker = '/files/';
-  const at = full.indexOf(marker, full.indexOf('/filesystems/'));
-  return at === -1 ? '' : full.slice(at + marker.length);
-};
+const filePath = (c: any): string => String(c.req.query('path') ?? '');
 
 projectsApp.openapi(
   createRoute({
     method: 'put',
-    path: '/{projectId}/filesystems/{name}/files/{path}',
+    path: '/{projectId}/filesystems/{name}/files/content',
     tags: ['projects'],
     summary: 'Write a file into a shared filesystem',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), name: z.string(), path: z.string() }),
+      params: z.object({ projectId: z.string(), name: z.string() }),
+      query: z.object({ path: z.string() }),
       body: { content: { 'application/octet-stream': { schema: z.any() } } },
     },
     responses: {
@@ -247,12 +249,13 @@ projectsApp.openapi(
 projectsApp.openapi(
   createRoute({
     method: 'get',
-    path: '/{projectId}/filesystems/{name}/files/{path}',
+    path: '/{projectId}/filesystems/{name}/files/content',
     tags: ['projects'],
     summary: 'Read a file from a shared filesystem',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), name: z.string(), path: z.string() }),
+      params: z.object({ projectId: z.string(), name: z.string() }),
+      query: z.object({ path: z.string() }),
     },
     responses: { 200: { description: 'File bytes' }, ...errors(403, 404) },
   }),
@@ -282,12 +285,13 @@ projectsApp.openapi(
 projectsApp.openapi(
   createRoute({
     method: 'delete',
-    path: '/{projectId}/filesystems/{name}/files/{path}',
+    path: '/{projectId}/filesystems/{name}/files/content',
     tags: ['projects'],
     summary: 'Delete a file from a shared filesystem',
     ...auth,
     request: {
-      params: z.object({ projectId: z.string(), name: z.string(), path: z.string() }),
+      params: z.object({ projectId: z.string(), name: z.string() }),
+      query: z.object({ path: z.string() }),
     },
     responses: { 204: { description: 'Deleted' }, ...errors(403, 404) },
   }),

@@ -338,8 +338,8 @@ content-addressed by sha256 and stored in S3 when it is configured, PostgreSQL
 otherwise (self-host has no S3).
 
 `FS-1` `POST /projects/:id/filesystems` → create, **idempotent by name** (201 first, 200 after); `GET /projects/:id/filesystems` → list; `DELETE /projects/:id/filesystems/:name` → 204, cascading its files.
-`FS-2` `PUT /projects/:id/filesystems/:name/files/*path` → write bytes (201 create / 200 replace); `GET …/files/*path` → the SAME bytes back, with `etag` = sha256 and the stored `content-type`.
-`FS-3` `GET /projects/:id/filesystems/:name/files?prefix=` → list metadata under a prefix, matching only on segment boundaries; `DELETE …/files/*path` → 204, and the path is then 404.
+`FS-2` `PUT /projects/:id/filesystems/:name/files/content?path=` → write bytes (201 create / 200 replace); `GET …/files/content?path=` → the SAME bytes back, with `etag` = sha256 and the stored `content-type`.
+`FS-3` `GET /projects/:id/filesystems/:name/files?prefix=` → list metadata under a prefix, matching only on segment boundaries; `DELETE …/files/content?path=` → 204, and the path is then 404.
 `FS-4` path traversal is REFUSED, never rewritten: `..`, percent-encoded `%2e%2e`, and backslash forms all → 400. A non-member gets 403/404 and ANON 401 on every route.
 
 ---

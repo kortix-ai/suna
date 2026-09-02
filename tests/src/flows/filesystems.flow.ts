@@ -13,7 +13,7 @@ const FS_ROUTES = {
   create: "/v1/projects/:projectId/filesystems",
   drop: "/v1/projects/:projectId/filesystems/:name",
   files: "/v1/projects/:projectId/filesystems/:name/files",
-  file: "/v1/projects/:projectId/filesystems/:name/files/:path",
+  file: "/v1/projects/:projectId/filesystems/:name/files/content",
 } as const;
 
 /** Unique per run so a re-run never collides with its own leftovers. */
@@ -100,8 +100,8 @@ flow(
     domain: "filesystems",
     tags: ["smoke"],
     routes: [
-      "PUT /v1/projects/:projectId/filesystems/:name/files/:path",
-      "GET /v1/projects/:projectId/filesystems/:name/files/:path",
+      "PUT /v1/projects/:projectId/filesystems/:name/files/content",
+      "GET /v1/projects/:projectId/filesystems/:name/files/content",
     ],
   },
   async (ctx) => {
@@ -114,7 +114,7 @@ flow(
 
     await ctx.step("OWNER writes a file → 201 with size and sha256", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).put(FS_ROUTES.file, content, {
-        params: { projectId: p.id, name, path },
+        params: { projectId: p.id, name }, query: { path },
         raw: true,
         headers: { "content-type": "text/markdown" },
       });
@@ -131,7 +131,7 @@ flow(
     await ctx.step("GET returns the SAME bytes, its content-type and an etag", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get(FS_ROUTES.file, { params: { projectId: p.id, name, path } });
+        .get(FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path } });
       r.status(200);
       if (r.text() !== content) throw new Error("bytes read back differ from bytes written");
       const ct = r.header("content-type") ?? "";
@@ -141,28 +141,28 @@ flow(
 
     await ctx.step("re-writing the same path → 200 (replace, not duplicate)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).put(FS_ROUTES.file, `${content}v2\n`, {
-        params: { projectId: p.id, name, path },
+        params: { projectId: p.id, name }, query: { path },
         raw: true,
         headers: { "content-type": "text/markdown" },
       });
       r.status(200);
       const read = await ctx.client
         .as(ctx.P.OWNER)
-        .get(FS_ROUTES.file, { params: { projectId: p.id, name, path } });
+        .get(FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path } });
       if (read.text() !== `${content}v2\n`) throw new Error("replace did not take effect");
     });
 
     await ctx.step("a path that was never written → 404", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get(FS_ROUTES.file, { params: { projectId: p.id, name, path: "nope/missing.txt" } });
+        .get(FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path: "nope/missing.txt" } });
       r.status(404);
     });
 
     await ctx.step("ANON cannot read it → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
-        .get(FS_ROUTES.file, { params: { projectId: p.id, name, path } });
+        .get(FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path } });
       r.status(401);
     });
   },
@@ -174,7 +174,7 @@ flow(
     domain: "filesystems",
     routes: [
       "GET /v1/projects/:projectId/filesystems/:name/files",
-      "DELETE /v1/projects/:projectId/filesystems/:name/files/:path",
+      "DELETE /v1/projects/:projectId/filesystems/:name/files/content",
     ],
   },
   async (ctx) => {
@@ -184,7 +184,7 @@ flow(
 
     const write = (path: string, body: string) =>
       ctx.client.as(ctx.P.OWNER).put(FS_ROUTES.file, body, {
-        params: { projectId: p.id, name, path },
+        params: { projectId: p.id, name }, query: { path },
         raw: true,
         headers: { "content-type": "text/plain" },
       });
@@ -219,17 +219,17 @@ flow(
     await ctx.step("DELETE removes exactly that path → 204, then 404", async () => {
       const del = await ctx.client
         .as(ctx.P.OWNER)
-        .request("DELETE", FS_ROUTES.file, { params: { projectId: p.id, name, path: "notes/a.txt" } });
+        .request("DELETE", FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path: "notes/a.txt" } });
       del.status(204);
       const gone = await ctx.client
         .as(ctx.P.OWNER)
-        .get(FS_ROUTES.file, { params: { projectId: p.id, name, path: "notes/a.txt" } });
+        .get(FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path: "notes/a.txt" } });
       gone.status(404);
       // Content addressing shares blobs, so a delete must not take a sibling
       // with it.
       const sibling = await ctx.client
         .as(ctx.P.OWNER)
-        .get(FS_ROUTES.file, { params: { projectId: p.id, name, path: "notes/b.txt" } });
+        .get(FS_ROUTES.file, { params: { projectId: p.id, name }, query: { path: "notes/b.txt" } });
       sibling.status(200);
     });
   },
@@ -239,7 +239,7 @@ flow(
   "FS-4",
   {
     domain: "filesystems",
-    routes: ["PUT /v1/projects/:projectId/filesystems/:name/files/:path"],
+    routes: ["PUT /v1/projects/:projectId/filesystems/:name/files/content"],
   },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
@@ -251,7 +251,7 @@ flow(
     for (const bad of ["../escape.txt", "a/../../escape.txt", "%2e%2e/escape.txt"]) {
       await ctx.step(`traversal ${bad} → 400`, async () => {
         const r = await ctx.client.as(ctx.P.OWNER).put(FS_ROUTES.file, "x", {
-          params: { projectId: p.id, name, path: bad },
+          params: { projectId: p.id, name }, query: { path: bad },
           raw: true,
           headers: { "content-type": "text/plain" },
         });
@@ -261,7 +261,7 @@ flow(
 
     await ctx.step("NONMEMBER cannot write → 403/404", async () => {
       const r = await ctx.client.as(ctx.P.NONMEMBER).put(FS_ROUTES.file, "x", {
-        params: { projectId: p.id, name, path: "intruder.txt" },
+        params: { projectId: p.id, name }, query: { path: "intruder.txt" },
         raw: true,
         headers: { "content-type": "text/plain" },
       });
@@ -270,7 +270,7 @@ flow(
 
     await ctx.step("ANON cannot write → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).put(FS_ROUTES.file, "x", {
-        params: { projectId: p.id, name, path: "intruder.txt" },
+        params: { projectId: p.id, name }, query: { path: "intruder.txt" },
         raw: true,
         headers: { "content-type": "text/plain" },
       });
