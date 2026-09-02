@@ -1,0 +1,7 @@
+{
+  "functions": "convex/functions",
+  "codegen": {
+    "staticApi": true,
+    "staticDataModel": true
+  }
+}

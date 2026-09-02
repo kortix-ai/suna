@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "strictFunctionTypes": false,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "lib": [
+      "esnext",
+      "dom"
+    ],
+    "types": [
+      "bun-types"
+    ],
+    "target": "esnext",
+    "moduleDetection": "force",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowJs": true
+  },
+  "include": [
+    "./**/*",
+    "../lib/**/*",
+    "../shared/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "./_generated",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ]
+}

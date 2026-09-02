@@ -1,0 +1,7 @@
+{
+  "paths": {
+    "lib": "convex/lib",
+    "shared": "convex/shared",
+    "env": "convex/lib/get-env.ts"
+  }
+}
