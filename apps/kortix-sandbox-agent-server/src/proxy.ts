@@ -113,11 +113,36 @@ export function isBlockingTurnRequest(method: string, path: string): boolean {
 }
 
 type OpencodeWsData = {
+  /** Absent means pty, the original and still the common case. */
+  kind?: 'pty' | 'env-rpc'
   // Absent when the client connects without an id — lookup-or-create then
   // mints a brand new pty (see `websocket.open` below).
   ptyId?: string
   handle?: PtyAttachHandle
+  /**
+   * env-rpc only: the caller's verified user-context header, replayed onto the
+   * synthetic request below so the RPC route authenticates exactly as it does
+   * over HTTP. Verified once at upgrade time; kept so each frame does not have
+   * to re-present it.
+   */
+  userContext?: string
 }
+
+/**
+ * The env-rpc websocket. One connection per session instead of one HTTP request
+ * per tool call.
+ *
+ * Gate G0 measured a multiplexed socket at 16.0ms p50 against 19.2ms for pooled
+ * keep-alive — worth 21%, not an order of magnitude, and the doc is clear that
+ * co-location is the real lever. The reason to take it anyway is CORRECTNESS:
+ * per-call HTTP already produced a bug in the spike when a keep-alive socket
+ * was retired between calls.
+ *
+ * NOTE: G0's number came from the spike's stub environment. Until this endpoint
+ * existed, the transport it measured was not something a real session could
+ * use at all.
+ */
+const KORTIX_ENV_RPC_WS_PATH_RE = /^\/kortix\/env-rpc\/rpc-ws\/?$/
 
 function jsonError(status: number, body: Record<string, unknown>): Response {
   return new Response(JSON.stringify(body), {
@@ -159,6 +184,76 @@ function prepareKortixPtyWsUpgrade(
   }
 
   return { ok: true, data: { ptyId } }
+}
+
+/**
+ * One env-rpc frame: `{id, op, args, cwd}` in, `{id, body}` out.
+ *
+ * It dispatches by re-entering the app's own HTTP route with a synthetic
+ * request rather than calling the op switch directly. That switch is ~250 lines
+ * of filesystem and exec semantics, and a second copy of it would drift — a
+ * websocket tool call behaving differently from the same call over POST is
+ * exactly the kind of bug nobody looks for. The synthetic Request costs
+ * microseconds against a network hop measured in tens of milliseconds.
+ *
+ * Errors are answered, never thrown: a frame that fails must still resolve the
+ * caller's pending promise, or the worker waits forever on a tool call that is
+ * already dead.
+ */
+async function handleEnvRpcFrame(
+  ws: ServerWebSocket<OpencodeWsData>,
+  app: { fetch: (req: Request) => Response | Promise<Response> },
+  raw: string,
+): Promise<void> {
+  let id: unknown
+  try {
+    const frame = JSON.parse(raw) as { id?: unknown; op?: unknown; args?: unknown; cwd?: unknown }
+    id = frame.id
+    const headers: Record<string, string> = { 'content-type': 'application/json' }
+    if (ws.data.userContext) headers[KORTIX_USER_CONTEXT_HEADER] = ws.data.userContext
+    const res = await app.fetch(
+      new Request('http://daemon/kortix/env-rpc/rpc', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ op: frame.op, args: frame.args, cwd: frame.cwd }),
+      }),
+    )
+    const body = await res.json().catch(() => ({ ok: false, error: { code: 'unknown', message: 'bad rpc response' } }))
+    ws.send(JSON.stringify({ id, body }))
+  } catch (e) {
+    try {
+      ws.send(
+        JSON.stringify({
+          id: id ?? null,
+          body: { ok: false, error: { code: 'unknown', message: String((e as Error)?.message ?? e) } },
+        }),
+      )
+    } catch {
+      // socket already gone; the worker's own timeout covers it
+    }
+  }
+}
+
+function prepareEnvRpcWsUpgrade(
+  req: Request,
+  cfg: Config,
+): { ok: true; data: OpencodeWsData } | { ok: false; response: Response } {
+  if (!cfg.sandboxToken) {
+    return {
+      ok: false,
+      response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
+    }
+  }
+  const url = new URL(req.url)
+  const header =
+    req.headers.get(KORTIX_USER_CONTEXT_HEADER) ??
+    url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
+  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
+  if (!auth.ok) {
+    logger.warn('[env-rpc] reject websocket', { reason: auth.reason })
+    return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }
+  }
+  return { ok: true, data: { kind: 'env-rpc', userContext: header ?? undefined } }
 }
 
 export function buildOpencodeApp(
@@ -645,6 +740,13 @@ export function startProxy(
     async fetch(req, srv) {
       const url = new URL(req.url)
       const isWsUpgrade = req.headers.get('upgrade')?.toLowerCase() === 'websocket'
+      if (isWsUpgrade && KORTIX_ENV_RPC_WS_PATH_RE.test(url.pathname)) {
+        const prep = prepareEnvRpcWsUpgrade(req, currentCfg)
+        if (!prep.ok) return prep.response
+        const upgraded = srv.upgrade(req, { data: prep.data })
+        if (upgraded) return undefined
+        return jsonError(500, { error: 'websocket upgrade failed' })
+      }
       if (isWsUpgrade && KORTIX_PTY_WS_PATH_RE.test(url.pathname)) {
         const prep = prepareKortixPtyWsUpgrade(req, currentCfg)
         if (!prep.ok) return prep.response
@@ -666,6 +768,8 @@ export function startProxy(
       // — that's a real end-of-session the client should surface, not
       // silently paper over.
       open(ws: ServerWebSocket<OpencodeWsData>) {
+        // env-rpc has no session to attach — the socket is the session.
+        if (ws.data.kind === 'env-rpc') return
         const state = ws.data
         const requestedId = state.ptyId
         const result = ptyRegistry.attachOrCreate(requestedId, {
@@ -695,6 +799,10 @@ export function startProxy(
         }
       },
       message(ws: ServerWebSocket<OpencodeWsData>, message: string | Buffer) {
+        if (ws.data.kind === 'env-rpc') {
+          void handleEnvRpcFrame(ws, app, typeof message === 'string' ? message : message.toString())
+          return
+        }
         ws.data.handle?.write(typeof message === 'string' ? message : message.toString())
       },
       close(ws: ServerWebSocket<OpencodeWsData>) {

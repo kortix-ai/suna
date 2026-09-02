@@ -196,7 +196,9 @@ export class LazyKortixEnv {
         baseUrl: `${edge}/kortix/env-rpc`,
         cwd: this.cwd,
         headers,
-        transport: 'keepalive',
+        // Negotiated, not pinned: prefer the socket, fall back on an
+        // image-baked daemon that predates `/rpc-ws`.
+        transport: 'auto',
       });
       return this.inner;
     })();

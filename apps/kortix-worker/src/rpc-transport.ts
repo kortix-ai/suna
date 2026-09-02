@@ -134,10 +134,64 @@ export class WebSocketTransport implements RpcTransport {
   }
 }
 
+/**
+ * Prefer the multiplexed socket; fall back once, permanently, if it is absent.
+ *
+ * Daemons are IMAGE-BAKED. A sandbox created before `/rpc-ws` existed will
+ * never serve it, so the worker cannot assume the endpoint — but it also must
+ * not pay a failed connect on every tool call. One probe per session: if the
+ * socket answers, it is used for the rest of the session; if it does not, the
+ * fallback is used for the rest of the session.
+ *
+ * A failure AFTER the socket has served a call is a REAL failure — a dropped
+ * connection — and is rethrown so the caller's own retry can reconnect.
+ * Quietly switching to HTTP there would hide a broken environment behind a
+ * slower one.
+ */
+export class NegotiatingTransport implements RpcTransport {
+  readonly kind = 'auto';
+  private proven = false;
+  private fellBack = false;
+
+  constructor(
+    private readonly preferred: RpcTransport,
+    private readonly fallback: RpcTransport,
+  ) {}
+
+  async call(op: string, args: Record<string, unknown>, cwd: string): Promise<any> {
+    if (this.fellBack) return this.fallback.call(op, args, cwd);
+    try {
+      const result = await this.preferred.call(op, args, cwd);
+      this.proven = true;
+      return result;
+    } catch (e) {
+      if (this.proven) throw e;
+      this.fellBack = true;
+      try {
+        await this.preferred.close();
+      } catch {
+        // nothing to release
+      }
+      return this.fallback.call(op, args, cwd);
+    }
+  }
+
+  async close(): Promise<void> {
+    await Promise.allSettled([this.preferred.close(), this.fallback.close()]);
+  }
+}
+
 export function makeTransport(kind: string, baseUrl: string, headers: Record<string, string> = {}): RpcTransport {
   switch (kind) {
     case 'ws': return new WebSocketTransport(baseUrl, headers);
     case 'fetch': return new FetchTransport(baseUrl, headers);
-    default: return new KeepAliveTransport(baseUrl, headers);
+    case 'keepalive': return new KeepAliveTransport(baseUrl, headers);
+    // Default: try the socket, fall back to pooled keep-alive. See
+    // NegotiatingTransport for why this cannot simply be 'ws'.
+    default:
+      return new NegotiatingTransport(
+        new WebSocketTransport(baseUrl, headers),
+        new KeepAliveTransport(baseUrl, headers),
+      );
   }
 }

@@ -84,7 +84,7 @@ class ExecutionErrorLike extends Error {
   }
 }
 
-export type TransportKind = 'fetch' | 'keepalive' | 'ws';
+export type TransportKind = 'fetch' | 'keepalive' | 'ws' | 'auto';
 
 export interface KortixEnvOptions {
   /** Base URL of the environment's RPC endpoint. In production this is the Kortix sandbox proxy. */
@@ -130,9 +130,11 @@ export class KortixExecutionEnv {
     this.cwd = opts.cwd;
     this.token = opts.token;
     this.headers = opts.headers ?? {};
-    // Default to keepalive: one pooled connection, handshake paid once per
-    // session rather than once per tool call. See the RPC-tax gate.
-    this.transport = makeTransport(opts.transport ?? 'keepalive', this.baseUrl, this.headers);
+    // Default: NEGOTIATE. Prefer the multiplexed socket (G0: 16.0ms p50 vs
+    // 19.2ms pooled keep-alive), fall back to keep-alive when the daemon has no
+    // `/rpc-ws` — which every sandbox baked before that endpoint existed does
+    // not, permanently. See NegotiatingTransport.
+    this.transport = makeTransport(opts.transport ?? 'auto', this.baseUrl, this.headers);
     this.timeoutMs = opts.timeoutMs ?? 120_000;
   }
 
