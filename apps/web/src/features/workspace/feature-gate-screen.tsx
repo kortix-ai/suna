@@ -15,9 +15,10 @@ import { FlagIcon } from '@phosphor-icons/react';
  * per-feature switch to hunt for. The button here just takes you there.
  *
  * The destination has moved twice and the content never has: the legacy
- * Customize overlay's `feature-flags` section, then the settings overlay's
- * Experimental tab, and now `/projects/<id>/config?section=feature-flags`.
- * A real `<Link>`, because it is a route now — middle-click and copy-link
+ * Customize overlay's `feature-flags` section, then `/projects/<id>/config
+ * ?section=feature-flags`, and — since that page was retired on 2026-09-02 —
+ * the Settings overlay's Feature flags tab, at `/settings/feature-flags`.
+ * A real `<Link>`, because it is still a route — middle-click and copy-link
  * both work, and the page prefetches.
  *
  * Only reachable surfaces render this. A gated NAV entry, palette action, or

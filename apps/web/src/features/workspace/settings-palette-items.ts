@@ -77,9 +77,9 @@ export const PALETTE_NO_PROJECT_DEFAULT_TAB: SettingsTab = 'profile';
  * carried over verbatim from the old `Customize · X` registry entries, so
  * "customize" returned twelve settings tabs plus five navigation rows and
  * "project" returned twelve tabs that are not the Projects page. `customize`
- * survives on exactly one row here — `general`, the Workspace tab that
- * `proj-customize`'s href actually opens (`/projects/{id}/settings/general`) —
- * so the legacy word still lands on the legacy destination and nowhere else.
+ * survives on exactly one row here — `workspace`, the tab labelled "General",
+ * which is what the Customize bar's Settings tab used to open — so the legacy
+ * word still lands on the legacy destination and nowhere else.
  * `project` survives only inside `general`'s phrase "project settings", the
  * pane's own former name.
  *
@@ -228,9 +228,10 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
  * renders an empty heading.
  *
  * `UPGRADE_ITEM` used to be appended to the last group here. It left the rail
- * with the rest of project configuration and is a section of
- * `/projects/<id>/config` now, reached through the `proj-settings` registry
- * row like every other out-of-overlay destination.
+ * with the rest of project configuration, became a section of
+ * `/projects/<id>/config`, and came back on 2026-09-02 when that page was
+ * retired — so it is a derived row from `railGroups()` like every other tab
+ * in this file, with no hand-written registry entry anywhere.
  */
 export function settingsPaletteGroups(params: SettingsPaletteParams): SettingsPaletteGroup[] {
   const groups: SettingsPaletteGroup[] = [];

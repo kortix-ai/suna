@@ -35,7 +35,6 @@ import {
   CompassIcon as Compass,
   CpuIcon as Cpu,
   CreditCardIcon as CreditCardSolid,
-  FlaskIcon as Flask,
   GitBranchIcon as FolderGit2,
   FolderOpenIcon as FolderOpen,
   GitDiffIcon as GitCompareArrows,
@@ -667,6 +666,26 @@ export const menuRegistry: MenuItemDef[] = [
   // (`settings-palette-items.ts`) — a registry href would be a second,
   // drifting copy. Feature flags' in-palette picker moved with it: see
   // `SETTINGS_TAB_SUBMENU_PAGE` in `command-palette.tsx`.
+  //
+  // `proj-config-feature-flags` outlived that sentence by a day. The row was
+  // still here on 2026-09-03, twenty-five lines under its own obituary, with
+  // `href: '/projects/{projectId}/config?section=feature-flags'` — a route
+  // `app/` no longer contains. Typing "feature flag" returned TWO rows: this
+  // one, under Navigation, labelled "Settings · Feature flags" and landing on
+  // a dead URL, and the derived `settings-tab-feature-flags` under "Settings ·
+  // Workspace", which opens the in-palette picker correctly. The dead one read
+  // like the right answer.
+  //
+  // Nothing was lost with it. Its keyword bag (`feature flags experimental
+  // beta labs toggles switches early access`) is a strict subset of the
+  // `feature-flags` bag in `settings-palette-items.ts`, and the picker it
+  // claimed to open was never keyed to its id — `SUBMENU_PAGE_BY_ID` has no
+  // `proj-config-feature-flags` entry, which is exactly why the row navigated.
+  //
+  // `menu-registry-destinations.test.ts` now checks the other direction too:
+  // every `kind: 'navigate'` href must resolve to a real route under
+  // `src/app`. A route deleted out from under a palette row is a red test now,
+  // not a dead link nobody notices.
   {
     // Not `proj-review` — that id named the old overlay tab and its absence
     // is pinned (`command-palette.test.tsx`); this row is the capability page.
@@ -683,22 +702,6 @@ export const menuRegistry: MenuItemDef[] = [
     // `review_center` is off), so the row cannot outlive the page.
     requiresFlag: 'review_center',
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
-  },
-  {
-    id: 'proj-config-feature-flags',
-    label: 'Settings · Feature flags',
-    icon: Flask,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/config?section=feature-flags',
-    requiresProject: true,
-    // Selecting this opens the in-palette flag list (`SUBMENU_PAGE_BY_ID` in
-    // command-palette.tsx), which names and toggles each experimental feature
-    // without leaving ⌘K; the href is the routed fallback for surfaces that
-    // consume this registry without that picker — same arrangement as
-    // `proj-sessions` and `nav-accounts`.
-    keywords: 'feature flags experimental beta labs toggles switches early access',
   },
   {
     id: 'proj-invite',
