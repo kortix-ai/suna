@@ -449,6 +449,16 @@ design correction found by measuring:
 > before the redesign. **Not verified live:** no reap has been observed on a
 > deployed API — the short horizon is 24 h.
 
+> **Verifying any sweep on pi requires knowing this:** the preview API runs with
+> `KORTIX_WORKERS_ENABLED=false`, so it logs *"API-only pod — singleton workers
+> disabled; not joining leader election"* and `startProjectMaintenance()` never
+> runs. The idle reaper, orphan-compute reconcile, stuck-session reconcile,
+> orphan-box sweep, branch GC, compute tick and monitor reconcile are ALL dark
+> there. It is not a place where a maintenance pass can be observed by waiting;
+> the reaper has to be invoked directly. This also means pi's accumulated state
+> (21 environment rows, 20 reading `active`) is not evidence about production —
+> nothing was ever going to reconcile it.
+
 **Recommended order for the remaining 26**, since they are not equal: (1) the
 automatic stop paths, which are mechanical and stop the bleeding; (2) billing,
 which needs a `workload_type` CHECK migration and belongs in one deliberate
