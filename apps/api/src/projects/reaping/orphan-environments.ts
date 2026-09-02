@@ -25,7 +25,7 @@
  * sweeps decline it for reasons that are individually correct. This pass is the
  * one that reads the session.
  */
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { projectSessions, sessionEnvironments } from '@kortix/db';
 import { db } from '../../shared/db';
 import {
@@ -183,8 +183,14 @@ export async function reapOrphanEnvironments(options?: {
         isNull(projectSessions.sessionId),
         sql`(${projectSessions.metadata}->>'deletedAt') is not null`,
         and(
-          sql`${sessionEnvironments.lastUsedAt} is not null`,
-          sql`${sessionEnvironments.lastUsedAt} < ${idleCutoff}`,
+          // Drizzle operators, not a raw `sql` fragment. Interpolating a JS Date
+          // into `sql` hands the postgres driver an unmapped value and the query
+          // dies with `The "string" argument must be of type string ... Received
+          // an instance of Date` — the column's type mapper is what encodes it,
+          // and a raw fragment has no column to ask. Caught only by running this
+          // against a real database; the pure-rule unit tests cannot see it.
+          isNotNull(sessionEnvironments.lastUsedAt),
+          lt(sessionEnvironments.lastUsedAt, idleCutoff),
         ),
       ),
     )
