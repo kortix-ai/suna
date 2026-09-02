@@ -271,6 +271,47 @@ The genuine legacy session `aa65b0a1-704b-43f2-b712-b7a9c9b4b2ec` repaired
 returned HTTP `200` and ZIP magic `50 4b 03 04`. The validation response displayed
 `ATTACHMENT_OK REPAIR_OK`.
 
+### Current-head legacy repair revalidation
+
+Fix Round 1 revalidated automatic repair against worktree head `84ecad7f55`, which
+contains the final runtime repair through `d83394981d`. The API listener PID was
+`53419`, with cwd `/Users/jay/root/kortix/suna-files-attachment/apps/api`. The web
+listener PID was `53434`, with cwd
+`/Users/jay/root/kortix/suna-files-attachment/apps/web`.
+
+Fresh session `c1de9a5f-1411-4fa2-9c1b-26a2a6e775f6` delivered pending-first
+command `172837d6-d3d9-417d-88d3-a113ee37e013`. Runtime message
+`msg_061d12e9e0018crqbcK4c7gdHV` contained part
+`prt_061d16f3e002WzlKqBx4tLPsx7`. Before repair, the marker was absent. The part
+was a data-backed `application/zip` file. Its data URL matched the source exactly.
+The decoded source was `368` bytes and started with `50 4b 03 04`.
+
+The authenticated browser displayed `legacy-current.zip` and the historical ZIP
+media-type error. Browser request `261` sent the next prompt to the session prompt
+route and returned HTTP `202`. Lifecycle command
+`8f7563c7-2f0e-4375-a54d-26d75650fb39` succeeded in one attempt. It forwarded
+runtime user message `msg_061da4d38000p9uAK5t4byMSsg`.
+
+The next prompt set `legacy_inline_attachments_repaired_at` to
+`2026-09-02T11:23:32.740Z`. The original runtime message ID and part ID did not
+change. The part changed in place to the deterministic reference:
+
+```text
+<file path="/workspace/uploads/.kortix-inbox/legacy-172837d6-d3d9-417d-88d3-a113ee37e013/1-legacy-current.zip" mime="application/zip" filename="legacy-current.zip">
+This file has been uploaded and is available at the path above.
+</file>
+```
+
+The raw path returned HTTP `200` with `Content-Type: application/zip`. Its `368`
+bytes matched the source exactly and started with `50 4b 03 04`. Final assistant
+message `msg_061dc54f3001yf5RPDY4Bd1tCR` completed with `error:null`. The runtime
+contained zero post-repair `application/zip` media-type errors. After reload, the
+DOM retained the ZIP tile, later prompt, completed response, and `Response complete`
+state.
+
+The post-run focused repair command passed `30` tests with `0` failures across two
+files. The post-run `SESS-27` command passed `1/1` flows with `0` failures.
+
 An earlier ready-session attempt failed before Task 5 repair. The lifecycle row
 reported a legacy-path mismatch, and the runtime message count did not increase.
 This proved that the failure path forwarded no partial prompt. The successful rerun
