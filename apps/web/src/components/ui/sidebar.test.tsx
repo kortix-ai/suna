@@ -90,7 +90,7 @@ describe('Sidebar offcanvas peek styling', () => {
  *
  *   **Layout resolves in one frame; only `transform` is ever animated.**
  *
- * The content pane reclaims its 16rem in a single reflow at t=0, under the
+ * The content pane reclaims its 20rem in a single reflow at t=0, under the
  * panel, and the panel then slides off on the compositor to uncover it. The
  * corollary — geometry only ever changes while the panel is OFF-SCREEN — is
  * what the previous revision could not honour: it swapped docked geometry for
@@ -226,6 +226,6 @@ describe('SidebarRail', () => {
 
 describe('SidebarProvider width', () => {
   test('renders the default width when no cookie has been written', () => {
-    expect(renderShell(true)).toContain('--sidebar-width:16rem');
+    expect(renderShell(true)).toContain('--sidebar-width:20rem');
   });
 });

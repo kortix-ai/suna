@@ -14,7 +14,7 @@ import { ChangeRequestDetailDialog } from '@/features/project-files/components/c
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { relativeTime } from '@/lib/relative-time';
 
@@ -91,7 +91,7 @@ function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: str
                 <span className="truncate">{relativeTime(cr.created_at)}</span>
               </span>
             </span>
-            <CaretRightIcon className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
+            <CaretRightIcon className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0" />
           </button>
         ))}
       </div>
@@ -161,8 +161,8 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // mid-deploy, a network blip. The flag-off branch still opens a dialog or a
   // popover in place and stays a button.
   const menuButton = reviewEnabled ? (
-    <SidebarMenuButton asChild className="font-medium">
-      <Link href={projectSettingsSectionHref(projectId, 'review')} prefetch>
+    <SidebarMenuButton asChild      className="group/menu-button text-sidebar-foreground relative">
+      <Link href={capabilityTabHref(projectId, 'review')} prefetch>
         {rowContent}
       </Link>
     </SidebarMenuButton>

@@ -310,8 +310,6 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.read',
   'project.write',
   'project.delete',
-  'project.cr.open',
-  'project.cr.merge',
   'project.session.read',
   'project.session.start',
   'project.session.stop',
@@ -341,6 +339,8 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.gitops.read',
   'project.gitops.push',
   'project.gitops.merge',
+  'project.gitops.ref.any',
+  'project.gitops.ref.delete',
   'project.secret.read',
   'project.secret.write',
   'project.connector.read',
@@ -370,6 +370,22 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
  * or be recommended for new manifests) and instead surfaced as a
  * deprecation warning by `validateGrantList`.
  */
+/**
+ * `kortix_cli` spellings that are still ACCEPTED but are the pre-cutover name
+ * for another leaf. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
+ * because they were the same capability named twice; a manifest that still
+ * lists one keeps validating and is rewritten to the value here when the grant
+ * is resolved.
+ *
+ * This is the single source: apps/api's grant canonicalizer imports it rather
+ * than keeping a second copy, and the CLI's `validate --scopes` annotates from
+ * it. Two hand-written copies of a key table is how they drift.
+ */
+export const DEPRECATED_KORTIX_CLI_ALIASES: Readonly<Record<string, string>> = {
+  'project.cr.open': 'project.gitops.push',
+  'project.cr.merge': 'project.gitops.merge',
+};
+
 export const LEGACY_TOLERATED_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.session.exec',
   'project.gateway.routing.edit',

@@ -14,7 +14,7 @@
  *      project on screen when there is one, else the selected account; and
  *   2. hand that `AccountBranding | null` to every consumer through context.
  *
- * It reads the same `['accounts']` query every other surface already holds
+ * It reads the same `useAccountsList()` query every other surface already holds
  * (`useEnsureSelectedAccount`, `AccountSwitcher`, `UserMenu`, …), so branding
  * costs no extra request. It renders nothing itself; `KortixLogo` swaps its
  * SVG for the org marks, and `BrandingDocumentEffect` (below) swaps the tab
@@ -23,11 +23,10 @@
  * to be branded as until someone signs in.
  */
 
-import { listAccounts, type AccountBranding } from '@kortix/sdk';
-import { useQuery } from '@tanstack/react-query';
+import { type AccountBranding } from '@kortix/sdk';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { siteMetadata } from '@/lib/site-metadata';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
@@ -80,17 +79,11 @@ export function useBrandingScope(accountId: string | null | undefined): void {
 }
 
 export function BrandingProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const { scopedAccountId } = useBrandingScopeState();
 
-  // Same key + staleTime as every other consumer → one fetch, shared cache.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: !!user,
-    staleTime: 60_000,
-  });
+  // Same hook as every other consumer → one user-scoped fetch, shared cache.
+  const accountsQuery = useAccountsList();
 
   const branding = useMemo<AccountBranding | null>(() => {
     const accounts = accountsQuery.data;

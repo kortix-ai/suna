@@ -9,8 +9,8 @@ import {
   KeyIcon as KeyRound,
   LockKeyIcon as Lock,
   PlugIcon as Plug,
-  GearSixIcon as Settings,
   StorefrontIcon as Storefront,
+  TrayIcon as Tray,
   type Icon,
 } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
@@ -110,9 +110,9 @@ const CARD_COPY: Record<CapabilityTab['key'], { icon: Icon; description: string 
     icon: KeyRound,
     description: 'Store encrypted values and control where each value can be used.',
   },
-  config: {
-    icon: Settings,
-    description: 'General project settings, sandbox templates, feature flags, and upgrades.',
+  review: {
+    icon: Tray,
+    description: 'Work waiting on a person before it can continue.',
   },
 };
 

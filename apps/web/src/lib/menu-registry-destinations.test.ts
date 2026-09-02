@@ -1,6 +1,5 @@
+import { VALID_TABS } from '@/features/accounts/hub/sections';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import {
   CAPABILITY_TABS,
@@ -8,10 +7,9 @@ import {
   channelsHref,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
-  ALL_PROJECT_SETTINGS_SECTIONS,
-  projectSettingsSectionHref,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
-import { SUBMENU_PAGE_BY_ID } from '@/features/workspace/command-palette';
+  SETTINGS_TAB_SUBMENU_PAGE,
+  SUBMENU_PAGE_BY_ID,
+} from '@/features/workspace/command-palette';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { getItemsForSurface } from '@/lib/menu-registry';
 
@@ -87,53 +85,31 @@ describe('every capability tab has a palette row', () => {
   });
 });
 
-describe('every project settings section has a palette row', () => {
-  for (const section of ALL_PROJECT_SETTINGS_SECTIONS) {
-    test(`"${section.label}" (?section=${section.key}) is reachable`, () => {
-      const href = projectSettingsSectionHref(PROJECT_TOKEN, section.key);
-      expect({ section: section.key, href, hasRow: paletteHrefs.has(href) }).toEqual({
-        section: section.key,
-        href,
-        hasRow: true,
-      });
-    });
-  }
-
-  test('the flag-gated section carries the same flag its section does', () => {
-    expect(rowFor(projectSettingsSectionHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe(
-      'review_center',
-    );
+describe('the flag-gated capability tab', () => {
+  test('Review carries the same flag its tab does', () => {
+    // `/projects/<id>/config` and its `?section=` rows are gone (2026-09-02);
+    // its configuration sections are Settings-overlay tabs, whose palette rows
+    // are DERIVED from the rail and covered by `command-palette.test.tsx`.
+    // Review is the one section that became a capability tab, and its row
+    // must hide exactly when the tab does.
+    expect(rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe('review_center');
   });
 });
 
 describe('every account section has a palette row', () => {
   /**
-   * Read out of the page's source rather than imported, exactly as
-   * `features/workspace/settings/route-contract.test.ts` does: importing
-   * `/accounts/[id]/page.tsx` drags every IAM tab module in with it, and the
-   * allowlist is a `const … as const` literal that a regex can read
-   * faithfully.
+   * `VALID_TABS` used to be a private `const … as const` inside
+   * `/accounts/[id]/page.tsx`, so this read the page's source and parsed it
+   * with a regex — importing the page drags every IAM tab module in with it.
+   * The allowlist is an exported constant of the hub catalog now
+   * (`features/accounts/hub/sections.ts`), which imports only icons, so the
+   * join is a plain import and cannot silently stop matching.
    */
-  const source = readFileSync(
-    join(import.meta.dir, '..', 'app', '(app)', 'accounts', '[id]', 'page.tsx'),
-    'utf8',
-  );
-  const block = source.match(/const VALID_TABS = \[([\s\S]*?)\] as const;/);
-
-  test('the page still declares a VALID_TABS allowlist this test can read', () => {
-    expect(block).not.toBeNull();
-  });
-
-  const tabs = (block?.[1] ?? '')
-    .split(',')
-    .map((line) => line.trim().replace(/^['"]|['"]$/g, ''))
-    .filter(Boolean);
-
   test('the allowlist is not empty', () => {
-    expect(tabs.length).toBeGreaterThan(0);
+    expect(VALID_TABS.length).toBeGreaterThan(0);
   });
 
-  for (const tab of tabs) {
+  for (const tab of VALID_TABS) {
     test(`?tab=${tab} is reachable`, () => {
       const href = `/accounts/${ACCOUNT_TOKEN}?tab=${tab}`;
       expect({ tab, href, hasRow: paletteHrefs.has(href) }).toEqual({ tab, href, hasRow: true });
@@ -148,7 +124,8 @@ describe('the two rows that answer in-palette instead of navigating', () => {
     // instead. Pin both directions: every key names a live palette row, and
     // the two rows this change added map to the pages they promise.
     expect(SUBMENU_PAGE_BY_ID['review-changes']).toBe('changes');
-    expect(SUBMENU_PAGE_BY_ID['proj-config-feature-flags']).toBe('flags');
+    // Feature flags is a derived settings row now, keyed by overlay tab.
+    expect(SETTINGS_TAB_SUBMENU_PAGE['feature-flags']).toBe('flags');
     for (const id of Object.keys(SUBMENU_PAGE_BY_ID)) {
       expect({ id, isRow: paletteRows.some((item) => item.id === id) }).toEqual({
         id,

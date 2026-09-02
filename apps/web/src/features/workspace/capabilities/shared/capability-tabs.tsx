@@ -48,7 +48,8 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  */
 export function useCapabilityTabFlags(projectId: string): Partial<Record<FeatureFlagKey, boolean>> {
   const subprojects = useFeatureFlag(projectId, 'subprojects');
-  return { subprojects: subprojects.enabled };
+  const reviewCenter = useFeatureFlag(projectId, 'review_center');
+  return { subprojects: subprojects.enabled, review_center: reviewCenter.enabled };
 }
 
 /**
@@ -80,6 +81,13 @@ export function useCapabilityTabFlags(projectId: string): Partial<Record<Feature
  * `flags` is REQUIRED, not optional with an all-on default, for the same
  * reason: a caller that forgets to pass it must lose the gated tabs, not gain
  * them.
+ *
+ * Gate 3 is ONE mechanism for every gated tab — the tab's own `flag:` field.
+ * Review is gated on `review_center` (the same gate the retired config page's
+ * Review section carried, so a flag that hides the inbox hides every way in)
+ * and Marketplace on `subprojects`; neither is a special case in this filter.
+ * A second, key-matching branch here would be a place for the two gates to
+ * disagree about what "off" means.
  */
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
@@ -168,17 +176,12 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * column; the page body below is the flex-1 scroller.
  */
 /**
- * Settings trails the row, on the right — one `TabsList`, so the underline
- * indicator, keyboard roving, and `role="tablist"` semantics stay unified;
- * only the visual position of this tab changes. It reads as "how it's
- * configured", a different register from the build-the-agent tabs to its
- * left, and the gap says so without a second list or a divider. `ml-auto`
- * now lives on `MembersLaunchLink` (the first trailing element in DOM order,
- * rendered just before this array's tabs) — Settings trails it with no
- * further margin of its own.
+ * No trailing Settings tab any more. It trailed the row on the right until
+ * 2026-09-02, when `/projects/<id>/config` was retired: its sections are the
+ * Settings overlay's Workspace group now, and Review took a place in the row
+ * proper. `MembersLaunchLink` keeps its `ml-auto` and is the only trailing
+ * element.
  */
-const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
-
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
@@ -204,35 +207,19 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           size="lg"
           className="h-auto w-full justify-start gap-5 border-b-0 px-2"
         >
-          {tabs
-            .filter((tab) => !TRAILING_TABS.includes(tab.key))
-            .map((tab) => (
-              <TabsTrigger
-                key={tab.key}
-                value={tab.key}
-                asChild
-                className="w-fit flex-none px-1 py-3"
-              >
-                <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                  {tab.label}
-                </Link>
-              </TabsTrigger>
-            ))}
+          {tabs.map((tab) => (
+            <TabsTrigger
+              key={tab.key}
+              value={tab.key}
+              asChild
+              className="w-fit flex-none px-1 py-3"
+            >
+              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+                {tab.label}
+              </Link>
+            </TabsTrigger>
+          ))}
           <MembersLaunchLink projectId={projectId} />
-          {tabs
-            .filter((tab) => TRAILING_TABS.includes(tab.key))
-            .map((tab) => (
-              <TabsTrigger
-                key={tab.key}
-                value={tab.key}
-                asChild
-                className="w-fit flex-none px-1 py-3"
-              >
-                <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                  {tab.label}
-                </Link>
-              </TabsTrigger>
-            ))}
         </TabsList>
       </Tabs>
     </div>

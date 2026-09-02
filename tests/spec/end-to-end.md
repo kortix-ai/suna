@@ -988,7 +988,7 @@ These contracts use product IDs. They replace the old route-coverage bucket IDs.
 `CONN-23` Connection roster and default-connection mutations hide an unknown project with 404.
 `DEL-4` Immediate account deletion removes the owned account state and the deletion-status read confirms the result.
 `GHA-1` A platform admin configures, reads, and removes the GitHub App or PAT integration through the supported setup routes.
-`GHA-2` GitHub App manifest and installation callbacks reject invalid state and preserve the configured integration.
+`GHA-2` GitHub App manifest and installation callbacks reject invalid state and preserve the configured integration. An install that arrives with no state at all is not an error — that is what installing from the App's own GitHub page looks like — so it redirects reporting `github=install_received&reason=direct_install` and carries the `installation_id`, the only thing that identifies the installation for later linking.
 `GHA-3` The GitHub App OAuth identity-proof callbacks reject an untrusted frontend origin and a forged state without minting a token.
 `GW-1b` The public LLM gateway health alias returns its health contract.
 `GW-2c` The OpenAI-compatible LLM models alias enforces authentication and returns the supported model envelope.

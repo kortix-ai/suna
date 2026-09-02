@@ -57,15 +57,18 @@ import {
   ClockCounterClockwiseIcon,
   DotsThreeIcon,
   GlobeIcon,
+  GridNineIcon,
   LockKeyIcon,
   PauseIcon,
   PlayIcon,
+  SquaresFourIcon,
   TrashIcon,
   XIcon,
+  type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
 type DeploymentTone = 'success' | 'destructive' | 'warning' | 'muted';
 
@@ -321,49 +324,57 @@ export function AppPreviewOverlay({
  * **The ratio is load-bearing.** The frame is scaled to the tile's WIDTH, so
  * any mismatch between the viewport's aspect and the tile's shows up as dead
  * space at the bottom of every tile (viewport shorter) or a crop (taller).
- * 1080x1350 is 4:5 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
+ * 1280x720 is 16:9 exactly, which is `PREVIEW_TILE_ASPECT`, so the scaled frame
  * fills the tile edge to edge. Change one, change the other — the parity is
  * asserted in `app-preview.test.tsx`.
  *
  * The width and the height answer two different questions, and only the second
  * is about the ratio. The viewport WIDTH decides which layout the App renders,
- * and 1080px is a desktop breakpoint — no App answers the thumbnail with its
+ * and 1280px is a desktop breakpoint — no App answers the thumbnail with its
  * hamburger. The viewport HEIGHT decides how far down that page the thumbnail
- * reaches: 1350px of a 1080px-wide page is a hero and the section under it,
- * where the 720px of the old 16:9 tile was the header alone.
+ * reaches: 720px of a 1280px-wide page is roughly the header and the top of the
+ * hero.
  *
  * The ratio is a row-height decision: every candidate trades how much page a
  * tile shows against how many rows fit a screen, at a fixed tile width.
  *
- *   | ratio     | height/width | tile at cap | four-across row              |
- *   | ---       | ---          | ---         | ---                          |
- *   | `16/9`    | 0.56x        | 300x169     | a letterbox of the header    |
- *   | `1/1`     | 1.00x        | 300x300     | two rows and part of a third |
- *   | **`4/5`** | **1.25x**    | **300x375** | **two rows on a laptop**     |
- *   | `3/4`     | 1.33x        | 300x400     | a row and a half             |
- *   | `2/3`     | 1.50x        | 300x450     | a row and a third            |
- *   | `9/16`    | 1.78x        | 300x533     | about one row                |
+ *   | ratio      | height/width | tile at cap | four-across row              |
+ *   | ---        | ---          | ---         | ---                          |
+ *   | **`16/9`** | **0.56x**    | **300x169** | **three rows and change**    |
+ *   | `1/1`      | 1.00x        | 300x300     | two rows and part of a third |
+ *   | `4/5`      | 1.25x        | 300x375     | two rows on a laptop         |
+ *   | `3/4`      | 1.33x        | 300x400     | a row and a half             |
+ *   | `2/3`      | 1.50x        | 300x450     | a row and a third            |
+ *   | `9/16`     | 1.78x        | 300x533     | about one row                |
  *
- * 4:5 is the one ratio here that shipped BEFORE and was reverted (`e56c580271`,
- * reverted by `e6c4ba0b62`), so the reason it works now and did not then has to
- * be written down: it was paired with a `max-w-5xl` cap and a fixed four-column
- * grid, which is a 230px tile — the App at 18% scale, every card the same grey
- * rectangle. What changed is not the ratio. The cap is `max-w-7xl` and the
- * columns come from a container ladder floored at ~232px, so the tile is 300px
- * at the cap and never the 230px that killed it. Do not revert this to 16:9
- * again; fix the ladder if a tile ever gets small.
+ * **This ratio has moved twice, so read the history before moving it again.**
+ * 16:9 shipped, was replaced by 4:5 (`e56c580271`), reverted back to 16:9
+ * (`e6c4ba0b62`), then set to 4:5 a second time — and is now 16:9 again by
+ * Jay's call on 2026-08-31. The recorded objection to 16:9 is that a tile is a
+ * letterbox: at the cap it is 300x169, and the App inside it is a 1280px page
+ * at 23% scale, so a thumbnail shows about the header and the top of the hero
+ * rather than a hero plus the section under it. The counter-argument, and the
+ * reason it keeps coming back, is that 16:9 is the shape a web page is actually
+ * screenshotted in and three rows fit a laptop instead of two.
  *
- * At the four columns a docked desktop lands on (`APP_GRID_COLUMNS`), a tile is
- * ~276x345 — the App at ~26% scale.
+ * The thing that genuinely broke a previous attempt was never the ratio: 4:5
+ * paired with a `max-w-5xl` cap and a fixed four-column grid gave a 230px tile,
+ * the App at 18% scale, every card the same grey rectangle. The cap is
+ * `max-w-7xl` now and the columns come from a container ladder floored at
+ * ~232px. Keep that floor whatever the ratio is.
+ *
+ * At the three columns a docked desktop lands on by default
+ * (`APP_GRID_COLUMN_OPTIONS`), a tile is ~320x180 — the App at ~25% scale. At
+ * the cap it is ~405x228, or ~32%.
  *
  * Note what does NOT solve the mobile-layout problem — `showAspectRatioToCSS`
  * in `show-content-renderer.tsx` reshapes the BOX and leaves the guest laying
  * out at the host's width, which is the thing that produced it here.
  */
-export const PREVIEW_VIEWPORT_WIDTH = 1080;
-export const PREVIEW_VIEWPORT_HEIGHT = 1350;
+export const PREVIEW_VIEWPORT_WIDTH = 1280;
+export const PREVIEW_VIEWPORT_HEIGHT = 720;
 /** The tile's shape, written once so the class and the viewport cannot drift. */
-export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
+export const PREVIEW_TILE_ASPECT = 'aspect-[16/9]';
 
 /**
  * How many tiles the gallery puts in a row.
@@ -383,10 +394,10 @@ export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
  *   | step            | container | cols | tile    |
  *   | ---             | ---       | ---  | ---     |
  *   | (base)          | < 512px   | 1    | full    |
- *   | `@lg`  (32rem)  | 512px     | 2    | 232x290 |
- *   | `@3xl` (48rem)  | 768px     | 3    | 235x294 |
- *   | `@5xl` (64rem)  | 1024px    | 4    | 236x295 |
- *   | (cap)           | 1280px    | 4    | 300x375 |
+ *   | `@lg`  (32rem)  | 512px     | 2    | 232x131 |
+ *   | `@3xl` (48rem)  | 768px     | 3    | 235x132 |
+ *   | `@5xl` (64rem)  | 1024px    | 4    | 236x133 |
+ *   | (cap)           | 1280px    | 4    | 300x169 |
  *
  * Four across is therefore what a docked desktop lands on, and a phone still
  * gets one column — a 170px tile is the grey rectangle again.
@@ -397,8 +408,123 @@ export const PREVIEW_TILE_ASPECT = 'aspect-[4/5]';
  */
 export const APP_GRID_CONTAINER = '@container/apps';
 
-export const APP_GRID_COLUMNS =
-  'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3 @5xl/apps:grid-cols-4';
+/**
+ * How many columns the gallery is ALLOWED to reach, as a reader's choice.
+ *
+ * There is a default and there is a choice, in that order. Three across is the
+ * default: at the `max-w-7xl` cap that is a ~405px tile, where four is ~300px,
+ * and the tile width is the only thing that decides whether the scaled-down
+ * desktop page inside it reads as a page or as a swatch. Someone with twenty
+ * Apps wants to see twenty Apps, so the control trades size for count — but
+ * nobody has to touch it to get a sane page.
+ *
+ * Both ladders share every step below their cap, so switching only ever changes
+ * what happens in a WIDE container. Neither drops below the ~232px tile floor
+ * that turns a card into a grey rectangle.
+ *
+ * Written out as full literals, one per option. Tailwind scans source text, so
+ * a class assembled at runtime (`grid-cols-${n}`) never reaches the compiled
+ * stylesheet and silently does nothing.
+ */
+export type AppGridColumns = 3 | 4;
+
+export const APP_GRID_DEFAULT_COLUMNS: AppGridColumns = 3;
+
+export const APP_GRID_COLUMN_OPTIONS: Record<
+  AppGridColumns,
+  { label: string; grid: string; icon: PhosphorIcon }
+> = {
+  3: {
+    label: 'Comfortable — up to 3 per row',
+    grid: 'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3',
+    icon: SquaresFourIcon,
+  },
+  4: {
+    label: 'Compact — up to 4 per row',
+    grid: 'grid-cols-1 @lg/apps:grid-cols-2 @3xl/apps:grid-cols-3 @5xl/apps:grid-cols-4',
+    icon: GridNineIcon,
+  },
+};
+
+/** Left to right in the control: biggest tile first, densest last. */
+export const APP_GRID_COLUMN_ORDER = [3, 4] as const;
+
+export const APP_GRID_COLUMNS_STORAGE_KEY = 'kortix.apps.grid-columns';
+
+/**
+ * The stored preference, or `null` for anything that is not one of ours.
+ *
+ * `localStorage` is a string bucket shared with every other tab and every past
+ * version of this page, so the value read back is untrusted input: a count this
+ * build removed, a key someone else wrote, `undefined` stringified by a bug.
+ * Any of those would land in `APP_GRID_COLUMN_OPTIONS[n]` as `undefined` and
+ * render a grid with no column class at all.
+ */
+export function parseAppGridColumns(value: string | null): AppGridColumns | null {
+  if (!value) return null;
+  return Object.hasOwn(APP_GRID_COLUMN_OPTIONS, value) ? (Number(value) as AppGridColumns) : null;
+}
+
+/**
+ * Where the choice lives when `localStorage` will not take it.
+ *
+ * A browser set to block site data throws on `setItem`, and the reader who
+ * clicked a density button is owed the density they clicked whether or not it
+ * can outlive the tab. Module scope, so it survives a remount the way the real
+ * store would.
+ */
+let blockedStorageColumns: AppGridColumns | null = null;
+
+/** Same-tab subscribers. The `storage` event covers every OTHER tab, not this one. */
+const columnListeners = new Set<() => void>();
+
+function subscribeAppGridColumns(onChange: () => void) {
+  columnListeners.add(onChange);
+  window.addEventListener('storage', onChange);
+  return () => {
+    columnListeners.delete(onChange);
+    window.removeEventListener('storage', onChange);
+  };
+}
+
+function readAppGridColumns(): AppGridColumns {
+  if (blockedStorageColumns) return blockedStorageColumns;
+  try {
+    return parseAppGridColumns(window.localStorage.getItem(APP_GRID_COLUMNS_STORAGE_KEY)) ??
+      APP_GRID_DEFAULT_COLUMNS;
+  } catch {
+    return APP_GRID_DEFAULT_COLUMNS;
+  }
+}
+
+function writeAppGridColumns(next: AppGridColumns) {
+  blockedStorageColumns = next;
+  try {
+    window.localStorage.setItem(APP_GRID_COLUMNS_STORAGE_KEY, String(next));
+  } catch {
+    // Site data blocked. `blockedStorageColumns` already holds the choice for
+    // this tab's lifetime, which is the whole guarantee we can make.
+  }
+  for (const listener of columnListeners) listener();
+}
+
+/**
+ * The reader's column choice.
+ *
+ * `useSyncExternalStore` rather than `useState` + an effect: the server has no
+ * `localStorage`, so the server snapshot is the DEFAULT and the client reads
+ * the real value during hydration. An effect would paint the default first and
+ * then jump, which on this page is every tile resizing one frame after load.
+ */
+function useAppGridColumns(): [AppGridColumns, (next: AppGridColumns) => void] {
+  const value = useSyncExternalStore(
+    subscribeAppGridColumns,
+    readAppGridColumns,
+    () => APP_GRID_DEFAULT_COLUMNS,
+  );
+  const setValue = useCallback((next: AppGridColumns) => writeAppGridColumns(next), []);
+  return [value, setValue];
+}
 
 /**
  * How far to shrink the desktop frame so it fits the tile. `null` for a width
@@ -576,7 +702,62 @@ export function AppPreview({
   );
 }
 
-function AppsHeader() {
+/**
+ * Column count, as two states of one control rather than a menu.
+ *
+ * A segmented `ButtonGroup` of icon buttons is the pattern this product already
+ * uses for a small closed set of view choices. Two options is few enough that
+ * both are visible without opening anything, and the glyphs read as the thing
+ * they do: four squares, then nine, the second denser than the first.
+ */
+function AppGridColumnsControl({
+  value,
+  onChange,
+}: {
+  value: AppGridColumns;
+  onChange: (next: AppGridColumns) => void;
+}) {
+  return (
+    <ButtonGroup aria-label="Tiles per row">
+      {APP_GRID_COLUMN_ORDER.map((key) => {
+        const option = APP_GRID_COLUMN_OPTIONS[key];
+        const Glyph = option.icon;
+        const active = value === key;
+        return (
+          <Hint key={key} side="bottom" label={option.label}>
+            <Button
+              type="button"
+              variant={active ? 'secondary' : 'outline'}
+              size="icon-sm"
+              aria-pressed={active}
+              aria-label={option.label}
+              onClick={() => onChange(key)}
+            >
+              <Glyph className="size-4" />
+            </Button>
+          </Hint>
+        );
+      })}
+    </ButtonGroup>
+  );
+}
+
+function AppsHeader({
+  columns,
+  onColumnsChange,
+  showColumns,
+}: {
+  columns: AppGridColumns;
+  onColumnsChange: (next: AppGridColumns) => void;
+  /**
+   * The control only exists to reshape a grid, so it is absent whenever there
+   * is no grid — the feature gate, the error state and the empty state each
+   * fill the page on their own, and a column picker over any of them is a dead
+   * switch. It stays visible over the SKELETON: a control that appears once
+   * loading finishes moves the two beside it on every page load.
+   */
+  showColumns: boolean;
+}) {
   const sidebar = useOptionalSidebar();
 
   return (
@@ -588,6 +769,11 @@ function AppsHeader() {
       <div className="flex min-w-0 flex-1 items-center gap-2 px-3 py-3">
         <h1 className="text-foreground shrink-0 text-sm font-medium">Apps</h1>
       </div>
+      {showColumns ? (
+        <div className="flex shrink-0 items-center pr-1">
+          <AppGridColumnsControl value={columns} onChange={onColumnsChange} />
+        </div>
+      ) : null}
       <Link
         href="/docs/feature-flags/apps"
         target="_blank"
@@ -620,6 +806,7 @@ export function AppsView({ projectId }: { projectId: string }) {
   // refetch (a lifecycle toggle, a rollback) re-renders the modal against the
   // fresh row instead of a stale copy captured at click time.
   const [openAppId, setOpenAppId] = useState<string | null>(null);
+  const [gridColumns, setGridColumns] = useAppGridColumns();
   const openApp = apps.data?.find((item) => item.app_id === openAppId) ?? null;
 
   useEffect(() => {
@@ -643,7 +830,11 @@ export function AppsView({ projectId }: { projectId: string }) {
     // assumes mobile browser chrome is visible, so the bar can never be pushed
     // under a toolbar that reappears.
     <div className="flex h-svh flex-col overflow-hidden">
-      <AppsHeader />
+      <AppsHeader
+        columns={gridColumns}
+        onColumnsChange={setGridColumns}
+        showColumns={appsGate.isLoading || (appsGate.enabled && (apps.isLoading || !!apps.data?.length))}
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* `max-w-7xl px-4` — the gallery's column, and the CONTAINER the grid
@@ -662,19 +853,19 @@ export function AppsView({ projectId }: { projectId: string }) {
             take their natural height and stay at the top, unaffected. */}
         <div
           className={cn(
-            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 py-6 pb-20',
+            'mx-auto flex min-h-full w-full max-w-7xl flex-col px-4 md:px-8 py-6 pb-20',
             APP_GRID_CONTAINER,
           )}
         >
           {appsGate.isLoading ? (
-            <AppGridSkeleton />
+            <AppGridSkeleton columns={gridColumns} />
           ) : !appsGate.enabled ? (
             <FeatureGateScreen
               featureName="Apps"
               description="Apps deploy static sites, JavaScript bundles, Dockerfiles, and OCI images to stable URLs. Each App wakes on its next request and suspends after its idle timeout."
             />
           ) : apps.isLoading ? (
-            <AppGridSkeleton />
+            <AppGridSkeleton columns={gridColumns} />
           ) : apps.isError ? (
             <ErrorState
               size="sm"
@@ -688,11 +879,11 @@ export function AppsView({ projectId }: { projectId: string }) {
             />
           ) : apps.data?.length ? (
             /* A gallery grid, sized by the space it has rather than by the
-               window (`APP_GRID_COLUMNS`). `gap-y` is larger than `gap-x`
+               window (`APP_GRID_COLUMN_OPTIONS`). `gap-y` is larger than `gap-x`
                because each tile's caption hangs BELOW it with no border to
                close it off — an equal gap would let the next row's thumbnail
                crowd the previous row's text. */
-            <ul className={cn('grid gap-x-4 gap-y-6', APP_GRID_COLUMNS)}>
+            <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[gridColumns].grid)}>
               {apps.data.map((app) => (
                 <AppCard
                   key={app.app_id}
@@ -726,19 +917,22 @@ export function AppsView({ projectId }: { projectId: string }) {
 }
 
 /**
- * Shape-matched placeholder: same grid, same 4:5 tile, same ONE-line caption
- * hanging below it as `AppCard`. Eight tiles — two full rows at the four
- * columns a desktop lands on, so the placeholder fills the page it stands in
- * for instead of trailing off half way down it.
+ * Shape-matched placeholder: same grid, same 16:9 tile, same ONE-line caption
+ * hanging below it as `AppCard`. It takes the SAME column count as the real
+ * grid — a skeleton laid out three across in front of a grid that resolves to
+ * four is a layout shift dressed as a loading state.
+ *
+ * Nine tiles: three full rows at the default three columns, so the placeholder
+ * fills the page it stands in for instead of trailing off half way down it.
  *
  * The second caption bar went when the card's hostname line did. A skeleton
  * taller than the thing it stands in for is a layout shift dressed as a
  * loading state.
  */
-function AppGridSkeleton() {
+function AppGridSkeleton({ columns }: { columns: AppGridColumns }) {
   return (
-    <ul className={cn('grid gap-x-4 gap-y-6', APP_GRID_COLUMNS)}>
-      {Array.from({ length: 8 }).map((_, index) => (
+    <ul className={cn('grid gap-6', APP_GRID_COLUMN_OPTIONS[columns].grid)}>
+      {Array.from({ length: 9 }).map((_, index) => (
         <li key={index}>
           <Skeleton className={cn(PREVIEW_TILE_ASPECT, 'w-full rounded-lg')} />
           <Skeleton className="mt-3 h-3.5 w-1/2 rounded-sm" />

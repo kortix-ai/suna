@@ -1,7 +1,10 @@
 'use client';
 
+import { cn } from '@/lib/utils';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
+
+import { COMPOSER_TEXT_METRICS } from './composer-text-metrics';
 
 /** Same idiom as `project-sidebar.tsx` — module-level, SSR-safe (false on the server). */
 const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
@@ -40,7 +43,7 @@ const FADE_SWAP = {
  *  - `/` and `@`      → editor/composer-editor.tsx suggestion extensions
  *  - ⌘K / Ctrl+K      → workspace/command-palette.tsx
  *  - Tab              → `cycleAgent` in composer.tsx
- *  - ⌘, / Ctrl+,      → `useSettingsKeyboardShortcut` (project-settings-nav.tsx)
+ *  - ⌘, / Ctrl+,      → `useSettingsKeyboardShortcut` (settings/use-settings-shortcut.ts)
  *  - Shift+Enter      → hard break in editor/extensions.ts
  *  - drag & drop      → `handleDropFiles` in composer.tsx
  *
@@ -120,7 +123,18 @@ export function AnimatedComposerPlaceholder({
       // `inset-x-2` mirrors the wrapper's `px-2`; the font classes mirror
       // `ComposerEditor`'s own, so the overlay sits exactly where the static
       // placeholder would. `overflow-hidden` clips the roll to one line.
-      className="text-muted-foreground pointer-events-none absolute inset-x-2 top-0 overflow-hidden text-base sm:text-sm"
+      //
+      // `COMPOSER_TEXT_METRICS` is the rest of that mirror, and it is NOT
+      // optional: `inset-x-2` only reaches the wrapper's padding box, so any
+      // horizontal padding on the contenteditable inside it is invisible from
+      // out here. Without this the overlay draws its first glyph at the
+      // wrapper's edge while the caret underneath it sits one inset further
+      // in — the placeholder and the cursor stop agreeing on where the line
+      // starts. See composer-text-metrics.ts.
+      className={cn(
+        'text-muted-foreground pointer-events-none absolute inset-x-1 top-0 overflow-hidden text-sm',
+        COMPOSER_TEXT_METRICS,
+      )}
     >
       <AnimatePresence mode="popLayout" initial={false}>
         <m.span

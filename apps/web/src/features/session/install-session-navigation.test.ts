@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { clearSessionFresh, isSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { clearSessionFresh, isSessionFresh } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   installSessionHref,

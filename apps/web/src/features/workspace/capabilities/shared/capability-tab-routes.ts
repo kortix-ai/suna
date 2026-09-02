@@ -45,7 +45,7 @@ export interface CapabilityTab {
     | 'models'
     | 'marketplace'
     | 'secrets'
-    | 'config';
+    | 'review';
   label: string;
   /**
    * When set, the tab exists only while this per-project feature flag is on.
@@ -69,12 +69,18 @@ export interface CapabilityTab {
  * The Agents key is singular because a key IS its URL segment
  * (`/projects/<id>/agent`); only the label is plural.
  *
- * Settings' key is `config`, not `settings`, and the mismatch is deliberate:
- * `/projects/<id>/settings` already belongs to the Settings OVERLAY's
- * deep-link route, which opens the store and bounces. Two routes cannot share
- * one segment, so the tab that holds project configuration takes `config` and
- * keeps the label a person reads. Every retired `/settings/<tab>` bookmark
- * redirects here through `settings-tabs.ts`'s `GRADUATED` map.
+ * There is no Settings tab. `/projects/<id>/config` — the bar's trailing
+ * "Settings" tab, a sub-nav over General / Sandbox templates / Review /
+ * Feature flags / Upgrades — was retired on 2026-09-02 (Jay). Its
+ * configuration sections live in the Settings overlay's Workspace group
+ * (`settings/rail.ts`, opened with Cmd+, or from the workspace switcher), and
+ * Review — an inbox, not configuration — moved up onto this bar as its own
+ * tab. `settings-tabs.ts` redirects every retired `/config?section=` link.
+ *
+ * Two tabs are flag-gated, and each says so in its own `flag:` field —
+ * Review on `review_center`, Marketplace on `subprojects`.
+ * `visibleCapabilityTabs` in `capability-tabs.tsx` hides a tab while its flag
+ * is off; that function reads the field and knows no tab key by name.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'models', label: 'Models' },
@@ -84,12 +90,12 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'triggers', label: 'Triggers' },
   // Marketplace installs the four tabs above it — a subproject delivers agents,
   // skills, connectors and triggers in one commit — so it reads as the last of
-  // the "what this project can do" group, ahead of the Secrets/Settings pair.
-  // Not first: `CAPABILITY_TABS[0]` is the landing tab, and landing on a store
+  // the "what this project can do" group, ahead of Review and Secrets. Not
+  // first: `CAPABILITY_TABS[0]` is the landing tab, and landing on a store
   // would answer a question nobody asked.
   { key: 'marketplace', label: 'Marketplace', flag: 'subprojects' },
+  { key: 'review', label: 'Review', flag: 'review_center' },
   { key: 'secrets', label: 'Secrets' },
-  { key: 'config', label: 'Settings' },
 ];
 
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {

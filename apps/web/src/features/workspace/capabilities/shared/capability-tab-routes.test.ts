@@ -7,11 +7,13 @@ import {
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists models, connectors, agent, skills, triggers, marketplace, secrets, config in that order', () => {
+  test('lists models, connectors, agent, skills, triggers, marketplace, review, secrets in that order', () => {
     // Models leads the bar (Jay, 2026-08-17) — it used to sit after Triggers.
-    // Marketplace sits after Triggers and before Secrets: the five before it
-    // are what a project declares, and Marketplace installs a ready-made set
-    // of exactly those five. Secrets and Settings are the operator half.
+    // Marketplace sits after Triggers: the five before it are what a project
+    // declares, and Marketplace installs a ready-made set of exactly those
+    // five. Review joined the row on 2026-09-02, when the trailing Settings
+    // tab (`config`) was retired; it is an inbox, so it follows the whole
+    // declare-what-this-project-does group.
     expect(CAPABILITY_TABS.map((t) => t.key)).toEqual([
       'models',
       'connectors',
@@ -19,19 +21,21 @@ describe('CAPABILITY_TABS', () => {
       'skills',
       'triggers',
       'marketplace',
+      'review',
       'secrets',
-      'config',
     ]);
   });
 
-  // Marketplace is the only tab whose surface a project can be without. The
-  // flag lives HERE, on the tab record, rather than in the bar component, so
-  // the bar, the sidebar row and the Customize index card all read one answer.
-  // `capability-tabs-gating.test.ts` asserts what the flag does; this asserts
-  // the tab declares it at all.
-  test('Marketplace is the one flag-gated tab, on the `subprojects` flag', () => {
+  // Marketplace and Review are the tabs whose surface a project can be
+  // without. Each flag lives HERE, on the tab record, rather than in the bar
+  // component, so the bar, the sidebar row and the Customize index card all
+  // read one answer. `capability-tabs-gating.test.ts` asserts what a flag
+  // does; this asserts the tabs declare them at all — and that nothing else
+  // does, so a new gate cannot appear without a decision.
+  test('Marketplace and Review are the flag-gated tabs', () => {
     expect(CAPABILITY_TABS.filter((t) => t.flag).map((t) => [t.key, t.flag])).toEqual([
       ['marketplace', 'subprojects'],
+      ['review', 'review_center'],
     ]);
   });
 
@@ -50,12 +54,12 @@ describe('CAPABILITY_TABS', () => {
     expect(channelsHref('p1')).toBe('/projects/p1/connectors?scope=channels');
   });
 
-  test('the Settings tab keys on `config`, never on `settings`', () => {
-    // `/projects/<id>/settings` is the settings OVERLAY's deep-link route. Two
-    // routes cannot share one segment, so the tab that holds project
-    // configuration takes `config` and keeps the label a person reads.
-    const settings = CAPABILITY_TABS.find((t) => t.label === 'Settings');
-    expect(settings?.key).toBe('config');
+  test('there is no Settings tab — configuration lives in the overlay', () => {
+    // `/projects/<id>/config` was retired on 2026-09-02. Asserted absent
+    // rather than merely left out of the list above, so re-adding the key
+    // without re-adding the route fails here.
+    expect(CAPABILITY_TABS.find((t) => t.label === 'Settings')).toBeUndefined();
+    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('config');
     expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('settings');
   });
 
@@ -73,7 +77,7 @@ describe('capabilityTabHref', () => {
     expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/agent');
     expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/triggers');
     expect(capabilityTabHref('p1', 'marketplace')).toBe('/projects/p1/marketplace');
-    expect(capabilityTabHref('p1', 'config')).toBe('/projects/p1/config');
+    expect(capabilityTabHref('p1', 'review')).toBe('/projects/p1/review');
   });
 });
 
@@ -84,7 +88,7 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/skills')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/triggers')).toBe('triggers');
     expect(activeCapabilityTab('/projects/p1/marketplace')).toBe('marketplace');
-    expect(activeCapabilityTab('/projects/p1/config')).toBe('config');
+    expect(activeCapabilityTab('/projects/p1/review')).toBe('review');
   });
   test('ignores a trailing slash', () => {
     expect(activeCapabilityTab('/projects/p1/skills/')).toBe('skills');
@@ -105,9 +109,11 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/settings/schedules')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/settings/webhooks')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/customize/skills')).toBeNull();
-    // The Settings tab's own segment, one level deeper — the overlay route is
-    // `/settings/<tab>`, so `config` must not be claimed from there either.
-    expect(activeCapabilityTab('/projects/p1/settings/config')).toBeNull();
+    // A tab key one level deeper under the overlay route is the overlay's
+    // redirect, not this bar's tab.
+    expect(activeCapabilityTab('/projects/p1/settings/review')).toBeNull();
+    // The retired config page's path is nobody's tab.
+    expect(activeCapabilityTab('/projects/p1/config')).toBeNull();
     // Why the Marketplace tab owns exactly one route: a page added at
     // `/marketplace/<anything>` lands here and un-highlights both the tab and
     // the sidebar's Customize row while it is open. Keep the tab's content at

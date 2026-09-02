@@ -227,6 +227,7 @@ a.prose code {
 @theme inline {
   --color-background: var(--background);
   --color-pane: var(--pane);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-foreground-strong: var(--foreground-strong);
   --color-foreground-weak: var(--foreground-weak);
@@ -701,6 +702,7 @@ a.prose code {
  *   role           dark        light
  *   canvas         #090909     #ffffff
  *   base           #0c0c0c     #ffffff
+ *   surface        #141414     #fcfcfc
  *   surface-1      #141414     #f4f4f4
  *   surface-2      #1c1c1c     #ececec
  *   ink            #ffffff     #000000
@@ -712,6 +714,7 @@ a.prose code {
 :root {
   --background: oklch(1 0 0); /* canvas */
   --pane: oklch(1 0 0); /* #ffffff */
+  --surface: oklch(0.9911 0 0); /* surface #fcfcfc — full-bleed shell pane */
   --foreground: oklch(0 0 0); /* ink */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
   --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
@@ -790,12 +793,17 @@ a.prose code {
   --liquid-glass-shadow:
     0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35),
     inset 0 -1px 0 oklch(1 0 0 / 0.08);
-  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%);
+  --liquid-glass-highlight: radial-gradient(
+    circle at 30% 20%,
+    oklch(1 0 0 / 0.28),
+    transparent 55%
+  );
 }
 
 .dark {
   --background: oklch(15% 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
+  --surface: oklch(0.1913 0 0); /* surface #141414 — full-bleed shell pane */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
   --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
@@ -846,7 +854,11 @@ a.prose code {
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 38%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 52%, transparent);
   --liquid-glass-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
-  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.12), transparent 55%);
+  --liquid-glass-highlight: radial-gradient(
+    circle at 30% 20%,
+    oklch(1 0 0 / 0.12),
+    transparent 55%
+  );
 }
 
 @layer base {

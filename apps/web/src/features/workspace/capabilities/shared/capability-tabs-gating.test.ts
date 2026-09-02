@@ -44,10 +44,26 @@ const flagsOn = () =>
 const GATED_TABS = CAPABILITY_TABS.filter((tab) => tab.flag);
 
 describe('visibleCapabilityTabs', () => {
-  test('a manager sees every tab', () => {
+  test('a manager with every gated flag on sees every tab', () => {
     expect(visibleCapabilityTabs(allowExcept(), flagsOn()).map((t) => t.key)).toEqual(
       CAPABILITY_TABS.map((t) => t.key),
     );
+  });
+
+  // `review_center` hides Review regardless of permissions, and it is off for
+  // a project that has not been given the inbox — the same gate the retired
+  // config page's Review section carried, so a flag that hides the inbox hides
+  // every way in. Named explicitly rather than left to the generic gated-tab
+  // tests below: this one asserts the OTHER gated tab still renders, which is
+  // what a per-key branch in the filter would have broken.
+  test('the review flag hides Review and nothing else', () => {
+    const keys = visibleCapabilityTabs(allowExcept(), {
+      ...flagsOn(),
+      review_center: false,
+    }).map((t) => t.key);
+    expect(keys).not.toContain('review');
+    expect(keys).toContain('marketplace');
+    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
   });
 
   // The whole point. A member holds project.read, project.trigger.read and
@@ -154,17 +170,22 @@ describe('CapabilityTabs gate wiring', () => {
     expect((body.match(/useProjectCan\(/g) ?? []).length).toBe(1);
   });
 
-  // Matched by regex with `\s*` before the `.`, not by a literal string:
-  // prettier breaks `tabs.filter(…).map(…)` across lines once the chain is
-  // long enough, and where it puts the newline is its business. What this test
-  // pins is the RECEIVER — `tabs`, the gated list, and not `CAPABILITY_TABS`.
-  test('both tab groups render from the gated list, never from CAPABILITY_TABS', () => {
+  test('the bar renders from the gated list, never from CAPABILITY_TABS', () => {
     const body = code(source);
     const barStart = body.indexOf('export function CapabilityTabs');
     const bar = body.slice(barStart);
-    expect(bar).toMatch(/tabs\s*\.filter\(\(tab\) => !TRAILING_TABS\.includes\(tab\.key\)\)/);
-    expect(bar).toMatch(/tabs\s*\.filter\(\(tab\) => TRAILING_TABS\.includes\(tab\.key\)\)/);
+    expect(bar).toContain('{tabs.map((tab) => (');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
+    expect(bar).not.toContain('CAPABILITY_TABS.map');
+    // One flat map, no trailing group. The bar had a `TRAILING_TABS` split
+    // while `config` sat at the far right of the row; that tab was retired on
+    // 2026-09-02 and `MembersLaunchLink` is the only trailing element now.
+    expect(bar).not.toContain('TRAILING_TABS');
+    // The flags reach the gate from the bar itself, so a page cannot forget
+    // them — and they arrive as one resolved map, so the bar names no flag key.
+    expect(bar).toContain('useCapabilityTabFlags(projectId)');
+    expect(bar).toContain('visibleCapabilityTabs(caps, flags)');
+    expect(bar).not.toContain('useFeatureFlag(');
   });
 
   // One list of leaves for the bar, the sidebar row and the Customize index —

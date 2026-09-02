@@ -167,7 +167,7 @@ import {
   type KortixProject,
   type ProjectInput,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -479,6 +479,25 @@ function GeneralWorkspaceCard({
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update workspace icon'),
+    // The icon is read from THREE caches and this mutation used to write back
+    // to one. `setQueryData` above repaints the sidebar switcher, which reads
+    // `qk.project.summary`; the projects grid and ⌘K read a
+    // `qk.projects.list(accountId)` entry, and the project-home heading reads
+    // `qk.project.detail` through `useProjectName` / `useProjectIcon`. Neither
+    // of those two was touched, so a new icon showed in the sidebar and stayed
+    // stale everywhere else until eviction.
+    //
+    // Exactly the bug `invalidateProjectIdentity` was written for when the
+    // project NAME had it (see its doc comment in
+    // `@kortix/sdk/react/invalidate-project.ts` — note it needs the
+    // `qk.projects.scope()` PREFIX, since `list()` and `list(accountId)` are
+    // siblings, not parent and child). The rename mutation above reaches it
+    // through `renameOnSettled`; this one calls it directly, because there is
+    // no optimistic write here to snapshot or roll back.
+    //
+    // `onSettled`, not `onSuccess`: a rejected save must re-sync too, or the
+    // caches keep whatever the failed attempt left them believing.
+    onSettled: () => invalidateProjectIdentity(queryClient, project.project_id),
   });
 
   // `draft.name` is always the SERVER-confirmed name (`project.name`), never

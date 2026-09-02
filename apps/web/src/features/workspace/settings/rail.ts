@@ -1,9 +1,18 @@
 import {
+  ArrowCircleUpIcon as ArrowUpCircle,
+  ChatCircleIcon as ChatCircle,
+  ShippingContainerIcon as Container,
+  CreditCardIcon as CreditCard,
+  FlaskIcon as Flask,
   KeyIcon as Key,
   LinkIcon as Link,
+  PaletteIcon as Palette,
+  ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
+  SquaresFourIcon as SquaresFour,
   UserIcon as User,
 } from '@phosphor-icons/react';
+
 import type { SettingsTab } from './settings-tabs';
 import type { RailGroup, RailItem } from './type';
 
@@ -22,17 +31,94 @@ export function isRailItemActive(item: RailItem, tab: SettingsTab): boolean {
 }
 
 const STATIC_GROUPS: readonly RailGroup[] = [
+  /**
+   * First, above the personal groups, because it is the thing you are inside.
+   * The group disappears whole when the overlay opens without a project:
+   * none of its tabs is in `ACCOUNT_SCOPED_SETTINGS_TABS`, so
+   * `isSettingsTabAllowed` filters every row and `SettingsPanel` drops the
+   * empty group.
+   *
+   * This group IS project configuration now: `/projects/<id>/config` was
+   * retired on 2026-09-02 and every section of it that configures the
+   * project lives here. (Review, the one section that was an inbox, is a
+   * capability tab instead — `capability-tab-routes.ts`.)
+   */
   {
-    label: 'You',
+    label: 'Workspace',
+    items: [
+      {
+        // Labelled "General", routed at `/settings/workspace` — the same
+        // label/id split `tokens` ("API keys") makes below, and for the same
+        // reason: the id is a URL segment that `general` had already spent on
+        // a redirect, while the label is what this pane has always been called.
+        tab: 'workspace',
+        label: 'General',
+        description: 'Name and icon for this workspace.',
+        icon: SquaresFour,
+      },
+      {
+        tab: 'sandbox',
+        label: 'Sandbox templates',
+        // Sandbox templates AND Snapshots — a snapshot is the build history of
+        // a sandbox template, not a separate concept, so one row shows the
+        // template's recipe and the record of each time Kortix built a
+        // machine from it.
+        description:
+          'The recipe for the machine a session runs on, and the record of every time Kortix prepared one.',
+        docsHref: '/docs/work/runtime',
+        icon: Container,
+      },
+      {
+        tab: 'feature-flags',
+        label: 'Feature flags',
+        description: 'Features you can switch on before they are generally available.',
+        icon: Flask,
+      },
+      // Last, where the old rail pinned it. Not billing: the agent-driven
+      // upgrade runner, which opens a change request against this workspace's
+      // own repo. Moved here from `/projects/<id>/config` on 2026-09-02.
+      {
+        tab: 'upgrades',
+        label: 'Upgrades',
+        description:
+          'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
+        icon: ArrowUpCircle,
+      },
+    ],
+  },
+  {
+    // "Personal", not "You" (Jay, 2026-09-02): the group names the scope the
+    // same way "Workspace" and "Account" do.
+    label: 'Personal',
     items: [
       {
         tab: 'profile',
         label: 'Profile',
+        description: 'Your picture, name, email, and organizations.',
         icon: User,
+      },
+      {
+        tab: 'security',
+        label: 'Security',
+        description: 'Two-factor authentication and the devices signed in as you.',
+        icon: ShieldCheck,
+      },
+      {
+        tab: 'appearance',
+        label: 'Appearance',
+        description: 'Theme, wallpaper, and how much a conversation shows.',
+        icon: Palette,
+      },
+      {
+        tab: 'sessions',
+        label: 'Sessions',
+        description: 'How a running session gets your attention.',
+        icon: ChatCircle,
       },
       {
         tab: 'preferences',
         label: 'Preferences',
+        description: 'Language and keyboard shortcuts.',
         icon: SlidersHorizontal,
       },
       {
@@ -54,21 +140,34 @@ const STATIC_GROUPS: readonly RailGroup[] = [
       },
     ],
   },
-  // The 'Workspace' and 'Agent' groups are gone, and 'Developer' went with
-  // them once Feature flags (the old `experimental` row) left too. Every one
-  // of those rows configured a PROJECT, and the Customize bar already gates on
-  // exactly the person allowed to change them — so they live on that bar now,
-  // at `/projects/<id>/config` (`capabilities/project-settings/`). Do not
-  // re-add them as settings tabs; `GRADUATED` in `settings-tabs.ts` carries
-  // every bookmark to the section that replaced it.
+  {
+    label: 'Account',
+    items: [
+      {
+        tab: 'plan',
+        label: 'Plan',
+        description: 'Your subscription, credits, and billing for this account.',
+        icon: CreditCard,
+      },
+    ],
+  },
+  // The 'Agent' group is gone, and 'Developer' went with it. Every one of
+  // those rows configured a PROJECT, and the Customize bar gates on exactly the
+  // person allowed to change them — so they live on that bar, at
+  // `/projects/<id>/config` (`capabilities/project-settings/`). Two of them —
+  // Sandbox templates and Feature flags — came BACK on 2026-09-02 as a second
+  // door onto the same components; `GRADUATED` in `settings-tabs.ts` still
+  // carries every bookmark to the config page.
   //
   // The 'Organization' group is gone for a different reason, recorded above
   // its own removal: those rows configured the ACCOUNT and moved to
-  // `/accounts/[id]`.
+  // `/accounts/[id]`. `Plan` above is the one account row that came back.
 ];
 
 /**
- * The rail. One group — `You` — and no flag-gated rows left in it.
+ * The rail. Three groups — `Workspace`, `Personal`, `Account` — and no
+ * flag-gated rows in any. `Workspace` is filtered out entirely when the
+ * overlay opens without a project.
  *
  * It took a `RailFlags` argument until Marketplace, Review and Voice moved to
  * the Customize bar's Settings tab with the rest of project configuration

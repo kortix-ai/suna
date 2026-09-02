@@ -71,15 +71,21 @@ export function resolveBillingState(
 
   // Fallback derivation for an API that predates `billing_state`.
   //
-  // The failing-payment check comes BEFORE the per-seat bypass, mirroring
-  // apps/api/src/billing/services/billing-state.ts: only a subscription Stripe
-  // is actually collecting on skips the wallet floor. With the checks the other
-  // way round, a `past_due` per-seat account rendered as fully `active` here
-  // while the server had already blocked it — the two copies of this decision
-  // disagreeing is the exact defect class this module exists to prevent.
+  // It must mirror apps/api/src/billing/services/billing-state.ts exactly. Two
+  // copies of this decision disagreeing is the defect class this module exists
+  // to prevent, so every line below has a counterpart there.
+  //
+  // `can_run` is the server's own answer and outranks everything: since the
+  // wallet floor became universal it is derived from `resolveBillingState`
+  // server-side (account-state.ts), so trusting it cannot smuggle the old
+  // exemption back in.
   if (state.credits?.can_run === true) return 'active';
   if (FAILING_STATUSES.has(state.subscription?.status ?? '')) return 'payment_failed';
-  if (accountHasLiveSubscription(state) && state.billing_model === 'per_seat') return 'active';
+  // REMOVED: `accountHasLiveSubscription(state) && billing_model === 'per_seat'
+  // -> 'active'`. That was the client's copy of `subscriptionBypassesWalletFloor`,
+  // and it would have re-rendered a drained Team account as fully runnable — on
+  // a rolling deploy, against a server that had already started blocking it.
+  // Nothing bypasses the wallet floor on either side of the wire now.
   if (state.subscription?.subscription_id || state.tier?.can_purchase_credits) {
     return 'out_of_credits';
   }
@@ -94,6 +100,108 @@ export function billingStateAllowsRun(state: BillingState | null): boolean {
 /** Whether adding credits (not subscribing) is what unblocks the account. */
 export function billingStateNeedsTopUp(state: BillingState | null): boolean {
   return state === 'out_of_credits' || state === 'payment_failed';
+}
+
+/** Warn below this wallet value (dollars) on an account that is still running. */
+export const LOW_BALANCE_USD = 5;
+
+export type WalletSeverity = 'blocked' | 'low' | null;
+
+/**
+ * How loudly the wallet should be flagged. THE only function allowed to turn a
+ * balance into a severity — see the source test in billing-gate-state.test.ts.
+ *
+ * The sidebar used to answer this itself with `balance <= 0 ? 'empty' : ...`,
+ * reading the raw number and never consulting `billing_state`. Against an
+ * account that the server considered `active` (a paying per-seat subscription
+ * bypassed the wallet floor, so $0.00 was a perfectly runnable state) that
+ * produced a permanent red "Out of credits" alert on an account with nothing
+ * wrong with it — while the project page beside it, which DID read
+ * `billing_state`, happily started sessions. Two surfaces, one account,
+ * opposite answers. That is the defect this module's docblock was written to
+ * prevent and it recurred anyway, because prose does not enforce anything.
+ *
+ * `blocked` is now derived from the state machine, never from the number. The
+ * number is consulted only for the softer "you are running low" nudge, which is
+ * meaningless on an account that is already blocked.
+ */
+export function walletSeverity(state: AccountStateLike | null | undefined): WalletSeverity {
+  if (!state) return null;
+  const billingState = resolveBillingState(state);
+  // Not loaded yet — never render an alarm on an unknown account.
+  if (billingState === null) return null;
+  if (billingStateNeedsTopUp(billingState)) return 'blocked';
+  if (!billingStateAllowsRun(billingState)) return null; // `no_subscription` / `no_account` own their own CTA.
+  const balance = state.credits?.total;
+  if (typeof balance !== 'number') return null;
+  return balance < LOW_BALANCE_USD ? 'low' : null;
+}
+
+/**
+ * Copy for the sidebar wallet alert. Here rather than in the component for the
+ * same reason as `billingModalCopy`: the strings a user reads about billing are
+ * a function of billing state, and a component that writes its own is a
+ * component that can contradict the server.
+ */
+export function walletAlertCopy(severity: Exclude<WalletSeverity, null>): {
+  label: string;
+  action: string;
+} {
+  return severity === 'blocked'
+    ? { label: 'Out of credits', action: 'Top up' }
+    : { label: 'Low balance', action: 'Top up' };
+}
+
+export interface BillingModalCopy {
+  title: string;
+  description: string;
+}
+
+/**
+ * Copy for the billing modal. Lives here, beside `billingGateCopy`, so no
+ * component owns billing prose.
+ *
+ * The modal used to hardcode the title `'Out of credits'` and the line "your
+ * Team plan and seats are unaffected", branching only on `payment_failed`. It
+ * therefore announced an emergency to accounts that were merely topping up
+ * voluntarily, and promised "seats are unaffected" to accounts that had no
+ * seats. Both strings are now a function of the state and the billing model.
+ */
+export function billingModalCopy(
+  state: BillingState | null,
+  opts?: { isPerSeat?: boolean },
+): BillingModalCopy {
+  const planNoun = opts?.isPerSeat ? 'your Team plan and seats are' : 'your plan is';
+  switch (state) {
+    case 'payment_failed':
+      return {
+        title: 'Payment issue on your plan',
+        description:
+          'Your last payment didn’t go through. Update your payment method under Manage billing, or top up to keep running in the meantime.',
+      };
+    case 'out_of_credits':
+      return {
+        title: 'Out of credits',
+        description: `Your wallet is empty, so sessions can’t start. Top up to keep compute and the latest AI models running — ${planNoun} unaffected.`,
+      };
+    case 'no_account':
+      return {
+        title: 'Finish setting up billing',
+        description: 'This account has no billing set up yet, so sessions can’t start.',
+      };
+    case 'no_subscription':
+      return {
+        title: 'Subscribe to start sessions',
+        description:
+          'Your team isn’t on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate.',
+      };
+    default:
+      // `active` — a voluntary top-up. Nothing is wrong, so nothing alarming.
+      return {
+        title: 'Add credits',
+        description: `Credits cover LLM usage and AI Computer compute. Top up now or set auto top-up so sessions never stop — ${planNoun} unaffected.`,
+      };
+  }
 }
 
 export interface BillingGateCopy {

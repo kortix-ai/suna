@@ -58,6 +58,16 @@ export const INITIAL_FORM_STATE: NewWorkspaceFormState = {
  * feeds both `AccountPicker` and `isSubmittable` below — never the raw list
  * to one and this to the other, which would let "what the user can pick" and
  * "what gates submit" disagree.
+ *
+ * Does NOT strip the `'s Account` possessive `bootstrap-personal-account.ts`
+ * stores on every personal account's `name`. That possessive is the only
+ * thing that marks the string as an account name rather than a bare email —
+ * stripping it here used to hand `AccountPicker` a value indistinguishable
+ * from `user.email`, which it then painted straight into the identity slot.
+ * An invited admin whose one creatable account is the owner's personal
+ * account saw the account owner's address labelled as their own identity.
+ * `AccountPicker` now renders `fallbackLabel` in that slot and this `name`
+ * only in the separate, explicitly labelled "Create in" line — never merged.
  */
 export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
   const creatable: KortixAccount[] = [];
@@ -65,7 +75,7 @@ export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccoun
     if (account.account_role === 'owner' || account.account_role === 'admin') {
       creatable.push({
         ...account,
-        name: account.name.trim().replaceAll("'s Account", ''),
+        name: account.name.trim(),
       });
     }
   }
@@ -76,41 +86,155 @@ export function filterCreatableAccounts(accounts: KortixAccount[]): KortixAccoun
  * Which creatable account `/new` should pre-select.
  *
  * Preference order:
- * 1. Account `name` equals the signed-in email (case-insensitive) — the
- *    personal / bootstrapped account is often titled with the email.
- * 2. Account `slug` equals the email or its local-part.
- * 3. `is_primary_owner` — same proxy marketplace/install dialogs use when
- *    there is no `personal_account` flag on the API.
- * 4. The first creatable account.
+ * 1. Identity — `account_id === userId`. Personal accounts are created with
+ *    `accountId === userId` by construction
+ *    (`apps/api/src/accounts/core/bootstrap-personal-account.ts`: "Personal
+ *    accounts use `accountId === userId`"), so this is the only tier that can
+ *    distinguish the account that IS the user from an account the user
+ *    merely owns or administers. Replaces two tiers that were permanently
+ *    dead against the real `GET /v1/accounts` shape: `name` always carries
+ *    the `'s Account` possessive (`filterCreatableAccounts` stopped
+ *    stripping it, Task 1), and `slug` is `accountId.slice(0, 8)`
+ *    (`apps/api/src/accounts/core/accounts.ts:122`) — never an email or its
+ *    local part.
+ * 2. `is_primary_owner` — true for any account this user owns outright
+ *    (`accountRole === 'owner'`, `apps/api/src/accounts/core/accounts.ts:126`),
+ *    including a team account that is NOT their personal one. Kept as a
+ *    fallback for when identity does not resolve (`userId` not loaded yet,
+ *    or the sole owned account is a team account) — the same proxy
+ *    marketplace/install dialogs use when there is no `personal_account`
+ *    flag on the API.
+ * 3. The first creatable account — no signal at all to prefer one over
+ *    another.
  *
  * Pure and Effect-free so `/new` can derive the default without writing to
  * state on mount (the page forbids `useEffect`).
  */
 export function resolveDefaultCreatableAccountId(
   accounts: KortixAccount[],
-  email?: string | null,
+  userId?: string | null,
 ): string | null {
   if (accounts.length === 0) return null;
   if (accounts.length === 1) return accounts[0]!.account_id;
 
-  const normalized = email?.trim().toLowerCase() ?? '';
-  if (normalized) {
-    const byName = accounts.find((account) => account.name.trim().toLowerCase() === normalized);
-    if (byName) return byName.account_id;
-
-    const localPart = normalized.split('@')[0] ?? '';
-    const bySlug = accounts.find((account) => {
-      const slug = account.slug?.trim().toLowerCase() ?? '';
-      if (!slug) return false;
-      return slug === normalized || (localPart.length > 0 && slug === localPart);
-    });
-    if (bySlug) return bySlug.account_id;
+  if (userId) {
+    const own = accounts.find((account) => account.account_id === userId);
+    if (own) return own.account_id;
   }
 
   const primary = accounts.find((account) => account.is_primary_owner);
   if (primary) return primary.account_id;
 
   return accounts[0]!.account_id;
+}
+
+/**
+ * A creatable-accounts list the viewer's identity cannot be anchored to: two
+ * or more accounts, none of them the viewer's own (`account_id === userId`).
+ *
+ * Deliberately excludes a SOLE foreign account. `GET /v1/accounts` only ever
+ * returns accounts this specific signed-in user is a genuine member of
+ * (`accountMembers.userId = userId`, `apps/api/src/accounts/core/accounts.ts`),
+ * and `filterCreatableAccounts` further narrows that to owner/admin roles —
+ * so a SOLE creatable account that is not the viewer's own is the ordinary
+ * invited-admin shape: someone added as admin on an account before ever
+ * having their own personal account bootstrapped (`bootstrapPersonalAccount`
+ * only fires when the caller has ZERO existing memberships,
+ * `apps/api/src/accounts/core/accounts.ts`). That is legitimate and common,
+ * not a leak — it is exactly the scenario Task 1's fix protects (Task 2
+ * controller addendum A2.2), so it is never FOREIGN on its own.
+ *
+ * The N=1 case this function CANNOT catch, and no longer has to: a SOLE
+ * foreign account (the branch above that returns `false`) used to be
+ * INDISTINGUISHABLE, from this function's inputs alone, from a stale account
+ * list still holding a DIFFERENT, previously-signed-in user's single-account
+ * list. Both shapes are exactly one account, `account_id !== userId`, so
+ * rejecting one would have permanently locked legitimate invited admins out
+ * of creating any workspace. That gap is closed one layer up instead,
+ * structurally: the account list is cached under `qk.accounts.list(userId)`
+ * (`packages/sdk/src/react/query-keys.ts`), read only through
+ * `useAccountsList()` (`hooks/account/use-accounts-list.ts`), and every
+ * reader is gated `enabled: !!user`. A previous user's list — of ANY size,
+ * not only one account — is not ADDRESSABLE from this user's session, so it
+ * cannot reach this function at all any more.
+ *
+ * WHAT THAT MEANS FOR THE 2+-ACCOUNT CASE THIS FUNCTION ACTUALLY GUARDS:
+ * before the key scoping above, a 2+-account list with no anchor to the
+ * viewer had TWO possible causes — (a) a stale or wrong cache entry left by a
+ * DIFFERENT signed-in user, or (b) a genuine, still-rare shape: a user who
+ * owns/admins 2+ team accounts and has no personal account of their own, so
+ * none of their creatable accounts is `account_id === userId`. The key
+ * scoping above closes (a) the same way it closes the N=1 case — a previous
+ * user's list cannot reach this function at all. It does NOT close (b): that
+ * user's OWN list, correctly scoped to their OWN session, still has zero
+ * anchor to their identity, because their identity genuinely has no
+ * creatable account of its own. So today the ONLY reachable trigger for this
+ * predicate is (b), a legitimate user, not a caching defect — reachable via
+ * SAML JIT provisioning (`iam/sso-sync.ts` inserting a membership directly)
+ * or direct invite acceptance (`accounts/invites.ts`), either of which can
+ * add someone as owner/admin on 2+ accounts without ever running the
+ * `memberships.length === 0` personal-account bootstrap gate.
+ *
+ * This check still earns its place and must NOT be deleted or relaxed: (b)
+ * is real, and this function still cannot tell "a genuine multi-account user
+ * with no personal account" apart from any other reason a response might
+ * carry zero anchor to the viewer — guessing which of 2+ unrelated accounts
+ * is safe to default into is worse than refusing to guess (G2, fail-closed).
+ * What changed is the caller's obligation: since the reachable trigger is now
+ * a LEGITIMATE user rather than a caching artifact, `new-workspace-page.tsx`
+ * must render that user a REASON, not a silently disabled form — see its own
+ * comment where `foreignAccountList` is read.
+ *
+ * `userId` is required, not optional: an omitted argument used to compile
+ * clean and silently degrade to `undefined`, which made every 2+-account
+ * list FOREIGN by accident (a functional break for real multi-account users,
+ * not a security hole, but one no single-account test could catch). The type
+ * also does not accept `undefined` at all — only `string | null` — so a
+ * caller that cannot yet establish identity must say so explicitly with
+ * `null` rather than by omission. `null` already fails closed correctly: no
+ * real `account_id` is ever `null`, so `!some(...)` is `true` for any 2+
+ * list, exactly the G2 fail-closed direction this function exists for.
+ */
+export function isForeignAccountList(
+  creatableAccounts: KortixAccount[],
+  userId: string | null,
+): boolean {
+  if (creatableAccounts.length < 2) return false;
+  return !creatableAccounts.some((account) => account.account_id === userId);
+}
+
+/**
+ * Whether `AccountPicker` should reveal any account-specific info beyond
+ * bare identity — the caller-side half of A2.2 / item 2's suppression rules.
+ *
+ * `AccountPicker` always receives the REAL, unmodified `creatableAccounts` —
+ * this function returns a boolean, never a shrunk stand-in list, precisely
+ * because handing the component a falsified `accounts` array (this used to
+ * return `[]` to suppress) makes `accounts` stop meaning "the accounts the
+ * user can create in" while `value` still names one of them, a standing trap
+ * for anyone who later changes `AccountPicker`'s own length thresholds or
+ * adds a second consumer of `accounts`. `AccountPicker`'s own
+ * `showAccountLine` prop is what actually acts on this.
+ *
+ * `false` (suppress) for:
+ * - A SOLE account that IS the viewer's own (`account_id === userId`): a
+ *   user's own email directly above "Create in jay@kortix.ai's Account" is
+ *   redundant, not informative (Task 2 controller addendum A2.2).
+ * - A FOREIGN list (`isForeignAccountList`): no account name renders at all
+ *   (Task 2 item 2, G2 fail-closed).
+ *
+ * `true` (reveal) for everything else, INCLUDING a sole foreign account (the
+ * invited-admin case) — that account's name must still render; suppressing
+ * it would re-open the exact disclosure Task 1 closed.
+ */
+export function shouldShowAccountLine(
+  creatableAccounts: KortixAccount[],
+  userId: string | null,
+): boolean {
+  if (isForeignAccountList(creatableAccounts, userId)) return false;
+  const sole = creatableAccounts.length === 1 ? creatableAccounts[0]! : null;
+  if (sole && sole.account_id === userId) return false;
+  return true;
 }
 
 export function isSubmittable(state: NewWorkspaceFormState, accountCount: number): boolean {

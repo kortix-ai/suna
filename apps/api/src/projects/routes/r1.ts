@@ -26,7 +26,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, withProjectGitAuth } from '../lib/git';
+import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectGitConnection, resolveProjectUpstream, withProjectGitAuth } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
@@ -602,6 +602,52 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/git/collaborators
+// GET /v1/projects/:projectId/git/connection
+// Is this project's git connection usable, and if not can the account fix it?
+//
+// Exists so the UI can show "Reconnect GitHub" BEFORE someone triggers a push
+// that fails. A stored GitHub App installation stops minting tokens when it is
+// uninstalled, or when the App identity itself changes — GitHub 404s the mint
+// either way — and until this endpoint there was no way to see that without
+// attempting a git operation and reading the error.
+//
+// `reconnect_required` is the only state that carries an install URL: the other
+// failures are ours (managed-git down, an unparseable repo URL), and sending
+// someone to reinstall would not help.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/git/connection',
+    tags: ['github'],
+    summary: 'GET /:projectId/git/connection',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          state: z.enum(['connected', 'reconnect_required', 'unavailable', 'not_connected']),
+          reason: z.string().optional(),
+          install_url: z.string().nullable().optional(),
+        }),
+        "The project's git connection state",
+      ),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const connection = await resolveProjectGitConnection(loaded.row, loaded.userId);
+    return c.json({
+      state: connection.state,
+      ...(connection.reason ? { reason: connection.reason } : {}),
+      ...(connection.installUrl !== undefined ? { install_url: connection.installUrl } : {}),
+    });
+  },
+);
+
 // Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
 // creator pull "their" Kortix-managed repo into their own GitHub account and
 // work on it on github.com directly. Managed repos only (the user already owns

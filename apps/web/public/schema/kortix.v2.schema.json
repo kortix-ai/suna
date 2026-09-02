@@ -129,8 +129,6 @@
                     "project.read",
                     "project.write",
                     "project.delete",
-                    "project.cr.open",
-                    "project.cr.merge",
                     "project.session.read",
                     "project.session.start",
                     "project.session.stop",
@@ -159,6 +157,8 @@
                     "project.gitops.read",
                     "project.gitops.push",
                     "project.gitops.merge",
+                    "project.gitops.ref.any",
+                    "project.gitops.ref.delete",
                     "project.secret.read",
                     "project.secret.write",
                     "project.connector.read",
@@ -171,6 +171,8 @@
                     "project.review.submit",
                     "project.review.act",
                     "project.credentials.issue",
+                    "project.cr.open",
+                    "project.cr.merge",
                     "*"
                   ]
                 }

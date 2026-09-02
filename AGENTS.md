@@ -492,7 +492,13 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.claude/skills/kortix-design-system/SKILL.md` first and compose existing
+- Read `.claude/skills/kortix-brand-guidelines/SKILL.md` before writing the first
+  `className`. It is the value law: the complete allowlist of every color,
+  spacing step, type rung, radius, elevation, and duration you may use. Note
+  `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
+  padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
+  before opening the PR; it must be clean on files you touched.
+- Read `.claude/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,

@@ -1,3 +1,4 @@
+import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { qk } from './query-keys';
 import { kortixKeys } from './use-kortix-master';
@@ -327,5 +328,124 @@ describe('qk.projects.scope', () => {
     expect(qk.projects.list().length).toBeGreaterThan(scope.length);
     expect(qk.projects.list()).not.toEqual(scope as never);
     expect(qk.projects.list('acct_1')).not.toEqual(scope as never);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// qk.accounts — the ONE key family that is scoped by the signed-in USER
+// ═════════════════════════════════════════════════════════════════════════
+//
+// Every other family here partitions by ACCOUNT or by PROJECT. The account
+// LIST cannot: it is the answer to "which accounts does the caller belong
+// to", so the caller is the only thing that partitions it. Before this
+// family existed, 13 `apps/web` readers and 7 writers/invalidators shared
+// one bare `['accounts']` literal with no user segment, so a list fetched
+// for user A stayed readable, byte-for-byte, by user B on the same document
+// — and `/new` would then resolve a create target out of A's accounts and
+// POST it under B's JWT, which the API answers 403.
+//
+// The list CONTENTS cannot distinguish the two cases: a legitimate invited
+// admin (a user with no personal account who administers someone else's org)
+// produces a single `KortixAccount` whose `account_id !== user.id` — exactly
+// what a stale single-account list from another user produces. Only the KEY
+// the list was cached under carries the answer. Hence this family.
+describe('qk.accounts', () => {
+  test('the account list partitions by USER', () => {
+    expect(qk.accounts.list('user_a')).not.toEqual(qk.accounts.list('user_b') as never);
+  });
+
+  test("carries the user id as a segment — not merely a length that happens to differ", () => {
+    expect(qk.accounts.list('user_a')).toContain('user_a');
+    expect(qk.accounts.list('user_b')).not.toContain('user_a');
+  });
+
+  // Fail closed (G2): a reader whose user id is not known yet must not land
+  // on ANY signed-in user's entry. It gets its own dead slot instead, which
+  // nothing ever writes because every reader is `enabled: !!user`.
+  test('an unknown user gets its own slot, never a signed-in user\'s', () => {
+    const anon = qk.accounts.list(undefined);
+    expect(anon).not.toEqual(qk.accounts.list('user_a') as never);
+    expect(anon).not.toEqual(qk.accounts.list('user_b') as never);
+    expect(startsWith(qk.accounts.list('user_a'), anon)).toBe(false);
+    expect(startsWith(anon, qk.accounts.list('user_a'))).toBe(false);
+  });
+
+  // `scope()` is the invalidation prefix. Every invalidator ("this account
+  // changed") uses it, so it must reach every user's slot — a mutation
+  // callback has no reliable user id in hand, and picking the wrong one
+  // would leave the live reader stale.
+  test('scope() is a strict prefix of every user list', () => {
+    const scope = qk.accounts.scope();
+    expect(startsWith(qk.accounts.list('user_a'), scope)).toBe(true);
+    expect(startsWith(qk.accounts.list('user_b'), scope)).toBe(true);
+    expect(startsWith(qk.accounts.list(undefined), scope)).toBe(true);
+  });
+
+  test('scope() is a strict prefix, never a key itself', () => {
+    const scope = qk.accounts.scope();
+    expect(qk.accounts.list('user_a').length).toBeGreaterThan(scope.length);
+    expect(qk.accounts.list('user_a')).not.toEqual(scope as never);
+  });
+
+  // The account family must not prefix-match, or be prefix-matched by, the
+  // project families — `invalidateQueries({ queryKey: qk.projects.scope() })`
+  // fires on every account create and must not blow away the account list,
+  // and `qk.accounts.scope()` must not reach a project key.
+  test('is disjoint from the project families and from kortixKeys', () => {
+    const accountKeys = [
+      qk.accounts.scope(),
+      qk.accounts.list('user_a'),
+      qk.accounts.list(undefined),
+    ];
+    const others = [
+      qk.projects.scope(),
+      qk.projects.list(),
+      qk.projects.list('user_a'),
+      qk.project.scope('user_a'),
+      kortixKeys.projects(),
+      kortixKeys.project('user_a'),
+    ];
+    for (const a of accountKeys) {
+      for (const o of others) {
+        expect(startsWith(a, o)).toBe(false);
+        expect(startsWith(o, a)).toBe(false);
+      }
+    }
+  });
+});
+
+// The defect this family closes, asserted against a REAL QueryClient rather
+// than against the key arrays alone: key equality is React Query's, not
+// ours, so the proof has to go through its cache.
+describe('qk.accounts — a real cache cannot serve one user another user\'s list', () => {
+  const listA = [{ account_id: 'acct_owned_by_a', name: "a's Account" }];
+
+  test("user B reads undefined from an entry written for user A", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(qk.accounts.list('user_a'), listA);
+
+    expect(client.getQueryData<typeof listA>(qk.accounts.list('user_a'))).toEqual(listA);
+    expect(client.getQueryData(qk.accounts.list('user_b'))).toBeUndefined();
+    // ...and neither does a reader whose identity has not resolved yet.
+    expect(client.getQueryData(qk.accounts.list(undefined))).toBeUndefined();
+  });
+
+  test("invalidating scope() reaches the entry written for a specific user", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(qk.accounts.list('user_a'), listA);
+    expect(client.getQueryState(qk.accounts.list('user_a'))?.isInvalidated).toBe(false);
+
+    await client.invalidateQueries({ queryKey: qk.accounts.scope() });
+
+    expect(client.getQueryState(qk.accounts.list('user_a'))?.isInvalidated).toBe(true);
+  });
+
+  test("invalidating the PROJECT scope does not touch the account list", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(qk.accounts.list('user_a'), listA);
+
+    await client.invalidateQueries({ queryKey: qk.projects.scope() });
+
+    expect(client.getQueryState(qk.accounts.list('user_a'))?.isInvalidated).toBe(false);
   });
 });

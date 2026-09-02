@@ -22,26 +22,24 @@ import {
 // (mobile didn't have a "pause in place" caller before this file); pull it
 // straight from the SDK's public `projects-client` subpath instead of adding
 // an export mobile itself doesn't otherwise need.
-import { stopProjectSession } from '@kortix/sdk/projects-client';
+import {
+  getProviders as sdkGetProviders,
+  getServiceLogs as sdkGetServiceLogs,
+  listServices as sdkListServices,
+  type ProvidersInfo,
+  reconcileServices as sdkReconcileServices,
+  type SandboxProviderName,
+  serviceAction as sdkServiceAction,
+  stopProjectSession,
+} from '@kortix/sdk';
 // The SDK's kortix-master service wrappers are public via the
-// `@kortix/sdk/opencode-client` subpath (client.ts re-exports the module).
+// canonical `@kortix/sdk` root entry (client.ts re-exports the module).
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
 // `sandboxRuntimeReload` and `/pty` stay mobile-native: the SDK's
 // `systemReload` targets the globally-active runtime URL, not an explicit
 // sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
-import {
-  getServiceLogs as sdkGetServiceLogs,
-  listServices as sdkListServices,
-  reconcileServices as sdkReconcileServices,
-  serviceAction as sdkServiceAction,
-} from '@kortix/sdk/opencode-client';
-import {
-  getProviders as sdkGetProviders,
-  type ProvidersInfo,
-  type SandboxProviderName,
-} from '@kortix/sdk/platform-client';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -55,7 +53,7 @@ export const SANDBOX_PORTS = {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type { SandboxProviderName } from '@kortix/sdk/platform-client';
+export type { SandboxProviderName } from '@kortix/sdk';
 
 export interface SandboxInfo {
   sandbox_id: string;
@@ -169,7 +167,7 @@ function toSandboxInfo(
 // JSON-parse boilerplate (a private `apiFetch`, now removed) duplicating what
 // `@kortix/sdk`'s `backendApi` already does. They now go through
 // `lib/projects/projects-client.ts`, which itself re-exports
-// `@kortix/sdk/projects-client` — same endpoints, same responses, just no
+// the `@kortix/sdk` root entry — same endpoints, same responses, just no
 // second hand-rolled REST client. Return values are narrowed to this file's
 // local `ProjectSummary`/`ProjectSessionSummary`/`ProjectSessionSandbox` view
 // types, which are structural subsets of the SDK's richer `KortixProject` /
