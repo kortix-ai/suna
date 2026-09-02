@@ -43,9 +43,21 @@ describe('traversal is rejected, never rewritten', () => {
     }
   });
 
-  test('percent-encoded traversal is refused — decoding happens BEFORE the check', () => {
-    expect(rejected('%2e%2e/secrets')).toMatch(/\.\./);
-    expect(rejected('a/%2E%2E/b')).toMatch(/\.\./);
+  // The transport already percent-decodes (`?path=` through Hono), so decoding
+  // again here made `a%252Fb` and `a/b` collide on one key — measured as real
+  // data loss on the deployed preview. An encoded separator that survives to
+  // this layer is a mistake or an attempt, so it is REFUSED, never decoded.
+  test('percent-encoded traversal and separators are refused, not decoded', () => {
+    expect(rejected('%2e%2e/secrets')).toMatch(/percent-encoded|\.\./);
+    expect(rejected('a/%2E%2E/b')).toMatch(/percent-encoded|\.\./);
+    expect(rejected('a%2Fb')).toMatch(/percent-encoded/);
+    expect(rejected('a%5Cb')).toMatch(/percent-encoded/);
+  });
+
+  test('an ordinary percent in a filename still survives', () => {
+    // `50%25.md` arrives here already decoded as `50%.md`; nothing about it
+    // decodes to a separator, so it is a legitimate name.
+    expect(ok('reports/50%.md')).toBe('reports/50%.md');
   });
 
   test('backslash traversal is refused — a backslash is a separator too', () => {
@@ -58,8 +70,12 @@ describe('traversal is rejected, never rewritten', () => {
     expect(rejected('a%00b')).toMatch(/NUL/);
   });
 
-  test('malformed percent-encoding is refused rather than passed through', () => {
-    expect(rejected('%zz')).toMatch(/percent-encoding/);
+  test('a malformed encoded-separator sequence is refused', () => {
+    // Only sequences that LOOK like an encoded separator are probed, so a bare
+    // `%zz` is an ordinary (if odd) filename, while `%2f%zz` cannot be decoded
+    // to prove it is safe.
+    expect(ok('%zz')).toBe('%zz');
+    expect(rejected('%2f%zz')).toMatch(/percent-encoding|percent-encoded/);
   });
 });
 

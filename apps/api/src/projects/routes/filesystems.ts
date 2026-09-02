@@ -182,11 +182,21 @@ projectsApp.openapi(
     const fs = await findFilesystem(projectId, c.req.param('name'));
     if (!fs) return c.json({ error: 'filesystem not found' }, 404);
 
+    // `Number('abc')` is NaN, and Math.min/max propagate it — which drops the
+    // LIMIT clause entirely and returns every row. Reject rather than ignore.
     const limitRaw = c.req.query('limit');
+    let limit: number | undefined;
+    if (limitRaw !== undefined && limitRaw !== '') {
+      const parsed = Number(limitRaw);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        return c.json({ error: 'limit must be a positive integer' }, 400);
+      }
+      limit = parsed;
+    }
     const result = await listFiles({
       filesystemId: fs.filesystemId,
       prefix: c.req.query('prefix') ?? '',
-      limit: limitRaw ? Number(limitRaw) : undefined,
+      limit,
     });
     if (!result.ok) return c.json({ error: result.reason }, 400);
     return c.json({ files: result.files.map(serializeFile) }, 200);
@@ -230,7 +240,16 @@ projectsApp.openapi(
     const fs = await findFilesystem(projectId, c.req.param('name'));
     if (!fs) return c.json({ error: 'filesystem not found' }, 404);
 
+    // Refuse on the DECLARED length before reading a byte. `arrayBuffer()`
+    // runs to completion first, so checking only afterwards means an oversized
+    // (or chunked, unbounded) upload is already resident in the API process —
+    // and this runtime applies no ambient body ceiling of its own.
+    const declared = Number(c.req.header('content-length') ?? '');
+    if (Number.isFinite(declared) && declared > MAX_FILE_BYTES) {
+      return c.json({ error: `file exceeds the ${MAX_FILE_BYTES} byte limit` }, 413);
+    }
     const buf = new Uint8Array(await c.req.arrayBuffer());
+    // A chunked request declares no length, so the read is still bounded here.
     if (buf.byteLength > MAX_FILE_BYTES) {
       return c.json({ error: `file exceeds the ${MAX_FILE_BYTES} byte limit` }, 413);
     }
@@ -257,7 +276,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), name: z.string() }),
       query: z.object({ path: z.string() }),
     },
-    responses: { 200: { description: 'File bytes' }, ...errors(403, 404) },
+    responses: { 200: { description: 'File bytes' }, ...errors(400, 403, 404, 500) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
@@ -268,15 +287,26 @@ projectsApp.openapi(
 
     const result = await readFile(fs.filesystemId, filePath(c));
     if (!result.ok) {
-      // `bytes_missing` is a metadata row whose blob is gone — a real fault,
-      // not "no such file". Saying 404 for both would hide it.
-      return result.reason === 'not_found'
-        ? c.json({ error: 'file not found' }, 404)
-        : c.json({ error: 'file content is unavailable' }, 500);
+      // Three distinct causes, three distinct answers. Collapsing them into
+      // 404 would report a configuration gap and a lost blob as "no such file".
+      if (result.reason === 'not_found') return c.json({ error: 'file not found' }, 404);
+      if (result.reason === 'storage_unavailable') {
+        return c.json(
+          { error: 'this file lives in a storage backend this deployment is not configured for' },
+          500,
+        );
+      }
+      return c.json({ error: 'file content is unavailable' }, 500);
     }
     return c.body(result.bytes, 200, {
+      // The content type is caller-supplied and stored verbatim, so a file
+      // written as text/html would otherwise execute in a browser on this
+      // origin. nosniff stops the type being upgraded, and the attachment
+      // disposition stops it rendering inline at all.
       'content-type': result.file.contentType,
       'content-length': String(result.file.size),
+      'x-content-type-options': 'nosniff',
+      'content-disposition': 'attachment',
       etag: `"${result.file.sha256}"`,
     });
   },
@@ -293,7 +323,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), name: z.string() }),
       query: z.object({ path: z.string() }),
     },
-    responses: { 204: { description: 'Deleted' }, ...errors(403, 404) },
+    responses: { 204: { description: 'Deleted' }, ...errors(400, 403, 404) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');

@@ -100,8 +100,16 @@ function toBytes(content: string | Uint8Array): Uint8Array {
 async function failureMessage(res: Response, fallback: string): Promise<string> {
   const text = await res.text().catch(() => '');
   try {
-    const parsed = text ? (JSON.parse(text) as { error?: string; message?: string }) : null;
-    return parsed?.error || parsed?.message || `${fallback} (${res.status})`;
+    const parsed = text
+      ? (JSON.parse(text) as { error?: unknown; message?: unknown })
+      : null;
+    // The platform error envelope sets `error` to the BOOLEAN `true`
+    // (apps/api/src/index.ts), so a naive `parsed.error || parsed.message`
+    // surfaces every 401/404/500 as the literal string "true". Only a string
+    // is a message.
+    const fromError = typeof parsed?.error === 'string' ? parsed.error : '';
+    const fromMessage = typeof parsed?.message === 'string' ? parsed.message : '';
+    return fromError || fromMessage || `${fallback} (${res.status})`;
   } catch {
     return text ? `${fallback}: ${text.slice(0, 200)}` : `${fallback} (${res.status})`;
   }

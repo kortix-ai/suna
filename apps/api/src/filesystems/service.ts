@@ -6,7 +6,7 @@
  * so removing the bytes when one path is deleted would corrupt every other path
  * (and every other filesystem) that happens to hold the same content. Reclaiming
  * an unreferenced blob is a sweep over `filesystem_files`, not a side effect of
- * one delete — see `collectUnreferencedBlobs`.
+ * one delete — see `sweepUnreferencedBlobs` in ./gc.ts.
  */
 import { and, asc, count, eq, like, sql } from 'drizzle-orm';
 import { filesystemBlobs, filesystemFiles, filesystems } from '@kortix/db';
@@ -14,6 +14,7 @@ import { config } from '../config';
 import { db } from '../shared/db';
 import {
   createBlobStore,
+  PostgresBlobStore,
   sha256Hex,
   type BlobRows,
   type BlobStore,
@@ -266,7 +267,7 @@ export async function statFile(
 
 export type ReadResult =
   | { ok: true; file: FileMetadata; bytes: Uint8Array }
-  | { ok: false; reason: 'not_found' | 'bytes_missing' };
+  | { ok: false; reason: 'not_found' | 'bytes_missing' | 'storage_unavailable' };
 
 export async function readFile(filesystemId: string, path: string): Promise<ReadResult> {
   const meta = await statFile(filesystemId, path);
@@ -275,28 +276,44 @@ export async function readFile(filesystemId: string, path: string): Promise<Read
   // Read from the store the ROW names, not today's configured default: a
   // deployment that gained S3 must still serve what PostgreSQL already holds.
   const store = blobStore();
-  const bytes =
-    meta.storage === store.kind
-      ? await store.get(meta.sha256)
-      : await fallbackStore(meta.storage).get(meta.sha256);
+  let bytes: Uint8Array | null;
+  if (meta.storage === store.kind) {
+    bytes = await store.get(meta.sha256);
+  } else {
+    try {
+      bytes = await fallbackStore(meta.storage as BlobStorageKind).get(meta.sha256);
+    } catch {
+      // Configuration, not data: the row is fine and the bytes are elsewhere.
+      return { ok: false, reason: 'storage_unavailable' };
+    }
+  }
   if (!bytes) return { ok: false, reason: 'bytes_missing' };
   return { ok: true, file: meta, bytes };
 }
 
-/** The other backend, for rows written before a storage switch. */
+/**
+ * The other backend, for rows written before a storage switch.
+ *
+ * Only ONE direction is reachable, and saying so is the point. The fallback
+ * runs when a row's `storage` differs from the configured default, so a row
+ * marked 's3' means the default is 'pg', which means the S3 configuration is
+ * absent — there is no S3 client to build. Returning a PostgreSQL store there
+ * would look up bytes that were never in PostgreSQL and report "bytes
+ * missing", blaming the data for a configuration gap. Report the real cause.
+ */
 function fallbackStore(kind: BlobStorageKind): BlobStore {
-  if (kind === 'pg') return createBlobStore({}, blobRows);
-  return createBlobStore(
-    {
-      s3Bucket: config.KORTIX_FS_S3_BUCKET,
-      s3Region: config.KORTIX_FS_S3_REGION,
-      s3Endpoint: config.KORTIX_FS_S3_ENDPOINT,
-      s3Prefix: config.KORTIX_FS_S3_PREFIX,
-      s3AccessKeyId: config.KORTIX_FS_S3_ACCESS_KEY_ID,
-      s3SecretAccessKey: config.KORTIX_FS_S3_SECRET_ACCESS_KEY,
-    },
-    blobRows,
+  if (kind === 'pg') return new PostgresBlobStore(blobRows);
+  throw new FilesystemStorageUnavailableError(
+    'this file was written to S3, but no S3 configuration is present on this deployment',
   );
+}
+
+export class FilesystemStorageUnavailableError extends Error {
+  code = 'storage_unavailable';
+  constructor(message: string) {
+    super(message);
+    this.name = 'FilesystemStorageUnavailableError';
+  }
 }
 
 export async function listFiles(input: {

@@ -24,24 +24,41 @@ export function normalizeFilePath(raw: string): PathResult {
   // string, so the stored key and the used key could differ.
   if (raw.includes('\0')) return { ok: false, reason: 'path must not contain a NUL byte' };
 
-  // Percent-decode ONCE before validating: `%2e%2e/x` is `../x`, and a check
-  // that runs before decoding would pass it straight through.
-  let decoded = raw;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    return { ok: false, reason: 'path is not valid percent-encoding' };
-  }
-  if (decoded.includes('\0')) return { ok: false, reason: 'path must not contain a NUL byte' };
-
-  // Backslashes are separators on Windows and literal characters here; treating
-  // them as separators keeps `..\\x` from slipping past the `..` check.
-  const unified = decoded.replace(/\\/g, '/');
+  // DO NOT DECODE HERE. The transport already did: the path arrives as
+  // `?path=`, and Hono percent-decodes query values before a handler sees them.
+  // Decoding again made two different names collide — `?path=a%252Fb` (the
+  // literal name `a%2Fb`) decoded to `a%2Fb` at the router and then to `a/b`
+  // here, landing on the same key as the genuinely nested `a/b` and silently
+  // overwriting it. Measured against the deployed preview: two writes, one row.
+  //
+  // What survives is the REFUSAL. A segment that still contains an encoded
+  // separator or dot-segment at this point is either a mistake or an attempt,
+  // never a name worth storing, so it is rejected rather than decoded.
+  const unified = raw.replace(/\\/g, '/');
 
   const segments: string[] = [];
   for (const segment of unified.split('/')) {
     if (segment === '' || segment === '.') continue; // `a//b` and `a/./b`
     if (segment === '..') return { ok: false, reason: 'path must not contain ".." segments' };
+    // An encoded separator, dot-segment or NUL inside ONE segment: `%2e%2e`,
+    // `%2f`, `%5c`, `%00`. Decoding it would alias onto a different path;
+    // storing it would hand the next consumer a name that decodes to something
+    // else again — and an encoded NUL still truncates a C string downstream.
+    if (/%(2e|2f|5c|00)/i.test(segment)) {
+      let probe = segment;
+      try {
+        probe = decodeURIComponent(segment);
+      } catch {
+        return { ok: false, reason: 'path is not valid percent-encoding' };
+      }
+      if (probe.includes('\0')) return { ok: false, reason: 'path must not contain a NUL byte' };
+      if (probe === '..' || probe === '.' || probe.includes('/') || probe.includes('\\')) {
+        return {
+          ok: false,
+          reason: 'path must not contain percent-encoded separators or ".." segments',
+        };
+      }
+    }
     segments.push(segment);
   }
 

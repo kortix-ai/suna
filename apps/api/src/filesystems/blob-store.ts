@@ -104,9 +104,16 @@ export class S3BlobStore implements BlobStore {
     const key = `${this.prefix}${sha256}`;
     if (this.opts.endpoint) {
       const base = this.opts.endpoint.replace(/\/+$/, '');
-      return this.opts.forcePathStyle === false
-        ? new URL(`${base}/${key}`)
-        : new URL(`${base}/${this.opts.bucket}/${key}`);
+      if (this.opts.forcePathStyle === false) {
+        // Virtual-host style puts the bucket in the HOSTNAME. Returning
+        // `${base}/${key}` dropped it entirely, so nothing in the signed
+        // request named the bucket.
+        const url = new URL(base);
+        url.hostname = `${this.opts.bucket}.${url.hostname}`;
+        url.pathname = `/${key}`;
+        return url;
+      }
+      return new URL(`${base}/${this.opts.bucket}/${key}`);
     }
     return new URL(`https://${this.opts.bucket}.s3.${this.opts.region}.amazonaws.com/${key}`);
   }
