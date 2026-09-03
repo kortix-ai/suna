@@ -71,7 +71,7 @@ describe('session environment service', () => {
     // with the work detached from the request the row is the ONLY channel it
     // has: `provisionEnvironment` swallows nothing silently.
     expect(source).toContain("status: 'error'");
-    expect(source).toContain('markEnvironmentError(input.sessionId, err)');
+    expect(source).toContain('markEnvironmentError(input.sessionId, provisionAttemptId, err)');
     // 'error' is a re-claimable state, which is what makes the retry work.
     expect(source).toContain("existing.status !== 'error'");
   });
@@ -96,12 +96,24 @@ describe('session environment service', () => {
     // session's environment stays stuck at 'provisioning' forever.
     expect(source).toContain('PROVISION_STALE_MS');
     const claim = source.indexOf('async function claimEnvironmentWork');
-    const block = source.slice(claim, source.indexOf('\n}', claim));
+    const block = source.slice(claim, source.indexOf('/**\n * The claimed work itself', claim));
     expect(block).toContain("existing.status === 'provisioning'");
     expect(block).toContain('abandoned');
     // The re-claim is conditioned on the status that was read, so two racing
     // callers cannot both win it.
     expect(block).toContain('eq(sessionEnvironments.status, existing.status)');
+  });
+
+  test('a deleted or superseded provision cannot publish its provider box', async () => {
+    const source = await serviceSource();
+    expect(source).toContain('provisionAttemptId');
+    const activate = source.slice(source.indexOf('async function activateEnvironmentClaim'));
+    expect(activate.slice(0, 2200)).toContain("eq(sessionEnvironments.status, 'provisioning')");
+    expect(activate.slice(0, 2200)).toContain("metadata}->>'provisionAttemptId'");
+    expect(activate.slice(0, 2200)).toContain('.returning()');
+    const work = source.slice(source.indexOf('async function runEnvironmentWork'));
+    expect(work).toContain('removeUnownedEnvironment');
+    expect(work).toContain('endComputeSession(meteredId)');
   });
 
   test('the worker reaches the environment over the provider edge, not the session proxy', async () => {

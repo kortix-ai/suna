@@ -255,7 +255,12 @@ export async function ensureSessionEnvironment(
 
   // Out of band on purpose (see above). Nothing awaits this; the row is the
   // only channel, which is why every exit path below writes to it.
-  void runEnvironmentWork(input, claimed.externalId).catch((err) => {
+  const provisionAttemptId = (claimed.metadata as { provisionAttemptId?: unknown } | null)
+    ?.provisionAttemptId;
+  if (typeof provisionAttemptId !== 'string') {
+    throw new SessionEnvironmentError('Environment claim has no provision attempt id.', 500);
+  }
+  void runEnvironmentWork(input, claimed.externalId, provisionAttemptId).catch((err) => {
     console.error('[session-env] environment work failed', {
       sessionId: input.sessionId,
       error: err instanceof Error ? err.message : String(err),
@@ -277,7 +282,13 @@ export async function ensureSessionEnvironment(
 async function claimEnvironmentWork(
   input: EnsureSessionEnvironmentInput,
   existing: Awaited<ReturnType<typeof readRow>>,
-): Promise<{ sessionId: string; status: string; externalId: string | null } | null> {
+): Promise<{
+  sessionId: string;
+  status: string;
+  externalId: string | null;
+  metadata: Record<string, unknown> | null;
+} | null> {
+  const provisionAttemptId = randomUUID();
   if (!existing) {
     const [inserted] = await db
       .insert(sessionEnvironments)
@@ -287,6 +298,7 @@ async function claimEnvironmentWork(
         projectId: input.projectId,
         provider: 'daytona',
         status: 'provisioning',
+        metadata: { provisionAttemptId },
       })
       .onConflictDoNothing()
       .returning();
@@ -302,7 +314,13 @@ async function claimEnvironmentWork(
   // transition cannot both win.
   const [reclaimed] = await db
     .update(sessionEnvironments)
-    .set({ status: 'provisioning', updatedAt: new Date() })
+    .set({
+      status: 'provisioning',
+      metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        provisionAttemptId,
+      })}::jsonb`,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(sessionEnvironments.sessionId, input.sessionId),
@@ -320,14 +338,22 @@ async function claimEnvironmentWork(
 async function runEnvironmentWork(
   input: EnsureSessionEnvironmentInput,
   externalId: string | null,
+  provisionAttemptId: string,
 ): Promise<void> {
   if (externalId) {
     try {
       await resumeEnvironment(externalId);
-      // A resumed box burns compute again, and its previous window was closed
-      // when it stopped — so open a new one, still against the parent session.
-      const resumed = await readRow(input.sessionId);
-      const meteredId = (resumed?.metadata as { environmentId?: string } | null)?.environmentId;
+      const claimed = await readRow(input.sessionId);
+      const meteredId = (claimed?.metadata as { environmentId?: string } | null)?.environmentId;
+      const activated = await activateEnvironmentClaim({
+        sessionId: input.sessionId,
+        provisionAttemptId,
+        externalId,
+      });
+      if (!activated) {
+        await removeUnownedEnvironment(externalId, meteredId);
+        return;
+      }
       if (meteredId) {
         await startComputeSession({
           sandboxId: meteredId,
@@ -340,20 +366,23 @@ async function runEnvironmentWork(
           metadata: { workload: 'session-environment', externalId, resumed: true },
         });
       }
-      await db
-        .update(sessionEnvironments)
-        .set({ status: 'active', lastUsedAt: new Date(), updatedAt: new Date() })
-        .where(eq(sessionEnvironments.sessionId, input.sessionId));
+      if (!(await environmentClaimIsOwned(input.sessionId, provisionAttemptId, externalId))) {
+        await removeUnownedEnvironment(externalId, meteredId);
+      }
       return;
     } catch (err) {
-      await markEnvironmentError(input.sessionId, err);
+      await markEnvironmentError(input.sessionId, provisionAttemptId, err);
       return;
     }
   }
-  await provisionEnvironment(input);
+  await provisionEnvironment(input, provisionAttemptId);
 }
 
-async function markEnvironmentError(sessionId: string, err: unknown): Promise<void> {
+async function markEnvironmentError(
+  sessionId: string,
+  provisionAttemptId: string,
+  err: unknown,
+): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
   await db
     .update(sessionEnvironments)
@@ -369,11 +398,79 @@ async function markEnvironmentError(sessionId: string, err: unknown): Promise<vo
       })}::jsonb`,
       updatedAt: new Date(),
     })
-    .where(eq(sessionEnvironments.sessionId, sessionId))
+    .where(
+      and(
+        eq(sessionEnvironments.sessionId, sessionId),
+        sql`${sessionEnvironments.metadata}->>'provisionAttemptId' = ${provisionAttemptId}`,
+      ),
+    )
     .catch(() => {});
 }
 
-async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promise<void> {
+async function activateEnvironmentClaim(input: {
+  sessionId: string;
+  provisionAttemptId: string;
+  externalId: string;
+  baseUrl?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const [activated] = await db
+    .update(sessionEnvironments)
+    .set({
+      externalId: input.externalId,
+      ...(input.baseUrl !== undefined ? { baseUrl: input.baseUrl } : {}),
+      status: 'active',
+      ...(input.metadata
+        ? {
+            metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify(
+              input.metadata,
+            )}::jsonb`,
+          }
+        : {}),
+      lastUsedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionEnvironments.sessionId, input.sessionId),
+        eq(sessionEnvironments.status, 'provisioning'),
+        sql`${sessionEnvironments.metadata}->>'provisionAttemptId' = ${input.provisionAttemptId}`,
+      ),
+    )
+    .returning();
+  return activated ?? null;
+}
+
+async function environmentClaimIsOwned(
+  sessionId: string,
+  provisionAttemptId: string,
+  externalId: string,
+): Promise<boolean> {
+  const row = await readRow(sessionId);
+  return (
+    row?.status === 'active' &&
+    row.externalId === externalId &&
+    (row.metadata as { provisionAttemptId?: unknown } | null)?.provisionAttemptId ===
+      provisionAttemptId
+  );
+}
+
+async function removeUnownedEnvironment(externalId: string, meteredId?: string): Promise<void> {
+  if (meteredId) await endComputeSession(meteredId).catch(() => {});
+  await getProvider('daytona')
+    .remove(externalId)
+    .catch((err) =>
+      console.warn(
+        `[session-env] failed to remove unowned box ${externalId}:`,
+        err instanceof Error ? err.message : err,
+      ),
+    );
+}
+
+async function provisionEnvironment(
+  input: EnsureSessionEnvironmentInput,
+  provisionAttemptId: string,
+): Promise<void> {
   try {
     const [token, image, envVars] = await Promise.all([
       sessionServiceKey(input.sessionId),
@@ -416,6 +513,21 @@ async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promi
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
       },
     } as never);
+    const activated = await activateEnvironmentClaim({
+      sessionId: input.sessionId,
+      provisionAttemptId,
+      externalId: result.externalId,
+      baseUrl: result.baseUrl || null,
+      metadata: {
+        environmentId,
+        snapshot: image.snapshotName,
+        providerMetadata: result.metadata ?? {},
+      },
+    });
+    if (!activated) {
+      await removeUnownedEnvironment(result.externalId, environmentId);
+      return;
+    }
     // Meter the environment AS PART OF THE PARENT SESSION: the compute row
     // carries the session's id, so its seconds and cost roll into that
     // session's line rather than appearing as a second, unattributed box.
@@ -432,25 +544,13 @@ async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promi
       spec: { ...ENVIRONMENT_METERING_SPEC },
       metadata: { workload: 'session-environment', externalId: result.externalId },
     });
-    await db
-      .update(sessionEnvironments)
-      .set({
-        externalId: result.externalId,
-        baseUrl: result.baseUrl || null,
-        status: 'active',
-        metadata: {
-          environmentId,
-          snapshot: image.snapshotName,
-          providerMetadata: result.metadata ?? {},
-        },
-        lastUsedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(sessionEnvironments.sessionId, input.sessionId));
+    if (!(await environmentClaimIsOwned(input.sessionId, provisionAttemptId, result.externalId))) {
+      await removeUnownedEnvironment(result.externalId, environmentId);
+    }
   } catch (err) {
     // Nothing is waiting on this promise, so the row IS the error channel:
     // the next ensure re-claims 'error' and tries again.
-    await markEnvironmentError(input.sessionId, err);
+    await markEnvironmentError(input.sessionId, provisionAttemptId, err);
   }
 }
 
