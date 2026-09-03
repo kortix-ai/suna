@@ -4491,3 +4491,19 @@ own config; no real secret was ever written to disk in plaintext.
   test suite whenever `pnpm-lock.yaml` resolves more than one version of
   `next`. The override now reads `"next@>=15.0.0 <16.3.3": "16.3.3"` and
   `apps/whitelabel-demo` declares `next: 16.3.3` explicitly.
+
+## Renaming an applied migration requires a name-and-order ledger repair
+
+- **Incident (2026-09-03, `pi-worker` preview):** two Pi migrations initially
+  used timestamps before migrations already merged into `main`. Moving the Pi
+  files after the merged migrations fixed fresh and sequential migration gates.
+  The persistent preview database still recorded the old names and their old
+  `run_on` order. `node-pg-migrate` rejected startup before the API bound port
+  `8080`, and the preview hostname returned `502` during the failed cutover.
+- **Rule:** never rename an applied migration without a checksum-guarded ledger
+  repair. The repair must update both `name` and `run_on` when the rename crosses
+  other applied migrations. A fresh database cannot prove this upgrade path.
+- **Enforcement:** `migration-ledger-repair.test.ts` pins both Pi name mappings.
+  `migration-ledger-repair.integration.test.ts` builds the historical ledger,
+  runs the locked repair, and requires strict `node-pg-migrate` order to report
+  no pending migrations.

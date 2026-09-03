@@ -41,7 +41,26 @@ const APP_ACCESS_RENAMES = [
   },
 ] as const;
 
-const MIGRATION_RENAMES = [...SANDBOX_DEADLINE_RENAMES, ...APP_ACCESS_RENAMES] as const;
+const PI_RUNTIME_RENAMES = [
+  {
+    legacyName: '20260828170156721_session_worker_log',
+    currentName: '20260902070000000_session_worker_log',
+    filename: '20260902070000000_session_worker_log.sql',
+    sha256: '0fafe47bb6b45c50ff4f6b56175337623cea81a2f722eec6294fb60cd35e84e5',
+  },
+  {
+    legacyName: '20260829160353474_pi_runtime_artifacts',
+    currentName: '20260902070001000_pi_runtime_artifacts',
+    filename: '20260902070001000_pi_runtime_artifacts.sql',
+    sha256: '87d0bbacf0fa853f80ad506696e3f556d45c3b934c4d25a9a1edf48ad36fd803',
+  },
+] as const;
+
+const MIGRATION_RENAMES = [
+  ...SANDBOX_DEADLINE_RENAMES,
+  ...APP_ACCESS_RENAMES,
+  ...PI_RUNTIME_RENAMES,
+] as const;
 
 const REPAIR_NAMES = [
   CONNECTOR_POLICY_MIGRATION.name,
@@ -86,8 +105,7 @@ export function planMigrationLedgerRepair(
     );
   }
 
-  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES
-    .filter(({ legacyName }) => byName.has(legacyName))
+  const deadlineRunOns = SANDBOX_DEADLINE_RENAMES.filter(({ legacyName }) => byName.has(legacyName))
     .map(({ legacyName }) => byName.get(legacyName)?.runOn)
     .filter((runOn): runOn is Date => runOn instanceof Date);
   const legacyRunOn =
@@ -142,6 +160,58 @@ async function inspectRepairPlan(databaseUrl: string): Promise<MigrationLedgerRe
   }
 }
 
+async function reorderAppliedPiRuntimeRenames(
+  client: pg.Client,
+  renames: MigrationLedgerRepairPlan['renames'],
+): Promise<void> {
+  const piCurrentNames = new Set(PI_RUNTIME_RENAMES.map(({ currentName }) => currentName));
+  const movedNames = renames
+    .map(({ currentName }) => currentName)
+    .filter((currentName) => piCurrentNames.has(currentName))
+    .sort();
+  if (movedNames.length === 0) return;
+
+  const firstName = movedNames[0];
+  const lastName = movedNames.at(-1);
+  const bounds = await client.query<{ lower_run_on: Date | null; upper_run_on: Date | null }>(
+    `select max(run_on) filter (
+              where name < $1 and not (name = any($3::text[]))
+            ) as lower_run_on,
+            min(run_on) filter (
+              where name > $2 and not (name = any($3::text[]))
+            ) as upper_run_on
+       from kortix_migrations.pgmigrations`,
+    [firstName, lastName, movedNames],
+  );
+  const lowerRunOn = bounds.rows[0]?.lower_run_on ?? null;
+  const upperRunOn = bounds.rows[0]?.upper_run_on ?? null;
+  if (lowerRunOn && upperRunOn && upperRunOn <= lowerRunOn) {
+    throw new Error('Migration ledger repair cannot place the renamed pi migrations in order.');
+  }
+
+  const slotCount = movedNames.length + 1;
+  for (const [index, currentName] of movedNames.entries()) {
+    const position = index + 1;
+    const result = await client.query(
+      `update kortix_migrations.pgmigrations
+          set run_on = case
+            when $2::timestamp is not null and $3::timestamp is not null
+              then $2::timestamp + ($3::timestamp - $2::timestamp) * ($4::double precision / $5::double precision)
+            when $2::timestamp is not null
+              then $2::timestamp + interval '1 millisecond' * $4
+            when $3::timestamp is not null
+              then $3::timestamp - interval '1 millisecond' * ($5 - $4)
+            else run_on
+          end
+        where name = $1`,
+      [currentName, lowerRunOn, upperRunOn, position, slotCount],
+    );
+    if (result.rowCount !== 1) {
+      throw new Error(`Migration ledger repair could not reorder ${currentName}.`);
+    }
+  }
+}
+
 async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
   const client = new pg.Client({ connectionString: databaseUrl });
   await client.connect();
@@ -189,6 +259,8 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
         );
       }
     }
+
+    await reorderAppliedPiRuntimeRenames(client, plan.renames);
 
     await client.query('commit');
     return true;
