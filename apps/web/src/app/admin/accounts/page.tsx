@@ -848,14 +848,14 @@ function FiltersPanel({
 
   return (
     <div className="max-h-[70vh] overflow-y-auto">
-      <div className="border-border/60 flex items-center justify-between border-b px-4 py-3">
+      <div className="border-border flex items-center justify-between border-b px-4 py-3">
         <span className="text-sm font-medium">Filters</span>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onReset}>
           {'Reset all'}
         </Button>
       </div>
 
-      <div className="border-border/60 space-y-2 border-b px-4 py-3">
+      <div className="border-border space-y-2 border-b px-4 py-3">
         <div className="text-muted-foreground text-xs font-medium">Subscription</div>
         <div className="flex items-center justify-between text-sm">
           <span>{'Has active subscription'}</span>
@@ -886,7 +886,7 @@ function FiltersPanel({
         </div>
       </div>
 
-      <div className="border-border/60 space-y-2 border-b px-4 py-3">
+      <div className="border-border space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="text-muted-foreground text-xs font-medium">Tier</div>
           {filters.tier.length > 0 && (
@@ -920,7 +920,7 @@ function FiltersPanel({
         </div>
       </div>
 
-      <div className="border-border/60 space-y-2 border-b px-4 py-3">
+      <div className="border-border space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="text-muted-foreground text-xs font-medium">{'Payment status'}</div>
           {filters.paymentStatus.length > 0 && (
@@ -1276,7 +1276,7 @@ function AccountDetail({ account }: { account: AdminAccount }) {
 
   return (
     <div className="flex min-h-0 flex-col">
-      <SheetHeader className="border-border/60 gap-3 border-b px-6 py-5">
+      <SheetHeader className="border-border gap-3 border-b px-6 py-5">
         {/* Title + who/what/where badges on the left; the one invasive action
             (Open as account) pinned top-right so it never hides under scroll. */}
         <div className="flex items-start justify-between gap-3">
@@ -1506,7 +1506,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
           plan shown is the RESOLVED one the API reports — an active trial and
           the per-seat self-heal overlay the stored tier, and the entitlement
           writes below act on the account, not on that plan. */}
-      <div className="border-border/60 bg-popover mb-4 space-y-3 rounded-md border p-4">
+      <div className="border-border bg-popover mb-4 space-y-3 rounded-md border p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-foreground text-sm font-medium">Plan</div>
@@ -1544,7 +1544,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         </p>
       </div>
 
-      <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
+      <div className="border-border bg-popover space-y-4 rounded-md border p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (
             <Button
@@ -1777,7 +1777,7 @@ function OverridesCard({ account }: { account: AdminAccount }) {
   const effectiveMultiplier = account.computeRateMultiplier;
 
   return (
-    <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
+    <div className="border-border bg-popover space-y-4 rounded-md border p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-foreground text-sm font-medium">Overrides</div>
@@ -1793,7 +1793,7 @@ function OverridesCard({ account }: { account: AdminAccount }) {
         )}
       </div>
 
-      <div className="border-border/60 divide-border divide-y rounded-md border">
+      <div className="border-border divide-border divide-y rounded-md border">
         {OVERRIDE_ENTITLEMENT_ROWS.map(({ key, title, description }) => (
           <div key={key} className="px-4 py-3">
             <EntitlementRow
@@ -2023,7 +2023,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       {/* Trial — an admin-issued overlay: the account BEHAVES as the trial tier
           until it ends, without touching credit_accounts.tier (Stripe owns
           that). Re-granting overwrites the window: extend = re-grant. */}
-      <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
+      <div className="border-border bg-popover space-y-4 rounded-md border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-foreground text-sm font-medium">Trial</div>
@@ -2038,7 +2038,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         </div>
 
         {trial && trial.status !== 'none' ? (
-          <div className="border-border/60 divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="border-border divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="px-3 py-2.5">
               <div className="text-muted-foreground text-xs">Tier</div>
               <div className="mt-0.5 text-sm font-medium">
@@ -2076,13 +2076,13 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         )}
 
         {trial?.note && (
-          <p className="text-muted-foreground border-border/60 border-l-2 pl-3 text-xs">
+          <p className="text-muted-foreground border-border border-l-2 pl-3 text-xs">
             {trial.note}
           </p>
         )}
 
         {/* Grant / replace form */}
-        <div className="border-border/60 space-y-3 border-t pt-4">
+        <div className="border-border space-y-3 border-t pt-4">
           <div className="text-foreground text-sm font-medium">
             {isActive ? 'Replace trial' : 'Grant trial'}
           </div>
@@ -2195,7 +2195,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       </div>
 
       {/* Managed models override — tri-state, null restores tier control. */}
-      <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
+      <div className="border-border bg-popover space-y-3 rounded-md border p-4">
         <EntitlementRow
           title="Managed models"
           description="Force Kortix-credential models on, restrict the account to its own BYOK keys, or leave the decision to the effective tier."
@@ -2219,7 +2219,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       </div>
 
       {/* Enterprise flags. Demo = evaluation preview; entitled = signed contract. */}
-      <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
+      <div className="border-border bg-popover space-y-4 rounded-md border p-4">
         <EntitlementRow
           title="Enterprise demo"
           description="Interactive preview of SSO, SCIM, advanced RBAC, and audit logs. Evaluation only — no billing change."
@@ -2232,7 +2232,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
           />
         </EntitlementRow>
 
-        <div className="border-border/60 border-t pt-4">
+        <div className="border-border border-t pt-4">
           <EntitlementRow
             title="Enterprise contract entitlements"
             description="Keeps SSO, SCIM, RBAC, and audit entitled for a signed Enterprise account that is also per-seat billed, so the Stripe reconciliation cannot strip them."
@@ -2253,7 +2253,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       <OverridesCard account={account} />
 
       {/* Read-only context the operator needs before issuing a trial. */}
-      <div className="border-border/60 bg-popover divide-border grid grid-cols-2 divide-x rounded-md border text-sm">
+      <div className="border-border bg-popover divide-border grid grid-cols-2 divide-x rounded-md border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           <span className="text-muted-foreground text-xs">Billing model</span>
           <span className="text-right font-medium">{account.billingModel || '—'}</span>
@@ -2313,7 +2313,7 @@ function UsersTab({
 
   if (usersQuery.isLoading) {
     return (
-      <div className="border-border/60 bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
+      <div className="border-border bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
         <Loading className="size-4 shrink-0" />
         {'Loading users…'}
       </div>
@@ -2323,7 +2323,7 @@ function UsersTab({
   const users = usersQuery.data?.users ?? [];
   if (users.length === 0) {
     return (
-      <div className="border-border/60 bg-popover rounded-md border">
+      <div className="border-border bg-popover rounded-md border">
         <EmptyState
           icon={IconInbox}
           title={'No users on this account'}
@@ -2335,7 +2335,7 @@ function UsersTab({
   }
 
   return (
-    <div className="border-border/60 bg-popover divide-border divide-y rounded-md border">
+    <div className="border-border bg-popover divide-border divide-y rounded-md border">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
@@ -2410,7 +2410,7 @@ function ProjectsTab({
 }) {
   if (projectsQuery.isLoading) {
     return (
-      <div className="border-border/60 bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
+      <div className="border-border bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
         <Loading className="size-4 shrink-0" />
         Loading projects…
       </div>
@@ -2420,7 +2420,7 @@ function ProjectsTab({
   const projects = projectsQuery.data?.projects ?? [];
   if (projects.length === 0) {
     return (
-      <div className="border-border/60 bg-popover rounded-md border">
+      <div className="border-border bg-popover rounded-md border">
         <EmptyState
           icon={FolderKanban}
           title="No projects on this account"
@@ -2432,7 +2432,7 @@ function ProjectsTab({
   }
 
   return (
-    <div className="border-border/60 bg-popover divide-border divide-y rounded-md border">
+    <div className="border-border bg-popover divide-border divide-y rounded-md border">
       {projects.map((project) => (
         <a
           key={project.projectId}
@@ -2496,7 +2496,7 @@ function formatRelative(value: string | null) {
 function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAccountLedger> }) {
   if (ledgerQuery.isLoading) {
     return (
-      <div className="border-border/60 bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
+      <div className="border-border bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
         <Loading className="size-4 shrink-0" />
         {'Loading ledger…'}
       </div>
@@ -2506,7 +2506,7 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
   const entries = ledgerQuery.data?.entries ?? [];
   if (entries.length === 0) {
     return (
-      <div className="border-border/60 bg-popover rounded-md border">
+      <div className="border-border bg-popover rounded-md border">
         <EmptyState
           icon={IconInbox}
           title={'No ledger entries'}
@@ -2581,7 +2581,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
               href={a.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group border-border/60 bg-popover hover:bg-hover inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+              className="group border-border bg-popover hover:bg-hover inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               <ServiceFavicon domain={a.domain} />
               {a.label}
@@ -2591,7 +2591,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       )}
 
-      <div className="border-border/60 bg-popover rounded-md border text-sm">
+      <div className="border-border bg-popover rounded-md border text-sm">
         <div className="divide-border grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           {summary.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -2602,7 +2602,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
         </div>
       </div>
 
-      <div className="border-border/60 bg-popover divide-border divide-y rounded-md border text-sm">
+      <div className="border-border bg-popover divide-border divide-y rounded-md border text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}
@@ -2619,7 +2619,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="border-border/60 bg-popover text-muted-foreground hover:bg-hover hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
+                    className="border-border bg-popover text-muted-foreground hover:bg-hover hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
                     title={'Open in Stripe'}
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />
