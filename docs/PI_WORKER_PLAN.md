@@ -6,20 +6,15 @@ Branch: `pi-worker`. Environment: `https://pi.kortix.com` (persistent branch env
 This file is the plan of record. Update the status column in the same commit
 that changes the status — a plan that lags the code is worse than no plan.
 
-> ### ⚠ The branch environment is frozen
+> ### The branch environment follows the branch
 >
-> `pi.kortix.com` serves **`ef2163ba`** and has not moved since. The persistent
-> preview sandbox cannot `git fetch` this PRIVATE repo — it holds no credential
-> at all (no repo config, no `~/.gitconfig`, no `~/.git-credentials`, no
-> `GIT_ASKPASS`), and `sandbox-preview.ts` supplies none. The deploy step is
-> `continue-on-error`, so the job continues, the hostname is never re-pointed,
-> and `/v1/health` keeps answering `ok` on the stale commit.
->
-> **Everything below is verified by local gates only** until a repo-scoped
-> credential exists in that box (`PREVIEW_MANAGED_GIT_GITHUB_TOKEN` — repo
-> admin). `scratchpad/pi-system-test.sh` now fails loudly when the served commit
-> does not match `origin/pi-worker`, so a stale environment can no longer be
-> mistaken for a passing one.
+> Every push to `pi-worker` redeploys `pi.kortix.com` in place
+> (`deploy-preview.yml`, persistent Platinum sandbox). Verified 2026-09-03:
+> `GET /v1/health` reports `commit` == `origin/pi-worker` (`2b1f7d9d`), and the
+> 20-check live system test (`scratchpad/pi-system-test.sh`) passes 20/20. That
+> script still fails loudly when the served commit is not the branch tip, so a
+> stale environment cannot be mistaken for a passing one. The earlier "frozen at
+> `ef2163ba`" state was the missing checkout credential, fixed by `711b6651`.
 
 ---
 
@@ -38,7 +33,7 @@ this branch). Nine requirements; the wording is his, condensed.
 | 6 | Messages read from the durable store, not through the OpenCode API | **shipped** |
 | 7 | Default tools point at the SANDBOX, never the worker filesystem | **shipped + pinned** |
 | 8 | The worker is locked down; a tool must not touch its disk | **shipped + pinned** |
-| 9 | Filesystems paradigm — shared volumes, "a Google Drive between agents", S3 | **shipped (API/SDK/CLI); agent path pending a dev deploy** |
+| 9 | Filesystems paradigm — shared volumes, "a Google Drive between agents", S3 | **shipped + verified live (API, SDK, CLI, agent)** |
 
 ### What "shipped + pinned" means for 7 and 8
 
@@ -102,7 +97,7 @@ what it wrote before the switch.
 | SDK | `kortix.project(id).filesystems.*` | live |
 | CLI | `kortix fs ls\|create\|rm\|list\|put\|get\|del` | live |
 | Docs | `apps/web/content/docs/sdk/filesystems.mdx` | written |
-| Agent | `bash` → `kortix fs …` in the session environment | **pending dev deploy** |
+| Agent | `bash` → `kortix fs …` in the session environment | **live — verified 2026-09-03** |
 
 The agent path needs **no new worker tool**. The pi worker runs exactly four
 tools by design, `bash` executes in the session ENVIRONMENT, and that image
@@ -110,13 +105,19 @@ carries the CLI at `/usr/local/bin/kortix`
 (`apps/sandbox/Dockerfile:244`), self-authenticating from `KORTIX_TOKEN` /
 `KORTIX_API_URL` / `KORTIX_PROJECT_ID`.
 
-> **Why it is still pending.** That binary is COMPILED INTO the sandbox image,
-> and the image is built by `deploy-dev.yml` — on main. `deploy-preview.yml`
-> builds only the gateway, API and frontend, so the branch preview runs new API
-> code against an old sandbox image. Measured on pi.kortix.com: an agent
-> answered `/usr/local/bin/kortix` for `command -v kortix` and
-> `FS_SUBCOMMAND_ABSENT` for `kortix fs --help`. The mechanism is proven; the
-> binary is stale until this branch merges and dev deploys.
+> **Verified live 2026-09-03.** Session `aec999c1` on pi-lab ran
+> `command -v kortix; kortix fs --help` through the `bash` tool and answered
+> `/usr/local/bin/kortix`, `Kortix CLI vpr-6998+95cc9bed`, and the `kortix fs`
+> usage text; the whole turn took 9 s on a fresh session. The earlier
+> `FS_SUBCOMMAND_ABSENT` reading was wrong about the mechanism: the preview
+> deploy builds the API image, that image bakes `apps/cli/dist/kortix` from the
+> branch (`apps/api/Dockerfile`, stage `sandbox-cli`, copied at `:265`), and the
+> ENVIRONMENT image is built by the API itself from that binary
+> (`ensureSandboxImage` → `stageBuildContext` → `cliBinPath()`). So a branch
+> preview carries the branch CLI as soon as a NEW environment box is created;
+> the stale answer came from a box pinned before that deploy — a per-session
+> environment is never rebuilt for a CLI change (learnings register: "a CLI
+> change reaches agents only when the sandbox image rebuilds").
 
 ---
 
@@ -145,9 +146,10 @@ by feeding wire-shaped strings that never occur over HTTP.
 
 Ordered by what blocks the most.
 
-1. **Agent path to production** — merge to main → `deploy-dev.yml` rebuilds the
-   sandbox image → re-probe a live session for `kortix fs --help`. Nothing else
-   is needed; this is a deploy, not a code change.
+1. **Agent path on dev and prod** — the branch preview is verified; dev and
+   prod get the `fs` subcommand when this branch merges and `deploy-dev.yml`
+   rebuilds the sandbox image. Re-probe a NEW session there for
+   `kortix fs --help`. This is a deploy, not a code change.
 2. **The warm pool stays off everywhere** (`KORTIX_PI_WORKER_POOL_TARGET=0`).
    The claim-durability fix (a claimed box must resume as a worker, never
    re-park) is proven against the real baked script through a real stop/resume,
@@ -322,8 +324,11 @@ actually needs the environment attaches again and reports it as its own Result.
 > for the old path, applied to the new one. That is the real P2.2 finish line
 > and it is not built.
 >
-> Not yet verified live: the branch environment is frozen, so the before/after
-> on a deployed box is owed.
+> Verified live 2026-09-03 (n=1, so a data point, not the number): a fresh
+> session on pi.kortix.com whose first prompt asked for one `bash` call
+> answered in 9 s end to end, environment provision included — against the
+> 37.5 s first-`bash` measured before the prewarm. A 10-run clock for this leg
+> is still owed.
 
 ### P2.3 — The transport — **done, and the plan item was wrong**
 
@@ -357,8 +362,7 @@ not a code change. The reason to take the socket anyway is correctness: per-call
 HTTP already produced a bug in the spike when a keep-alive socket was retired
 between calls.
 
-> Not verified live. The branch environment is frozen, and a daemon change
-> reaches only newly baked images regardless — so this is the first item whose
+> Not yet observed live. A daemon change reaches only newly baked images regardless — so this is the first item whose
 > verification needs an image rebuild, not just a deploy.
 
 ### P2.4 — `session_id == sandbox_id` stops being true — **scoped: 28 sites, not done**
