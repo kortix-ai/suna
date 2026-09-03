@@ -576,11 +576,27 @@ deadline, and looping would multiply that by every tool call in the turn.
 > a reap mid-turn. That needs a live prompt, a reap behind its back, and a
 > second tool call.
 
-**Still open on this item:** the state matrix itself. The recovery contract
-answers "what does the next tool call do"; it does not yet enumerate every
-reachable (worker × environment) pair and say which are legal. Wake fences and
-turn accounting — which box's clock settles a turn, and whether a busy
-environment keeps its worker alive — are unexamined.
+**The state matrix is now executable policy.**
+`platform/services/session-runtime-state.ts` defines all 15 reachable
+worker × environment pairs. `session-runtime-state.test.ts` proves the matrix is
+total and pins each repair action.
+
+| Worker | Environment | Legal | Action on environment | Turn authority |
+|---|---|---:|---|---|
+| missing | missing | yes | none | none |
+| missing | any row | no | delete | none |
+| live | missing, stopped, error | yes | lazy ensure | worker |
+| live | provisioning | yes | wait | worker |
+| live | active | yes | serve | worker |
+| parked | active, provisioning | no | stop | none |
+| parked | missing, stopped, error | yes | none | none |
+
+The worker owns wake fences and turn accounting. Environment activity does not
+extend a parked worker's lifetime. A provider-running observation refreshes the
+environment's `lastUsedAt`; this prevents the disk reaper from deleting a live
+working tree whose direct RPC traffic bypasses the API. A detached provision can
+publish its box only while the parent worker is live and the session is not
+deleted. Provider stop/remove webhooks now reconcile both runtime tables.
 
 ### P2.6 — The secret boundary follows the worker
 

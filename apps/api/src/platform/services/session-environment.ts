@@ -25,7 +25,7 @@
  *   without an OpenCode session.
  */
 import { randomUUID } from 'node:crypto';
-import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
@@ -435,6 +435,12 @@ async function activateEnvironmentClaim(input: {
         eq(sessionEnvironments.sessionId, input.sessionId),
         eq(sessionEnvironments.status, 'provisioning'),
         sql`${sessionEnvironments.metadata}->>'provisionAttemptId' = ${input.provisionAttemptId}`,
+        sql`exists (
+          select 1 from ${projectSessions}
+          where ${projectSessions.sessionId} = ${input.sessionId}
+            and ${projectSessions.status} in ('queued', 'branching', 'provisioning', 'running')
+            and ${projectSessions.metadata}->>'deletedAt' is null
+        )`,
       ),
     )
     .returning();

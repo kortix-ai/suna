@@ -81,6 +81,7 @@ export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
     .select({
       computeId: sandboxComputeSessions.id,
       sandboxId: sandboxComputeSessions.sandboxId,
+      sessionId: sandboxComputeSessions.sessionId,
       workloadType: sandboxComputeSessions.workloadType,
       startedAt: sandboxComputeSessions.startedAt,
       computeMetadata: sandboxComputeSessions.metadata,
@@ -246,6 +247,18 @@ export async function reconcileOrphanComputeSessions(
                 unresolvedSince: null,
                 ...(isEnvironment ? { lastAliveAt: now.toISOString() } : {}),
               });
+            }
+            if (isEnvironment && row.sessionId) {
+              await db
+                .update(sessionEnvironments)
+                .set({ lastUsedAt: now, updatedAt: now })
+                .where(
+                  and(
+                    eq(sessionEnvironments.sessionId, row.sessionId),
+                    eq(sessionEnvironments.externalId, externalId as string),
+                    eq(sessionEnvironments.status, 'active'),
+                  ),
+                );
             }
           } else if (
             providerStatus !== 'stopped' &&

@@ -110,6 +110,11 @@ describe('session environment service', () => {
     const activate = source.slice(source.indexOf('async function activateEnvironmentClaim'));
     expect(activate.slice(0, 2200)).toContain("eq(sessionEnvironments.status, 'provisioning')");
     expect(activate.slice(0, 2200)).toContain("metadata}->>'provisionAttemptId'");
+    expect(activate.slice(0, 2200)).toContain('from ${projectSessions}');
+    expect(activate.slice(0, 2200)).toContain(
+      "projectSessions.status} in ('queued', 'branching', 'provisioning', 'running')",
+    );
+    expect(activate.slice(0, 2200)).toContain("metadata}->>'deletedAt' is null");
     expect(activate.slice(0, 2200)).toContain('.returning()');
     const work = source.slice(source.indexOf('async function runEnvironmentWork'));
     expect(work).toContain('removeUnownedEnvironment');
