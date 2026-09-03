@@ -36,6 +36,8 @@ interface RunResult {
   readyMs?: number;
   promptMs?: number;
   tokenMs?: number;
+  /** --tool mode: the first tool RESULT arrives — environment reachable AND the command ran. */
+  toolMs?: number;
   totalMs?: number;
   serverTimelineMs?: number | null;
   provider?: string | null;
@@ -54,7 +56,29 @@ const PROJECT = arg('project');
 const JWT = arg('jwt');
 const RUNS = Number(arg('runs', '10'));
 const LABEL = arg('label', 'unlabelled');
-const PROMPT = arg('prompt', 'Reply with exactly the word READY and nothing else.');
+/**
+ * --tool: clock the first TOOL RESULT as well as the first token.
+ *
+ * P2.2's leg. The split moved the environment's cold start out of session
+ * setup and into the middle of the first answer (measured 37.5s to the first
+ * `bash` on a cold session before the prompt-time prewarm). This mode forces
+ * one `bash` call and stamps the moment its result comes back — provisioning,
+ * daemon readiness, repo materialisation and the command itself, end to end.
+ */
+const TOOL = process.argv.includes('--tool');
+/**
+ * --keep: leave the benchmark sessions running. By default each run STOPS its
+ * session once measured — ten runs a day against one project otherwise walk
+ * straight into the 100-active-sessions cap (`create 429`), which is exactly
+ * how the fourth run of a ten-run clock failed on 2026-09-03.
+ */
+const KEEP = process.argv.includes('--keep');
+const PROMPT = arg(
+  'prompt',
+  TOOL
+    ? 'Use the bash tool to run exactly this command: echo KORTIX-TOOL-PROBE . Then reply with only its output.'
+    : 'Reply with exactly the word READY and nothing else.',
+);
 /** 'pi' streams its own turn; 'opencode' needs a concurrent listener on /event. */
 const RUNTIME = arg('runtime', 'pi') as 'pi' | 'opencode';
 const H = { authorization: `Bearer ${JWT}`, 'content-type': 'application/json' };
@@ -226,6 +250,7 @@ async function oneRun(run: number): Promise<RunResult> {
     // Read the SSE until the first assistant TEXT — not the first frame. A
     // `message_start` with empty content is not something a user can read.
     let tokenMs: number | undefined;
+    let toolMs: number | undefined;
     const reader = turn.body.getReader();
     const decoder = new TextDecoder();
     let buffered = '';
@@ -241,14 +266,16 @@ async function oneRun(run: number): Promise<RunResult> {
         } catch {
           continue;
         }
+        if (TOOL && evt?.type === 'tool_execution_end' && toolMs === undefined) {
+          toolMs = performance.now() - t0;
+        }
         const parts = evt?.message?.content;
         if (evt?.message?.role === 'assistant' && Array.isArray(parts)) {
           const text = parts.map((p: any) => (p?.type === 'text' ? p.text ?? '' : '')).join('');
-          if (text.length > 0) {
-            tokenMs = performance.now() - t0;
-            break outer;
-          }
+          if (text.length > 0 && tokenMs === undefined) tokenMs = performance.now() - t0;
         }
+        // Token mode stops at the first text; tool mode needs the tool result too.
+        if (tokenMs !== undefined && (!TOOL || toolMs !== undefined)) break outer;
       }
       // Keep only the tail so a split frame is not lost between reads.
       const lastNewline = buffered.lastIndexOf('\n');
@@ -282,7 +309,16 @@ async function oneRun(run: number): Promise<RunResult> {
       // attribution is a bonus, never the measurement
     }
 
-    return { run, ok: tokenMs !== undefined, sessionId, createMs, readyMs, promptMs, tokenMs, totalMs, serverTimelineMs, provider };
+    if (!KEEP) {
+      // Fire-and-forget: the measurement is over; a slow stop must not skew the
+      // next run's create clock, and a failed stop is the cap's problem later.
+      void fetch(`${BASE}/projects/${PROJECT}/sessions/${sessionId}/stop`, {
+        method: 'POST',
+        headers: H,
+        signal: AbortSignal.timeout(120_000),
+      }).catch(() => {});
+    }
+    return { run, ok: tokenMs !== undefined && (!TOOL || toolMs !== undefined), sessionId, createMs, readyMs, promptMs, tokenMs, toolMs, totalMs, serverTimelineMs, provider };
   } catch (err) {
     return { run, ok: false, error: String((err as Error)?.message ?? err).slice(0, 200) };
   }
@@ -290,13 +326,13 @@ async function oneRun(run: number): Promise<RunResult> {
 
 const results: RunResult[] = [];
 console.log(`\n=== ${LABEL} — ${RUNS} runs against ${BASE} ===`);
-console.log('run  create    ready    prompt    TOKEN     server-tl  status');
+console.log(`run  create    ready    prompt    TOKEN   ${TOOL ? ' TOOL     ' : ''}server-tl  status`);
 for (let i = 1; i <= RUNS; i++) {
   const r = await oneRun(i);
   results.push(r);
   const f = (v?: number) => (v === undefined ? '     —' : `${(v / 1000).toFixed(2)}s`.padStart(7));
   console.log(
-    `${String(i).padStart(3)}  ${f(r.createMs)}  ${f(r.readyMs)}  ${f(r.promptMs)}  ${f(r.tokenMs)}  ` +
+    `${String(i).padStart(3)}  ${f(r.createMs)}  ${f(r.readyMs)}  ${f(r.promptMs)}  ${f(r.tokenMs)}  ${TOOL ? `${f(r.toolMs)}  ` : ''}` +
       `${r.serverTimelineMs === null || r.serverTimelineMs === undefined ? '     —' : `${(r.serverTimelineMs / 1000).toFixed(2)}s`.padStart(7)}  ` +
       `${r.ok ? 'ok' : `FAIL ${r.error ?? ''}`}`,
   );
@@ -310,6 +346,10 @@ console.log(`runs            ${results.length} (${ok.length} usable, ${results.l
 if (ok.length > 0) {
   console.log(`TIME TO FIRST TOKEN  p50 ${(pct(tokens, 50) / 1000).toFixed(2)}s   p95 ${(pct(tokens, 95) / 1000).toFixed(2)}s   min ${(Math.min(...tokens) / 1000).toFixed(2)}s   max ${(Math.max(...tokens) / 1000).toFixed(2)}s`);
   console.log(`  of which, to ready p50 ${(pct(readies, 50) / 1000).toFixed(2)}s`);
+  if (TOOL) {
+    const tools = ok.map((r) => r.toolMs!);
+    console.log(`TIME TO FIRST TOOL RESULT  p50 ${(pct(tools, 50) / 1000).toFixed(2)}s   p95 ${(pct(tools, 95) / 1000).toFixed(2)}s   min ${(Math.min(...tools) / 1000).toFixed(2)}s   max ${(Math.max(...tools) / 1000).toFixed(2)}s`);
+  }
   console.log(`  provider ${ok[0]!.provider ?? 'unknown'}`);
 }
 await Bun.write(
