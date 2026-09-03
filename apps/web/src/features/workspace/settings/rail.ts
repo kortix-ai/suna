@@ -1,6 +1,7 @@
 import {
   ArrowCircleUpIcon as ArrowUpCircle,
   ChatCircleIcon as ChatCircle,
+  CoinsIcon as Coins,
   ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
   FlaskIcon as Flask,
@@ -21,10 +22,10 @@ import type { RailGroup, RailItem } from './type';
  *
  * A plain 1:1 match. It used to carry a `models` stand-in for the seven
  * legacy `llm-*` sub-page ids, which went with the Models tab when project
- * configuration moved to `/projects/<id>/config` — the sub-nav there resolves
- * those ids itself (see
- * `capabilities/project-settings/project-settings-page.tsx`). Every tab left
- * in this rail matches its own id and nothing else.
+ * configuration moved out of this rail. Those ids resolve through `GRADUATED`
+ * in `settings-tabs.ts` onto `/projects/<id>/models` now — the config page
+ * that briefly owned them was retired on 2026-09-02. Every tab left in this
+ * rail matches its own id and nothing else.
  */
 export function isRailItemActive(item: RailItem, tab: SettingsTab): boolean {
   return item.tab === tab;
@@ -143,10 +144,23 @@ const STATIC_GROUPS: readonly RailGroup[] = [
   {
     label: 'Account',
     items: [
+      // Credits FIRST, plan second: reading the balance is the frequent visit
+      // and changing the plan is the rare one. The row is in `Account`, not
+      // `Personal`, because a wallet belongs to the account — on a Team plan
+      // every seat spends the same balance, and filing it under "Personal"
+      // would claim otherwise. Jay asked for a Usage tab under Personal
+      // (2026-09-03); the scope is the one thing changed, and the word "usage"
+      // still finds this row through the command palette.
+      {
+        tab: 'credits',
+        label: 'Credits',
+        description: 'What this account has left to spend, and what it spent this period.',
+        icon: Coins,
+      },
       {
         tab: 'plan',
         label: 'Plan',
-        description: 'Your subscription, credits, and billing for this account.',
+        description: 'Your subscription, team seats, and billing for this account.',
         icon: CreditCard,
       },
     ],
@@ -154,10 +168,10 @@ const STATIC_GROUPS: readonly RailGroup[] = [
   // The 'Agent' group is gone, and 'Developer' went with it. Every one of
   // those rows configured a PROJECT, and the Customize bar gates on exactly the
   // person allowed to change them — so they live on that bar, at
-  // `/projects/<id>/config` (`capabilities/project-settings/`). Two of them —
-  // Sandbox templates and Feature flags — came BACK on 2026-09-02 as a second
-  // door onto the same components; `GRADUATED` in `settings-tabs.ts` still
-  // carries every bookmark to the config page.
+  // the Customize bar. Sandbox templates, Feature flags and Upgrades came
+  // BACK on 2026-09-02, when `/projects/<id>/config` was retired — this rail
+  // is their only mount now, and `GRADUATED` in `settings-tabs.ts` carries
+  // every bookmark that still names a config section.
   //
   // The 'Organization' group is gone for a different reason, recorded above
   // its own removal: those rows configured the ACCOUNT and moved to

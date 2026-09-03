@@ -71,7 +71,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           // are deliberately left empty: fumadocs renders those two into a
           // hardcoded `border bg-fd-secondary/50 rounded-lg` pill, and with
           // both empty its own `empty:hidden` drops the container entirely.
-          footer: <DocsSidebarFooter />,
+          // Keyed because fumadocs renders this slot as a bare item in a
+          // children ARRAY (`dist/layouts/docs/slots/sidebar.js`: `children:
+          // [languageSelect, iconLinks, footer]`), and React's reconciler warns
+          // on any unkeyed element it reconciles from an array. The element is
+          // ours, so the key has to be too — there is no prop fumadocs exposes
+          // to fix it from their side.
+          footer: <DocsSidebarFooter key="docs-sidebar-footer" />,
           // Collapse is still driven through useSidebar() by our own buttons
           // (docs-controls.tsx); false only strips fumadocs' built-in chrome.
           collapsible: false,

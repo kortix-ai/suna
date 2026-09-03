@@ -7,7 +7,9 @@
  * the subscription and the current plan"). It is a second door onto the SAME
  * component `/accounts/[id]?tab=billing` renders — `BillingTab` in
  * `features/accounts/settings/billing-tab.tsx` — mounted with the same
- * provider and the same gate, so nothing about billing is forked:
+ * provider and the same gate. One component, two mounts; the only difference
+ * is `showWallet`, which chooses which of the two blocks leads (see the JSX
+ * below and `BillingTab`'s own doc comment). No billing LOGIC is forked:
  *
  * - `BillingAccountProvider` scopes every billing hook below to THIS account,
  *   so a multi-account user never reads or mutates their primary account by
@@ -54,7 +56,16 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
         </div>
       ) : canWrite.allowed ? (
         <BillingAccountProvider accountId={accountId}>
-          <BillingTab returnUrl={planReturnUrl()} isActive />
+          {/* `showWallet={false}` (Jay, 2026-09-03: "in the plan, you need to
+              show just the team part, team seat"). The pane leads with
+              `PlanCard` — the subscription, with the seat count, price each
+              and monthly total as properties under it — instead of the
+              wallet-first `AccountOverviewTab`. Balance, credit composition,
+              period spend and limits are the Credits pane's subject now
+              (`tabs/credits-tab.tsx`), one row above this one in the rail.
+              `/accounts/[id]?tab=billing` passes nothing and keeps the
+              wallet-first layout unchanged. */}
+          <BillingTab returnUrl={planReturnUrl()} isActive showWallet={false} />
           <GlobalUpgradeModal />
         </BillingAccountProvider>
       ) : (

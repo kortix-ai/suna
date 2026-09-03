@@ -60,6 +60,18 @@ export type SettingsTab =
   // `billing` is spent on an `ACCOUNT_GRADUATED` redirect to the account page
   // and a live tab under it would shadow every bookmark pointing there.
   | 'plan'
+  // What the account has left to spend, and what it spent (Jay, 2026-09-03:
+  // "it's difficult to get to know how many credits we still have pending").
+  // Read-only — every mutation stays on `plan`, which this pane's one action
+  // navigates to.
+  //
+  // The id is `credits`, not `usage`, for the same reason `plan` is not
+  // `billing`: `usage` is an ACCOUNT_GRADUATED key below, pointing at
+  // `/accounts/<id>?tab=transactions`, and `legacySectionRedirect` resolves
+  // that map BEFORE live tabs — a tab under `usage` would shadow every
+  // bookmark to the account page's usage surface. The word still reaches this
+  // pane through the command palette's keyword bag.
+  | 'credits'
   // The first PROJECT-scoped tab in an otherwise person-scoped overlay, and a
   // deliberate partial reversal of the graduation described below (Jay,
   // 2026-09-01). Everything else that configures a project genuinely belongs
@@ -75,16 +87,17 @@ export type SettingsTab =
   // rail row is still LABELLED "General" under a "Workspace" group, which is
   // what it was called before it graduated — see `rail.ts`.
   //
-  // It renders `tabs/general-tab.tsx`, the same component
-  // `/projects/<id>/config?section=general` renders. ONE component, two
-  // mounts: nothing is forked, and the config page keeps working unchanged.
+  // It renders `tabs/general-tab.tsx`. That component had two mounts while
+  // `/projects/<id>/config?section=general` existed; since that page was
+  // retired on 2026-09-02 this tab is its ONLY mount, and the `general`
+  // redirect below is all that is left of the other one.
   | 'workspace'
   // Two more project-scoped rows, back on 2026-09-02 (Jay: "find some more
-  // settings that you can show in the workspace settings"). Both mount the
-  // SAME component the config page mounts — `SandboxTab` + `SnapshotsTab`,
+  // settings that you can show in the workspace settings"). Both mount what
+  // the config page used to mount — `SandboxTab` + `SnapshotsTab`,
   // `ExperimentalTab` — and gate on the same IAM read leaf
-  // (`isCustomizeSectionVisible`), so a person sees exactly the rows here that
-  // they see on `/projects/<id>/config`. The ids equal the config page's
+  // (`isCustomizeSectionVisible`), so a person sees exactly the rows the
+  // retired page showed them. The ids equal that page's
   // section keys on purpose: `legacySectionRedirect` checks `GRADUATED`
   // BEFORE live tabs, so a stale `/customize/sandbox` bookmark still lands on
   // the config page, while `/settings/sandbox` opens this overlay.
@@ -99,13 +112,15 @@ export type SettingsTab =
 // project, and the account already owns a full page for them at
 // `/accounts/[id]`. They resolve through `ACCOUNT_GRADUATED` below.
 //
-// The project's own configuration is gone too — General, Members, Secrets,
+// The project's own configuration left too — General, Members, Secrets,
 // Channels, Repositories, Models, Sandbox templates, Snapshots, Marketplace,
 // Review, Voice, Feature flags (was `experimental`) and Upgrades. All thirteen
-// are sections of the Customize bar's Settings tab now, at
-// `/projects/[id]/config?section=<key>`, and resolve through `GRADUATED`.
-// What is left in this overlay is exactly what is scoped to the PERSON using
-// it: Profile, Preferences, Connected accounts.
+// became sections of the Customize bar's Settings tab, `/projects/[id]/config
+// ?section=<key>`, and that page was itself retired on 2026-09-02: each id now
+// resolves through `GRADUATED` to a capability page, or is a live tab of this
+// overlay again (`workspace`, `sandbox`, `feature-flags`, `upgrades`).
+// Nothing routes to `/config` any more — `menu-registry-destinations.test.ts`
+// fails on a palette row that tries.
 
 /**
  * The default must be a tab that survives every gate, or the overlay opens on
@@ -123,6 +138,7 @@ export const SETTINGS_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'tokens',
+  'credits',
   'plan',
   // Project-scoped, so NOT in `ACCOUNT_SCOPED_SETTINGS_TABS`
   // (`settings-panel.tsx`): the overlay hides the whole Workspace group when it

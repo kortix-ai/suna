@@ -1,5 +1,7 @@
 import { VALID_TABS } from '@/features/accounts/hub/sections';
 import { describe, expect, test } from 'bun:test';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 import {
   CAPABILITY_TABS,
@@ -46,6 +48,65 @@ import { getItemsForSurface } from '@/lib/menu-registry';
 
 const PROJECT_TOKEN = '{projectId}';
 const ACCOUNT_TOKEN = '{accountId}';
+
+/**
+ * Every routable path under `src/app`, as a segment list.
+ *
+ * Route groups (`(app)`, `(capabilities)`) are stripped — they organize files,
+ * not URLs — and a directory counts only when it holds a `page.tsx`, which is
+ * what makes a path routable in the App Router. `[id]`, `[...slug]` and
+ * `[[...slug]]` stay as-is and are matched structurally below.
+ */
+function collectRoutes(dir: string, segments: string[] = [], out: string[][] = []): string[][] {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  if (entries.some((e) => e.isFile() && e.name === 'page.tsx')) out.push(segments);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    // A route group contributes no URL segment; `@slot` and `_private`
+    // directories contribute no route at all.
+    if (entry.name.startsWith('@') || entry.name.startsWith('_')) continue;
+    const isGroup = entry.name.startsWith('(') && entry.name.endsWith(')');
+    collectRoutes(join(dir, entry.name), isGroup ? segments : [...segments, entry.name], out);
+  }
+  return out;
+}
+
+const APP_DIR = join(import.meta.dir, '..', 'app');
+const ROUTES = collectRoutes(APP_DIR);
+
+/**
+ * One href's path against one route's segments.
+ *
+ * A literal segment must match exactly. A dynamic one (`[id]`) matches any
+ * single segment, which is what lets the registry's own `{projectId}` and
+ * `{accountId}` tokens stand in for the ids they are replaced by at render.
+ * A catch-all (`[...slug]`) swallows the remainder; the optional form
+ * (`[[...slug]]`) also matches a path that stops before it.
+ */
+function routeMatches(route: string[], path: string[]): boolean {
+  let r = 0;
+  for (const actual of path) {
+    const segment = route[r];
+    if (segment === undefined) return false;
+    if (segment.startsWith('[[...') || segment.startsWith('[...')) return true;
+    const isDynamic = segment.startsWith('[') && segment.endsWith(']');
+    if (!isDynamic && segment !== actual) return false;
+    r++;
+  }
+  if (r === route.length) return true;
+  return route.length === r + 1 && route[r]!.startsWith('[[...');
+}
+
+/** Whether any route in `src/app` serves this href. */
+function isLiveRoute(href: string): boolean {
+  const path = href.split('?')[0]!.split('#')[0]!.split('/').filter(Boolean);
+  return ROUTES.some((route) => routeMatches(route, path));
+}
 
 const paletteRows = getItemsForSurface('commandPalette').filter(
   (item) => !LEGACY_PALETTE_HIDDEN.has(item.id),
@@ -167,5 +228,65 @@ describe('the destinations that need a resolved id at runtime', () => {
     const row = paletteRows.find((item) => item.id === 'review-changes');
     expect(row?.requiresProject).toBe(true);
     expect(row?.requiresSession).toBeUndefined();
+  });
+});
+
+/**
+ * ============================================================================
+ * THE OTHER DIRECTION: EVERY ROW POINTS AT A ROUTE THAT EXISTS.
+ * ============================================================================
+ *
+ * Everything above pins that each destination HAS a row. Nothing pinned the
+ * reverse, and that is the half a real defect walked through: `/projects/<id>/
+ * config` was deleted on 2026-09-02, and `proj-config-feature-flags` kept
+ * pointing at it until 2026-09-03. Typing "feature flag" offered that row
+ * first, under Navigation, and selecting it navigated to a 404 instead of
+ * opening the Feature flags pane.
+ *
+ * Deleting a route is the moment this breaks, and it breaks silently: the
+ * registry is a plain data table, so no import goes red and no type narrows.
+ * Reading `src/app` from disk is what makes the two facts one fact.
+ */
+describe('every palette row points at a live route', () => {
+  test('the route table was actually found', () => {
+    // A wrong `APP_DIR` would make every assertion below vacuously pass.
+    expect(ROUTES.length).toBeGreaterThan(50);
+    expect(ROUTES.some((r) => r.join('/') === 'projects/[id]/files')).toBe(true);
+  });
+
+  test('/projects/[id]/config is gone, so nothing may point at it', () => {
+    // The specific route this test exists because of.
+    expect(isLiveRoute('/projects/{projectId}/config?section=feature-flags')).toBe(false);
+  });
+
+  for (const row of paletteRows.filter((item) => item.kind === 'navigate' && item.href)) {
+    test(`"${row.label}" (${row.id}) → ${row.href}`, () => {
+      expect({ id: row.id, href: row.href, live: isLiveRoute(row.href!) }).toEqual({
+        id: row.id,
+        href: row.href,
+        live: true,
+      });
+    });
+  }
+});
+
+describe('the retired /config sections are reached through the settings overlay', () => {
+  test('no registry row keeps a /config href', () => {
+    // Belt-and-braces over the loop above, and the assertion that names the
+    // path rather than the row: a NEW row pointing at `/config` fails here
+    // even if someone also re-adds the route.
+    const offenders = paletteRows
+      .filter((item) => item.href?.includes('/config'))
+      .map((item) => item.id);
+    expect(offenders).toEqual([]);
+  });
+
+  test('Feature flags is reachable, and only as the derived settings row', () => {
+    // The row that answers "feature flag" now. It is derived from the rail
+    // (`settings-palette-items.ts`) and opens the in-palette picker through
+    // `SETTINGS_TAB_SUBMENU_PAGE`, never a URL — which is why it cannot rot
+    // the way the registry row did.
+    expect(SETTINGS_TAB_SUBMENU_PAGE['feature-flags']).toBe('flags');
+    expect(paletteRows.some((item) => item.id === 'proj-config-feature-flags')).toBe(false);
   });
 });

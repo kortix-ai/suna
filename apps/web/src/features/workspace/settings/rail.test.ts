@@ -43,6 +43,7 @@ describe('railGroups', () => {
       'preferences',
       'connected',
       'tokens',
+      'credits',
       'plan',
     ]);
   });

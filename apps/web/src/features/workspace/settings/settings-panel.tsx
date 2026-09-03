@@ -40,6 +40,7 @@ import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { AppearanceTab } from './tabs/appearance-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
+import { CreditsTab } from './tabs/credits-tab';
 import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
 import { PlanTab } from './tabs/plan-tab';
@@ -79,6 +80,11 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
   'tokens',
+  // Same scope as `plan` below — one wallet per account, read through the same
+  // resolved id — so it renders wherever `plan` does. Listed before it, in the
+  // rail's own order, because `command-palette.test.tsx` asserts this array
+  // equals `PALETTE_ACCOUNT_SCOPED_TABS` element for element.
+  'credits',
   // The plan is the ACCOUNT's, and the account is resolved the same way the
   // Tokens pane resolves it (`useSettingsAccountId`), so it renders with or
   // without a project too.
@@ -92,9 +98,10 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
 ];
 
 /**
- * The two Workspace rows that gate on an IAM read leaf, keyed to the
- * `CustomizeSection` the config page gates the same pane on
- * (`project-settings-sections.ts`). `workspace` (General) is not here: every
+ * The three Workspace rows that gate on an IAM read leaf, keyed to the
+ * `CustomizeSection` the retired config page gated the same pane on — the
+ * section keys outlived that page and live in `lib/project-actions.ts`.
+ * `workspace` (General) is not here: every
  * member may see the workspace's name and icon, and `GeneralTab` gates its own
  * controls on write.
  */
@@ -140,9 +147,9 @@ export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | un
  * Connected accounts are user-scoped, so they render with or without a
  * project. The per-section IAM probe this used to run
  * (`GATED_TAB_SECTION` -> `isCustomizeSectionVisible`) went with the
- * project-configuration tabs it gated — those live at
- * `/projects/[id]/config` now, and that page runs the identical probe over
- * the identical leaves (`capabilities/project-settings/`).
+ * project-configuration tabs it gated. Most of those are capability pages now
+ * (`capabilities/`), which run their own probes; the four that came back to
+ * this overlay are gated here again, by `PROJECT_GATED_TABS` above.
  *
  * The function stays because the CONCEPT stays: a tab added here must declare
  * whether it needs a project, and the command palette mirrors this decision
@@ -552,10 +559,10 @@ function SettingsTabPane({
 }) {
   if (!active) return null;
 
-  // The SAME component `/projects/<id>/config?section=general` renders
-  // (`capabilities/project-settings/project-settings-page.tsx`), not a copy.
-  // Workspace name and icon have one implementation and one set of mutations;
-  // this overlay is a second door onto it, not a second version of it.
+  // Workspace name and icon have one implementation and one set of mutations,
+  // and this is now its only mount: `/projects/<id>/config` and the
+  // `capabilities/project-settings/` directory behind it were both retired on
+  // 2026-09-02. This pane was the second door; it is the only door.
   //
   // The `projectId` guard is belt-and-braces: the row is filtered out of the
   // rail whenever there is no project, so this branch is unreachable without
@@ -601,6 +608,9 @@ function SettingsTabPane({
   }
   if (item.tab === 'tokens') {
     return <TokensTab accountId={accountId} />;
+  }
+  if (item.tab === 'credits') {
+    return <CreditsTab accountId={accountId} />;
   }
   if (item.tab === 'plan') {
     return <PlanTab accountId={accountId} />;

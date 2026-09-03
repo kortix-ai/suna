@@ -275,6 +275,11 @@ describe('queries return the rows they name', () => {
       'nav:account-usage',
       'nav:nav-accounts',
       'settings:connected',
+      // The Credits row's rail description reads "What this account has left
+      // to spend" — the wallet is the ACCOUNT's, not the person's, and saying
+      // so is why that row owns the word rather than inheriting it from the
+      // `Account` group heading it sits under.
+      'settings:credits',
       // The Plan row's rail description reads "for this account".
       'settings:plan',
       'settings:profile',

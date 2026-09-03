@@ -33,6 +33,15 @@ const DISPLAY_ONLY = [
   join('features', 'billing', 'credit-transactions.tsx'),
   join('features', 'billing', 'transactions-table.tsx'),
   join('features', 'billing', 'account-overview.tsx'),
+  // The Credits pane, added 2026-09-03. Same class as `account-overview.tsx`
+  // directly above and for the same reason: it RENDERS the wallet and decides
+  // nothing with it. Its one `balance < 0` paints the figure red and appends
+  // the word "owed" — a display branch, not an entitlement one. The pane's
+  // only gate, `canOfferTopup()`, reads `subscription.can_purchase_credits`
+  // and `can_manage_billing`; it never looks at the number. Listed here rather
+  // than dodged by renaming the variable: an exemption you can read beats a
+  // tripwire quietly routed around.
+  join('features', 'workspace', 'settings', 'tabs', 'credits-tab.tsx'),
   join('stores', 'subscription-store.tsx'),
   join('hooks', 'billing'),
 ];
