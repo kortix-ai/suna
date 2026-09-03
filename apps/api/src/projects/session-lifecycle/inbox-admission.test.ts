@@ -58,17 +58,60 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
-  test('a live turn does not block runtime forwarding', async () => {
-    // Turn authority controls wire-id placement, not admission. OpenCode owns
-    // the safe execution boundary after the durable inbox forwards the prompt.
+  test('a LIVE TURN holds the prompt back — one queued message runs at a time', async () => {
+    // THE RULE THIS GATE EXISTS FOR. OpenCode picks up new user messages at
+    // STEP boundaries inside a running turn, and it "parents each step on the
+    // newest user message and answers everything before it in that step"
+    // (`forwarded-placement.ts`). So two prompts forwarded into one live turn
+    // share ONE answer: reported 2026-09-04 as a 13-step turn followed by
+    // "tell me HI" and "tell me bye" queued together, answered once, with
+    // "HI" never spoken.
+    //
+    // Forwarding mid-turn was tried (4ee30a9c3b) to remove the wait between
+    // queued messages, and this is the behaviour it bought. The wait it was
+    // removing is gone anyway: `promoteNextInboxRow` is AWAITED on the
+    // daemon's own `session.idle` relay (`r4.ts`), and the backoff below is a
+    // 2s-capped fallback rather than the 30s ceiling that produced the
+    // measured dead air.
     const box = { status: 'active', metadata: { activeTurns: { ...activeTurn('t1'), ...activeTurn('t2') } } };
     expect(sessionHoldsTurnAuthority(box)).toBe(true);
 
     const admission = await admitInboxPrompt(row(), {
+      readSandbox: async () => box,
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(admission).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
+  });
+
+  test('a STOPPED box holds nothing back — stale metadata is not a live turn', async () => {
+    // The gate reads the same predicate `GET .../turn` serves from, so a
+    // parked box whose metadata still names a turn cannot wedge the queue.
+    const admission = await admitInboxPrompt(row(), {
+      readSandbox: async () => ({ status: 'stopped', metadata: { activeTurns: activeTurn('t1') } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
     expect(admission).toEqual({ admit: true });
+  });
+
+  test('"send now" does NOT jump a live turn — it jumps the QUEUE', async () => {
+    // Promotion reorders the line. It cannot put a second message in front of
+    // a turn that is already running, because that is the merge above.
+    const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+    });
+    expect(admission).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
   });
 
   test('refuses when an OLDER prompt for the same session is still pending', async () => {
@@ -77,6 +120,7 @@ describe('admitInboxPrompt', () => {
     // own messages on the wire out of the order they typed them.
     const seen: Array<{ sessionId: string; row: SessionLifecycleCommandRow }> = [];
     const admission = await admitInboxPrompt(row(), {
+      readSandbox: async () => null,
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async (sessionId, candidate) => {
         seen.push({ sessionId, row: candidate });
@@ -104,6 +148,7 @@ describe('admitInboxPrompt', () => {
     // written for any of it. Admitting a second prompt into that window puts
     // two deliveries of one session on the wire at once.
     const admission = await admitInboxPrompt(row(), {
+      readSandbox: async () => null,
       hasInFlightPrompt: async () => true,
       hasOlderPendingPrompt: async () => false,
     });
@@ -116,6 +161,7 @@ describe('admitInboxPrompt', () => {
 
   test('admits a session whose prompt is the oldest pending one', async () => {
     const admission = await admitInboxPrompt(row(), {
+      readSandbox: async () => null,
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
@@ -126,6 +172,7 @@ describe('admitInboxPrompt', () => {
     // "Send now" on one queued row: the user pointed at it and must get THAT
     // message, not the oldest one.
     const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
+      readSandbox: async () => null,
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => true,
     });
@@ -135,6 +182,7 @@ describe('admitInboxPrompt', () => {
   test('a promoted row still waits for a sibling prompt already ON THE WIRE', async () => {
     // "Send now" yields the ORDERING rule, not the one-prompt-at-a-time rule.
     const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
+      readSandbox: async () => null,
       hasInFlightPrompt: async () => true,
       hasOlderPendingPrompt: async () => false,
     });
@@ -170,6 +218,7 @@ describe('admitInboxPrompt', () => {
     const admission = await admitInboxPrompt(
       row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 99 } }),
       {
+        readSandbox: async () => null,
         hasInFlightPrompt: async () => false,
         hasOlderPendingPrompt: async () => true,
       },
@@ -185,6 +234,7 @@ describe('admitInboxPrompt', () => {
     // Refusing here would requeue it for ever; `executeQueuedContinue` already
     // dead-letters a row with no session.
     const admission = await admitInboxPrompt(row({ sessionId: null }), {
+      readSandbox: async () => null,
       hasInFlightPrompt: async () => {
         throw new Error('must not read');
       },

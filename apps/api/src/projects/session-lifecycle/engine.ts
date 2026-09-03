@@ -59,7 +59,6 @@ import {
   markCommandForwarded,
   markCommandQueued,
   markCommandSucceeded,
-  promoteNextInboxRow,
   requeueForAdmission,
   resultFromExistingCommand,
   withNextDeliveryAttempt,
@@ -1800,21 +1799,23 @@ export async function executeQueuedContinue(
       wireMessageId = replaced;
     }
     if (delivery === 'delivered') {
-      // OpenCode accepts mid-turn prompts into its own safe-boundary queue.
-      // Promote the next durable row now so a burst reaches that queue without
-      // waiting for terminal relay delivery. Turn-end and reaper promotion are
-      // recovery wakes if this asynchronous chain is lost.
-      void promoteNextInboxRow(row.sessionId)
-        .then((idempotencyKey) =>
-          idempotencyKey ? drainSessionLifecycleQueue({ idempotencyKey }) : null,
-        )
-        .catch((error) => {
-          logger.warn('[session-lifecycle] next inbox prompt promotion failed', {
-            session_id: row.sessionId,
-            command_id: row.commandId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
+      // A successful POST starts a TURN, and the TERMINAL RELAY owns promotion
+      // of the next row — `routes/r4.ts`, "THE TURN ENDED — the session's next
+      // queued prompt is admissible NOW", which awaits `promoteNextInboxRow`
+      // before it acknowledges the daemon.
+      //
+      // Promoting here instead is what let a burst of queued messages share
+      // one answer: the next row was made due while this turn was still
+      // running, admission had no turn gate to stop it, and OpenCode merged
+      // every prompt it found into the step that reached them. Reported
+      // 2026-09-04 — "tell me HI" and "tell me bye" queued behind a 13-step
+      // turn produced exactly one reply, "bye".
+      //
+      // Promoting here is also a LOST WAKE even with the gate back: the row
+      // would be claimed mid-turn, refused by admission, and requeued — after
+      // the terminal relay has already checked the queue — so the next prompt
+      // waits out the admission backoff instead of going out on the turn-end
+      // event.
       tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }

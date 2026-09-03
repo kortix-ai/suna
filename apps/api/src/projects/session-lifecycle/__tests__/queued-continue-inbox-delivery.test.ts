@@ -467,7 +467,17 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
-  test('a prompt submitted into a live turn is forwarded with a reminted wire id', async () => {
+  test('a prompt submitted into a LIVE TURN waits — then goes out re-minted when the turn ends', async () => {
+    // REWRITTEN 2026-09-04, and this is the behaviour change, not a fixture
+    // tweak. It used to assert the prompt was FORWARDED into the live turn.
+    // That is how two queued messages came to share one answer: OpenCode picks
+    // new user messages up at step boundaries inside the running turn and
+    // "answers everything before it in that step", so "tell me HI" and "tell
+    // me bye" queued behind a 13-step turn produced one reply, "bye".
+    //
+    // The prompt now waits for the turn. Nothing about the RE-MINT changes —
+    // the refusal stamps `admission_reason`, which is what `waited` reads, so
+    // the delivery after the turn still lifts the id above the transcript tip.
     boxRow = {
       status: 'active',
       metadata: {
@@ -485,11 +495,22 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     transcript = [
       { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
     ];
-    const outcome = await executeQueuedContinue(baseRow());
+    const refused = await executeQueuedContinue(baseRow());
+
+    expect(refused).toBe('queued');
+    expect(capturedBodies).toEqual([]);
+    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
+      { commandId: 'cmd-1', reason: 'turn_active' },
+    ]);
+
+    // The daemon's `session.idle` relay ends the turn and promotes this row.
+    boxRow = { status: 'active', metadata: { activeTurns: {} } };
+    const outcome = await executeQueuedContinue(
+      baseRow({ result: { admission_reason: 'turn_active' } }),
+    );
 
     expect(outcome).toBe('succeeded');
     expect(capturedBodies).toHaveLength(1);
-    expect(requeues).toEqual([]);
     const sent = capturedBodies[0].messageID as string;
     expect(sent).not.toBe(SUBMITTED_WIRE_ID);
     expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
@@ -635,14 +656,16 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
-    // Accepted delivery is the normal wake for the next durable row. Turn-end
-    // and reaper promotion remain recovery paths for a lost chain kick.
+    // AND THE DELIVERY PATH KICKS NOTHING. Promotion belongs to the turn-end
+    // relay (`routes/r4.ts`), which is the only place that knows the answer is
+    // finished. Promoting on accepted delivery instead made the next row due
+    // while this turn was still running — the merge that let two queued
+    // messages share one answer — and it was a lost wake besides: the row was
+    // claimed mid-turn, refused, and requeued AFTER the relay had already
+    // checked the queue, so it waited out the backoff instead.
     await Bun.sleep(300);
-    expect(promotionCalls).toEqual(['sess-ordered']);
-    expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([
-      null,
-      'queue-next-idempotency-key',
-    ]);
+    expect(promotionCalls).toEqual([]);
+    expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([null]);
   });
 
   test('chains three prompts in canonical FIFO order without overlapping posts', async () => {
@@ -707,9 +730,19 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     const result = await drainSessionLifecycleQueue({ limit: 10 });
     expect(result).toMatchObject({ claimed: 3, succeeded: 1, queued: 2 });
 
-    const deadline = Date.now() + 2_000;
-    while (capturedBodies.length < 3 && Date.now() < deadline) await Bun.sleep(20);
+    // ONE drain sends ONE prompt. The other two are put back — the delivery
+    // path no longer chains them, because a chained row lands inside the turn
+    // the first prompt just started and gets merged into its step.
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(promotionCalls).toEqual([]);
 
+    // B and C go out on the turn-end relay's targeted drain, one per turn —
+    // `routes/r4.ts` awaits `promoteNextInboxRow` and kicks exactly this.
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-b' });
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c' });
+
+    // CANONICAL SEND ORDER, one post at a time: the client sent A, B, C and the
+    // database handed them over C, B, A.
     expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB, wireC]);
     expect(maxActivePosts).toBe(1);
     expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([
@@ -717,6 +750,5 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       'queue-b',
       'queue-c',
     ]);
-    expect(promotionCalls).toEqual(['sess-inbox-delivery-1', 'sess-inbox-delivery-1', 'sess-inbox-delivery-1']);
   });
 });
