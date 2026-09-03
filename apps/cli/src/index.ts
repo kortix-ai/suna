@@ -36,6 +36,7 @@ import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
+import { runSubprojects } from './commands/subprojects.ts';
 import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
 import { runTriggers } from './commands/triggers.ts';
@@ -270,6 +271,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'marketplace',
             args: '<subcommand>',
             blurb: 'Search, show, install, and inspect marketplace items',
+          },
+          {
+            name: 'subprojects',
+            args: '<subcommand>',
+            blurb: 'Group sessions, instructions, context and schedules into subprojects',
           },
         ],
       },
@@ -551,6 +557,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'agents') {
     return runAgents(argv.slice(1));
   }
+  if (argv[0] === 'subprojects') {
+    return runSubprojects(argv.slice(1));
+  }
   if (argv[0] === 'models') {
     return runModels(argv.slice(1));
   }
@@ -692,6 +701,7 @@ const KNOWN_COMMANDS = [
   'skills',
   'registry',
   'agents',
+  'subprojects',
   'models',
   'access',
   'roles',
