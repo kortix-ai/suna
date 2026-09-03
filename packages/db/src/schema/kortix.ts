@@ -837,11 +837,13 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
-    // `GET /projects/:id/sessions?subproject=<slug>` and the subproject page's
-    // session count. Partial: most rows carry NULL and never need indexing.
-    index('idx_project_sessions_project_subproject')
-      .on(table.projectId, table.subproject)
-      .where(sql`${table.subproject} IS NOT NULL`),
+    // NOTE: `idx_project_sessions_project_subproject` (partial btree on
+    // (project_id, subproject) WHERE subproject IS NOT NULL — the
+    // `?subproject=` list filter and the subproject page's session count) is
+    // intentionally NOT declared here. It ships in
+    // 20260903191413522_subprojects_index.concurrent.ts so index creation stays
+    // on the CONCURRENTLY path; declaring it would make `db:generate` emit a
+    // conflicting plain CREATE INDEX. See MIGRATIONS.md.
     // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
     // origin_ref's live sessions, checked on every backend session create.
     // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in

@@ -13743,28 +13743,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_project_sessions_project_subproject": {
-          "name": "idx_project_sessions_project_subproject",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "subproject",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"kortix\".\"project_sessions\".\"subproject\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_project_sessions_project_origin": {
           "name": "idx_project_sessions_project_origin",
           "columns": [

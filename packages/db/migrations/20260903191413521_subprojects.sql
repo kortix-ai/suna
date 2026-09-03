@@ -21,5 +21,18 @@ set statement_timeout = '30s';
 --   [ ] Any ALTER TYPE ... ADD VALUE needs:
 -- enum-value-checked: <how you verified every env, including any faked baseline, has this value>
 
-ALTER TABLE "kortix"."project_sessions" ADD COLUMN "subproject" text;--> statement-breakpoint
-CREATE INDEX "idx_project_sessions_project_subproject" ON "kortix"."project_sessions" USING btree ("project_id","subproject") WHERE "kortix"."project_sessions"."subproject" IS NOT NULL;
+ALTER TABLE "kortix"."project_sessions" ADD COLUMN "subproject" text;
+
+-- backfill-safe: catalog seed, not a backfill. One INSERT of one literal row
+-- into kortix.object_policies (a small catalog table, one row per object
+-- type) keyed by object_type, idempotent via ON CONFLICT DO NOTHING. It
+-- touches no user data and scans nothing.
+--
+-- `closed` mirrors the existing `agent` row: a subproject with zero grant
+-- rows is usable by the manager tier only, and a member sees it only once a
+-- grant names them or one of their groups. `role_assignments.object_type` has
+-- an FK onto `object_policies.object_type`, so this seed must land before any
+-- `object_type='subproject'` grant row can be inserted (spec §4/§5).
+INSERT INTO kortix.object_policies (object_type, unscoped_default_for_member, description)
+VALUES ('subproject', 'closed', 'A subproject with no grant rows is usable by the manager tier only.')
+ON CONFLICT (object_type) DO NOTHING;
