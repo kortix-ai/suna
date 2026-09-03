@@ -22,7 +22,7 @@ import {
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForUser } from '../iam/actor';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 
@@ -96,11 +96,10 @@ export async function canAccessSandboxSession(input: {
       resolveShareSubject(input.userId),
       loadSessionGrants([input.sessionId]),
       isTriggerCreatedSessionMetadata(row.metadata)
-        ? authorize(
-            actorForUser(input.userId, input.accountId),
-            'project.members.manage',
-            { type: 'project', id: input.projectId },
-          )
+        ? authorize(actorForUser(input.userId, input.accountId), 'project.members.manage', {
+            type: 'project',
+            id: input.projectId,
+          })
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
     ]);
     const grants = grantsBySession.get(input.sessionId) ?? [];
@@ -180,7 +179,32 @@ async function resolveSandboxRef(
     .where(sql`lower(${sessionSandboxes.externalId}) = lower(${previewSandboxId})`)
     .limit(1);
 
-  return ciRow ?? null;
+  if (ciRow) return ciRow;
+
+  const environmentColumns = {
+    sandboxId: sql<string>`coalesce(${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
+    accountId: sessionEnvironments.accountId,
+    projectId: sessionEnvironments.projectId,
+  };
+  const environmentCondition = UUID_RE.test(previewSandboxId)
+    ? or(
+        eq(sessionEnvironments.externalId, previewSandboxId),
+        sql`${sessionEnvironments.metadata}->>'environmentId' = ${previewSandboxId}`,
+      )
+    : eq(sessionEnvironments.externalId, previewSandboxId);
+  const [environment] = await db
+    .select(environmentColumns)
+    .from(sessionEnvironments)
+    .where(environmentCondition)
+    .limit(1);
+  if (environment) return environment;
+
+  const [ciEnvironment] = await db
+    .select(environmentColumns)
+    .from(sessionEnvironments)
+    .where(sql`lower(${sessionEnvironments.externalId}) = lower(${previewSandboxId})`)
+    .limit(1);
+  return ciEnvironment ?? null;
 }
 
 /**
@@ -208,10 +232,7 @@ async function isAccountMember(userId: string, accountId: string): Promise<boole
   return !!row;
 }
 
-async function computeEntry(
-  previewSandboxId: string,
-  userId: string,
-): Promise<CacheEntry> {
+async function computeEntry(previewSandboxId: string, userId: string): Promise<CacheEntry> {
   const expiresAt = Date.now() + CACHE_TTL_MS;
 
   const ref = await resolveSandboxRef(previewSandboxId);
@@ -252,10 +273,7 @@ async function computeEntry(
   };
 }
 
-async function getOrCompute(
-  previewSandboxId: string,
-  userId: string,
-): Promise<CacheEntry> {
+async function getOrCompute(previewSandboxId: string, userId: string): Promise<CacheEntry> {
   const key = cacheKey(previewSandboxId, userId);
   const cached = previewContextCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached;

@@ -5,7 +5,8 @@ description: Run a session, stream its events, and handle the errors it can thro
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-A session is one agent run, in its own sandbox, on its own git branch.
+A session is one agent run on its own git branch. Most sessions use one
+sandbox. A Pi session separates the agent harness from its workspace compute.
 `kortix.session(projectId, sessionId)` returns the handle for everything a
 session does: start it, send prompts, stream events, and read status. This
 page covers the handle, the readiness handshake, streaming, and the typed
@@ -15,8 +16,9 @@ errors an SDK call can throw.
 const s = kortix.session(projectId, sessionId);
 ```
 
-`s` is the handle for everything a session does. The session ID, the sandbox
-ID, and the branch name are the same value. See
+`s` is the handle for everything a session does. The session ID is stable.
+Provider sandbox IDs are runtime implementation details and can differ from the
+session ID. See
 [Sessions](/docs/work/sessions) for the concept.
 
 ## Session lifecycle
@@ -26,6 +28,10 @@ ID, and the branch name are the same value. See
 | `s.get(opts?)` | `GET /projects/:pid/sessions/:sid` | Reads session details |
 | `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session or updates metadata |
 | `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
+| `s.ensureWorkspaceReady(opts?)` | `POST …/sessions/:sid/environment/ensure` for Pi | Lazily resolves the runtime that owns files, PTYs, and ports |
+| `s.environment.get()` | `GET …/sessions/:sid/environment` | Reads the Pi workspace runtime state |
+| `s.environment.ensure()` | `POST …/sessions/:sid/environment/ensure` | Provisions or resumes the Pi workspace runtime |
+| `s.environment.stop()` | `POST …/sessions/:sid/environment/stop` | Stops the Pi workspace runtime without stopping the agent harness |
 | `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
 | `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
 | `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
@@ -65,8 +71,8 @@ Three more read methods round out the handle:
 
 ## Readiness is a handshake
 
-Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
-needed, waits for the runtime to boot, and returns the resolved runtime.
+Before you send a prompt, call `ensureReady()`. It provisions the control
+runtime if needed, waits for it to boot, and returns the resolved runtime.
 
 ```ts
 const { opencodeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
@@ -77,6 +83,25 @@ On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
 retry.
 
 `s.send()` and `s.abort()` call `ensureReady()` for you.
+
+### Pi control and workspace runtimes
+
+A Pi session uses two runtime addresses:
+
+- The control runtime owns Pi, the model loop, messages, and the event stream.
+- The workspace runtime owns the repository, files, PTYs, and user ports.
+
+The workspace runtime starts only when it is needed:
+
+```ts
+const workspace = await s.ensureWorkspaceReady();
+console.log(workspace.workspaceSandboxId, workspace.workspaceRuntimeUrl);
+await s.files.read('/workspace/package.json');
+```
+
+Every `s.files` method calls `ensureWorkspaceReady()` automatically. Concurrent
+calls share one environment start. Non-Pi sessions return the control runtime
+from `ensureWorkspaceReady()` and do not create a second sandbox.
 
 ### Seed a server-authorized OpenCode pin
 
@@ -202,12 +227,15 @@ call `ensureReady()`.
 
 ```ts
 const { ok, health } = await s.health();
+await s.ensureWorkspaceReady();
 const url = s.previewUrl(3000, '/docs');
 ```
 
 `s.health()` never throws. Call it any time, even before the session has a
-runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
-`s.ensureReady()` first, or they throw `SessionNotReadyError`. See
+runtime. `s.previewUrl()` and `s.proxyUrl()` target the workspace when it is
+resolved. Call `s.ensureWorkspaceReady()` first for a Pi session. Call
+`s.ensureReady()` first for a one-box session. Otherwise they throw
+`SessionNotReadyError`. See
 [Session readiness errors](#session-readiness-errors).
 
 ## Streaming

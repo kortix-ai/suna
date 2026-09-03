@@ -1428,6 +1428,48 @@ test('session(...).files auto-provisions via ensureReady() if not already ready'
   expect(mkdirCall?.url).toContain('/p/sb-files-auto/8000/file/mkdir');
 });
 
+test('pi session files use the environment while messages stay on the worker', async () => {
+  globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
+    const url = requestUrl(input);
+    const request = input instanceof Request ? input : null;
+    const method = request?.method ?? init?.method ?? 'GET';
+    calls.push({ url, method });
+    if (url.includes('/sessions/FILES-PI/start')) {
+      return jsonResponse({
+        ...sessionStartPayload('worker-files-pi', 'ocs-files-pi'),
+        sandbox: { external_id: 'worker-files-pi', metadata: { sandbox_slug: 'pi-worker' } },
+      });
+    }
+    if (url.endsWith('/sessions/FILES-PI/environment/ensure')) {
+      return jsonResponse({
+        session_id: 'FILES-PI',
+        status: 'active',
+        external_id: 'environment-files-pi',
+        preview_url: 'https://environment.example',
+        preview_token: null,
+      });
+    }
+    if (url.includes('/file?path=')) return jsonResponse([]);
+    if (url.endsWith('/sessions/FILES-PI')) {
+      return jsonResponse({ agent_name: 'agent', metadata: {} });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const session = k.session('PROJ', 'FILES-PI');
+
+  await session.files.list('/workspace');
+  expect(calls.some((call) => call.url.endsWith('/environment/ensure'))).toBe(true);
+  expect(calls.find((call) => call.url.includes('/file?path='))?.url).toContain(
+    '/p/environment-files-pi/8000/file',
+  );
+
+  calls.length = 0;
+  await session.send('continue');
+  expect(calls.some((call) => call.url.includes('/p/worker-files-pi/8000/session/'))).toBe(true);
+});
+
 // ── ensureReady() polls a slow cold-start to ready instead of throwing on the
 // first non-ready check (a backend waiting to send its first turn must not
 // give up while the sandbox is still provisioning/starting) ─────────────────
