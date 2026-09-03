@@ -58,31 +58,13 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
-  test('a session in the middle of a turn holds the prompt in the durable inbox', async () => {
-    // `/prompt_async` interleaves a second prompt with the active turn. The
-    // durable inbox keeps the user bubble visible without forwarding it across
-    // that unsafe boundary.
+  test('a live turn does not block runtime forwarding', async () => {
+    // Turn authority controls wire-id placement, not admission. OpenCode owns
+    // the safe execution boundary after the durable inbox forwards the prompt.
     const box = { status: 'active', metadata: { activeTurns: { ...activeTurn('t1'), ...activeTurn('t2') } } };
     expect(sessionHoldsTurnAuthority(box)).toBe(true);
 
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => box,
-      hasInFlightPrompt: async () => false,
-      hasOlderPendingPrompt: async () => false,
-    });
-    expect(admission).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
-    });
-  });
-
-  test('a STOPPED box is admitted — wake-then-deliver, unchanged', async () => {
-    // Admission never wakes the box; `continueSession` does. A stale
-    // `activeTurns` record on a parked box holds no authority
-    // (`sessionHoldsTurnAuthority` reads the status first).
-    const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => ({ status: 'stopped', metadata: { activeTurns: activeTurn('t1') } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
@@ -95,7 +77,6 @@ describe('admitInboxPrompt', () => {
     // own messages on the wire out of the order they typed them.
     const seen: Array<{ sessionId: string; row: SessionLifecycleCommandRow }> = [];
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async (sessionId, candidate) => {
         seen.push({ sessionId, row: candidate });
@@ -123,7 +104,6 @@ describe('admitInboxPrompt', () => {
     // written for any of it. Admitting a second prompt into that window puts
     // two deliveries of one session on the wire at once.
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => true,
       hasOlderPendingPrompt: async () => false,
     });
@@ -136,7 +116,6 @@ describe('admitInboxPrompt', () => {
 
   test('admits a session whose prompt is the oldest pending one', async () => {
     const admission = await admitInboxPrompt(row(), {
-      readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
@@ -147,7 +126,6 @@ describe('admitInboxPrompt', () => {
     // "Send now" on one queued row: the user pointed at it and must get THAT
     // message, not the oldest one.
     const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
-      readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => true,
     });
@@ -157,7 +135,6 @@ describe('admitInboxPrompt', () => {
   test('a promoted row still waits for a sibling prompt already ON THE WIRE', async () => {
     // "Send now" yields the ORDERING rule, not the one-prompt-at-a-time rule.
     const admission = await admitInboxPrompt(row({ result: { promoted: true } }), {
-      readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => true,
       hasOlderPendingPrompt: async () => false,
     });
@@ -193,7 +170,6 @@ describe('admitInboxPrompt', () => {
     const admission = await admitInboxPrompt(
       row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 99 } }),
       {
-        readSandbox: async () => ({ status: 'active', metadata: {} }),
         hasInFlightPrompt: async () => false,
         hasOlderPendingPrompt: async () => true,
       },
@@ -209,7 +185,6 @@ describe('admitInboxPrompt', () => {
     // Refusing here would requeue it for ever; `executeQueuedContinue` already
     // dead-letters a row with no session.
     const admission = await admitInboxPrompt(row({ sessionId: null }), {
-      readSandbox: async () => ({ status: 'active', metadata: {} }),
       hasInFlightPrompt: async () => {
         throw new Error('must not read');
       },

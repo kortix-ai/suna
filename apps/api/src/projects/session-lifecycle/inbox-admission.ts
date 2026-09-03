@@ -8,22 +8,19 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 /**
  * The inbox's admission gate.
  *
- * A prompt sits in `session_lifecycle_commands` until the prior turn is idle
- * and every older prompt has left the delivery path. OpenCode's legacy
- * `/prompt_async` route interleaves inputs posted during a live turn. The inbox
- * must therefore serialize before that boundary instead of trusting runtime
- * placement to recover ownership afterwards.
+ * A prompt sits in `session_lifecycle_commands` until every older prompt has
+ * left the delivery path. A live turn is not an admission blocker: OpenCode
+ * persists mid-turn prompts and runs them at its next safe boundary.
  *
- * What is left is ORDER, and only order: one prompt of a session on the wire at
- * a time, oldest first, so the user's own messages reach OpenCode in the order
- * they were typed.
+ * Admission enforces ORDER only: one prompt of a session on the wire at a time,
+ * oldest first, so the user's own messages reach OpenCode in typed order.
  *
  * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
- * instant a turn ends (turn-stream), `promoteNextInboxRow` makes the session's
- * next row due and drains it. The
- * backoff below only covers the gap a lost kick would leave, so it stays cheap
- * and capped — 30s here compounded to 27s / 45s / 75s of dead air behind ~1s
- * deliveries (dev, 2026-08-18).
+ * instant the prior delivery succeeds, `promoteNextInboxRow` makes the
+ * session's next row due and drains it. Terminal completion and the reaper are
+ * recovery wakes. The backoff below only covers the gap a lost kick would
+ * leave, so it stays cheap and capped — 30s here compounded to 27s / 45s / 75s
+ * of dead air behind ~1s deliveries (dev, 2026-08-18).
  *
  * A refusal is NOT a failure: see `requeueForAdmission`, which gives the claim's
  * attempt increment back so waiting cannot burn the 5-attempt dead-letter budget.
@@ -100,11 +97,6 @@ export async function sessionHoldsLiveTurn(sessionId: string): Promise<boolean> 
 }
 
 export interface InboxAdmissionDeps {
-  /** The session's one sandbox row — its `metadata.activeTurns` is the turn
-   *  authority `sessionHoldsTurnAuthority` reads. */
-  readSandbox: (
-    sessionId: string,
-  ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
   hasOlderPendingPrompt: (
     sessionId: string,
     row: SessionLifecycleCommandRow,
@@ -115,14 +107,6 @@ export interface InboxAdmissionDeps {
 }
 
 const liveDeps: InboxAdmissionDeps = {
-  async readSandbox(sessionId) {
-    const [box] = await db
-      .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, sessionId))
-      .limit(1);
-    return box ?? null;
-  },
   async hasOlderPendingPrompt(sessionId, row) {
     const [older] = await db
       .select({ commandId: sessionLifecycleCommands.commandId })
@@ -177,10 +161,6 @@ export async function admitInboxPrompt(
     INBOX_ORDER_MAX_BACKOFF_MS,
     refusals,
   );
-
-  if (sessionHoldsTurnAuthority(await deps.readSandbox(row.sessionId))) {
-    return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
-  }
 
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
