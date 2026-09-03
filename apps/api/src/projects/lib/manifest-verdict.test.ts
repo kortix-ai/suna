@@ -22,8 +22,8 @@ name = "dev"
 `;
 
 describe('LATEST_MANIFEST_VERSION', () => {
-  test('is 2 — the only current manifest schema this platform ships', () => {
-    expect(LATEST_MANIFEST_VERSION).toBe(2);
+  test('is 3 — the Pi-native manifest schema this platform ships', () => {
+    expect(LATEST_MANIFEST_VERSION).toBe(3);
   });
 });
 
@@ -80,14 +80,14 @@ describe('resolveManifestVerdict — a real v1 kortix.toml is offered a migratio
 });
 
 describe('resolveManifestVerdict — v2 has no implemented upgrade path', () => {
-  test('reports version 2 as latest and offers nothing', () => {
+  test('reports version 3 as latest but offers no automatic runtime conversion', () => {
     const verdict = resolveManifestVerdict({
       raw: V2_YAML,
       format: 'yaml',
       path: 'kortix.yaml',
     });
     expect(verdict.version).toBe(2);
-    expect(verdict.latest_version).toBe(2);
+    expect(verdict.latest_version).toBe(3);
     expect(verdict.migration_offered).toBe(false);
     expect(verdict.target_version).toBeNull();
   });
