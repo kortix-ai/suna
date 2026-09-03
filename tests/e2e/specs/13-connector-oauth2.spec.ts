@@ -65,27 +65,32 @@ test.describe("13 — Custom connector OAuth2", () => {
     });
     await dismissOnboarding(page);
 
-    // A user opens the Customize index from the sidebar. This is a real
-    // link, so navigation also works before client hydration completes.
-    // The row lands on the index (Jay, 2026-08-17: "even with the index
-    // thing it should just be the home page") rather than jumping straight
-    // into a tab, so reaching Connectors specifically is a second real-link
-    // hop, off the index's own card grid.
+    // A user opens Customize from the sidebar. This is a real link, so
+    // navigation also works before client hydration completes.
+    //
+    // The row lands on AGENTS, not on an index. Customize is agent-centric
+    // (Marko, 2026-09-01: the agent is the object a person is granted), so
+    // `ProjectCustomizeNavItem` points at the first capability tab the caller
+    // may open — `capabilityTabHref(projectId, tab)`. The former index at
+    // `/customize` still resolves and redirects here, which is why every
+    // bookmark keeps working; it is simply no longer where the sidebar goes.
+    // Reaching Connectors is then one hop along the capability TAB BAR rather
+    // than a card on a chooser page.
     const customizeLink = page.getByRole("link", { name: /^Customize$/i });
     await expect(customizeLink).toHaveAttribute(
       "href",
-      `/projects/${projectId}/customize`,
+      `/projects/${projectId}/customize/agents`,
     );
     await customizeLink.click();
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${projectId}/customize$`),
+      new RegExp(`/projects/${projectId}/customize/agents$`),
     );
-    const connectorsCard = page.getByRole("link", { name: /^Connectors/i });
-    await expect(connectorsCard).toHaveAttribute(
+    const connectorsTab = page.getByRole("link", { name: /^Connectors/i });
+    await expect(connectorsTab).toHaveAttribute(
       "href",
       `/projects/${projectId}/customize/connectors`,
     );
-    await connectorsCard.click();
+    await connectorsTab.click();
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/customize/connectors$`),
     );
