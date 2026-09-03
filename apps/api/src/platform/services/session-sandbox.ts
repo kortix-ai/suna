@@ -35,7 +35,6 @@ import {
   type PreparedInitialSandboxTurn,
   initialSandboxTurnMetadata,
 } from '../../projects/sandbox-turn-lifecycle';
-import { readManifest } from '../../projects/triggers';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { db } from '../../shared/db';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';

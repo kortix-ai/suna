@@ -1,3 +1,4 @@
+import { piRuntimeArtifacts } from '@kortix/db';
 /**
  * The durable, shared store for compiled pi worker runtimes.
  *
@@ -19,8 +20,7 @@
  * so an S3 driver can be added later without touching callers. Rows are ~900 KB
  * of minified JS, TOASTed and compressed.
  */
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { piRuntimeArtifacts } from '@kortix/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 
 /** Newest artifacts kept per (project, agent). Older ones are pruned on write. */
@@ -117,10 +117,7 @@ export async function pruneStoredPiRuntimeArtifacts(
     .select({ artifactKey: piRuntimeArtifacts.artifactKey })
     .from(piRuntimeArtifacts)
     .where(
-      and(
-        eq(piRuntimeArtifacts.projectId, projectId),
-        eq(piRuntimeArtifacts.agentName, agentName),
-      ),
+      and(eq(piRuntimeArtifacts.projectId, projectId), eq(piRuntimeArtifacts.agentName, agentName)),
     )
     .orderBy(sql`${piRuntimeArtifacts.createdAt} desc`);
   const stale = rows.slice(retain).map((r) => r.artifactKey);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { accountMembers, projectSessions, sessionEnvironments } from '@kortix/db';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
 

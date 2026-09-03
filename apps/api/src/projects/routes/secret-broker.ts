@@ -16,7 +16,6 @@ import { recordAuditEvent } from '../../shared/audit';
 import { loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { readBody } from '../lib/serializers';
-import { intersectSecretGrants } from '../secrets';
 
 projectsApp.openapi(
   createRoute({

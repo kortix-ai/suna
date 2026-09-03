@@ -41,7 +41,8 @@ test('the COMPOSER keeps the ungated projection — holding on a maybe-open turn
   // `/` commands go straight at OpenCode with no admission gate, so the
   // composer must stay conservative even when the indicator does not. If this
   // ever reads `generating`, a command could be dispatched into a live turn.
-  expect(code).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
+  expect(code).toContain('sessionWorking={effectiveBusy}');
+  expect(code).toContain('hasRetryingAssistant,');
 });
 
 test('the transcript wait renders the skeleton, and the boot loader only covers a real boot', () => {
@@ -81,9 +82,7 @@ test('the skeleton keeps a stable shape across remounts', () => {
  * ONE rule for every visible affordance: the runtime's own stream, or this
  * tab's own send. Never a poll.
  */
-const layout = strip(
-  readFileSync(join(import.meta.dir, 'session-layout.tsx'), 'utf8'),
-);
+const layout = strip(readFileSync(join(import.meta.dir, 'session-layout.tsx'), 'utf8'));
 
 test('THE INTERRUPT AFFORDANCE fails SAFE — isBusy keeps the broad answer', () => {
   // Reported 2026-08-29 on pi: a long answer had NO Stop button, because this
@@ -109,7 +108,8 @@ test('the SHIMMER stays strict — a poll may never claim the agent is thinking'
 test('the COMMAND gate keeps the ungated projection too', () => {
   // A `/` command goes straight at the runtime with no admission gate, so
   // holding it over a turn that MIGHT be open is correct.
-  expect(code).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
+  expect(code).toContain('sessionWorking={effectiveBusy}');
+  expect(code).toContain('hasRetryingAssistant,');
 });
 
 test('the layout panel keeps the broad answer, for the same asymmetry', () => {

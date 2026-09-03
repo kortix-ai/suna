@@ -45,7 +45,7 @@ export function normalizeFilePath(raw: string): PathResult {
     // storing it would hand the next consumer a name that decodes to something
     // else again — and an encoded NUL still truncates a C string downstream.
     if (/%(2e|2f|5c|00)/i.test(segment)) {
-      let probe = segment;
+      let probe: string;
       try {
         probe = decodeURIComponent(segment);
       } catch {
@@ -109,7 +109,8 @@ export function normalizeFilesystemName(raw: string): PathResult {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(name)) {
     return {
       ok: false,
-      reason: 'name must start alphanumeric and contain only letters, digits, dot, dash, underscore',
+      reason:
+        'name must start alphanumeric and contain only letters, digits, dot, dash, underscore',
     };
   }
   if (RESERVED_FILESYSTEM_NAMES.has(name.toLowerCase())) {
@@ -127,5 +128,8 @@ export function normalizeListPrefix(raw: string | undefined | null): PathResult 
   const normalized = normalizeFilePath(raw);
   if (!normalized.ok) return normalized;
   // Match on a segment boundary so prefix `not` cannot return `notes/x`.
-  return { ok: true, path: normalized.path.endsWith('/') ? normalized.path : `${normalized.path}/` };
+  return {
+    ok: true,
+    path: normalized.path.endsWith('/') ? normalized.path : `${normalized.path}/`,
+  };
 }

@@ -101,14 +101,14 @@ git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.re
 # Authenticate the fetch when we were given a token.
 #
 # GitHub answers this sandbox's ref advertisement anonymously and then REFUSES
-# the fetch that follows. Measured 2026-09-02 from the pi.kortix.com sandbox:
+# the fetch that follows. Measured 2026-09-02 from the stable branch preview sandbox:
 # GET /info/refs?service=git-upload-pack returned 200 ten times out of ten while
 # POST /git-upload-pack returned 401 with www-authenticate: Basic realm="GitHub",
 # and \`git ls-remote\` failed 10 times out of 10. The repository is PUBLIC —
 # GitHub throttles unauthenticated fetches from that datacenter range, and it
 # does it on the expensive request only, which is why a plain curl of the GET
 # looks perfectly healthy. The checkout phase exited 128 and every deploy went
-# red while pi.kortix.com sat on an older commit.
+# red while the stable branch preview served an older commit.
 #
 # The helper is written as its own FILE rather than inlined into
 # \`git config credential.helper "!f() { ... }"\`. That inline form is a quoting
@@ -294,23 +294,26 @@ docker builder prune -af >/dev/null 2>&1 || true
 df -h / | tail -1 >&2
 
 ${
-    input.runTests === false
-      ? `printf 'tests-skipped\\n' > "$PHASE"
+  input.runTests === false
+    ? `printf 'tests-skipped\\n' > "$PHASE"
 printf 'suite skipped — this is a branch environment, not a gate. Run it with:\\n' >&2
 printf '  cd %s && set -a && . %s && set +a && pnpm test -- --target-full\\n' "$ROOT" ${shellQuote(`${instanceDir}/.env.test`)} >&2`
-      : `printf 'tests\\n' > "$PHASE"
+    : `printf 'tests\\n' > "$PHASE"
 set -a
 source ${shellQuote(`${instanceDir}/.env.test`)}
 set +a
 pnpm test -- --target-full`
-  }
+}
 
 printf 'ready\n' > "$PHASE"
 `;
 }
 
 export class PreviewInfrastructureError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'PreviewInfrastructureError';
   }
@@ -328,7 +331,11 @@ export class PreviewInfrastructureError extends Error {
  * session and its Postgres volume across deploys.
  */
 export function branchEnvSandboxName(branch: string): string {
-  const slug = branch.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = branch
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   if (!slug) throw new Error(`invalid branch for a persistent environment: ${branch}`);
   return `kortix-env-${slug}`;
 }
@@ -474,7 +481,9 @@ export async function runSandboxPreview(
     return await runners.platinum(input);
   } catch (error) {
     if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(`[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`);
+    console.warn(
+      `[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`,
+    );
     return runners.daytona(input);
   }
 }

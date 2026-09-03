@@ -24,7 +24,6 @@ import {
   sandboxInstanceId,
 } from '../instance-scope';
 import { syncSessionRuntimesEnvForPrompt } from '../lib/sandbox-env-sync';
-import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { createProjectSession } from '../lib/sessions';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
@@ -32,12 +31,12 @@ import { openSession } from '../routes/shared';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
 import {
   MAX_WIRE_ID_CLOCK_CORRECTION,
   WIRE_ID_TIME_MASK,
   WIRE_ID_TIME_SCALE,
-  mintWireMessageId,
   newestWireIdTime,
   wireIdTime,
 } from '../wire-message-id';
@@ -61,11 +60,7 @@ import {
 } from './forwarded-placement';
 import { requireConnectorsConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { crossAccountIdempotencyResult } from './idempotency-guard';
-import {
-  INBOX_ORDER_BACKOFF_MS,
-  admitInboxPrompt,
-  sessionHoldsLiveTurn,
-} from './inbox-admission';
+import { INBOX_ORDER_BACKOFF_MS, admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
 import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { mayRequeueFailedCreate } from './requeue-policy';

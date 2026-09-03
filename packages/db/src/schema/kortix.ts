@@ -2,7 +2,6 @@ import { relations, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigint,
-  bigserial,
   boolean,
   check,
   customType,
@@ -901,7 +900,7 @@ export const projectSessions = kortixSchema.table(
 export const sessionWorkerLog = kortixSchema.table(
   'session_worker_log',
   {
-    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),

@@ -18618,9 +18618,20 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "bigserial",
+          "type": "bigint",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "session_worker_log_id_seq",
+            "schema": "kortix",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
         },
         "session_id": {
           "name": "session_id",
