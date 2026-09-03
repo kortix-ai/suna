@@ -35,7 +35,8 @@ import { countLabel, subprojectMatchesQuery } from './subprojects-catalog';
 
 /**
  * The project-scoped subprojects store — the **Marketplace** capability tab at
- * `/projects/[id]/marketplace`. (`/projects/[id]/subprojects` redirects here.)
+ * `/projects/[id]/customize/marketplace`. (`/projects/[id]/subprojects`
+ * redirects here.)
  *
  * One page, one job: browse the catalog and install. It used to open with an
  * "Installed · N" list carrying each subproject's run counts, a link to its run

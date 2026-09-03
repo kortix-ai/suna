@@ -666,7 +666,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/marketplace',
+    href: '/projects/{projectId}/customize/marketplace',
     requiresProject: true,
     // Same gate the tab itself carries (`CAPABILITY_TABS` → `flag:
     // 'subprojects'`), so the row cannot outlive the page. Without it the

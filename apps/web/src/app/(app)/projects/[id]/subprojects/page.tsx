@@ -6,10 +6,10 @@ import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capa
  * `/projects/[id]/subprojects` — retired, and kept only to forward.
  *
  * The store is the **Marketplace** capability tab now
- * (`/projects/[id]/marketplace`), under Customize with Models / Connectors /
- * Agents / Skills / Triggers. It had its own sidebar row and its own top-level
- * segment; both are gone, because installing a subproject is configuration, not
- * a place you navigate to.
+ * (`/projects/[id]/customize/marketplace`), under Customize with Agents /
+ * Skills / Connectors / Triggers. It had its own sidebar row and its own
+ * top-level segment; both are gone, because installing a subproject is
+ * configuration, not a place you navigate to.
  *
  * A server redirect rather than a `router.replace` effect — the target needs no
  * per-project data, so resolving it on the server means the browser never

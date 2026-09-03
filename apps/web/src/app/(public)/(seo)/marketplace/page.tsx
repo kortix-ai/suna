@@ -16,8 +16,8 @@ const URL = `${CANONICAL_ORIGIN}/marketplace`;
 
 /**
  * `/marketplace` — the PUBLIC subproject catalogue, and an SEO acquisition
- * channel. It is the sibling of `/projects/[id]/marketplace` with two
- * deliberate differences:
+ * channel. It is the sibling of `/projects/[id]/customize/marketplace` with
+ * two deliberate differences:
  *
  *  - No auth. The rows come from `GET /v1/public/subprojects`, which is narrowed
  *    to `visibility = 'public' AND status = 'active'` in the store's WHERE

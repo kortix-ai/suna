@@ -225,11 +225,11 @@ test.describe('26 — Subprojects UI', () => {
           response.status() === 200,
         { timeout: 60_000 },
       );
-      // The store is the Marketplace capability tab. The old top-level
-      // `/projects/<id>/subprojects` segment still resolves — it server-redirects
-      // here — but the canonical URL is what the product links to, so that is
-      // what this drives.
-      await page.goto(`/projects/${project.id}/marketplace`, {
+      // The store is the Marketplace capability tab, under Customize. The old
+      // top-level `/projects/<id>/subprojects` segment still resolves — it
+      // server-redirects here — but the canonical URL is what the product
+      // links to, so that is what this drives.
+      await page.goto(`/projects/${project.id}/customize/marketplace`, {
         waitUntil: 'domcontentloaded',
       });
       const listed = await listResponse;
@@ -242,7 +242,7 @@ test.describe('26 — Subprojects UI', () => {
         ),
       ).toBe(true);
 
-      await expect(page.getByRole('heading', { name: 'Subprojects', exact: true })).toBeVisible({
+      await expect(page.getByRole('heading', { name: 'Marketplace', exact: true })).toBeVisible({
         timeout: 30_000,
       });
 

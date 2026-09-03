@@ -20,7 +20,7 @@
  *    (see `packages/db/migrations/*_seed_public_subprojects.sql`).
  *  - NO installed state. There is no project and no account in the request, so
  *    the public card cannot and must not say "Installed" — that is the one
- *    behavioural difference from `/projects/:id/marketplace`.
+ *    behavioural difference from `/projects/:id/customize/marketplace`.
  *
  * Cached with a short `max-age` + ETag, following the `/v1/system/maintenance`
  * precedent. The normal caller is Next.js ISR revalidating once an hour per

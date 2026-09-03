@@ -41,18 +41,20 @@
  *  - Counts: 10 skills committed into a new project repo, plus 10 platform
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
- *  - THE SKILLS MARKETPLACE IS GONE. Do not write copy about browsing a
- *    registry of agents/skills/templates from this page. The whole surface —
- *    API, CLI, `features/marketplace/*`, the public `/marketplace` page — was
- *    removed from the product. This page had a §5 "Marketplace" section with a
- *    `/marketplace` CTA; both went with it, and the CTA had already started
- *    answering `404`. Its replacement is SUBPROJECTS: a Kortix project
- *    installed into another Kortix project, listed under Customize →
- *    Marketplace at `/projects/:id/marketplace`. It is behind the
- *    `subprojects` feature flag, OFF by default, with no public page yet, so
- *    nothing about it is quotable on a marketing page today. Do not re-add a
- *    section here until that public page exists — and never restore the old
- *    registry counts, which were stale before the surface was deleted.
+ *  - THE OLD SKILLS MARKETPLACE IS GONE. Do not write copy about browsing a
+ *    registry of agents/skills/templates from this page. That whole surface —
+ *    API, CLI, `features/marketplace/*`, the OLD public `/marketplace` page —
+ *    was removed from the product. This page had a §5 "Marketplace" section
+ *    with a `/marketplace` CTA; both went with it. Its replacement is
+ *    SUBPROJECTS: a Kortix project installed into another Kortix project,
+ *    listed under Customize → Marketplace at
+ *    `/projects/:id/customize/marketplace`, behind the `subprojects` feature
+ *    flag (OFF by default). The name `/marketplace` was reused for a NEW
+ *    public page — the curated public subproject catalog
+ *    (`app/(public)/(seo)/marketplace/`) — which is a real, live surface as of
+ *    2026-09-03. Do not re-add a §5 "browse the registry" section here; that
+ *    idea is retired. A section pointing at the new public catalog is fair
+ *    game, but keep the counts real — never restore the old registry numbers.
  *  - "Agents rewrite themselves" is TRUE and must always carry "human-merged".
  *    An agent cannot escalate its own grants by editing kortix.yaml, because the
  *    runtime grant is intersected with the launching user's role.

@@ -387,7 +387,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // change. They were removed here as SETTINGS TABS
     // (`/settings/secrets`, opened through the overlay); they came back as
     // CAPABILITY PAGES with their own routes (`/projects/<id>/secrets`, the
-    // account Access pane, `?scope=channels`, `/projects/<id>/marketplace`),
+    // account Access pane, `?scope=channels`, `/projects/<id>/customize/marketplace`),
     // which the derived settings list structurally cannot produce — the same
     // arrangement `proj-triggers` and the `account-*` rows use. What must stay
     // gone is a row that opens the OVERLAY on a tab that no longer exists; the
@@ -417,7 +417,7 @@ describe('the registry no longer carries palette settings destinations', () => {
   test('Marketplace is a flag-gated registry row, pointing at its own page', () => {
     const marketplace = paletteItems.find((item) => item.id === 'proj-marketplace');
     expect(marketplace?.kind).toBe('navigate');
-    expect(marketplace?.href).toBe('/projects/{projectId}/marketplace');
+    expect(marketplace?.href).toBe('/projects/{projectId}/customize/marketplace');
     expect(marketplace?.requiresProject).toBe(true);
     // The one registry row that declares a flag. A project without the
     // surface must not be offered a palette row that 403s on arrival.
