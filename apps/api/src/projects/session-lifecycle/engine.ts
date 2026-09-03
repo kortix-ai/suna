@@ -780,7 +780,7 @@ export async function drainSessionLifecycleQueue(
       // siblings reproduced the exact failure this queue exists to prevent:
       // both rows reported delivered while the first answer rendered under
       // the second prompt. Remaining claimed siblings are returned to the
-      // queue. The turn-end promotion makes the next one due immediately.
+      // queue. Accepted delivery makes the next one due immediately.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
@@ -1475,7 +1475,7 @@ export async function executeQueuedContinue(
     typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
   // `result.promoted` is written by `retryInboxPrompt` alone — the user pointed
   // at ONE row and pressed "send now". `requeueForAdmission` merges into
-  // `result`, so it survives the row waiting again behind a live turn.
+  // `result`, so it survives the row waiting again behind an in-flight sibling.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
 
   // WHICH ROW MAY COMMIT A STAGED REVERT.
@@ -1548,9 +1548,8 @@ export async function executeQueuedContinue(
   //    and the client's id is its browser's clock with no lift against anything
   //    (`ascendingId`), so a browser running behind the sandbox delivers an id
   //    that sorts BELOW them — which OpenCode accepts and silently never runs.
-  //    This is the flagship "type while it works" path. It used to re-mint by
-  //    being REFUSED admission (`turn_active` stamped `remintOnDelivery`); with
-  //    the refusal gone it has to ask the question directly;
+  //    This is the flagship "type while it works" path. Admission deliberately
+  //    ignores turn authority, so placement asks this question directly;
   //  - the prompt WAITED (`result.admission_reason` is stamped by every
   //    admission refusal), so something else held the wire while ids moved on;
   //  - the prompt is a REDELIVERY. The abandoned attempt may already have

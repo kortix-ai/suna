@@ -28,11 +28,12 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: the terminal relay or reaper calls `promoteNextInboxRow` and
- * makes the session's next queued row due NOW, then kicks a targeted drain. So
- * this backoff only ever covers the gap a lost kick would leave. 30s here was
- * the entire "queue does not send between turns" experience: three quick
- * messages compounded to 27s / 45s / 75s of dead air behind ~1s deliveries.
+ * boot any more: accepted delivery calls `promoteNextInboxRow` and makes the
+ * session's next queued row due NOW, then kicks a targeted drain. The terminal
+ * relay and reaper repeat that wake for recovery. This backoff only covers the
+ * gap a lost kick would leave. 30s here was the entire "queue does not send
+ * between turns" experience: three quick messages compounded to 27s / 45s /
+ * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
 export const INBOX_BACKOFF_FREE_REFUSALS = 4;

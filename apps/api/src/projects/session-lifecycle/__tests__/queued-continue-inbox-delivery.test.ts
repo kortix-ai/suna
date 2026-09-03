@@ -5,11 +5,10 @@
 //  1. A prompt whose only content is an attachment (no text at all) is a legal
 //     send — the composer allows it and the POST route accepts it — so the
 //     drain must deliver it instead of dead-lettering it as "missing text".
-//  2. A prompt that WAITED behind a live turn must be re-minted before it goes
-//     out. The client minted its id when the user pressed Enter; by the time
-//     admission lets it through, the running turn has written messages with
-//     HIGHER ids, and OpenCode reads a lower id as already answered — the turn
-//     silently never runs.
+//  2. A prompt posted during a live turn must be re-minted before it goes out.
+//     The running turn has written messages with HIGHER ids than the client id,
+//     and OpenCode reads a lower id as already answered — the turn silently
+//     never runs.
 //  3. A redelivery must prove the prompt is still unanswered. A `delivering`
 //     record is only evidence that the ACCEPTANCE write failed; if the
 //     transcript shows an assistant reply under that message, the turn ran and
@@ -69,6 +68,11 @@ let events: string[] = [];
 let promotionCalls: string[] = [];
 let promotionResult: string | null = null;
 let claimInputs: Array<{ idempotencyKey?: string }> = [];
+let promotionResults: Array<string | null> = [];
+let targetedClaims = new Map<string, SessionLifecycleCommandRow[]>();
+let activePosts = 0;
+let maxActivePosts = 0;
+let postDelayMs = 0;
 // Models the real database state after a drain claims same-session siblings:
 // every claimed row is `running` until the drain releases the tail.
 const simulatedInFlightCommands = new Set<string>();
@@ -83,8 +87,8 @@ mock.module('../../../shared/db', () => ({
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
+        where: () => {
+          const limit = async () => {
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
@@ -105,8 +109,9 @@ mock.module('../../../shared/db', () => ({
               return [{ commandId: [...simulatedInFlightCommands][0] }];
             }
             return [];
-          },
-        }),
+          };
+          return { limit, orderBy: () => ({ limit }) };
+        },
       }),
     }),
     update: () => ({
@@ -146,7 +151,11 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     _headers: Headers,
     body: ArrayBuffer,
   ) => {
+    activePosts += 1;
+    maxActivePosts = Math.max(maxActivePosts, activePosts);
+    if (postDelayMs > 0) await Bun.sleep(postDelayMs);
     capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+    activePosts -= 1;
     return new Response(null, { status: 204 });
   },
 }));
@@ -166,7 +175,7 @@ mock.module('../backpressure', () => ({
 mock.module('../store', () => ({
   promoteNextInboxRow: async (sessionId: string) => {
     promotionCalls.push(sessionId);
-    return promotionResult;
+    return promotionResults.length > 0 ? (promotionResults.shift() ?? null) : promotionResult;
   },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
@@ -177,7 +186,7 @@ mock.module('../store', () => ({
   },
   claimDueLifecycleCommands: async (input: { idempotencyKey?: string }) => {
     claimInputs.push(input);
-    return input.idempotencyKey ? [] : claimed;
+    return input.idempotencyKey ? (targetedClaims.get(input.idempotencyKey) ?? []) : claimed;
   },
   enqueueContinueSessionCommand: async () => {
     throw new Error('not expected');
@@ -306,6 +315,11 @@ beforeEach(() => {
   promotionCalls = [];
   promotionResult = null;
   claimInputs = [];
+  promotionResults = [];
+  targetedClaims = new Map();
+  activePosts = 0;
+  maxActivePosts = 0;
+  postDelayMs = 0;
   simulatedInFlightCommands.clear();
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
@@ -372,8 +386,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     // stop reading `waiting` — so `admission_reason` cannot be the input to the
     // re-mint decision. The marker that survives lives in the PAYLOAD, which is
     // merged rather than replaced. Without this, "send now" on a prompt that
-    // queued behind a live turn delivers the id minted when the user pressed
-    // Enter, and OpenCode reads it as already answered.
+    // queued behind another prompt delivers the id minted when the user
+    // pressed Enter, and OpenCode reads it as already answered.
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
@@ -629,5 +643,80 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       null,
       'queue-next-idempotency-key',
     ]);
+  });
+
+  test('chains three prompts in canonical FIFO order without overlapping posts', async () => {
+    const wireA = mintWireMessageId({ nowMs: NOW_MS - 9 * 60_000, random: () => 0.1 }).id;
+    const wireB = mintWireMessageId({ nowMs: NOW_MS - 8 * 60_000, random: () => 0.2 }).id;
+    const wireC = mintWireMessageId({ nowMs: NOW_MS - 7 * 60_000, random: () => 0.3 }).id;
+    const makeRow = (
+      commandId: string,
+      idempotencyKey: string,
+      text: string,
+      wireMessageId: string,
+      clientSentAtMs: number,
+      createdAt: Date,
+    ) =>
+      baseRow({
+        commandId,
+        idempotencyKey,
+        createdAt,
+        payload: {
+          ...baseRow().payload,
+          text,
+          parts: [{ type: 'text', text }],
+          clientMessageId: `client-${commandId}`,
+          wireMessageId,
+          clientSentAtMs,
+        },
+      });
+
+    // Database arrival order is C, B, A. The client sent A, B, C.
+    const rowA = makeRow(
+      'cmd-a',
+      'queue-a',
+      'PROMPT-A',
+      wireA,
+      NOW_MS - 3_000,
+      new Date(NOW_MS + 3_000),
+    );
+    const rowB = makeRow(
+      'cmd-b',
+      'queue-b',
+      'PROMPT-B',
+      wireB,
+      NOW_MS - 2_000,
+      new Date(NOW_MS + 2_000),
+    );
+    const rowC = makeRow(
+      'cmd-c',
+      'queue-c',
+      'PROMPT-C',
+      wireC,
+      NOW_MS - 1_000,
+      new Date(NOW_MS + 1_000),
+    );
+    claimed = [rowC, rowB, rowA];
+    simulatedInFlightCommands.add('cmd-b');
+    simulatedInFlightCommands.add('cmd-c');
+    promotionResults = ['queue-b', 'queue-c', null];
+    targetedClaims.set('queue-b', [rowB]);
+    targetedClaims.set('queue-c', [rowC]);
+    postDelayMs = 10;
+
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+    expect(result).toMatchObject({ claimed: 3, succeeded: 1, queued: 2 });
+
+    const deadline = Date.now() + 2_000;
+    while (capturedBodies.length < 3 && Date.now() < deadline) await Bun.sleep(20);
+
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB, wireC]);
+    expect(maxActivePosts).toBe(1);
+    expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([
+      null,
+      'queue-b',
+      'queue-c',
+    ]);
+    expect(promotionCalls).toEqual(['sess-inbox-delivery-1', 'sess-inbox-delivery-1', 'sess-inbox-delivery-1']);
   });
 });

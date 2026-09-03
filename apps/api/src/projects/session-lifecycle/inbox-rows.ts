@@ -148,8 +148,8 @@ export async function deleteInboxPrompt(
  * This is both "retry" and "send now" — one primitive, because they are one
  * intent: the user pointed at a row and asked for THAT message. `promoted`
  * is what the admission gate reads to let it past the ordering rule
- * (`older_prompt_pending`). A live turn and an in-flight sibling still bind a
- * promoted row because both are unsafe delivery boundaries.
+ * (`older_prompt_pending`). An in-flight sibling still binds a promoted row
+ * because two concurrent network deliveries can reverse their arrival order.
  *
  * `payload.remintOnDelivery` is stamped because this row did NOT go out on its
  * first claim: whatever the session did in the meantime has written HIGHER wire
