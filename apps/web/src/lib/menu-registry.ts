@@ -42,6 +42,7 @@ import {
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
+  LifebuoyIcon as Lifebuoy,
   LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
@@ -902,13 +903,31 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'credits-explained',
-    label: 'Credits Explained',
+    label: 'Credits & usage',
     icon: Coins,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/help/credits',
-    keywords: 'credits coins billing usage tokens cost explain',
+    href: '/docs/credits',
+    // `explained` stays in the keywords because /credits-explained was the
+    // original public URL and is still what people type for this page.
+    keywords: 'credits coins billing usage tokens cost explain explained',
+  },
+  {
+    id: 'support',
+    label: 'Support',
+    icon: Lifebuoy,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/support',
+    // "help" is the important one: this page absorbed /help, and that is still
+    // the word people reach for. Deliberately NOT "account", "delete" or
+    // "billing" — those queries belong to the account sections and the
+    // delete-account action, and a support row answering them would push the
+    // real destination down the list (command-palette-search.test.ts pins the
+    // exact hit set for "account" for this reason).
+    keywords: 'support help faq contact refund bug report issue question',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
