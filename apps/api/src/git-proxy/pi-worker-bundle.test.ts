@@ -79,12 +79,12 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     try {
-      let health: { ok?: boolean } | null = null;
+      let health: { ok?: boolean; confined?: boolean } | null = null;
       for (let i = 0; i < 100; i++) {
         try {
           const res = await fetch(`http://127.0.0.1:${port}/health`);
           if (res.ok) {
-            health = (await res.json()) as { ok?: boolean };
+            health = (await res.json()) as { ok?: boolean; confined?: boolean };
             break;
           }
         } catch {
@@ -93,6 +93,9 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
         await new Promise((r) => setTimeout(r, 50));
       }
       expect(health?.ok).toBe(true);
+      // Started bare (no --permission) on purpose: the field must say so rather
+      // than echo what the entrypoint would have passed.
+      expect(health?.confined).toBe(false);
       // The double-start regression crashed the process ~immediately AFTER
       // health first answered, so a single poll flaky-passed. Survival for a
       // beat plus a second answer is the actual assertion.

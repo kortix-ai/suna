@@ -128,6 +128,24 @@ function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number)
 const BOOT_T0 = Date.now();
 
 /**
+ * Is this process confined by node's permission model?
+ *
+ * The check is the capability itself, not a flag we were told about: asking
+ * `process.permission.has('fs.write')` answers whether a write ANYWHERE would
+ * be allowed. A process started without `--permission` has no
+ * `process.permission` at all and is, by definition, not confined.
+ */
+export function isConfined(): boolean {
+  const permission = (process as { permission?: { has?: (scope: string) => boolean } }).permission;
+  if (!permission || typeof permission.has !== 'function') return false;
+  try {
+    return !permission.has('fs.write');
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Seconds since the machine booted, read at the moment we start serving.
  *
  * This is the number the whole project turns on. The in-guest clock the
@@ -751,6 +769,12 @@ export async function startWorker(cfg = configFromEnv()) {
     if (url.pathname === '/health') {
       const body = JSON.stringify({
         ok: true,
+        // Requirement 8, observable from outside: true when this process runs
+        // under node's permission model with fs writes denied (the entrypoint
+        // and park.mjs both start it that way — piWorkerNodeArgs in the API's
+        // build-context.ts). `process.permission` exists only under
+        // --permission, so a worker started bare reports false, honestly.
+        confined: isConfined(),
         bootMs: LISTEN_MS,
         processAgeMs: Date.now() - BOOT_T0,
         vmUptimeAtListenMs: LISTEN_UPTIME_MS,

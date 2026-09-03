@@ -197,8 +197,15 @@ describe.skipIf(!existsSync(WORKER_DIST))('pi worker lockdown — the real bundl
     const base = `http://127.0.0.1:${port}`;
     const health = await waitFor(`${base}/health`);
     expect(health, `worker never listened under --permission; stderr: ${stderr.slice(0, 800)}`).not.toBeNull();
-    const healthBody = (await health!.json()) as { ok?: boolean; environment?: { mode?: string } };
+    const healthBody = (await health!.json()) as {
+      ok?: boolean;
+      confined?: boolean;
+      environment?: { mode?: string };
+    };
     expect(healthBody.ok).toBe(true);
+    // The live proof: the same field a `curl <sandbox_url>/health` reads on a
+    // deployed box. It comes from process.permission, not from a flag echo.
+    expect(healthBody.confined).toBe(true);
     expect(healthBody.environment?.mode).toBe('url');
 
     // A scripted faux turn: one bash call, one write, then an answer. Every
