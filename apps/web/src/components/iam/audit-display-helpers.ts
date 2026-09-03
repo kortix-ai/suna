@@ -247,6 +247,14 @@ const ROUTE_LABEL_OVERRIDES: Record<string, string> = {
   'POST /v1/auth/verify-otp': 'Verified a sign-in code',
   'POST /v1/auth/sign-in/oauth': 'Started a social sign-in',
   'POST /v1/auth/oauth/exchange': 'Completed a social sign-in',
+  'POST /v1/auth/sign-in/sso': 'Started an SSO sign-in',
+  'PATCH /v1/auth/user': 'Updated their profile',
+  // MFA is security-relevant, so each leg reads as a distinct event in the
+  // audit log — "enrolled" and "removed" must never collapse into one label.
+  'POST /v1/auth/mfa/factors': 'Enrolled a second factor',
+  'DELETE /v1/auth/mfa/factors/:factorId': 'Removed a second factor',
+  'POST /v1/auth/mfa/factors/:factorId/challenge': 'Started a second-factor challenge',
+  'POST /v1/auth/mfa/factors/:factorId/verify': 'Verified a second factor',
   'POST /v1/auth/refresh': 'Refreshed a session',
   'POST /v1/auth/password/reset': 'Requested a password reset',
   'POST /v1/auth/password/update': 'Changed the password',
