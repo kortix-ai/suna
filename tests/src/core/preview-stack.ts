@@ -240,7 +240,10 @@ export function applyPreviewEnvironment(
     CORS_ALLOWED_ORIGINS: origin,
     KORTIX_PUBLIC_APP_URL: origin,
     KORTIX_PUBLIC_AUTH_METHODS: 'magic,password',
-    KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
+    // target-full exercises the public landing and pricing contracts against
+    // this origin. Keep those pages enabled on previews even though the
+    // self-host CLI defaults the marketing site to disabled.
+    KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'false',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
     // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same

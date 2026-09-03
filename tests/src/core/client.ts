@@ -430,6 +430,26 @@ function announceBreaker(): void {
 export class Client {
   private readonly origin: string;
 
+  /**
+   * Build a client for a service URL whose public mount can include a path.
+   *
+   * The normal constructor is API-oriented: it deliberately discards `/v1`
+   * because the route templates already contain the API mount. A preview puts
+   * the standalone gateway below `/_gateway`, so gateway requests must keep
+   * that prefix without changing their route templates or coverage keys.
+   */
+  static forBaseUrl(baseUrl: string): Client {
+    const url = new URL(baseUrl);
+    const pathPrefix = url.pathname.replace(/\/+$/, '');
+    return new Client(
+      url.origin,
+      ANON,
+      60_000,
+      Number(process.env.KE2E_GATEWAY_RETRIES ?? 3),
+      pathPrefix,
+    );
+  }
+
   constructor(
     apiUrl: string,
     private readonly identity: Identity = ANON,
@@ -446,13 +466,20 @@ export class Client {
     private readonly transientGatewayRetries = Number(
       process.env.KE2E_GATEWAY_RETRIES ?? 3,
     ),
+    private readonly pathPrefix = '',
   ) {
     this.origin = new URL(apiUrl).origin;
   }
 
   /** Clone bound to a principal/identity. */
   as(identity: Identity): Client {
-    return new Client(this.origin, identity, this.defaultTimeoutMs, this.transientGatewayRetries);
+    return new Client(
+      this.origin,
+      identity,
+      this.defaultTimeoutMs,
+      this.transientGatewayRetries,
+      this.pathPrefix,
+    );
   }
 
   withBearer(token: string, label = 'raw'): Client {
@@ -465,7 +492,7 @@ export class Client {
    * Callers must opt in only for requests that are safe to repeat.
    */
   withTransientGatewayRetries(retries = 3): Client {
-    return new Client(this.origin, this.identity, this.defaultTimeoutMs, retries);
+    return new Client(this.origin, this.identity, this.defaultTimeoutMs, retries, this.pathPrefix);
   }
 
   get(t: string, o?: ReqOpts) {
@@ -511,7 +538,11 @@ export class Client {
         path = path.replace(new RegExp(`:${k}(?=/|$|\\.)`, 'g'), encodeURIComponent(String(v)));
       }
     }
-    const url = new URL(this.origin + path);
+    const requestPath =
+      this.pathPrefix && path !== this.pathPrefix && !path.startsWith(`${this.pathPrefix}/`)
+        ? `${this.pathPrefix}${path.startsWith('/') ? '' : '/'}${path}`
+        : path;
+    const url = new URL(this.origin + requestPath);
     if (opts?.query) {
       for (const [k, v] of Object.entries(opts.query)) {
         if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
