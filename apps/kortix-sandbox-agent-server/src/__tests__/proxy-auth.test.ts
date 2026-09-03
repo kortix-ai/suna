@@ -187,6 +187,16 @@ describe('daemon proxy auth gate', () => {
     expect('apiToken' in cfg).toBe(false)
   })
 
+  it('loads a purpose-bound environment RPC secret separately from the session token', () => {
+    const cfg = loadConfig({
+      KORTIX_TOKEN: TEST_TOKEN,
+      KORTIX_ENV_RPC_SECRET: 'rpc-only-secret',
+    } as NodeJS.ProcessEnv)
+
+    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
+    expect(cfg.envRpcSecret).toBe('rpc-only-secret')
+  })
+
   it('parses the one-time replacement branch restore signal', () => {
     expect(loadConfig({ KORTIX_SESSION_BRANCH_RESTORE: '1' }).sessionBranchRestore).toBe(true)
     expect(loadConfig({}).sessionBranchRestore).toBe(false)

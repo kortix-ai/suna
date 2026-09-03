@@ -10,7 +10,9 @@ import { createEnvRpcRouter } from '../routes/env-rpc'
 // workspace-excluded but dependency-free on this path — `ws` loads lazily).
 import { LazyKortixEnv } from '../../../kortix-worker/src/lazy-env.ts'
 
-const TOKEN = 'shared-session-token'
+const WORKER_TOKEN = 'worker-session-token'
+const ENVIRONMENT_TOKEN = 'environment-session-token'
+const RPC_SECRET = 'purpose-bound-environment-rpc-secret'
 
 interface Rig {
   stop(): Promise<void>
@@ -33,14 +35,21 @@ async function buildRig(): Promise<Rig> {
 
   const daemon = new Hono()
   daemon.get('/kortix/health', (c) => c.json({ ok: true, repo_ready: true }))
-  daemon.route('/kortix/env-rpc', createEnvRpcRouter({ sandboxToken: TOKEN, workspace } as unknown as Config))
+  daemon.route(
+    '/kortix/env-rpc',
+    createEnvRpcRouter({
+      sandboxToken: ENVIRONMENT_TOKEN,
+      envRpcSecret: RPC_SECRET,
+      workspace,
+    } as unknown as Config),
+  )
   const daemonServer = Bun.serve({ port: 0, fetch: daemon.fetch })
 
   const rig = { ensureCalls: 0 } as Rig
   const api = new Hono()
   api.post('/v1/projects/:pid/sessions/:sid/environment/ensure', (c) => {
     rig.ensureCalls += 1
-    if (c.req.header('authorization') !== `Bearer ${TOKEN}`) {
+    if (c.req.header('authorization') !== `Bearer ${WORKER_TOKEN}`) {
       return c.json({ error: 'bad token' }, 401)
     }
     return c.json({
@@ -49,6 +58,7 @@ async function buildRig(): Promise<Rig> {
       external_id: 'env-box-1',
       preview_url: `http://127.0.0.1:${daemonServer.port}`,
       preview_token: 'edge-token',
+      rpc_secret: RPC_SECRET,
     })
   })
   const apiServer = Bun.serve({ port: 0, fetch: api.fetch })
@@ -56,7 +66,7 @@ async function buildRig(): Promise<Rig> {
   rig.workspace = workspace
   rig.env = new LazyKortixEnv({
     apiUrl: `http://127.0.0.1:${apiServer.port}/v1`,
-    token: TOKEN,
+    token: WORKER_TOKEN,
     projectId: 'proj-1',
     sessionId: 'sess-1',
     cwd: workspace,
@@ -111,11 +121,11 @@ describe('worker lazy environment ↔ daemon env-rpc', () => {
     rig = await buildRig()
     const missing = await rig.env.readTextFile('never-written.txt')
     expect(missing.ok).toBe(false)
-    if (!missing.ok) expect((missing.error as { code?: string }).code).toBe('ENOENT')
+    if (!missing.ok) expect((missing.error as { code?: string }).code).toBe('not_found')
 
     const dead = new LazyKortixEnv({
       apiUrl: 'http://127.0.0.1:1/v1',
-      token: TOKEN,
+      token: WORKER_TOKEN,
       projectId: 'p',
       sessionId: 's',
       cwd: '/workspace',

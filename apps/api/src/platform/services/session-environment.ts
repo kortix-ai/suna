@@ -24,7 +24,7 @@
  *   KORTIX_BOOTSTRAP_OPENCODE_SESSION=0 — the daemon serves files/find/pty
  *   without an OpenCode session.
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { projectSessions, sessionEnvironments } from '@kortix/db';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
@@ -78,6 +78,7 @@ async function withPreview(row: {
   sessionId: string;
   status: string;
   externalId: string | null;
+  config?: unknown;
 }): Promise<SessionEnvironmentInfo> {
   let previewUrl: string | null = null;
   let previewToken: string | null = null;
@@ -103,12 +104,14 @@ async function withPreview(row: {
       console.warn(`[session-env] preview link for ${row.externalId} failed:`, err);
     }
   }
+  const config = (row.config ?? {}) as { rpcSecret?: string; serviceKey?: string };
   return {
     sessionId: row.sessionId,
     status: row.status,
     externalId: row.externalId,
     previewUrl,
     previewToken,
+    rpcSecret: row.status === 'active' ? (config.rpcSecret ?? config.serviceKey ?? null) : null,
   };
 }
 
@@ -512,6 +515,7 @@ async function provisionEnvironment(
 ): Promise<void> {
   let credential: { tokenId: string; secretKey: string } | null = null;
   let credentialPublished = false;
+  const rpcSecret = randomBytes(32).toString('base64url');
   try {
     const [image, envVars] = await Promise.all([
       ensureSandboxImage(input.gitProject, { provider: 'daytona' }),
@@ -557,6 +561,7 @@ async function provisionEnvironment(
       envVars: {
         ...envVars,
         KORTIX_TOKEN: credential.secretKey,
+        KORTIX_ENV_RPC_SECRET: rpcSecret,
         // The daemon serves /file, /find and /pty without an OpenCode
         // session; the worker is this session's harness, not OpenCode.
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
@@ -570,6 +575,7 @@ async function provisionEnvironment(
       config: {
         serviceKey: credential.secretKey,
         credentialTokenId: credential.tokenId,
+        rpcSecret,
       },
       metadata: {
         snapshot: image.snapshotName,

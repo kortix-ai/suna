@@ -13,4 +13,6 @@ export interface SessionEnvironmentInfo {
   previewUrl: string | null;
   /** Edge auth token for previewUrl, null until active. */
   previewToken: string | null;
+  /** Purpose-bound worker-to-environment HMAC key, null until active. */
+  rpcSecret: string | null;
 }

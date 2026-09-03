@@ -848,16 +848,19 @@ async function enforceTokenProjectScope(
 ): Promise<void> {
   const path = c.req.path;
 
-  // `/v1/platform/runtime-projection` — the sandbox daemon pushing its OWN
-  // runtime projection. A session sandbox holds exactly ONE credential — a
-  // project+SESSION-scoped PAT ("One sandbox, one session-scoped Kortix
-  // credential", platform/services/session-sandbox.ts) — so without this
-  // branch the daemon's push can never reach the sink on any environment.
+  // Runtime projection and boot timeline are sandbox daemons pushing their OWN
+  // runtime state. A session runtime holds a project+SESSION-scoped PAT, so
+  // without this branch the daemon cannot reach either sink.
   // Allowed ONLY for a session-BOUND token; an ordinary project PAT stays
-  // denied. The handler re-verifies the binding against `session_sandboxes`
-  // (sandbox id ∧ session ∧ account ∧ live) via isSessionSandboxCredential,
-  // so this gate is authentication, not the authorization boundary.
-  if (opts.sessionBound && path === '/v1/platform/runtime-projection') return;
+  // denied. Each handler re-verifies the binding against the matching worker
+  // or environment runtime row. This gate is authentication, not the
+  // authorization boundary.
+  if (
+    opts.sessionBound &&
+    (path === '/v1/platform/runtime-projection' || path === '/v1/platform/boot-timeline')
+  ) {
+    return;
+  }
 
   // Whitelist a couple of self-identity probes the CLI hits even for
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm

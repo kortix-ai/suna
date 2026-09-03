@@ -32,7 +32,7 @@ flowchart LR
     MSG <-->|"read and append messages"| W
 
     W -->|"assistant text + SSE"| API
-    W -->|"bash/read/write/glob/grep adapter"| EDGE["Provider edge\nWebSocket, HTTP fallback"]
+    W -->|"operations + RPC HMAC"| EDGE["Provider edge\nWebSocket, HTTP fallback"]
     EDGE --> E["Workspace environment\nfull project image"]
 
     API -->|"lazy ensure + environment token"| E
@@ -66,7 +66,7 @@ sequenceDiagram
     opt A workspace tool is needed
         W->>A: Ensure environment
         A->>E: Create or resume full workspace
-        E-->>W: Provider-edge endpoint
+        E-->>W: Provider-edge endpoint + RPC secret
         W->>E: Execute bash/read/write/glob/grep
         E-->>W: Tool result
         W-->>C: Continue assistant stream
@@ -147,6 +147,12 @@ multiplexed WebSocket per session. It falls back to pooled HTTP only when the
 environment image predates WebSocket support. Traffic does not make an extra
 round trip through the Kortix API data plane.
 
+The API creates a random, purpose-bound RPC secret for each new environment.
+The environment uses it to verify worker RPC signatures. The secret cannot call
+the Kortix API and does not replace either runtime token. The authenticated
+`ensure` response returns it to the owning worker. Read-only environment status
+and stop responses do not return it.
+
 ### Where do messages live?
 
 Messages live in PostgreSQL. The worker writes durable transcript mutations and
@@ -180,6 +186,12 @@ No. Each runtime has a distinct token row and stable UUID. The tokens carry the
 same parent session and agent grant, but the API can distinguish their runtime
 kind and runtime ID. Egress pins, token leases, revocation, boot callbacks, and
 runtime projection checks use that exact principal.
+
+Worker-to-environment RPC uses a third credential with one purpose: signing
+requests to that environment's `/kortix/env-rpc` endpoint. This prevents either
+runtime PAT from becoming a shared cross-runtime secret. Existing environment
+boxes use their environment token as a compatibility RPC secret until the
+control plane rebuilds them.
 
 ### Which runtime serves each product surface?
 

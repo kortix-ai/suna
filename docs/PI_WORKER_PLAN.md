@@ -122,6 +122,10 @@ lease validation resolves the correct runtime table. Egress pins are stored and
 verified per runtime. Environment teardown revokes only its token. Session
 teardown revokes both.
 
+Worker-to-environment RPC uses a random purpose-bound HMAC secret. The worker
+PAT calls `environment/ensure`. The environment PAT calls the control plane.
+Neither PAT authenticates RPC on a newly created environment.
+
 Prompt sync and project-secret propagation target the worker and every active
 environment. Environment pushes update secret and runtime state without
 starting OpenCode or provisioning an unused environment.

@@ -6,9 +6,10 @@ import path from 'node:path'
 
 import type { Config } from '../config'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { createEnvRpcRouter } from '../routes/env-rpc'
+import { createEnvRpcRouter, environmentRpcSecret } from '../routes/env-rpc'
 
 const TOKEN = 'test-session-token'
+const RPC_SECRET = 'test-environment-rpc-secret'
 
 function mintUserContext(secret: string, expOffsetSec = 300): string {
   const payload = Buffer.from(
@@ -36,13 +37,17 @@ function mintUserContext(secret: string, expOffsetSec = 300): string {
 
 async function makeApp() {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), 'env-rpc-ws-'))
-  const app = createEnvRpcRouter({ sandboxToken: TOKEN, workspace } as unknown as Config)
+  const app = createEnvRpcRouter({
+    sandboxToken: TOKEN,
+    envRpcSecret: RPC_SECRET,
+    workspace,
+  } as unknown as Config)
   const call = async (op: string, args: Record<string, unknown>, opts?: { token?: string }) => {
     const res = await app.request('/', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        [KORTIX_USER_CONTEXT_HEADER]: mintUserContext(opts?.token ?? TOKEN),
+        [KORTIX_USER_CONTEXT_HEADER]: mintUserContext(opts?.token ?? RPC_SECRET),
       },
       body: JSON.stringify({ op, args, cwd: workspace }),
     })
@@ -52,6 +57,13 @@ async function makeApp() {
 }
 
 describe('env-rpc route', () => {
+  test('prefers the purpose-bound secret and keeps the legacy token fallback', () => {
+    expect(environmentRpcSecret({ envRpcSecret: RPC_SECRET, sandboxToken: TOKEN })).toBe(
+      RPC_SECRET,
+    )
+    expect(environmentRpcSecret({ sandboxToken: TOKEN })).toBe(TOKEN)
+  })
+
   test('rejects a missing or wrongly-signed user context', async () => {
     const { app } = await makeApp()
     const noHeader = await app.request('/', {
@@ -63,6 +75,8 @@ describe('env-rpc route', () => {
     const { call } = await makeApp()
     const wrong = await call('exists', { path: 'x' }, { token: 'other-secret' })
     expect(wrong.status).toBe(401)
+    const environmentPat = await call('exists', { path: 'x' }, { token: TOKEN })
+    expect(environmentPat.status).toBe(401)
   })
 
   test('file ops round-trip on the real filesystem, failures are Results not 500s', async () => {

@@ -25,11 +25,10 @@ import { logger } from '../logger'
  * file is a Result, not a 500. HTTP errors are reserved for auth and malformed
  * requests.
  *
- * Auth: `/kortix/*` is exempt from the daemon's global gate, so — exactly like
- * the sibling pty router — every request verifies X-Kortix-User-Context signed
- * with this box's own KORTIX_TOKEN. The worker holds the SAME session token
- * (platform/services/session-environment.ts boots the box with it), so it can
- * mint the header itself; nothing else can.
+ * Auth: `/kortix/*` is exempt from the daemon's global gate. Every request
+ * verifies X-Kortix-User-Context with KORTIX_ENV_RPC_SECRET. The secret is
+ * purpose-bound to this environment and cannot call the control-plane API.
+ * KORTIX_TOKEN remains the environment's independent API principal.
  */
 
 const EXEC_TIMEOUT_DEFAULT_MS = 120_000
@@ -45,6 +44,12 @@ interface EnvRpcError {
 
 const ok = (value: unknown) => ({ ok: true as const, value })
 const err = (error: EnvRpcError) => ({ ok: false as const, error })
+
+export function environmentRpcSecret(
+  cfg: Pick<Config, 'envRpcSecret' | 'sandboxToken'>,
+): string | undefined {
+  return cfg.envRpcSecret ?? cfg.sandboxToken
+}
 
 function fsError(e: unknown, fallbackPath?: string) {
   const errno = e as NodeJS.ErrnoException
@@ -118,12 +123,16 @@ async function runExec(input: {
 
 export function createEnvRpcRouter(cfg: Config): Hono {
   const app = new Hono()
+  const rpcSecret = environmentRpcSecret(cfg)
 
   app.use('*', async (c, next) => {
-    if (!cfg.sandboxToken) {
-      return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
+    if (!rpcSecret) {
+      return c.json(
+        { error: 'daemon not configured', detail: 'KORTIX_ENV_RPC_SECRET unset' },
+        503,
+      )
     }
-    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), cfg.sandboxToken)
+    const auth = verifyKortixUserContext(c.req.header(KORTIX_USER_CONTEXT_HEADER), rpcSecret)
     if (!auth.ok) {
       logger.warn('[env-rpc] reject', { reason: auth.reason })
       return c.json({ error: 'unauthorized', reason: auth.reason }, 401)

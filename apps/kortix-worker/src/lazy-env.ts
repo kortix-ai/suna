@@ -8,9 +8,9 @@
  * flows through the ordinary KortixExecutionEnv against
  * `{edge}/kortix/env-rpc` — the control plane is not in the data path.
  *
- * The daemon's env-rpc route authenticates X-Kortix-User-Context signed with
- * the box's KORTIX_TOKEN. The worker holds the SAME session credential (the
- * environment boots with it, by design), so it mints that header itself.
+ * The daemon's env-rpc route authenticates X-Kortix-User-Context with a
+ * purpose-bound RPC secret returned by ensure. Worker and environment PATs
+ * remain separate control-plane principals.
  *
  * Same contract as the inner env: operations never throw — a failed ensure is
  * a Result the tool renders, not a crash.
@@ -85,6 +85,7 @@ interface EnsureResponse {
   external_id?: string | null;
   preview_url?: string | null;
   preview_token?: string | null;
+  rpc_secret?: string | null;
   error?: string;
 }
 
@@ -178,9 +179,15 @@ export class LazyKortixEnv {
       if (!ensured?.preview_url) {
         throw new EnvUnavailableError(`could not attach environment: ${lastError}`);
       }
+      if (!ensured.rpc_secret) {
+        throw new EnvUnavailableError('environment ensure returned no RPC secret');
+      }
       const edge = ensured.preview_url.replace(/\/+$/, '');
       const headers: Record<string, string> = {
-        'x-kortix-user-context': mintUserContext(this.opts.token, ensured.external_id ?? 'env'),
+        'x-kortix-user-context': mintUserContext(
+          ensured.rpc_secret,
+          ensured.external_id ?? 'env',
+        ),
         ...(ensured.preview_token ? { 'x-daytona-preview-token': ensured.preview_token } : {}),
       };
       // Wait for the daemon (repo materialization included) before first use.

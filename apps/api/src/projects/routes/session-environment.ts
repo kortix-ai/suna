@@ -30,6 +30,9 @@ const EnvironmentSchema = z.object({
   preview_url: z.string().nullable(),
   preview_token: z.string().nullable(),
 });
+const EnsureEnvironmentSchema = EnvironmentSchema.extend({
+  rpc_secret: z.string().nullable(),
+});
 
 interface SessionForEnvironment {
   agentName: string;
@@ -132,6 +135,13 @@ function serialize(info: {
   };
 }
 
+function serializeWithRpc(info: Parameters<typeof serialize>[0] & { rpcSecret: string | null }) {
+  return {
+    ...serialize(info),
+    rpc_secret: info.rpcSecret,
+  };
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -143,7 +153,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(EnvironmentSchema, 'The session environment, provisioned or resumed'),
+      200: json(EnsureEnvironmentSchema, 'The session environment, provisioned or resumed'),
       ...errors(400, 403, 404, 409, 502, 504),
     },
   }),
@@ -177,7 +187,7 @@ projectsApp.openapi(
           gitAuthToken: null,
         },
       });
-      return c.json(serialize(info));
+      return c.json(serializeWithRpc(info));
     } catch (err) {
       if (err instanceof SessionEnvironmentError) {
         return c.json({ error: err.message }, err.status as never);

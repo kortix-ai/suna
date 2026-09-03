@@ -64,9 +64,21 @@ describe('session environment service', () => {
     expect(source).toContain('runtimeId: environmentId');
     const envBlock = source.slice(provision, source.indexOf('} as never', provision));
     expect(envBlock).toContain('KORTIX_TOKEN: credential.secretKey');
+    expect(envBlock).toContain('KORTIX_ENV_RPC_SECRET: rpcSecret');
     expect(envBlock).toContain("KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0'");
     // The session branch already exists remotely; the box restores it.
     expect(source).toContain('restoreSessionBranch: true');
+  });
+
+  test('ensure returns a purpose-bound RPC secret without exposing it on status or stop', async () => {
+    const route = await routeSource();
+    const service = await serviceSource();
+    expect(route).toContain('const EnsureEnvironmentSchema = EnvironmentSchema.extend({');
+    expect(route).toContain('rpc_secret: z.string().nullable()');
+    expect(route.split('return c.json(serializeWithRpc(info));').length - 1).toBe(1);
+    expect(route.split('return c.json(serialize(info));').length - 1).toBe(2);
+    expect(service).toContain("const rpcSecret = randomBytes(32).toString('base64url')");
+    expect(service).toContain('(config.rpcSecret ?? config.serviceKey ?? null)');
   });
 
   test('the claim is an ON CONFLICT insert and every terminal failure marks the row error', async () => {

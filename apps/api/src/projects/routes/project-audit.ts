@@ -9,7 +9,7 @@ import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { auditDb, isAuditContentionError } from '../../shared/audit-db';
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
+import { auditEvents, connectors, connectorCalls, projectSessions, sessionEnvironments, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, assertProjectCapability } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
@@ -31,8 +31,7 @@ import { parseOpenCodeAuditBatch } from '../../shared/opencode-audit-ingestion';
 import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-guard';
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
-import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
-import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
+import { getSessionRuntimeCredential } from '../../middleware/session-sandbox-credential';
 
 /**
  * Rows per audit-ingest INSERT statement. Each statement holds this session's
@@ -179,40 +178,64 @@ projectsApp.openapi(
   async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!isSessionSandboxCredential(c)) {
+    const runtimeCredential = getSessionRuntimeCredential(c);
+    if (!runtimeCredential) {
       return c.json({ error: 'audit ingestion requires a sandbox token' }, 403);
     }
     const accountId = c.get('accountId');
-    const sandboxId = c.get('sandboxId');
-    if (!accountId || !sandboxId || !sandboxTokenMayActOnSession(sandboxId, sessionId)) {
+    if (!accountId || runtimeCredential.sessionId !== sessionId) {
       return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
     }
-    const [scope] = await db
-      .select({
-        sessionId: sessionSandboxes.sessionId,
-        opencodeSessionId: projectSessions.opencodeSessionId,
-        agentName: projectSessions.agentName,
-        createdBy: projectSessions.createdBy,
-      })
-      .from(sessionSandboxes)
-      .innerJoin(
-        projectSessions,
-        and(
-          eq(projectSessions.accountId, sessionSandboxes.accountId),
-          eq(projectSessions.projectId, sessionSandboxes.projectId),
-          eq(projectSessions.sessionId, sessionSandboxes.sessionId),
-        ),
-      )
-      .where(
-        and(
-          eq(sessionSandboxes.sandboxId, sandboxId),
-          eq(sessionSandboxes.accountId, accountId),
-          eq(sessionSandboxes.projectId, projectId),
-          inArray(sessionSandboxes.status, ['provisioning', 'active']),
-        ),
-      )
-      .limit(1);
-    if (!scope || (scope.sessionId ?? sandboxId) !== sessionId) {
+    const selected = {
+      sessionId: projectSessions.sessionId,
+      opencodeSessionId: projectSessions.opencodeSessionId,
+      agentName: projectSessions.agentName,
+      createdBy: projectSessions.createdBy,
+    };
+    const [scope] =
+      runtimeCredential.kind === 'environment'
+        ? await db
+            .select(selected)
+            .from(sessionEnvironments)
+            .innerJoin(
+              projectSessions,
+              and(
+                eq(projectSessions.accountId, sessionEnvironments.accountId),
+                eq(projectSessions.projectId, sessionEnvironments.projectId),
+                eq(projectSessions.sessionId, sessionEnvironments.sessionId),
+              ),
+            )
+            .where(
+              and(
+                eq(sessionEnvironments.environmentId, runtimeCredential.runtimeId),
+                eq(sessionEnvironments.sessionId, sessionId),
+                eq(sessionEnvironments.accountId, accountId),
+                eq(sessionEnvironments.projectId, projectId),
+                inArray(sessionEnvironments.status, ['provisioning', 'active']),
+              ),
+            )
+            .limit(1)
+        : await db
+            .select(selected)
+            .from(sessionSandboxes)
+            .innerJoin(
+              projectSessions,
+              and(
+                eq(projectSessions.accountId, sessionSandboxes.accountId),
+                eq(projectSessions.projectId, sessionSandboxes.projectId),
+                eq(projectSessions.sessionId, sessionSandboxes.sessionId),
+              ),
+            )
+            .where(
+              and(
+                eq(sessionSandboxes.sandboxId, runtimeCredential.runtimeId),
+                eq(sessionSandboxes.accountId, accountId),
+                eq(sessionSandboxes.projectId, projectId),
+                inArray(sessionSandboxes.status, ['provisioning', 'active']),
+              ),
+            )
+            .limit(1);
+    if (!scope || scope.sessionId !== sessionId) {
       return c.json({ error: 'sandbox token is not scoped to this project and session' }, 403);
     }
 

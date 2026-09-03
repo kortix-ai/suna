@@ -21,7 +21,7 @@ import { opencodeTurnInFlight, readPinnedSessionId } from './opencode-turn-state
 import { OPENCODE_HOME } from './opencode'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
-import { createEnvRpcRouter } from './routes/env-rpc'
+import { createEnvRpcRouter, environmentRpcSecret } from './routes/env-rpc'
 import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
@@ -238,17 +238,21 @@ function prepareEnvRpcWsUpgrade(
   req: Request,
   cfg: Config,
 ): { ok: true; data: OpencodeWsData } | { ok: false; response: Response } {
-  if (!cfg.sandboxToken) {
+  const rpcSecret = environmentRpcSecret(cfg)
+  if (!rpcSecret) {
     return {
       ok: false,
-      response: jsonError(503, { error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }),
+      response: jsonError(503, {
+        error: 'daemon not configured',
+        detail: 'KORTIX_ENV_RPC_SECRET unset',
+      }),
     }
   }
   const url = new URL(req.url)
   const header =
     req.headers.get(KORTIX_USER_CONTEXT_HEADER) ??
     url.searchParams.get(KORTIX_USER_CONTEXT_QUERY_PARAM)
-  const auth = verifyKortixUserContext(header, cfg.sandboxToken)
+  const auth = verifyKortixUserContext(header, rpcSecret)
   if (!auth.ok) {
     logger.warn('[env-rpc] reject websocket', { reason: auth.reason })
     return { ok: false, response: jsonError(401, { error: 'unauthorized', reason: auth.reason }) }

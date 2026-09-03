@@ -72,6 +72,7 @@ export async function stopSessionEnvironment(
         externalId: updated.externalId,
         previewUrl: null,
         previewToken: null,
+        rpcSecret: null,
       }
     : null;
 }
