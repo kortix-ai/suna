@@ -1347,6 +1347,7 @@
     "KORTIX_SESSION_SENTINEL",
     "KortixAuthError",
     "createAppViewerKortix",
+    "createKortixAppGuard",
     "createKortixAuth",
     "createScopedKortix",
     "forwardKortixRequest",
