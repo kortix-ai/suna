@@ -1,6 +1,6 @@
 'use client';
 
-import { MagnifyingGlassIcon } from '@phosphor-icons/react';
+import { GithubLogoIcon, MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
@@ -8,6 +8,12 @@ import { listConnectors, type Subproject } from '@kortix/sdk';
 import { qk, useProjectSubprojects, useSubprojects } from '@kortix/sdk/react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { InfoBanner } from '@/components/ui/info-banner';
 import {
   InputGroupSearch,
@@ -24,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { AddSubprojectModal } from './add-subproject-modal';
 import { AuthorSubprojectModal } from './author-subproject-modal';
 import { SubprojectInstallModal } from './install-modal';
-import { SubprojectBuildCard, SubprojectCard } from './subprojects-card';
+import { SubprojectCard } from './subprojects-card';
 import { countLabel, subprojectMatchesQuery } from './subprojects-catalog';
 
 /**
@@ -50,14 +56,19 @@ import { countLabel, subprojectMatchesQuery } from './subprojects-catalog';
  *    not parse has no card.
  *
  * It draws its own header rather than using `CapabilityPageShell` because the
- * page's own search sits BETWEEN two headed sections (the catalog and "Make your
- * own"), while the shell renders search above all of its children. What it DOES
- * borrow from the shell is every container and type token: the
- * `min-h-0 flex-1 overflow-y-auto` scroll root, `max-w-5xl`, the
+ * `+ Add` control sits INLINE with search and the All/Installed/Available
+ * filter, not stacked above them the way the shell's own header renders its
+ * action slot. What it DOES borrow from the shell is every container and type
+ * token: the `min-h-0 flex-1 overflow-y-auto` scroll root, `max-w-5xl`, the
  * `py-10 pb-20 lg:py-14` block, and `text-xl font-medium` on the `h1`. Those
  * are what a person compares when they switch tabs, so they match exactly.
- * `space-y-8` is the one departure from the shell's `space-y-5`: this body is
- * two sections each under its own heading, not a header over one list.
+ *
+ * `+ Add` replaced a "Make your own" section (two dashed cards, always on
+ * screen below the catalog) that used to own this job. Same two destinations —
+ * `AddSubprojectModal` (index something that exists) and
+ * `AuthorSubprojectModal` (describe one and have it built) — collapsed into one
+ * menu next to the thing it adds to, instead of permanent real estate under a
+ * catalog that is the actual reason someone opened this page.
  *
  * Reads the real index through `useSubprojects()` and the project's installed set
  * through `useProjectSubprojects()`. The two are separate on purpose: the index is
@@ -233,6 +244,45 @@ export function SubprojectsStore({ projectId }: { projectId: string }) {
                 </TabsListCompact>
               </Tabs>
             ) : null}
+
+            {/* The two doors "Make your own" used to render as permanent dashed
+              cards. They are genuinely different (index something that EXISTS
+              vs. have one built), so a menu, not a single button with a mode
+              switch buried inside it. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" className="ml-auto">
+                  <PlusIcon className="size-4" aria-hidden />
+                  Add
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuItem
+                  onSelect={() => setAdding(true)}
+                  className="flex items-start gap-2.5 py-2"
+                >
+                  <GithubLogoIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span className="min-w-0">
+                    <span className="block text-sm">Add from GitHub</span>
+                    <span className="text-muted-foreground block text-xs">
+                      Point at a repo, or upload a .zip.
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => setAuthoring(true)}
+                  className="flex items-start gap-2.5 py-2"
+                >
+                  <SparkleIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span className="min-w-0">
+                    <span className="block text-sm">Grow your own</span>
+                    <span className="text-muted-foreground block text-xs">
+                      Describe a subproject and Kortix builds it.
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           {store.isLoading ? (
@@ -295,17 +345,6 @@ export function SubprojectsStore({ projectId }: { projectId: string }) {
             </ul>
           )}
         </div>
-
-        <section className="space-y-3">
-          <h2 className="text-foreground text-sm font-medium">Make your own</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {/* Two doors, and they are genuinely different: one indexes a subproject
-              that EXISTS, the other has one built. Collapsing them into one
-              button would put a mode switch in front of both. */}
-            <SubprojectBuildCard onClick={() => setAuthoring(true)} />
-            <SubprojectBuildCard variant="add" onClick={() => setAdding(true)} />
-          </div>
-        </section>
 
         <AddSubprojectModal open={adding} onOpenChange={setAdding} />
         <AuthorSubprojectModal projectId={projectId} open={authoring} onOpenChange={setAuthoring} />

@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  CheckIcon,
-  DownloadSimpleIcon,
-  GithubLogoIcon,
-  SparkleIcon,
-  StarIcon,
-} from '@phosphor-icons/react';
+import { CheckIcon, DownloadSimpleIcon, StarIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 
 import { cn } from '@/lib/utils';
@@ -182,69 +176,3 @@ export function SubprojectCard({
   );
 }
 
-/**
- * The dashed card. Two jobs, one shape:
- *
- *  - `grow` (default) — describe a subproject and have one built.
- *  - `add` — index a subproject that already exists, from a repo or a `.zip`.
- *
- * They are siblings, not a mode switch: one creates, the other imports. On the
- * project home the card is a LINK into the store; in the store it is a BUTTON
- * that opens the matching modal.
- */
-export function SubprojectBuildCard({
-  glass = false,
-  variant = 'grow',
-  href,
-  onClick,
-}: {
-  glass?: boolean;
-  variant?: 'grow' | 'add';
-  /** When set, the card renders as a link to that destination. */
-  href?: string;
-  onClick?: () => void;
-}) {
-  const add = variant === 'add';
-  const body = (
-    <>
-      <span
-        className={cn(
-          'flex size-8 shrink-0 items-center justify-center rounded-sm',
-          'bg-muted text-muted-foreground',
-        )}
-      >
-        {add ? (
-          <GithubLogoIcon className="size-4" aria-hidden />
-        ) : (
-          <SparkleIcon className="size-4" aria-hidden />
-        )}
-      </span>
-      <span className="text-sm font-medium">
-        {add ? 'Add a subproject' : 'Grow your subprojects'}
-      </span>
-      <span className="text-muted-foreground text-center text-xs leading-relaxed text-pretty">
-        {add
-          ? 'Point at a GitHub repo, or upload a .zip.'
-          : 'Describe a subproject and Kortix builds it.'}
-      </span>
-    </>
-  );
-  const className = cn(
-    'hover:border-foreground/30 text-muted-foreground hover:text-foreground flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed p-4',
-    'transition-colors duration-normal active:scale-[0.99]',
-    glass ? 'bg-background/40 backdrop-blur-sm' : 'bg-transparent',
-  );
-
-  if (href) {
-    return (
-      <Link href={href} className={className}>
-        {body}
-      </Link>
-    );
-  }
-  return (
-    <button type="button" onClick={onClick} className={className}>
-      {body}
-    </button>
-  );
-}
