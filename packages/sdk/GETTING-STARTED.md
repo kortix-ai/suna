@@ -197,7 +197,7 @@ pnpm --filter @kortix/sdk run smoke:install  # pack → install → import, herm
 
 `test` without built bundles skips the 2 bundle-content tests; run it after
 `build:bundles` for the full count. If you change anything here, read
-[AGENTS.md](./AGENTS.md) first — this package is live on npm, and the rules
+[AGENTS.md](../../AGENTS.md) first — this package is live on npm, and the rules
 (TDD, never weaken a test, exported names are forever) are enforced by the
 tripwires you just ran.
 
