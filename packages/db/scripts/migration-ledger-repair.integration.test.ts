@@ -106,11 +106,11 @@ suite('migration ledger rename repair', () => {
         .concat(legacyPiNames)
         .sort();
 
-      for (const [index, name] of historicalNames.entries()) {
+      for (const name of historicalNames) {
         await piClient.query(
           `insert into kortix_migrations.pgmigrations (name, run_on)
            values ($1, $2::timestamptz)`,
-          [name, new Date(Date.UTC(2026, 8, 1, 0, 0, index)).toISOString()],
+          [name, '2026-09-01T00:00:00.123456Z'],
         );
       }
     } finally {

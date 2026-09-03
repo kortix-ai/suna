@@ -172,43 +172,32 @@ async function reorderAppliedPiRuntimeRenames(
   if (movedNames.length === 0) return;
 
   const firstName = movedNames[0];
-  const lastName = movedNames.at(-1);
-  const bounds = await client.query<{ lower_run_on: Date | null; upper_run_on: Date | null }>(
-    `select max(run_on) filter (
-              where name < $1 and not (name = any($3::text[]))
-            ) as lower_run_on,
-            min(run_on) filter (
-              where name > $2 and not (name = any($3::text[]))
-            ) as upper_run_on
-       from kortix_migrations.pgmigrations`,
-    [firstName, lastName, movedNames],
+  const result = await client.query(
+    `with boundary as (
+       select coalesce(
+                max(run_on) filter (where name < $1),
+                min(run_on) - interval '1 microsecond',
+                timestamp 'epoch'
+              ) as anchor
+         from kortix_migrations.pgmigrations
+     ), ordered as (
+       select id, row_number() over (order by name, id) as position
+         from kortix_migrations.pgmigrations
+        where name >= $1
+     ), normalized as (
+       select ordered.id,
+              boundary.anchor + ordered.position * interval '1 microsecond' as run_on
+         from ordered
+         cross join boundary
+     )
+     update kortix_migrations.pgmigrations as ledger
+        set run_on = normalized.run_on
+       from normalized
+      where ledger.id = normalized.id`,
+    [firstName],
   );
-  const lowerRunOn = bounds.rows[0]?.lower_run_on ?? null;
-  const upperRunOn = bounds.rows[0]?.upper_run_on ?? null;
-  if (lowerRunOn && upperRunOn && upperRunOn <= lowerRunOn) {
-    throw new Error('Migration ledger repair cannot place the renamed pi migrations in order.');
-  }
-
-  const slotCount = movedNames.length + 1;
-  for (const [index, currentName] of movedNames.entries()) {
-    const position = index + 1;
-    const result = await client.query(
-      `update kortix_migrations.pgmigrations
-          set run_on = case
-            when $2::timestamp is not null and $3::timestamp is not null
-              then $2::timestamp + ($3::timestamp - $2::timestamp) * ($4::double precision / $5::double precision)
-            when $2::timestamp is not null
-              then $2::timestamp + interval '1 millisecond' * $4
-            when $3::timestamp is not null
-              then $3::timestamp - interval '1 millisecond' * ($5 - $4)
-            else run_on
-          end
-        where name = $1`,
-      [currentName, lowerRunOn, upperRunOn, position, slotCount],
-    );
-    if (result.rowCount !== 1) {
-      throw new Error(`Migration ledger repair could not reorder ${currentName}.`);
-    }
+  if ((result.rowCount ?? 0) < movedNames.length) {
+    throw new Error('Migration ledger repair could not reorder the renamed pi migrations.');
   }
 }
 
