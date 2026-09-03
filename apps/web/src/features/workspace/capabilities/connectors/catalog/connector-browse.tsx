@@ -99,11 +99,11 @@ function ConnectorIcon({ icon, computer = false }: { icon: string | null; comput
 const CatalogEntryCard = memo(function CatalogEntryCard({
   entry,
   connectedKeys,
-  onSelect,
+  getHref,
 }: {
   entry: CatalogEntry;
   connectedKeys: ReadonlySet<string>;
-  onSelect: (entry: CatalogEntry) => void;
+  getHref: (entry: CatalogEntry) => string;
 }) {
   return (
     <CatalogCard
@@ -111,7 +111,7 @@ const CatalogEntryCard = memo(function CatalogEntryCard({
       title={entry.name}
       description={entry.description}
       trailing={<CatalogAffordance connected={isCatalogEntryConnected(entry, connectedKeys)} />}
-      onClick={() => onSelect(entry)}
+      href={getHref(entry)}
     />
   );
 });
@@ -144,12 +144,12 @@ const LOADING_MORE_SKELETONS = 6;
 function CategorySection({
   section,
   connectedKeys,
-  onSelect,
+  getHref,
   onViewAll,
 }: {
   section: CatalogSection;
   connectedKeys: ReadonlySet<string>;
-  onSelect: (entry: CatalogEntry) => void;
+  getHref: (entry: CatalogEntry) => string;
   onViewAll: (category: string) => void;
 }) {
   return (
@@ -194,7 +194,7 @@ function CategorySection({
             key={entry.key}
             entry={entry}
             connectedKeys={connectedKeys}
-            onSelect={onSelect}
+            getHref={getHref}
           />
         ))}
       </div>
@@ -337,7 +337,7 @@ export function ConnectorBrowse({
   mode,
   category,
   onCategoryChange,
-  onSelect,
+  getHref,
   emptyTitle,
   emptyDescription,
 }: {
@@ -347,7 +347,7 @@ export function ConnectorBrowse({
   /** The open category, or `ALL_CATEGORIES` while browsing everything. */
   category: string;
   onCategoryChange: (category: string) => void;
-  onSelect: (entry: CatalogEntry) => void;
+  getHref: (entry: CatalogEntry) => string;
   emptyTitle: string;
   emptyDescription: string;
 }) {
@@ -431,7 +431,8 @@ export function ConnectorBrowse({
         shown: entries.length,
         loaded: entries.length,
         total,
-        categoryLabel: activeCategory === ALL_CATEGORIES ? null : (openCategoryFacet?.label ?? activeCategory),
+        categoryLabel:
+          activeCategory === ALL_CATEGORIES ? null : (openCategoryFacet?.label ?? activeCategory),
         searching,
         hasMore,
         isLoadingMore: state.isLoadingMore,
@@ -468,7 +469,7 @@ export function ConnectorBrowse({
             key={section.key}
             section={section}
             connectedKeys={connectedKeys}
-            onSelect={onSelect}
+            getHref={getHref}
             onViewAll={openCategory}
           />
         ))
@@ -479,7 +480,7 @@ export function ConnectorBrowse({
               key={entry.key}
               entry={entry}
               connectedKeys={connectedKeys}
-              onSelect={onSelect}
+              getHref={getHref}
             />
           ))}
           {/* Inside the grid, not under it, so the next page's cards land

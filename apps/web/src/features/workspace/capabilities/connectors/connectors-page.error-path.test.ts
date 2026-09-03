@@ -66,24 +66,9 @@ describe('connectors page error path', () => {
     expect(source).not.toContain('?.experimental?.');
   });
 
-  test('both add journeys end in the same handler shape', () => {
-    // A flow omits the slug when the manifest write succeeded but the sync did
-    // not. `DiscoverAddFlow` used to pass it anyway, so one partial failure
-    // opened the detail modal from the catalogue and not from the custom form.
-    // Both handlers now guard: `onCatalogAdded` and the custom form's own.
-    // Matched without the brace: `onCatalogAdded`'s guard is a single
-    // statement (`if (slug) showConnected(slug);`), the custom form's is a
-    // block. What must hold is that BOTH guard, not how each is punctuated.
-    expect(source.match(/if \(slug\)/g)).toHaveLength(2);
-  });
-
-  test('a newly created connector waits for a fresh list before missing-detail cleanup', () => {
-    expect(source).toContain('const [pendingDetail, setPendingDetail] = useState<');
-    expect(source).toContain(
-      'setPendingDetail({ slug, dataUpdatedAt: connectorsQuery.dataUpdatedAt });',
-    );
-    expect(source).toContain('connectorsQuery.dataUpdatedAt > pendingDetail.dataUpdatedAt');
-    expect(source).toContain('pendingDetail.slug !== detailSlug');
+  test('custom creation navigates only when synchronization returns a slug', () => {
+    expect(source).toContain('if (slug) {');
+    expect(source).toContain('router.push(connectedConnectorHref(projectId, slug))');
   });
 
   test('the plus button opens the custom form only', () => {
@@ -101,12 +86,10 @@ describe('connectors page error path', () => {
     expect(source).toContain('<CustomConnectorForm');
   });
 
-  test('a catalogue card can only open the flow that made it', () => {
-    // `CatalogEntry` is a discriminated union precisely so a Discover entry
-    // cannot be handed to Pipedream's connection modal. Dropping either guard
-    // would pass the wrong raw item to a flow that cannot build a draft
-    // from it.
-    expect(source).toContain("catalogTarget?.source === 'discover' ? catalogTarget.connector");
-    expect(source).toContain("catalogTarget?.source === 'easy-connect' ? catalogTarget.app");
+  test('catalogue add flows are absent from the list route', () => {
+    expect(source).not.toContain('<DiscoverAddFlow');
+    expect(source).not.toContain('<EasyConnectAddFlow');
+    expect(source).not.toContain('<ComputersAddFlow');
+    expect(source).toContain('catalogConnectorHref(projectId, entry)');
   });
 });
