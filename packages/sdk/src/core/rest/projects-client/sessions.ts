@@ -44,6 +44,9 @@ export interface ProjectSession {
    */
   custom_name: string | null;
   agent_name: string | null;
+  /** Slug of the subproject this session belongs to; null = none. Set at
+   *  create and never moved. See `listProjectSubprojects`. */
+  subproject?: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
@@ -127,6 +130,13 @@ export interface PendingSessionPrompt {
 export interface CreateProjectSessionInput {
   base_ref?: string;
   agent_name?: string;
+  /**
+   * Start the session inside a declared subproject. The caller must be granted
+   * it (`403 subproject_not_accessible`) and it must exist in the manifest
+   * (`400 SUBPROJECT_NOT_DECLARED`). When `agent_name` is omitted the
+   * subproject's own `agent` becomes the requested agent.
+   */
+  subproject?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
@@ -203,10 +213,19 @@ export interface ProjectOpenCodeSession {
  */
 export async function listProjectSessions(
   projectId: string,
-  options?: { scope?: 'visible' | 'project' },
+  options?: {
+    scope?: 'visible' | 'project';
+    /**
+     * Narrow to one subproject. `''` is a real filter — the rows that carry no
+     * subproject — so it is sent as `?subproject=`, not dropped as falsy.
+     * Omit the key entirely for "every subproject".
+     */
+    subproject?: string;
+  },
 ) {
   const params = new URLSearchParams();
   if (options?.scope && options.scope !== 'visible') params.set('scope', options.scope);
+  if (options?.subproject !== undefined) params.set('subproject', options.subproject);
   const query = params.size > 0 ? `?${params}` : '';
   return unwrap(await backendApi.get<ProjectSession[]>(`/projects/${projectId}/sessions${query}`));
 }

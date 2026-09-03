@@ -84,6 +84,8 @@ describe('qk.project', () => {
       qk.project.appAccessSession(id, 'app_1'),
       qk.project.appDeployments(id, 'app_1'),
       qk.project.triggers(id),
+      qk.project.subprojects(id),
+      qk.project.subproject(id, 'marketing'),
       qk.project.files(id),
       qk.project.fileSource(id, 'AGENTS.md'),
       qk.project.branches(id),
@@ -185,6 +187,49 @@ describe('qk.project', () => {
       expect(qk.project.sessions(id)).not.toEqual(qk.project.sessions(id, 'project') as never);
     });
 
+    // `listProjectSessions(id, { subproject })` is, like `scope`, a DIFFERENT
+    // server request — not a client-side filter of the unfiltered list — so it
+    // gets its own slot. The segment is appended ONLY when a subproject is
+    // passed, so every key that existed before subprojects is byte-identical.
+    describe('the optional subproject segment', () => {
+      test('an omitted subproject leaves the key exactly as it was', () => {
+        expect(qk.project.sessions(id)).toEqual([
+          ...qk.project.sessionsScope(id),
+          'list',
+          'visible',
+        ] as never);
+        expect(qk.project.sessions(id, 'project')).toEqual([
+          ...qk.project.sessionsScope(id),
+          'list',
+          'project',
+        ] as never);
+      });
+
+      test('a subproject filter is a different key from the unfiltered list', () => {
+        expect(qk.project.sessions(id, 'visible', 'marketing')).not.toEqual(
+          qk.project.sessions(id) as never,
+        );
+      });
+
+      test('two subprojects are different keys', () => {
+        expect(qk.project.sessions(id, 'visible', 'marketing')).not.toEqual(
+          qk.project.sessions(id, 'visible', 'research') as never,
+        );
+      });
+
+      test('the empty-string subproject ("no subproject") is its own key, not the unfiltered list', () => {
+        expect(qk.project.sessions(id, 'visible', '')).not.toEqual(
+          qk.project.sessions(id) as never,
+        );
+      });
+
+      test('a filtered list still sits under sessionsScope, so project invalidation reaches it', () => {
+        expect(
+          startsWith(qk.project.sessions(id, 'visible', 'marketing'), qk.project.sessionsScope(id)),
+        ).toBe(true);
+      });
+    });
+
     test('sessionsScope(id) is a strict prefix of BOTH scoped forms', () => {
       const prefix = qk.project.sessionsScope(id);
       expect(startsWith(qk.project.sessions(id), prefix)).toBe(true);
@@ -273,6 +318,30 @@ describe('qk.project', () => {
     expect(qk.project.triggers(id)).not.toEqual(qk.project.secrets(id) as never);
     expect(startsWith(qk.project.triggers(id), qk.project.secrets(id))).toBe(false);
     expect(startsWith(qk.project.secrets(id), qk.project.triggers(id))).toBe(false);
+  });
+
+  // A subproject is a manifest-defined container, addressed by slug. The
+  // detail key nests under the listing so deleting one subproject can
+  // invalidate both with a single prefix, and the listing itself is a plain
+  // sibling of `triggers`/`secrets` under `scope(id)`.
+  test('subproject(id, slug) nests under subprojects(id) without colliding with it', () => {
+    expect(startsWith(qk.project.subproject(id, 'marketing'), qk.project.subprojects(id))).toBe(
+      true,
+    );
+    expect(qk.project.subproject(id, 'marketing')).not.toEqual(
+      qk.project.subprojects(id) as never,
+    );
+  });
+
+  test('two subprojects are different keys', () => {
+    expect(qk.project.subproject(id, 'marketing')).not.toEqual(
+      qk.project.subproject(id, 'research') as never,
+    );
+  });
+
+  test('subprojects(id) is a sibling of triggers(id), not a prefix relationship', () => {
+    expect(startsWith(qk.project.subprojects(id), qk.project.triggers(id))).toBe(false);
+    expect(startsWith(qk.project.triggers(id), qk.project.subprojects(id))).toBe(false);
   });
 
   test('App deployment history nests under its App inventory without colliding with it', () => {

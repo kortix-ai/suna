@@ -448,6 +448,42 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
+test('project(id).subprojects covers the whole CRUD + context surface', async () => {
+  const subprojects = kortix.project('PID123').subprojects;
+
+  await subprojects.list();
+  expect(last().url).toBe('http://test.local/projects/PID123/subprojects');
+  expect(last().method).toBe('GET');
+
+  await subprojects.get('marketing');
+  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing');
+  expect(last().method).toBe('GET');
+
+  await subprojects.create({ name: 'Marketing' });
+  expect(last().url).toBe('http://test.local/projects/PID123/subprojects');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ name: 'Marketing' });
+
+  await subprojects.update('marketing', { sessions: 'shared' });
+  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing');
+  expect(last().method).toBe('PATCH');
+  expect(last().body).toEqual({ sessions: 'shared' });
+
+  await subprojects.addContext('marketing', { path: 'brand.md', content: '# Brand\n' });
+  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing/context');
+  expect(last().method).toBe('POST');
+
+  await subprojects.removeContext('marketing', 'docs/brand.md');
+  expect(last().url).toBe(
+    'http://test.local/projects/PID123/subprojects/marketing/context?path=docs%2Fbrand.md',
+  );
+  expect(last().method).toBe('DELETE');
+
+  await subprojects.remove('marketing');
+  expect(last().url).toBe('http://test.local/projects/PID123/subprojects/marketing');
+  expect(last().method).toBe('DELETE');
+});
+
 test('project(id).secrets covers provider OAuth start, poll, and removal', async () => {
   await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');
