@@ -288,17 +288,13 @@ describe('admitInboxPrompt against real rows', () => {
     },
   };
 
-  test('a live turn on a RUNNING box holds the prompt until terminal promotion', async () => {
-    // One completed turn promotes exactly one queued prompt. Forwarding into
-    // the live turn makes runtime arrival order authoritative and lets two
-    // user sends share one answer.
+  test('a live turn on a RUNNING box no longer holds a prompt back', async () => {
+    // The turn-active refusal is deleted. OpenCode persists a mid-turn prompt
+    // and runs it in arrival order after the turn in flight ends, so the row
+    // goes straight out instead of costing the user up to 10s of dead air.
     const row = await enqueue('q_admit');
     await setBox('active', turn);
-    expect(await admitInboxPrompt(row)).toEqual({
-      admit: false,
-      reason: 'turn_active',
-      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
-    });
+    expect(await admitInboxPrompt(row)).toEqual({ admit: true });
 
     // The authority itself is unchanged — this is a change to ADMISSION only.
     // `GET .../turn` and `settleOrphanedSandboxTurns` read the same predicate
