@@ -235,7 +235,6 @@ async function oneRun(run: number): Promise<RunResult> {
         error: r.error,
       };
     }
-    const promptStart = performance.now();
     const turn = await fetch(`${sandboxUrl}/turn`, {
       method: 'POST',
       headers: { authorization: H.authorization, 'content-type': 'application/json' },

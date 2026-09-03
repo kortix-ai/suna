@@ -24,7 +24,7 @@
  * `/messages` always says exactly what `/events` said and ids can never
  * disagree between the two.
  */
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { mintWireMessageId, wireIdTime } from './wire-message-id';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 

@@ -52,11 +52,6 @@ const PostHogIdentify = lazy(() =>
     default: mod.PostHogIdentify,
   })),
 );
-const AnnouncementDialog = lazy(() =>
-  import('@/components/announcements/announcement-dialog').then((mod) => ({
-    default: mod.AnnouncementDialog,
-  })),
-);
 const RouteChangeTracker = lazy(() =>
   import('@/components/analytics/route-change-tracker').then((mod) => ({
     default: mod.RouteChangeTracker,

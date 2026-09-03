@@ -60,6 +60,13 @@ describe('turnEndUrl', () => {
   test('encodes the project id', () => {
     expect(turnEndUrl('https://x.test', 'a/b')).toBe('https://x.test/projects/a%2Fb/turn-stream');
   });
+
+  test('strips a hostile trailing-slash candidate in linear time', () => {
+    const root = `https://x.test/${'/'.repeat(30_000)}x`;
+    const startedAt = performance.now();
+    expect(turnEndUrl(root, 'proj-1')).toBe(`${root}/projects/proj-1/turn-stream`);
+    expect(performance.now() - startedAt).toBeLessThan(100);
+  });
 });
 
 describe('turnEndPayload', () => {
@@ -246,13 +253,6 @@ describe('buildTurnEndRelay', () => {
  * the reconcile waits a beat and stands down entirely if a turn started.
  */
 describe('scheduleBootReconcile', () => {
-  const base = {
-    apiUrl: 'https://api.example.test/v1',
-    projectId: 'proj-1',
-    sessionId: 'sess-1',
-    kortixToken: 'tok-1',
-  };
-
   test('closes a row left open by a previous process', async () => {
     const sent: string[] = [];
     const relay = async (status: TurnEndStatus) => void sent.push(status);

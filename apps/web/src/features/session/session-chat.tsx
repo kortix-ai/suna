@@ -39,11 +39,7 @@ import {
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import {
-  SystemNotificationCard,
-  parseSystemNotifications,
-  stripSystemPtyText,
-} from './message-parsing';
+import { stripSystemPtyText } from './message-parsing';
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
@@ -168,7 +164,6 @@ import { projectSessionHref } from '@/lib/navigation/session-href';
 import {
   type Command,
   type MessageWithParts,
-  type Part,
   type PermissionRequest,
   type QuestionRequest,
   type TextPart,
@@ -561,56 +556,6 @@ export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> 
     await deps.stop();
   }
   await deps.dispatch();
-}
-
-// ============================================================================
-// Notification-only turn detection
-// ============================================================================
-
-/** True when a turn's user message contains only system notification XML
- *  with no real user-authored text. */
-function isNotificationOnlyMessage(parts: Part[]): boolean {
-  if (parts.length === 0) return false;
-  const textParts = parts.filter(
-    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-  ) as TextPart[];
-  if (textParts.length === 0) return false;
-  const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
-  return notifications.length > 0 && !cleanText.trim();
-}
-
-// ============================================================================
-// NotificationTurn — lightweight turn for system notification messages
-// ============================================================================
-
-/** Renders notification-only turns (PTY exits, agent completions, etc.)
- *  inline with the conversation flow, styled like tool-call cards. */
-function NotificationTurn({ turn }: { turn: Turn }) {
-  const rawText = useMemo(() => {
-    const texts: string[] = [];
-    for (const p of turn.userMessage.parts) {
-      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
-        texts.push((p as TextPart).text || '');
-      }
-    }
-    return texts.join('\n');
-  }, [turn.userMessage.parts]);
-
-  const { notifications } = useMemo(
-    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
-    [rawText],
-  );
-
-  if (notifications.length === 0) return null;
-
-  return (
-    <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n) => (
-        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
-      ))}
-    </div>
-  );
 }
 
 // ============================================================================
@@ -1190,11 +1135,6 @@ function SessionTurnImpl({
     }
     return result;
   }, [questions, sessionId, turn.assistantMessages]);
-  const answeredQuestionIds = useMemo(
-    () => new Set(answeredQuestionParts.map(({ part }) => part.id)),
-    [answeredQuestionParts],
-  );
-
   // Inline content parts — interleaves text and answered question parts in natural order.
   // When a turn contains answered questions, we need to render text and questions
   // in their original order rather than extracting the last text as a separate "response".
@@ -1386,24 +1326,8 @@ function SessionTurnImpl({
     return () => clearInterval(timer);
   }, [retryInfo]);
 
-  // ---- Duration ticking ----
-  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
-  // where it called setDuration on mount and forced every completed turn in the
-  // transcript through a second render for a number that never changes. The
-  // early return below is what removes that pass. A settled turn's duration is
-  // now SessionTurnMeta's job, from turnDurationMs.
   const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
   const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
-  const [liveDuration, setLiveDuration] = useState('');
-  useEffect(() => {
-    if (!working) return;
-    const { startedAt } = sessionTurnSpan(turn);
-    if (startedAt == null) return;
-    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [working, turn]);
 
   // ---- Copy response ----
   const handleCopy = async () => {
@@ -2197,7 +2121,6 @@ export function SessionChat({
     loadOlder,
   } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
-  const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
@@ -2294,10 +2217,6 @@ export function SessionChat({
   const composerAgentName = composerAgent.selected;
   const noAccessibleAgents = composerAgent.disabled;
   const localAgentSet = local.agent.set;
-  const localModelCurrentKey = local.model.currentKey;
-  // Wire model to SEND: `auto` when on the default (gateway resolves it), else
-  // the explicit pick. Always send this — not currentKey, which is for display.
-  const localModelSendKey = local.model.sendKey;
   const localModelList = local.model.list;
   const localModelSet = local.model.set;
   const localModelVisible = local.model.visible;

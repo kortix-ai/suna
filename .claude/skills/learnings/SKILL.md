@@ -21,6 +21,14 @@ linked, not inlined.
 
 ## Register
 
+### Parse untrusted text with one forward scan, not a backtracking regular expression (2026-09-03)
+
+**When:** trimming URLs or extracting text from upstream HTML and other untrusted response bodies.
+**Incident:** the Pi PR introduced three high-severity CodeQL alerts; 30,000 trailing-slash
+candidates took 363 ms, and 10,000 unclosed HTML tags took 425 ms on a developer machine.
+**Rule:** use an index or cursor that advances monotonically. Add an adversarial-size regression test.
+**Enforcer:** CodeQL blocks polynomial regexes; the worker and SDK tests cap both cases at 100 ms.
+
 ### Read deployed capability and environment facts from the target, not the runner label (2026-09-03)
 
 **When:** writing browser assertions for a deployed preview, staging, or production target.

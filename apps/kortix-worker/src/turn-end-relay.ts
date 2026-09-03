@@ -37,7 +37,9 @@ export type TurnEndStatus = 'idle' | 'error';
 
 /** `POST /v1/projects/:projectId/turn-stream`, the route `r4.ts` serves. */
 export function turnEndUrl(apiUrl: string, projectId: string): string {
-  const root = apiUrl.replace(/\/+$/, '');
+  let rootEnd = apiUrl.length;
+  while (rootEnd > 0 && apiUrl.charCodeAt(rootEnd - 1) === 47) rootEnd -= 1;
+  const root = apiUrl.slice(0, rootEnd);
   return `${root}/projects/${encodeURIComponent(projectId)}/turn-stream`;
 }
 

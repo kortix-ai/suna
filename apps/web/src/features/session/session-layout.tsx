@@ -226,7 +226,7 @@ export const SessionLayout = memo(function SessionLayout({
   const prevSplitRef = useRef(panelSplit);
   const prevAspectRef = useRef(panelAspect);
 
-  const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
+  const wallpaperLayer: HTMLDivElement | null = null;
 
   const shouldShowPanel = isSidePanelOpen;
 

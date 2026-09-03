@@ -68,8 +68,12 @@ function runtime(): OpencodeClient {
  * transient failure doesn't wedge the key — the next call issues a fresh
  * `/start` instead of replaying a stale rejected promise forever.
  */
-const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
-const inFlightEnvironmentStarts = new Map<string, Promise<SessionRuntimeEntry>>();
+interface InFlightRuntimeStart {
+  promise: Promise<SessionRuntimeEntry>;
+}
+
+const inFlightSessionStarts = new Map<string, InFlightRuntimeStart>();
+const inFlightEnvironmentStarts = new Map<string, InFlightRuntimeStart>();
 
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
@@ -950,7 +954,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const key = `${projectId}\n${sessionId}`;
       const inFlight = inFlightSessionStarts.get(key);
       if (inFlight) {
-        _ready = await inFlight;
+        _ready = await inFlight.promise;
         await previewConfig;
         return _ready;
       }
@@ -1028,17 +1032,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
               : 'worker',
         };
       })();
+      const start: InFlightRuntimeStart = { promise: startPromise };
 
-      inFlightSessionStarts.set(key, startPromise);
+      inFlightSessionStarts.set(key, start);
       try {
-        _ready = await startPromise;
+        _ready = await start.promise;
         // Resolved concurrently with the boot above, so this is already
         // settled — awaited here only so `previewUrl()` can never be reached
         // before the deployment's preview addressing is known.
         await previewConfig;
         return _ready;
       } finally {
-        if (inFlightSessionStarts.get(key) === startPromise) {
+        if (inFlightSessionStarts.get(key) === start) {
           inFlightSessionStarts.delete(key);
         }
       }
@@ -1055,7 +1060,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const key = `${projectId}\n${sessionId}`;
       const inFlight = inFlightEnvironmentStarts.get(key);
       if (inFlight) {
-        _ready = await inFlight;
+        _ready = await inFlight.promise;
         return _ready;
       }
 
@@ -1082,12 +1087,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           { code: 'ENVIRONMENT_UNAVAILABLE' },
         );
       })();
-      inFlightEnvironmentStarts.set(key, environmentPromise);
+      const environmentStart: InFlightRuntimeStart = { promise: environmentPromise };
+      inFlightEnvironmentStarts.set(key, environmentStart);
       try {
-        _ready = await environmentPromise;
+        _ready = await environmentStart.promise;
         return _ready;
       } finally {
-        if (inFlightEnvironmentStarts.get(key) === environmentPromise) {
+        if (inFlightEnvironmentStarts.get(key) === environmentStart) {
           inFlightEnvironmentStarts.delete(key);
         }
       }
