@@ -25,17 +25,15 @@ mock.module('../config', () => ({
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
-        if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'glm-5.2';
+        if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'glm-5.3-flash';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
-        if (key === 'ASTER_API_KEY') return 'aster-key';
-        if (key === 'ASTER_API_URL') return 'https://api.asterlab.ai/v1';
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') {
           return [
             {
               id: 'test-platform-default',
               models: ['codex/gpt-5.6-sol'],
-              fallbackModels: ['glm-5.2'],
+              fallbackModels: ['glm-5.3-flash'],
               fallbackOn: 'any-error',
             },
           ];
@@ -171,7 +169,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   test('blocks managed premium candidates for free accounts', async () => {
     accountTier = 'free';
     await expect(
-      resolveCandidates(principal('free-managed'), 'glm-5.2'),
+      resolveCandidates(principal('free-managed'), 'glm-5.3-flash'),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'plan_upgrade_required',
@@ -181,7 +179,7 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('allows managed premium candidates for Team accounts', async () => {
     accountTier = 'per_seat';
-    const candidates = await resolveCandidates(principal('team-managed'), 'glm-5.2');
+    const candidates = await resolveCandidates(principal('team-managed'), 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
     // 0, not 1: the pass path answers via the managed-models entitlement
@@ -242,7 +240,7 @@ describe('resolveCandidates free-tier premium gate', () => {
     billingEnabled = false;
     accountTier = 'free';
     managedProviderEnabled = true;
-    const candidates = await resolveCandidates(principal('self-host-managed'), 'glm-5.2');
+    const candidates = await resolveCandidates(principal('self-host-managed'), 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
     expect(accountTierCalls).toBe(0);
   });
@@ -251,7 +249,7 @@ describe('resolveCandidates free-tier premium gate', () => {
     managedProviderEnabled = false;
     accountTier = 'per_seat';
     await expect(
-      resolveCandidates(principal('self-host-flag-off'), 'glm-5.2'),
+      resolveCandidates(principal('self-host-flag-off'), 'glm-5.3-flash'),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'model_disabled_on_deployment',

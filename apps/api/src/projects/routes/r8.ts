@@ -32,7 +32,8 @@ import {
   sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { resolveChangeRequestBase } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
@@ -632,6 +633,11 @@ projectsApp.openapi(
             ? stored.wireMessageId
             : messageId,
       deduped: enqueued.deduped,
+      // The write's place on the SERVER clock — stamped after the enqueue
+      // settled. Clients rank queue snapshots on this one clock, so a read
+      // issued before this POST carries an older stamp and can never erase
+      // the row it confirmed (JAY-728).
+      observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
 
@@ -660,7 +666,10 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(z.object({ prompts: z.array(SessionPromptSchema) }), 'Pending prompts'),
+      200: json(
+        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
+        'Pending prompts',
+      ),
       ...errors(400, 404),
     },
   }),
@@ -681,12 +690,15 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
+    // Captured BEFORE the read: an answer is only as fresh as the moment it
+    // was asked. Clients rank queue snapshots on this server clock (JAY-728).
+    const observedAt = new Date().toISOString();
     // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
     // how triggers, Slack and approval-resume deliver, and listing those put an
     // automation's internal prompt in the user's own queue.
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
 
-    return c.json({ prompts: rows.map(serializePrompt) });
+    return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
   },
 );
 
@@ -856,7 +868,10 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } }, required: true },
     },
     responses: {
-      200: json(z.object({ prompts: z.array(SessionPromptSchema) }), 'Hold applied'),
+      200: json(
+        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
+        'Hold applied',
+      ),
       ...errors(400, 404),
     },
   }),
@@ -895,6 +910,9 @@ projectsApp.openapi(
     }
 
     await holdInboxPrompts(sessionId, body.held);
+    // After the write, before the read-back — either instant orders this
+    // snapshot correctly against the hold it just applied (JAY-728).
+    const observedAt = new Date().toISOString();
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
     if (body.held) {
       // The instant marking above is what the client waits for; what a Stop
@@ -904,7 +922,7 @@ projectsApp.openapi(
     } else {
       void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
     }
-    return c.json({ prompts: rows.map(serializePrompt) });
+    return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
   },
 );
 
@@ -1013,15 +1031,13 @@ projectsApp.openapi(
     const description = normalizeString(body.description) ?? '';
     const headRef = normalizeString(body.head_ref ?? body.headRef);
     if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
-    const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? loaded.row.defaultBranch;
-    if (baseRef === headRef) {
-      return c.json({ error: 'head_ref and base_ref must differ' }, 400);
-    }
-
+    // The session must be resolved BEFORE the base, because a session's own
+    // base is what the change request targets.
     let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+    let sessionBaseRef: string | null = null;
     if (originSessionId) {
       const [sessionRow] = await db
-        .select({ sessionId: projectSessions.sessionId })
+        .select({ sessionId: projectSessions.sessionId, baseRef: projectSessions.baseRef })
         .from(projectSessions)
         .where(
           and(
@@ -1031,6 +1047,21 @@ projectsApp.openapi(
         )
         .limit(1);
       if (!sessionRow) originSessionId = null;
+      else sessionBaseRef = normalizeString(sessionRow.baseRef);
+    }
+
+    const baseDecision = resolveChangeRequestBase({
+      requested: normalizeString(body.base_ref ?? body.baseRef),
+      sessionBase: sessionBaseRef,
+      projectDefault: loaded.row.defaultBranch,
+      actorIsSession: isProjectSessionPrincipal(c),
+    });
+    if (!baseDecision.ok) {
+      return c.json({ error: baseDecision.error, code: baseDecision.code }, 400);
+    }
+    const baseRef = baseDecision.baseRef;
+    if (baseRef === headRef) {
+      return c.json({ error: 'head_ref and base_ref must differ' }, 400);
     }
 
     // Resolve current tips so the CR has anchored SHAs from the start, and

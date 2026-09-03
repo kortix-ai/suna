@@ -1348,7 +1348,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       slug: 'daily',
       name: 'Daily',
       cron: '* * * * * *',
-      model: 'glm-5.2',
+      model: 'glm-5.3-flash',
       prompt: 'Run at {{ fired_at }}',
     }));
 
@@ -1363,11 +1363,11 @@ describe('git-backed triggers — runtime fire paths', () => {
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.2');
+    expect(lastProvisionEnv?.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.3-flash');
   });
 
   test('manual fire without overrides resolves the project model and selected agent before provisioning', async () => {
-    modelDefaults.projects[PROJECT_ID] = 'glm-5.2';
+    modelDefaults.projects[PROJECT_ID] = 'glm-5.3-flash';
     projectRow.metadata = {
       default_agent: 'asana-refresher',
       experimental: { llm_gateway: true },
@@ -1391,7 +1391,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(sessionRows.at(-1)?.agentName).toBe('asana-refresher');
     expect(sessionRows.at(-1)?.metadata).toMatchObject({
-      opencode_model: 'kortix/glm-5.2',
+      opencode_model: 'kortix/glm-5.3-flash',
       opencode_model_source: 'project',
     });
   });

@@ -3,7 +3,7 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import type { Command } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRosterReady } from './keys';
+import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
 import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } from './shared';
 
 // ============================================================================
@@ -23,7 +23,7 @@ import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } fro
  * the result unconditionally.
  */
 export function useOpenCodeCommands() {
-  const rosterReady = useOpenCodeRosterReady();
+  const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery<Command[]>({
     queryKey: opencodeKeys.commands(),
     queryFn: async () => {
@@ -34,7 +34,7 @@ export function useOpenCodeCommands() {
       return commands;
     },
     placeholderData: () => cachedRuntimeList<Command>(LS_COMMANDS),
-    enabled: rosterReady,
+    enabled: runtimeReady,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });

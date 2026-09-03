@@ -136,7 +136,11 @@ export function OpenChangeRequestDialog({
   const [pickedBaseRef, setPickedBaseRef] = useState(defaultBranch);
 
   const headRef = sessionMode ? activeSession!.branch_name : pickedHeadRef;
-  const baseRef = sessionMode ? defaultBranch : pickedBaseRef;
+  // In session mode the base is derived server-side from the session's own
+  // base_ref, which is not necessarily the project default: a session started
+  // from `dev` must propose into `dev`. Sending `defaultBranch` here is what
+  // used to retarget those change requests at `main`.
+  const baseRef = sessionMode ? (activeSession!.base_ref ?? defaultBranch) : pickedBaseRef;
 
   useEffect(() => {
     if (!open) return;
@@ -186,7 +190,7 @@ export function OpenChangeRequestDialog({
         title: title.trim(),
         description: description.trim() || undefined,
         head_ref: headRef,
-        base_ref: baseRef,
+        base_ref: sessionMode ? undefined : baseRef,
         session_id: sessionMode ? activeSession!.session_id : undefined,
       },
       {

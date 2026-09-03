@@ -10,6 +10,7 @@ import {
   probeFileAvailability,
   type FileAvailability,
 } from '@/features/session/file-availability';
+import { useInsideLink } from './inside-link-context';
 import { resolveRuntimePath } from '@/features/session/use-oc-file-open';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { cn } from '@/lib/utils';
@@ -100,15 +101,16 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
   }, [canProbe, missing, openPreview, text]);
 
   if (missing) {
-    // Inert: no `role`, no handler, no pointer. The demotion to
-    // `text-muted-foreground` is the whole visual signal — deliberately not a
-    // strikethrough, because a probe failure cannot tell a deleted file apart
-    // from a sandbox that stopped answering, and only one of those means the
-    // file is gone.
+    // Inert: no `role`, no handler, no pointer. Losing the affordances IS the
+    // whole signal — the text is deliberately NOT dimmed and NOT struck
+    // through, because a probe failure cannot tell a deleted file apart from a
+    // sandbox that stopped answering, and only one of those means the file is
+    // gone. Dimming would assert the first when only the second may be true;
+    // the title attribute carries the uncertainty instead.
     return (
       <code
         title={`${text} — not available in this session`}
-        className={cn(INLINE_CODE, 'text-muted-foreground')}
+        className={cn(INLINE_CODE)}
       >
         {children}
       </code>
@@ -143,6 +145,7 @@ function FilePathCode({ text, children }: { text: string; children: React.ReactN
 // Inline code that becomes a link (URLs) or opens a file preview (paths).
 export function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const { proxyUrl } = useSandboxProxy();
+  const insideLink = useInsideLink();
   const text = childrenToText(children).trim();
 
   // Before the URL and path checks: a hex is neither, and the test is a single
@@ -156,6 +159,14 @@ export function ClickableInlineCode({ children }: { children: React.ReactNode })
   if (isUrl) {
     const href = proxyUrl(text) ?? text;
     const linkClass = cn(INLINE_CODE, 'hover:text-foreground cursor-pointer transition-colors');
+
+    // Already inside a markdown link (e.g. `` [`http://x`](http://x) ``): a
+    // nested <a> is invalid HTML and throws a React hydration error. The
+    // surrounding anchor already carries the click, so render the styled code
+    // WITHOUT its own anchor. See `inside-link-context.ts`.
+    if (insideLink) {
+      return <code className={cn(linkClass, 'text-[0.8rem]')}>{children}</code>;
+    }
 
     // A malformed absolute URL (e.g. `http://:`) must not reach next/link —
     // its prefetch path throws `Cannot prefetch '...'` (see isLinkSafeHref).

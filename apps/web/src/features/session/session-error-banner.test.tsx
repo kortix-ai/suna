@@ -11,7 +11,7 @@ describe('SessionRetryDisplay', () => {
         secondsLeft={26}
         details={{
           message: 'All upstream candidates failed',
-          provider: 'aster',
+          provider: 'openrouter',
           code: 'upstream_error',
           requestId: 'req_incident',
           attemptFailures: [
@@ -27,9 +27,9 @@ describe('SessionRetryDisplay', () => {
             },
             {
               attempt: 2,
-              provider: 'aster',
-              routeModel: 'glm-5.2',
-              resolvedModel: 'glm-5.2',
+              provider: 'openrouter',
+              routeModel: 'glm-5.3-flash',
+              resolvedModel: 'z-ai/glm-5.3-flash',
               stage: 'stream_probe',
               code: 'stream_probe_timeout',
               message: 'No bytes within 60 seconds.',
@@ -40,12 +40,12 @@ describe('SessionRetryDisplay', () => {
     );
 
     expect(html).toContain('Retrying in 26s');
-    expect(html).toContain('aster · upstream_error · req_incident');
+    expect(html).toContain('openrouter · upstream_error · req_incident');
     expect(html).toContain('openai-codex/gpt-5.6-sol');
     expect(html).toContain('route codex/gpt-5.6-sol');
     expect(html).toContain('HTTP 400');
     expect(html).toContain('context_length_exceeded');
-    expect(html).toContain('aster/glm-5.2');
+    expect(html).toContain('openrouter/z-ai/glm-5.3-flash');
     expect(html).toContain('stream_probe_timeout');
   });
 
@@ -62,7 +62,7 @@ describe('SessionRetryDisplay', () => {
       <TurnErrorDisplay
         errorText="All upstream candidates failed"
         errorDetails={{
-          provider: 'aster',
+          provider: 'openrouter',
           code: 'upstream_error',
           requestId: 'req_terminal',
           attemptFailures: [
@@ -86,5 +86,19 @@ describe('SessionRetryDisplay', () => {
     expect(html).toContain('openai-codex/gpt-5.6-sol');
     expect(html).toContain('HTTP 400');
     expect(html).toContain('context_length_exceeded');
+  });
+});
+
+// Persisted on a local stack as OpenCode `UnknownError.data.message`:
+// `{"message":"The usage limit has been reached","code":429}`. Once the SDK
+// unwraps that to the sentence, it is a usage stop the user can lift, so it
+// must reach the upgrade card and not the generic failure row.
+describe('TurnErrorDisplay routes a usage-limit sentence to the upgrade card', () => {
+  test('"The usage limit has been reached" renders Upgrade plan', () => {
+    const html = renderToStaticMarkup(
+      <TurnErrorDisplay errorText="The usage limit has been reached" />,
+    );
+    expect(html).toContain('Upgrade plan');
+    expect(html).toContain('The usage limit has been reached');
   });
 });

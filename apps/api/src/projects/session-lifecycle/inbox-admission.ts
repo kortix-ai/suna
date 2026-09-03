@@ -2,18 +2,16 @@ import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
-import type { SessionLifecycleCommandRow } from './store';
+import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
 /**
  * The inbox's admission gate.
  *
- * A prompt sits in `session_lifecycle_commands` only until it is this session's
- * TURN TO BE SENT — not until the session is idle. A live turn does NOT hold a
- * prompt back: it is forwarded at once, OpenCode persists it (the bubble lands
- * in the transcript within seconds) and answers everything queued behind the
- * turn in flight as soon as that turn ends. That is what "the queue sends in
- * between" means to the user: whatever was typed while the agent worked is
- * already WITH the agent, and it picks all of it up together.
+ * A prompt sits in `session_lifecycle_commands` until the prior turn is idle
+ * and every older prompt has left the delivery path. OpenCode's legacy
+ * `/prompt_async` route interleaves inputs posted during a live turn. The inbox
+ * must therefore serialize before that boundary instead of trusting runtime
+ * placement to recover ownership afterwards.
  *
  * What is left is ORDER, and only order: one prompt of a session on the wire at
  * a time, oldest first, so the user's own messages reach OpenCode in the order
@@ -58,8 +56,6 @@ function admissionRefusals(result: unknown): number {
 /** The one thing that still holds a prompt back. Kept as a union because it is
  *  written into `result.admission_reason` and served as `GET .../prompts`'
  *  `reason`, where a second value may well appear again. */
-export type InboxAdmissionReason = 'older_prompt_pending';
-
 export type InboxAdmission =
   | { admit: true }
   | { admit: false; reason: InboxAdmissionReason; retryAfterMs: number };
@@ -73,11 +69,9 @@ export type InboxAdmission =
  * its metadata still says. Pure over the two fields, so the truth table is
  * testable without a database.
  *
- * ADMISSION NO LONGER READS THIS — a live turn does not hold a prompt back. It
- * stays here, and stays exported, because `GET .../turn` and
- * `settleOrphanedSandboxTurns` share the status filter and would drift apart if
- * each re-expressed it, and because the DRAIN still asks the question for a
- * different purpose — see `sessionHoldsLiveTurn` below.
+ * Admission, `GET .../turn`, and `settleOrphanedSandboxTurns` share this exact
+ * predicate. A stopped box never holds authority even when stale metadata still
+ * contains an active turn.
  */
 export function sessionHoldsTurnAuthority(
   box: { status: string; metadata: Record<string, unknown> | null } | null,
@@ -90,11 +84,8 @@ export function sessionHoldsTurnAuthority(
 /**
  * The same question, against the database, for one session.
  *
- * ADMISSION still does not ask it — a live turn no longer holds a prompt back.
- * The DRAIN does, and for a different reason: a prompt delivered into a live
- * turn has to be re-minted first, because the turn has been writing higher wire
- * ids ever since it started and OpenCode reads a lower id as already answered.
- * See `executeQueuedContinue`.
+ * The drain also uses this read when it must decide whether a client-minted id
+ * is still correctly placed.
  */
 export async function sessionHoldsLiveTurn(sessionId: string): Promise<boolean> {
   // `session_sandboxes.session_id` is UNIQUE, so this is the session's one box.
@@ -187,6 +178,10 @@ export async function admitInboxPrompt(
     INBOX_ORDER_MAX_BACKOFF_MS,
     refusals,
   );
+
+  if (sessionHoldsTurnAuthority(await deps.readSandbox(row.sessionId))) {
+    return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
+  }
 
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside

@@ -7,7 +7,7 @@ import { pickPrimaryTemplate, resolveSandboxRuntimeStatus } from '../../snapshot
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
 import { ttlMemo } from '../../shared/ttl-memo';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isSelfHostOperator } from '../../shared/platform-roles';
 import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
@@ -121,12 +121,16 @@ projectsApp.openapi(
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
   const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
+  // Narrowed from `isPlatformAdmin` to `isSelfHostOperator`: this path imports
+  // ANY repo in MANAGED_GIT_GITHUB_OWNER, which on cloud is the shared
+  // `managed-kortix` org. Staff admins are platform admins too, so the old gate
+  // let one import another customer's project repository.
   if (
     installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID &&
-    !(await isPlatformAdmin(scope.userId))
+    !(await isSelfHostOperator(scope.userId))
   ) {
     return c.json(
-      { error: 'Managed GitHub repository import requires platform admin access' },
+      { error: 'Managed GitHub repository import is only available to a self-host operator' },
       403,
     );
   }

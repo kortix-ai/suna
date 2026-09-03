@@ -101,7 +101,7 @@ describe('ApiClient', () => {
         route: {
           policyId: 'platform-default',
           primaryModel: 'codex/gpt-5.6-sol',
-          fallbackModels: ['glm-5.2'],
+          fallbackModels: ['glm-5.3-flash'],
           fallbackOn: 'any-error',
         },
       });
@@ -120,7 +120,7 @@ describe('ApiClient', () => {
     expect(route).toMatchObject({
       policyId: 'platform-default',
       primaryModel: 'codex/gpt-5.6-sol',
-      fallbackModels: ['glm-5.2'],
+      fallbackModels: ['glm-5.3-flash'],
     });
   });
 

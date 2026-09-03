@@ -33,16 +33,16 @@ test('reads current routing policy from the shared DB on every request', async (
 
   selectRows = [
     {
-      visionModel: 'glm-5.2',
-      defaultFallbackModels: ['glm-5.2'],
+      visionModel: 'glm-5.3-flash',
+      defaultFallbackModels: ['glm-5.3-flash'],
       defaultFallbackOn: 'any-error',
       rules: [],
       modelOverrides: { 'codex/gpt-5.4': false },
     },
   ];
   expect(await getProjectRoutingPolicy('multi-replica-project')).toEqual({
-    visionModel: 'glm-5.2',
-    defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+    visionModel: 'glm-5.3-flash',
+    defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
     rules: [],
     modelGenerationConfig: {},
     modelOverrides: { 'codex/gpt-5.4': false },

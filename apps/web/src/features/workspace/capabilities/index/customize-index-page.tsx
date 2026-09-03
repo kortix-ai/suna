@@ -9,7 +9,7 @@ import {
   KeyIcon as KeyRound,
   LockKeyIcon as Lock,
   PlugIcon as Plug,
-  GearSixIcon as Settings,
+  TrayIcon as Tray,
   type Icon,
 } from '@phosphor-icons/react';
 import { m, useReducedMotion } from 'motion/react';
@@ -28,6 +28,7 @@ import {
 } from '@/features/workspace/capabilities/shared/capability-tabs';
 import { useProjectCans } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
+import { useFeatureFlag } from '@kortix/sdk/react';
 
 /**
  * The page body for `/projects/[id]/customize` when opened bare (no
@@ -97,9 +98,9 @@ const CARD_COPY: Record<CapabilityTab['key'], { icon: Icon; description: string 
     icon: KeyRound,
     description: 'Store encrypted values and control where each value can be used.',
   },
-  config: {
-    icon: Settings,
-    description: 'General project settings, sandbox templates, feature flags, and upgrades.',
+  review: {
+    icon: Tray,
+    description: 'Work waiting on a person before it can continue.',
   },
 };
 
@@ -113,7 +114,7 @@ function DotGrid() {
     <div
       aria-hidden
       className={cn(
-        'pointer-events-none absolute inset-x-0 top-0 h-56 select-none opacity-70',
+        'pointer-events-none absolute inset-x-0 top-0 h-56 opacity-70 select-none',
         '[background-image:radial-gradient(circle_at_center,var(--color-border)_1px,transparent_1px)]',
         '[background-size:22px_22px]',
         '[mask-image:radial-gradient(ellipse_75%_100%_at_50%_0%,#000_0%,transparent_72%)]',
@@ -133,7 +134,8 @@ export function CustomizeIndexPage({ projectId }: { projectId: string }) {
   // three leaves they DO hold (Models, Agents, Triggers) on a page they cannot
   // use, reachable by URL.
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const visible = visibleCapabilityTabs(caps);
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
+  const visible = visibleCapabilityTabs(caps, { reviewEnabled });
 
   const cards = CAPABILITY_TABS.filter((tab) => visible.includes(tab)).map((tab) => ({
     tab,

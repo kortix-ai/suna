@@ -5,6 +5,7 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
+import type { SandboxExecOptions, SandboxExecResult } from './index';
 import { SandboxState } from '@daytonaio/sdk';
 import { SANDBOX_VERSION, config } from '../../config';
 import { triggerEmergencyDiskArchiveSweep } from '../../projects/disk-quota-guard';
@@ -165,6 +166,10 @@ export function daytonaLifecycle(autoStopOverride?: number): {
     autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
     autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   };
+}
+
+function shellQuote(arg: string): string {
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
 export class DaytonaProvider implements SandboxProvider {
@@ -374,6 +379,26 @@ export class DaytonaProvider implements SandboxProvider {
         `Daytona session runtime bootstrap failed for ${externalId}: exit ${result.exitCode}: ${String(result.result).slice(0, 500)}`,
       );
     }
+  }
+
+  async exec(
+    externalId: string,
+    command: string[],
+    opts: SandboxExecOptions,
+  ): Promise<SandboxExecResult> {
+    const daytona = getDaytona();
+    const sandbox = await withTimeout(
+      daytona.get(externalId),
+      PROVIDER_CALL_TIMEOUT_MS,
+      `Daytona get(${externalId}) for exec`,
+    );
+    const line = command.map(shellQuote).join(' ');
+    const result = await withTimeout(
+      sandbox.process.executeCommand(line, undefined, undefined, Math.ceil(opts.timeoutMs / 1000)),
+      opts.timeoutMs + 30_000,
+      `Daytona exec(${externalId})`,
+    );
+    return { exitCode: result.exitCode, stdout: result.result ?? '', stderr: '' };
   }
 
   async start(externalId: string): Promise<void> {

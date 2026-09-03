@@ -27,7 +27,7 @@ export const uncoveredAllow: AllowEntry[] = [
     method: "POST",
     path: "/v1/platform/runtime-projection",
     reason:
-      "sandbox-only projection sink: the in-guest daemon pushes its own /kortix/opencode/state document with a sandbox token, and the handler re-checks that token's sandbox against session_sandboxes (sandbox -> session -> account) before storing. Not an end-user API route — same class as /v1/platform/boot-timeline. Credential, scoping, gzip decoding and the decompressed size cap are covered black-box in apps/api/src/platform/routes/runtime-projection.test.ts; the SERVED side is flow-covered through the open-bundle runtime leg in SESS-20.",
+      "sandbox-only projection sink: the in-guest daemon pushes its own /kortix/opencode/state document with a sandbox token, and the handler re-checks that token's sandbox against session_sandboxes (sandbox -> session -> account) before storing. Not an end-user API route — same class as /v1/platform/boot-timeline. Credential, scoping, gzip decoding and the decompressed size cap are covered black-box in apps/api/src/platform/routes/runtime-projection.test.ts; the SERVED side is flow-covered through the snapshot runtime leg in SESS-20.",
   },
   {
     method: "POST",

@@ -2,6 +2,7 @@ import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -300,9 +301,11 @@ export async function enqueueContinueSessionCommand(
  * Reading a display marker to make a correctness decision is how the id got
  * sent stale; the payload merge (`||`) is the durable half.
  */
+export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+
 export async function requeueForAdmission(
   commandId: string,
-  reason: 'older_prompt_pending',
+  reason: InboxAdmissionReason,
   availableAt: Date,
 ): Promise<void> {
   await db
@@ -645,6 +648,20 @@ export async function markCommandFailed(
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // Surface the failure on the trigger runtime row too. markCommandFailed parks
+  // the session (above) so the next reuse fire self-heals, but until now it left
+  // `projectTriggerRuntime.last_status` frozen at "queued" — the triggers API/UI
+  // never showed the dead-letter, so the operator's queue-age alarm was the only
+  // (and a misleading) signal. Flip it to "failed" with the error.
+  if (typeof payload.triggerSlug === 'string') {
+    await markTriggerRuntimeDeliveryFailed({
+      projectId: row.projectId,
+      slug: payload.triggerSlug,
+      when: new Date(),
+      error,
+    }).catch(() => {});
   }
 }
 

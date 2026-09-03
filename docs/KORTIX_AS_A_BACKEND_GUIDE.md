@@ -43,7 +43,7 @@ curl -sS -X POST \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
     "agent_name": "support",
-    "opencode_model": "kortix/glm-5.2",
+    "opencode_model": "kortix/glm-5.3-flash",
     "runtime_context": {
       "ticket_id": "ticket-123"
     },
@@ -77,7 +77,7 @@ const kortix = createScopedKortix({
 
 const session = await kortix.project(projectId).sessions.create({
   agent_name: "support",
-  opencode_model: "kortix/glm-5.2",
+  opencode_model: "kortix/glm-5.3-flash",
   runtime_context: { ticket_id: "ticket-123" },
   connector_bindings: {
     "gmail-read": { connection_id: connectionId },

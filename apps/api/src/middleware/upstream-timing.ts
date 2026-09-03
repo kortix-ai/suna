@@ -67,6 +67,18 @@ export function upstreamMsSoFar(): number {
   return Number.isFinite(value) ? value : 0;
 }
 
+/** Split independently measured clocks into valid whole-millisecond values. */
+export function splitTimingDurations(
+  totalMs: number,
+  upstreamMs: number,
+): { upstream: number; api: number } {
+  const upstream = Math.round(upstreamMs);
+  return {
+    upstream,
+    api: Math.max(0, Math.round(totalMs - upstreamMs)),
+  };
+}
+
 /**
  * Emit `Server-Timing` on every response. Mount globally, INSIDE the request
  * context middleware (it reads the context the latter creates).
@@ -76,14 +88,14 @@ export async function upstreamTiming(c: Context, next: Next): Promise<void> {
   await next();
 
   const total = performance.now() - start;
-  const upstream = upstreamMsSoFar();
+  const durations = splitTimingDurations(total, upstreamMsSoFar());
   // `api` is the remainder, floored at zero: the two clocks are started at
   // different depths of the chain, so rounding can otherwise produce a
   // nonsensical negative on a request that is almost entirely one upstream call.
-  const api = Math.max(0, Math.round(total - upstream));
-
   c.header(
     'Server-Timing',
-    upstream > 0 ? `up;dur=${Math.round(upstream)}, api;dur=${api}` : `api;dur=${api}`,
+    durations.upstream > 0
+      ? `up;dur=${durations.upstream}, api;dur=${durations.api}`
+      : `api;dur=${durations.api}`,
   );
 }

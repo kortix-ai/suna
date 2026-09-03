@@ -177,7 +177,7 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
     writeFileSync(frozen, JSON.stringify({ models: { 'retired-model': { name: 'Retired' } } }))
 
     const liveModels = {
-      'glm-5.2': { name: 'GLM 5.2' },
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash' },
       'claude-sonnet-4.6': { name: 'Claude Sonnet 4.6' },
     }
     const server = Bun.serve({
@@ -207,7 +207,7 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
     const dir = mkdtempSync(join(tmpdir(), 'catalog-current-'))
     const frozen = join(dir, 'frozen.json')
     const refreshed = join(dir, 'refreshed.json')
-    const liveModels = { 'glm-5.2': { name: 'GLM 5.2' } }
+    const liveModels = { 'glm-5.3-flash': { name: 'GLM 5.3 Flash' } }
     writeFileSync(frozen, JSON.stringify({ models: liveModels }))
 
     const server = Bun.serve({

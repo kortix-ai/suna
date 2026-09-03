@@ -6,6 +6,7 @@ import {
   isRetryableError,
   isTransportFailure,
   messageFor,
+  resolveTargetAccountId,
   RETRY_DELAY_MS,
   runCreate,
   runCreateAttempt,
@@ -92,21 +93,51 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: null },
       [OWNER_ACCOUNT],
       'key-1',
+      'user-1',
     );
     expect(payload.account_id).toBe('acct-owner');
   });
 
-  test('prefers the explicitly picked account over the creatableAccounts fallback', () => {
+  test('prefers the explicitly picked account over the default, when that pick is one of creatableAccounts', () => {
+    // `userId: 'acct-owner'` anchors this list to the viewer (matches
+    // `OWNER_ACCOUNT`) so it is a normal multi-account list, not a FOREIGN
+    // one — the user is explicitly picking the OTHER account they can also
+    // create in (e.g. personal account owned, team account picked).
+    const picked: KortixAccount = { account_id: 'acct-picked', name: 'Picked Co', account_role: 'owner' };
     const payload = buildCreatePayload(
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
-      [OWNER_ACCOUNT],
+      [OWNER_ACCOUNT, picked],
       'key-1',
+      'acct-owner',
     );
     expect(payload.account_id).toBe('acct-picked');
   });
 
+  test('Task 2 item 3 (G2 fail closed): throws rather than send when the resolved account is NOT one of creatableAccounts', () => {
+    // Was previously "prefers the explicitly picked account over the
+    // creatableAccounts fallback" and asserted `accountId: 'acct-picked'`
+    // resolved even though `'acct-picked'` was absent from `[OWNER_ACCOUNT]`
+    // — trusting `state.accountId` unconditionally, with no check that it is
+    // an account the current user can actually create in. That is precisely
+    // the shape a stale/foreign `accountId` would take, so `buildCreatePayload`
+    // (via `resolveTargetAccountId`) now refuses to send it at all.
+    expect(() =>
+      buildCreatePayload(
+        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
+        [OWNER_ACCOUNT],
+        'key-1',
+        'user-1',
+      ),
+    ).toThrow();
+  });
+
   test('always carries the passed idempotency_key', () => {
-    const payload = buildCreatePayload({ ...INITIAL_FORM_STATE, name: 'x' }, [OWNER_ACCOUNT], 'the-key');
+    const payload = buildCreatePayload(
+      { ...INITIAL_FORM_STATE, name: 'x' },
+      [OWNER_ACCOUNT],
+      'the-key',
+      'user-1',
+    );
     expect(payload.idempotency_key).toBe('the-key');
   });
 
@@ -115,9 +146,77 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
       { ...INITIAL_FORM_STATE, name: '  suna-web  ' },
       [OWNER_ACCOUNT],
       'key-1',
+      'user-1',
     );
     expect(payload.name).toBe('suna-web');
     expect(payload.seed_starter).toBe(true);
+  });
+});
+
+describe('resolveTargetAccountId', () => {
+  test('an explicit pick present in creatableAccounts wins', () => {
+    expect(
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: 'acct-owner' },
+        [OWNER_ACCOUNT],
+        'user-1',
+      ),
+    ).toBe('acct-owner');
+  });
+
+  test('identity match resolves the default when nothing is explicitly picked', () => {
+    const personal: KortixAccount = { account_id: 'user-1', name: "me's Account", account_role: 'owner' };
+    const team: KortixAccount = { account_id: 'acct-team', name: 'Acme', account_role: 'owner' };
+    expect(
+      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [team, personal], 'user-1'),
+    ).toBe('user-1');
+  });
+
+  // Task 2's Tests section: "a member-only user with no owned account
+  // resolves to `undefined` rather than a stranger's account."
+  // `filterCreatableAccounts` excludes a member-role account entirely, so a
+  // member-only user's `creatableAccounts` is always `[]` — there is nothing
+  // to default into, and nothing was ever explicitly picked either.
+  test('a member-only user (empty creatableAccounts) resolves to undefined, never a stranger\'s account', () => {
+    expect(
+      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [], 'user-1'),
+    ).toBeUndefined();
+  });
+
+  test('G2 fail closed: throws when the resolved id is not one of creatableAccounts', () => {
+    expect(() =>
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: 'acct-stale' },
+        [OWNER_ACCOUNT],
+        'user-1',
+      ),
+    ).toThrow();
+  });
+
+  test('G2 fail closed: throws for a FOREIGN accounts list even when the resolved id IS technically in it', () => {
+    // The gap this closes: a 2+-account list with none owned by the viewer
+    // still has an `is_primary_owner`/first-creatable default that resolves
+    // to SOME entry — and that entry is trivially "in creatableAccounts",
+    // since it came from that exact list. The plain membership check above
+    // cannot catch this; only asking whether the list itself is FOREIGN can.
+    const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
+    const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+    expect(() =>
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: null },
+        [foreign1, foreign2],
+        'user-1',
+      ),
+    ).toThrow();
+    // Even an EXPLICIT pick cannot escape a FOREIGN list — the whole list is
+    // untrustworthy, not just the default tier.
+    expect(() =>
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: 'org-1' },
+        [foreign1, foreign2],
+        'user-1',
+      ),
+    ).toThrow();
   });
 });
 
@@ -362,6 +461,8 @@ describe('runCreate: the full create() orchestration', () => {
       attemptKeyFor,
       clearAttemptKey,
       runCreateAttempt: async () => fakeProject('created'),
+      createGitHubRepoProject: async () => fakeProject('created-github'),
+      importGitHubRepoProject: async () => fakeProject('imported-github'),
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
@@ -402,6 +503,8 @@ describe('runCreate: the full create() orchestration', () => {
         clearAttemptKey(fingerprint);
       },
       runCreateAttempt: async () => fakeProject('created-order'),
+      createGitHubRepoProject: async () => fakeProject('created-order'),
+      importGitHubRepoProject: async () => fakeProject('created-order'),
       primeProjectCache: () => order.push('primeCache'),
       invalidateProjects: () => order.push('invalidate'),
       writeLastProjectId: () => order.push('writeCookie'),
@@ -484,6 +587,8 @@ describe('runCreate: the full create() orchestration', () => {
           },
           wait: async () => {},
         }),
+      createGitHubRepoProject: async () => fakeProject('created-retry-mint'),
+      importGitHubRepoProject: async () => fakeProject('created-retry-mint'),
       primeProjectCache: () => {},
       invalidateProjects: () => {},
       writeLastProjectId: () => {},
@@ -595,6 +700,168 @@ describe('runCreate: the full create() orchestration', () => {
     );
 
     expect(sentPayloads[0]?.account_id).toBe('acct-owner');
+  });
+
+  /**
+   * The two GitHub sources. Before this work `runCreate` had ONE network call
+   * (`/projects/provision`) and the page refused to submit anything else, so
+   * "Create in GitHub" and "Import from GitHub" were rendered `disabled`.
+   * These tests pin the routing — which call each source makes, and what each
+   * one is handed — because getting it wrong means creating a workspace
+   * against the wrong upstream repository, which is not recoverable by a
+   * retry.
+   */
+  test('github-create routes to create-repo, never to provision', async () => {
+    const state = {
+      ...INITIAL_FORM_STATE,
+      name: "Ana's agents",
+      accountId: 'acct-owner',
+      source: 'github-create' as const,
+      installationId: '84',
+    };
+    let provisionCalls = 0;
+    const created: unknown[] = [];
+
+    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      ...noopClient(),
+      runCreateAttempt: async () => {
+        provisionCalls += 1;
+        return fakeProject('should-not-happen');
+      },
+      createGitHubRepoProject: async (payload) => {
+        created.push(payload);
+        return fakeProject('created-in-github');
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(provisionCalls).toBe(0);
+    expect(created).toHaveLength(1);
+    // The slug for GitHub, the typed name for the workspace.
+    expect(created[0]).toMatchObject({
+      name: 'Ana-s-agents',
+      project_name: "Ana's agents",
+      installation_id: '84',
+      account_id: 'acct-owner',
+    });
+  });
+
+  test('github-import routes to link-repository, never to provision', async () => {
+    const state = {
+      ...INITIAL_FORM_STATE,
+      name: 'Portal',
+      accountId: 'acct-owner',
+      source: 'github-import' as const,
+      installationId: '84',
+      repoFullName: 'acme/portal',
+      defaultBranch: 'trunk',
+    };
+    let provisionCalls = 0;
+    const imported: unknown[] = [];
+
+    const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      ...noopClient(),
+      runCreateAttempt: async () => {
+        provisionCalls += 1;
+        return fakeProject('should-not-happen');
+      },
+      importGitHubRepoProject: async (payload) => {
+        imported.push(payload);
+        return fakeProject('imported-from-github');
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(provisionCalls).toBe(0);
+    expect(imported[0]).toMatchObject({
+      repo_full_name: 'acme/portal',
+      installation_id: '84',
+      default_branch: 'trunk',
+      account_id: 'acct-owner',
+    });
+  });
+
+  test('a GitHub source mints no idempotency key — neither route accepts one', async () => {
+    // A minted-but-never-sent key would persist for its full TTL and never be
+    // cleared, so a LATER managed create with the same fingerprint would reuse
+    // a key that no request ever carried.
+    const state = {
+      ...INITIAL_FORM_STATE,
+      name: 'suna-web',
+      accountId: 'acct-owner',
+      source: 'github-create' as const,
+      installationId: '84',
+    };
+    const mintCalls: string[] = [];
+
+    await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+      ...noopClient(),
+      attemptKeyFor: (fingerprint, now) => {
+        mintCalls.push(fingerprint);
+        return attemptKeyFor(fingerprint, now);
+      },
+    });
+
+    expect(mintCalls).toEqual([]);
+  });
+
+  test('every source runs the SAME success path — cache, invalidate, cookie, onboarding', async () => {
+    // The routing differs; what happens after a project exists must not.
+    for (const state of [
+      { ...INITIAL_FORM_STATE, name: 'a', accountId: 'acct-owner', source: 'managed' as const },
+      {
+        ...INITIAL_FORM_STATE,
+        name: 'b',
+        accountId: 'acct-owner',
+        source: 'github-create' as const,
+        installationId: '84',
+      },
+      {
+        ...INITIAL_FORM_STATE,
+        name: 'c',
+        accountId: 'acct-owner',
+        source: 'github-import' as const,
+        installationId: '84',
+        repoFullName: 'acme/portal',
+      },
+    ]) {
+      const order: string[] = [];
+      const result = await runCreate(state, [OWNER_ACCOUNT], 'user-1', {
+        ...noopClient(),
+        primeProjectCache: () => order.push('primeCache'),
+        invalidateProjects: () => order.push('invalidate'),
+        writeLastProjectId: () => order.push('writeCookie'),
+        enterOnboarding: () => order.push('enterOnboarding'),
+      });
+      expect(result.ok).toBe(true);
+      expect(order).toEqual(['primeCache', 'invalidate', 'writeCookie', 'enterOnboarding']);
+    }
+  });
+
+  test('a failed GitHub create surfaces the error like any other source', async () => {
+    const err = new ApiError('Install the Kortix GitHub App before creating GitHub-backed projects', {
+      status: 409,
+    });
+    const result = await runCreate(
+      {
+        ...INITIAL_FORM_STATE,
+        name: 'suna-web',
+        accountId: 'acct-owner',
+        source: 'github-create' as const,
+        installationId: '84',
+      },
+      [OWNER_ACCOUNT],
+      'user-1',
+      {
+        ...noopClient(),
+        createGitHubRepoProject: async () => {
+          throw err;
+        },
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe(err);
   });
 
 });

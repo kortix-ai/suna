@@ -61,6 +61,12 @@ bun build --target=bun --format=esm --outfile=dist/server.mjs src/main.ts
 compile_with_retry
 chmod +x dist/kortix-agent
 
+# Invalidate the snapshot builder's source-staleness memo (dist/kortix-agent.srchash,
+# see apps/api/src/snapshots/build-context.ts `agentBinaryStale`). This freshly
+# compiled binary IS current, so the guard must re-memoize the source hash from
+# it rather than trust a stale record from a previous build.
+rm -f dist/kortix-agent.srchash
+
 # The product name is `kortixd`. `dist/kortixd` is the primary artifact — what
 # install.sh downloads and what `kortixd install/update` manage on a normal
 # machine. `dist/kortix-agent` is KEPT as a compatibility name: it is the

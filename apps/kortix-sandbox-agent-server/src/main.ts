@@ -44,6 +44,7 @@ import { ensureInjectedManagedSkills } from './injected-skills'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from './runtime-assets'
 import { isSharedSeedBakedRoot, OPENCODE_SEED_BAKED_PIN_PATH } from './opencode-fork-root'
 import { startOpencodeEventLoop, flattenOpencodeError, type QuestionRequest, type OpencodeTurnError } from './opencode-events'
+import { createTurnAutoResumer } from './turn-auto-resume'
 import { kortixEventBus } from './kortix-event-bus'
 import { runtimeStateStore } from './runtime-state-projection'
 import { auditRelayConfigFromEnv, auditRelayToken, createAuditRelay } from './opencode-audit-relay'
@@ -860,13 +861,34 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  // Auto-resume ROOT turns killed by a TRANSIENT provider/stream error — a
+  // stalled model host mid-stream ("Upstream idle timeout exceeded"), a reset,
+  // a 5xx after opencode's own retries. Instead of surfacing a dead red turn,
+  // the turn is re-prompted to continue. Budget-limited (3 per 15min per
+  // session) with growing backoff; permanent errors, subagent sessions, staged
+  // reverts and exhausted budget fall through and surface exactly as before.
+  // See turn-auto-resume.ts. This wiring was LOST in the ACP-runtime refactor
+  // churn (the module survived, its call site did not — #4152 first added it),
+  // so every transient provider error had been surfacing raw.
+  const autoResumer = createTurnAutoResumer({
+    opencode,
+    cfg,
+    isRoot: (sid) => isRootOpencodeSession(sid, opencode, cfg),
+  })
   const onSessionError = (opencodeSessionId: string, error?: OpencodeTurnError) => {
-    kortixEventBus().publishDaemon(
-      'kortix.turn',
-      { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
-      opencodeSessionId,
-    )
-    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error).catch((err) =>
+    void (async () => {
+      // A successful resume means the turn is being re-prompted to continue, so
+      // it must NOT surface as the turn's final outcome — neither on the event
+      // bus nor in the API ledger. maybeResume returns false when the error is
+      // not resumable → relay it exactly as before this feature.
+      if (await autoResumer.maybeResume(opencodeSessionId, error)) return
+      kortixEventBus().publishDaemon(
+        'kortix.turn',
+        { opencode_session_id: opencodeSessionId, verdict: 'error', error: error ?? null },
+        opencodeSessionId,
+      )
+      await relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg, error)
+    })().catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
@@ -935,7 +957,15 @@ async function startSessionRuntime(
     // connect reconciliation closes the residual event-loss race.
     startOpencodeEventLoop(opencode, cfg, eventHandlers)
     loopStarted = true
-    const finalizeInitialSession = async () => {
+    const completeInitialSessionBoot = async () => {
+      // `maybeCreateInitialOpencodeSession` (direct call above, or via
+      // `attemptInitialSession` under the retry ladder below) already wrote
+      // the id onto `bootState` before this runs — see the `if
+      // (bootState.initialOpenCodeSessionId)` / `established()` guards at
+      // both call sites. Re-applying it through the pure helper is what
+      // clears a poisoned `initialOpenCodeSessionError` from an earlier
+      // failed attempt; see `finalizeInitialSession`.
+      finalizeInitialSession(bootState, bootState.initialOpenCodeSessionId as string)
       await reconcileInitialTurnAcceptance()
       bootMark('initial-turn-accepted')
       opencode.markReady()
@@ -972,7 +1002,7 @@ async function startSessionRuntime(
         logger.warn('[boot] initial opencode session setup failed', err)
       })
     if (bootState.initialOpenCodeSessionId) {
-      await finalizeInitialSession()
+      await completeInitialSessionBoot()
       return
     }
     // NOT established — a `defer` (opencode slow to answer, prior root pinned)
@@ -986,7 +1016,7 @@ async function startSessionRuntime(
     void retryUntilInitialSessionEstablished({
       attempt: attemptInitialSession,
       established: () => bootState.initialOpenCodeSessionId !== null,
-      finalize: finalizeInitialSession,
+      finalize: completeInitialSessionBoot,
     })
   }
   const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, markOpencodeListening)
@@ -1470,6 +1500,31 @@ async function runWarmSeedMode(
 /** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
 export function initialSessionRetryDelayMs(attempt: number): number {
   return Math.min(5_000 * Math.max(attempt, 1), 30_000)
+}
+
+/** The subset of `SandboxBootState` the initial-session finalizer touches. */
+type InitialSessionBootState = Pick<
+  SandboxBootState,
+  'initialOpenCodeSessionId' | 'initialOpenCodeSessionError' | 'initialOpenCodeSessionRequired'
+>
+
+/**
+ * Record that the initial OpenCode session is established under `sessionId`,
+ * and release a poisoned failure flag left by an earlier attempt.
+ *
+ * `initialOpenCodeSessionError` describes ONE attempt of the retry ladder,
+ * not the box. `proxy.ts` (`initial_opencode_session_failed`, 503) and
+ * `routes/health.ts` (`runtimeReady`) both treat it as a permanent failure
+ * because until now nothing ever cleared it: it was written on a caught
+ * throw in two places and cleared in none, so one throwing attempt wedged
+ * the sandbox for its whole life even after `retryUntilInitialSessionEstablished`
+ * established the root on a later rung. Only a manual Restart healed it.
+ * Pure and exported so it can be exercised directly — see
+ * initial-session-poison-flag.test.ts.
+ */
+export function finalizeInitialSession(bootState: InitialSessionBootState, sessionId: string): void {
+  bootState.initialOpenCodeSessionId = sessionId
+  bootState.initialOpenCodeSessionError = null
 }
 
 /**

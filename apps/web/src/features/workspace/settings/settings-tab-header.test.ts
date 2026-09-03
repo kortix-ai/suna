@@ -62,6 +62,7 @@ const TABS_DIR = join(import.meta.dir, 'tabs');
  * deliberately absent despite being on disk.
  */
 const TAB_ID_FOR_FILE: Record<string, string> = {
+  'appearance-tab.tsx': 'appearance',
   'connected-tab.tsx': 'connected',
   // Renamed on the move to `/projects/[id]/config`: the section is called
   // "Feature flags" there, which is also the `CustomizeSection` id it has
@@ -69,9 +70,13 @@ const TAB_ID_FOR_FILE: Record<string, string> = {
   // project-settings registry rather than the rail.
   'experimental-tab.tsx': 'feature-flags',
   'general-tab.tsx': 'general',
+  'credits-tab.tsx': 'credits',
+  'plan-tab.tsx': 'plan',
   'preferences-tab.tsx': 'preferences',
   'profile-tab.tsx': 'profile',
   'sandbox-tab.tsx': 'sandbox',
+  'security-tab.tsx': 'security',
+  'sessions-tab.tsx': 'sessions',
   'tokens-tab.tsx': 'tokens',
 };
 

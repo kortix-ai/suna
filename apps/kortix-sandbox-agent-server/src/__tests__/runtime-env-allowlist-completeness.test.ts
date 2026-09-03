@@ -72,6 +72,10 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   // connector token is a new session, not a live push.
   'KORTIX_API_URL',
   'KORTIX_TOKEN',
+  // The session PAT a 2026-07 box carries beside its service key; read only to
+  // pick the LLM gateway bearer at spawn, boot-only for the same reason as
+  // KORTIX_TOKEN.
+  'KORTIX_LLM_API_KEY',
   // Warm-fork proxy-mode flag. Daemon-injected at boot so a warm seed's
   // provider config is session-independent; never posted by the API — see
   // buildOpencodeConfigContent's comment on `llmProxyUrl`/`connectorProxyUrl`.
@@ -143,6 +147,7 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
       'KORTIX_COMPILED_RUNTIME_FORMAT',
       'KORTIX_CONNECTORS_MCP_ENABLED',
       'KORTIX_CONNECTORS_PROXY_URL',
+      'KORTIX_LLM_API_KEY',
       'KORTIX_LLM_BASE_URL',
       'KORTIX_LLM_CATALOG_FILE',
       'KORTIX_LLM_PROXY_URL',

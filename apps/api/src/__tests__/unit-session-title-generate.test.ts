@@ -74,7 +74,7 @@ describe('extractPromptInfo', () => {
       model: { providerID: 'anthropic', modelID: 'claude-sonnet-4.6' },
     });
     expect(extractPromptInfo(byok, headers()).model).toBe('anthropic/claude-sonnet-4.6');
-    expect(extractPromptInfo(bodyOf({ model: 'kortix/glm-5.2' }), headers()).model).toBe('glm-5.2');
+    expect(extractPromptInfo(bodyOf({ model: 'kortix/glm-5.3-flash' }), headers()).model).toBe('glm-5.3-flash');
   });
 
   it('ignores non-text blocks and non-json / empty bodies', () => {
@@ -215,25 +215,25 @@ describe('generateSessionTitleFromFirstPrompt', () => {
   });
 
   it('falls back to opencode_model when the prompt carries no model', async () => {
-    const h = harness({ row: row({ opencode_model: 'kortix/glm-5.2' }) });
+    const h = harness({ row: row({ opencode_model: 'kortix/glm-5.3-flash' }) });
     await generateSessionTitleFromFirstPrompt(input, h.options);
-    expect(h.models).toEqual(['glm-5.2']);
+    expect(h.models).toEqual(['glm-5.3-flash']);
   });
 
   it('retries once with the servable fallback when the session model is rejected', async () => {
     const attempts: string[] = [];
     const h = harness({
       row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
-      fallbackModel: async () => 'glm-5.2',
+      fallbackModel: async () => 'glm-5.3-flash',
       generate: async (model) => {
         attempts.push(model);
-        return model === 'glm-5.2' ? '"Fallback Title"' : null;
+        return model === 'glm-5.3-flash' ? '"Fallback Title"' : null;
       },
     });
 
     await generateSessionTitleFromFirstPrompt(input, h.options);
 
-    expect(attempts).toEqual(['anthropic/claude-opus-4-8', 'glm-5.2']);
+    expect(attempts).toEqual(['anthropic/claude-opus-4-8', 'glm-5.3-flash']);
     expect(h.persisted).toEqual(['Fallback Title']);
     expect(h.minted).toEqual(['k']);
     expect(h.revoked).toEqual(['key-1']);
@@ -242,7 +242,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
   it('uses the first prompt as a deterministic title when both model attempts fail', async () => {
     const h = harness({
       row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
-      fallbackModel: async () => 'glm-5.2',
+      fallbackModel: async () => 'glm-5.3-flash',
       generate: async () => null,
     });
 
@@ -268,7 +268,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     async () => {
       const h = harness({
         row: row({ opencode_model: 'anthropic/claude-opus-4-8' }),
-        fallbackModel: async () => 'glm-5.2',
+        fallbackModel: async () => 'glm-5.3-flash',
         generate: async () => new Promise<string | null>(() => {}),
       });
       const options = { ...h.options, generationTimeoutMs: 5 } as GenerateSessionTitleOptions;
@@ -324,9 +324,9 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     // Create-time and every server-side delivery arrive with no modelHint, and
     // `opencode_model` is absent whenever session create resolved no default —
     // without this fallback those sessions would stay untitled forever.
-    const h = harness({ row: row({}), fallbackModel: async () => 'glm-5.2' });
+    const h = harness({ row: row({}), fallbackModel: async () => 'glm-5.3-flash' });
     await generateSessionTitleFromFirstPrompt(input, h.options);
-    expect(h.models).toEqual(['glm-5.2']);
+    expect(h.models).toEqual(['glm-5.3-flash']);
     expect(h.persisted).toEqual(['Set Up MS Graph']);
   });
 
@@ -342,7 +342,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
   });
 
   it('precedence: modelHint beats opencode_model beats the resolved fallback', async () => {
-    const hint = harness({ row: row({ opencode_model: 'kortix/glm-5.2' }) });
+    const hint = harness({ row: row({ opencode_model: 'kortix/glm-5.3-flash' }) });
     await generateSessionTitleFromFirstPrompt(
       { ...input, modelHint: 'codex/gpt-5.6-sol' },
       hint.options,
@@ -350,11 +350,11 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(hint.models).toEqual(['codex/gpt-5.6-sol']);
 
     const stored = harness({
-      row: row({ opencode_model: 'kortix/glm-5.2' }),
+      row: row({ opencode_model: 'kortix/glm-5.3-flash' }),
       fallbackModel: async () => 'never/used',
     });
     await generateSessionTitleFromFirstPrompt(input, stored.options);
-    expect(stored.models).toEqual(['glm-5.2']);
+    expect(stored.models).toEqual(['glm-5.3-flash']);
 
     const fallback = harness({ row: row({}), fallbackModel: async () => 'anthropic/claude' });
     await generateSessionTitleFromFirstPrompt(input, fallback.options);
@@ -368,7 +368,7 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     // and raw workspace/channel ids — on a project-visible session.
     const prompts: string[] = [];
     const h = harness({
-      row: row({ opencode_model: 'kortix/glm-5.2', title_source: 'bump the node version in CI' }),
+      row: row({ opencode_model: 'kortix/glm-5.3-flash', title_source: 'bump the node version in CI' }),
       generate: async (_model, _auth, promptText) => {
         prompts.push(promptText);
         return 'Bump Node In CI';
@@ -386,14 +386,14 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     // `metadata->>'name'` stringifies any jsonb scalar, so a row the TS gate
     // waved through would fail the UPDATE silently and re-bill on every prompt.
     const numericName = harness({
-      row: row({ name: 123, opencode_model: 'kortix/glm-5.2' }),
+      row: row({ name: 123, opencode_model: 'kortix/glm-5.3-flash' }),
     });
     await generateSessionTitleFromFirstPrompt(input, numericName.options);
     expect(numericName.persisted).toEqual([]);
     expect(numericName.generateCalls()).toBe(0);
 
     const numericCustom = harness({
-      row: row({ custom_name: 123, opencode_model: 'kortix/glm-5.2' }),
+      row: row({ custom_name: 123, opencode_model: 'kortix/glm-5.3-flash' }),
     });
     await generateSessionTitleFromFirstPrompt(input, numericCustom.options);
     expect(numericCustom.persisted).toEqual([]);

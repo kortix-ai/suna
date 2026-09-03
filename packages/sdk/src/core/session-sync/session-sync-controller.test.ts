@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { SandboxNotReadyError } from '../http/opencode-errors';
 import {
@@ -101,14 +101,10 @@ describe('SessionSyncController', () => {
           url: String(input),
           authorization: headers.get('authorization'),
         });
-        return new Response(
-          JSON.stringify({
-            messages: page(['message-1']).messages,
-            has_more: true,
-            first_message_id: 'message-1',
-          }),
-          { status: 200 },
-        );
+        return new Response(JSON.stringify(page(['message-1']).messages), {
+          status: 200,
+          headers: { 'X-Next-Cursor': 'cursor-1' },
+        });
       },
       hydrate: (messages) => hydrated.push(messages),
       markLoaded: () => {},
@@ -117,7 +113,7 @@ describe('SessionSyncController', () => {
     await controller.start();
     expect(requests).toEqual([
       {
-        url: `https://runtime.example.test/kortix/opencode/messages/session%2F1?limit=${SESSION_SYNC_TAIL_PAGE_SIZE}`,
+        url: `https://runtime.example.test/session/session%2F1/message?limit=${SESSION_SYNC_TAIL_PAGE_SIZE}`,
         authorization: 'Bearer token-1',
       },
     ]);
@@ -369,8 +365,23 @@ describe('SessionSyncController', () => {
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-2' },
       { limit: SESSION_SYNC_PAGE_SIZE, before: 'cursor-3' },
     ]);
+    // S2 (Task 4): each page of the older-history walk now hydrates as it
+    // lands (`onPage`), on top of the pre-existing final commit — so the tail
+    // read is followed by one hydrate per walked page, then the final,
+    // already-complete commit. Redundant, not incorrect: `hydrate` is
+    // idempotent by message id in the real store; this mock just records
+    // every call verbatim.
     expect(hydrated).toEqual([
       ['user-new', 'assistant-new'],
+      ['assistant-old-1', 'assistant-old-2', 'assistant-old-3', 'assistant-old-4'],
+      [
+        'user-old',
+        'assistant-old-0',
+        'assistant-old-1',
+        'assistant-old-2',
+        'assistant-old-3',
+        'assistant-old-4',
+      ],
       [
         'user-old',
         'assistant-old-0',
@@ -472,18 +483,7 @@ describe('SessionSyncController', () => {
     ]);
   });
 
-  /**
-   * The 10s quiet-based liveness poll and the 30s busy-verification read are
-   * DELETED. Their job — catching a transcript frame lost between the runtime
-   * and this tab — moved to the session stream, whose runtime channel is
-   * DENSE-SEQUENCED: a lost frame is `seq > last + 1`, detected the moment
-   * the next frame arrives and repaired by one immediate bounded tail read
-   * (`connectSessionStream`'s `onRuntimeGap`/`onRuntimeResync`,
-   * `session-stream-controller.test.ts`). A poll that re-read the tail on a
-   * timer hoping to catch a loss it could not observe is strictly worse than
-   * a gap check that observes it exactly.
-   */
-  test('a busy session schedules NO interval reads — loss repair moved to the stream seq', async () => {
+  test('uses event activity instead of part count for busy liveness', async () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const statuses: SessionStatus[] = [];
@@ -503,33 +503,90 @@ describe('SessionSyncController', () => {
       setStatus: (status) => statuses.push(status),
       scheduler: clock.scheduler,
       livenessIntervalMs: 10_000,
-      verifyIntervalMs: 30_000,
     });
 
     await controller.start();
-    expect(requests).toHaveLength(1);
     controller.setBusy(true);
-    // Two minutes busy, with stream activity arriving throughout: not one
-    // timer-driven read, whatever the (deprecated, ignored) intervals say.
-    for (let tick = 0; tick < 12; tick++) {
-      clock.advance(10_000);
-      controller.noteActivity();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
+    clock.advance(9_000);
+    controller.noteActivity();
+    clock.advance(10_000);
+    await Promise.resolve();
     expect(requests).toHaveLength(1);
-    // No status is claimed or even read either — `GET .../turn` is the status
-    // authority, and `setBusy` is already driven FROM that projection.
-    expect(statuses).toEqual([]);
-    expect(statusReads).toBe(0);
 
-    // The busy→idle edge still reads the tail once: the turn end is exactly
-    // when a stream that dropped its last frames leaves the answer truncated.
-    controller.setBusy(false);
+    clock.advance(10_000);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toHaveLength(2);
+    // The poll reconciles the TAIL and nothing else. Its status half read the
+    // runtime over REST and wrote the answer into the slot SSE frames land in,
+    // which made a REST poll indistinguishable from the runtime's own voice —
+    // and re-stamped the stream observation on every tick, so the bound that
+    // stops a dead stream from deciding was never reached. `GET .../turn` is
+    // the status authority now, and the controller's own `setBusy` is already
+    // driven FROM that projection, so a fourth stamped input could only
+    // confirm or latch, never correct.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
   });
 
-  test('an unattended controller is silent — no reads without a consumer action', async () => {
+  test('the caller\'s working signal, and only it, starts transcript liveness reconciliation', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const hydrated: string[][] = [];
+    const statuses: SessionStatus[] = [];
+    let statusReads = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return messagePage([
+          { id: 'user-new', role: 'user' },
+          { id: 'assistant-new', role: 'assistant', parentID: 'user-new' },
+        ]);
+      },
+      loadStatus: async () => {
+        statusReads += 1;
+        return { type: 'idle' } as SessionStatus;
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+      setStatus: (status) => statuses.push(status),
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+    });
+
+    // Nothing polls until someone says the session is working. The controller
+    // does not decide that any more — `projectWorking` does, from the server's
+    // turn authority — so an unattended controller is silent.
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(0);
+
+    controller.setBusy(true);
+    clock.advance(10_001);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requests).toHaveLength(1);
+    expect(hydrated).toEqual([['user-new', 'assistant-new']]);
+    // The tail is repaired; no status is claimed or even read. `loadStatus` /
+    // `setStatus` remain on the options type only because 0.12.8 published
+    // them — see their `@deprecated` banners.
+    expect(statuses).toEqual([]);
+    expect(statusReads).toBe(0);
+  });
+
+  /**
+   * The postponement hole (prod, 2026-08-26): `noteActivity` renews the poll's
+   * quiet timer on EVERY transcript frame, so a degraded stream that still
+   * delivers a trickle — events lost at the source or the edge, connection
+   * alive — postponed the tail read indefinitely while the transcript diverged
+   * arbitrarily far from the runtime. The repair built for a lossy stream was
+   * switched off by the surviving frames of that same lossy stream.
+   *
+   * While the session is busy, a bounded verification read runs at
+   * `verifyIntervalMs` no matter how much activity arrives. A healthy stream
+   * pays one tail page per interval and the hydrate is a no-op.
+   */
+  test('continuous stream activity cannot postpone tail verification forever', async () => {
     const clock = createScheduler();
     const requests: Array<{ limit: number; before?: string }> = [];
     const controller = new SessionSyncController({
@@ -541,15 +598,33 @@ describe('SessionSyncController', () => {
       hydrate: () => {},
       markLoaded: () => {},
       scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+      verifyIntervalMs: 30_000,
     });
 
-    clock.advance(120_000);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    controller.setBusy(true);
+    // A busy runtime: activity lands between every poll tick, forever.
+    for (let tick = 0; tick < 5; tick++) {
+      clock.advance(5_000);
+      controller.noteActivity();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // 25s of constant activity: the quiet-based poll never fired.
     expect(requests).toHaveLength(0);
-    // `setBusy(false)` on a session that was never busy reads nothing either.
-    controller.setBusy(false);
+
+    clock.advance(5_000);
+    controller.noteActivity();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(requests).toHaveLength(0);
+    // 30s since the last tail read (there has never been one): verification
+    // runs even though activity is fresh.
+    expect(requests).toHaveLength(1);
+
+    // And the NEXT verification waits a full interval again — one read per
+    // `verifyIntervalMs`, not one per tick.
+    clock.advance(5_000);
+    controller.noteActivity();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(1);
   });
 
   test('the snapshot holds transcript state only — never a busy opinion', async () => {
@@ -1160,5 +1235,117 @@ describe('SessionSyncController — bounded turn walk', () => {
     // The cursor survives, so the rest of history is reachable rather than
     // drained on this one pull.
     expect(controller.getSnapshot().hasOlder).toBe(true);
+  });
+});
+
+/**
+ * Partial commit of a failed older-history walk (S2 / Task 4). `loadOlder`
+ * walks up to MAX_TURN_BACKFILL_PAGES + 1 = 11 pages and used to commit them
+ * all in one atomic `.then`, so a rejection on a later page discarded every
+ * successful read AND left `nextCursor` unmoved — the only recovery was to
+ * replay the identical walk. That is the "continuously tries to fetch more &
+ * more, but no messages render" report.
+ */
+describe('SessionSyncController — partial commit of a failed history walk', () => {
+  /**
+   * Builds a controller wired to a paged, mockable `loadPage`, already past
+   * its initial tail read (so `nextCursor` is set and `loadOlder` can walk).
+   * Every older page carries an assistant message whose parent is never
+   * resolved, so the turn-completion walk keeps going instead of stopping
+   * after one page — mirrors the "bounded turn walk" setup above. The Nth
+   * older-history read (1-indexed; the first page — `firstPage` itself —
+   * counts as read 1) rejects when it matches `rejectAtPage`.
+   */
+  async function makeControllerWithPagedHistory(options: { rejectAtPage?: number }) {
+    const { rejectAtPage } = options;
+    const hydrated: MessageWithParts[] = [];
+    const olderBefore: string[] = [];
+    let olderReads = 0;
+    const servePage = mock(async (request: { limit: number; before?: string }) => {
+      if (!request.before) {
+        // The initial tail page — seeds the cursor `loadOlder` walks back from.
+        return page(['tail'], 'cursor-0');
+      }
+      olderBefore.push(request.before);
+      olderReads += 1;
+      if (rejectAtPage && olderReads === rejectAtPage) {
+        throw new Error(`page ${olderReads} failed`);
+      }
+      return messagePage(
+        [{ id: `assistant-${olderReads}`, role: 'assistant', parentID: 'user-never' }],
+        `cursor-${olderReads}`,
+      );
+    });
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: servePage,
+      hydrate: (messages) => hydrated.push(...messages),
+      markLoaded: () => {},
+    });
+    await controller.start();
+    return { controller, hydrated, olderBefore, servePage };
+  }
+
+  // S2: an older-history pull walks up to 11 pages. Committing them in one
+  // atomic `.then` meant a rejection on page 6 discarded five successful reads
+  // — including `firstPage`, read 1, whose content only ever reached the
+  // store as part of that atomic commit — AND left the cursor unmoved, so the
+  // only recovery was to replay the identical walk — the "continously tries
+  // to fetch more & more" report.
+  test('a history walk that fails midway keeps the pages it already read', async () => {
+    const { controller, hydrated } = await makeControllerWithPagedHistory({
+      rejectAtPage: 6,
+    });
+
+    await controller.loadOlder().catch(() => undefined);
+
+    // The distinct hydrated ids from the older-history walk pin two things at
+    // once: five pages were committed (not zero, not fewer), AND `firstPage`
+    // itself (assistant-1) reached the store even though ITS read never
+    // failed — only the 6th read did.
+    const olderIds = new Set(
+      hydrated.map((message) => message.info.id).filter((id) => id.startsWith('assistant-')),
+    );
+    expect([...olderIds].sort()).toEqual([
+      'assistant-1',
+      'assistant-2',
+      'assistant-3',
+      'assistant-4',
+      'assistant-5',
+    ]);
+  });
+
+  // Important 1 (fix round 1): a rejection on ANY page must commit what is
+  // already accumulated, including the loop's very FIRST read — the one case
+  // where `firstPage`'s content had never yet been carried along by a prior
+  // successful `onPage` call. `rejectAtPage: 6` above does not exercise this:
+  // by page 6, four earlier successful reads had already swept `firstPage`
+  // into the store incidentally. This test isolates the loop's first read.
+  test('a rejection on the loop\'s very first read still commits firstPage', async () => {
+    const { controller, hydrated } = await makeControllerWithPagedHistory({
+      rejectAtPage: 2,
+    });
+
+    await controller.loadOlder().catch(() => undefined);
+
+    const olderIds = new Set(
+      hydrated.map((message) => message.info.id).filter((id) => id.startsWith('assistant-')),
+    );
+    // firstPage (assistant-1) reached the store even though its own read
+    // never failed — only the very next read did, before any onPage call
+    // had ever fired.
+    expect([...olderIds]).toEqual(['assistant-1']);
+  });
+
+  test('a retry resumes at the failed-page boundary instead of replaying committed pages', async () => {
+    const { controller, olderBefore } = await makeControllerWithPagedHistory({
+      rejectAtPage: 6,
+    });
+
+    await controller.loadOlder().catch(() => undefined);
+    const readsAfterFailure = olderBefore.length;
+    await controller.loadOlder();
+
+    expect(olderBefore[readsAfterFailure]).toBe('cursor-5');
   });
 });

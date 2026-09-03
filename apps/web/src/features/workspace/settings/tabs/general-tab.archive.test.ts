@@ -122,6 +122,45 @@ describe('runProjectArchive', () => {
     expect(calls).toEqual(['the-project-id']);
   });
 
+  /**
+   * JAY-729: an archived project must stop being the remembered landing
+   * target, or `/`, sign-in, and the settings exit keep redirecting into a
+   * project that now 404s — the softlock the access gate then has to unwind.
+   */
+  test('forgets the archived project as the landing target, after the archive lands', async () => {
+    const events: string[] = [];
+    await runProjectArchive(
+      'p1',
+      5,
+      client({
+        archiveProject: async () => {
+          events.push('archived');
+        },
+      }),
+      () => events.push('suppressed'),
+      () => events.push('forgotten'),
+    );
+    // Fires regardless of the remaining-count suppression decision (5 > 1
+    // here, so no suppression) — forgetting is about THIS project, not the
+    // account's emptiness.
+    expect(events).toEqual(['archived', 'forgotten']);
+  });
+
+  test('does NOT forget the landing target when the archive call fails', async () => {
+    let forgetCalls = 0;
+    const failing = client({
+      archiveProject: async () => {
+        throw new Error('archive failed');
+      },
+    });
+    await expect(
+      runProjectArchive('p1', 1, failing, () => {}, () => {
+        forgetCalls += 1;
+      }),
+    ).rejects.toThrow('archive failed');
+    expect(forgetCalls).toBe(0);
+  });
+
   test('suppression fires strictly after archiveProject resolves, not before', async () => {
     // Ordering matters: onSuppress must observe a completed archive, never a
     // still-in-flight one.

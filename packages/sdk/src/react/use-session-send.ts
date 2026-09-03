@@ -375,7 +375,18 @@ export function applyOptimisticAbort(sessionId: string): void {
   if (!msgs) return;
   for (let i = msgs.length - 1; i >= 0; i--) {
     const msg = msgs[i];
-    if (msg.role === 'assistant' && !msg.error) {
+    if (msg.role !== 'assistant') continue;
+    // STOP at the newest assistant message, whatever state it is in. The abort
+    // belongs to the turn the user just stopped, and that is the last one.
+    //
+    // This used to be `msg.role === 'assistant' && !msg.error`, which SKIPPED
+    // an already-errored newest message and kept walking — so stopping a turn
+    // whose assistant message already carried an error (an earlier interrupt,
+    // or a turn that failed) stamped "Interrupted" onto a COMPLETED turn
+    // further up the transcript. The marker appeared detached, above the turn
+    // it belonged to, instead of at the end of it.
+    if (msg.error) break;
+    {
       // Typed as the wider `MessageError` (not just the literal shape below)
       // so the assertion further down overlaps with `AssistantMessage.error`'s
       // real union — see `MessageError` in the sync store.

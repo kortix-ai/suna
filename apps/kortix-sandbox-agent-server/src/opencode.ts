@@ -141,6 +141,21 @@ export function requiresRespawn(changedNames: readonly string[]): boolean {
   )
 }
 
+/**
+ * The bearer OpenCode presents to the Kortix LLM gateway. Current boxes carry
+ * one session PAT as KORTIX_TOKEN. A box provisioned before 2026-08 carries a
+ * `kortix_sb_` service key there — valid for the daemon and the API, unknown to
+ * the gateway — and its session PAT under KORTIX_LLM_API_KEY (the variable the
+ * daemon of that era used). Prefer whichever is a PAT; never invent one.
+ */
+export function pickLlmGatewayKey(env: NodeJS.ProcessEnv): string | undefined {
+  const token = env.KORTIX_TOKEN?.trim()
+  const legacy = env.KORTIX_LLM_API_KEY?.trim()
+  if (token?.startsWith('kortix_pat_')) return token
+  if (legacy?.startsWith('kortix_pat_')) return legacy
+  return token || legacy || undefined
+}
+
 /** True when OpenCode uses the single synthetic `kortix` LLM provider. */
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
@@ -234,7 +249,7 @@ export async function buildOpencodeConfigContent(
   const connectorToken = env.KORTIX_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
-  const llmApiKey = env.KORTIX_TOKEN
+  const llmApiKey = pickLlmGatewayKey(env)
 
   // Warm-fork no-restart path (stateful only). When the daemon runs the localhost
   // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
@@ -1243,15 +1258,6 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     limit: { context: 1_048_575, output: 384_000 },
     cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
   },
-  'glm-5.2': {
-    name: 'GLM 5.2',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: false,
-    temperature: true,
-    limit: { context: 1_000_000, output: 131_072 },
-  },
   'muse-spark-1.2': {
     name: 'Muse Spark 1.2',
     provider: 'kortix',
@@ -1316,21 +1322,6 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     limit: { context: 1_048_576, output: 131_072 },
     cost: { input: 0.075, output: 0.25, cache_read: 0.015 },
   },
-  // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
-  // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
-  // `temperature:false` — models.dev advertises Kimi K3 as
-  // `temperature:false` (it rejects a client-sent temperature), matching
-  // capabilitiesOf() in the served catalog. Must NOT advertise temperature
-  // support or OpenCode sends one and 400s the turn.
-  // 'kimi-k3': {
-  //   name: 'Kimi K3',
-  //   provider: 'kortix',
-  //   reasoning: true,
-  //   tool_call: true,
-  //   attachment: true,
-  //   temperature: false,
-  //   limit: { context: 1_048_576, output: 131_072 },
-  // },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',
@@ -2552,6 +2543,12 @@ export function createOpencodeSupervisor(
     async restart() {
       await this.stop('SIGTERM')
       restartDelayMs = 500
+      // A restart is where a freshly converged OpenCode must take effect. The
+      // binary path is memoised at boot — before the convergence pass could
+      // have installed anything — so a restart that kept it would spawn the
+      // baked binary forever (prod, 2026-09-01: 1.18.23 installed, 1.17.11
+      // kept running until the daemon itself was relaunched).
+      binaryResolutionPromise = null
       await this.start()
       // A PLANNED restart strands its turn exactly like a crash does, and only
       // the crash path was cleaning up: `proc.on('exit')` returns early while

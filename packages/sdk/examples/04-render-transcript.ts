@@ -1,7 +1,7 @@
 /**
  * 04 — Render a session's transcript as plain text, no React.
  *
- * `classifyTurn` (`@kortix/sdk/turns`) is framework-free: it normalizes every
+ * `classifyTurn` is framework-free: it normalizes every
  * opencode part type (text, reasoning, tool, file, subtask, patch, snapshot,
  * agent, retry, compaction, step) into a `ClassifiedPart` with a
  * compile-time-exhaustive `kind`, plus a normalized `TurnError` for a failed
@@ -16,8 +16,7 @@
  *     bun run examples/04-render-transcript.ts
  *
  * As an npm consumer:
- *   import { createKortix } from '@kortix/sdk';
- *   import { classifyTurn, type ClassifiedPart } from '@kortix/sdk/turns';
+ *   import { createKortix, classifyTurn, type ClassifiedPart } from '@kortix/sdk';
  */
 import { createKortix } from '../src/index';
 import { classifyTurn, type ClassifiedPart } from '../src/core/turns/index';

@@ -10,13 +10,16 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
 
 import { CAPABILITY_TABS } from './capability-tab-routes';
 import { CAPABILITY_TAB_GATE_ACTIONS, visibleCapabilityTabs } from './capability-tabs';
 
-const source = readFileSync(fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)), 'utf8');
+const source = readFileSync(
+  fileURLToPath(new URL('./capability-tabs.tsx', import.meta.url)),
+  'utf8',
+);
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 /** Probe map for a caller allowed everything except the listed actions. */
@@ -30,10 +33,19 @@ const stillLoading = () =>
   Object.fromEntries(CAPABILITY_TAB_GATE_ACTIONS.map((action) => [action, { allowed: false }]));
 
 describe('visibleCapabilityTabs', () => {
-  test('a manager sees every tab', () => {
-    expect(visibleCapabilityTabs(allowExcept()).map((t) => t.key)).toEqual(
+  test('a manager with the review flag on sees every tab', () => {
+    expect(visibleCapabilityTabs(allowExcept(), { reviewEnabled: true }).map((t) => t.key)).toEqual(
       CAPABILITY_TABS.map((t) => t.key),
     );
+  });
+
+  // Review is the one flag-gated tab — the `review_center` flag hides it
+  // regardless of permissions, and the flag defaults OFF (a flag is a fact the
+  // project detail holds, not a probe in flight).
+  test('the review flag hides Review and nothing else', () => {
+    const keys = visibleCapabilityTabs(allowExcept()).map((t) => t.key);
+    expect(keys).not.toContain('review');
+    expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
   });
 
   // The whole point. A member holds project.read, project.trigger.read and
@@ -74,7 +86,9 @@ describe('visibleCapabilityTabs', () => {
   // rather than `!caps[…]?.allowed`.
   test('an in-flight probe is a denial for this helper — the caller keeps it optimistic', () => {
     expect(visibleCapabilityTabs(stillLoading())).toEqual([]);
-    expect(code(source)).toContain("caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false");
+    expect(code(source)).toContain(
+      'caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false',
+    );
     expect(code(source)).toContain('caps[pref.action]?.allowed !== false');
   });
 });
@@ -88,13 +102,16 @@ describe('CapabilityTabs gate wiring', () => {
     expect((body.match(/useProjectCan\(/g) ?? []).length).toBe(1);
   });
 
-  test('both tab groups render from the gated list, never from CAPABILITY_TABS', () => {
+  test('the bar renders from the gated list, never from CAPABILITY_TABS', () => {
     const body = code(source);
     const barStart = body.indexOf('export function CapabilityTabs');
     const bar = body.slice(barStart);
-    expect(bar).toContain('tabs.filter((tab) => !TRAILING_TABS.includes(tab.key))');
-    expect(bar).toContain('tabs.filter((tab) => TRAILING_TABS.includes(tab.key))');
+    expect(bar).toContain('{tabs.map((tab) => (');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
+    expect(bar).not.toContain('CAPABILITY_TABS.map');
+    // The flag reaches the gate from the bar itself, so a page cannot forget it.
+    expect(bar).toContain("useFeatureFlag(projectId, 'review_center')");
+    expect(bar).toContain('visibleCapabilityTabs(caps, { reviewEnabled })');
   });
 
   // One list of leaves for the bar, the sidebar row and the Customize index —

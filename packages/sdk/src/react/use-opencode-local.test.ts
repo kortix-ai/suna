@@ -44,7 +44,7 @@ describe('OpenCode local model selection scoping', () => {
       modelProviderMode({
         all: [{ id: 'kortix', name: 'Kortix', models: {} }],
         connected: ['kortix'],
-        default: { kortix: 'glm-5.2' },
+        default: { kortix: 'glm-5.3-flash' },
       } as any),
     ).toBe('gateway');
   });
@@ -107,10 +107,10 @@ describe('OpenCode local model selection scoping', () => {
     ).toBeUndefined();
     expect(
       resolveHiddenAutoModel(
-        { providerID: 'kortix', modelID: 'glm-5.2' },
+        { providerID: 'kortix', modelID: 'glm-5.3-flash' },
         { enableAutoModel: false, isModelValid: () => false },
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.2' });
+    ).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
   });
 
   test('project sessions prefer the server-bound agent over global last-used agent', () => {

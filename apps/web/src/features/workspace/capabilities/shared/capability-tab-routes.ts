@@ -31,14 +31,7 @@
  * index cards keep their own icons in their own client files.
  */
 export interface CapabilityTab {
-  key:
-    | 'agent'
-    | 'connectors'
-    | 'skills'
-    | 'triggers'
-    | 'models'
-    | 'secrets'
-    | 'config';
+  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'review';
   label: string;
 }
 
@@ -51,12 +44,16 @@ export interface CapabilityTab {
  * The Agents key is singular because a key IS its URL segment
  * (`/projects/<id>/agent`); only the label is plural.
  *
- * Settings' key is `config`, not `settings`, and the mismatch is deliberate:
- * `/projects/<id>/settings` already belongs to the Settings OVERLAY's
- * deep-link route, which opens the store and bounces. Two routes cannot share
- * one segment, so the tab that holds project configuration takes `config` and
- * keeps the label a person reads. Every retired `/settings/<tab>` bookmark
- * redirects here through `settings-tabs.ts`'s `GRADUATED` map.
+ * There is no Settings tab. `/projects/<id>/config` — the bar's trailing
+ * "Settings" tab, a sub-nav over General / Sandbox templates / Review /
+ * Feature flags / Upgrades — was retired on 2026-09-02 (Jay). Its
+ * configuration sections live in the Settings overlay's Workspace group
+ * (`settings/rail.ts`, opened with Cmd+, or from the workspace switcher), and
+ * Review — an inbox, not configuration — moved up onto this bar as its own
+ * tab. `settings-tabs.ts` redirects every retired `/config?section=` link.
+ *
+ * Review is the one flag-gated tab (`review_center`); `visibleCapabilityTabs`
+ * in `capability-tabs.tsx` hides it while the flag is off.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'models', label: 'Models' },
@@ -64,8 +61,8 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'triggers', label: 'Triggers' },
+  { key: 'review', label: 'Review' },
   { key: 'secrets', label: 'Secrets' },
-  { key: 'config', label: 'Settings' },
 ];
 
 export function capabilityTabHref(projectId: string, key: CapabilityTab['key']): string {

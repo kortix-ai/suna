@@ -196,10 +196,6 @@ const CAPABILITY_HINTS: Record<string, Partial<ItemCapabilities>> = {
     secrets: ["ELEVENLABS_API_KEY"],
     network: ["api.elevenlabs.io"],
   },
-  replicate: {
-    secrets: ["REPLICATE_API_TOKEN"],
-    network: ["api.replicate.com"],
-  },
   "deep-research": { tools: ["web_search"] },
   "account-research": { tools: ["web_search"] },
   "competitive-intelligence": { tools: ["web_search"] },

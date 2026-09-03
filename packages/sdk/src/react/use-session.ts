@@ -52,12 +52,12 @@ import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
-import { extractGatewayErrorDetails } from '../core/turns/errors';
+import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
 import type { ModelKey } from './use-model-store';
-import { useSessionRuntimeStream } from './use-session-stream';
+import { useOpenCodeEventStream } from './use-opencode-events';
 import { formatModelString } from './use-opencode-local';
 import {
   type AbortSettlement,
@@ -74,12 +74,15 @@ import {
   useSendOpenCodeMessage,
 } from './use-opencode-sessions';
 import { unwrap } from './use-opencode-sessions/shared';
+import { usePermissionSelfHeal } from './use-permission-self-heal';
 import { useProjectConfig } from './use-project-config';
 import { useProjectModels } from './use-project-models';
+import { useQuestionSelfHeal } from './use-question-self-heal';
 import { useRuntimePhase } from './use-runtime-phase';
 import { useSessionPicks } from './use-session-picks';
 import { derivePhase } from './use-session-phase';
 import { useSessionSync } from './use-session-sync';
+import { useSessionStartGiveUp } from './use-session-start-give-up';
 import { useSessionWorking } from './use-session-working';
 import { useVisibleAgents } from './use-visible-agents';
 
@@ -177,7 +180,11 @@ export function shouldPollSessionStart(
  * is the safe direction — it never cuts short a legitimate wake, only delays
  * how quickly a genuine outage surfaces its error card.
  */
-export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
+export {
+  START_INCONCLUSIVE_GIVE_UP_MS,
+  hasStartGivenUp,
+  nextInconclusiveSince,
+} from './use-session-start-give-up';
 
 /**
  * Has `/start` been returning nothing usable — no data, no error — for at
@@ -187,18 +194,6 @@ export const START_INCONCLUSIVE_GIVE_UP_MS = 45_000;
  * caller stop waiting on it" are different questions once the first answer
  * is permanently yes.
  */
-export function hasStartGivenUp(
-  data: SessionStartResult | null | undefined,
-  error: unknown,
-  inconclusiveSinceMs: number | null,
-  nowMs: number,
-): boolean {
-  if (data || error) return false;
-  return (
-    inconclusiveSinceMs !== null && nowMs - inconclusiveSinceMs >= START_INCONCLUSIVE_GIVE_UP_MS
-  );
-}
-
 /**
  * Compute the next value for the "inconclusive since" clock that feeds
  * {@link hasStartGivenUp}, given one poll tick's outcome. Pure and separate
@@ -216,30 +211,17 @@ export function hasStartGivenUp(
  *   up" nor is it "still working" — it hasn't started. A stamp taken while
  *   disabled must not survive into the enabled window.
  * - Data or error arrived → clear to `null`. The poll said SOMETHING.
- * - Enabled, inconclusive (no data, no error), not mid-fetch → arm at
+ * - Enabled and inconclusive (no data, no error) → arm at
  *   `nowMs` if nothing is armed yet; otherwise keep the existing stamp — the
  *   clock starts once, at the FIRST inconclusive tick, not every tick.
- * - Mid-fetch → keep whatever is already armed; a fetch in flight is not
- *   itself informative either way, and time spent waiting on it still counts.
+ * - The first mid-fetch state also arms the clock. A request that never settles
+ *   must reach the same bounded verdict as repeated empty responses.
  *
  * Session-identity resetting (`projectId`/`sessionId` changing under a reused
  * hook instance) is handled by a separate effect, not here — this function
  * has no session id to key on by design, matching the narrow input the
  * `useEffect` actually has on each tick.
  */
-export function nextInconclusiveSince(input: {
-  current: number | null;
-  enabled: boolean;
-  hasData: boolean;
-  hasError: boolean;
-  isFetching: boolean;
-  nowMs: number;
-}): number | null {
-  if (!input.enabled) return null;
-  if (input.hasData || input.hasError) return null;
-  if (input.isFetching) return input.current;
-  return input.current ?? input.nowMs;
-}
 
 /**
  * Whether the `/start` poll should be treated as SETTLED — resolved, failed,
@@ -606,7 +588,9 @@ export function classifySendError(error: unknown): KortixSendError {
     kind: 'runtime-error',
     // Prefer the gateway's own message (already human-written server-side per
     // status/cause) over opencode's raw runtime-error formatting when present.
-    message: gateway?.message || formatted.message,
+    // The fallback is unwrapped too: a thrown error's message is often an HTTP
+    // body (`{"message":…,"code":401}`), and a body is not a sentence.
+    message: gateway?.message || unwrapError(formatted.message),
     ...(gateway
       ? {
           gateway: {
@@ -768,23 +752,26 @@ export interface UseSessionOptions {
    */
   initialOpenCodeSessionId?: string | null;
   /**
-   * Mount the chat-consumption engine — `useSessionSync` (messages/status/
-   * diffs/todos) — on top of the boot/lifecycle machinery every host needs.
-   * Default true.
+   * Mount the chat-consumption engine — `useSessionSync` (messages/status/diffs/
+   * todos, including its 10s busy-poll SSE-stall fallback) and `useQuestionSelfHeal`
+   * (the 2s missed-`question.asked` self-heal poll) — on top of the boot/lifecycle
+   * machinery every host needs. Default true.
    *
    * Set this false when the host mounts its OWN chat surface for the same
    * `(projectId, sessionId)` (e.g. apps/web's `SessionChat`, which has its own
-   * `useSessionSync`): with two callers of `useSession` alive for the same
-   * session — this hook (for boot/lifecycle) and the host's chat component —
-   * leaving it `true` would double-drive the transcript machinery for no
-   * benefit, since nothing reads this hook's chat fields anyway.
+   * `useSessionSync` + `useQuestionSelfHeal`): with two callers of `useSession`
+   * alive for the same session — this hook (for boot/lifecycle) and the host's
+   * chat component — leaving it `true` would double-mount both pollers, running
+   * the question self-heal poll twice and the busy-poll fallback at ~2x cadence
+   * for no benefit, since nothing reads this hook's chat fields anyway.
    *
    * When `false`: `messages`/`diffs`/`todos` are empty arrays, `status` is the
-   * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions`
-   * stay live (carried by the session stream), and `replayStartStash` is
-   * force-disabled (it reads the now-empty chat state, so it would never fire
-   * correctly). Everything the boot/lifecycle fields need — `start`/`switch`/
-   * `runtimePhase`/`sandbox`/`stage`/`opencodeSessionId` — is unaffected.
+   * idle status, `isBusy`/`isLoading` are `false`, `questions`/`permissions` stay
+   * live (populated by SSE via the still-active event stream, just without the
+   * self-heal poll backstop), and `replayStartStash` is force-disabled (it reads
+   * the now-empty chat state, so it would never fire correctly). Everything the
+   * boot/lifecycle fields need — `start`/`switch`/`runtimePhase`/`sandbox`/`stage`/
+   * `opencodeSessionId` — is unaffected.
    */
   chatEngine?: boolean;
 }
@@ -905,40 +892,16 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // error — so `computeStartSettled` can bound the "given up" case (see
   // START_INCONCLUSIVE_GIVE_UP_MS) instead of waiting on a poll that a
   // swallowed transport failure can keep alive forever. `nextInconclusiveSince`
-  // owns the arm/reset decision (pure, unit-tested); the effects here are thin
-  // callers of it. Only the RAW TIMESTAMP lives in a ref — `hasGivenUp` below
-  // is the one piece of *derived* state, and everything else `phase` needs
-  // (`enabled`/`isFetching`/`data`/`error`) is read fresh at render, never
-  // stored (see the comment on `startSettled` below for why).
-  const startInconclusiveSinceRef = useRef<number | null>(null);
-  const [startGivenUp, setStartGivenUp] = useState(false);
-  // A new session gets a fresh clock AND a fresh give-up verdict. This hook
-  // instance is reused across session navigation (see the switch effect
-  // below), and neither may bleed from a DIFFERENT (projectId, sessionId)
-  // into this one's give-up budget. Declared before the arming effect so both
-  // clear first, within the same commit, when the session changes.
-  useEffect(() => {
-    startInconclusiveSinceRef.current = null;
-    setStartGivenUp(false);
-  }, [projectId, sessionId]);
-  useEffect(() => {
-    // `Date.now()` lives here, not in the render body: reading it during
-    // render made this impure and a StrictMode/concurrent-render hazard. One
-    // read feeds both the arm decision and the give-up decision, computed
-    // together so they never disagree about "now".
-    const nowMs = Date.now();
-    startInconclusiveSinceRef.current = nextInconclusiveSince({
-      current: startInconclusiveSinceRef.current,
-      enabled: startEnabled,
-      hasData: !!start.data,
-      hasError: !!start.error,
-      isFetching: start.isFetching,
-      nowMs,
-    });
-    setStartGivenUp(
-      hasStartGivenUp(start.data, start.error, startInconclusiveSinceRef.current, nowMs),
-    );
-  }, [startEnabled, start.data, start.error, start.isFetching]);
+  // owns the arm/reset decision. `useSessionStartGiveUp` owns the timestamp and
+  // timer. The hook-level test proves that a first request which never settles
+  // still reaches this verdict.
+  const startGivenUp = useSessionStartGiveUp({
+    identity: `${projectId}\u0000${sessionId}`,
+    enabled: startEnabled,
+    hasData: !!start.data,
+    hasError: !!start.error,
+    isFetching: start.isFetching,
+  });
   // `startEnabled`/`start.isFetching`/`start.data`/`start.error` are read
   // FRESH here, on every render — never stored. Only `startGivenUp` comes
   // from state. The PREVIOUS version stored `computeStartSettled`'s entire
@@ -998,14 +961,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setOpenCodeHealth(true);
   }, [switched]);
 
-  // 4. Open THE live stream — one control-plane SSE per session
-  // (`GET .../sessions/:sid/stream`). Mounted on SESSION IDENTITY, not on
-  // runtime readiness: the control channel (turn verdicts, the prompt queue,
-  // the runtime projection) answers while the box is stopped or waking, and
-  // the runtime channel attaches by itself the moment the daemon does. This
-  // replaced the `/p/`-proxied opencode event stream, the connect-time `/p/`
-  // hydration reads, and the 2 s permission/question self-heal polls.
-  useSessionRuntimeStream(projectId, sessionId, { enabled: startEnabled });
+  // 4. Open the live SSE stream. This was a provider component (OpenCodeEvent
+  // StreamProvider); calling the underlying hook here means the host mounts
+  // nothing. It self-gates on the connection store's healthy flag (seeded above).
+  useOpenCodeEventStream({ enabled: switched });
 
   // 5. Resolve the canonical OpenCode root id (server-owned; /start hands it over)
   // and sync messages off it.
@@ -1098,6 +1057,19 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     setRewindPending(false);
     setRewindError(null);
   }, [sessionId, ocSessionId]);
+
+  // 5b. Self-heal a missed `question.asked` SSE event (a `question` tool part
+  // rendering as running with nothing in the pending store) — see
+  // `useQuestionSelfHeal` for why this is distinct from the SSE reconnect-gap
+  // hydration in `useOpenCodeEventStream`. Disabled entirely when `chatEngine`
+  // is off — see that option's jsdoc: a host mounting its own chat surface
+  // already runs its own copy of this poller for the same session.
+  useQuestionSelfHeal(ocSessionId, sync.messages, {
+    enabled: switched && chatEngine && !!ocSessionId,
+  });
+  usePermissionSelfHeal(ocSessionId, sync.messages, {
+    enabled: switched && chatEngine && !!ocSessionId,
+  });
 
   // 6. Interactive prompts live in the pending store (the SSE writes them there,
   // keyed by request id carrying sessionID). useSessionSync does NOT surface them.
@@ -1499,6 +1471,10 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     switched,
     /** Whether polling /start again can still make progress (false = terminal). */
     retriable: startData?.retriable ?? false,
+    /** Is a provider operation running for this session right now, per the
+     *  latest /start's `boot.actively_starting`? `false` while a `starting`
+     *  stage is only waiting out a retry cooldown, not driving the box. */
+    activelyStarting: startData?.boot?.actively_starting ?? false,
     /** Terminal /start failure, for hosts to render instead of spinning forever. */
     startError,
     /** Typed provider-neutral terminal provisioning failure. */

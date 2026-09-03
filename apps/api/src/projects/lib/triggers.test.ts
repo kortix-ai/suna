@@ -9,6 +9,9 @@ import { parseManifestText, validateManifest } from '@kortix/manifest-schema';
 // synthesis path (no manifest committed yet) run with zero DB/network, same
 // pattern as `./compile-agent-config.test.ts`.
 let manifestFile: { path: string; content: string } | null = null;
+let manifestReader:
+  | ((...args: unknown[]) => Promise<{ path: string; content: string } | null>)
+  | null = null;
 
 // `../git` and `./git` are heavily-imported modules (session-lifecycle,
 // github, etc. all pull other exports off them) — spread the REAL module and
@@ -18,7 +21,8 @@ let manifestFile: { path: string; content: string } | null = null;
 const realProjectsGit = await import('../git');
 mock.module('../git', () => ({
   ...realProjectsGit,
-  readManifestFromRepo: async () => manifestFile,
+  readManifestFromRepo: async (...args: unknown[]) =>
+    manifestReader ? manifestReader(...args) : manifestFile,
 }));
 
 const realLibGit = await import('./git');
@@ -32,6 +36,7 @@ mock.module('./git', () => ({
 
 const { loadManifestForEdit } = await import('./triggers');
 const { serializeManifest } = await import('../triggers');
+const { findProjectTriggerBySlug } = await import('../triggers');
 const { DEFAULT_AGENT_SENTINEL, extractAgents, resolveGovernedAgentGrant, loadProjectAgents } =
   await import('../agents');
 const { applyDefaultAgentV2, applyAgentBlockV2 } = await import('./agent-config-v2');
@@ -171,5 +176,76 @@ describe('loadManifestForEdit — blank managed project (no kortix.yaml on disk 
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.format).toBe('toml');
     expect(manifest.raw.agents).toBeUndefined();
+  });
+});
+
+describe('findProjectTriggerBySlug — replica mirror convergence', () => {
+  test('returns a cached trigger without forcing an unnecessary fetch', async () => {
+    const forceRefreshValues: Array<boolean | undefined> = [];
+    manifestReader = async (...args: unknown[]) => {
+      const opts = args[3] as { forceRefresh?: boolean } | undefined;
+      forceRefreshValues.push(opts?.forceRefresh);
+      return {
+        path: 'kortix.yaml',
+        content:
+          'kortix_version: 2\nproject:\n  name: current\ntriggers:\n  - slug: daily\n    name: Daily\n    type: cron\n    cron: "0 0 3 * * *"\n    prompt: Report status\n',
+      };
+    };
+
+    try {
+      const trigger = await findProjectTriggerBySlug(fakeProject(), 'daily');
+      expect(trigger?.slug).toBe('daily');
+      expect(forceRefreshValues).toEqual([undefined]);
+    } finally {
+      manifestReader = null;
+    }
+  });
+
+  test('forces one mirror refresh when the cached manifest does not contain the trigger', async () => {
+    const forceRefreshValues: Array<boolean | undefined> = [];
+    manifestReader = async (...args: unknown[]) => {
+      const opts = args[3] as { forceRefresh?: boolean } | undefined;
+      forceRefreshValues.push(opts?.forceRefresh);
+      if (!opts?.forceRefresh) {
+        return {
+          path: 'kortix.yaml',
+          content: 'kortix_version: 2\nproject:\n  name: stale\ntriggers: []\n',
+        };
+      }
+      return {
+        path: 'kortix.yaml',
+        content:
+          'kortix_version: 2\nproject:\n  name: fresh\ntriggers:\n  - slug: daily\n    name: Daily\n    type: cron\n    cron: "0 0 3 * * *"\n    prompt: Report status\n',
+      };
+    };
+
+    try {
+      const trigger = await findProjectTriggerBySlug(fakeProject(), 'daily');
+      expect(trigger?.slug).toBe('daily');
+      expect(forceRefreshValues).toEqual([undefined, true]);
+    } finally {
+      manifestReader = null;
+    }
+  });
+
+  test('bounds repeated missing slugs to one forced refresh per project interval', async () => {
+    const forceRefreshValues: Array<boolean | undefined> = [];
+    manifestReader = async (...args: unknown[]) => {
+      const opts = args[3] as { forceRefresh?: boolean } | undefined;
+      forceRefreshValues.push(opts?.forceRefresh);
+      return {
+        path: 'kortix.yaml',
+        content: 'kortix_version: 2\nproject:\n  name: stale\ntriggers: []\n',
+      };
+    };
+
+    try {
+      const project = fakeProject({ projectId: 'proj_refresh_cooldown' });
+      expect(await findProjectTriggerBySlug(project, 'missing-one')).toBeNull();
+      expect(await findProjectTriggerBySlug(project, 'missing-two')).toBeNull();
+      expect(forceRefreshValues).toEqual([undefined, true, undefined]);
+    } finally {
+      manifestReader = null;
+    }
   });
 });

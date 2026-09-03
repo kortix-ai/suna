@@ -1,7 +1,7 @@
 'use client';
 
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
@@ -10,6 +10,7 @@ import {
   type SessionTurnEnded,
   getSessionTurn,
 } from '../core/rest/projects-client/sessions';
+import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import {
   type AbortReceipt,
   type SendReceipt,
@@ -19,14 +20,8 @@ import {
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
-import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
-import {
-  sessionStreamScope,
-  useSessionStreamPresence,
-  useSessionTurnCorroborated,
-} from './use-session-stream-presence';
 
 /**
  * The ONE answer to "is this session working?", and where the answer came from.
@@ -50,41 +45,6 @@ export const WORKING_POLL_ACTIVE_MS = 5_000;
 
 export function workingPollMs(projection: WorkingProjection): number {
   return projection.state === 'working' ? WORKING_POLL_ACTIVE_MS : WORKING_POLL_IDLE_MS;
-}
-
-/**
- * The `/turn` query's interval, given who else is answering.
- *
- * The session stream's `kortix.control.turn` frames are THE SAME projection
- * (`readSessionTurnState`) pushed on change, so while a stream is connected
- * for this session the poll is pure duplication and hands its cadence over.
- * The moment the stream drops, the owner's poll resumes — presence flips a
- * subscribed store, so this re-evaluates immediately, not on the next tick.
- */
-export function workingRefetchInterval(input: {
-  pollOwner: boolean;
-  streamConnected: boolean;
-  /**
-   * Has a `kortix.control.turn` frame arrived since this stream attached? A
-   * connected stream has PROMISED to carry turn state; this is the promise
-   * kept. Absent (older callers) is treated as corroborated, so the gate can
-   * only ever add polling, never remove it.
-   */
-  streamCorroborated?: boolean;
-  projection: WorkingProjection;
-}): number | false {
-  if (!input.pollOwner) return false;
-  // Standing down on a connected stream is only safe once that stream has
-  // answered. Turn frames are pushed ON CHANGE, so a session resumed with a
-  // row already open generates neither — and the stale row then reads as
-  // `working` until the observation ages out 45s later ("Gathering thoughts..."
-  // over a finished transcript, on every resume). Keep the poll until either
-  // the stream corroborates or the projection stops claiming work.
-  const corroborated = input.streamCorroborated ?? true;
-  if (input.streamConnected && (corroborated || input.projection.state !== 'working')) {
-    return false;
-  }
-  return workingPollMs(input.projection);
 }
 
 /**
@@ -210,10 +170,7 @@ const workingObserverCounts = new Map<string, number>();
  * `STREAM_OBSERVATION_MAX_MS` window. The frame's age is a fact about the
  * frame, so it lives with the frame.
  */
-export function streamObservationStamp(
-  storeStampMs: number | undefined,
-  nowMs: number,
-): number {
+export function streamObservationStamp(storeStampMs: number | undefined, nowMs: number): number {
   return storeStampMs ?? nowMs;
 }
 
@@ -354,9 +311,6 @@ export function useSessionWorking(
     projectWorking(inputsFor(turn, nowMs));
 
   const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
-  const streamScope = canRead ? sessionStreamScope(projectId, sessionId) : '';
-  const streamConnected = useSessionStreamPresence(streamScope);
-  const streamCorroborated = useSessionTurnCorroborated(streamScope);
 
   const query = useQuery({
     queryKey: qk.project.sessionTurn(projectId, sessionId),
@@ -369,16 +323,8 @@ export function useSessionWorking(
     // session at three times its declared cadence — measured as 6 `/turn`
     // reads inside one 25 s open. Non-owners read the same entry the owner
     // refreshes, so nobody sees a staler answer; only the scheduling moved.
-    // And while the session STREAM is connected, even the owner stands down:
-    // `kortix.control.turn` writes this same cache entry, from the same
-    // server projection — see `workingRefetchInterval`.
     refetchInterval: (query) =>
-      workingRefetchInterval({
-        pollOwner,
-        streamConnected,
-        streamCorroborated,
-        projection: project(query.state.data, Date.now()),
-      }),
+      pollOwner ? workingPollMs(project(query.state.data, Date.now())) : false,
     // Coming back to a tab is the moment a turn that started (or ended) while
     // it was hidden has to be on screen.
     refetchOnWindowFocus: true,
@@ -388,27 +334,29 @@ export function useSessionWorking(
     retry: 1,
   });
 
-  // NO status-frame invalidation of `/turn` and `/prompts` any more.
-  //
-  // A status frame used to invalidate both queries so a turn that ended stopped
-  // reading as open before the next poll tick. That refetch is now pure
-  // duplication, and it was the last thing making the composer re-poll `/turn`
-  // and `/prompts` while the session STREAM was connected — the interval
-  // already stands down on `streamConnected` (`workingRefetchInterval`), but an
-  // `invalidateQueries` bypasses that gate and fired a full round trip per
-  // observer on every turn boundary (measured: 3×`/turn` + 3×`/prompts` per
-  // boundary on the local stack). It is redundant on BOTH sides now:
-  //   - Busy clears with no refetch: the runtime's own idle frame is folded
-  //     straight into `projectWorking`'s `stream` input, so the answer flips the
-  //     instant the frame lands — a `/turn` read was never on that path.
-  //   - The cache stays current with no refetch: the API's reconciler pushes
-  //     `kortix.control.turn` and `kortix.control.queue` — the SAME server
-  //     projections — onto the stream on change, and `use-session-stream.ts`
-  //     writes them into these exact cache entries.
-  // A surface with NO stream keeps its poll (`workingRefetchInterval` resumes
-  // the moment presence flips), and that poll is what carries a turn boundary
-  // there — no status frames reach a tab whose stream is down, so this effect
-  // did nothing for it anyway.
+  // A status frame is the earliest news there is that a turn started or ended.
+  // NOTHING invalidated this query before — no SSE frame, no mutation — so a
+  // turn that ended stayed "open" in the cache until the next interval tick.
+  // That window was up to WORKING_POLL_ACTIVE_MS of the composer holding Stop
+  // after the last token, and of `rewind()` throwing "Cannot rewind a busy
+  // session" on the Edit the user clicked the moment the reply landed.
+  // The prompt list is invalidated with it: a reading of the inbox is the one
+  // input with a life shorter than its own poll interval, and the turn ending
+  // is exactly when a `waiting` row becomes a running one.
+  const queryClient = useQueryClient();
+  // Keyed on the PHASE, not on the observation instant. The instant changes on
+  // every frame, and the runtime emits many per turn — see `streamTurnPhase`
+  // for the measured `busy`/`retry` oscillation this stops re-fetching on.
+  const streamPhase = streamTurnPhase(stream?.status);
+  useEffect(() => {
+    if (!canRead || streamPhase === 'none') return;
+    void queryClient.invalidateQueries({
+      queryKey: qk.project.sessionTurn(projectId, sessionId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: qk.project.sessionPrompts(projectId, sessionId),
+    });
+  }, [canRead, projectId, sessionId, streamPhase, queryClient]);
 
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.
@@ -438,5 +386,6 @@ export function useSessionWorking(
   // it are not re-run once per render just because `now` moved.
   const identity = `${projection.state}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these five fields define projection identity; object identity does not.
   return useMemo(() => projection, [identity]);
 }

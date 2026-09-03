@@ -6,8 +6,8 @@ test('indexes model metadata once by provider and model id', () => {
   const first = {
     providerID: 'kortix',
     providerName: 'Kortix',
-    modelID: 'glm-5.2',
-    modelName: 'GLM 5.2',
+    modelID: 'glm-5.3-flash',
+    modelName: 'GLM 5.3 Flash',
   };
   const second = {
     providerID: 'kortix',
@@ -17,7 +17,7 @@ test('indexes model metadata once by provider and model id', () => {
   };
   const lookup = createModelLookup([first, second]);
 
-  expect(lookup.get('kortix:glm-5.2')).toBe(first);
+  expect(lookup.get('kortix:glm-5.3-flash')).toBe(first);
   expect(lookup.get('kortix:codex/gpt-5.6-sol')).toBe(second);
   expect(lookup.get('kortix:missing')).toBeUndefined();
 });

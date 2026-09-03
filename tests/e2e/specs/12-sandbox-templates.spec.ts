@@ -50,17 +50,16 @@ interface TemplateCreateResult {
 }
 
 async function openSandboxSection(page: Page, projectId: string) {
-  // Sandbox templates graduated out of the Mod+, Settings overlay onto the
-  // Customize bar's Settings tab (`settings-tabs.ts`'s `GRADUATED` map:
-  // `sandbox: (p) => \`/projects/${p}/config?section=sandbox\``). It is a
-  // plain page section now, not an overlay tab — navigate straight there
-  // instead of opening the (now Profile/Preferences/Connected-only) overlay.
-  await page.goto(`/projects/${projectId}/config?section=sandbox`, {
+  // Sandbox templates is a Workspace row of the Mod+, Settings overlay again
+  // (2026-09-02; `/projects/[id]/config` is gone). `/settings/<tab>` is the
+  // overlay's deep-link route: it opens the store on that tab and lands on the
+  // project page with the overlay over it.
+  await page.goto(`/projects/${projectId}/settings/sandbox`, {
     waitUntil: "domcontentloaded",
   });
   await dismissOnboarding(page);
-  // "Sandbox templates" is the section label (`project-settings-sections.ts`)
-  // and the `SettingsTabHeader` title `sandbox-tab.tsx` still renders from it.
+  // "Sandbox templates" is the rail row's label (`settings/rail.ts`) and the
+  // `SettingsTabHeader` title `sandbox-tab.tsx` renders from it.
   await expect(
     page.getByRole("heading", { name: "Sandbox templates", exact: true }),
   ).toBeVisible({ timeout: 30_000 });

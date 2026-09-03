@@ -7,16 +7,18 @@ import {
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists models, connectors, agent, skills, triggers, secrets, config in that order', () => {
+  test('lists models, connectors, agent, skills, triggers, review, secrets in that order', () => {
     // Models leads the bar (Jay, 2026-08-17) — it used to sit after Triggers.
+    // Review joined the row on 2026-09-02, when the trailing Settings tab
+    // (`config`) was retired.
     expect(CAPABILITY_TABS.map((t) => t.key)).toEqual([
       'models',
       'connectors',
       'agent',
       'skills',
       'triggers',
+      'review',
       'secrets',
-      'config',
     ]);
   });
 
@@ -35,12 +37,12 @@ describe('CAPABILITY_TABS', () => {
     expect(channelsHref('p1')).toBe('/projects/p1/connectors?scope=channels');
   });
 
-  test('the Settings tab keys on `config`, never on `settings`', () => {
-    // `/projects/<id>/settings` is the settings OVERLAY's deep-link route. Two
-    // routes cannot share one segment, so the tab that holds project
-    // configuration takes `config` and keeps the label a person reads.
-    const settings = CAPABILITY_TABS.find((t) => t.label === 'Settings');
-    expect(settings?.key).toBe('config');
+  test('there is no Settings tab — configuration lives in the overlay', () => {
+    // `/projects/<id>/config` was retired on 2026-09-02. Asserted absent
+    // rather than merely left out of the list above, so re-adding the key
+    // without re-adding the route fails here.
+    expect(CAPABILITY_TABS.find((t) => t.label === 'Settings')).toBeUndefined();
+    expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('config');
     expect(CAPABILITY_TABS.map((t) => t.key)).not.toContain('settings');
   });
 
@@ -57,7 +59,7 @@ describe('capabilityTabHref', () => {
     expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/skills');
     expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/agent');
     expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/triggers');
-    expect(capabilityTabHref('p1', 'config')).toBe('/projects/p1/config');
+    expect(capabilityTabHref('p1', 'review')).toBe('/projects/p1/review');
   });
 });
 
@@ -67,7 +69,7 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/connectors')).toBe('connectors');
     expect(activeCapabilityTab('/projects/p1/skills')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/triggers')).toBe('triggers');
-    expect(activeCapabilityTab('/projects/p1/config')).toBe('config');
+    expect(activeCapabilityTab('/projects/p1/review')).toBe('review');
   });
   test('ignores a trailing slash', () => {
     expect(activeCapabilityTab('/projects/p1/skills/')).toBe('skills');
@@ -88,8 +90,10 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/settings/schedules')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/settings/webhooks')).toBeNull();
     expect(activeCapabilityTab('/projects/p1/customize/skills')).toBeNull();
-    // The Settings tab's own segment, one level deeper — the overlay route is
-    // `/settings/<tab>`, so `config` must not be claimed from there either.
-    expect(activeCapabilityTab('/projects/p1/settings/config')).toBeNull();
+    // A tab key one level deeper under the overlay route is the overlay's
+    // redirect, not this bar's tab.
+    expect(activeCapabilityTab('/projects/p1/settings/review')).toBeNull();
+    // The retired config page's path is nobody's tab.
+    expect(activeCapabilityTab('/projects/p1/config')).toBeNull();
   });
 });

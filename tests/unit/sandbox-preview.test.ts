@@ -7,6 +7,7 @@ import {
   previewSandboxName,
   runSandboxPreview,
   selectStalePreviewSandboxIds,
+  selectTeardownSandboxIds,
 } from '../src/core/sandbox-preview';
 import {
   daytonaPreviewLabelsFilter,
@@ -152,26 +153,92 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).toContain("PREVIEW_ORIGIN='https://pi.example.test'");
   });
 
-  it('retires a branch environment when its pull request stops being an active preview', () => {
-    // A labelled preview stays up until the label comes off or the pull request
-    // closes — and deleting the branch closes it. `activePullRequests` holds
-    // only open, labelled pull requests, so absence IS the retirement signal.
+  it('retires a branch environment when its BRANCH is gone, not when its PR closes', () => {
+    // The rule this test used to state was "absence from activePullRequests IS
+    // the retirement signal", which made CLOSING the pull request destroy the
+    // environment and its Postgres volume. Closing one is routine — superseded,
+    // reopened later, split in two — and none of that means the work is over.
+    // A branch environment is named after the branch and redeployed in place,
+    // so the BRANCH is its identity: it lives exactly as long as the branch.
     const sandboxes = [
-      { id: 'branch-live', metadata: { owner: 'kortix-branch-env', pr_number: '10', git_sha: 'old' } },
-      { id: 'branch-gone', metadata: { owner: 'kortix-branch-env', pr_number: '11', git_sha: 'x' } },
+      // No open labelled pull request at all — and the branch still exists.
+      {
+        id: 'branch-pr-closed',
+        name: 'kortix-env-feat-live',
+        metadata: { owner: 'kortix-branch-env', pr_number: '10', git_sha: 'old' },
+      },
+      {
+        id: 'branch-deleted',
+        name: 'kortix-env-feat-gone',
+        metadata: { owner: 'kortix-branch-env', pr_number: '11', git_sha: 'x' },
+      },
       { id: 'pr-current', metadata: { owner: 'kortix-preview', pr_number: '12', git_sha: 'head' } },
       { id: 'pr-moved', metadata: { owner: 'kortix-preview', pr_number: '13', git_sha: 'stale' } },
     ];
     const active = new Map<number, string>([
-      [10, 'moved-on'], // the branch env's head moved: NORMAL, it redeploys in place
       [12, 'head'],
       [13, 'head'],
     ]);
-    // Only the unlabelled/closed branch env and the moved ephemeral preview go.
-    expect(selectStalePreviewSandboxIds(sandboxes, active).sort()).toEqual([
-      'branch-gone',
+    const liveBranches = new Set(['kortix-env-feat-live']);
+    // Only the branch that is GONE, plus the moved ephemeral preview.
+    expect(selectStalePreviewSandboxIds(sandboxes, active, liveBranches).sort()).toEqual([
+      'branch-deleted',
       'pr-moved',
     ]);
+  });
+
+  it('keeps a branch environment it cannot identify instead of assuming it is gone', () => {
+    // The name is the only record of which branch a sandbox belongs to —
+    // nothing writes the branch into metadata. A listing that stopped returning
+    // names would therefore make every branch environment look deleted, and
+    // sweeping on that would destroy all of them, volumes included, at once.
+    // An unidentifiable sandbox costs money; this mistake is unrecoverable.
+    const sandboxes = [{ id: 'nameless', metadata: { owner: 'kortix-branch-env' } }];
+    expect(selectStalePreviewSandboxIds(sandboxes, new Map(), new Set())).toEqual([]);
+  });
+
+  it('tears down both sandbox shapes, and only this pull request\'s', () => {
+    // A branch environment has autoDeleteDays: 0 — no provider expiry. If
+    // teardown does not find it, NOTHING ever will, so it runs until someone
+    // notices the bill.
+    const sandboxes = [
+      { id: 'pr-box', name: 'kortix-preview-pr-42', metadata: { owner: 'kortix-preview', pr_number: '42' } },
+      { id: 'branch-box', name: 'kortix-env-feat-x', metadata: { owner: 'kortix-branch-env', pr_number: '42' } },
+      // Another pull request's boxes, identical in every other way.
+      { id: 'other-pr', name: 'kortix-preview-pr-43', metadata: { owner: 'kortix-preview', pr_number: '43' } },
+      { id: 'other-branch', name: 'kortix-env-feat-y', metadata: { owner: 'kortix-branch-env', pr_number: '43' } },
+      // Right name, wrong owner: something this system did not create.
+      { id: 'impostor', name: 'kortix-env-feat-x', metadata: { owner: 'someone-else', pr_number: '42' } },
+    ];
+
+    expect(selectTeardownSandboxIds(sandboxes, { prNumber: 42, branchEnv: 'feat/x' })).toEqual([
+      'pr-box',
+      'branch-box',
+    ]);
+
+    // WITHOUT branchEnv the branch-named box is invisible — which is exactly how
+    // a persistent environment leaks. The teardown job must always pass it.
+    expect(selectTeardownSandboxIds(sandboxes, { prNumber: 42 })).toEqual(['pr-box']);
+
+    // CHANGED DELIBERATELY: this returned [] while a branch environment was
+    // owned by a pull request. It is owned by its BRANCH now, so a mismatched
+    // number no longer hides it — two pull requests cannot share one branch,
+    // and the `delete` event that retires it carries no number to agree with.
+    expect(selectTeardownSandboxIds(sandboxes, { prNumber: 99, branchEnv: 'feat/x' })).toEqual([
+      'branch-box',
+    ]);
+
+    // Branch alone: exactly what the branch-deleted teardown job passes.
+    expect(selectTeardownSandboxIds(sandboxes, { branchEnv: 'feat/x' })).toEqual(['branch-box']);
+    expect(selectTeardownSandboxIds(sandboxes, { branchEnv: 'feat/y' })).toEqual(['other-branch']);
+    // The wrong-owner box shares that name and is still never returned.
+    expect(selectTeardownSandboxIds(sandboxes, { branchEnv: 'feat/x' })).not.toContain('impostor');
+
+    // Neither key is a caller bug, and it must FAIL rather than quietly delete
+    // nothing: a branch environment has no expiry to catch what teardown missed.
+    expect(() => selectTeardownSandboxIds(sandboxes, {})).toThrow(
+      /needs a pull request number or a branch/,
+    );
   });
 
   it('does not sweep a branch environment for the one thing that retires a preview', () => {
@@ -182,13 +249,18 @@ describe('provider-neutral preview lifecycle', () => {
     // push, which is the whole thing persistence exists to prevent.
     const sandboxes = [
       { id: 'pr-moved', metadata: { owner: 'kortix-preview', pr_number: '4242', git_sha: 'built' } },
-      { id: 'branch-env', metadata: { owner: 'kortix-branch-env', pr_number: '6998', git_sha: 'built' } },
+      {
+        id: 'branch-env',
+        name: 'kortix-env-pi-worker',
+        metadata: { owner: 'kortix-branch-env', pr_number: '6998', git_sha: 'built' },
+      },
     ];
     const active = new Map<number, string>([
       [4242, 'pushed'],
       [6998, 'pushed'],
     ]);
-    expect(selectStalePreviewSandboxIds(sandboxes, active)).toEqual(['pr-moved']);
+    const liveBranches = new Set(['kortix-env-pi-worker']);
+    expect(selectStalePreviewSandboxIds(sandboxes, active, liveBranches)).toEqual(['pr-moved']);
   });
 
   it('uses a new Platinum idempotency key for each deployment run', () => {

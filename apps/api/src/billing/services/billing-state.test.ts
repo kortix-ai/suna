@@ -9,7 +9,7 @@ import {
   hasPlan,
   isPayingSubscriptionStatus,
   resolveBillingState,
-  subscriptionBypassesWalletFloor,
+
 } from './billing-state';
 
 function snapshot(overrides: Partial<BillingSnapshot> = {}): BillingSnapshot {
@@ -26,7 +26,12 @@ function snapshot(overrides: Partial<BillingSnapshot> = {}): BillingSnapshot {
 }
 
 describe('resolveBillingState — subscribed-but-broke is never "no plan"', () => {
-  test('per-seat account on an ACTIVE subscription with a drained wallet is active, not blocked', () => {
+  test('per-seat account on an ACTIVE subscription with a drained wallet is BLOCKED — but as out_of_credits', () => {
+    // This pair of tests used to assert `active`, because a paying per-seat
+    // subscription bypassed the wallet floor outright. That bypass is gone (see
+    // "NO account bypasses the wallet floor" below for why). The point this file
+    // exists to defend is unchanged and is what the second assertion pins: the
+    // account is blocked, and it is named a TOP-UP problem, never "no plan".
     const state = resolveBillingState(
       snapshot({
         billingModel: 'per_seat',
@@ -36,22 +41,23 @@ describe('resolveBillingState — subscribed-but-broke is never "no plan"', () =
         subscriptionStatus: 'active',
       }),
     );
-    expect(state).toBe('active');
-    expect(billingStateAllowsRun(state)).toBe(true);
+    expect(state).toBe('out_of_credits');
+    expect(billingStateAllowsRun(state)).toBe(false);
+    expect(state).not.toBe('no_subscription');
   });
 
-  test('per-seat account on an ACTIVE subscription with an exactly-zero wallet is still active', () => {
-    expect(
-      resolveBillingState(
-        snapshot({
-          billingModel: 'per_seat',
-          tier: 'per_seat',
-          balance: 0,
-          subscriptionId: 'sub_live',
-          subscriptionStatus: 'active',
-        }),
-      ),
-    ).toBe('active');
+  test('per-seat account on an ACTIVE subscription with an exactly-zero wallet is blocked, not unplanned', () => {
+    const state = resolveBillingState(
+      snapshot({
+        billingModel: 'per_seat',
+        tier: 'per_seat',
+        balance: 0,
+        subscriptionId: 'sub_live',
+        subscriptionStatus: 'active',
+      }),
+    );
+    expect(state).toBe('out_of_credits');
+    expect(billingStateNeedsTopUp(state)).toBe(true);
   });
 
   test('per-seat account whose subscription was CANCELED and wallet drained is out_of_credits, not no_subscription', () => {
@@ -171,7 +177,18 @@ describe('resolveBillingState — subscribed-but-broke is never "no plan"', () =
   });
 });
 
-describe('only a PAYING subscription bypasses the wallet floor', () => {
+describe('NO account bypasses the wallet floor', () => {
+  // The bypass this block used to assert (`subscriptionBypassesWalletFloor`) is
+  // GONE. It let a paying per-seat / credit-plan / paid-tier account spend with
+  // no floor at all, which on a 6-seat production account produced $588.81 of
+  // spend against a $150/mo seat grant on a $0.00 wallet — and, past $0, a
+  // silently frozen `credit_ledger` because `atomic_use_credits` refuses to go
+  // negative. The floor is now universal.
+  //
+  // What must NOT come back with it is the PR #5141 mislabel: a drained PAYING
+  // account is blocked, but it is blocked as `out_of_credits` ("Top up — your
+  // plan and seats are unaffected"), never as `no_subscription` ("Subscribe").
+  // Every test below is really asserting that pair: blocked AND correctly named.
   const EVERY_STRIPE_STATUS = [
     'active',
     'trialing',
@@ -184,7 +201,8 @@ describe('only a PAYING subscription bypasses the wallet floor', () => {
     '',
   ] as const;
 
-  const BYPASSES = new Set(['active', 'trialing']);
+  /** Statuses Stripe is collecting on. No longer a bypass — only a label input. */
+  const PAYING = new Set(['active', 'trialing']);
 
   function perSeat(status: string, balance: number): BillingSnapshot {
     return snapshot({
@@ -200,29 +218,44 @@ describe('only a PAYING subscription bypasses the wallet floor', () => {
   for (const status of EVERY_STRIPE_STATUS) {
     const label = status || '(empty)';
 
-    test(`per-seat "${label}" with an empty wallet: bypass=${BYPASSES.has(status)}`, () => {
-      const snap = perSeat(status, 0);
-      expect(subscriptionBypassesWalletFloor(snap)).toBe(BYPASSES.has(status));
-      expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(BYPASSES.has(status));
+    test(`per-seat "${label}" with an empty wallet CANNOT run, whatever Stripe says`, () => {
+      expect(billingStateAllowsRun(resolveBillingState(perSeat(status, 0)))).toBe(false);
     });
 
-    test(`per-seat "${label}" agrees between the gate predicate and the resolved state`, () => {
-      const snap = perSeat(status, 0);
-      if (subscriptionBypassesWalletFloor(snap)) {
-        expect(resolveBillingState(snap)).toBe('active');
-      } else {
-        expect(resolveBillingState(snap)).not.toBe('active');
-      }
+    test(`per-seat "${label}" with an empty wallet is never told to subscribe`, () => {
+      // It has a subscription row, so `hasPlan` is true and the state must be a
+      // top-up/payment state — never the "you have no plan" pitch.
+      const state = resolveBillingState(perSeat(status, 0));
+      expect(state).not.toBe('no_subscription');
+      expect(billingStateNeedsTopUp(state)).toBe(true);
+    });
+
+    test(`per-seat "${label}" with a FUNDED wallet runs`, () => {
+      expect(resolveBillingState(perSeat(status, 25))).toBe('active');
     });
   }
 
-  test('past_due per-seat with a DRAINED wallet blocks, and blocks as payment_failed', () => {
+  test('a paying per-seat account at $0 is out_of_credits — the exact case that used to run unmetered', () => {
+    const state = resolveBillingState(perSeat('active', 0));
+    expect(state).toBe('out_of_credits');
+    expect(billingStateAllowsRun(state)).toBe(false);
+    expect(billingStateNeedsTopUp(state)).toBe(true);
+  });
+
+  test('a paying per-seat account just under the floor is blocked; at the floor it runs', () => {
+    expect(billingStateAllowsRun(resolveBillingState(perSeat('active', 0.0099)))).toBe(false);
+    expect(billingStateAllowsRun(resolveBillingState(perSeat('active', 0.01)))).toBe(true);
+  });
+
+  test('past_due per-seat with a DRAINED wallet blocks as payment_failed, not out_of_credits', () => {
+    // payment_failed is checked BEFORE hasPlan, so a failing card is named as a
+    // card problem rather than sent to a top-up flow that will also fail.
     const state = resolveBillingState(perSeat('past_due', 0));
     expect(state).toBe('payment_failed');
     expect(billingStateAllowsRun(state)).toBe(false);
   });
 
-  test('past_due per-seat is NOT told to subscribe — the PR #5141 mislabel', () => {
+  test('past_due per-seat is NOT told to subscribe — the PR #5141 mislabel stays dead', () => {
     expect(resolveBillingState(perSeat('past_due', 0))).not.toBe('no_subscription');
     expect(billingStateNeedsTopUp(resolveBillingState(perSeat('past_due', 0)))).toBe(true);
   });
@@ -231,32 +264,41 @@ describe('only a PAYING subscription bypasses the wallet floor', () => {
     expect(resolveBillingState(perSeat('past_due', 25))).toBe('active');
   });
 
-  test('past_due per-seat with a funded wallet is metered: it does NOT bypass the floor', () => {
-    expect(subscriptionBypassesWalletFloor(perSeat('past_due', 25))).toBe(false);
+  test('CONSEQUENCE: a Stripe-trialing per-seat account at $0 now BLOCKS', () => {
+    // Deliberate and load-bearing. `trialing` used to bypass the floor, so a
+    // trial with an unfunded wallet ran for free. It no longer does.
+    //
+    // A Stripe trial produces no `invoice.paid`, and the seat grant is driven by
+    // `invoice.paid` — so a trial started through Stripe has NO wallet unless
+    // something else funds it. Admin-issued trials are fine: trial-admin.ts
+    // grants credits explicitly as part of issuing the trial ("even a BYOK
+    // trial needs compute credits to run sessions").
+    //
+    // If Stripe-native trials on the per-seat plan are ever used, they must be
+    // funded at trial start or this test is the thing that will have warned you.
+    const state = resolveBillingState(perSeat('trialing', 0));
+    expect(billingStateAllowsRun(state)).toBe(false);
+    expect(state).toBe('out_of_credits');
+  });
+
+  test('a trial WITH credits runs — the funded trial path is unaffected', () => {
+    expect(resolveBillingState(perSeat('trialing', 25))).toBe('active');
   });
 
   test('incomplete_expired per-seat cannot spend below the floor', () => {
-    expect(subscriptionBypassesWalletFloor(perSeat('incomplete_expired', 0))).toBe(false);
     expect(resolveBillingState(perSeat('incomplete_expired', 0))).toBe('payment_failed');
   });
 
-  test('trialing per-seat bypasses the floor — a trial is a live subscription', () => {
-    expect(subscriptionBypassesWalletFloor(perSeat('trialing', 0))).toBe(true);
-    expect(resolveBillingState(perSeat('trialing', 0))).toBe('active');
-  });
-
-  test('an unknown future Stripe status fails CLOSED rather than granting a blank cheque', () => {
+  test('an unknown future Stripe status fails CLOSED', () => {
     const snap = perSeat('some_status_stripe_adds_in_2027', 0);
-    expect(subscriptionBypassesWalletFloor(snap)).toBe(false);
     expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(false);
   });
 
-  test('a FREE account with an active $0 Stripe subscription NEVER bypasses the floor', () => {
-    // The trap that makes the paid-plan half of the rule load-bearing: the free
-    // tier carries a real Stripe subscription whose status is `active`
-    // (226,931 such rows on production, 2026-08-20). Bypassing on "has a
-    // paying subscription" alone would hand every free account an unmetered
-    // wallet. Modeled on the real row shape.
+  test('a FREE account with an active $0 Stripe subscription cannot run', () => {
+    // The free tier carries a real Stripe subscription whose status is `active`
+    // (226,931 such rows on production, 2026-08-20). Under the old bypass this
+    // was the trap that made the paid-plan condition load-bearing; under a
+    // universal floor it simply falls out.
     for (const tier of ['free', 'none', null]) {
       const snap = snapshot({
         billingModel: 'legacy',
@@ -265,48 +307,50 @@ describe('only a PAYING subscription bypasses the wallet floor', () => {
         subscriptionId: 'sub_free_tier',
         subscriptionStatus: 'active',
       });
-      expect(subscriptionBypassesWalletFloor(snap)).toBe(false);
       expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(false);
     }
   });
 
-  test('the bypass is resolved by the SUBSCRIPTION, not the billing model: a paying legacy sub bypasses too', () => {
-    // Deliberate reversal (2026-08-20). The old `isPerSeatAccount && paying`
-    // rule 402'd every paying legacy customer: legacy tiers grant no monthly
-    // credits, so a $40/mo machine-subscription account sat at a $0 wallet and
-    // blocked on the one-cent admission hold — paying monthly for an account
-    // that could not run. Same allow-list, same fail-closed behavior; only the
-    // billing-model condition is gone.
+  test('a paying LEGACY subscription is metered exactly like per-seat', () => {
+    // The 2026-08-20 reversal widened the bypass to any paid tier so paying
+    // legacy customers were not 402'd at a $0 wallet. With no bypass at all,
+    // legacy and per-seat converge: both run on credit and block without it.
     for (const status of EVERY_STRIPE_STATUS) {
-      const snap = snapshot({
+      const drained = snapshot({
         billingModel: 'legacy',
         tier: 'tier_2_20',
         balance: 0,
         subscriptionId: 'sub_x',
         subscriptionStatus: status,
       });
-      expect(subscriptionBypassesWalletFloor(snap)).toBe(BYPASSES.has(status));
-      expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(BYPASSES.has(status));
+      expect(billingStateAllowsRun(resolveBillingState(drained))).toBe(false);
+      expect(resolveBillingState(drained)).not.toBe('no_subscription');
+
+      const funded = { ...drained, balance: 25 };
+      expect(resolveBillingState(funded)).toBe('active');
     }
   });
 
-  test('no subscription id means no bypass even when the status reads active', () => {
-    expect(
-      subscriptionBypassesWalletFloor(
-        snapshot({
-          billingModel: 'per_seat',
-          tier: 'per_seat',
-          balance: 0,
-          subscriptionId: null,
-          subscriptionStatus: 'active',
-        }),
-      ),
-    ).toBe(false);
+  test('hasPayingSubscription survives as a reporting predicate, granting nothing', () => {
+    // It still answers "is Stripe collecting" for the webhook layer and for
+    // `payment_failed`. It just no longer decides who may spend.
+    for (const status of EVERY_STRIPE_STATUS) {
+      expect(hasPayingSubscription(perSeat(status, 0))).toBe(PAYING.has(status));
+      // ...and being paying buys no run permission on an empty wallet.
+      expect(billingStateAllowsRun(resolveBillingState(perSeat(status, 0)))).toBe(false);
+    }
   });
 
-  test('hasLiveSubscription stays a REPORTING predicate and still counts past_due as live', () => {
-    expect(hasLiveSubscription(perSeat('past_due', 0))).toBe(true);
-    expect(hasPayingSubscription(perSeat('past_due', 0))).toBe(false);
+  test('no subscription id and an empty wallet means no plan at all', () => {
+    const snap = snapshot({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: 0,
+      subscriptionId: null,
+      subscriptionStatus: 'active',
+    });
+    expect(hasPayingSubscription(snap)).toBe(false);
+    expect(billingStateAllowsRun(resolveBillingState(snap))).toBe(false);
   });
 });
 

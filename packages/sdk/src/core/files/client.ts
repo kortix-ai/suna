@@ -668,11 +668,7 @@ export async function renameFile(from: string, to: string, baseUrl?: string): Pr
 
 // ── project / health (via opencode client) ────────────────────────────────────
 export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
-  // `/kortix/opencode/project-current` daemon passthrough, not raw `/project/current`.
-  // Lazy import: this core module is in the rest layer's early init chain, and a
-  // top-level import of daemon-read (-> current-runtime/auth) cycles backendApi.
-  const { readDaemonOpencode } = await import('../runtime/daemon-read');
-  return readDaemonOpencode<OpenCodeProjectInfo>('project-current');
+  return unwrap(await getClient().project.current()) as OpenCodeProjectInfo;
 }
 
 export async function getServerHealth(): Promise<ServerHealth> {

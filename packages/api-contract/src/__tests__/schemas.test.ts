@@ -788,7 +788,7 @@ describe('SessionCreateInputSchema runtime_context', () => {
         agentName: 'veyris',
         sandboxSlug: 'default',
         initialPrompt: 'hello',
-        opencodeModel: 'kortix/glm-5.2',
+        opencodeModel: 'kortix/glm-5.3-flash',
         sessionId: '11111111-1111-4111-a111-111111111111',
         branchAlreadyCreated: true,
       }).success,

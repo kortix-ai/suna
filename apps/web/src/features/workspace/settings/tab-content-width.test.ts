@@ -62,22 +62,27 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  projectSettingsSection,
-  type ProjectSettingsSectionKey,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
+import { railItemForTab } from './rail';
+import type { SettingsTab } from './settings-tabs';
 
 const TABS_DIR = join(import.meta.dir, 'tabs');
 const SRC_DIR = join(import.meta.dir, '..', '..', '..');
 
 /** Single-column settings. The design system's default container. */
 const FORM_TABS = [
+  'appearance-tab.tsx',
   'connected-tab.tsx',
   'experimental-tab.tsx',
   'general-tab.tsx',
+  // Plan: `BillingTab`'s cards and rows, not a `<Table>` — the ledger with
+  // the wide table is the account page's Usage tab, which is not mounted here.
+  'credits-tab.tsx',
+  'plan-tab.tsx',
   'preferences-tab.tsx',
   'profile-tab.tsx',
   'sandbox-tab.tsx',
+  'security-tab.tsx',
+  'sessions-tab.tsx',
   'snapshots-tab.tsx',
   // API keys: `AccessRow` list rows, not a `<Table>`, so it is a form tab.
   'tokens-tab.tsx',
@@ -415,11 +420,15 @@ describe('customize sections mounted in the settings panel', () => {
    * different reason: not a graduation, a merge into General — it never had
    * its own heading to check once its content became a section of General's.
    */
-  const PANES_WITH_REGISTRY_HEADING: ProjectSettingsSectionKey[] = ['upgrades'];
+  // Upgrades resolves through the RAIL since 2026-09-02, when it moved off
+  // `/config` and into the overlay's Workspace group. Same guard, other
+  // registry: the row must carry both the label and the description the pane
+  // renders through `SettingsTabHeader`.
+  const PANES_WITH_RAIL_HEADING: SettingsTab[] = ['upgrades'];
 
-  for (const key of PANES_WITH_REGISTRY_HEADING) {
-    test(`the '${key}' section entry carries the heading its pane renders`, () => {
-      const item = projectSettingsSection(key);
+  for (const key of PANES_WITH_RAIL_HEADING) {
+    test(`the '${key}' rail row carries the heading its pane renders`, () => {
+      const item = railItemForTab(key);
       expect(item).toBeDefined();
       expect(item?.label ?? '').not.toBe('');
       expect(item?.description ?? '').not.toBe('');

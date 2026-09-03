@@ -169,7 +169,8 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');
-    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(3);
+    // deploy, teardown, teardown-branch, reconcile.
+    expect(workflow.match(/uses: oven-sh\/setup-bun@v2/g)).toHaveLength(4);
     expect(workflow).toContain('pnpm test -- --target-full');
     expect(workflow).toContain('PREVIEW_LOCKFILE_SHA256');
     expect(workflow).toContain('Test report:');
@@ -182,6 +183,84 @@ describe('web ECS migration', () => {
     expect(workflow).not.toMatch(/vercel/i);
     expect(workflow).not.toContain('KORTIX_PREVIEW_APPROVED_SHA');
     expect(workflow).toContain('**Preview:**');
+  });
+
+  /**
+   * A preview environment lives until its BRANCH is deleted.
+   *
+   * It used to die when the pull request closed, which is the wrong event:
+   * closing one is routine — superseded, reopened later, split in two — and it
+   * took the environment's Postgres volume with it. The branch is what the
+   * environment is named after and redeployed against, so the branch is what it
+   * belongs to. Two switches turn it off: removing the `preview` label, and
+   * deleting the branch. Nothing else may.
+   */
+  /**
+   * A sandbox EXISTING is not its stack SERVING.
+   *
+   * 2026-08-29: `kortix-migrate` exited 1, so nothing bound port 8080 — and the
+   * stable hostname was re-pointed at that box anyway, because the step only
+   * checked that a sandbox origin came back. pi.kortix.com served Cloudflare's
+   * 502 until someone noticed. A failing SUITE still deserves a live
+   * environment to debug in; a failing STACK has nothing to point at, and the
+   * previous sandbox is still serving.
+   */
+  it('only points the stable hostname at a sandbox that answers /v1/health', () => {
+    const workflow = read('.github/workflows/deploy-preview.yml');
+    const step = workflow.slice(workflow.indexOf('Point the stable hostname at this sandbox'));
+    const body = step.slice(0, step.indexOf('\n      - name:'));
+
+    // The probe goes at the sandbox's OWN origin, which is what the public name
+    // is about to be pointed at — not at the public name, which still answers
+    // from the previous sandbox and would pass while this one is dead.
+    expect(body).toContain('"${target%/}/v1/health"');
+    expect(body).toContain(`jq -e '.status == "ok"'`);
+    // A dead stack must FAIL the step, leaving TARGET_ORIGIN where it was.
+    expect(body).toMatch(/is not serving \/v1\/health/);
+    expect(body).toMatch(/exit 1/);
+    // And the re-point must still come after the probe, never before it.
+    expect(body.indexOf('/v1/health')).toBeLessThan(body.indexOf('wrangler@4 deploy'));
+  });
+
+  it('keeps a preview environment alive until its branch is deleted', () => {
+    const workflow = read('.github/workflows/deploy-preview.yml');
+    const jobs = (name: string) => {
+      const body = workflow.slice(workflow.indexOf(`\n  ${name}:\n`) + name.length + 5);
+      const next = body.search(/\n {2}[a-z][a-z0-9-]*:\n/);
+      return next === -1 ? body : body.slice(0, next);
+    };
+
+    // `closed` reaches neither the trigger nor any job condition.
+    expect(workflow).toContain('types: [labeled, unlabeled, synchronize]');
+    expect(workflow).not.toContain("github.event.action == 'closed'");
+
+    // Removing the label is still the explicit off switch.
+    expect(jobs('teardown')).toContain(
+      "github.event.action == 'unlabeled' && github.event.label.name == 'preview'",
+    );
+
+    // Deleting the branch is the other one, and the only event that retires a
+    // branch environment — whose sandbox has no provider expiry behind it.
+    expect(workflow).toContain('\n  delete:\n');
+    const branchTeardown = jobs('teardown-branch');
+    // Tag deletions arrive on the same event and name no branch.
+    expect(branchTeardown).toContain(
+      "github.event_name == 'delete' && github.event.ref_type == 'branch'",
+    );
+    expect(branchTeardown).toContain('bun tests/bin/sandbox-preview.ts teardown');
+    // The branch alone identifies the sandbox; a delete event has no number.
+    expect(branchTeardown).toContain('PREVIEW_BRANCH_ENV: ${{ github.event.ref }}');
+    expect(branchTeardown).not.toContain('\n      PREVIEW_PR_NUMBER:');
+    // Default-branch code, never a pull request head — the same rule the
+    // pull_request_target jobs follow.
+    expect(branchTeardown).toContain('ref: ${{ github.event.repository.default_branch }}');
+    expect(branchTeardown).toContain('persist-credentials: false');
+    // No pull request exists to patch, so the job asks for no write scope and
+    // calls no GitHub API.
+    expect(branchTeardown).toContain('permissions:\n      contents: read\n');
+    expect(branchTeardown).not.toContain('pull-requests: write');
+    expect(branchTeardown).not.toContain('deployments: write');
+    expect(branchTeardown).not.toContain('gh api');
   });
 
   it('disables Vercel auto-deploys everywhere except staging', () => {

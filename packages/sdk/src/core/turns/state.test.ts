@@ -3,9 +3,9 @@ import { getRetryInfo, getRetryMessage } from './state';
 import type { SessionStatusLike } from './types';
 
 const failureBody = {
-  message: 'openai-codex failed; aster failed',
+  message: 'openai-codex failed; openrouter failed',
   code: 'upstream_error',
-  provider: 'aster',
+  provider: 'openrouter',
   request_id: 'req_incident',
   suggestion: 'Retry the request.',
   attempt_failures: [
@@ -32,7 +32,7 @@ describe('retry state gateway details', () => {
     };
     const retry = getRetryInfo(status);
     expect(retry?.details).toMatchObject({
-      provider: 'aster',
+      provider: 'openrouter',
       code: 'upstream_error',
       requestId: 'req_incident',
       attemptFailures: [
@@ -53,7 +53,7 @@ describe('retry state gateway details', () => {
         next: 123,
         message: JSON.stringify(failureBody),
       } as SessionStatusLike),
-    ).toBe('openai-codex failed; aster failed');
+    ).toBe('openai-codex failed; openrouter failed');
   });
 
   test('plain legacy retry messages remain unchanged', () => {
@@ -69,7 +69,7 @@ describe('retry state gateway details', () => {
 
   test('keeps the actionable gateway chain when OpenCode preserves only the HTTP error message', () => {
     const message =
-      'Bad Gateway: req_incident: All upstream candidates failed: openai-codex/gpt-5.6-sol [HTTP 400, context_length_exceeded]: context rejected; aster/glm-5.2 [stream_probe_timeout]: no bytes within 60000ms';
+      'Bad Gateway: req_incident: All upstream candidates failed: openai-codex/gpt-5.6-sol [HTTP 400, context_length_exceeded]: context rejected; openrouter/z-ai/glm-5.3-flash [stream_probe_timeout]: no bytes within 60000ms';
 
     const retry = getRetryInfo({
       type: 'retry',

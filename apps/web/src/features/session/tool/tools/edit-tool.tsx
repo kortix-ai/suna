@@ -1,6 +1,5 @@
 'use client';
 
-import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   BasicTool,
   DiagnosticsDisplay,
@@ -17,6 +16,7 @@ import {
   ToolRunningContext,
   useToolIndent,
 } from '@/features/session/tool/shared/infrastructure';
+import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -25,11 +25,9 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 import { getFilename } from '@/ui';
 import { PencilSimpleIcon } from '@phosphor-icons/react';
 import { diffLines } from 'diff';
-import { useTranslations } from 'next-intl';
 import { useCallback, useContext, useMemo } from 'react';
 
 export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const running = useContext(ToolRunningContext);
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
@@ -69,6 +67,19 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const hasDiff = before !== '' || after !== '';
   const output = partOutput(part);
   const isError = status === 'completed' && isErrorOutput(output);
+
+  /**
+   * `Editing` never became `Edited`. The row was a present participle for the
+   * life of the transcript, so a call that finished an hour ago still claimed to
+   * be mid-flight — the single biggest reason a settled session read as a
+   * stalled one. See `file-verb.ts`; every other surface has reported this call
+   * in the right tense for a long time.
+   *
+   * `morph_edit` shares this renderer and therefore this wording, which is
+   * correct: the reader is told what happened to their file, not which of two
+   * edit implementations the agent picked.
+   */
+  const title = fileVerb('edit', filePhase(running, isError));
   // Line counts for the row, from the same before/after the expanded diff
   // renders — so the closed row already answers "how big was this edit?".
   // Settled calls only: while an edit streams, `after` grows by the chunk, and
@@ -100,7 +111,7 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Editing',
+        title,
         subtitle: filename || undefined,
         // No stat on a failed call: the numbers would describe an edit that
         // did not land.
@@ -139,12 +150,15 @@ export function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
           <ToolCodeCard code={codeEdit} language={ext} />
         </>
       ) : isStalePending ? (
+        // The same statement `write` makes, in the same words, because it is the
+        // same situation: a part that is DONE waiting — the run it belonged to
+        // is over. This row used to shimmer "Waiting for file content" instead,
+        // which is a promise, and on a restored session it was a promise the
+        // transcript could never keep — the animation ran forever over a diff
+        // that was never going to arrive. `write-tool.tsx` dropped that shimmer;
+        // `edit` kept it, so one situation had two answers.
         <ToolResultCard bodyClassName="px-2 py-1.5">
-          <TextShimmer>
-            {tHardcodedUi.raw(
-              'componentsSessionToolRenderers.line2853JsxTextWaitingForFileContent',
-            )}
-          </TextShimmer>
+          <span className="text-muted-foreground/60 text-xs">No content received</span>
         </ToolResultCard>
       ) : null}
       <DiagnosticsDisplay diagnostics={diagnostics} filePath={filePath} />

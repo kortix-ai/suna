@@ -46,32 +46,7 @@ mock.module('@tanstack/react-query', () => ({
 let clientImpl: Record<string, unknown> = {};
 mock.module('../../core/runtime/client', () => ({
   getClient: () => clientImpl,
-}))
-
-// The config/session/todo reads now go through the daemon `/kortix/opencode/*`
-// passthroughs (readDaemonOpencode). Delegate to the SAME per-test `clientImpl`
-// so each test's setup (clientImpl.global.config.get, session.get, …) still
-// drives what the daemon "returns".
-mock.module('../../core/runtime/daemon-read', () => ({
-  readDaemonOpencode: async (path: string) => {
-    const c = clientImpl as {
-      global?: { config?: { get?: () => Promise<{ data?: unknown }> } };
-      session?: {
-        get?: (a: { sessionID: string }) => Promise<{ data?: unknown }>;
-        todo?: (a: { sessionID: string }) => Promise<{ data?: unknown }>;
-      };
-    };
-    if (path === 'config') return (await c.global?.config?.get?.())?.data;
-    if (path.startsWith('session/')) {
-      return (await c.session?.get?.({ sessionID: path.slice('session/'.length) }))?.data;
-    }
-    if (path.startsWith('todo/')) {
-      const r = await c.session?.todo?.({ sessionID: path.slice('todo/'.length) });
-      return (r as { data?: unknown })?.data ?? r;
-    }
-    return undefined;
-  },
-}));;
+}));
 
 // `useOpenCodeCompactionStore` is a real zustand hook — calling it outside a
 // React render (as this file does, invoking hooks as plain functions) throws
@@ -137,7 +112,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     clientImpl = {
       global: {
         config: {
-          get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.2' } }),
+          get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.3-flash' } }),
         },
       },
       session: {
@@ -154,7 +129,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     expect(summarizeArgs).toEqual({
       sessionID: 'ses_1',
       providerID: 'openrouter',
-      modelID: 'z-ai/glm-5.2',
+      modelID: 'z-ai/glm-5.3-flash',
     });
   });
 

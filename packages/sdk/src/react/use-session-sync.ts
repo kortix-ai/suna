@@ -1,11 +1,7 @@
 'use client';
 
 import type { SessionStatus, Todo } from '@opencode-ai/sdk/v2/client';
-import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import { SERVER_OBSERVATION_MAX_MS } from '../core/session/working';
-import { qk } from './query-keys';
-import type { SessionTurnObservation } from './use-session-working';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -68,13 +64,12 @@ interface UseSessionSyncOptions {
   /**
    * The caller's working projection (`useSessionWorking`), when it has one.
    *
-   * It is the controller's busy switch, whose remaining job is the TURN-END
-   * tail read (the busy→idle edge re-reads the tail once — the moment a
-   * stream that dropped its last frames leaves the answer truncated). Reading
-   * the raw `session.status` slot instead means a dropped busy frame — a
-   * backgrounded tab, a reconnect across the start of a turn — misses that
-   * edge for a turn the server's own authority says ran. Omit it
-   * (apps/mobile) and the stream slot decides, as before.
+   * It is the transcript liveness poll's switch. Reading the raw `session.status`
+   * slot instead means a dropped busy frame — a backgrounded tab, a proxy
+   * reconnect across the start of a turn — leaves the poll off for a turn the
+   * server's own authority says is running, and the transcript then never
+   * refreshes behind the missing stream. Omit it (apps/mobile) and the stream
+   * slot decides, as before.
    */
   working?: boolean;
   /**
@@ -107,98 +102,14 @@ interface UseSessionSyncOptions {
 export function sessionSyncBusy(input: {
   working: boolean | undefined;
   streamBusy: boolean;
-  /**
-   * The CONTROL channel's turn snapshot says this session is idle — no turn is
-   * open (`turns: []`), pushed by the API's reconciler from the lifecycle
-   * authority (`readSessionTurnState`), NOT from the sandbox daemon.
-   *
-   * It is the authority a stale runtime frame must not outrank. On an old,
-   * slow, or degraded daemon the runtime channel can deliver a `busy` frame and
-   * then never the matching `idle` one — the box died mid-turn — and
-   * `streamBusy` then latches the composer on Stop forever, even though `/turn`
-   * already knows the turn ended. When the control snapshot is a fresh idle,
-   * that latch clears: control is daemon-independent, so a degraded daemon can
-   * never wedge busy. A definite `working: true` still wins (it already folds
-   * the same control read plus the inbox and live content — see
-   * `projectWorking`), so this only removes the stale-frame wedge; it never
-   * un-busies a session the projection knows is running.
-   */
-  controlTurnIdle?: boolean;
 }): boolean {
-  if (input.controlTurnIdle) return input.working ?? false;
   return input.working ?? input.streamBusy;
 }
 
-/** Split `${projectId}/${sessionId}` into its two ids. `['', '']` when absent
- *  or malformed, which makes the control-turn query key inert (never enabled,
- *  never a request). Both ids are UUIDs with no `/`, so the first split is
- *  exact. */
-export function splitKortixSessionScope(
-  scope: string | undefined,
-): [string, string] {
-  if (!scope) return ['', ''];
-  const slash = scope.indexOf('/');
-  if (slash <= 0 || slash === scope.length - 1) return ['', ''];
-  return [scope.slice(0, slash), scope.slice(slash + 1)];
-}
-
 /**
- * Is the control channel's turn snapshot a FRESH idle — no turn open?
- *
- * `turns: []` is the authority's statement that nothing is running. Bounded by
- * `SERVER_OBSERVATION_MAX_MS` for the same reason the projection bounds its own
- * server read: a snapshot the reconciler has not refreshed for that long is no
- * longer evidence, so it may not clear busy on its own. A snapshot with an open
- * turn (`turns.length > 0`) is NOT idle and returns false — the runtime frame,
- * or the projection, decides then.
+ * Whether the transcript liveness poll should be running. Pure, so "the
+ * projection outranks the stream slot" is a test rather than a convention.
  */
-export function isControlTurnIdle(
-  turn: SessionTurnObservation | undefined,
-  nowMs: number,
-): boolean {
-  if (!turn) return false;
-  if (nowMs - turn.atMs > SERVER_OBSERVATION_MAX_MS) return false;
-  return turn.turns.length === 0;
-}
-
-/**
- * Whether the controller should treat this session as BUSY — the switch whose
- * busy→idle edge fires the turn-end tail read. (The 10s interval poll this
- * used to arm is deleted: the session stream's dense seq detects a lost frame
- * exactly.) Pure, so "the projection outranks the stream slot" is a test
- * rather than a convention.
- */
-/** The stale-daemon fallback cadence. */
-export const TRANSCRIPT_FALLBACK_POLL_MS = 10_000;
-
-/**
- * @deprecated Retired — the transcript-poll fallback is gone; always `null`.
- *
- * It re-read `/kortix/opencode/messages` on a timer whenever the runtime
- * channel was not live. But "runtime channel not live" is a box that is
- * down / rebuilding / not-yet-reachable — and such a daemon serves NEITHER
- * `/kortix/opencode/events` NOR `/kortix/opencode/messages` (they ship
- * together), so the poll only 404-spammed for nothing while the user watched a
- * churning network tab (dev, 2026-08-27). It also defeated the whole point of
- * the owned surface: `/events` + `/snapshot` ARE the feed.
- *
- * The steady state polls NOTHING and now so does every other state: while the
- * runtime channel is live, every transcript frame rides a dense seq so a loss
- * is detected and repaired EXACTLY by the stream's gap reconcile
- * (`connectSessionStream` → `reconcileHeldTranscripts` on a `resync`/seq-gap).
- * A box that is genuinely down has nothing to stream; the composer says so
- * (the runtime-unreachable / waking notice) instead of hammering a dead route.
- *
- * Kept as a no-op export because the name is published API — removing it is a
- * breaking change. It always returns `null`.
- */
-export function transcriptFallbackPollMs(_input: {
-  busy: boolean;
-  runtimeChannelLive: boolean;
-}): number | null {
-  return null;
-}
-
 export function livenessBusy(input: {
   networkEnabled: boolean;
   /**
@@ -392,10 +303,11 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   }, [controller, networkEnabled, sessionId]);
 
   // Coming back to the tab is a moment of MAXIMUM uncertainty, so it is a
-  // moment to re-read. A backgrounded tab has its timers clamped (Chrome:
-  // about one tick a minute) and its SSE connection can be dropped with no
-  // visible error. Whatever the transcript shows on return was assembled from
-  // a stream nobody was watching. One bounded tail read settles it.
+  // moment to re-read. A backgrounded tab has its timers clamped (Chrome: about
+  // one tick a minute), so the 10s liveness poll effectively stops, and the SSE
+  // connection can be dropped with no visible error. Whatever the transcript
+  // shows on return was assembled from a stream nobody was watching. One
+  // bounded tail read settles it.
   useEffect(() => {
     if (!networkEnabled || !canQueryOpenCodeSession(sessionId)) return;
     return onTabVisible(() => {
@@ -433,58 +345,17 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   const todos = useSyncStore((state) => state.todos[readableSessionId]) as Todo[] | undefined;
 
   const streamBusy = status.type === 'busy' || status.type === 'retry';
-
-  // The CONTROL channel's turn snapshot — the SAME `qk.project.sessionTurn`
-  // cache entry the `kortix.control.turn` frame writes (`use-session-stream.ts`
-  // `applyControlTurn`). Read by SUBSCRIBING to the react-query cache, never by
-  // mounting a `useQuery` observer: this hook has no `/turn` queryFn, and a
-  // queryFn-less observer throws "No queryFn was passed" the moment anything
-  // triggers a fetch — so this reads the stream-seeded cache and CANNOT itself
-  // issue a request. It is the daemon-independent authority that keeps a dead
-  // daemon's stale `busy` frame from wedging the composer: when the snapshot is
-  // a fresh idle (no open turn), busy clears even if the runtime channel went
-  // silent mid-turn. Keyed by the Kortix `(projectId, sessionId)` pair carried
-  // in `kortixSessionScope`, because `/turn` is addressed by those ids while
-  // this hook is keyed by the OpenCode wire id.
-  const queryClient = useQueryClient();
-  const [turnProjectId, turnSessionId] = splitKortixSessionScope(kortixSessionScope);
-  const turnKey = qk.project.sessionTurn(turnProjectId, turnSessionId);
-  // Stable-ref subscription: the snapshot is the cached object, which react-query
-  // only replaces on a real write, so `useSyncExternalStore` bails out of
-  // re-render when nothing moved even though the cache fires for other keys.
-  const turnKeyHashRef = useRef('');
-  turnKeyHashRef.current = JSON.stringify(turnKey);
-  const controlTurn = useSyncExternalStore(
-    (onChange) =>
-      queryClient.getQueryCache().subscribe((event) => {
-        if (JSON.stringify(event.query.queryKey) === turnKeyHashRef.current) onChange();
-      }),
-    () =>
-      turnProjectId && turnSessionId
-        ? queryClient.getQueryData<SessionTurnObservation>(turnKey)
-        : undefined,
-    () => undefined,
-  );
-  const controlTurnIdle = isControlTurnIdle(controlTurn, Date.now());
-
   // Published, so it cannot be removed — but it is now an ALIAS of the
   // projection when the caller passed one, so the hook's public answer and the
-  // poll's switch are the same rule instead of two — with the control turn
-  // snapshot allowed to clear a stale runtime-frame wedge (`controlTurnIdle`).
-  const isBusy = sessionSyncBusy({ working, streamBusy, controlTurnIdle });
+  // poll's switch are the same rule instead of two.
+  const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
 
-  const busy = livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn });
   useEffect(() => {
-    controller.setBusy(busy);
-  }, [controller, busy]);
-
-  // No transcript-poll fallback. `/events` is the single feed: a lost frame is
-  // a dense-seq gap the stream repairs exactly (`connectSessionStream` →
-  // `reconcileHeldTranscripts`), and a box that is down has nothing to stream —
-  // the composer shows the waking / lost-contact notice rather than hammering a
-  // dead `/kortix/opencode/messages` route. See `transcriptFallbackPollMs`
-  // (retired). This removed the `/messages` 404-spam a rebuilding box produced.
+    controller.setBusy(
+      livenessBusy({ networkEnabled, runtimeHealthy, working, streamBusy, serverHoldsTurn }),
+    );
+  }, [controller, streamBusy, networkEnabled, runtimeHealthy, working, serverHoldsTurn]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a

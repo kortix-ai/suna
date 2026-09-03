@@ -1,23 +1,22 @@
 import { describe, expect, mock, test } from 'bun:test';
 import type { SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { useSyncStore } from '../browser/stores/sync-store';
+import { configureKortix } from '../core/http/config';
+import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
 import {
   SERVER_OBSERVATION_MAX_MS,
   STREAM_OBSERVATION_MAX_MS,
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
-import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
-import { configureKortix } from '../core/http/config';
 import {
   WORKING_POLL_ACTIVE_MS,
-  readSessionTurnObservation,
   WORKING_POLL_IDLE_MS,
   buildWorkingInputs,
-  workingPollMs,
-  workingRefetchInterval,
+  readSessionTurnObservation,
   streamObservationStamp,
   streamTurnPhase,
+  workingPollMs,
 } from './use-session-working';
 
 const T0 = Date.parse('2026-08-18T10:00:00.000Z');
@@ -27,7 +26,13 @@ configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' }
 describe('workingPollMs', () => {
   test('a working session is polled fast — the end of the turn is the news', () => {
     expect(
-      workingPollMs({ state: 'working', source: 'server', turnId: 'msg_1', since: T0, serverOpenTurnToken: 'tt-1' }),
+      workingPollMs({
+        state: 'working',
+        source: 'server',
+        turnId: 'msg_1',
+        since: T0,
+        serverOpenTurnToken: 'tt-1',
+      }),
     ).toBe(WORKING_POLL_ACTIVE_MS);
   });
 
@@ -35,9 +40,15 @@ describe('workingPollMs', () => {
     // A trigger, a second device, or the inbox delivering a queued prompt all
     // start turns nobody here asked for. `false` would mean only a reload
     // ever shows them.
-    expect(workingPollMs({ state: 'idle', source: 'server', turnId: null, since: T0, serverOpenTurnToken: null })).toBe(
-      WORKING_POLL_IDLE_MS,
-    );
+    expect(
+      workingPollMs({
+        state: 'idle',
+        source: 'server',
+        turnId: null,
+        since: T0,
+        serverOpenTurnToken: null,
+      }),
+    ).toBe(WORKING_POLL_IDLE_MS);
     expect(WORKING_POLL_IDLE_MS).toBeGreaterThan(WORKING_POLL_ACTIVE_MS);
   });
 
@@ -45,7 +56,13 @@ describe('workingPollMs', () => {
     // It is the one state that MUST resolve quickly: the projection is
     // running on this tab's own word until a server source answers.
     expect(
-      workingPollMs({ state: 'working', source: 'optimistic', turnId: 'msg_1', since: T0, serverOpenTurnToken: null }),
+      workingPollMs({
+        state: 'working',
+        source: 'optimistic',
+        turnId: 'msg_1',
+        since: T0,
+        serverOpenTurnToken: null,
+      }),
     ).toBe(WORKING_POLL_ACTIVE_MS);
   });
 });
@@ -465,7 +482,10 @@ describe('readSessionTurnObservation', () => {
 
   test('reads /turn when no bundle is in flight — the steady-state poll', async () => {
     resetSessionOpenBundles();
-    const urls = mockFetch(() => ({ turns: [], last_ended: { turn_token: 'tt-0', end_reason: 'completed', ended_at: null } }));
+    const urls = mockFetch(() => ({
+      turns: [],
+      last_ended: { turn_token: 'tt-0', end_reason: 'completed', ended_at: null },
+    }));
     const observation = await readSessionTurnObservation('P1', 'S1');
     expect(urls).toHaveLength(1);
     expect(urls[0]).toContain('/sessions/S1/turn');
@@ -476,7 +496,7 @@ describe('readSessionTurnObservation', () => {
   test('falls back to /turn when the bundle could not answer that leg', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch((url) =>
-      url.includes('snapshot')
+      url.includes('/snapshot')
         ? {
             observed_at: BUNDLE_AT,
             turn: { known: false, reason: 'turn read exploded' },
@@ -493,99 +513,5 @@ describe('readSessionTurnObservation', () => {
     // UNKNOWN is not idle: the fallback must ASK, not assume.
     expect(urls.some((u) => u.endsWith('/turn'))).toBe(true);
     expect(observation.turns[0]?.turn_token).toBe('tt-2');
-  });
-});
-
-describe('workingRefetchInterval (stream presence hands the cadence over)', () => {
-  const projection = {
-    state: 'working',
-    source: 'server',
-    turnId: 'msg_1',
-    since: T0,
-    serverOpenTurnToken: 'tt-1',
-  } as const;
-
-  test('poll owner with no stream polls at the projection cadence', () => {
-    expect(
-      workingRefetchInterval({ pollOwner: true, streamConnected: false, projection }),
-    ).toBe(WORKING_POLL_ACTIVE_MS);
-  });
-
-  test('a connected stream silences the poll — the control channel carries the same projection', () => {
-    expect(
-      workingRefetchInterval({ pollOwner: true, streamConnected: true, projection }),
-    ).toBe(false);
-  });
-
-  test('a non-owner never polls, stream or not', () => {
-    expect(
-      workingRefetchInterval({ pollOwner: false, streamConnected: false, projection }),
-    ).toBe(false);
-  });
-
-  /**
-   * Resuming a session showed "Gathering thoughts..." over a finished
-   * transcript for ~45s.
-   *
-   * The poll stood down the moment the stream connected, on the promise that
-   * `kortix.control.turn` carries the same projection. It does — but the
-   * reconciler pushes those frames ON CHANGE, and a session resumed with a
-   * turn row already open produces no change and therefore no frame. Nothing
-   * re-read `/turn`, so the stale row decided the UI until the whole
-   * observation aged past SERVER_OBSERVATION_MAX_MS.
-   */
-  describe('a connected stream that has not answered yet', () => {
-    test('keeps polling while it claims work on an uncorroborated observation', () => {
-      expect(
-        workingRefetchInterval({
-          pollOwner: true,
-          streamConnected: true,
-          streamCorroborated: false,
-          projection,
-        }),
-      ).toBe(WORKING_POLL_ACTIVE_MS);
-    });
-
-    test('stands down as soon as a turn frame arrives', () => {
-      expect(
-        workingRefetchInterval({
-          pollOwner: true,
-          streamConnected: true,
-          streamCorroborated: true,
-          projection,
-        }),
-      ).toBe(false);
-    });
-
-    test('does not poll an IDLE session — only the working claim needs converging', () => {
-      // An idle projection is not the failure mode: a turn STARTING is a change,
-      // so the reconciler pushes a frame for it. Polling here would reinstate
-      // the duplication the stand-down exists to remove.
-      expect(
-        workingRefetchInterval({
-          pollOwner: true,
-          streamConnected: true,
-          streamCorroborated: false,
-          projection: { ...projection, state: 'idle', turnId: null, serverOpenTurnToken: null },
-        }),
-      ).toBe(false);
-    });
-
-    test('a non-owner still never polls', () => {
-      expect(
-        workingRefetchInterval({
-          pollOwner: false,
-          streamConnected: true,
-          streamCorroborated: false,
-          projection,
-        }),
-      ).toBe(false);
-    });
-
-    test('an absent flag reads as corroborated, so the gate can only ADD polling', () => {
-      expect(
-        workingRefetchInterval({ pollOwner: true, streamConnected: true, projection }),
-      ).toBe(false);
-    });
   });
 });

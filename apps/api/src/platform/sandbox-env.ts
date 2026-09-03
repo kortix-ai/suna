@@ -36,12 +36,10 @@ const SANDBOX_ALLOWED_CREDENTIALS: ReadonlySet<string> = new Set([
  */
 const SANDBOX_FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
   'OPENROUTER_API_KEY',
-  'ANTHROPIC_API_KEY',
   'OPENAI_API_KEY',
   'TAVILY_API_KEY',
   'SERPER_API_KEY',
   'FIRECRAWL_API_KEY',
-  'REPLICATE_API_TOKEN',
   'CONTEXT7_API_KEY',
   // Platform infra secrets that never belong in a sandbox and don't match the
   // pattern below.

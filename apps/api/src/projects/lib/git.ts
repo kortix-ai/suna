@@ -32,8 +32,8 @@ import type { RequestContext } from '../../iam/actor';
 import { registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
 import { accountRoleFor } from '../../iam/read-models';
 import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, normalizeJsonObject, normalizeString } from './serializers';
+import type { GitPrincipal } from '../../git-proxy/ref-policy';
 import {
-  sessionWorkspaceAllowsRepositoryAccess,
   workspaceMetadataAllowsRepositoryAccess,
 } from './session-workspace-access';
 
@@ -503,9 +503,27 @@ export async function hasServerManagedGitAuth(project: ProjectRow): Promise<bool
 }
 
 
+/**
+ * Why `resolveProjectGitAuth` could not produce a credential. Only set when
+ * `authSource` is `'none'`. `installation_*` mean the ACCOUNT has to act (the
+ * GitHub App is missing, or no longer mints tokens for the stored
+ * installation — which is what happens when the App identity itself changes);
+ * everything else is a server-side or data problem the account cannot fix by
+ * reconnecting. `resolveProjectGitConnection` turns the first kind into a
+ * reconnect prompt.
+ */
+export type GitAuthUnavailableReason =
+  | 'installation_missing'
+  | 'installation_unusable'
+  | 'installation_mismatch'
+  | 'repo_url_unparseable'
+  | 'managed_git_unavailable'
+  | 'no_credential';
+
 export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   auth?: GitHubAuthContext;
   authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
+  reason?: GitAuthUnavailableReason;
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
 
@@ -544,39 +562,55 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         );
       }
     }
-    return { authSource: 'none' };
+    return { authSource: 'none', reason: 'managed_git_unavailable' };
   }
 
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
-    if (!repo) return { authSource: 'none' };
+    if (!repo) return { authSource: 'none', reason: 'repo_url_unparseable' };
     const installation = remote.installationId
       ? await getAccountGitHubInstallation(project.accountId, remote.installationId)
       : (await listAccountGitHubInstallations(project.accountId)).find(
           (candidate) => candidate.ownerLogin.toLowerCase() === repo.owner.toLowerCase(),
         ) ?? null;
-    if (!installation) return { authSource: 'none' };
+    if (!installation) return { authSource: 'none', reason: 'installation_missing' };
     if (repo.owner.toLowerCase() !== installation.ownerLogin.toLowerCase()) {
-      return { authSource: 'none' };
+      return { authSource: 'none', reason: 'installation_mismatch' };
     }
     if (remote.repoOwner && remote.repoOwner.toLowerCase() !== repo.owner.toLowerCase()) {
-      return { authSource: 'none' };
+      return { authSource: 'none', reason: 'installation_mismatch' };
     }
     if (remote.repoName && remote.repoName.toLowerCase() !== repo.repo.toLowerCase()) {
-      return { authSource: 'none' };
+      return { authSource: 'none', reason: 'installation_mismatch' };
     }
     // Scope the BYO token to the single linked repo too.
-    const token = await createInstallationToken(installation.installationId, [repo.repo]);
-    return {
-      auth: {
-        token: token.token,
-        source: 'app_installation',
-        owner: installation.ownerLogin,
-        ownerType: installation.ownerType,
-        installationId: installation.installationId,
-      },
-      authSource: 'app_installation',
-    };
+    //
+    // Minting can fail for a reason the account can fix: GitHub 404s when the
+    // App JWT does not own this installation, which is exactly what a stored
+    // installation looks like after the App identity changes, and it also 404s
+    // once someone uninstalls the App. Without this catch that failure THREW
+    // out of a routine auth resolve, so callers saw an opaque error instead of
+    // "reconnect GitHub". Degrade to a named reason and let
+    // resolveProjectGitConnection turn it into a prompt.
+    try {
+      const token = await createInstallationToken(installation.installationId, [repo.repo]);
+      return {
+        auth: {
+          token: token.token,
+          source: 'app_installation',
+          owner: installation.ownerLogin,
+          ownerType: installation.ownerType,
+          installationId: installation.installationId,
+        },
+        authSource: 'app_installation',
+      };
+    } catch (err) {
+      console.warn(
+        `[projects] GitHub App installation ${installation.installationId} no longer mints tokens for ${project.projectId}:`,
+        err,
+      );
+      return { authSource: 'none', reason: 'installation_unusable' };
+    }
   }
 
   if (remote.authMethod === 'project_credential') {
@@ -618,7 +652,46 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     };
   }
 
-  return { authSource: 'none' };
+  return { authSource: 'none', reason: 'no_credential' };
+}
+
+/** What the client should show for a project's git connection. */
+export type ProjectGitConnectionState = {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: GitAuthUnavailableReason;
+  installUrl?: string | null;
+};
+
+/**
+ * Answer "is this project's git connection usable, and if not can the account
+ * fix it themselves?" — the read behind the Reconnect GitHub prompt.
+ *
+ * Only the two `installation_*` reasons are the account's to fix, and only
+ * those return an install URL. A managed-git or repo-URL failure is ours, so
+ * it reports `unavailable`: telling someone to reconnect would send them round
+ * a loop that cannot help.
+ */
+export async function resolveProjectGitConnection(
+  project: ProjectRow,
+  userId: string,
+): Promise<ProjectGitConnectionState> {
+  const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+  if (!remote.upstreamUrl && !project.repoUrl) return { state: 'not_connected' };
+
+  const resolved = await resolveProjectGitAuth(project);
+  if (resolved.authSource !== 'none') return { state: 'connected' };
+
+  const reconnectable =
+    resolved.reason === 'installation_missing' ||
+    resolved.reason === 'installation_unusable' ||
+    resolved.reason === 'installation_mismatch';
+  if (!reconnectable) return { state: 'unavailable', reason: resolved.reason };
+
+  return {
+    state: 'reconnect_required',
+    reason: resolved.reason,
+    installUrl: await createGitHubInstallationInstallUrl(project.accountId, userId),
+  };
 }
 
 
@@ -667,12 +740,7 @@ export async function resolveProjectUpstream(
 
 
 export type GitProxyAuth =
-  /**
-   * `sessionId` is set when the caller IS a session (a sandbox/session token),
-   * so a route can name the session without a second token round-trip. The pi
-   * runtime route uses it to bake the session's own agent into the artifact.
-   */
-  | { ok: true; project: ProjectRow; sessionId?: string | null }
+  | { ok: true; project: ProjectRow; principal: GitPrincipal }
   | { ok: false; status: number; message: string };
 
 /**
@@ -799,18 +867,41 @@ async function authorizeGitProxyUncached(
     if (result.projectId && result.projectId !== projectId) {
       return { ok: false, status: 403, message: 'token is scoped to a different project' };
     }
-    if (
-      result.sessionId &&
-      !(await sessionWorkspaceAllowsRepositoryAccess({
-        sessionId: result.sessionId,
-        accountId: result.accountId,
-        projectId,
-      }))
-    ) {
-      return {
-        ok: false,
-        status: 403,
-        message: 'session workspace does not allow repository access',
+    // A SESSION-scoped PAT is an agent credential wearing a different prefix:
+    // the `kortix` CLI inside a sandbox authenticates with one. It must land on
+    // the same principal as the sandbox token, or the ref allowlist would be a
+    // one-line bypass (swap the credential, keep the push).
+    let sessionPrincipal: GitPrincipal | null = null;
+    if (result.sessionId) {
+      const [sessionRow] = await db
+        .select({
+          sessionId: projectSessions.sessionId,
+          branchName: projectSessions.branchName,
+          sessionMetadata: projectSessions.metadata,
+        })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.sessionId, result.sessionId),
+            eq(projectSessions.accountId, result.accountId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!sessionRow || !workspaceMetadataAllowsRepositoryAccess(sessionRow.sessionMetadata)) {
+        return {
+          ok: false,
+          status: 403,
+          message: 'session workspace does not allow repository access',
+        };
+      }
+      if (!sessionRow.branchName) {
+        return { ok: false, status: 403, message: 'session has no branch to push' };
+      }
+      sessionPrincipal = {
+        kind: 'session',
+        sessionId: sessionRow.sessionId,
+        branch: sessionRow.branchName,
       };
     }
     if (result.accountId !== project.accountId) {
@@ -820,7 +911,11 @@ async function authorizeGitProxyUncached(
         return { ok: false, status: 403, message: 'token is not authorized for this project' };
       }
     }
-    return { ok: true, project, sessionId: result.sessionId ?? null };
+    return {
+      ok: true,
+      project,
+      principal: sessionPrincipal ?? { kind: 'user', userId: result.userId ?? null },
+    };
   }
 
   if (tokenCheck.kind === 'kortix') {
@@ -835,6 +930,8 @@ async function authorizeGitProxyUncached(
       const [sandbox] = await db
         .select({
           sandboxId: sessionSandboxes.sandboxId,
+          sessionId: projectSessions.sessionId,
+          branchName: projectSessions.branchName,
           sessionMetadata: projectSessions.metadata,
         })
         .from(sessionSandboxes)
@@ -864,14 +961,28 @@ async function authorizeGitProxyUncached(
           accountId: result.accountId,
           sandboxId: result.sandboxId,
         });
-        if (monitorBox) return { ok: true, project };
+        if (monitorBox) return { ok: true, project, principal: { kind: 'monitor' } };
         return { ok: false, status: 403, message: 'sandbox token is not scoped to this project' };
       }
       if (!workspaceMetadataAllowsRepositoryAccess(sandbox.sessionMetadata)) {
         return { ok: false, status: 403, message: 'sandbox workspace does not allow Git access' };
       }
-      // session_id == sandbox_id for a session box (the platform invariant).
-      return { ok: true, project, sessionId: result.sandboxId };
+      // A session's git authority is its own branch and nothing else — see
+      // git-proxy/ref-policy.ts. Refuse rather than widen if the row somehow
+      // carries no branch: an unnamed branch would make the allowlist empty in
+      // one direction and unbounded in the other, depending on how it is read.
+      if (!sandbox.branchName) {
+        return { ok: false, status: 403, message: 'session has no branch to push' };
+      }
+      return {
+        ok: true,
+        project,
+        principal: {
+          kind: 'session',
+          sessionId: sandbox.sessionId,
+          branch: sandbox.branchName,
+        },
+      };
     }
     // Account-scoped user API key. No per-project fallback here: an API key
     // carries no user identity, so there is no principal to evaluate project
@@ -879,7 +990,7 @@ async function authorizeGitProxyUncached(
     if (result.accountId !== project.accountId) {
       return { ok: false, status: 403, message: 'token does not own this project' };
     }
-    return { ok: true, project };
+    return { ok: true, project, principal: { kind: 'user', userId: null } };
   }
 
   return { ok: false, status: 401, message: 'git proxy requires a Kortix token' };

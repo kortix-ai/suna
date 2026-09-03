@@ -2,7 +2,7 @@
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useParams, usePathname } from 'next/navigation';
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import {
@@ -12,7 +12,6 @@ import {
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectPageCans } from '@/lib/use-project-can';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**
  * The one project-configuration entry in the sidebar:
@@ -24,9 +23,12 @@ import { useSettingsPanelStore } from '@/stores/settings-panel-store';
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
  * workspace switcher already opens, one level up — a second row to an
  * identical destination. The overlay itself, and its Mod+, keyboard
- * shortcut, are unchanged; only this row's `<SidebarMenuItem>` is gone. See
- * `useSettingsKeyboardShortcut` below and `workspace-switcher.tsx`'s "User
- * Settings" row.
+ * shortcut, are unchanged; only this row's `<SidebarMenuItem>` is gone. The
+ * shortcut moved out of this file on 2026-09-02 — it now sits with the surface
+ * it opens (`settings/settings-shortcut.ts`, mounted by `SettingsPanel`), so
+ * it binds wherever the panel is mounted rather than wherever this sidebar is.
+ * The keycap it advertises is printed on `workspace-switcher.tsx`'s "Settings"
+ * row, which is the row that opens the same overlay.
  */
 
 /**
@@ -60,18 +62,18 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), so every project
   // role that could open these panes in the Settings overlay still can here.
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
+  // Review — the inbox, on the bar since 2026-09-02 (it was a section of the
+  // retired `/config` page). Same read leaf `CUSTOMIZE_SECTION_ACCESS.review`
+  // gated the section on; the `review_center` flag is applied by the bar
+  // (`visibleCapabilityTabs`), not by this permission list.
+  { key: 'review', action: PROJECT_ACTIONS.PROJECT_REVIEW_READ },
   // Channels is NOT a row here any more. It is a scope of the Connectors page
   // (`channelsHref`), and it always gated on `project.connector.read` — the
   // same leaf the Connectors row above already probes, so folding it in
   // removed a duplicate probe rather than a gate.
   { key: 'secrets', action: PROJECT_ACTIONS.PROJECT_SECRET_READ },
-  // Settings (`/projects/<id>/config`) holds the project configuration that
-  // did not earn its own top-level tab. It reuses `project.customize.write`,
-  // the SAME leaf the row itself gates on above, rather than inventing a
-  // narrower one: anyone who can see the Customize row at all can open this
-  // tab, so a second, stricter probe here could only ever produce a row that
-  // leads nowhere.
-  { key: 'config', action: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
+  // No Settings entry: `/projects/<id>/config` was retired on 2026-09-02. Its
+  // sections are the Settings overlay's Workspace group (Cmd+,).
 ];
 
 /**
@@ -94,34 +96,6 @@ function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] |
     return !!probe && (probe.allowed || probe.isLoading);
   });
   return hit === -1 ? null : TAB_PREFERENCE[hit].key;
-}
-
-/**
- * Mod+, — printed on the Settings row, so it does what that row does: open the
- * Settings overlay. A keycap that opens something other than the row it sits
- * on is worse than no keycap.
- */
-export function useSettingsKeyboardShortcut() {
-  const openSettings = useSettingsPanelStore((s) => s.openSettings);
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        event.key === ','
-      ) {
-        event.preventDefault();
-        openSettings();
-        if (isMobile) setOpenMobile(false);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [openSettings, isMobile, setOpenMobile]);
 }
 
 /**
@@ -204,7 +178,7 @@ export function ProjectCustomizeNavItem() {
         asChild
         isActive={isActive}
         tooltip="Customize"
-        className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+        className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={`/projects/${projectId}/customize`} prefetch onClick={handleClick}>
           <span className="shrink-0">

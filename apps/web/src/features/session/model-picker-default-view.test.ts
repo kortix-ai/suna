@@ -35,7 +35,7 @@ describe('modelInDefaultView', () => {
 
   test('gateway (kortix) models are untouched — the server already curated them via enabled', () => {
     expect(
-      modelInDefaultView(m('kortix', 'glm-5.2'), {
+      modelInDefaultView(m('kortix', 'glm-5.3-flash'), {
         search: '',
         isStoreVisible: hiddenByStore,
         selected: null,

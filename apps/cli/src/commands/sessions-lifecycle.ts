@@ -313,7 +313,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
     return 2;
   }
   if (!model) {
-    process.stderr.write(`${status.err('Pass a model id (e.g. `kortix/glm-5.2`).')}\n`);
+    process.stderr.write(`${status.err('Pass a model id (e.g. `kortix/glm-5.3-flash`).')}\n`);
     return 2;
   }
 

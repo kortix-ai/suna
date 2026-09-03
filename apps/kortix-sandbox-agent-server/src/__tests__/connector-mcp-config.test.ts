@@ -197,7 +197,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     )
     const models = config.provider.kortix.models
     expect(Object.keys(models).length).toBeGreaterThan(0)
-    expect(models['glm-5.2']).toBeDefined()
+    expect(models['glm-5.3-flash']).toBeDefined()
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 

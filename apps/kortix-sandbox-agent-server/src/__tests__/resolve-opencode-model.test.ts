@@ -73,11 +73,11 @@ describe('resolveOpencodeModel', () => {
 
   test('routes a bare managed model through the Kortix provider in gateway mode', () => {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
-    process.env.KORTIX_OPENCODE_MODEL = 'glm-5.2'
+    process.env.KORTIX_OPENCODE_MODEL = 'glm-5.3-flash'
 
     expect(resolveOpencodeModel()).toEqual({
       providerID: 'kortix',
-      modelID: 'glm-5.2',
+      modelID: 'glm-5.3-flash',
     })
   })
 
@@ -109,7 +109,7 @@ describe('resolveOpencodeModel', () => {
   test('native mode drops a stale bare kortix/<managed-id> pin', () => {
     delete process.env.KORTIX_LLM_BASE_URL
     delete process.env.KORTIX_LLM_PROXY_URL
-    process.env.KORTIX_OPENCODE_MODEL = 'kortix/glm-5.2'
+    process.env.KORTIX_OPENCODE_MODEL = 'kortix/glm-5.3-flash'
 
     expect(resolveOpencodeModel()).toBeUndefined()
   })

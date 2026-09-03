@@ -38,14 +38,14 @@ describe('writeStartStash / readStartStash', () => {
   test('round-trips the modern stash shape', () => {
     writeStartStash('ses_1', {
       prompt: 'hello',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
       agent: 'build',
       variant: 'thinking',
     });
 
     expect(readStartStash('ses_1')).toEqual({
       prompt: 'hello',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -104,13 +104,13 @@ describe('readStartStash legacy compatibility', () => {
       'opencode_pending_options:ses_3',
       JSON.stringify({
         agent: 'build',
-        model: { providerID: 'kortix', modelID: 'glm-5.2' },
+        model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
         variant: 'thinking',
       }),
     );
     expect(readStartStash('ses_3')).toEqual({
       prompt: 'do the thing',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -152,7 +152,7 @@ describe('migrateLegacyStash', () => {
     sessionStorage.setItem('project_pending_prompt:proj-ses-1', 'build me a widget');
     sessionStorage.setItem(
       'project_pending_options:proj-ses-1',
-      JSON.stringify({ agent: 'build', model: { providerID: 'kortix', modelID: 'glm-5.2' } }),
+      JSON.stringify({ agent: 'build', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } }),
     );
 
     migrateLegacyStash(
@@ -163,7 +163,7 @@ describe('migrateLegacyStash', () => {
 
     expect(readStartStash('oc_target')).toEqual({
       prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
       agent: 'build',
       variant: null,
     });
@@ -203,7 +203,7 @@ describe('migrateStash', () => {
   test('moves a canonical stash from one session id to another', () => {
     writeStartStash('route_1', {
       prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
       agent: 'build',
       variant: 'thinking',
     });
@@ -212,7 +212,7 @@ describe('migrateStash', () => {
 
     expect(readStartStash('oc_1')).toEqual({
       prompt: 'build me a widget',
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
       agent: 'build',
       variant: 'thinking',
     });

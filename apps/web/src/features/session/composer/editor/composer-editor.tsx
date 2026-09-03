@@ -8,11 +8,12 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
 import { textToParagraphs } from '../composer-logic';
+import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
 import { SLASH_ACTIONS } from '../menus/slash-actions';
-import type { SlashFile } from '../menus/slash-files';
 import { createSlashSuggestion } from '../menus/slash-controller';
+import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
 import { baseExtensions } from './extensions';
 import { MentionNode } from './mention-node';
@@ -304,7 +305,10 @@ export function setEditorDocument(editor: Editor | null, doc: JSONContent): void
   if (!editor) return;
   const content = doc.content ?? [];
   editor.commands.setContent({ type: 'doc', content });
-  editor.commands.focus('end');
+  // `scrollIntoView: false` — see the note on the `setContent` handle below.
+  // This is the same programmatic whole-document replace, so it wants the same
+  // treatment: put the caret at the end, move nothing.
+  editor.commands.focus('end', { scrollIntoView: false });
 }
 
 /**
@@ -465,22 +469,28 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
      * make that ordering irrelevant — each controller can only ever turn its
      * own flag on or off.
      *
-     * Each flag tracks "does at least one row currently exist", NOT "is a
-     * trigger match active" — see `MenuNavState`'s doc comment
-     * (`menus/menu-nav-state.ts`). A match with zero rows (`@nonexistentfile`,
-     * `/xyzzy`) must leave its flag `false` for its entire lifetime, so Enter
-     * falls through to submit exactly like the live
-     * `mentionItems.length > 0` / `filteredCommands.length > 0` guards at
+     * Each flag tracks "should Enter go to this menu" — a row exists, OR the
+     * menu is open with its rows for the current query not yet reported. See
+     * `MenuNavState.ownsEnter` and the `onOwnsEnterChange` doc comment
+     * (`menus/menu-nav-state.ts`) for why the second case is load-bearing:
+     * rows arrive from a React effect while this guard is a DIRECT editor
+     * prop, so treating that gap as "no rows" sent the message out from under
+     * a file the user had just picked.
+     *
+     * A match whose rows ARE known and empty (`@nonexistentfile`, `/xyzzy`)
+     * still leaves its flag `false` for its whole lifetime, so Enter falls
+     * through to submit exactly like the live `mentionItems.length > 0` /
+     * `filteredCommands.length > 0` guards at
      * `session-chat-input.tsx:932`/`:958`/`:990` — not stay `true` from open
      * to close and swallow Enter into a no-op paragraph split.
      */
-    const mentionHasRowsRef = useRef(false);
-    const slashHasRowsRef = useRef(false);
+    const mentionOwnsEnterRef = useRef(false);
+    const slashOwnsEnterRef = useRef(false);
 
     /**
      * Task 9's `onMenuOpenChange` — the OR of the two controllers' own
      * `onOpenChange`, same two-independent-flags-OR'd-together shape as
-     * `mentionHasRowsRef`/`slashHasRowsRef` above and for the identical
+     * `mentionOwnsEnterRef`/`slashOwnsEnterRef` above and for the identical
      * reason (TipTap's reversed extension order can fire one controller's
      * `onExit` and the other's `onStart` inside a single transaction).
      * `reportedMenuOpenRef` is the boundary guard: without it, a caret move
@@ -516,7 +526,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
       () =>
         createSubmitOnEnterHandler(
           () => onSubmitRef.current(),
-          () => disabledRef.current || mentionHasRowsRef.current || slashHasRowsRef.current,
+          () => disabledRef.current || mentionOwnsEnterRef.current || slashOwnsEnterRef.current,
         ),
       [],
     );
@@ -541,8 +551,8 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             getAgents: () => agentsRef.current,
             getSessions: () => sessionsRef.current,
             getCurrentSessionId: () => currentSessionIdRef.current,
-            onHasRowsChange: (hasRows) => {
-              mentionHasRowsRef.current = hasRows;
+            onOwnsEnterChange: (ownsEnter) => {
+              mentionOwnsEnterRef.current = ownsEnter;
             },
             onOpenChange: (isOpen) => {
               mentionMenuOpenRef.current = isOpen;
@@ -565,8 +575,8 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             dockSelector: slashDockSelector,
             onSelectCommand: (command) => onSelectCommandRef.current?.(command),
             onSelectAction: (action) => onSelectActionRef.current?.(action),
-            onHasRowsChange: (hasRows) => {
-              slashHasRowsRef.current = hasRows;
+            onOwnsEnterChange: (ownsEnter) => {
+              slashOwnsEnterRef.current = ownsEnter;
             },
             onOpenChange: (isOpen) => {
               slashMenuOpenRef.current = isOpen;
@@ -602,7 +612,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
            * curve is now monotonic: 45vh below 640px (a phone keyboard eats the
            * rest of the screen anyway), 40vh above it.
            */
-          class: 'outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto',
+          class: `outline-none min-h-[1.7em] max-h-[45vh] sm:max-h-[40vh] overflow-y-auto ${COMPOSER_TEXT_METRICS}`,
         },
         handleKeyDown,
       },
@@ -627,7 +637,32 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           if (!editor) return;
           const paragraphs = textToParagraphs(text);
           editor.commands.setContent({ type: 'doc', content: paragraphs });
-          editor.commands.focus('end');
+          /*
+           * `scrollIntoView: false`, and it is the whole fix for a jerk that
+           * read as a missing animation.
+           *
+           * TipTap's `focus()` defaults to `scrollIntoView: true`, which
+           * dispatches a ProseMirror transaction carrying `.scrollIntoView()`.
+           * ProseMirror then walks EVERY scrollable ancestor and scrolls the
+           * caret into view. On project home that ancestor is the hero column's
+           * own `overflow-y-auto` wrapper (`project-layout/home/welcome-body.tsx`),
+           * and the scroll is computed in the same frame the card is growing by
+           * several lines of freshly-inserted text — so it lands against a box
+           * that is mid-reflow and yanks the column.
+           *
+           * Nothing is gained by the scroll here. This method REPLACES the whole
+           * document programmatically — a starter prompt, a `?q=` deep link, a
+           * command-palette prefill, a draft restore — and in every one of those
+           * the composer is already fully on screen. The caret still lands at
+           * the end, so typing continues immediately; only the involuntary
+           * scroll is dropped.
+           *
+           * NOT applied to the bare `focus()` handle below. That one is an
+           * explicit "put the caret here" from `useComposerFocus`, which can
+           * fire while the composer is genuinely scrolled out of view in a long
+           * session — there the scroll is the point.
+           */
+          editor.commands.focus('end', { scrollIntoView: false });
         },
         getDocument: () => getEditorDocument(editor),
         setDocument: (doc) => setEditorDocument(editor, doc),
@@ -648,7 +683,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
           // page on focus for any input under 16px, and the composer is the one
           // field on the screen. `sm:text-sm` above 640px, which is the size
           // `globals.css`'s slash-trigger rule already documents.
-          'kortix-composer-editor w-full text-base sm:text-sm',
+          'kortix-composer-editor w-full text-sm',
           disabled && 'opacity-50',
         )}
       />

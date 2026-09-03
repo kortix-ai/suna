@@ -66,7 +66,7 @@ export interface CreateSlashSuggestionOptions {
    * selection) instead of falling through to submit like the live composer
    * does.
    */
-  onHasRowsChange?: (hasRows: boolean) => void;
+  onOwnsEnterChange?: (ownsEnter: boolean) => void;
   /**
    * Fires on the false<->true boundary of "is the `/` menu open at all" --
    * see `MenuNavState`'s own `onOpenChange` doc comment. Task 9's seam for
@@ -96,7 +96,7 @@ export function createSlashSuggestion(
   let latestCommand: ((row: SlashRow) => void) | null = null;
 
   const nav = new MenuNavState<SlashRow>({
-    onHasRowsChange: opts.onHasRowsChange,
+    onOwnsEnterChange: opts.onOwnsEnterChange,
     onOpenChange: opts.onOpenChange,
   });
 

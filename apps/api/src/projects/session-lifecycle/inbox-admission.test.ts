@@ -58,11 +58,10 @@ const row = (overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecy
   }) as SessionLifecycleCommandRow;
 
 describe('admitInboxPrompt', () => {
-  test('a session in the middle of a turn is ADMITTED — the prompt goes to OpenCode now', async () => {
-    // A live turn never holds a prompt back. OpenCode persists it at once and
-    // answers everything queued behind the turn in flight as soon as it ends —
-    // "the queue sends in between". (Holding was tried and reverted: the user
-    // wants what they typed to be WITH the agent immediately.)
+  test('a session in the middle of a turn holds the prompt in the durable inbox', async () => {
+    // `/prompt_async` interleaves a second prompt with the active turn. The
+    // durable inbox keeps the user bubble visible without forwarding it across
+    // that unsafe boundary.
     const box = { status: 'active', metadata: { activeTurns: { ...activeTurn('t1'), ...activeTurn('t2') } } };
     expect(sessionHoldsTurnAuthority(box)).toBe(true);
 
@@ -71,7 +70,11 @@ describe('admitInboxPrompt', () => {
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
     });
-    expect(admission).toEqual({ admit: true });
+    expect(admission).toEqual({
+      admit: false,
+      reason: 'turn_active',
+      retryAfterMs: INBOX_ORDER_BACKOFF_MS,
+    });
   });
 
   test('a STOPPED box is admitted — wake-then-deliver, unchanged', async () => {

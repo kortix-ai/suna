@@ -182,9 +182,9 @@ describe('sessionPromptDefaults', () => {
     expect(
       sessionPromptDefaults({
         agent_name: 'kortix',
-        metadata: { opencode_model: 'kortix/glm-5.2' },
+        metadata: { opencode_model: 'kortix/glm-5.3-flash' },
       }),
-    ).toEqual({ agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.2' } });
+    ).toEqual({ agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } });
   });
 
   test('omits missing pieces instead of guessing', () => {

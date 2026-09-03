@@ -46,7 +46,7 @@ export type ModelKey = {
 // ── Gateway wire-model ⟷ ModelKey conversion ───────────────────────────────
 // The LLM gateway identifies a model by its "wire model" — what opencode sends
 // as `body.model`. Under the kortix gateway provider that is just the modelID
-// (a bare managed id like 'glm-5.2', or a BYOK 'provider/model'). A direct
+// (a bare managed id like 'glm-5.3-flash', or a BYOK 'provider/model'). A direct
 // provider model uses 'provider/model'.
 export function modelKeyToWire(model: ModelKey): string {
   if (model.providerID === 'kortix' || model.providerID === 'opencode') return model.modelID;

@@ -437,6 +437,155 @@ holds a reference to its own image, so only genuinely dead layers go.
 filter, never fatal (`|| true`) — and verify the reclaim on the real box, because
 a prune that frees nothing looks exactly like a prune that works.
 *Enforcer:* `tests/unit/sandbox-preview.test.ts`.
+### A read that fails is not an admin decision — health flags fail open (2026-09-02)
+
+**When:** writing any code path that answers "is the platform in maintenance /
+locked down / degraded?", especially one an edge proxy polls.
+`getEdgeMaintenanceConfig()` returned a synthetic `level: 'blocking'` whenever
+the Vercel Edge Config read threw *or the key was simply absent*. The
+`api-router` worker polls that route as `MAINTENANCE_STATE_URL` and answers
+every non-read-only request to `api.kortix.com` with a 503 carrying that
+config's `message`. So one failed network call locked production writes, and
+users got `ApiError: Kortix is temporarily unavailable. Service will resume
+automatically.` — the string that only that fallback produces. Nobody had
+touched the admin toggle. **The rule:** an unknown state is `none`. Distinguish
+"the store says nothing" (normal operation) from "the read failed" (serve the
+last value actually read, else normal operation). A lockdown that must survive
+the flag store being down belongs in the consumer as an explicit override
+(`MAINTENANCE_LEVEL_OVERRIDE` on the worker), never as a failure default.
+Commit 005fd6a4c9 fixed three of these paths on 2026-08-02 and missed the
+fourth and fifth — when you flip one fail-closed path, grep for every producer
+of the same message. *Incident:* prod, Better Stack `Kortix Frontend`: 1,000+
+`ApiError` occurrences over ~2 days; the client-side twin
+(`automaticMaintenanceConfig()`) additionally navigated users off a healthy app
+to `/maintenance` on one failed poll. Enforcement:
+`maintenance-store.test.ts` edge-gate cases, `maintenance-client.test.ts`
+"stays out of maintenance after a status request failure".
+
+### A runtime that only updates by pulling never updates a box that predates the puller (2026-09-01)
+
+**When:** designing or relying on any "the box converges on the API" mechanism
+(runtime-assets, daemon self-update). A daemon built before the pull code
+exists never pulls; restart/resume keep the VM and warm-fork keeps the disk, so
+every box from before the cutover is a fossil until the CONTROL PLANE reaches
+into it through the provider's own exec channel. Ship the push path with the
+pull path, and probe the fleet for boxes whose `/kortix/health` has no `runtime`
+block. *Incident:* OpenCode's 48-bit message-id rollover (2026-08-14) silently
+broke every pre-wrap session on OpenCode < 1.18.15; the fix (1.18.15) never
+reached July boxes — 9 prod sessions dead 19 days, 4 h 15 m zombie turns.
+*Automation:* `legacy-runtime-bootstrap.ts` scheduled from `box-reaper` (PR #7088);
+`scripts/legacy-runtime-sweep.ts --dry-run` lists what is still legacy.
+
+### Verify "converged" by what is RUNNING, not by what was installed (2026-09-01)
+
+**When:** any install-then-restart flow. The daemon memoised its OpenCode binary
+path at boot, installed 1.18.23, restarted — and kept spawning 1.17.11. The
+install log said success; `readlink /proc/<pid>/exe` said otherwise.
+*Automation:* `restart()` drops the memoised path (opencode.ts); the bootstrap
+relaunches once more after an `updated` boot pass and its health wait requires a
+FRESH daemon (`uptime_s` small), never the one just killed.
+
+### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
+
+**When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
+root dependency installed by its `--filter kortix --prod=false` layer. The
+production image contains both. Pin each binary's module graph to Trivy's fixed
+version, then scan the complete `linux/amd64` image.
+
+*Incident:* Deploy Dev run `33501907712`, job `99838193732`, failed on
+`CVE-2026-56854`. Caddy contained `x/crypto v0.53.0`; Supabase CLI contained
+`v0.54.0`. Both were below the fixed `v0.55.0`.
+*Enforcer:* `apps/kortix-app-runtime/build_test.go`,
+`scripts/worktree/__tests__/contract.test.ts`, and the Deploy Dev Trivy gate.
+
+### A proxied WebSocket that carries idle traffic needs a keepalive YOU send (2026-08-30)
+
+**When:** you proxy a WebSocket through `apps/api` (the PTY terminal, an app
+preview socket, anything on `/v1/p/.../connect`). Every hop between the API and a
+sandbox drops a connection with no bytes on it, and a terminal is idle by nature
+— a shell at its prompt emits nothing and a reader types nothing. Measured on a
+real Platinum box, the API->sandbox leg dies at **exactly 60 s** of silence.
+
+`websocket.idleTimeout: 0` on both Bun servers does NOT cover this: it governs
+neither the provider edge nor the API's own upstream client. And on a PTY you
+cannot keep the leg busy with data — an upstream byte is typed into the user's
+shell, a downstream byte is printed into their terminal. **Send a PING control
+frame on BOTH legs, well under the shortest hop timeout, and clear the interval
+on every close path** (`PREVIEW_WS_KEEPALIVE_MS`, `pingPreviewWsLegs`).
+
+**Diagnosing a WS that dies on a timer:** a browser reports every drop as `1006`
+with no detail, so instrument from a Bun client instead and run three arms on ONE
+sandbox in ONE minute — no keepalive, PING, DATA. A ping terminates at the API,
+so `PING dies / DATA survives` proves the cut is on the UPSTREAM leg; the reverse
+proves it is on the client leg. Guessing at ALB/Cloudflare timeouts from the
+outside is how this stayed unexplained.
+
+*Incident:* PR #7062. Terminals reconnected once a minute on dev, staging AND
+prod ("not connecting anymore, basically EVERY time"), rendered as
+`Reconnecting in Ns (code 1006)`. Root cause reproduced on the LOCAL stack with
+no Cloudflare and no ALB in the path, which is what ruled out the edge.
+*Enforcer:* `apps/api/src/sandbox-proxy/ws-proxy-keepalive.test.ts` pins that both
+legs are pinged, that one leg throwing does not skip the other, and that the
+interval clears the measured 60 s cut twice over. There is still NO end-to-end
+coverage of the PTY WebSocket in `tests/` — `grep -rn "kortix/pty" tests/` was
+empty before this incident, which is why a socket that died every 60 s on every
+environment shipped unnoticed.
+
+### A floor that refuses a DEBIT stops the bookkeeping, not the spending (2026-09-01)
+
+**When:** writing anything that moves money after work has been performed —
+a usage settlement, a metering debit, a post-hoc reconciliation. Two different
+questions were being answered by one function:
+
+  ADMISSION  — "may this account START work?"   strict floor, never negative
+  SETTLEMENT — "record work already DONE"       must always succeed
+
+`atomic_use_credits` refuses any debit that would go below zero. Correct for
+admission; for settlement it deletes the RECORD of spend that already happened,
+because refusing it does not un-spend the money. Compounded by
+`subscriptionBypassesWalletFloor`, which exempted any paying per-seat /
+credit-plan / paid-tier account from the floor entirely — added to fix a COPY
+bug ("Your team isn't on a plan yet" shown to a paying Team account), by
+removing metering instead of fixing the words.
+
+Measured on one 6-seat account: `grantForSeats(6)` = $150/mo included usage,
+wallet $0.00, `credit_ledger` $588.81, and the gate admitting every create /
+start / wake / prompt / gateway call. Past $0 every debit returned
+`success:false`, no ledger row was written, and "Spent this period" — which
+SUMs `credit_ledger` — silently froze while compute kept burning.
+
+**Rules.** (1) Never let a balance floor gate a settlement; overdraft instead,
+and let the NEXT admission refuse — recording the debt blocks the account
+harder than losing it did. (2) A failed settlement is unrecorded revenue: log
+it at `error` with the account, never `warn`, and never `.catch(() => {})`.
+(3) Fixing wrong COPY by widening a spend permission is never the smaller
+change. (4) Any client surface that turns a balance into a decision must read
+the state machine, not the number — `billing-gate-state.ts` had carried a
+docblock naming that exact defect ("the sidebar keyed off the raw balance")
+since PR #5141 and it shipped again anyway, because prose enforces nothing.
+
+**Diagnostic:** a wallet at exactly $0.00 on an account that plainly still
+works is this. Confirm by summing `credit_ledger` for the period against the
+account's grant: if spend exceeds the grant and the balance is pinned at zero,
+the ledger stopped recording rather than the account stopping.
+
+*Incident:* no outage; revenue under-collected and finance reporting blind for
+one billing period on every drained per-seat account. Fixed in PR #7080.
+*Enforcer:* `billing-source-rules.test.ts` (three source-level tripwires: no
+balance-to-number decisions outside the decision layer, no billing prose in
+components, the bypass stays deleted on both sides of the wire);
+`billing-state.test.ts` sweeps every Stripe status x plan class against the
+universal floor; `settle-credits.test.ts` pins the settlement contract.
+
+### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
+
+**When:** a package imports source files from another package without installing
+that package's runtime dependencies. Do not use a static type import for an
+optional dependency. Define the required structural type locally, and keep the
+runtime import behind the existing lazy boundary.
+*Near-miss:* staging promotion PR #7027 failed because the sandbox agent typecheck
+resolved the worker's `import('ws')` type without installing worker dependencies.
+*Enforcer:* the Sandbox Agent CI job runs `bun run typecheck` before its build.
 
 ### `deploy-preview.yml` runs from the DEFAULT BRANCH, so everything it references must be on main (2026-08-28)
 
@@ -1437,10 +1586,6 @@ fixture only proves the class you thought to seed.
 including a free-tier + `active` $0-subscription case modeled on the real prod
 row; `per-seat-pricing.test.ts` pins `resolveRenewalGrant` for per-seat,
 configured-grant and paid-by-amount branches.
-
-||||||| bd5aae39c4
-
-||||||| 0c247496b6
 
 ### A URL that carries a credential must never reach a log line (2026-08-20)
 
@@ -3229,8 +3374,6 @@ still blocked, and the own-session credential still allowed.
 
 *Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
 PR #6828.
-||||||| base
-
 ## Measure the amplification factor; never decode what you can forward
 
 2026-08-24. The gateway's ai-sdk transport decoded every `data:` image with
@@ -4149,3 +4292,202 @@ and the session-bound boot-timeline middleware allowance.
 *Incident:* The branch preview returned two environment tool errors before the
 fix. No production or dev deployment received this branch. The affected preview
 sessions were stopped after verification.
+## OAuth loopback redirect URIs are protocol data, not perimeter SSRF attempts
+
+- **Incident (2026-08-28, v0.13.7 release QA):** flow `OAU-8` received an HTML
+  `403` before the API for `GET /v1/oauth/authorize` when `redirect_uri` used
+  `http://localhost` or `http://127.0.0.1`. The same request reached the API
+  when it used an HTTPS public origin. Dev, staging, and production reproduced
+  the block. The AWS Common managed rule group classified the loopback query
+  argument as SSRF, but OAuth public and native clients require loopback
+  redirects.
+- **Rule:** exclude loopback redirect values from the Common managed rule group
+  only when the method is `GET`, the path is exactly `/v1/oauth/authorize`, and
+  `redirect_uri` starts with `http://localhost` or `http://127.0.0.1`. Do not
+  disable the managed rule or its query inspection globally. Keep
+  KnownBadInputs and IP reputation inspection active. The API must validate the
+  complete redirect URI against the registered client.
+- **Enforcement:**
+  `infra/terraform/scripts/test_web_waf_associations.py` pins the scoped
+  Terraform statement. Deployed release flow `OAU-8` proves that a registered
+  loopback redirect reaches the API and completes authorization.
+
+## Release assertions must follow the named data source, not an obsolete availability bit
+
+- **Incident (2026-08-29, v0.13.7 release QA):** `SESS-24` failed two exact-SHA
+  staging attempts after a stopped session returned `available:true`. The API
+  was correct. `buildSessionTranscriptDigest()` intentionally serves the
+  durable transcript mirror for a stopped session. Its unit test already pinned
+  `source:"mirror"`. The end-to-end contract still expected the deleted
+  `available:false` behavior from before the mirror existed.
+- **Rule:** when a response can come from live, mirror, or no source, assert the
+  `source` discriminator and the required content. Do not use `available` alone
+  as a proxy for runtime state. Update the natural-language contract in the same
+  change that adds or removes a source.
+- **Enforcement:** `SESS-24` now stops the sandbox, requires
+  `available:true` plus `source:"mirror"`, and verifies session isolation in the
+  mirrored content. `session-transcript.test.ts` separately pins the stopped
+  session mirror and the no-mirror `available:false` path.
+## A root-only package smoke can publish a broken optional entry point
+
+- **Incident (2026-08-29, v0.13.7 npm release):** a fresh consumer could import
+  `@kortix/sdk` and `@kortix/sdk/server`, but `@kortix/sdk/react` failed after
+  installing its documented peers. The React graph reached
+  `@kortix/llm-catalog/dist/index.js`, which exported `./enablement` without the
+  `.js` extension required by plain Node ESM. Repository typechecks and the
+  root-only packed-artifact smoke did not traverse that graph.
+- **Rule:** a publish smoke must install every documented optional peer and
+  import every public entry point that those peers enable. TypeScript
+  `moduleResolution:"Bundler"` does not repair extensionless relative imports
+  in emitted Node ESM. Source imports must name the emitted `.js` file.
+- **Enforcement:** `packages/sdk/scripts/smoke-install.mjs` installs React and
+  TanStack Query, imports `@kortix/sdk/react`, and asserts `useSession` exists.
+  The `@kortix/llm-catalog` build runs `tsc-alias --resolve-full-paths` to turn
+  its extensionless workspace import into `./enablement.js` after `tsc` emits.
+
+---
+
+## A guard nobody armed is not a guard, and a path-only allowlist is a hole (2026-08-29)
+
+Audit of the plaintext-`.env` defenses, prompted by "are we sure a new dev
+can't commit a plaintext .env?". Three defenses existed. Two did not do what
+the docs claimed.
+
+**1. The pre-commit hook was never armed.** `.githooks/pre-commit` is
+version-controlled and good — it auto-*encrypts* every staged `.env`. But it
+only runs after `git config core.hooksPath .githooks`, which nothing executed.
+No `prepare`, no `postinstall`, not in `scripts/setup-env.sh`, not in README or
+CONTRIBUTING. It was documented in the hook's own comment header and one line of
+an agent skill file. A clone + `pnpm install` + `git commit` had **zero** local
+protection. Proven in a throwaway repo: hooks unarmed → `sk_live_…` landed in
+the commit; hooks armed → the same commit carried ciphertext, plaintext grep
+count `0`.
+
+**2. gitleaks was allowlisted over the exact leak surface.** `.gitleaks.toml`
+allowlist #1 named the six encrypted profiles by `paths` with **no**
+`condition = "AND"` and **no** `regexes`. A gitleaks allowlist that only
+constrains paths exempts every finding in those files. A committed plaintext
+`apps/api/.env` holding a Postgres password, an HMAC secret, and a
+Stripe-shaped key scanned as `no leaks found`, exit `0`. The other three
+allowlists in the same file were written correctly, with `condition = "AND"`
+— the bug was one missing line in one block.
+
+**3. The remaining net was thinner than assumed.** GitHub push protection is
+enabled, but is provider-pattern based. After tightening the allowlist, gitleaks
+caught `INTERNAL_HMAC_SECRET` (generic-api-key) and still missed the plaintext
+`postgres://kortix:S3cr3tP4ssw0rd@host` URL.
+
+**Rules.**
+1. **A guard that requires a manual activation step is off.** Assume every
+   optional setup line was skipped, because it was. Arm it from something the
+   developer already runs — here, the root `package.json` `prepare` script,
+   which `pnpm install` executes (verified: `core.hooksPath` = `.githooks`
+   after a bare `pnpm install`).
+2. **Never write a path-only gitleaks allowlist.** `paths` alone exempts the
+   whole file. Pair it with `condition = "AND"` **and** `regexes` (plus
+   `regexTarget = "line"` when exempting a file *format* rather than a value)
+   so only the intended lines are exempt and a real secret still fails.
+   `condition = "AND"` with no `regexes` is still path-only — the AND has
+   nothing to intersect. The first version of the tripwire below checked only
+   the condition and would have passed that shape; review caught it.
+3. **Know each gate's shape before trusting it.** `dotenvx ext precommit`
+   inspects only the **staged** diff — correct for a hook, a no-op in CI where
+   nothing is staged. gitleaks runs on the **pull request** — after the commit,
+   after the push, on a public repo. Only the hook runs before the commit
+   exists. A gate list is not a defense unless you know when each one fires.
+4. **Pattern matching is not a structural guarantee.** For a file format whose
+   whole invariant is "every value is ciphertext", assert *that*, not a
+   catalogue of secret shapes.
+5. Test a security control in **both** directions. "It passes on the real repo"
+   proves nothing about whether it fails on a leak.
+
+*Automation:* root `prepare` arms the hooks on `pnpm install`;
+`scripts/check-env-encrypted.sh` (`pnpm secrets:check`) structurally asserts
+every value in a committed `.env` profile starts with `encrypted:`;
+`.github/workflows/secrets-guard.yml` runs it on every PR **and** fails the
+build if a path-only allowlist reappears in `.gitleaks.toml`.
+
+*Incident:* No leak occurred. Found by audit, closed the same session. All
+findings reproduced in throwaway repos with real gitleaks 8.30.1 and the repo's
+own config; no real secret was ever written to disk in plaintext.
+
+## Every build command must declare its executable in that package
+
+- **Incident (2026-08-29, v0.13.8 production release):** the
+  `@kortix/llm-catalog` publish job ran `tsc-alias` from its `build` script, but
+  the package did not declare `tsc-alias`. Local builds found the executable
+  through `@kortix/sdk`. The isolated production publish runner returned exit
+  `127`. The workflow then skipped the dependent `@kortix/sdk` publish.
+- **Rule:** each publishable package must directly declare every executable in
+  its lifecycle scripts. A sibling package dependency does not satisfy this
+  requirement.
+- **Enforcement:** `packages/llm-catalog/package.json` declares `tsc-alias` in
+  `devDependencies`. The package build now resolves the executable through its
+  own `node_modules/.bin` directory.
+
+## An action endpoint must refresh a replicated mirror before returning 404
+
+- **Incident (2026-08-29, v0.13.9 release QA):** `CLI-TRG` created a trigger,
+  then `triggers ls` and `triggers info` found it through refreshed API
+  replicas. The subsequent `triggers fire` request reached a different replica
+  whose Git mirror was still inside its 60-second cache interval. That replica
+  returned `404 Not found` in two consecutive release-gate attempts.
+- **Rule:** a mutable-resource action endpoint can use its replica cache for the
+  first lookup. It must force one source refresh before it returns a definitive
+  not-found response. A successful read through another replica does not prove
+  fleet-wide cache convergence.
+- **Enforcement:** `findProjectTriggerBySlug()` retries a missing cached trigger
+  through `readManifest(..., { forceRefresh: true })`. A per-project cooldown
+  limits forced fetches to one per Git refresh interval. The manual fire route
+  uses this helper. Unit tests prove cached-hit, forced-refresh, and bounded-miss
+  sequences.
+
+## An explicit pathspec does not isolate concurrent agents — it commits file STATE, not your hunks
+
+- **Incident (2026-08-31, `identity-boundary`):** three implementer agents ran
+  in parallel in ONE worktree on verified-disjoint file sets, each instructed to
+  commit only its own pathspec. One task's whole job was retiring a bare
+  `['accounts']` query key across ~39 call sites, and
+  `app/(app)/projects/start/page.tsx` was both on that list and owned by another
+  task. The second agent's `git commit -- <its files>` captured the first
+  agent's in-flight `useAccountsList` refactor of that shared file. HEAD stayed
+  self-consistent only because the other agent later committed the module its
+  import needed — but for three commits the branch **did not build**, and a
+  commit whose subject says "scope the suppress-auto-project check" contains an
+  unrelated key migration. Its `git log`-based reference count also came out
+  wrong (43 vs 42), because it measured a worktree another agent was mutating.
+- **Rule:** `git commit -- <path>` records that path's CURRENT CONTENT, not the
+  hunks you authored, so it is not isolation. Before running implementers in
+  parallel on one worktree, compute disjointness against **every task still
+  capable of writing — including ones not yet dispatched** — and never run a
+  task with a wide call-site surface (a key/API/rename migration) concurrently
+  with anything. Otherwise give each agent its own worktree, or serialize. What
+  saved this one was luck: both agents completed. Had the migration reported
+  BLOCKED — which its brief explicitly invited — half a cutover would have been
+  stranded inside another task's commit.
+- **Enforcement:** none. A pre-commit check that refuses when a staged path
+  carries unstaged changes from another process, or a `pnpm worktree` guard that
+  refuses a second concurrent writer, is the TODO. Until then this rule is the
+  only guard, alongside the existing `git stash` and shared-worktree entries.
+
+## A pnpm override that pins one exact version forks the dependency graph the moment its dependent moves
+
+- **Incident (2026-08-30..31, dev deploy outage):** three consecutive `main`
+  deploys (`528ad10a`, `20027210`, `9bfc0685`) failed on `Waiter ServicesStable`
+  for `kortix-dev-web`. The frontend container exited 1 at boot with
+  `Cannot find module 'next'`. Root override `"next@>=15.0.0 <16.3.0": "16.3.0"`
+  mapped `apps/whitelabel-demo`'s declared `next: 15.5.21` onto `16.3.0`. While
+  `apps/web` was itself on 16.3.0 both apps shared one resolved package. PR
+  #7067 moved `apps/web` to 16.3.3; the override kept whitelabel on 16.3.0, so
+  the lockfile resolved TWO `next` packages. The `.next/standalone` trace then
+  contained a partial 16.3.0 copy (a `dist/` without `package.json`), and the
+  Dockerfile relink loop linked `node_modules/next` to it by sort order. Dev
+  served the previous image (`95f60297`) for ~22 hours.
+- **Rule:** an override that maps a range to one exact version must move in the
+  same commit as the direct dependency it shadows. `--frozen-lockfile` cannot
+  catch the drift: it compares the lockfile against post-override specs, so the
+  divergence is green in CI and only fails at container boot.
+- **Enforcement:** `apps/web/scripts/single-next-version.test.mjs` fails the web
+  test suite whenever `pnpm-lock.yaml` resolves more than one version of
+  `next`. The override now reads `"next@>=15.0.0 <16.3.3": "16.3.3"` and
+  `apps/whitelabel-demo` declares `next: 16.3.3` explicitly.

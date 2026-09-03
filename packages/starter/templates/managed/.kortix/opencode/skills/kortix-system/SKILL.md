@@ -441,8 +441,9 @@ When you, as an agent, have changes you believe should persist:
    If the push is rejected because the remote session branch moved
    (the platform can advance it to the latest base), run
    `git fetch origin` then `git push --force-with-lease origin HEAD`.
-   Force-pushing is acceptable ONLY for your own session branch —
-   never for `main` or anyone else's branch.
+   Force-pushing is accepted ONLY for your own session branch; the
+   proxy refuses it for `main` or anyone else's branch, so there is
+   nothing to be careful about — it simply will not go through.
 4. **Open a CR.** From inside the sandbox the CLI reads
    `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_SANDBOX_TOKEN`
    (deprecated alias: `$KORTIX_TOKEN`) automatically:
@@ -471,9 +472,15 @@ When you, as an agent, have changes you believe should persist:
 
 ### Don't bypass this
 
-- **Don't push to `main` directly.** The platform doesn't currently
-  block force-pushes to protected branches in every backend, but
-  doing so violates the user-review contract and surprises the user.
+- **You cannot push to `main` directly — the platform refuses it.**
+  A session's git credential may write exactly one ref: its own
+  session branch. A push to `main`, to another session's branch, to
+  any other branch, or to a tag comes back as
+  `! [remote rejected] <ref> (a session may only push its own
+  branch ...)`. That is not a bug to work around; it is the review
+  contract. Commit on your branch, push it, open a CR.
+- **You cannot merge your own CR.** The API refuses it with
+  `CR_SELF_MERGE_REFUSED`. A person merges it.
 - **Don't paper over with "I committed it on my branch."** That isn't
   persistence. The session branch dissolves; only `main` survives.
 - **Don't ask the user to copy-paste files out of the session.** The

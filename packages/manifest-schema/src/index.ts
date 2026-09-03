@@ -32,6 +32,7 @@ import {
   manifestUsesAgentMap,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_CLI_ALIASES,
   reservedEnvNameReason,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -106,6 +107,7 @@ export {
   manifestUsesAgentMap,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_CLI_ALIASES,
   isReservedEnvName,
   NEVER_DELIVERED_ENV_NAMES,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -399,7 +401,20 @@ export function validateGrantList(
     }
     const s = item.trim();
     if (checkAction && s !== '*' && !GRANTABLE_KORTIX_CLI_ACTIONS.includes(s)) {
-      if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
+      const renamedTo = DEPRECATED_KORTIX_CLI_ALIASES[s];
+      if (renamedTo) {
+        // A RENAMED action, not a dead one: it still resolves to a real
+        // capability (`canonicalizeGrantActions` rewrites it), so this is a
+        // warning in BOTH versions. Hard-rejecting it the way the no-op legacy
+        // set is rejected in v2 would fail the manifest, and a manifest that
+        // fails to parse gives its agent an EMPTY grant — silently stripping
+        // every capability it holds rather than the one line that is outdated.
+        issues.push({
+          path: `${where}[${k}]`,
+          message: `"${s}" was renamed to "${renamedTo}" — the grant still applies, but update the manifest.`,
+          severity: 'warning',
+        });
+      } else if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
         issues.push({
           path: `${where}[${k}]`,
           message:

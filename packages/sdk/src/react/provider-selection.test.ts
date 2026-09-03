@@ -122,7 +122,7 @@ describe('mergeProviderLists', () => {
 // or the open picker keeps showing the pre-toggle list until a hard refresh.
 describe('applyEnablementToProviderList', () => {
   const providers = {
-    default: { kortix: 'glm-5.2' },
+    default: { kortix: 'glm-5.3-flash' },
     connected: ['kortix'],
     all: [
       {
@@ -130,7 +130,7 @@ describe('applyEnablementToProviderList', () => {
         name: 'Kortix',
         source: 'gateway',
         models: {
-          'glm-5.2': { name: 'GLM 5.2', enabled: true },
+          'glm-5.3-flash': { name: 'GLM 5.3 Flash', enabled: true },
           'anthropic/claude-sonnet-5': { name: 'Claude Sonnet 5', enabled: true },
         },
       },
@@ -143,13 +143,13 @@ describe('applyEnablementToProviderList', () => {
     });
     const models = (next.all?.[0] as { models: Record<string, { enabled?: boolean }> }).models;
     expect(models['anthropic/claude-sonnet-5'].enabled).toBe(false);
-    expect(models['glm-5.2'].enabled).toBe(true);
+    expect(models['glm-5.3-flash'].enabled).toBe(true);
   });
 
   test('does not mutate the input list', () => {
-    applyEnablementToProviderList(providers, { 'glm-5.2': false });
+    applyEnablementToProviderList(providers, { 'glm-5.3-flash': false });
     const models = (providers.all?.[0] as { models: Record<string, { enabled?: boolean }> }).models;
-    expect(models['glm-5.2'].enabled).toBe(true);
+    expect(models['glm-5.3-flash'].enabled).toBe(true);
   });
 });
 
@@ -302,7 +302,7 @@ describe('nativeProviderListFromCatalog (pre-runtime native picker source)', () 
       ...catalog,
       providers: [
         ...catalog.providers,
-        { id: 'kortix', name: 'Kortix', env: [], models: [{ id: 'glm-5.2', name: 'GLM', released: null }] },
+        { id: 'kortix', name: 'Kortix', env: [], models: [{ id: 'glm-5.3-flash', name: 'GLM', released: null }] },
       ],
     };
     const list = nativeProviderListFromCatalog(withKortix as never, new Set(['ANTHROPIC_API_KEY']));

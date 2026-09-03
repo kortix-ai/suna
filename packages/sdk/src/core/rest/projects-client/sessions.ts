@@ -758,57 +758,6 @@ export type SessionOpenBundleModels =
     }
   | SessionOpenBundleUnknown;
 
-/** Identity the LIVE runtime would also produce for this projection. It travels
- *  with the document so a cached roster whose id the live read will not also
- *  produce can be REFUSED rather than rendered — the transcript mirror's
- *  ghost rule, applied to config state. */
-export interface SessionRuntimeIdentity {
-  opencode_session_id: string | null;
-  opencode_version: string | null;
-  daemon_build: number | null;
-  agent_config_etag: string | null;
-  /** OpenCode's OWN durable cursor per aggregate — NOT the stream's `seq`. */
-  head_seq: Record<string, number> | null;
-}
-
-/**
- * = the sandbox daemon's `GET /kortix/opencode/state`, served from the control
- * plane's projection store.
- *
- * This is the leg that replaces SEVEN proxied reads (`/agent` `/command`
- * `/config` `/session` `/session/status` `/permission` `/question`) — measured
- * at ~3.3 MB and ~1.4 s each across the edge hop — with a Postgres read. It is
- * also what lets a STOPPED session answer "which agents, which commands, what
- * model" at all.
- *
- * `known: false` reasons, and nothing else:
- *   `no_projection`      — nothing has ever been captured for this session.
- *   `identity_mismatch`  — the projection belongs to a different OpenCode root.
- *   `stale`              — a RUNNING box's projection has aged out. A STOPPED
- *                          box's never does: it cannot change, so its last
- *                          capture is its true state.
- *
- * `epoch` + `seq` are the daemon's stream cursor AT CAPTURE. Hand them straight
- * to `sessionStreamPath(...)` so seeding and streaming cannot disagree about
- * what has already been applied.
- */
-export type SessionOpenBundleRuntime =
-  | {
-      known: true;
-      fresh: boolean;
-      source: 'daemon_push' | 'api_pull';
-      captured_at: string;
-      age_ms: number;
-      runtime_running: boolean;
-      epoch: string | null;
-      seq: number | null;
-      identity: SessionRuntimeIdentity;
-      /** The `/kortix/opencode/state` document, verbatim. Every section inside
-       *  is itself `{known, reason?, value}` — see the daemon contract. */
-      state: Record<string, unknown>;
-    }
-  | SessionOpenBundleUnknown;
-
 export interface SessionOpenBundle {
   /** ONE clock for the whole envelope. Every leg is a snapshot at this instant,
    *  and every projection that ranks a server observation against local
@@ -820,7 +769,6 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
-  runtime: SessionOpenBundleRuntime;
 }
 
 /**
@@ -841,8 +789,18 @@ export async function getSessionOpenBundle(
   const qs = search.toString();
   return unwrap(
     await backendApi.get<SessionOpenBundle>(
+      // `/snapshot` is the canonical path; #6987 renamed the route while this
+      // client kept requesting `/open-bundle`, so every session open 404'd the
+      // bundle and silently fell back to 6-8 serial reads. (The API keeps an
+      // `/open-bundle` alias for SDKs published before the rename.)
       `/projects/${projectId}/sessions/${sessionId}/snapshot${qs ? `?${qs}` : ''}`,
-      { signal: options?.signal },
+      // A 404 here is an EXPECTED race: the session exists but the control
+      // plane has not marked it visible yet. `openSessionBundle` already
+      // resolves `null` and every consumer falls back to its direct read
+      // (`/message`, `/turn`, `/prompts`), so this must never fire the host's
+      // global "Not found" toast / Sentry. `showErrors: false` keeps the
+      // handled fallback silent.
+      { signal: options?.signal, showErrors: false },
     ),
   );
 }
@@ -927,6 +885,11 @@ export interface CreateSessionPromptResult {
   message_id: string;
   /** The submission name already named a row: this call added nothing. */
   deduped: boolean;
+  /** The SERVER's clock after the write. The ordering stamp a client ranks
+   *  this acceptance with against queue snapshots — a read issued before the
+   *  POST carries an older stamp and can never erase the row. Absent from
+   *  servers older than this field. */
+  observed_at?: string;
 }
 
 export interface CreateSessionPromptInput {
@@ -984,13 +947,15 @@ export async function createSessionPrompt(
 }
 
 /** Every prompt this session still owes the user, oldest first. Delivered
- *  prompts are omitted — they are in the transcript. */
+ *  prompts are omitted — they are in the transcript. `observed_at` is the
+ *  SERVER's clock captured BEFORE the read: the ordering stamp this snapshot
+ *  ranks with against other server observations. Absent from older servers. */
 export async function listSessionPrompts(
   projectId: string,
   sessionId: string,
-): Promise<{ prompts: SessionPrompt[] }> {
+): Promise<{ prompts: SessionPrompt[]; observed_at?: string }> {
   return unwrap(
-    await backendApi.get<{ prompts: SessionPrompt[] }>(
+    await backendApi.get<{ prompts: SessionPrompt[]; observed_at?: string }>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
     ),
   );

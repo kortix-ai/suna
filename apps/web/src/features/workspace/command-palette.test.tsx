@@ -126,7 +126,9 @@ describe('mirrored settings-panel constants', () => {
  * offered-but-unreachable tab is a test failure rather than a dead click.
  */
 describe('offered tabs survive the panel filter', () => {
-  const allowedParams = (hasProject: boolean) => ({ hasProject });
+  // `canProject: () => true` — the palette offers the two IAM-gated Workspace
+  // rows without probing; the panel answers the probe and hides a denied row.
+  const allowedParams = (hasProject: boolean) => ({ hasProject, canProject: () => true });
 
   test('with a project, every offered tab is allowed', () => {
     for (const tab of tabsFor(IN_A_PROJECT)) {
@@ -176,10 +178,12 @@ describe('offered tabs survive the panel filter', () => {
  */
 describe('search terms carried across from the removed registry entries', () => {
   const CARRIED: ReadonlyArray<[string, SettingsTab]> = [
-    ['theme', 'preferences'],
-    ['wallpaper', 'preferences'],
+    // Appearance and Sessions split out of Preferences on 2026-09-02; the
+    // words followed the sections they name.
+    ['theme', 'appearance'],
+    ['wallpaper', 'appearance'],
     ['hotkeys', 'preferences'],
-    ['mute', 'preferences'],
+    ['mute', 'sessions'],
     ['oauth', 'connected'],
     ['avatar', 'profile'],
     // API keys came back into the rail on 2026-08-18, so the two words that
@@ -264,14 +268,7 @@ describe('search terms carried across from the removed registry entries', () => 
       ['agentmail', 'proj-channels'],
       ['llm', 'proj-models'],
       ['openrouter', 'proj-models'],
-      ['git', 'proj-config-general'],
-      ['github', 'proj-config-general'],
-      ['danger zone', 'proj-config-general'],
-      ['templates', 'proj-config-sandbox'],
-      ['snapshots', 'proj-config-sandbox'],
-      ['approvals', 'proj-config-review'],
-      ['feature flags', 'proj-config-feature-flags'],
-      ['upgrades', 'proj-config-upgrades'],
+      ['approvals', 'proj-review-inbox'],
       ['customize', 'proj-customize'],
     ];
     for (const [query, id] of OWNER) {
@@ -340,29 +337,41 @@ describe('the registry no longer carries palette settings destinations', () => {
     expect(resolved.map((entry) => entry.id).sort()).toEqual([]);
   });
 
-  test('proj-customize points at the Customize index, and General at the config page', () => {
+  test('proj-customize points at the Customize index, and no row survives /config', () => {
     // A bare `/projects/{id}/settings` resolved to `{ tab: undefined }`, and
     // `openSettings(undefined)` keeps whatever was last open — so one entry
     // landed somewhere different on every click. It named `/settings/general`
     // after that, then `/config` once General became a config section.
     //
-    // `/config` is now `proj-config-general`'s href, under its own honest
-    // label ("Settings · General"). `proj-customize` keeps the WORD customize
-    // and takes the index page it names — the card grid over every capability
-    // tab, each of which has its own row.
+    // `proj-customize` keeps the WORD customize and takes the index page it
+    // names — the card grid over every capability tab, each of which has its
+    // own row.
     const customize = paletteItems.find((item) => item.id === 'proj-customize');
     expect(customize?.href).toBe('/projects/{projectId}/customize');
     expect(customize?.kind).toBe('navigate');
     expect(customize?.requiresProject).toBe(true);
 
-    const general = paletteItems.find((item) => item.id === 'proj-config-general');
-    expect(general?.href).toBe('/projects/{projectId}/config');
-    expect(general?.requiresProject).toBe(true);
+    // Every `proj-config-*` row is gone with `/config` (2026-09-02): General,
+    // Sandbox templates and Feature flags are overlay tabs derived from the
+    // rail.
+    //
+    // `proj-config-feature-flags` outlived the other two by a day. It was
+    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/config
+    // ?section=feature-flags'`, so typing "feature flag" offered it under
+    // Navigation — above the derived row that works — and selecting it
+    // navigated to a deleted route. `menu-registry-destinations.test.ts` now
+    // checks every navigate row's href against the real `src/app` tree, which
+    // is the check that would have caught it the day the route was deleted.
+    for (const id of ['proj-config-general', 'proj-config-sandbox', 'proj-config-feature-flags']) {
+      expect({ id, present: paletteItems.some((item) => item.id === id) }).toEqual({
+        id,
+        present: false,
+      });
+    }
 
-    // Neither may be claimed by the overlay resolver, or the click would open
-    // a tab instead of navigating.
+    // Customize may not be claimed by the overlay resolver, or the click
+    // would open a tab instead of navigating.
     expect(resolveSettingsOverlayHref(customize!.href!).opensOverlay).toBe(false);
-    expect(resolveSettingsOverlayHref(general!.href!).opensOverlay).toBe(false);
   });
 
   test('the removed per-tab entries are gone from every surface, not just the palette', () => {
@@ -471,12 +480,12 @@ describe('LEGACY_SETTINGS_TAB_MAP', () => {
     }
   });
 
-  test('shortcuts maps to preferences, same as appearance and sounds', () => {
-    // preferences-tab.tsx hosts all three: wallpaper/theme, sound packs, and
-    // a full "Keyboard shortcuts" section (modifier picker + shortcut list).
+  test('each legacy id maps to the tab that hosts its section now', () => {
+    // Since 2026-09-02: theme/wallpaper on Appearance, sound packs on
+    // Sessions, the shortcut list (modifier picker + list) on Preferences.
     expect(LEGACY_SETTINGS_TAB_MAP.shortcuts).toBe('preferences');
-    expect(LEGACY_SETTINGS_TAB_MAP.appearance).toBe('preferences');
-    expect(LEGACY_SETTINGS_TAB_MAP.sounds).toBe('preferences');
+    expect(LEGACY_SETTINGS_TAB_MAP.appearance).toBe('appearance');
+    expect(LEGACY_SETTINGS_TAB_MAP.sounds).toBe('sessions');
   });
 
   test('referrals has no entry and no mapping — there is no referrals tab', () => {

@@ -22,6 +22,7 @@ import {
   readdir,
   mkdir,
   mkdtemp,
+  readFile,
   rename,
   rm,
   stat,
@@ -199,10 +200,8 @@ async function assertRuntimeArtifactsCurrent(
   attestationPath: string,
 ): Promise<void> {
   if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
-    const binMtime = (await stat(agentPath)).mtimeMs;
     const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
-    const newestSrc = await newestMtimeMs(srcDir);
-    if (newestSrc > binMtime) {
+    if (await agentBinaryStale(agentPath, srcDir)) {
       throw new Error(
         `kortix-agent dist binary (${agentPath}) is older than its source ` +
           `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
@@ -734,10 +733,8 @@ export async function stageBuildContext(
   // binary). Refuse to stage a context whose binary predates the source.
   // Env-overridden binary paths skip this — the caller is pinning on purpose.
   if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
-    const binMtime = (await stat(AGENT_BIN_PATH)).mtimeMs;
     const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
-    const newestSrc = await newestMtimeMs(srcDir);
-    if (newestSrc > binMtime) {
+    if (await agentBinaryStale(AGENT_BIN_PATH, srcDir)) {
       throw new Error(
         `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
         `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
@@ -897,6 +894,66 @@ async function newestMtimeMs(dir: string): Promise<number> {
     if (s && s.mtimeMs > newest) newest = s.mtimeMs;
   }
   return newest;
+}
+
+/**
+ * SHA-256 of the daemon SOURCE tree — every file's relative path + bytes, in a
+ * stable (sorted) order. Deterministic and mtime-INDEPENDENT: a `git checkout`
+ * that rewrites file mtimes without changing content produces the same hash.
+ */
+async function srcContentHash(dir: string): Promise<string> {
+  const { readdir } = await import('node:fs/promises');
+  const files: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    files.push(join((entry.parentPath ?? (entry as { path?: string }).path) ?? dir, entry.name));
+  }
+  files.sort();
+  const hash = createHash('sha256');
+  for (const file of files) {
+    hash.update(file.slice(dir.length));
+    hash.update('\0');
+    hash.update(await readFile(file));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * Is the compiled daemon binary stale relative to its source?
+ *
+ * mtime is the fast path: a binary newer than every source file is trivially
+ * current. The mtime-stale branch is the one that used to false-positive — a
+ * `git checkout` / branch switch bumps every source file's mtime past the
+ * gitignored binary WITHOUT changing content, which in a worktree workflow
+ * fired "runtime artifact missing" on a binary that was perfectly current.
+ *
+ * So the stale branch now confirms with a CONTENT hash. The build records the
+ * source hash next to the binary (`<binary>.srchash`, removed on every rebuild
+ * so it re-memoizes); the guard also writes it opportunistically the first time
+ * it sees an mtime-current binary. A stored hash that matches the live source
+ * proves the binary is current despite the mtime, so the guard does not
+ * false-positive. Only a genuine content change with no rebuild — a missing or
+ * mismatched hash on the stale branch — reads as stale.
+ */
+async function agentBinaryStale(agentPath: string, srcDir: string): Promise<boolean> {
+  const binMtime = (await stat(agentPath)).mtimeMs;
+  const newestSrc = await newestMtimeMs(srcDir);
+  const hashPath = `${agentPath}.srchash`;
+  if (newestSrc <= binMtime) {
+    // Current by mtime. Memoize the source hash once (only when absent, so the
+    // steady state pays nothing) so a later checkout can be recognized as a
+    // no-op instead of false-positive stale.
+    if (!(await stat(hashPath).catch(() => null))) {
+      await writeFileFs(hashPath, await srcContentHash(srcDir)).catch(() => {});
+    }
+    return false;
+  }
+  const stored = await readFile(hashPath, 'utf8')
+    .then((s) => s.trim())
+    .catch(() => null);
+  if (!stored) return true; // no attestation on the stale branch → trust mtime
+  return stored !== (await srcContentHash(srcDir));
 }
 
 async function assertExists(path: string, envVarHint: string): Promise<void> {

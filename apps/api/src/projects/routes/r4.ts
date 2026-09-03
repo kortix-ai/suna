@@ -158,7 +158,11 @@ import {
   setTriggerSessionAccess,
   validateTriggerSessionAccessPrincipals,
 } from '../trigger-session-access';
-import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
+import {
+  type ParsedManifest,
+  extractTriggers,
+  findProjectTriggerBySlug,
+} from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 import {
   abandonSandboxTurn,
@@ -3819,8 +3823,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     );
 
-    const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
-    const spec = specs.find((s) => s.slug === slug);
+    const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
     if (!spec) return c.json({ error: 'Not found' }, 404);
 
     const now = new Date();

@@ -256,7 +256,14 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # and the nightly sweep can only ever touch a sandbox this system made.
         self.assertIn("owner: 'kortix-preview',", PREVIEW_CORE)
         self.assertIn("owner: identity.owner,", PREVIEW_PROVIDERS)
-        self.assertEqual(PREVIEW_PROVIDERS.count("sandbox.metadata?.owner === 'kortix-preview'"), 2)
+        # Every destructive read filters on the owner this system stamps, so a
+        # redeploy, a teardown and the nightly sweep can only ever touch a
+        # sandbox it created. The replace path checks it in the provider; the
+        # teardown and sweep selectors check it in core.
+        self.assertEqual(PREVIEW_PROVIDERS.count("sandbox.metadata?.owner === 'kortix-preview'"), 1)
+        self.assertIn("sandbox.name === ephemeral &&", PREVIEW_CORE)
+        self.assertIn("owner === 'kortix-preview' &&", PREVIEW_CORE)
+        self.assertIn("sandbox.name === persistent && owner === 'kortix-branch-env'", PREVIEW_CORE)
         self.assertIn("'kortix-preview': 'true',", PREVIEW_PROVIDERS)
         # A provider switch must not leave the other provider's sandbox running.
         self.assertIn(
@@ -378,29 +385,59 @@ class PreviewRuntimeIsolation(unittest.TestCase):
 
 
 class PreviewTeardown(unittest.TestCase):
-    """Close, unlabel, new head, and the nightly sweep all delete the sandbox."""
+    """Unlabel, branch delete, new head, and the nightly sweep, each by its own rule."""
 
-    def test_close_and_unlabel_run_complete_default_branch_teardown(self):
+    def test_unlabel_and_branch_delete_run_complete_default_branch_teardown(self):
+        # WAS: `closed` tore the environment down. That is the wrong event.
+        # Closing a pull request is routine — superseded, reopened later, split
+        # in two — and none of it means the work is finished, yet it destroyed a
+        # live environment and its Postgres volume. An environment belongs to
+        # its BRANCH, so exactly two things retire it: the `preview` label coming
+        # off (the explicit switch) and the branch being deleted.
         teardown = job("teardown")
-        self.assertIn("github.event.action == 'closed'", WORKFLOW)
+        self.assertNotIn("github.event.action == 'closed'", WORKFLOW)
+        self.assertIn("types: [labeled, unlabeled, synchronize]", WORKFLOW)
         self.assertIn("github.event.action == 'unlabeled' && github.event.label.name == 'preview'", WORKFLOW)
         self.assertIn("github.event.action == 'synchronize'", WORKFLOW)
         # Teardown runs default-branch code, never the pull request head.
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", teardown)
         # OLD: bash infra/scripts/ecs-preview.sh teardown "$NUM".
         self.assertIn("bun tests/bin/sandbox-preview.ts teardown", teardown)
+
+        # The branch-deleted job. `ref_type` gates out tag deletions, which
+        # arrive on the same event and name no branch. It has no pull request to
+        # patch, so it takes no write scope and calls no GitHub API — and it
+        # still reads default-branch code only.
+        self.assertIn("\n  delete:\n", WORKFLOW)
+        branch_teardown = job("teardown-branch")
+        self.assertIn(
+            "github.event_name == 'delete' && github.event.ref_type == 'branch'", branch_teardown
+        )
+        self.assertIn("PREVIEW_BRANCH_ENV: ${{ github.event.ref }}", branch_teardown)
+        self.assertNotIn("\n      PREVIEW_PR_NUMBER:", branch_teardown)
+        self.assertIn("ref: ${{ github.event.repository.default_branch }}", branch_teardown)
+        self.assertIn("persist-credentials: false", branch_teardown)
+        self.assertNotIn("pull-requests: write", branch_teardown)
+        self.assertNotIn("deployments: write", branch_teardown)
+        self.assertNotIn("gh api", branch_teardown)
+        self.assertIn("bun tests/bin/sandbox-preview.ts teardown", branch_teardown)
+
         # OLD: aws ecs delete-service / elbv2 delete-rule / delete-target-group
         # / ecs deregister-task-definition removed the four ECS resources.
         # NEW: one sandbox holds the whole stack, so teardown deletes it on both
         # providers and refuses to touch a sandbox it does not own.
         teardown_action = cli_action("teardown")
-        # Both shapes are deleted: the PR-named sandbox always, and the
-        # branch-named one when this pull request runs a persistent preview.
+        # Both shapes are deleted, and either key alone is enough: the PR-named
+        # sandbox when a number is known, the branch-named one when a branch is.
+        self.assertIn("...(prNumber === undefined ? {} : { prNumber }),", teardown_action)
+        self.assertIn("...(branchEnv ? { branchEnv } : {}),", teardown_action)
+        # Daytona only ever holds the EPHEMERAL shape — a branch environment is
+        # pinned to Platinum — and its teardown is keyed by pull request number,
+        # so a branch-only teardown has nothing to ask it for.
         self.assertIn(
-            "teardownPlatinumPreview({ ...platinum, prNumber, ...(branchEnv ? { branchEnv } : {}) })",
+            "prNumber === undefined ? Promise.resolve(0) : teardownDaytonaPreview({ ...daytona, prNumber })",
             teardown_action,
         )
-        self.assertIn("teardownDaytonaPreview({ ...daytona, prNumber })", teardown_action)
         self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         self.assertIn("sandbox.metadata?.owner === 'kortix-preview' &&", PREVIEW_PROVIDERS)
         self.assertIn("Mark GitHub deployment inactive", teardown)
@@ -463,7 +500,9 @@ class PreviewTeardown(unittest.TestCase):
         # A push must no longer tear anything down, and must not strip the label.
         self.assertNotIn("synchronize", teardown)
         self.assertNotIn("labels/preview", teardown)
-        self.assertIn("github.event.action == 'closed'", teardown)
+        # Nor may closing the pull request: removing the label is the only pull
+        # request action that retires an environment.
+        self.assertNotIn("github.event.action == 'closed'", teardown)
         self.assertIn("github.event.label.name == 'preview'", teardown)
 
     def test_the_nightly_sweep_deletes_only_unapproved_sandboxes(self):
@@ -475,25 +514,29 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn('cron: "17 6 * * *"', WORKFLOW)
         reconcile_action = cli_action("reconcile")
         self.assertIn(
-            "reconcilePlatinumPreviews({ ...platinum, activePullRequests: active })", reconcile_action
+            "reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames })",
+            reconcile_action,
         )
         self.assertIn(
             "reconcileDaytonaPreviews({ ...daytona, activePullRequests: active })", reconcile_action
         )
         self.assertIn("selectStalePreviewSandboxIds", PREVIEW_CORE)
-        # Both owners are reaped, by different rules. A moved head makes an
-        # EPHEMERAL preview stale (it was built for one commit); it is the normal
-        # state of a branch environment, which is redeployed in place. Sweeping a
-        # branch environment on sha would delete a live environment every push.
-        self.assertIn("if (!activeSha) return true;", PREVIEW_CORE)
+        # Both owners are reaped, by different rules, because they are identified
+        # by different things. An EPHEMERAL preview is built for exactly one
+        # commit of one pull request, so a closed pull request or a moved head
+        # makes it stale. A BRANCH environment is redeployed in place — a moved
+        # head is its normal state, and sweeping on sha would delete a live
+        # environment on every push. It is retired by its branch disappearing.
+        self.assertIn("return !activeSha || activeSha !== sandbox.metadata?.git_sha;", PREVIEW_CORE)
+        self.assertIn("if (owner !== 'kortix-preview') return false;", PREVIEW_CORE)
         self.assertIn(
-            "return owner === 'kortix-preview' && activeSha !== sandbox.metadata?.git_sha;",
+            "return !liveBranchSandboxNames.has(sandbox.name);",
             PREVIEW_CORE,
         )
-        self.assertIn(
-            "if (owner !== 'kortix-preview' && owner !== 'kortix-branch-env') return false;",
-            PREVIEW_CORE,
-        )
+        # The name is the ONLY record of which branch a sandbox belongs to.
+        # Deleting one that has none would turn a listing that stopped returning
+        # names into the loss of every branch environment and its volume.
+        self.assertIn("if (sandbox.name === undefined) return false;", PREVIEW_CORE)
         self.assertIn("const approved = pull.labels?.some((label) => label.name === 'preview');", PREVIEW_CLI)
         self.assertIn("const sameRepository = pull.head?.repo?.full_name === repository;", PREVIEW_CLI)
         # A PR preview is swept after 7 idle days; the Platinum retention now
@@ -505,13 +548,14 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("autoArchiveInterval: 10_080,", PREVIEW_PROVIDERS)
         self.assertIn("autoDeleteInterval: 10_080,", PREVIEW_PROVIDERS)
         # A branch environment carries NO provider expiry — it is retired by the
-        # pull request leaving the active set, which is what closing it or
-        # removing the label does, and deleting the branch does both. Teardown
-        # must therefore know the branch, or the box outlives everything.
+        # `preview` label coming off or by its BRANCH being deleted, and nothing
+        # else. Teardown must therefore know the branch, or the box outlives
+        # everything and bills until a human notices.
         self.assertIn("owner: 'kortix-branch-env',", PREVIEW_CORE)
         self.assertIn("autoArchiveDays: 0,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 0,", PREVIEW_CORE)
-        self.assertIn("branchEnvSandboxName(input.branchEnv)", PREVIEW_PROVIDERS)
+        self.assertIn("branchEnvSandboxName(input.branchEnv)", PREVIEW_CORE)
+        self.assertIn("selectTeardownSandboxIds(await allPlatinumPreviewSandboxes(api), input)", PREVIEW_PROVIDERS)
         self.assertIn("PREVIEW_BRANCH_ENV", job("teardown"))
 
     def test_a_failed_pull_request_query_never_reads_as_no_active_previews(self):
@@ -523,6 +567,14 @@ class PreviewTeardown(unittest.TestCase):
             PREVIEW_CLI,
         )
         self.assertIn("if (pulls.length < 100) return active;", PREVIEW_CLI)
+        # The same rule for the branch listing, which now decides the life of
+        # every branch environment. An empty set means "every branch is gone",
+        # so failing open here would delete all of them in one sweep.
+        self.assertIn(
+            "if (!response.ok) throw new Error(`GitHub branch list returned ${response.status}`);",
+            PREVIEW_CLI,
+        )
+        self.assertIn("if (branches.length < 100) return names;", PREVIEW_CLI)
 
 
 class PreviewHealthGate(unittest.TestCase):

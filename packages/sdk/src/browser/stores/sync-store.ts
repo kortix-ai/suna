@@ -16,6 +16,7 @@ import {
 	isWithinRewindWindow,
 	stageSessionRewind,
 } from "../../core/session/rewind";
+import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { writeStreamCache } from "./sync-store/stream-cache";
@@ -2598,8 +2599,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			if (!props.sessionID || !props.error) return;
 			const sid = props.sessionID;
 			const error = props.error;
-			// Mark session idle — errors terminate the response.
-			store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
+			// Most errors terminate the response. A RETRYABLE one does not:
+			// OpenCode stamps `data.isRetryable === true` and keeps writing the
+			// SAME assistant message, and apps/api reaches the same conclusion
+			// from this same event (`isTerminalTurnEnd`,
+			// apps/api/src/projects/sandbox-deadline-policy.ts:295). Writing
+			// `idle` here made a live turn byte-identical to a finished one, and
+			// `endedByRuntime` (core/session/working.ts) then vetoed the still-open
+			// ledger row with no time bound — the Stop button disappeared mid-turn
+			// and the partial answer read as complete.
+			//
+			// The status slot is LEFT ALONE rather than set to `retry`: the frame
+			// already there is the runtime's own last word, and overwriting it
+			// would re-stamp its arrival time and restart every freshness window
+			// that depends on it.
+			if (!isRetryableTurnError(error)) {
+				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event), emittedAt);
+			}
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);

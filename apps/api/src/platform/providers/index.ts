@@ -238,6 +238,19 @@ export function effectiveAppMachine(
   };
 }
 
+
+/** Result of a provider-level command run inside a sandbox VM/container. */
+export interface SandboxExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SandboxExecOptions {
+  /** Wall-clock budget for the command itself. The provider call gets a margin on top. */
+  timeoutMs: number;
+}
+
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
@@ -314,6 +327,15 @@ export interface SandboxProvider {
    * this capability is absent or returns unavailable.
    */
   recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
+  /**
+   * Run one command as root inside the sandbox through the PROVIDER's own
+   * channel (Platinum `/exec`, Daytona toolbox, E2B commands) — independent of
+   * the in-box kortix-agent daemon, which is exactly what a legacy-runtime
+   * bootstrap needs: the daemon being replaced cannot be the thing that
+   * replaces it. Optional: a provider without an exec channel cannot be
+   * converged from the control plane.
+   */
+  exec?(externalId: string, command: string[], opts: SandboxExecOptions): Promise<SandboxExecResult>;
   resolveEndpoint(externalId: string): Promise<ResolvedEndpoint>;
   routeIngress(request: SandboxIngressRequest): SandboxIngressRoute;
   /**

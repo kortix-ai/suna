@@ -3,6 +3,7 @@ import { changeRequests } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope } from '../../iam/agent-scope';
+import { refusesSelfMerge } from '../change-request-policy';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
@@ -65,6 +66,27 @@ projectsApp.openapi(
     if (!cr) return c.json({ error: 'Change request not found' }, 404);
     if (cr.status !== 'open') {
       return c.json({ error: `Change request is ${cr.status}` }, 409);
+    }
+
+    // A session may not merge the change request it opened — see
+    // change-request-policy.ts for why this is the only place it can be
+    // enforced (the merge writes the base ref server-side, never through the
+    // git proxy).
+    if (
+      refusesSelfMerge({
+        actingSessionId: (c.get('sessionId') as string | null | undefined) ?? null,
+        originSessionId: cr.originSessionId ?? null,
+      })
+    ) {
+      return c.json(
+        {
+          error:
+            `Change request #${cr.number} was opened by this session, so this session cannot ` +
+            'merge it. A person reviews and merges it from the dashboard or with `kortix cr merge`.',
+          code: 'CR_SELF_MERGE_REFUSED',
+        },
+        403,
+      );
     }
 
     const customMessage = normalizeString(body.message);

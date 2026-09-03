@@ -5,7 +5,7 @@ function baseRow() {
   return {
     requestId: 'req_abc123',
     resolvedModel: 'anthropic/claude-sonnet-5',
-    requestedModel: 'glm-5.2',
+    requestedModel: 'glm-5.3-flash',
     provider: 'bedrock',
     streaming: false,
     inputTokens: 120,
@@ -30,7 +30,7 @@ describe('mapGatewayLogToGeneration', () => {
     expect(result).toEqual({
       id: 'req_abc123',
       model: 'anthropic/claude-sonnet-5',
-      requested_model: 'glm-5.2',
+      requested_model: 'glm-5.3-flash',
       provider: 'bedrock',
       streamed: false,
       tokens_prompt: 120,

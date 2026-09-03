@@ -361,6 +361,26 @@ export function ModelSection({ oc, setOc }: { oc: RuntimeAgentConfig; setOc: Set
 }
 
 /**
+ * Whether a slider row is showing its default.
+ *
+ * True for an absent key (inherit) AND for an explicit value that equals the
+ * value the row parks at. Both put the handle where an untouched row puts it,
+ * so neither is worth offering a Reset for: dragging away and back left
+ * "Reset" sitting under a slider that looked untouched, which reads as a
+ * control with nothing to undo.
+ *
+ * The two states stay distinguishable in the readout — `—` is inherit, a
+ * number is explicit — so no information is lost. To go from an explicit
+ * parked value back to inherit, move the handle; Reset returns with it.
+ *
+ * Compared with a tolerance because `step` is fractional (0.05 / 0.01) and
+ * slider arithmetic does not land on exact binary fractions.
+ */
+export function isSliderAtDefault(value: number | undefined, fallback: number): boolean {
+  return value === undefined || Math.abs(value - fallback) < 1e-9;
+}
+
+/**
  * A slider row that can be UNSET.
  *
  * The readout prints `—` rather than the fallback when the key is absent: an
@@ -390,7 +410,7 @@ function SliderRow({
     <SettingRow
       label={label}
       help={
-        value === undefined ? (
+        isSliderAtDefault(value, fallback) ? (
           help
         ) : (
           <>

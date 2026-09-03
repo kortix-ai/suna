@@ -42,18 +42,18 @@ mock.module('../model-gate', () => ({ channelModelContext: async () => gate }));
 mock.module('../../../llm-gateway/models/picker', () => ({
   listPickerModels: async () => ({
     models: [
-      { id: 'kortix/glm-5.2', label: 'GLM 5.2', provider: 'kortix', managed: true, hint: 'Balanced, fast' },
+      { id: 'kortix/glm-5.3-flash', label: 'GLM 5.3 Flash', provider: 'kortix', managed: true, hint: 'Balanced, fast' },
       { id: 'kortix/claude-opus-4.8', label: 'Claude Opus 4.8', provider: 'kortix', managed: true, hint: 'Most capable' },
     ],
-    projectDefault: { model: 'glm-5.2', source: 'platform', label: 'GLM 5.2' },
+    projectDefault: { model: 'glm-5.3-flash', source: 'platform', label: 'GLM 5.3 Flash' },
   }),
-  labelForModelRef: (ref: string) => (ref.includes('glm') ? 'GLM 5.2' : ref),
+  labelForModelRef: (ref: string) => (ref.includes('glm') ? 'GLM 5.3 Flash' : ref),
 }));
 
 let servable = true;
 mock.module('../../../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async () => servable,
-  resolveEffectiveModel: async () => ({ model: 'glm-5.2', source: 'project' }),
+  resolveEffectiveModel: async () => ({ model: 'glm-5.3-flash', source: 'project' }),
 }));
 
 mock.module('../participants', () => ({
@@ -114,15 +114,15 @@ describe('/kortix models → real served catalog', () => {
     const resp = await handleSlashCommand('models', '', ctx);
     const ids = actionIds(resp);
     expect(ids).toContain('set_model_default');
-    expect(ids).toContain('set_model_kortix/glm-5.2');
+    expect(ids).toContain('set_model_kortix/glm-5.3-flash');
     expect(ids).toContain('set_model_kortix/claude-opus-4.8');
   });
 });
 
 describe('/kortix model <id> → servability gate (never store a 404)', () => {
   test('servable id is stored as the opencode ref', async () => {
-    const resp = await handleSlashCommand('model', 'glm-5.2', ctx);
-    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'kortix/glm-5.2');
+    const resp = await handleSlashCommand('model', 'glm-5.3-flash', ctx);
+    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'kortix/glm-5.3-flash');
     expect(resp.text).toContain('set to');
   });
 

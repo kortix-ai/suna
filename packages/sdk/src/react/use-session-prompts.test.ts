@@ -6,6 +6,7 @@ import { openSessionBundle, resetSessionOpenBundles } from '../core/session/open
 import type { SessionPrompt } from '../core/rest/projects-client/sessions';
 import {
   applyOptimisticPrompt,
+  applyInboxObservation,
   optimisticSessionPrompt,
   reconcileOptimisticPrompts,
   removeOptimisticPrompt,
@@ -13,7 +14,6 @@ import {
   SESSION_PROMPTS_IDLE_POLL_MS,
   SESSION_PROMPTS_POLL_MS,
   noteInboxObservation,
-  promptsRefetchInterval,
   readSessionPromptsInbox,
   sessionPromptsPollMs,
   startSessionWithPrompt,
@@ -121,6 +121,60 @@ describe('noteInboxObservation', () => {
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
   });
 
+  test('an older empty stream snapshot cannot erase a newer confirmed queue row', () => {
+    useSessionWorkingStore.getState().reset();
+    const queued = prompt({ prompt_id: 'p2', client_message_id: 'q_2' });
+
+    expect(applyInboxObservation('sess_1', undefined, [queued], 500)).toEqual([queued]);
+    expect(applyInboxObservation('sess_1', [queued], [], 400)).toEqual([queued]);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 1, atMs: 500 });
+  });
+
+  test('a newer empty snapshot removes a queue row after delivery', () => {
+    useSessionWorkingStore.getState().reset();
+    const queued = prompt({ prompt_id: 'p2', client_message_id: 'q_2' });
+
+    applyInboxObservation('sess_1', undefined, [queued], 500);
+
+    expect(applyInboxObservation('sess_1', [queued], [], 600)).toEqual([]);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 600 });
+  });
+
+  /**
+   * The cross-clock race PR #6957's review reproduced, closed at the boundary:
+   * every snapshot the SERVER produced ranks on the server's own clock, so a
+   * read that STARTED before a POST — however late it settles, whatever the
+   * client clock says — can never erase the row that POST confirmed.
+   */
+  test('a queue read started before the POST cannot erase it after it settles', () => {
+    useSessionWorkingStore.getState().reset();
+    const confirmed = prompt({ prompt_id: 'srv_1', client_message_id: 'q_9' });
+
+    // POST .../prompts settled at server instant 5_000; the row is durable.
+    useSessionWorkingStore.getState().notePromptAccepted('sess_1', 200, 5_000);
+
+    // The slow read was ISSUED at server instant 4_000 (before the write) and
+    // settles only now, with a browser stamp newer than everything above.
+    expect(applyInboxObservation('sess_1', [confirmed], [], 900, 4_000)).toEqual([confirmed]);
+    expect(useSessionWorkingStore.getState().inbox.sess_1?.pending).toBe(1);
+  });
+
+  test('a server ten minutes ahead does not get its snapshots rejected or latched', () => {
+    useSessionWorkingStore.getState().reset();
+    const skew = 10 * 60_000;
+    const queued = prompt({ prompt_id: 'p3', client_message_id: 'q_3' });
+
+    // A bundle observed on the API clock (10 min ahead of this tab)…
+    applyInboxObservation('sess_1', undefined, [queued], 1_000, 61_000 + skew);
+    // …must not outrank the DIRECT read issued right after it: the direct
+    // read's server stamp is newer on the one clock that may decide.
+    expect(applyInboxObservation('sess_1', [queued], [], 1_500, 62_000 + skew)).toEqual([]);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 0,
+      atMs: 1_500,
+      serverAtMs: 62_000 + skew,
+    });
+  });
 });
 
 /**
@@ -396,10 +450,46 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     expect(useSessionWorkingStore.getState().inbox.S1?.pending).toBe(1);
   });
 
+  test('the bundle stamps AGE from this tab’s clock and ORDER from the server’s', async () => {
+    resetSessionOpenBundles();
+    useSessionWorkingStore.getState().clearSession('S1');
+    // A server clock ten minutes BEHIND this tab. Stamping age from
+    // `observed_at` made this observation expire on arrival
+    // (INBOX_OBSERVATION_MAX_MS is 10s), flipping the composer to Send with
+    // the prompt still queued.
+    const observedAt = new Date(Date.now() - 10 * 60_000).toISOString();
+    mockFetch(() => ({
+      ...bundle({ known: true, prompts: [{ prompt_id: 'p1', state: 'queued' }], held: false }),
+      observed_at: observedAt,
+    }));
+    openSessionBundle('P1', 'S1');
+    const before = Date.now();
+    await readSessionPromptsInbox('P1', 'S1', undefined);
+    const entry = useSessionWorkingStore.getState().inbox.S1;
+    expect(entry?.pending).toBe(1);
+    // Age: browser clock at receive time — fresh, not 10 minutes old.
+    expect(entry!.atMs).toBeGreaterThanOrEqual(before);
+    // Order: the server's own stamp, kept for ranking against other server reads.
+    expect(entry?.serverAtMs).toBe(Date.parse(observedAt));
+  });
+
+  test('a direct read carries the endpoint’s server stamp into the projection', async () => {
+    resetSessionOpenBundles();
+    useSessionWorkingStore.getState().clearSession('S2');
+    const observedAt = '2026-08-26T12:34:56.000Z';
+    mockFetch(() => ({ prompts: [{ prompt_id: 'p1', state: 'queued' }], observed_at: observedAt }));
+    const before = Date.now();
+    await readSessionPromptsInbox('P1', 'S2', undefined);
+    const entry = useSessionWorkingStore.getState().inbox.S2;
+    expect(entry?.pending).toBe(1);
+    expect(entry!.atMs).toBeGreaterThanOrEqual(before);
+    expect(entry?.serverAtMs).toBe(Date.parse(observedAt));
+  });
+
   test('falls back to /prompts when the bundle could not read the inbox', async () => {
     resetSessionOpenBundles();
     const urls = mockFetch((url) =>
-      url.includes('snapshot')
+      url.includes('/snapshot')
         ? bundle({ known: false, reason: 'inbox read failed' })
         : { prompts: [{ prompt_id: 'p9', state: 'queued' }] },
     );
@@ -407,28 +497,5 @@ describe('readSessionPromptsInbox and the open bundle', () => {
     const prompts = await readSessionPromptsInbox('P1', 'S1', undefined);
     expect(urls.some((u) => u.endsWith('/prompts'))).toBe(true);
     expect(prompts[0]?.prompt_id).toBe('p9');
-  });
-});
-
-describe('promptsRefetchInterval (stream presence hands the cadence over)', () => {
-  test('poll owner with no stream keeps the two-cadence contract', () => {
-    expect(
-      promptsRefetchInterval({ pollOwner: true, streamConnected: false, count: 2, believedPending: 0 }),
-    ).toBe(SESSION_PROMPTS_POLL_MS);
-    expect(
-      promptsRefetchInterval({ pollOwner: true, streamConnected: false, count: 0, believedPending: 0 }),
-    ).toBe(SESSION_PROMPTS_IDLE_POLL_MS);
-  });
-
-  test('a connected stream silences the poll — kortix.control.queue is the same list', () => {
-    expect(
-      promptsRefetchInterval({ pollOwner: true, streamConnected: true, count: 2, believedPending: 1 }),
-    ).toBe(false);
-  });
-
-  test('a non-owner never polls', () => {
-    expect(
-      promptsRefetchInterval({ pollOwner: false, streamConnected: false, count: 5, believedPending: 0 }),
-    ).toBe(false);
   });
 });

@@ -615,7 +615,25 @@ githubAppSetupRouter.openapi(
     if (!installationId) {
       return c.redirect(accountRedirect(accountId, 'error', 'missing_installation_id'), 302);
     }
-    if (action === 'reject' || !query.state) {
+    // Installing straight from the App's GitHub page (rather than through
+    // Kortix's Connect button) is a perfectly normal thing to do, and GitHub
+    // then calls this Setup URL with an installation_id but NO state — we never
+    // minted one. Reporting that as `invalid_state` read like a security
+    // failure and dead-ended at the site root, stranding a real installation
+    // that nobody had linked to an account. Name it for what it is and carry
+    // the installation id, so the frontend can offer to link it once the user
+    // is signed in (POST /projects/github/installations/{linkable,link}).
+    // Strictly ABSENT, not merely empty. `?state=` reaches the handler as ''
+    // and is malformed — GitHub always sends a real state on a flow Kortix
+    // started — so it belongs with the errors below. Only a state that was
+    // never provided at all means the install began on GitHub's own App page.
+    if (query.state === undefined) {
+      const base = frontendUrl();
+      const qs = new URLSearchParams({ github: 'install_received', reason: 'direct_install' });
+      if (installationId) qs.set('installation_id', String(installationId));
+      return c.redirect(`${base || ''}/?${qs.toString()}`, 302);
+    }
+    if (action === 'reject') {
       return c.redirect(accountRedirect(accountId, 'error', 'invalid_state'), 302);
     }
 

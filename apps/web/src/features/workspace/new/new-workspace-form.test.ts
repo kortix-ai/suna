@@ -4,8 +4,10 @@ import {
   INITIAL_FORM_STATE,
   buildProvisionPayload,
   filterCreatableAccounts,
+  isForeignAccountList,
   isSubmittable,
   resolveDefaultCreatableAccountId,
+  shouldShowAccountLine,
 } from './new-workspace-form';
 import type { KortixAccount } from '@kortix/sdk';
 
@@ -24,6 +26,13 @@ describe('INITIAL_FORM_STATE', () => {
       defaultBranch: 'main',
       templateId: null,
       accountId: null,
+      // The two GitHub sources need an installation, and `github-import`
+      // additionally a repository. Null on a `managed` default, where neither
+      // is read — but present in the shape, so `isSubmittable`'s
+      // `githubSourceReady` gate reads a defined field rather than
+      // `undefined`.
+      installationId: null,
+      repoFullName: null,
     });
   });
 });
@@ -51,6 +60,23 @@ describe('filterCreatableAccounts', () => {
   test('one owner + one member account leaves exactly one creatable — AccountPicker (accounts.length < 2) renders nothing', () => {
     expect(filterCreatableAccounts([owner, member])).toHaveLength(1);
   });
+
+  test('keeps the possessive suffix — never returns the bare email', () => {
+    // Regression guard: this used to `.replaceAll("'s Account", '')`, which
+    // turned the API's stored `"a@x.com's Account"` into a bare `a@x.com` —
+    // indistinguishable from `user.email` once it reached `AccountPicker`.
+    // The possessive is the only thing marking this as an account name
+    // belonging to someone else, so it must survive this function untouched.
+    const personalAccount: KortixAccount = {
+      account_id: 'a5',
+      name: "a@x.com's Account",
+      account_role: 'owner',
+    };
+    const [result] = filterCreatableAccounts([personalAccount]);
+    expect(result?.name).toContain("'s Account");
+    expect(result?.name).not.toBe('a@x.com');
+    expect(result?.name).toBe("a@x.com's Account");
+  });
 });
 
 describe('resolveDefaultCreatableAccountId', () => {
@@ -61,48 +87,41 @@ describe('resolveDefaultCreatableAccountId', () => {
   };
   const personal: KortixAccount = {
     account_id: 'a-personal',
-    name: 'jay@kortix.ai',
-    slug: 'jay',
+    // REAL post-`filterCreatableAccounts` shape as of Task 1: the API always
+    // stores a personal account as `"<email>'s Account"`
+    // (`defaultAccountName`, apps/api/src/accounts/core/app.ts). Personal
+    // accounts use `accountId === userId` by construction
+    // (`bootstrap-personal-account.ts`), so `'a-personal'` doubles as both
+    // this account's id and the signed-in user's id in the tests below.
+    name: "jay@kortix.ai's Account",
     account_role: 'owner',
     is_primary_owner: true,
   };
 
+  // Task 2 replaced the `byName`/`bySlug` email-matching tiers entirely —
+  // both were permanently dead against the real `GET /v1/accounts` shape
+  // (see `resolveDefaultCreatableAccountId`'s doc comment in
+  // `new-workspace-form.ts`). There is no successor test for "matches by
+  // name" or "matches by slug": that behavior no longer exists, on purpose.
+  // The identity tier below (`account_id === userId`) is what replaces it.
+
   test('returns null when there are no creatable accounts', () => {
-    expect(resolveDefaultCreatableAccountId([], 'jay@kortix.ai')).toBeNull();
+    expect(resolveDefaultCreatableAccountId([], 'a-personal')).toBeNull();
   });
 
-  test('prefers the account whose name matches the signed-in email (case-insensitive)', () => {
-    expect(resolveDefaultCreatableAccountId([team, personal], 'Jay@Kortix.ai')).toBe(
-      'a-personal',
-    );
+  test('prefers the account whose account_id equals the signed-in user id, regardless of list order', () => {
+    expect(resolveDefaultCreatableAccountId([team, personal], 'a-personal')).toBe('a-personal');
+    expect(resolveDefaultCreatableAccountId([personal, team], 'a-personal')).toBe('a-personal');
   });
 
-  test('falls back to slug match against the email or its local-part', () => {
-    const bySlug: KortixAccount = {
-      account_id: 'a-slug',
-      name: 'Personal',
-      slug: 'jay@kortix.ai',
-      account_role: 'owner',
-    };
-    expect(resolveDefaultCreatableAccountId([team, bySlug], 'jay@kortix.ai')).toBe('a-slug');
-
-    const byLocal: KortixAccount = {
-      account_id: 'a-local',
-      name: 'Personal',
-      slug: 'jay',
-      account_role: 'admin',
-    };
-    expect(resolveDefaultCreatableAccountId([team, byLocal], 'jay@kortix.ai')).toBe('a-local');
-  });
-
-  test('falls back to is_primary_owner when nothing matches the email', () => {
+  test('falls back to is_primary_owner when identity does not match any account', () => {
     const primary: KortixAccount = {
       account_id: 'a-primary',
       name: 'Me',
       account_role: 'owner',
       is_primary_owner: true,
     };
-    expect(resolveDefaultCreatableAccountId([team, primary], 'other@kortix.ai')).toBe(
+    expect(resolveDefaultCreatableAccountId([team, primary], 'someone-elses-id')).toBe(
       'a-primary',
     );
   });
@@ -111,8 +130,103 @@ describe('resolveDefaultCreatableAccountId', () => {
     expect(resolveDefaultCreatableAccountId([team, admin], null)).toBe('a-team');
   });
 
-  test('returns the sole creatable account even with no email', () => {
+  test('returns the sole creatable account even with no userId', () => {
     expect(resolveDefaultCreatableAccountId([personal], null)).toBe('a-personal');
+  });
+});
+
+describe('resolveDefaultCreatableAccountId: order-independent default when a user owns both a personal and a team account', () => {
+  // Converts Task 1's `test.todo` (ruling R5 / Task 2 controller addendum
+  // A2.1). `is_primary_owner` is `accountRole === 'owner'`
+  // (apps/api/src/accounts/core/accounts.ts:126) — true for BOTH the user's
+  // bootstrapped personal account and any team account they own outright, so
+  // it cannot break the tie between the two. Only `account_id === userId`
+  // can: it is true for the personal account by construction
+  // (`bootstrap-personal-account.ts`) and never true for a team account,
+  // which always gets its own freshly generated account id. Run through the
+  // REAL composed pipeline (`filterCreatableAccounts` then
+  // `resolveDefaultCreatableAccountId`), exactly as `/new` calls them.
+  test('personal account wins regardless of list order', () => {
+    const userId = 'a-personal-order';
+    const personalAccount: KortixAccount = {
+      account_id: 'a-personal-order',
+      name: "jay@kortix.ai's Account",
+      account_role: 'owner',
+      is_primary_owner: true,
+    };
+    // A team the SAME user also owns outright — not their personal account,
+    // but `is_primary_owner` cannot tell the two apart.
+    const teamAccountUserOwns: KortixAccount = {
+      account_id: 'a-team-order',
+      name: 'Acme Inc',
+      account_role: 'owner',
+      is_primary_owner: true,
+    };
+
+    const personalFirst = filterCreatableAccounts([personalAccount, teamAccountUserOwns]);
+    const teamFirst = filterCreatableAccounts([teamAccountUserOwns, personalAccount]);
+
+    expect(resolveDefaultCreatableAccountId(personalFirst, userId)).toBe('a-personal-order');
+    expect(resolveDefaultCreatableAccountId(teamFirst, userId)).toBe('a-personal-order');
+  });
+});
+
+describe('isForeignAccountList', () => {
+  const own: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
+  const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
+  const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+
+  test('false for zero creatable accounts', () => {
+    expect(isForeignAccountList([], 'me')).toBe(false);
+  });
+
+  test("false for a SOLE account that is not the viewer's own — the ordinary invited-admin case, not FOREIGN", () => {
+    expect(isForeignAccountList([foreign1], 'me')).toBe(false);
+  });
+
+  test("false for two or more accounts once at least one is the viewer's own, regardless of order", () => {
+    expect(isForeignAccountList([own, foreign1], 'me')).toBe(false);
+    expect(isForeignAccountList([foreign1, own], 'me')).toBe(false);
+  });
+
+  test("true for two or more accounts, none of them the viewer's own", () => {
+    expect(isForeignAccountList([foreign1, foreign2], 'me')).toBe(true);
+  });
+
+  // `userId` is required and typed `string | null` (no `| undefined`) —
+  // review round 1, Important 2. A caller that genuinely cannot establish
+  // identity must say so explicitly with `null`; `undefined` is no longer a
+  // representable value at the type level, so there is no longer a separate
+  // "omitted" case to test here. `null` already fails closed correctly: no
+  // real `account_id` is ever `null`.
+  test('true for two or more accounts when the viewer id is explicitly unknown (null)', () => {
+    expect(isForeignAccountList([foreign1, foreign2], null)).toBe(true);
+  });
+});
+
+describe('shouldShowAccountLine', () => {
+  const ownSole: KortixAccount = { account_id: 'me', name: "me@x.com's Account", account_role: 'owner' };
+  const foreignSole: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
+  const foreignSecond: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+
+  test('sole OWN account: false — AccountPicker renders the identity line alone (A2.2)', () => {
+    expect(shouldShowAccountLine([ownSole], 'me')).toBe(false);
+  });
+
+  test('sole FOREIGN account: true — the invited-admin scenario must still name the account (A2.2, do not re-open Task 1s disclosure fix)', () => {
+    expect(shouldShowAccountLine([foreignSole], 'me')).toBe(true);
+  });
+
+  test('a FOREIGN list (two or more, none owned): false — no account name renders at all', () => {
+    expect(shouldShowAccountLine([foreignSole, foreignSecond], 'me')).toBe(false);
+  });
+
+  test("a normal multi-account list that includes the viewer's own: true — the real list reaches the interactive Select unmodified", () => {
+    expect(shouldShowAccountLine([ownSole, foreignSole], 'me')).toBe(true);
+  });
+
+  test('zero accounts: true, trivially (AccountPicker itself renders nothing at zero accounts and no fallback label)', () => {
+    expect(shouldShowAccountLine([], 'me')).toBe(true);
   });
 });
 

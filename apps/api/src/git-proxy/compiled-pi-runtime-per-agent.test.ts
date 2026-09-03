@@ -66,7 +66,8 @@ describe('one artifact, one agent', () => {
     const source = await routeSource();
     // Putting the agent in the fetch URL would edit the image's fetch script,
     // change the pi snapshot fingerprint and rebuild the shared template.
-    expect(source).toContain('agentOfCallingSession(auth.sessionId)');
+    expect(source).toContain("auth.principal.kind === 'session' ? auth.principal.sessionId : null");
+    expect(source).toContain('agentOfCallingSession(callerSessionId)');
     expect(source).toContain('projectSessions.agentName');
     // The id must come from the AUTH RESULT: this route authenticates its own
     // token and never runs the middleware that populates the Hono context, so

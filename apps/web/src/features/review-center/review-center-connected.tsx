@@ -60,7 +60,7 @@ export function ReviewCenterConnected({
   const qc = useQueryClient();
   const router = useRouter();
   const closeCustomize = useSettingsPanelStore((s) => s.close);
-  const { data, isLoading, isFetching, isError, refetch } = useReviewItems();
+  const { data, isLoading, isFetching, isFetched, isError, refetch } = useReviewItems();
   const act = useActReviewItem();
   const bulk = useBulkActReviewItems();
   const resolve = useResolveReviewApproval();
@@ -260,6 +260,7 @@ export function ReviewCenterConnected({
       initialItems={items}
       isLoading={isLoading}
       isFetching={isFetching}
+      isFetched={isFetched}
       isError={isError}
       sessionLabels={sessionLabels}
       onAct={canAct ? handleAct : undefined}

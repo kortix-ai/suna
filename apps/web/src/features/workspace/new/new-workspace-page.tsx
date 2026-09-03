@@ -1,27 +1,31 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
-
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
+import { readSourceParam } from '@/features/workspace/new/source-param';
 
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
   filterCreatableAccounts,
+  isForeignAccountList,
   isSubmittable,
   resolveDefaultCreatableAccountId,
+  shouldShowAccountLine,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
@@ -30,9 +34,9 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
-import { listAccounts } from '@kortix/sdk';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
@@ -77,11 +81,11 @@ const ICON_WIDTH = '2.5rem';
  * that creates something because you looked at it is a page nobody can link
  * to safely.
  *
- * It DOES read the account list on mount (`useQuery(['accounts'],
- * listAccounts)`) — an idempotent GET, needed to know whether there is
- * anything to disambiguate (`AccountPicker`) and to gate submission on the
- * REAL account count instead of a placeholder. `['accounts']` is the exact
- * cache key `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
+ * It DOES read the account list on mount (`useAccountsList()`) — an
+ * idempotent GET, needed to know whether there is anything to disambiguate
+ * (`AccountPicker`) and to gate submission on the REAL account count instead
+ * of a placeholder. That hook is the exact
+ * cache entry `WorkspaceSwitcher` and `AccountSwitcher` already use, so a user
  * who reaches `/new` from either menu (the common path) hits a warm cache,
  * not a second request. That list is filtered to `creatableAccounts` (owner
  * or admin — `POST /provision` 403s on anything else, same predicate as
@@ -113,10 +117,13 @@ const ICON_WIDTH = '2.5rem';
  * top-right, independent of the form below.
  */
 export function NewWorkspacePage() {
-  const { user, signOut } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
   const router = useRouter();
+
+  useSignedOutRedirect();
+
   // Same `useSearchParams()` result the clone param reads — one subscription,
   // two params. Non-null only between "the workspace was created" and "the
   // user finished or skipped onboarding for it".
@@ -124,11 +131,20 @@ export function NewWorkspacePage() {
     new URLSearchParams(searchParams?.toString() ?? ''),
   );
 
+  // `?source=` is how the picked repository source survives the real
+  // navigation to `/github/setup` and back (`readSourceParam`). Read into the
+  // INITIAL state only — a lazy `useState` initializer, so a later param
+  // change never fights the user's own Select.
+  const initialSource = readSourceParam(new URLSearchParams(searchParams?.toString() ?? ''));
+
   const [state, setState] = useState<NewWorkspaceFormState>(() => ({
     ...INITIAL_FORM_STATE,
     templateId: cloneItemId,
+    ...(initialSource ? { source: initialSource } : {}),
   }));
   const [touched, setTouched] = useState(false);
+  // Never cleared: the document is replaced, not re-rendered.
+  const [signingOut, setSigningOut] = useState(false);
   const reduceMotion = useReducedMotion();
   // One source for "is the icon column open" — the animation, the a11y
   // attributes and the inert gate all read the same value.
@@ -155,13 +171,12 @@ export function NewWorkspacePage() {
     return result.ok ? null : result.error;
   }, [state.name, touched]);
 
-  // Same `['accounts']` cache entry `WorkspaceSwitcher`/`AccountSwitcher` read
-  // — one shared query, not a page-local duplicate.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  // Same user-scoped cache entry `WorkspaceSwitcher`/`AccountSwitcher` read —
+  // one shared query, not a page-local duplicate. `useAccountsList` is also
+  // what makes the stale-list instance of symptom 3 unreachable here: the key
+  // carries the signed-in user, so a previous user's list is not addressable
+  // from this page at all.
+  const accountsQuery = useAccountsList();
   const accounts = accountsQuery.data ?? [];
 
   // `filterCreatableAccounts` (`new-workspace-form.ts`) matches
@@ -172,13 +187,41 @@ export function NewWorkspacePage() {
   // the user can pick" and "what gates submit" disagree.
   const creatableAccounts = filterCreatableAccounts(accounts);
 
-  // Pre-select the personal / email-matching account when the user has not
-  // picked yet. Derived, not Effect-written — this page forbids useEffect
-  // (no eager side effects on mount). `isSubmittable` and submit both read
-  // the effective id so multi-account users are not blocked on "Choose an
-  // account" when a clear default exists.
-  const defaultAccountId = resolveDefaultCreatableAccountId(creatableAccounts, user?.email);
-  const effectiveAccountId = state.accountId ?? defaultAccountId;
+  // `user?.id` is `string | undefined`; the identity helpers below require an
+  // explicit `string | null` — an omitted/undefined argument used to compile
+  // clean and silently degrade to "cannot establish identity", which failed
+  // closed for the wrong reason (an accident, not a decision, G4). Normalized
+  // once here and reused for every identity-aware call on this page.
+  const userId = user?.id ?? null;
+
+  // A creatableAccounts list the signed-in user's identity cannot be
+  // anchored to (Task 2, G2 fail-closed) — see `isForeignAccountList`'s own
+  // doc comment for exactly which shape this is, why a SOLE foreign account
+  // (the ordinary invited-admin case) is deliberately excluded, and why the
+  // stale single-account instance of symptom 3 is closed by the user-scoped
+  // `qk.accounts.list(userId)` key above rather than here. This check is
+  // still live and still required: it covers a 2+-account list with no anchor
+  // to the viewer, a shape the key cannot rule out.
+  const foreignAccountList = isForeignAccountList(creatableAccounts, userId);
+
+  // Whether `AccountPicker` should reveal any account-specific info beyond
+  // bare identity (Task 2 controller addendum A2.2 / item 2). `AccountPicker`
+  // always gets the REAL `creatableAccounts` below — never a shrunk stand-in
+  // — so `accounts` keeps meaning "the accounts the user can create in" and
+  // this flag is the sole, explicit place suppression is decided.
+  const showAccountLine = shouldShowAccountLine(creatableAccounts, userId);
+
+  // Pre-select the personal / identity-matching account when the user has not
+  // picked yet. Derived, not Effect-written — the signed-out guard above is the
+  // only Effect this page is allowed, and no Effect here may perform a WRITE.
+  // `isSubmittable` and submit both read the effective id so multi-account users
+  // are not blocked on "Choose an account" when a clear default exists. `null`
+  // outright for a FOREIGN list — nothing in it can be trusted enough to
+  // pre-fill or submit.
+  const defaultAccountId = foreignAccountList
+    ? null
+    : resolveDefaultCreatableAccountId(creatableAccounts, userId);
+  const effectiveAccountId = foreignAccountList ? null : (state.accountId ?? defaultAccountId);
   const effectiveState: NewWorkspaceFormState = {
     ...state,
     accountId: effectiveAccountId,
@@ -198,17 +241,24 @@ export function NewWorkspacePage() {
   // wrong account — is exactly what a stale reading of that count during the
   // loading window would let through.
   //
-  // `state.source === 'managed'` is gated here, not in the shared
-  // `isSubmittable`: `POST /provision` (the only wired submit path —
-  // `useCreateWorkspace`) has no installation-id or repo fields, so a
-  // `github-create` / `github-import` source can never be submittable through
-  // it. `AdvancedFields` explains this inline and links to the real GitHub
-  // connect flow instead of shipping a form that would 400.
+  // The source-specific part of the gate lives in `isSubmittable`
+  // (`githubSourceReady`), not here. It used to be a flat
+  // `state.source === 'managed'` on this line, because `useCreateWorkspace`
+  // only knew how to POST `/projects/provision` — so the two GitHub sources
+  // were unreachable and their Select options were rendered `disabled`. Both
+  // now have their own route (`/projects/create-repo`,
+  // `/projects/link-repository`) and their own inputs, so what blocks submit
+  // is a MISSING input, the same as an empty name — never the choice itself.
   const canSubmit =
     isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
-    state.source === 'managed' &&
-    !submitting;
+    !submitting &&
+    // Belt and braces on top of `effectiveAccountId` already being forced
+    // null above for a FOREIGN list — `isSubmittable`'s own
+    // `accountCount > 1 && !accountId` check already fails on that null, but
+    // naming the condition here directly means a future edit to either
+    // function cannot silently reopen the disclosure by accident.
+    !foreignAccountList;
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
@@ -227,6 +277,7 @@ export function NewWorkspacePage() {
           value={effectiveAccountId}
           onChange={(accountId) => setState((s) => ({ ...s, accountId }))}
           fallbackLabel={user?.email}
+          showAccountLine={showAccountLine}
           className="min-w-0"
         />
         {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
@@ -234,15 +285,24 @@ export function NewWorkspacePage() {
             treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
             otherwise it sits at full-contrast `text-foreground` beside the
             identity's dim muted text and reads louder than the page's actual
-            primary action. */}
+            primary action.
+
+            `performSignOut`, not the old bare `void signOut()`: that neither
+            awaited the sign-out nor navigated, so pressing Log out here signed
+            the user out and left them sitting on the create form. */}
         <Button
           type="button"
           variant="ghost"
           size="sm"
           className="text-muted-foreground hover:text-foreground shrink-0"
-          onClick={() => void signOut()}
+          disabled={signingOut}
+          onClick={() => {
+            setSigningOut(true);
+            void performSignOut();
+          }}
         >
-          Log out
+          {signingOut ? <Loading className="size-4 shrink-0" /> : null}
+          {signingOut ? 'Signing out' : 'Log out'}
         </Button>
       </div>
 
@@ -256,8 +316,8 @@ export function NewWorkspacePage() {
           RELOAD the create hook restarts at `status: 'idle'`, so `submitting`
           alone would paint the live form (Name input, `autoFocus`, fully
           interactive) in the window before `getProjectDetail` settles. A user
-          who reloaded mid-onboarding could type into it, and if `['accounts']`
-          resolved first, Enter fired a SECOND `runCreate`.
+          who reloaded mid-onboarding could type into it, and if the account
+          list resolved first, Enter fired a SECOND `runCreate`.
 
           The header lives INSIDE the form branch, not above the swap. It is
           the form's title — "Create a workspace" above a screen that is already
@@ -428,7 +488,42 @@ export function NewWorkspacePage() {
                   </p>
                 ) : null}
 
-                <AdvancedFields state={state} onChange={setState} />
+                {/* The `isForeignAccountList` case (`new-workspace-form.ts`) —
+                      2+ creatable accounts, none of them this user's own. Its
+                      only reachable trigger today is a LEGITIMATE user with no
+                      personal account (SAML JIT or a direct invite acceptance
+                      that bypassed the personal-account bootstrap gate), not a
+                      caching defect — see that function's own doc comment. Before
+                      this note the page went silent here: no picker (the top
+                      bar collapses to bare identity text), no "Create in" line,
+                      and a permanently disabled submit with nothing explaining
+                      why. Same treatment as the sibling message above —
+                      gated on `!accountsQuery.isLoading` for the same reason. */}
+                {!accountsQuery.isLoading && foreignAccountList ? (
+                  <p className="text-muted-foreground text-xs">
+                    We can't tell which of your accounts is yours, so we're not guessing.
+                    Email{' '}
+                    <a
+                      href="mailto:support@kortix.ai"
+                      className="text-foreground underline underline-offset-2"
+                    >
+                      support@kortix.ai
+                    </a>{' '}
+                    and we'll get it fixed.
+                  </p>
+                ) : null}
+
+                {/* `effectiveAccountId`, not `state.accountId`: the GitHub
+                      queries inside are account-scoped, and `state.accountId`
+                      is legitimately null for a single-account user (the
+                      picker hides itself below two accounts). Passing the raw
+                      value would leave those queries permanently disabled for
+                      exactly the users who have nothing to pick. */}
+                <AdvancedFields
+                  state={state}
+                  accountId={effectiveAccountId}
+                  onChange={setState}
+                />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">

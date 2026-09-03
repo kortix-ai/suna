@@ -668,8 +668,8 @@ flow(
 // read (the exact snapshot the web's "persisted-pin paint" instant-switch
 // fix reads) keeps serving that session's own mirrored data after its
 // runtime is stopped — proving the cached-paint read path works without a
-// live runtime. See the file header for why this is the session-detail read
-// and not `/transcript` (which deliberately degrades once stopped).
+// live runtime. The transcript route then serves the durable mirror rather
+// than attempting a live read from the stopped sandbox.
 flow(
   'SESS-24',
   {
@@ -870,12 +870,20 @@ flow(
     );
 
     await ctx.step(
-      "the live transcript read degrades gracefully (200, available:false) once stopped — it does not error, but it also does not keep serving live content",
+      "the stopped session's transcript read serves its durable mirror, not the stopped sandbox",
       async () => {
         const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
           params: { projectId: project.id, sessionId: sessionA.id },
         });
-        r.status(200).body().has('$.available', false);
+        r.status(200).body().has('$.available', true).has('$.source', 'mirror');
+        const body = r.json<any>();
+        const text = (body.messages ?? []).map((m: any) => m.text).join('\n');
+        if (!text.includes(markerA)) {
+          throw new Error(`session A's durable mirror lost its own marker: ${text}`);
+        }
+        if (text.includes(markerB)) {
+          throw new Error(`session A's durable mirror contains session B's marker: ${text}`);
+        }
       },
     );
 

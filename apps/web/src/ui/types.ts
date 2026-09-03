@@ -81,7 +81,7 @@ export interface Turn {
 // Tool rendering types (shared between web & mobile tool renderers)
 // ---------------------------------------------------------------------------
 
-export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk/turns';
+export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';
 
 /** Structured trigger data for the BasicTool wrapper. */
 export interface TriggerTitle {

@@ -1146,7 +1146,7 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
 // per-agent default (scope='agent', scope_key=agent_name) → the account default
 // (scope='account', scope_key='') → the platform default. The stored `model` is a
-// gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
+// gateway wire model (a bare managed id like 'glm-5.3-flash', a BYOK 'provider/model',
 // or 'codex/<id>') — never the synthetic `auto`.
 //
 // `project_id` (added 2026-07-18, see 20260718*_account_model_preferences_project_id.sql)
