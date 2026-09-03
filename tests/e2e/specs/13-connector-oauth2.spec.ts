@@ -98,8 +98,16 @@ test.describe("13 — Custom connector OAuth2", () => {
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/customize/connectors$`),
     );
+    // The header action is a "New" MENU now (`NewEntityMenu`), not a single
+    // button: "Create in chat" hands the job to an agent, "Add a custom
+    // connector" opens the form. The old top-level button is gone.
+    //
+    // The menu item's accessible name carries its description too — "Add a
+    // custom connector OpenAPI, Postman, GraphQL, MCP or HTTP." — so the
+    // regex must NOT anchor the end.
+    await page.getByRole("button", { name: /^New$/i }).click();
     await page
-      .getByRole("button", { name: /^Add a custom connector$/i })
+      .getByRole("menuitem", { name: /^Add a custom connector/i })
       .click();
     await expect(
       page.getByRole("dialog", { name: /^Add a custom connector$/i }),
