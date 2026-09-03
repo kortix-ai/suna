@@ -9,7 +9,7 @@ const html = () => renderToStaticMarkup(<SessionsTabView />);
 
 describe('SessionsTabView', () => {
   test('notifications lead, then sounds — one h2, the rest h3', () => {
-    expect(headings(html())).toEqual(['h2:Sessions', 'h3:Notifications', 'h3:Sounds']);
+    expect(headings(html())).toEqual(['h2:Notifications', 'h3:Browser notifications', 'h3:Sounds']);
   });
 
   test('a separator sits between the two sections', () => {

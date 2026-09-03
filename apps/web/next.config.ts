@@ -366,6 +366,30 @@ const nextConfig = (): NextConfig => ({
 
   async redirects() {
     return [
+      // Capability tabs moved under /customize/ (2026-09-03). The old
+      // top-level segments were shared in Slack, saved as bookmarks and baked
+      // into agent transcripts, so every one keeps resolving. `agent` became
+      // `agents`, `config` became `settings`; the rest kept their names.
+      {
+        source: '/projects/:id/agent/:path*',
+        destination: '/projects/:id/customize/agents/:path*',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/agent',
+        destination: '/projects/:id/customize/agents',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/config',
+        destination: '/projects/:id/customize/settings',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/:tab(skills|connectors|triggers|review|models|secrets)',
+        destination: '/projects/:id/customize/:tab',
+        permanent: false,
+      },
       // Decks moved from the single /presentation route to the /presentations
       // framework (index + one route per registered deck). The old paths were
       // shared in Slack and calendar invites, so they keep working.

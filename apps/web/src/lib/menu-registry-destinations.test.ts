@@ -254,9 +254,10 @@ describe('every palette row points at a live route', () => {
     expect(ROUTES.some((r) => r.join('/') === 'projects/[id]/files')).toBe(true);
   });
 
-  test('/projects/[id]/config is gone, so nothing may point at it', () => {
-    // The specific route this test exists because of.
-    expect(isLiveRoute('/projects/{projectId}/config?section=feature-flags')).toBe(false);
+  test('/projects/[id]/customize/settings is live again, so its row may point at it', () => {
+    // The route this test exists because of. It was deleted on 2026-09-02
+    // and brought back on 2026-09-03 with the Customize bar's Settings tab.
+    expect(isLiveRoute('/projects/{projectId}/customize/settings')).toBe(true);
   });
 
   for (const row of paletteRows.filter((item) => item.kind === 'navigate' && item.href)) {
@@ -270,23 +271,28 @@ describe('every palette row points at a live route', () => {
   }
 });
 
-describe('the retired /config sections are reached through the settings overlay', () => {
-  test('no registry row keeps a /config href', () => {
-    // Belt-and-braces over the loop above, and the assertion that names the
-    // path rather than the row: a NEW row pointing at `/config` fails here
-    // even if someone also re-adds the route.
-    const offenders = paletteRows
-      .filter((item) => item.href?.includes('/config'))
-      .map((item) => item.id);
-    expect(offenders).toEqual([]);
+describe('the /config sections are reached through the Settings tab rows', () => {
+  test('exactly the four section rows point at /config', () => {
+    // The Customize bar's Settings tab and its sections came back on
+    // 2026-09-03 (Marko) when the overlay's Workspace group was removed;
+    // Review stays a capability tab and has no `/config` row.
+    const rows = paletteRows
+      .filter((item) => item.href?.includes('/customize/settings'))
+      .map((item) => item.id)
+      .sort();
+    expect(rows).toEqual([
+      'proj-config-feature-flags',
+      'proj-config-general',
+      'proj-config-sandbox',
+      'proj-config-upgrades',
+    ]);
   });
 
-  test('Feature flags is reachable, and only as the derived settings row', () => {
-    // The row that answers "feature flag" now. It is derived from the rail
-    // (`settings-palette-items.ts`) and opens the in-palette picker through
-    // `SETTINGS_TAB_SUBMENU_PAGE`, never a URL — which is why it cannot rot
-    // the way the registry row did.
+  test('Feature flags is reachable as the Settings tab row', () => {
+    // The overlay's derived row is gone with its Workspace group; the
+    // registry row points at the live `/config?section=feature-flags`, which
+    // the route loop above proves exists.
     expect(SETTINGS_TAB_SUBMENU_PAGE['feature-flags']).toBe('flags');
-    expect(paletteRows.some((item) => item.id === 'proj-config-feature-flags')).toBe(false);
+    expect(paletteRows.some((item) => item.id === 'proj-config-feature-flags')).toBe(true);
   });
 });

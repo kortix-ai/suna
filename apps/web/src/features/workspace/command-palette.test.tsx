@@ -145,9 +145,10 @@ describe('offered tabs survive the panel filter', () => {
     }
   });
 
-  test('with NO project, only account-scoped tabs are offered', () => {
+  test('with NO project, every live tab is offered — all of them are personal', () => {
     const offered: string[] = tabsFor({ hasProject: false });
-    expect([...offered].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
+    expect([...offered].sort()).toEqual([...SETTINGS_TABS].sort());
+    for (const tab of offered) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
     // The project configuration tabs specifically — these were the ones the
     // old `Customize · X` entries offered from `/accounts/**`. They are not
     // offered from anywhere in this list now: they are `?section=` values on
@@ -184,7 +185,8 @@ describe('search terms carried across from the removed registry entries', () => 
     ['wallpaper', 'appearance'],
     ['hotkeys', 'preferences'],
     ['mute', 'sessions'],
-    ['oauth', 'connected'],
+    // `connected` left the overlay on 2026-09-03 — the account's GitHub App
+    // installations are the account page's Git tab.
     ['avatar', 'profile'],
     // API keys came back into the rail on 2026-08-18, so the two words that
     // name a person's own key answer HERE again, not on `account-tokens` —
@@ -331,7 +333,7 @@ describe('the registry no longer carries palette settings destinations', () => {
 
     // Nothing does any more. `nav-accounts` left this list when the account
     // surfaces moved to `/accounts/[id]`; `proj-customize` left it when
-    // project configuration moved to `/projects/[id]/config`. Every settings
+    // project configuration moved to `/projects/[id]/customize/settings`. Every settings
     // destination in the palette is either a derived row (which opens the
     // overlay by tab id, not by href) or a plain navigation.
     expect(resolved.map((entry) => entry.id).sort()).toEqual([]);
@@ -356,16 +358,21 @@ describe('the registry no longer carries palette settings destinations', () => {
     // rail.
     //
     // `proj-config-feature-flags` outlived the other two by a day. It was
-    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/config
+    // still shipping on 2026-09-03 with `href: '/projects/{projectId}/customize/settings
     // ?section=feature-flags'`, so typing "feature flag" offered it under
     // Navigation — above the derived row that works — and selecting it
     // navigated to a deleted route. `menu-registry-destinations.test.ts` now
     // checks every navigate row's href against the real `src/app` tree, which
     // is the check that would have caught it the day the route was deleted.
+    // The `proj-config-*` rows are BACK since 2026-09-03 (Marko): the
+    // Settings tab returned to the Customize bar and the overlay's Workspace
+    // group went, so these rows are the only way the palette reaches those
+    // sections. `menu-registry-destinations.test.ts` proves each href is a
+    // live route.
     for (const id of ['proj-config-general', 'proj-config-sandbox', 'proj-config-feature-flags']) {
       expect({ id, present: paletteItems.some((item) => item.id === id) }).toEqual({
         id,
-        present: false,
+        present: true,
       });
     }
 
@@ -408,7 +415,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     // because it is no longer a settings destination.
     // `resolveSettingsOverlayHref` must not claim its href — that is what
     // would re-open the retired overlay tabs.
-    const href = '/projects/{projectId}/triggers';
+    const href = '/projects/{projectId}/customize/triggers';
     const item = paletteItems.find((entry) => entry.id === 'proj-triggers');
     expect(item?.href).toBe(href);
     expect(item?.kind).toBe('navigate');

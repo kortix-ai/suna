@@ -83,11 +83,11 @@ test.describe("13 — Custom connector OAuth2", () => {
     const connectorsCard = page.getByRole("link", { name: /^Connectors/i });
     await expect(connectorsCard).toHaveAttribute(
       "href",
-      `/projects/${projectId}/connectors`,
+      `/projects/${projectId}/customize/connectors`,
     );
     await connectorsCard.click();
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${projectId}/connectors$`),
+      new RegExp(`/projects/${projectId}/customize/connectors$`),
     );
     await page
       .getByRole("button", { name: /^Add a custom connector$/i })

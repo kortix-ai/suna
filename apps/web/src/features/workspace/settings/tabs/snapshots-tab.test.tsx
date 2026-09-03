@@ -348,7 +348,7 @@ describe('SnapshotsTabView', () => {
 
   test('renders no pane heading of its own — SandboxTabView, mounted above it, owns the shared one', () => {
     // Snapshots merged into the Sandbox templates section on
-    // `/projects/[id]/config`. `SandboxTabView` carries the shared heading
+    // `/projects/[id]/customize/settings`. `SandboxTabView` carries the shared heading
     // (title, description, and the `/docs/work/runtime` Docs link) for the
     // whole merged pane; a second one here would be a duplicate, not a fix.
     const out = renderToStaticMarkup(<SnapshotsTabView />);

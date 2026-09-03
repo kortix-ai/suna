@@ -67,10 +67,10 @@ test('the Apps page cannot enable Apps — activation lives only in Feature flag
   expect(view).not.toContain('Enable Apps');
 
   // The shared screen links to the one place a flag can be flipped: the
-  // Settings overlay's Feature flags tab, through its deep-link route (the
-  // config page that held it was retired on 2026-09-02). A real link, not a
-  // store call.
-  expect(gate).toContain('/settings/feature-flags');
+  // Customize bar's Settings tab, Feature flags section — through the shared
+  // href builder, so the route can move without this link going stale. A
+  // real link, not a store call.
+  expect(gate).toContain("projectSettingsSectionHref(projectId, 'feature-flags')");
   expect(gate).not.toContain('useCustomizeStore');
   expect(gate).not.toContain('useSettingsPanelStore');
   expect(gate).toContain('Feature flags');

@@ -32,7 +32,8 @@ import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowLeftIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { isRailItemActive, railGroups } from './rail';
@@ -50,6 +51,11 @@ import { SandboxTab } from './tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
+import {
+  type AccountMembership,
+  accountRoleLabel,
+  useAccountMemberships,
+} from './tabs/account-memberships';
 import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
@@ -198,6 +204,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     [open, tab, membersTab],
   );
   const isMobile = useIsMobile();
+  const memberships = useAccountMemberships();
 
   // Mod+, lives with the panel, not with whatever row happens to link to it —
   // binding it here is what makes the keystroke work on every surface that
@@ -267,6 +274,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         accountId={resolvedAccountId}
         groups={groups}
         allItems={allItems}
+        organizations={memberships.accounts}
       />
     </SettingsNavProvider>
   );
@@ -286,6 +294,14 @@ export interface SettingsPanelViewProps {
   accountId: string | undefined;
   groups: readonly RailGroup[];
   allItems: readonly RailItem[];
+  /**
+   * The organizations the person belongs to, drawn under the Personal group
+   * as links to each one's own settings page (`/accounts/<id>`). Members,
+   * billing, roles and audit live THERE, not in this overlay (Marko,
+   * 2026-09-03) — the overlay is personal, and this list is the way over.
+   * Optional so the shell stays renderable without a query client.
+   */
+  organizations?: readonly AccountMembership[];
 }
 
 export function SettingsPanelView({
@@ -299,6 +315,7 @@ export function SettingsPanelView({
   accountId,
   groups,
   allItems,
+  organizations,
 }: SettingsPanelViewProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -329,7 +346,7 @@ export function SettingsPanelView({
         )}
       >
         <ModalTitle className="sr-only">
-          {project ? `Settings — ${project.name}` : 'Settings'}
+          {project ? `Preferences — ${project.name}` : 'Preferences'}
         </ModalTitle>
 
         <SettingsPanelShell
@@ -340,6 +357,7 @@ export function SettingsPanelView({
           accountId={accountId}
           groups={groups}
           allItems={allItems}
+          organizations={organizations}
         />
       </ModalContent>
     </Modal>
@@ -382,11 +400,13 @@ export function SettingsPanelShell({
   accountId,
   groups,
   allItems,
+  organizations = [],
 }: SettingsPanelShellProps) {
   // A heading over a lone group labels nothing — it is the only group, and the
   // dialog's own title already says Settings. It comes back the moment a
-  // second group does, which is the only case where the label does work.
-  const showGroupLabels = groups.length > 1;
+  // second group does — or the Organizations block, which is a second list
+  // under the same rail — which is the only case where the label does work.
+  const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
 
   return (
@@ -409,7 +429,7 @@ export function SettingsPanelShell({
     >
       {isMobile ? (
         <nav
-          aria-label="Settings"
+          aria-label="Preferences"
           className="border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
         >
           <FadedScrollArea
@@ -428,6 +448,20 @@ export function SettingsPanelShell({
                 </TabsTrigger>
               ))}
             </TabsList>
+            {organizations.length > 0
+              ? organizations.map((account) => (
+                  <ModalClose asChild key={account.account_id}>
+                    <Link
+                      href={`/accounts/${account.account_id}`}
+                      prefetch
+                      className="text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
+                    >
+                      {account.name?.trim() || 'Account'}
+                      <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
+                    </Link>
+                  </ModalClose>
+                ))
+              : null}
           </FadedScrollArea>
           <div className="flex shrink-0 items-center px-3">
             <ModalClose asChild>
@@ -465,7 +499,7 @@ export function SettingsPanelShell({
           </div>
 
           <nav
-            aria-label="Settings"
+            aria-label="Preferences"
             className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
             {groups.map((group) => (
@@ -494,6 +528,48 @@ export function SettingsPanelShell({
                 </TabsList>
               </div>
             ))}
+
+            {organizations.length > 0 ? (
+              /* The organizations the person belongs to. Each row LEAVES the
+                 overlay for that organization's own settings page — members,
+                 billing, roles, audit all live there — so it is a link that
+                 closes the dialog, not a tab. Same row footprint as the tabs
+                 above so the rail reads as one list with two kinds of row. */
+              <div>
+                <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+                  Organizations
+                </div>
+                <ul className="flex flex-col gap-0.5">
+                  {organizations.map((account) => (
+                    <li key={account.account_id}>
+                      <ModalClose asChild>
+                        <Link
+                          href={`/accounts/${account.account_id}`}
+                          prefetch
+                          className={cn(
+                            'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
+                            'text-foreground hover:bg-hover transition-colors',
+                          )}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{account.name?.trim() || 'Account'}</span>
+                            {accountRoleLabel(account.account_role) ? (
+                              <span className="text-muted-foreground block truncate text-xs">
+                                {accountRoleLabel(account.account_role)}
+                              </span>
+                            ) : null}
+                          </span>
+                          <ArrowUpRightIcon
+                            aria-hidden
+                            className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
+                          />
+                        </Link>
+                      </ModalClose>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </nav>
         </aside>
       )}
@@ -507,7 +583,7 @@ export function SettingsPanelShell({
             <Breadcrumb className="min-w-0 flex-1">
               <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
                 <BreadcrumbItem className="min-w-0">
-                  <span className="flex h-7 items-center px-2">Settings</span>
+                  <span className="flex h-7 items-center px-2">Preferences</span>
                 </BreadcrumbItem>
                 {activeItem ? (
                   <>
