@@ -402,3 +402,64 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });
+
+describe('buildSessionRuntimeEnv — subproject envelope', () => {
+  const SUBPROJECT = {
+    version: 1 as const,
+    slug: 'marketing',
+    name: 'Marketing',
+    description: 'Campaign work.',
+    instructions: 'Always write in British English.\n',
+    context: ['docs/brand.md', '.kortix/subprojects/marketing/'],
+    sessions: 'private' as const,
+  };
+
+  test('emits neither key for a plain session', () => {
+    const env = buildSessionRuntimeEnv(BASE_INPUT);
+    expect(env).not.toHaveProperty('KORTIX_SUBPROJECT');
+    expect(env).not.toHaveProperty('KORTIX_SUBPROJECT_CONTEXT');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, subproject: null })).toEqual(env);
+  });
+
+  test('emits the slug and the version-1 JSON envelope', () => {
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, subproject: SUBPROJECT });
+    expect(env.KORTIX_SUBPROJECT).toBe('marketing');
+    expect(JSON.parse(env.KORTIX_SUBPROJECT_CONTEXT)).toEqual(SUBPROJECT);
+  });
+
+  test('truncates instructions at 32 KB and keeps the whole envelope under 64 KB', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      subproject: { ...SUBPROJECT, instructions: 'x'.repeat(200_000) },
+    });
+    const parsed = JSON.parse(env.KORTIX_SUBPROJECT_CONTEXT);
+    expect(parsed.instructions.endsWith('\n…[truncated]')).toBe(true);
+    expect(Buffer.byteLength(parsed.instructions, 'utf8')).toBeLessThanOrEqual(32 * 1024);
+    expect(Buffer.byteLength(env.KORTIX_SUBPROJECT_CONTEXT, 'utf8')).toBeLessThanOrEqual(64 * 1024);
+    // The context paths survive the truncation — they are what the agent reads.
+    expect(parsed.context).toEqual(SUBPROJECT.context);
+  });
+
+  test('never splits a multi-byte character while truncating', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      subproject: { ...SUBPROJECT, instructions: '💡'.repeat(20_000) },
+    });
+    const parsed = JSON.parse(env.KORTIX_SUBPROJECT_CONTEXT);
+    expect(parsed.instructions).not.toContain('�');
+    expect(Buffer.byteLength(parsed.instructions, 'utf8')).toBeLessThanOrEqual(32 * 1024);
+  });
+
+  test('drops the context list before ever exceeding the 64 KB envelope cap', () => {
+    const env = buildSessionRuntimeEnv({
+      ...BASE_INPUT,
+      subproject: {
+        ...SUBPROJECT,
+        instructions: 'y'.repeat(32 * 1024),
+        context: Array.from({ length: 5_000 }, (_, i) => `docs/very-long-context-path-${i}.md`),
+      },
+    });
+    expect(Buffer.byteLength(env.KORTIX_SUBPROJECT_CONTEXT, 'utf8')).toBeLessThanOrEqual(64 * 1024);
+    expect(env.KORTIX_SUBPROJECT).toBe('marketing');
+  });
+});

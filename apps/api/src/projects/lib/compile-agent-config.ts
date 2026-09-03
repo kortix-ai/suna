@@ -51,6 +51,10 @@ import {
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
 import {
+  subprojectBlockFromManifest,
+  subprojectContextInstructions,
+} from './subproject-envelope';
+import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
   readRepoFile,
@@ -87,6 +91,12 @@ export interface OpencodeConfig {
    *  is a no-op until one exists. Reserved so a future field has somewhere to
    *  land without another signature change. */
   small_model?: string;
+  /** OpenCode top-level `instructions` — extra context files inlined into every
+   *  turn ALONGSIDE the agent's own prompt. Today only the session's subproject
+   *  contributes here (its `context[]`); omitted when there is nothing to add.
+   *  Never confuse this with an agent's `prompt`, which REPLACES OpenCode's
+   *  default system prompt. */
+  instructions?: string[];
   agent: Record<string, OpencodeAgentConfig>;
 }
 
@@ -289,6 +299,33 @@ export function compileSelectedAgentConfig(
 }
 
 /**
+ * Overlay the session's subproject `context[]` onto a compiled config as
+ * OpenCode top-level `instructions` (spec §7). Pure.
+ *
+ * The agent `prompt` is deliberately untouched: it REPLACES OpenCode's default
+ * system prompt, so folding standing context into it would silently rewrite
+ * every agent's behavior. `instructions` is additive and is exactly the
+ * mechanism the daemon already uses for the secret-capability guide.
+ *
+ * A slug that is not declared at this ref contributes nothing (no key), so an
+ * out-of-date session row can never break a compile.
+ */
+export function withSubprojectInstructions(
+  compiled: OpencodeConfig,
+  manifest: Record<string, unknown>,
+  slug: string | null | undefined,
+): OpencodeConfig {
+  const block = subprojectBlockFromManifest(manifest, slug);
+  if (!block?.context?.length) return compiled;
+  const existing = Array.isArray(compiled.instructions) ? compiled.instructions : [];
+  const instructions = [...existing];
+  for (const entry of subprojectContextInstructions(block.context)) {
+    if (!instructions.includes(entry)) instructions.push(entry);
+  }
+  return instructions.length > 0 ? { ...compiled, instructions } : compiled;
+}
+
+/**
  * Compile one agent: parse its `.md` (if supplied), copy every recognized
  * behavioral frontmatter field through unchanged, then overlay Kortix
  * governance — `enabled: false` forces `disable: true` (the one field where
@@ -486,6 +523,8 @@ export async function resolveCompiledAgentConfigForSession(
    * Falls back to the default branch, which is what every caller got before.
    */
   baseRef?: string | null,
+  /** The session's `project_sessions.subproject`, when it runs inside one. */
+  opts?: { subproject?: string | null },
 ): Promise<string | null> {
   const ref = baseRef?.trim() || project.defaultBranch;
   try {
@@ -528,7 +567,9 @@ export async function resolveCompiledAgentConfigForSession(
     );
 
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
-    return compiled ? JSON.stringify(compiled) : null;
+    return compiled
+      ? JSON.stringify(withSubprojectInstructions(compiled, raw, opts?.subproject))
+      : null;
   } catch (err) {
     console.warn(
       `[compile-agent-config] project ${project.projectId}: compile failed, session boots without a compiled agent config: ${(err as Error).message}`,
@@ -542,6 +583,8 @@ export async function resolveSelectedAgentConfigForSession(
   project: GitBackedProject,
   agentName: string,
   baseRef?: string | null,
+  /** The session's `project_sessions.subproject`, when it runs inside one. */
+  opts?: { subproject?: string | null },
 ): Promise<string> {
   const ref = baseRef?.trim() || project.defaultBranch;
   const candidates = manifestCandidatePaths(project.manifestPath).map(
@@ -572,5 +615,11 @@ export async function resolveSelectedAgentConfigForSession(
     if (!isRepoFileNotFoundError(err)) throw err;
   }
 
-  return JSON.stringify(compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles));
+  return JSON.stringify(
+    withSubprojectInstructions(
+      compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles),
+      raw,
+      opts?.subproject,
+    ),
+  );
 }

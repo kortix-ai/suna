@@ -54,3 +54,23 @@ describe('session runtime context boundaries', () => {
     ).toEqual({});
   });
 });
+
+describe('subproject env is server-owned', () => {
+  test('trusted internal extras cannot forge, move, or erase a subproject binding', () => {
+    const envelope = '{"version":1,"slug":"marketing"}';
+    // Forging one for a session the server put in no subproject.
+    expect(
+      mergeSessionSandboxEnv(
+        {},
+        { KORTIX_SUBPROJECT: 'marketing', KORTIX_SUBPROJECT_CONTEXT: envelope },
+      ),
+    ).toEqual({});
+    // Moving a session into a different subproject.
+    expect(
+      mergeSessionSandboxEnv(
+        { KORTIX_SUBPROJECT: 'marketing', KORTIX_SUBPROJECT_CONTEXT: envelope },
+        { KORTIX_SUBPROJECT: 'finance', KORTIX_SUBPROJECT_CONTEXT: '{"version":1,"slug":"finance"}' },
+      ),
+    ).toEqual({ KORTIX_SUBPROJECT: 'marketing', KORTIX_SUBPROJECT_CONTEXT: envelope });
+  });
+});

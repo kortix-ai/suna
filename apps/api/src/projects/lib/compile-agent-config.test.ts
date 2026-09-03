@@ -62,6 +62,7 @@ const {
   compileAgentConfig,
   resolveCompiledAgentConfigForSession,
   resolveSelectedAgentConfigForSession,
+  withSubprojectInstructions,
 } = await import('./compile-agent-config');
 type OpencodeConfig = Awaited<ReturnType<typeof compileAgentConfig>> & object;
 
@@ -692,5 +693,124 @@ describe('resolveSelectedAgentConfigForSession', () => {
     await expect(
       resolveSelectedAgentConfigForSession(PROJECT, 'missing', 'main'),
     ).rejects.toThrow('not declared');
+  });
+});
+
+// ─── subproject `context[]` → top-level `instructions` (spec §7) ────────────
+
+const SUBPROJECT_FIXTURE = `
+kortix_version: 2
+default_agent: support
+
+agents:
+  support:
+    workspace: runtime
+
+subprojects:
+  marketing:
+    name: Marketing
+    instructions: |
+      Always write in British English.
+    context:
+      - docs/brand.md
+      - .kortix/subprojects/marketing/
+      - docs/brand.md
+  bare:
+    name: Bare
+`;
+
+describe('withSubprojectInstructions', () => {
+  const compiled = { agent: { support: { prompt: 'Support body.' } } };
+
+  test('maps files through and a trailing-slash directory to a markdown glob', () => {
+    const out = withSubprojectInstructions(
+      compiled,
+      parseYaml(SUBPROJECT_FIXTURE),
+      'marketing',
+    );
+    expect(out.instructions).toEqual([
+      'docs/brand.md',
+      '.kortix/subprojects/marketing/**/*.md',
+    ]);
+  });
+
+  test('never rewrites the agent prompt — instructions are additive', () => {
+    const out = withSubprojectInstructions(
+      compiled,
+      parseYaml(SUBPROJECT_FIXTURE),
+      'marketing',
+    );
+    expect(out.agent.support.prompt).toBe('Support body.');
+    expect(compiled).not.toHaveProperty('instructions');
+  });
+
+  test('emits no key for no slug, an undeclared slug, or a subproject with no context', () => {
+    const manifest = parseYaml(SUBPROJECT_FIXTURE);
+    expect(withSubprojectInstructions(compiled, manifest, null)).not.toHaveProperty(
+      'instructions',
+    );
+    expect(withSubprojectInstructions(compiled, manifest, 'nope')).not.toHaveProperty(
+      'instructions',
+    );
+    expect(withSubprojectInstructions(compiled, manifest, 'bare')).not.toHaveProperty(
+      'instructions',
+    );
+  });
+
+  test('appends to instructions the config already declares, without duplicating', () => {
+    const out = withSubprojectInstructions(
+      { ...compiled, instructions: ['docs/brand.md'] },
+      parseYaml(SUBPROJECT_FIXTURE),
+      'marketing',
+    );
+    expect(out.instructions).toEqual([
+      'docs/brand.md',
+      '.kortix/subprojects/marketing/**/*.md',
+    ]);
+  });
+});
+
+describe('subproject instructions through the I/O resolvers', () => {
+  test('resolveCompiledAgentConfigForSession emits them when the session names a subproject', async () => {
+    manifestFile = { path: 'kortix.yaml', content: SUBPROJECT_FIXTURE };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' };
+
+    const withSub = JSON.parse(
+      (await resolveCompiledAgentConfigForSession(PROJECT, 'main', {
+        subproject: 'marketing',
+      }))!,
+    );
+    expect(withSub.instructions).toEqual([
+      'docs/brand.md',
+      '.kortix/subprojects/marketing/**/*.md',
+    ]);
+    expect(withSub.agent.support.prompt).toBe('Support body.');
+
+    const without = JSON.parse((await resolveCompiledAgentConfigForSession(PROJECT, 'main'))!);
+    expect(without).not.toHaveProperty('instructions');
+    expect(
+      JSON.parse(
+        (await resolveCompiledAgentConfigForSession(PROJECT, 'main', { subproject: 'gone' }))!,
+      ),
+    ).not.toHaveProperty('instructions');
+  });
+
+  test('resolveSelectedAgentConfigForSession emits them for a restricted session too', async () => {
+    manifestFile = { path: 'kortix.yaml', content: SUBPROJECT_FIXTURE };
+    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' };
+
+    const compiled = JSON.parse(
+      await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main', {
+        subproject: 'marketing',
+      }),
+    );
+    expect(compiled.instructions).toEqual([
+      'docs/brand.md',
+      '.kortix/subprojects/marketing/**/*.md',
+    ]);
+    expect(compiled.agent.support.prompt).toBe('Support body.');
+    expect(
+      JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main')),
+    ).not.toHaveProperty('instructions');
   });
 });

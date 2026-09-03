@@ -59,6 +59,7 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from './secret-capabilities'
+import { writeSubprojectInstruction } from './subproject'
 
 const READY_POLL_MS = 100
 /** How long the post-respawn turn finalize waits for opencode to answer again.
@@ -244,6 +245,7 @@ export async function buildOpencodeConfigContent(
   opts: {
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    subprojectInstructionPath?: string | null
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -294,6 +296,13 @@ export async function buildOpencodeConfigContent(
   const secretCapabilitiesInstructionPath =
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
+      : null
+  // (6) The session's subproject guide (subproject.ts). Same mechanism as #5:
+  // an extra `instructions` file, appended after whatever the project config
+  // and the compiled agent config already declare.
+  const subprojectInstructionPath =
+    opts.subprojectInstructionPath && existsSync(opts.subprojectInstructionPath)
+      ? opts.subprojectInstructionPath
       : null
   // Native mode (no gateway): the session's model pin still has to reach
   // opencode's config — without an explicit `model`, opencode's default is
@@ -352,13 +361,12 @@ export async function buildOpencodeConfigContent(
   }
   const out: Record<string, unknown> = { ...base }
 
-  if (secretCapabilitiesInstructionPath) {
+  for (const path of [secretCapabilitiesInstructionPath, subprojectInstructionPath]) {
+    if (!path) continue
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
       : []
-    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
-      ? instructions
-      : [...instructions, secretCapabilitiesInstructionPath]
+    out.instructions = instructions.includes(path) ? instructions : [...instructions, path]
   }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
@@ -796,11 +804,13 @@ export async function writeKortixOpencodeConfig(
     configPath?: string
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    subprojectInstructionPath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    subprojectInstructionPath: opts.subprojectInstructionPath,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -1924,10 +1934,21 @@ export function createOpencodeSupervisor(
         err: err instanceof Error ? err.message : String(err),
       })
     }
+    let subprojectInstructionPath: string | null = null
+    try {
+      // Null for an ordinary session (no KORTIX_SUBPROJECT_CONTEXT); the
+      // config then declares no subproject instructions at all.
+      subprojectInstructionPath = writeSubprojectInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] subproject instruction file unavailable; session continues without it', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
       secretCapabilitiesInstructionPath,
+      subprojectInstructionPath,
     })
   }
 
