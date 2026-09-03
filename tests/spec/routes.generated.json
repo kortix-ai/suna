@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 637,
+  "count": 639,
   "routes": [
     {
       "method": "GET",
@@ -2221,6 +2221,14 @@
     {
       "method": "GET",
       "path": "/v1/public/session-shares/:shareId/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/subprojects"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/subprojects/:slug"
     },
     {
       "method": "POST",

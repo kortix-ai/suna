@@ -81,6 +81,7 @@ const MARKETING_SOURCES = {
   careers: 'apps/web/src/app/(public)/(seo)/careers/page.tsx',
   changelog: 'apps/web/src/app/(public)/(seo)/changelog/page.tsx',
   blog: 'apps/web/src/app/(public)/(seo)/blog/page.tsx',
+  marketplace: 'apps/web/src/app/(public)/(seo)/marketplace/page.tsx',
   'use-cases': 'apps/web/src/app/(public)/(seo)/use-cases/page.tsx',
   download: 'apps/web/src/app/(public)/download/page.tsx',
   help: 'apps/web/src/app/(utility)/help/page.tsx',

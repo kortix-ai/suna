@@ -159,8 +159,15 @@ export function serializeSubproject(row: SubprojectRow & { fileCount?: number })
 }
 
 export interface ListSubprojectsInput {
-  /** The account browsing. Its own account-scoped subprojects are visible to it. */
-  accountId: string;
+  /**
+   * The account browsing. Its own account-scoped subprojects are visible to it.
+   *
+   * Omit it (or pass null) for the ANONYMOUS public catalogue — the listing then
+   * narrows to `public` + `active` and nothing else. That is what
+   * `GET /v1/public/subprojects` passes: there is no account to scope to, and
+   * the public marketplace must never widen past the curated rows.
+   */
+  accountId?: string | null;
   /**
    * The user browsing, for `visibility = 'private'` rows. Omit it and this
    * listing hides every private row in the account, including the caller's own
@@ -195,18 +202,27 @@ export interface ListSubprojectsInput {
 export async function listSubprojects(
   input: ListSubprojectsInput,
 ): Promise<{ items: SubprojectRecord[]; total: number }> {
-  const ownAccount = and(
-    eq(subprojects.accountId, input.accountId),
-    or(
-      sql`${subprojects.visibility} <> 'private'`,
-      isNull(subprojects.submittedBy),
-      input.userId ? eq(subprojects.submittedBy, input.userId) : sql`false`,
-    ),
+  const publicActive = and(
+    eq(subprojects.visibility, 'public'),
+    eq(subprojects.status, 'active'),
   ) as SQL;
-  const visible = or(
-    and(eq(subprojects.visibility, 'public'), eq(subprojects.status, 'active')),
-    ownAccount,
-  ) as SQL;
+  const accountId = input.accountId;
+  // No account = the anonymous public catalogue. Narrow to the public clause
+  // rather than dropping the account clause from an `or`, which would widen the
+  // listing to every row in the table.
+  const visible = accountId
+    ? (or(
+        publicActive,
+        and(
+          eq(subprojects.accountId, accountId),
+          or(
+            sql`${subprojects.visibility} <> 'private'`,
+            isNull(subprojects.submittedBy),
+            input.userId ? eq(subprojects.submittedBy, input.userId) : sql`false`,
+          ),
+        ),
+      ) as SQL)
+    : publicActive;
   const notYanked = sql`${subprojects.status} <> 'yanked'`;
   const term = input.q?.trim();
   const search = term
@@ -242,6 +258,33 @@ export async function listSubprojects(
     ),
     total: counted[0]?.n ?? 0,
   };
+}
+
+/**
+ * One PUBLIC subproject by slug, or null — the anonymous detail read behind
+ * `/marketplace/<slug>`.
+ *
+ * `visibility` and `status` are in the WHERE clause, not left to the caller,
+ * because this is the one reader with no authenticated actor to check against:
+ * a route that forgot the check would publish an account's private subproject.
+ * `slug` is not globally unique (two accounts may submit the same repo name), so
+ * this orders the same way the listing does and takes one row — the public
+ * catalogue's own slugs are unique among public rows.
+ */
+export async function getPublicSubprojectBySlug(slug: string): Promise<SubprojectRecord | null> {
+  const [row] = await db
+    .select(SUBPROJECT_CARD_COLUMNS)
+    .from(subprojects)
+    .where(
+      and(
+        eq(subprojects.slug, slug),
+        eq(subprojects.visibility, 'public'),
+        eq(subprojects.status, 'active'),
+      ),
+    )
+    .orderBy(desc(subprojects.installCount), desc(subprojects.createdAt))
+    .limit(1);
+  return row ? serializeSubproject(row as unknown as SubprojectRow & { fileCount: number }) : null;
 }
 
 /** One subproject by id, or null. Visibility is the caller's to enforce. */

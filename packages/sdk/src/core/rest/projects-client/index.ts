@@ -35,6 +35,7 @@ export * from './presentations';
 export * from './review';
 export * from './sandbox-shares';
 export * from './public-session-shares';
+export * from './public-subprojects';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';

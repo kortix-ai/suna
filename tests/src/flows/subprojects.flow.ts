@@ -162,6 +162,8 @@ flow(
       'GET /v1/subprojects',
       'GET /v1/subprojects/:subprojectId',
       'DELETE /v1/subprojects/:subprojectId',
+      'GET /v1/public/subprojects',
+      'GET /v1/public/subprojects/:slug',
     ],
   },
   async (ctx) => {
@@ -327,6 +329,35 @@ flow(
     await ctx.step('and reading it directly by id → 404, never 403', async () => {
       // A 403 would confirm the id exists, which is itself the leak.
       const r = await ctx.client.as(ctx.P.NONMEMBER).get(`/v1/subprojects/${subprojectId}`);
+      r.status(404);
+    });
+
+    // The public catalogue behind /marketplace. Unauthenticated, and narrowed to
+    // `visibility = 'public' AND status = 'active'` in the store's WHERE clause —
+    // so the private subproject this flow just submitted must not appear on it.
+    await ctx.step('the PUBLIC catalogue reads with no auth at all → 200', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/public/subprojects');
+      r.status(200);
+      r.headerEquals('cache-control', 'public, max-age=300, must-revalidate');
+      r.headerExists('etag');
+      if (r.json().subprojects?.some((c: any) => c.subproject_id === subprojectId)) {
+        throw new Error('a private subproject leaked into the anonymous public catalogue');
+      }
+    });
+
+    await ctx.step('the public catalogue revalidates → 304 on a matching ETag', async () => {
+      const first = await ctx.client.as(ctx.P.ANON).get('/v1/public/subprojects');
+      first.status(200);
+      const again = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/public/subprojects', { headers: { 'if-none-match': first.header('etag')! } });
+      again.status(304);
+    });
+
+    await ctx.step('a private slug on the public route → 404, never 403', async () => {
+      // 403 would confirm the slug exists. To an anonymous visitor a private
+      // subproject and a nonexistent one must be indistinguishable.
+      const r = await ctx.client.as(ctx.P.ANON).get(`/v1/public/subprojects/${slug}`);
       r.status(404);
     });
 

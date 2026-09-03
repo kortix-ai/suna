@@ -30,7 +30,34 @@ function markdownEntry(pathname: string, lastModified?: string): SitemapEntry {
   };
 }
 
-export default function sitemap(): MetadataRoute.Sitemap {
+/**
+ * Every public subproject's detail page — `/marketplace/<slug>`.
+ *
+ * These are the only sitemap entries that come from the DATABASE rather than
+ * from a committed record, so this is the only part of the sitemap that can fail
+ * because a service is down. It swallows that failure: a sitemap missing the
+ * catalogue is a crawl the index page still leads to, while a throw here means
+ * NO sitemap at all and every other URL disappears with it.
+ *
+ * The loader is imported dynamically, inside the try, because it carries
+ * `server-only` — a module that throws on import outside a server component
+ * graph, which is every `bun test` run of this file. The dynamic form makes that
+ * the same fail-closed path as an unreachable API.
+ */
+async function subprojectEntries(): Promise<SitemapEntry[]> {
+  try {
+    const { loadPublicSubprojects } =
+      await import('@/features/subprojects/public-subprojects-server');
+    const subprojects = await loadPublicSubprojects();
+    return subprojects.map((subproject) =>
+      htmlEntry(`/marketplace/${subproject.slug}`, subproject.updated_at),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const includeUseCases = areUseCasesPublic();
   const records = getPublicContentRecords({ includeUseCases });
   const entries = new Map<string, SitemapEntry>();
@@ -68,6 +95,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
       const markdown = markdownEntry(record.markdownPath, record.lastModified);
       entries.set(markdown.url, markdown);
     }
+  }
+
+  for (const entry of await subprojectEntries()) {
+    entries.set(entry.url, entry);
   }
 
   for (const pathname of ['/llms.txt', '/llms-full.txt']) {

@@ -1035,6 +1035,14 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
+// Public subproject catalogue — PUBLIC, no gate at all. Anonymous read of the
+// curated `visibility = 'public'` subprojects behind the /marketplace SEO pages.
+// A separate app because `subprojectsApp` mounts `combinedAuth` on `/*`; the
+// public/private split is the mount, not a branch inside a handler. Narrowing to
+// public + active lives in the store's WHERE clause.
+import { publicSubprojectsApp } from './public-subprojects';
+app.route('/v1/public/subprojects', publicSubprojectsApp); // /v1/public/subprojects[/:slug]
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
