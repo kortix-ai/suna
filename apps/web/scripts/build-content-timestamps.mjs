@@ -84,8 +84,6 @@ const MARKETING_SOURCES = {
   marketplace: 'apps/web/src/app/(public)/(seo)/marketplace/page.tsx',
   'use-cases': 'apps/web/src/app/(public)/(seo)/use-cases/page.tsx',
   download: 'apps/web/src/app/(public)/download/page.tsx',
-  help: 'apps/web/src/app/(utility)/help/page.tsx',
-  'help/credits': 'apps/web/src/app/(utility)/help/credits/page.tsx',
 };
 
 function gitAvailable() {

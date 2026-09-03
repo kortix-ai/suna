@@ -57,7 +57,7 @@ describe('STANDALONE_DEFAULT_SETTINGS_TAB', () => {
 
   test('the project-scoped default is reachable with no project too', () => {
     // The two constants converged when project configuration left the overlay
-    // for `/projects/[id]/config`: `DEFAULT_SETTINGS_TAB` was `general`, the
+    // for `/projects/[id]/customize/settings`: `DEFAULT_SETTINGS_TAB` was `general`, the
     // project workspace tab, and is `profile` now. They stay separate
     // constants because they answer different questions — what the panel opens
     // on, and what the project-less route opens on — and a future

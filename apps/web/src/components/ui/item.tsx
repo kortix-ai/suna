@@ -38,6 +38,7 @@ const itemVariants = cva(
         default: "bg-transparent",
         outline: "border-border",
         muted: "bg-muted/50",
+        warning: "border-kortix-orange bg-kortix-orange/20",
       },
       size: {
         default: "gap-4 p-4",

@@ -174,7 +174,13 @@ describe('CapabilityTabs gate wiring', () => {
     const body = code(source);
     const barStart = body.indexOf('export function CapabilityTabs');
     const bar = body.slice(barStart);
-    expect(bar).toContain('{tabs.map((tab) => (');
+    // Two groups (Agents + Skills, then the library) with a seam between —
+    // both carved from the GATED `tabs`, never from CAPABILITY_TABS.
+    expect(bar).toContain('tabs.filter((tab) => !TRAILING_TABS.includes(tab.key))');
+    expect(bar).toContain('leading.filter((tab) => PRIMARY_TABS.includes(tab.key))');
+    expect(bar).toContain('leading.filter((tab) => !PRIMARY_TABS.includes(tab.key))');
+    expect(bar).toContain('{primary.map(renderTab)}');
+    expect(bar).toContain('{library.map(renderTab)}');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
     expect(bar).not.toContain('CAPABILITY_TABS.map');
     // One flat map, no trailing group. The bar had a `TRAILING_TABS` split

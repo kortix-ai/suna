@@ -18,7 +18,7 @@ const html = () => renderToStaticMarkup(<PreferencesTabView />);
  * its own file. Language leads here (Jay: "in the preferences we need to show
  * the language selection for the whole app").
  */
-const EXPECTED_HEADINGS = ['h2:Preferences', 'h3:Language', 'h3:Keyboard shortcuts'];
+const EXPECTED_HEADINGS = ['h2:Language &amp; shortcuts', 'h3:Language', 'h3:Keyboard shortcuts'];
 
 describe('PreferencesTabView', () => {
   test('language leads — it is the first section heading, right after the pane heading', () => {
@@ -27,7 +27,7 @@ describe('PreferencesTabView', () => {
 
   test('the pane title outranks its sections — one h2, the rest h3', () => {
     const found = headings(html());
-    expect(found.filter((h) => h.startsWith('h2:'))).toEqual(['h2:Preferences']);
+    expect(found.filter((h) => h.startsWith('h2:'))).toEqual(['h2:Language &amp; shortcuts']);
     expect(found.filter((h) => h.startsWith('h3:'))).toHaveLength(2);
   });
 

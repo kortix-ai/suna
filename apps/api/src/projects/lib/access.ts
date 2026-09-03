@@ -287,7 +287,12 @@ export async function loadVisibleSession(
   ) {
     canManageProject = loaded.actor
       ? (
-          await authorize(loaded.actor, 'project.members.manage', {
+          // `project.trigger.update`, not `project.members.manage` (Marko,
+          // 2026-09-03: "wtf, based on members.manage you get access to the
+          // triggered sessions"). Whoever may change what a trigger does may
+          // read what it produced; administering people is a different power
+          // and must not unlock session content.
+          await authorize(loaded.actor, 'project.trigger.update', {
             type: 'project',
             id: loaded.row.projectId,
           })

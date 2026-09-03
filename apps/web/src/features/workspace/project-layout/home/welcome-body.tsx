@@ -1,14 +1,17 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { resolveConfettiFace } from '@/lib/confetti-identity';
 import { useProjectIcon, useProjectName } from '@kortix/sdk/react';
-import { ProjectHomeSections } from './project-home-sections';
-import { StarterPromptBand } from './starter-prompt-band';
+import {
+  HOME_GREETINGS,
+  HOME_GREETING_STORAGE_KEY,
+  greetingIndexFor,
+  spaceBefore,
+} from './home-greeting';
 
 /**
  * The project-home empty state: ONE centred column.
@@ -77,7 +80,6 @@ export function ProjectHomeWelcomeBody({
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
 }) {
-  const tI18nHardcoded = useTranslations('hardcodedUi');
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
   // The SAME `qk.project.detail(projectId)` entry `useProjectName` reads, so
@@ -104,6 +106,25 @@ export function ProjectHomeWelcomeBody({
   // slot — "this project" is a description wearing a name's highlight, and it
   // stretches the line for a case where we know the least.
   const displayName = name.trim() || 'it';
+  // Variant 0 on the server and through hydration; the stored visit count
+  // picks the real one before first paint. See `home-greeting.ts`.
+  const [greeting, setGreeting] = useState(HOME_GREETINGS[0]);
+  useLayoutEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(HOME_GREETING_STORAGE_KEY);
+      // A layout effect on purpose: the swap has to land before first paint,
+      // and the value cannot be read during render (no window on the server).
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setGreeting(HOME_GREETINGS[greetingIndexFor(stored)]);
+      const n = Number.parseInt(stored ?? '', 10);
+      window.localStorage.setItem(
+        HOME_GREETING_STORAGE_KEY,
+        String(Number.isFinite(n) && n >= 0 ? n + 1 : 1),
+      );
+    } catch {
+      // Storage blocked (private mode, an in-app WebView): variant 0 stays.
+    }
+  }, []);
 
   return (
     <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -151,7 +172,7 @@ export function ProjectHomeWelcomeBody({
             keeps the last line off a single orphan word.
           */}
           <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
-            Give{' '}
+            {greeting.before}{' '}
             {/*
               A real <button>, not a <span> with an onClick: this is the only
               interactive thing in the heading, and it has to be reachable by
@@ -197,10 +218,9 @@ export function ProjectHomeWelcomeBody({
               // Same colour, no affordance: the name still carries the
               // sentence's one highlight, it just is not pressable.
               <span className="text-foreground">{displayName}</span>
-            )}{' '}
-            {tI18nHardcoded.raw(
-              'autoFeaturesCoWorkerProjectLayoutProjectHomeJsxTextSomething18ab9904',
             )}
+            {spaceBefore(greeting.after) ? ' ' : ''}
+            {greeting.after}
           </h1>
 
           {/* Keyed on the press count, so each press is a fresh mount and a
@@ -220,23 +240,13 @@ export function ProjectHomeWelcomeBody({
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
         </div>
 
-        {/* ONE slot, two occupants. The checklist owns it while there are open
-            setup steps; the starter prompts own it once there are not —
-            dismissed, all finished, or every step denied by IAM. They wear the
-            same panel and the same row rail (`./band.ts`), so this reads as one
-            thing changing its contents rather than two panels taking turns.
-
-            The prompts used to be a row of pills under the composer, and had
-            been commented out rather than deleted. A slot that is empty for
-            most returning users, and a second shape for the same job in the
-            same column, were both fixed by moving them here.
-
-            Gated on `onPickSuggestion`: a host with nowhere to put a picked
-            prompt gets no prompts. The instant session shell is that host. */}
-        <ProjectHomeSections
-          projectId={projectId}
-          fallback={onPickSuggestion ? <StarterPromptBand onPick={onPickSuggestion} /> : undefined}
-        />
+        {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
+            have the chat input there & that's it"). The "Get started" setup
+            checklist (`ProjectHomeSections`) and the "Start with" starter
+            prompts (`StarterPromptBand`) both used to fill this slot; both
+            components still exist for hosts that want them, and the setup
+            steps stay reachable from Customize. `onPickSuggestion` stays on
+            the props so those hosts keep their contract. */}
       </div>
     </div>
   );

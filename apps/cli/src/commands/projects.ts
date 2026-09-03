@@ -205,7 +205,7 @@ A flag is a stable key (e.g. apps, voice, llm_gateway). State is stored on
 the project row, never in kortix.yaml.
 
 Subcommands:
-  ls                    List every flag: key, state, origin, stability. (--json)
+  ls                    List every flag: key, state, origin. (--json)
   enable <flag>         Set the project override to ON.
   disable <flag>        Set the project override to OFF.
   reset <flag>          Remove the override; the flag follows the platform default.
@@ -252,7 +252,7 @@ function printFeatureTable(rows: FeatureFlagRow[]): void {
         : `${C.dim}off  ${C.reset}`;
     const origin = !r.available ? 'unavailable' : r.overridden ? 'override' : 'default';
     process.stdout.write(
-      `  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${pad(r.stability, 13)}${r.name}\n`,
+      `  ${pad(r.key, keyW)}  ${state}  ${pad(origin, 10)}  ${r.name}\n`,
     );
   }
   process.stdout.write('\n');

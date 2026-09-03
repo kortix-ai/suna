@@ -216,7 +216,7 @@ function SandboxAlertContent({
   // unhealthy, which is the worst moment to reboot the SPA.
   // The Settings overlay's Sandbox templates tab, via its deep-link route —
   // the config page this pointed at was retired on 2026-09-02.
-  const sandboxSectionHref = `/projects/${projectId}/settings/sandbox`;
+  const sandboxSectionHref = `/projects/${projectId}/config?section=sandbox`;
   const { retry, fixWithAgent } = useSandboxRecovery(projectId);
   // The alert TEXT is information a plain member needs — "new sessions can't
   // start until this image builds" explains why the composer is refusing them.

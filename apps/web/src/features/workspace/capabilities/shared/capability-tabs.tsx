@@ -16,6 +16,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import {
   CAPABILITY_TABS,
+  PRIMARY_TABS,
   activeCapabilityTab,
   capabilityTabHref,
   type CapabilityTab,
@@ -182,6 +183,26 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * proper. `MembersLaunchLink` keeps its `ml-auto` and is the only trailing
  * element.
  */
+/**
+ * The hairline between Agents and everything an agent draws on (Skills
+ * through Secrets). One `TabsList` still —
+ * this is a `span`, not a second list, so the underline indicator and the
+ * keyboard roving stay unified. It is `aria-hidden` because the grouping is
+ * visual: a screen reader walks seven tabs either way.
+ */
+/**
+ * Settings trails the row, on the right, after the Members link — one
+ * `TabsList`, so the underline indicator, keyboard roving and `role="tablist"`
+ * stay unified; only the visual position of this tab changes. It reads as
+ * "how the project is configured", a different register from the build-the-
+ * agent tabs to its left, and the gap says so without a second list.
+ */
+const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
+
+function GroupSeam() {
+  return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
+}
+
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const activeKey = activeCapabilityTab(pathname);
@@ -193,6 +214,18 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
   const flags = useCapabilityTabFlags(projectId);
   const tabs = visibleCapabilityTabs(caps, flags);
+
+  const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
+  const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
+  const library = leading.filter((tab) => !PRIMARY_TABS.includes(tab.key));
+  const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
+  const renderTab = (tab: CapabilityTab) => (
+    <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
+      <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+        {tab.label}
+      </Link>
+    </TabsTrigger>
+  );
 
   return (
     <div
@@ -207,19 +240,13 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           size="lg"
           className="h-auto w-full justify-start gap-5 border-b-0 px-2"
         >
-          {tabs.map((tab) => (
-            <TabsTrigger
-              key={tab.key}
-              value={tab.key}
-              asChild
-              className="w-fit flex-none px-1 py-3"
-            >
-              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                {tab.label}
-              </Link>
-            </TabsTrigger>
-          ))}
+          {primary.map(renderTab)}
+          {/* The seam only earns its pixel when both groups are drawn — a
+              role that holds only Agents gets no dangling bar. */}
+          {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
+          {library.map(renderTab)}
           <MembersLaunchLink projectId={projectId} />
+          {trailing.map(renderTab)}
         </TabsList>
       </Tabs>
     </div>

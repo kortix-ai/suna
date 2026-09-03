@@ -914,7 +914,12 @@ async function authorizeGitProxyUncached(
     return {
       ok: true,
       project,
-      principal: sessionPrincipal ?? { kind: 'user', userId: result.userId ?? null },
+      principal:
+        sessionPrincipal ?? {
+          kind: 'user',
+          userId: result.userId ?? null,
+          tokenId: result.tokenId ?? null,
+        },
     };
   }
 

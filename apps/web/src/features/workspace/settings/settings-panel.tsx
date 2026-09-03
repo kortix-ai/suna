@@ -32,7 +32,8 @@ import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
 import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowLeftIcon } from '@phosphor-icons/react';
+import { ArrowLeftIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
+import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import { isRailItemActive, railGroups } from './rail';
@@ -40,6 +41,7 @@ import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
 import { AppearanceTab } from './tabs/appearance-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
+import { CreditsTab } from './tabs/credits-tab';
 import { ExperimentalTab } from './tabs/experimental-tab';
 import { GeneralTab } from './tabs/general-tab';
 import { PlanTab } from './tabs/plan-tab';
@@ -49,6 +51,11 @@ import { SandboxTab } from './tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
+import {
+  type AccountMembership,
+  accountRoleLabel,
+  useAccountMemberships,
+} from './tabs/account-memberships';
 import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
@@ -79,6 +86,11 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // see `tabs/tokens-tab.tsx`), but never in one project, so this renders with
   // or without a project open like the three above it.
   'tokens',
+  // Same scope as `plan` below — one wallet per account, read through the same
+  // resolved id — so it renders wherever `plan` does. Listed before it, in the
+  // rail's own order, because `command-palette.test.tsx` asserts this array
+  // equals `PALETTE_ACCOUNT_SCOPED_TABS` element for element.
+  'credits',
   // The plan is the ACCOUNT's, and the account is resolved the same way the
   // Tokens pane resolves it (`useSettingsAccountId`), so it renders with or
   // without a project too.
@@ -92,9 +104,10 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
 ];
 
 /**
- * The two Workspace rows that gate on an IAM read leaf, keyed to the
- * `CustomizeSection` the config page gates the same pane on
- * (`project-settings-sections.ts`). `workspace` (General) is not here: every
+ * The three Workspace rows that gate on an IAM read leaf, keyed to the
+ * `CustomizeSection` the retired config page gated the same pane on — the
+ * section keys outlived that page and live in `lib/project-actions.ts`.
+ * `workspace` (General) is not here: every
  * member may see the workspace's name and icon, and `GeneralTab` gates its own
  * controls on write.
  */
@@ -140,9 +153,9 @@ export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | un
  * Connected accounts are user-scoped, so they render with or without a
  * project. The per-section IAM probe this used to run
  * (`GATED_TAB_SECTION` -> `isCustomizeSectionVisible`) went with the
- * project-configuration tabs it gated — those live at
- * `/projects/[id]/config` now, and that page runs the identical probe over
- * the identical leaves (`capabilities/project-settings/`).
+ * project-configuration tabs it gated. Most of those are capability pages now
+ * (`capabilities/`), which run their own probes; the four that came back to
+ * this overlay are gated here again, by `PROJECT_GATED_TABS` above.
  *
  * The function stays because the CONCEPT stays: a tab added here must declare
  * whether it needs a project, and the command palette mirrors this decision
@@ -191,6 +204,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
     [open, tab, membersTab],
   );
   const isMobile = useIsMobile();
+  const memberships = useAccountMemberships();
 
   // Mod+, lives with the panel, not with whatever row happens to link to it —
   // binding it here is what makes the keystroke work on every surface that
@@ -260,6 +274,7 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         accountId={resolvedAccountId}
         groups={groups}
         allItems={allItems}
+        organizations={memberships.accounts}
       />
     </SettingsNavProvider>
   );
@@ -279,6 +294,14 @@ export interface SettingsPanelViewProps {
   accountId: string | undefined;
   groups: readonly RailGroup[];
   allItems: readonly RailItem[];
+  /**
+   * The organizations the person belongs to, drawn under the Personal group
+   * as links to each one's own settings page (`/accounts/<id>`). Members,
+   * billing, roles and audit live THERE, not in this overlay (Marko,
+   * 2026-09-03) — the overlay is personal, and this list is the way over.
+   * Optional so the shell stays renderable without a query client.
+   */
+  organizations?: readonly AccountMembership[];
 }
 
 export function SettingsPanelView({
@@ -292,6 +315,7 @@ export function SettingsPanelView({
   accountId,
   groups,
   allItems,
+  organizations,
 }: SettingsPanelViewProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -322,7 +346,7 @@ export function SettingsPanelView({
         )}
       >
         <ModalTitle className="sr-only">
-          {project ? `Settings — ${project.name}` : 'Settings'}
+          {project ? `Preferences — ${project.name}` : 'Preferences'}
         </ModalTitle>
 
         <SettingsPanelShell
@@ -333,6 +357,7 @@ export function SettingsPanelView({
           accountId={accountId}
           groups={groups}
           allItems={allItems}
+          organizations={organizations}
         />
       </ModalContent>
     </Modal>
@@ -375,11 +400,13 @@ export function SettingsPanelShell({
   accountId,
   groups,
   allItems,
+  organizations = [],
 }: SettingsPanelShellProps) {
   // A heading over a lone group labels nothing — it is the only group, and the
   // dialog's own title already says Settings. It comes back the moment a
-  // second group does, which is the only case where the label does work.
-  const showGroupLabels = groups.length > 1;
+  // second group does — or the Organizations block, which is a second list
+  // under the same rail — which is the only case where the label does work.
+  const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
 
   return (
@@ -402,7 +429,7 @@ export function SettingsPanelShell({
     >
       {isMobile ? (
         <nav
-          aria-label="Settings"
+          aria-label="Preferences"
           className="border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
         >
           <FadedScrollArea
@@ -421,6 +448,20 @@ export function SettingsPanelShell({
                 </TabsTrigger>
               ))}
             </TabsList>
+            {organizations.length > 0
+              ? organizations.map((account) => (
+                  <ModalClose asChild key={account.account_id}>
+                    <Link
+                      href={`/accounts/${account.account_id}`}
+                      prefetch
+                      className="text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
+                    >
+                      {account.name?.trim() || 'Account'}
+                      <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
+                    </Link>
+                  </ModalClose>
+                ))
+              : null}
           </FadedScrollArea>
           <div className="flex shrink-0 items-center px-3">
             <ModalClose asChild>
@@ -458,7 +499,7 @@ export function SettingsPanelShell({
           </div>
 
           <nav
-            aria-label="Settings"
+            aria-label="Preferences"
             className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           >
             {groups.map((group) => (
@@ -487,6 +528,48 @@ export function SettingsPanelShell({
                 </TabsList>
               </div>
             ))}
+
+            {organizations.length > 0 ? (
+              /* The organizations the person belongs to. Each row LEAVES the
+                 overlay for that organization's own settings page — members,
+                 billing, roles, audit all live there — so it is a link that
+                 closes the dialog, not a tab. Same row footprint as the tabs
+                 above so the rail reads as one list with two kinds of row. */
+              <div>
+                <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+                  Organizations
+                </div>
+                <ul className="flex flex-col gap-0.5">
+                  {organizations.map((account) => (
+                    <li key={account.account_id}>
+                      <ModalClose asChild>
+                        <Link
+                          href={`/accounts/${account.account_id}`}
+                          prefetch
+                          className={cn(
+                            'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
+                            'text-foreground hover:bg-hover transition-colors',
+                          )}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate">{account.name?.trim() || 'Account'}</span>
+                            {accountRoleLabel(account.account_role) ? (
+                              <span className="text-muted-foreground block truncate text-xs">
+                                {accountRoleLabel(account.account_role)}
+                              </span>
+                            ) : null}
+                          </span>
+                          <ArrowUpRightIcon
+                            aria-hidden
+                            className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
+                          />
+                        </Link>
+                      </ModalClose>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </nav>
         </aside>
       )}
@@ -500,7 +583,7 @@ export function SettingsPanelShell({
             <Breadcrumb className="min-w-0 flex-1">
               <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
                 <BreadcrumbItem className="min-w-0">
-                  <span className="flex h-7 items-center px-2">Settings</span>
+                  <span className="flex h-7 items-center px-2">Preferences</span>
                 </BreadcrumbItem>
                 {activeItem ? (
                   <>
@@ -552,10 +635,10 @@ function SettingsTabPane({
 }) {
   if (!active) return null;
 
-  // The SAME component `/projects/<id>/config?section=general` renders
-  // (`capabilities/project-settings/project-settings-page.tsx`), not a copy.
-  // Workspace name and icon have one implementation and one set of mutations;
-  // this overlay is a second door onto it, not a second version of it.
+  // Workspace name and icon have one implementation and one set of mutations,
+  // and this is now its only mount: `/projects/<id>/config` and the
+  // `capabilities/project-settings/` directory behind it were both retired on
+  // 2026-09-02. This pane was the second door; it is the only door.
   //
   // The `projectId` guard is belt-and-braces: the row is filtered out of the
   // rail whenever there is no project, so this branch is unreachable without
@@ -601,6 +684,9 @@ function SettingsTabPane({
   }
   if (item.tab === 'tokens') {
     return <TokensTab accountId={accountId} />;
+  }
+  if (item.tab === 'credits') {
+    return <CreditsTab accountId={accountId} />;
   }
   if (item.tab === 'plan') {
     return <PlanTab accountId={accountId} />;

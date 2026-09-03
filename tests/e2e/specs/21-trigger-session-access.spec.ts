@@ -46,7 +46,7 @@ async function openTriggerAccess(page: Page, projectId: string) {
   // `settings-tabs.ts` GRADUATED map: `schedules: (p) => \`/projects/${p}/triggers\``).
   // Navigate straight there instead of through the now-gone overlay tab; the
   // row click / detail-sheet mechanics below are unchanged.
-  await page.goto(`/projects/${projectId}/triggers`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`/projects/${projectId}/customize/triggers`, { waitUntil: 'domcontentloaded' });
   await dismissOnboarding(page);
   const panel = page.locator('body');
   await panel.getByRole('button', { name: 'Access policy UI', exact: true }).click();
@@ -135,7 +135,7 @@ test.describe('21 — Trigger-created session access UI', () => {
       await api<TriggerList>(
         session.access_token,
         'POST',
-        `/projects/${projectId}/triggers`,
+        `/projects/${projectId}/customize/triggers`,
         {
           name: 'Access policy UI',
           type: 'cron',
@@ -191,17 +191,13 @@ test.describe('21 — Trigger-created session access UI', () => {
 
       const { section } = await openTriggerAccess(page, projectId);
       const privateOption = section.getByRole('radio', {
-        // Capital "Managers" — matches `schedule-detail-sheet.tsx`'s copy
-        // override verbatim ("Trigger agent and project Managers", "Project
-        // Managers can always open trigger-created sessions."). A raw regex
-        // (unlike `getByText`'s string form) is case-sensitive by default, so
-        // the lowercase "managers" this used to read never matched.
-        name: /Trigger agent and project Managers/,
+        // Matches `trigger-session-access-copy.ts` verbatim — the copy names
+        // the permission the API checks (`project.trigger.update`), not a
+        // role nickname. A raw regex is case-sensitive by default.
+        name: /Trigger managers only/,
       });
       await expect(privateOption).toBeChecked();
-      await expect(
-        section.getByText('Project managers can always open trigger-created sessions.'),
-      ).toBeVisible();
+      await expect(section.getByText(/project\.trigger\.update permission/)).toBeVisible();
 
       await section.getByRole('radio', { name: /Selected teammates/ }).click();
       const memberButton = section.getByRole('button', { name: new RegExp(email) });
@@ -236,7 +232,7 @@ test.describe('21 — Trigger-created session access UI', () => {
       const readback = await api<TriggerList>(
         session.access_token,
         'GET',
-        `/projects/${projectId}/triggers`,
+        `/projects/${projectId}/customize/triggers`,
       );
       expect(
         readback.triggers.find((trigger) => trigger.slug === 'access-policy-ui')?.session_access,

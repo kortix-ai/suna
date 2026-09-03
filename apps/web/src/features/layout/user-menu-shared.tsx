@@ -39,7 +39,6 @@ import { openExternalRoute } from '@/lib/desktop';
 import {
   ArticleIcon,
   BookOpenIcon,
-  HeadsetIcon,
   LifebuoyIcon,
   MonitorIcon,
   Moon,
@@ -77,11 +76,13 @@ export type MenuLink = {
  * the sidebar and the header, so this render path is not rare.
  */
 export const HELP_LINKS: MenuLink[] = [
-  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
+  // One support row, not two. This menu used to open with "Help center" (/help)
+  // and close with "Support" (/support) — two destinations for one intent, and
+  // the /help one was the weaker page. The help centre is now part of /support.
+  { label: 'Support', href: '/support', Icon: LifebuoyIcon },
   { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
   { label: 'Blog', href: '/blog', Icon: ArticleIcon },
   { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
-  { label: 'Support', href: '/support', Icon: HeadsetIcon },
 ];
 
 /** Kept separate so a divider can hold the legal pages apart from the rest. */

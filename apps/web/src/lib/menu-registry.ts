@@ -26,6 +26,7 @@ import type { FeatureFlagKey } from '@kortix/sdk';
 import {
   ActivityIcon as Activity,
   AlarmIcon as AlarmClock,
+  ArrowCircleUpIcon as ArrowUpCircle,
   SquaresFourIcon as Blocks,
   RobotIcon as Bot,
   CalendarIcon as Calendar,
@@ -33,6 +34,7 @@ import {
   GearSixIcon as CogOne,
   CoinsIcon as Coins,
   CompassIcon as Compass,
+  ShippingContainerIcon as Container,
   CpuIcon as Cpu,
   CreditCardIcon as CreditCardSolid,
   FlaskIcon as Flask,
@@ -43,6 +45,7 @@ import {
   KeyIcon as KeyRound,
   StackIcon as Layers,
   SquaresFourIcon as LayoutDashboard,
+  LifebuoyIcon as Lifebuoy,
   LockKeyIcon as LockKey,
   SignOutIcon as LogOut,
   ChatsIcon as MessagesSquare,
@@ -484,14 +487,64 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    // The index/hub, NOT `/config`. `/customize` renders `CustomizeIndexPage`,
-    // a card grid over every tab below — which is what the word "customize"
-    // now names, since each tab it introduces has its own row. Before this
-    // change the word led to the Settings tab, one of the eight things the hub
-    // introduces.
+    // `/customize` redirects to the first capability tab the caller may open
+    // — Agents, for anyone who can read them — so this entry lands where the
+    // sidebar's Customize row lands (Marko, 2026-09-01: Customize is
+    // agent-centric). It is kept as the palette's href rather than `/agent`
+    // so the two cannot drift: one redirect owns the landing rule.
     href: '/projects/{projectId}/customize',
     requiresProject: true,
     keywords: 'customize configure setup capabilities overview hub',
+  },
+  // The Customize bar's trailing Settings tab, one row per section. Retired
+  // 2026-09-02 for the overlay's Workspace group; both came back to this page
+  // on 2026-09-03 (Marko) when that group was removed from the overlay.
+  {
+    id: 'proj-config-general',
+    label: 'Settings · General',
+    icon: CogOne,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/settings',
+    requiresProject: true,
+    keywords:
+      'settings general workspace rename delete danger zone name description git repo repository github clone branch remote',
+  },
+  {
+    id: 'proj-config-sandbox',
+    label: 'Settings · Sandbox templates',
+    icon: Container,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/settings?section=sandbox',
+    requiresProject: true,
+    // Snapshots merged into this section — a snapshot is a sandbox template's
+    // build history — so both vocabularies answer here.
+    keywords: 'sandbox templates template image runtime machine snapshots builds recipe container',
+  },
+  {
+    id: 'proj-config-feature-flags',
+    label: 'Settings · Feature flags',
+    icon: Flask,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/settings?section=feature-flags',
+    requiresProject: true,
+    keywords: 'feature flags flag experimental labs beta toggle enable disable',
+  },
+  {
+    id: 'proj-config-upgrades',
+    label: 'Settings · Upgrades',
+    icon: ArrowUpCircle,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/projects/{projectId}/customize/settings?section=upgrades',
+    requiresProject: true,
+    keywords: 'upgrades upgrade migrate migration manifest runner kortix yaml version bump',
   },
   {
     id: 'proj-models',
@@ -500,7 +553,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/models',
+    href: '/projects/{projectId}/customize/models',
     requiresProject: true,
     // The reported bug's row. `llm gateway providers budgets anthropic openai
     // openrouter` came off `proj-customize`'s bag, where they pointed at
@@ -520,7 +573,7 @@ export const menuRegistry: MenuItemDef[] = [
     // The standalone page, not `/customize/agents`. That href still works —
     // `legacySectionRedirect` bounces it here — but routing through the
     // redirect costs a second navigation and paints the overlay route first.
-    href: '/projects/{projectId}/agent',
+    href: '/projects/{projectId}/customize/agents',
     requiresProject: true,
     keywords: 'agents subagents ai',
   },
@@ -531,7 +584,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/skills',
+    href: '/projects/{projectId}/customize/skills',
     requiresProject: true,
     keywords: 'skills abilities',
   },
@@ -549,7 +602,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/connectors',
+    href: '/projects/{projectId}/customize/connectors',
     requiresProject: true,
     // 'apps' removed: it is the label of `proj-apps` (deployments), so the
     // one-word query for that page returned Connectors as well. 'connector' /
@@ -568,7 +621,7 @@ export const menuRegistry: MenuItemDef[] = [
     // "slack" and "inbox" are words people type, and the scope query lands
     // them on the inbound half rather than the outbound one.
     // 'connections' stays off this bag — it names `proj-connectors`.
-    href: '/projects/{projectId}/connectors?scope=channels',
+    href: '/projects/{projectId}/customize/connectors?scope=channels',
     requiresProject: true,
     keywords: 'channels channel slack teams discord email agentmail inbox inbound messaging',
   },
@@ -584,7 +637,7 @@ export const menuRegistry: MenuItemDef[] = [
     // `?rules=1` opens the Global rules sheet on arrival — the Connectors page
     // hosts `PoliciesPanel` and reads that param (`connectors-page.tsx`), so
     // this entry now reaches the destination its label names.
-    href: '/projects/{projectId}/connectors?rules=1',
+    href: '/projects/{projectId}/customize/connectors?rules=1',
     requiresProject: true,
     keywords: 'policies approval block require_approval rules tools connector guardrails',
   },
@@ -600,7 +653,7 @@ export const menuRegistry: MenuItemDef[] = [
     // two ways to start it, not two separate rows. `/projects/{id}/settings/
     // schedules` and `/settings/webhooks` no longer resolve to a tab; both
     // redirect here via `legacySectionRedirect`.
-    href: '/projects/{projectId}/triggers',
+    href: '/projects/{projectId}/customize/triggers',
     requiresProject: true,
     // The combined bag both retired rows carried, so neither query goes dark.
     keywords:
@@ -635,7 +688,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/projects/{projectId}/secrets',
+    href: '/projects/{projectId}/customize/secrets',
     requiresProject: true,
     keywords: 'secrets secret env environment variables credentials vault egress store',
   },
@@ -690,6 +743,26 @@ export const menuRegistry: MenuItemDef[] = [
   // (`settings-palette-items.ts`) — a registry href would be a second,
   // drifting copy. Feature flags' in-palette picker moved with it: see
   // `SETTINGS_TAB_SUBMENU_PAGE` in `command-palette.tsx`.
+  //
+  // `proj-config-feature-flags` outlived that sentence by a day. The row was
+  // still here on 2026-09-03, twenty-five lines under its own obituary, with
+  // `href: '/projects/{projectId}/customize/settings?section=feature-flags'` — a route
+  // `app/` no longer contains. Typing "feature flag" returned TWO rows: this
+  // one, under Navigation, labelled "Settings · Feature flags" and landing on
+  // a dead URL, and the derived `settings-tab-feature-flags` under "Settings ·
+  // Workspace", which opens the in-palette picker correctly. The dead one read
+  // like the right answer.
+  //
+  // Nothing was lost with it. Its keyword bag (`feature flags experimental
+  // beta labs toggles switches early access`) is a strict subset of the
+  // `feature-flags` bag in `settings-palette-items.ts`, and the picker it
+  // claimed to open was never keyed to its id — `SUBMENU_PAGE_BY_ID` has no
+  // `proj-config-feature-flags` entry, which is exactly why the row navigated.
+  //
+  // `menu-registry-destinations.test.ts` now checks the other direction too:
+  // every `kind: 'navigate'` href must resolve to a real route under
+  // `src/app`. A route deleted out from under a palette row is a red test now,
+  // not a dead link nobody notices.
   {
     // Not `proj-review` — that id named the old overlay tab and its absence
     // is pinned (`command-palette.test.tsx`); this row is the capability page.
@@ -700,28 +773,12 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     // Its own capability tab since 2026-09-02, beside Agents and Triggers.
-    href: '/projects/{projectId}/review',
+    href: '/projects/{projectId}/customize/review',
     requiresProject: true,
     // Same gate the tab carries (`visibleCapabilityTabs` hides Review while
     // `review_center` is off), so the row cannot outlive the page.
     requiresFlag: 'review_center',
     keywords: 'review center inbox approvals awaiting waiting needs you outputs queue',
-  },
-  {
-    id: 'proj-config-feature-flags',
-    label: 'Settings · Feature flags',
-    icon: Flask,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/projects/{projectId}/config?section=feature-flags',
-    requiresProject: true,
-    // Selecting this opens the in-palette flag list (`SUBMENU_PAGE_BY_ID` in
-    // command-palette.tsx), which names and toggles each experimental feature
-    // without leaving ⌘K; the href is the routed fallback for surfaces that
-    // consume this registry without that picker — same arrangement as
-    // `proj-sessions` and `nav-accounts`.
-    keywords: 'feature flags experimental beta labs toggles switches early access',
   },
   {
     id: 'proj-invite',
@@ -922,13 +979,31 @@ export const menuRegistry: MenuItemDef[] = [
   },
   {
     id: 'credits-explained',
-    label: 'Credits Explained',
+    label: 'Credits & usage',
     icon: Coins,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/help/credits',
-    keywords: 'credits coins billing usage tokens cost explain',
+    href: '/docs/credits',
+    // `explained` stays in the keywords because /credits-explained was the
+    // original public URL and is still what people type for this page.
+    keywords: 'credits coins billing usage tokens cost explain explained',
+  },
+  {
+    id: 'support',
+    label: 'Support',
+    icon: Lifebuoy,
+    group: 'navigation',
+    showIn: ['commandPalette'],
+    kind: 'navigate',
+    href: '/support',
+    // "help" is the important one: this page absorbed /help, and that is still
+    // the word people reach for. Deliberately NOT "account", "delete" or
+    // "billing" — those queries belong to the account sections and the
+    // delete-account action, and a support row answering them would push the
+    // real destination down the list (command-palette-search.test.ts pins the
+    // exact hit set for "account" for this reason).
+    keywords: 'support help faq contact refund bug report issue question',
   },
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -975,7 +1050,7 @@ export const menuRegistry: MenuItemDef[] = [
   // change exists to remove.
   // ──────────────────────────────────────────────────────────────────────────
   // `pref-general` is gone. It declared `settingsTab: 'general'` — the project
-  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/config` now, not
+  // WORKSPACE tab — which is a `?section=` on `/projects/[id]/customize/settings` now, not
   // a settings tab at all. A `kind: 'settings'` row can only name a tab, and
   // there is no user-scoped tab this row meant, so it was removed rather than
   // repointed at an unrelated pane. Nothing rendered it: its only declared

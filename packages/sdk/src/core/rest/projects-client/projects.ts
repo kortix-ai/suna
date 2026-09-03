@@ -148,6 +148,9 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** The agent's `model:` frontmatter (`provider/model`); absent on older
+     *  servers, null when it follows the project default. */
+    model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */

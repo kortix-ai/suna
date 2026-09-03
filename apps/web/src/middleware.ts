@@ -31,7 +31,7 @@ const MARKETING_ROUTES = ['/', '/legal', '/support'];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
-// app. Functional public routes (/auth, /docs, /help, /legal, /support,
+// app. Functional public routes (/auth, /docs, /legal, /support,
 // /marketplace, /share, /download, /maintenance, …) stay reachable; only the
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
@@ -72,8 +72,7 @@ const PUBLIC_ROUTES = [
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
-  '/support', // Support page should be public
-  '/help', // Help center and documentation should be public
+  '/support', // Support hub — FAQ, contact channels, account deletion
   '/docs', // Product documentation (Fumadocs) should be public
   '/about', // About page should be public
   '/agent-computer', // Agent computer marketing page should be public
@@ -582,7 +581,7 @@ export async function middleware(request: NextRequest) {
   // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE — default ON for self-host), the WHOLE
   // marketing surface is deactivated: the homepage and every marketing route
   // bounce straight to the app — authenticated users to /projects, everyone
-  // else to /auth. Functional public routes (/docs, /help, /legal, /support,
+  // else to /auth. Functional public routes (/docs, /legal, /support,
   // /marketplace, /share, …) are unaffected. Read via process.env directly —
   // NEXT_PUBLIC_ vars are inlined at build time, so in Docker containers they'd
   // carry the image's placeholder value; the runtime container env

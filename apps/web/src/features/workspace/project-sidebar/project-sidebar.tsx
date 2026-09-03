@@ -236,14 +236,17 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectManifestUpgradeAlert projectId={projectId} />
               <SidebarBalanceWarning accountId={accountId} />
-              <SidebarUpgradeButton accountId={accountId} />
               <ProjectFilesNavItem />
               <ProjectChatGptConnectNavItem projectId={projectId} />
+              {/* Last (Jay, 2026-09-03). It is the only paid call to action in
+                  this group, and above the nav rows it put a sell between the
+                  user and the links they actually use. */}
+              <SidebarUpgradeButton accountId={accountId} />
             </SidebarMenu>
           </SidebarGroup>
         </div>

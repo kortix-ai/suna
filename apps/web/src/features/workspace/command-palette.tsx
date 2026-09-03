@@ -321,7 +321,7 @@ export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
  * Same idea, for the rows the palette DERIVES from the Settings overlay's rail
  * (`settingsPaletteGroups`) rather than reads from the registry. "Feature
  * flags" opens the in-palette flag list — every experimental feature with its
- * stability and its switch, so a flag can be found and flipped by name without
+ * switch, so a flag can be found and flipped by name without
  * three navigations. Selecting any other settings row opens the overlay on
  * that tab, which is also this row's fallback if the map loses the key.
  */
@@ -687,7 +687,7 @@ function ChangeRequestsPage({
 
 /**
  * The 'flags' page — every experimental feature this deployment exposes for
- * the current workspace, by name, with its stability and its switch.
+ * the current workspace, by name, with its switch.
  *
  * Same data, same route, same permission gate as the Feature flags section of
  * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
@@ -826,11 +826,6 @@ function FeatureFlagsPage({
                 {feature.key}
               </span>
             </div>
-            {feature.stability !== 'stable' && (
-              <Badge variant="kortix" size="sm" className="shrink-0">
-                {feature.stability}
-              </Badge>
-            )}
             {pending ? (
               <Loading className="text-muted-foreground size-3.5 shrink-0" />
             ) : (
@@ -2632,7 +2627,7 @@ export function CommandPalette() {
                     {filteredSettingsGroups.map((group) => (
                       <CommandGroup
                         key={group.label}
-                        heading={`Settings · ${group.label}`}
+                        heading={`Preferences · ${group.label}`}
                         forceMount
                       >
                         {group.items.map((item) => {

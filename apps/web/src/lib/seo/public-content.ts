@@ -64,8 +64,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/docs',
   '/download',
   '/enterprise',
-  '/help',
-  '/help/credits',
   '/connectors',
   '/legal',
   '/marketplace',
@@ -167,21 +165,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'help',
-    title: 'Kortix Help Center',
-    description: 'Guides for billing, credits, and everyday Kortix questions.',
-    htmlPath: '/help',
-  },
-  {
-    kind: 'marketing',
-    slug: 'help/credits',
-    title: 'Kortix credits explained',
-    description:
-      'What credits are, how Kortix sessions consume them, and how to manage your balance and subscription.',
-    htmlPath: '/help/credits',
-  },
-  {
-    kind: 'marketing',
     slug: 'enterprise',
     title: 'Kortix Enterprise',
     description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
@@ -200,7 +183,8 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'support',
     title: 'Kortix support',
-    description: 'Support resources and contact information for Kortix.',
+    description:
+      'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.',
     htmlPath: '/support',
   },
   // The product pages. Each one's layout.tsx reads its title/description back

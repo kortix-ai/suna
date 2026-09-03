@@ -31,7 +31,7 @@ export function ProjectHomeSections({
   // several.
   //
   // Hide only on a denial we actually RECEIVED (`allowed === false`), the same
-  // optimistic-while-loading rule `CustomizeIndexPage` and the sidebar's
+  // optimistic-while-loading rule the capability tab bar and the sidebar's
   // Customize row use: a slow probe must never blink a step away from someone
   // who does have access. It is also what lets the checklist paint at full
   // height on the first frame instead of growing a round-trip later.

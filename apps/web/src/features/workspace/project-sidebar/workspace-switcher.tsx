@@ -222,7 +222,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   header `UserMenu` has no such renderer and must navigate. */}
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
-                Settings
+                Preferences
                 {/* The keycap sits on this row because this row is what the
                     keystroke does — `useSettingsKeyboardShortcut` calls the
                     same `openSettings()`. It is the only row in the app that

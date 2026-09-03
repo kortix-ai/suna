@@ -366,6 +366,30 @@ const nextConfig = (): NextConfig => ({
 
   async redirects() {
     return [
+      // Capability tabs moved under /customize/ (2026-09-03). The old
+      // top-level segments were shared in Slack, saved as bookmarks and baked
+      // into agent transcripts, so every one keeps resolving. `agent` became
+      // `agents`, `config` became `settings`; the rest kept their names.
+      {
+        source: '/projects/:id/agent/:path*',
+        destination: '/projects/:id/customize/agents/:path*',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/agent',
+        destination: '/projects/:id/customize/agents',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/config',
+        destination: '/projects/:id/customize/settings',
+        permanent: false,
+      },
+      {
+        source: '/projects/:id/:tab(skills|connectors|triggers|review|models|secrets)',
+        destination: '/projects/:id/customize/:tab',
+        permanent: false,
+      },
       // Decks moved from the single /presentation route to the /presentations
       // framework (index + one route per registered deck). The old paths were
       // shared in Slack and calendar invites, so they keep working.
@@ -395,12 +419,46 @@ const nextConfig = (): NextConfig => ({
         destination: '/docs/guides/self-hosting',
         permanent: true,
       },
+      // The help centre was a second support surface: it wore the app sidebar
+      // and a ⌘K modal to host exactly one article, while /support carried the
+      // FAQ, the contact addresses and the account-deletion steps. They merged
+      // into /support, so every help URL lands on its counterpart there.
+      //
+      // Permanent (308), because these are indexed public URLs and the merge is
+      // not going to be undone. /help went to the hub; /help/credits went to
+      // the credits guide, which now lives in the docs tree. /help/:path*
+      // catches nothing today — the tree held only the index and credits — and
+      // exists so a stale deep link ends on the hub instead of the marketing 404.
+      {
+        source: '/help/credits',
+        destination: '/docs/credits',
+        permanent: true,
+      },
+      {
+        source: '/help',
+        destination: '/support',
+        permanent: true,
+      },
+      {
+        source: '/help/:path*',
+        destination: '/support',
+        permanent: true,
+      },
+      // The credits guide is reference material, so it lives in the docs tree
+      // rather than as a marketing article. It was briefly at /support/credits
+      // on this branch; that URL never shipped to production, so this entry is
+      // for preview links and review references, not for search indexes.
+      {
+        source: '/support/credits',
+        destination: '/docs/credits',
+        permanent: true,
+      },
       // Removed pages that may live on in old links and search indexes.
-      // /credits-explained became the help-center credits article; the
+      // /credits-explained became the credits guide in the docs tree; the
       // /compare section was retired with no direct replacement.
       {
         source: '/credits-explained',
-        destination: '/help/credits',
+        destination: '/docs/credits',
         permanent: true,
       },
       {
