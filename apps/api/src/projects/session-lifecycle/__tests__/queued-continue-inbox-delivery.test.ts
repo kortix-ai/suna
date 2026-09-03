@@ -20,8 +20,8 @@
 // `--isolate` test runner already guarantees that).
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import type { SessionLifecycleCommandRow } from '../store';
 import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
+import type { SessionLifecycleCommandRow } from '../store';
 
 const SESSION_ID = 'sess-inbox-delivery-1';
 const ACCOUNT_ID = 'acct-1';
@@ -46,9 +46,9 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  * `WIRE_ID_BACKDATE_MS` and so the case where the mint is LIFTED above the
  * transcript rather than merely clocked past it.
  */
-const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
+const OPENCODE_MINTED_ID = `msg_${((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}AbCdEfGhIjKlMn`;
 
-let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
+const requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let sessionRow: Record<string, unknown> | null = null;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
@@ -204,7 +204,7 @@ mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 
 const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
@@ -385,8 +385,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     const sent = capturedBodies[0].messageID as string;
     // An id OpenCode minted 60s ago, the way OpenCode mints one: a raw
     // `Date.now()` scaled into the id clock, with no backdate.
-    const openCodeId =
-      (BigInt(NOW_MS - 60_000) * BigInt(0x1000)) & BigInt(0xffffffffffff);
+    const openCodeId = (BigInt(NOW_MS - 60_000) * BigInt(0x1000)) & BigInt(0xffffffffffff);
     expect(wireIdTime(sent)!).toBeGreaterThan(openCodeId);
   });
 
@@ -448,9 +447,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         },
       },
     };
-    transcript = [
-      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
-    ];
+    transcript = [{ info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } }];
 
     const outcome = await executeQueuedContinue(baseRow());
 

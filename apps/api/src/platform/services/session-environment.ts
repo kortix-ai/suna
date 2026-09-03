@@ -12,10 +12,10 @@
  *   primary key. The claim is an INSERT … ON CONFLICT DO NOTHING; the loser
  *   does NOT wait — `ensure` answers with the current status and the caller
  *   polls, because the provision outlives any request. No advisory locks.
- * - **The environment IS the session, credential-wise.** Its KORTIX_TOKEN is
- *   the session's own service key (read from `session_sandboxes.config`), so
- *   its git access, secret handles and callback rights are exactly the
- *   session's — no new credential surface, no separate revocation story.
+ * - **The environment is a separate runtime principal.** Its KORTIX_TOKEN has
+ *   the same session grant but a different runtime UUID and token row. The API
+ *   can distinguish worker callbacks from environment callbacks and revoke
+ *   either box without changing the other.
  * - **The worker reaches it over the provider edge, not the session proxy.**
  *   The ensure response carries a preview URL + token; worker↔environment
  *   traffic never transits the control plane (gate G0: per-call proxied HTTP
@@ -25,12 +25,13 @@
  *   without an OpenCode session.
  */
 import { randomUUID } from 'node:crypto';
-import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { projectSessions, sessionEnvironments } from '@kortix/db';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 import type { GitBackedProject } from '../../projects/git';
 import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
+import { revokeAccountToken } from '../../repositories/account-tokens';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { withTimeout } from '../../shared/with-timeout';
@@ -39,6 +40,7 @@ import { getProvider } from '../providers';
 import { classifyDaytonaState } from '../providers/daytona-state';
 import { decideEnvironmentLiveness, environmentReconcileWrite } from './environment-liveness';
 import type { SessionEnvironmentInfo } from './session-environment-types';
+import { mintSessionRuntimeToken } from './session-runtime-token';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
 /**
@@ -110,23 +112,6 @@ async function withPreview(row: {
   };
 }
 
-/** The session's own sandbox credential — the environment acts AS the session. */
-async function sessionServiceKey(sessionId: string): Promise<string> {
-  const [row] = await db
-    .select({ config: sessionSandboxes.config })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-  const key = (row?.config as { serviceKey?: string } | null)?.serviceKey;
-  if (!key) {
-    throw new SessionEnvironmentError(
-      'Session has no runtime credential yet — start the session before its environment.',
-      409,
-    );
-  }
-  return key;
-}
-
 async function resumeEnvironment(externalId: string): Promise<void> {
   const daytona = getDaytona();
   const sandbox = await withTimeout(
@@ -178,7 +163,9 @@ async function reconcileEnvironmentStatus(
   // The meter tracked a box that is not running. Closing it here keeps the
   // window honest; a resume opens a fresh one.
   const current = await readRow(sessionId);
-  const meteredId = (current?.metadata as { environmentId?: string } | null)?.environmentId;
+  const meteredId =
+    current?.environmentId ??
+    (current?.metadata as { environmentId?: string } | null)?.environmentId;
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
   const [updated] = await db
     .update(sessionEnvironments)
@@ -260,7 +247,12 @@ export async function ensureSessionEnvironment(
   if (typeof provisionAttemptId !== 'string') {
     throw new SessionEnvironmentError('Environment claim has no provision attempt id.', 500);
   }
-  void runEnvironmentWork(input, claimed.externalId, provisionAttemptId).catch((err) => {
+  void runEnvironmentWork(
+    input,
+    claimed.externalId,
+    claimed.environmentId,
+    provisionAttemptId,
+  ).catch((err) => {
     console.error('[session-env] environment work failed', {
       sessionId: input.sessionId,
       error: err instanceof Error ? err.message : String(err),
@@ -287,6 +279,7 @@ async function claimEnvironmentWork(
   status: string;
   externalId: string | null;
   metadata: Record<string, unknown> | null;
+  environmentId: string | null;
 } | null> {
   const provisionAttemptId = randomUUID();
   if (!existing) {
@@ -294,6 +287,7 @@ async function claimEnvironmentWork(
       .insert(sessionEnvironments)
       .values({
         sessionId: input.sessionId,
+        environmentId: randomUUID(),
         accountId: input.accountId,
         projectId: input.projectId,
         provider: 'daytona',
@@ -309,6 +303,12 @@ async function claimEnvironmentWork(
   const abandoned =
     existing.status === 'provisioning' && Date.now() - startedAt > PROVISION_STALE_MS;
   if (existing.status !== 'error' && existing.status !== 'stopped' && !abandoned) return null;
+  const legacyEnvironmentId = (existing.metadata as { environmentId?: string } | null)
+    ?.environmentId;
+  const reusesProviderBox = Boolean(existing.externalId);
+  const environmentId = reusesProviderBox
+    ? (existing.environmentId ?? legacyEnvironmentId ?? randomUUID())
+    : randomUUID();
 
   // Conditioned on the status we read, so two callers racing the same
   // transition cannot both win.
@@ -316,6 +316,7 @@ async function claimEnvironmentWork(
     .update(sessionEnvironments)
     .set({
       status: 'provisioning',
+      environmentId,
       metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify({
         provisionAttemptId,
       })}::jsonb`,
@@ -328,6 +329,18 @@ async function claimEnvironmentWork(
       ),
     )
     .returning();
+  const oldCredentialTokenId = (existing.config as { credentialTokenId?: string } | null)
+    ?.credentialTokenId;
+  if (
+    reclaimed &&
+    oldCredentialTokenId &&
+    existing.environmentId !== environmentId &&
+    !reusesProviderBox
+  ) {
+    await revokeAccountToken(oldCredentialTokenId, existing.accountId, existing.projectId).catch(
+      () => {},
+    );
+  }
   return reclaimed ?? null;
 }
 
@@ -338,13 +351,16 @@ async function claimEnvironmentWork(
 async function runEnvironmentWork(
   input: EnsureSessionEnvironmentInput,
   externalId: string | null,
+  environmentId: string | null,
   provisionAttemptId: string,
 ): Promise<void> {
   if (externalId) {
     try {
       await resumeEnvironment(externalId);
       const claimed = await readRow(input.sessionId);
-      const meteredId = (claimed?.metadata as { environmentId?: string } | null)?.environmentId;
+      const meteredId =
+        claimed?.environmentId ??
+        (claimed?.metadata as { environmentId?: string } | null)?.environmentId;
       const activated = await activateEnvironmentClaim({
         sessionId: input.sessionId,
         provisionAttemptId,
@@ -375,7 +391,15 @@ async function runEnvironmentWork(
       return;
     }
   }
-  await provisionEnvironment(input, provisionAttemptId);
+  if (!environmentId) {
+    await markEnvironmentError(
+      input.sessionId,
+      provisionAttemptId,
+      new Error('Environment claim has no runtime id.'),
+    );
+    return;
+  }
+  await provisionEnvironment(input, environmentId, provisionAttemptId);
 }
 
 async function markEnvironmentError(
@@ -413,6 +437,7 @@ async function activateEnvironmentClaim(input: {
   externalId: string;
   baseUrl?: string | null;
   metadata?: Record<string, unknown>;
+  config?: Record<string, unknown>;
 }) {
   const [activated] = await db
     .update(sessionEnvironments)
@@ -424,6 +449,13 @@ async function activateEnvironmentClaim(input: {
         ? {
             metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify(
               input.metadata,
+            )}::jsonb`,
+          }
+        : {}),
+      ...(input.config
+        ? {
+            config: sql`coalesce(${sessionEnvironments.config}, '{}'::jsonb) || ${JSON.stringify(
+              input.config,
             )}::jsonb`,
           }
         : {}),
@@ -475,11 +507,13 @@ async function removeUnownedEnvironment(externalId: string, meteredId?: string):
 
 async function provisionEnvironment(
   input: EnsureSessionEnvironmentInput,
+  environmentId: string,
   provisionAttemptId: string,
 ): Promise<void> {
+  let credential: { tokenId: string; secretKey: string } | null = null;
+  let credentialPublished = false;
   try {
-    const [token, image, envVars] = await Promise.all([
-      sessionServiceKey(input.sessionId),
+    const [image, envVars] = await Promise.all([
       ensureSandboxImage(input.gitProject, { provider: 'daytona' }),
       buildSessionSandboxEnvVars({
         accountId: input.accountId,
@@ -498,8 +532,17 @@ async function provisionEnvironment(
         workspaceMode: input.workspaceMode,
       }),
     ]);
+    credential = await mintSessionRuntimeToken({
+      accountId: input.accountId,
+      userId: input.userId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      runtimeKind: 'environment',
+      runtimeId: environmentId,
+      agentName: input.agentName,
+      gitProject: input.gitProject,
+    });
     const provider = getProvider('daytona');
-    const environmentId = randomUUID();
     const result = await provider.create({
       accountId: input.accountId,
       userId: input.userId,
@@ -513,7 +556,7 @@ async function provisionEnvironment(
       autoStopInterval: 60,
       envVars: {
         ...envVars,
-        KORTIX_TOKEN: token,
+        KORTIX_TOKEN: credential.secretKey,
         // The daemon serves /file, /find and /pty without an OpenCode
         // session; the worker is this session's harness, not OpenCode.
         KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0',
@@ -524,16 +567,23 @@ async function provisionEnvironment(
       provisionAttemptId,
       externalId: result.externalId,
       baseUrl: result.baseUrl || null,
+      config: {
+        serviceKey: credential.secretKey,
+        credentialTokenId: credential.tokenId,
+      },
       metadata: {
-        environmentId,
         snapshot: image.snapshotName,
         providerMetadata: result.metadata ?? {},
       },
     });
     if (!activated) {
+      await revokeAccountToken(credential.tokenId, input.accountId, input.projectId).catch(
+        () => {},
+      );
       await removeUnownedEnvironment(result.externalId, environmentId);
       return;
     }
+    credentialPublished = true;
     // Meter the environment AS PART OF THE PARENT SESSION: the compute row
     // carries the session's id, so its seconds and cost roll into that
     // session's line rather than appearing as a second, unattributed box.
@@ -551,9 +601,17 @@ async function provisionEnvironment(
       metadata: { workload: 'session-environment', externalId: result.externalId },
     });
     if (!(await environmentClaimIsOwned(input.sessionId, provisionAttemptId, result.externalId))) {
+      await revokeAccountToken(credential.tokenId, input.accountId, input.projectId).catch(
+        () => {},
+      );
       await removeUnownedEnvironment(result.externalId, environmentId);
     }
   } catch (err) {
+    if (credential && !credentialPublished) {
+      await revokeAccountToken(credential.tokenId, input.accountId, input.projectId).catch(
+        () => {},
+      );
+    }
     // Nothing is waiting on this promise, so the row IS the error channel:
     // the next ensure re-claims 'error' and tries again.
     await markEnvironmentError(input.sessionId, provisionAttemptId, err);

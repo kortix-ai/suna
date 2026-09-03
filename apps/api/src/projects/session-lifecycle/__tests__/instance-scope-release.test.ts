@@ -13,8 +13,8 @@
 // process-global in bun:test, so this file runs on its own under `--isolate`.
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import type { SessionLifecycleCommandRow } from '../store';
 import { mintWireMessageId } from '../../wire-message-id';
+import type { SessionLifecycleCommandRow } from '../store';
 
 const SESSION_ID = 'sess-scope-1';
 const ACCOUNT_ID = 'acct-1';
@@ -161,7 +161,7 @@ mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 
 const { drainSessionLifecycleQueue } = await import('../engine');

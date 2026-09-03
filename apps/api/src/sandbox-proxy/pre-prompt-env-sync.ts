@@ -27,7 +27,7 @@
  * path keeps working.
  */
 import type { ProviderName } from '../platform/providers';
-import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
+import type { syncSessionRuntimesEnvForPrompt } from '../projects/lib/sandbox-env-sync';
 import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
 import {
   SessionGrantRemintError,
@@ -235,7 +235,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * none — and injecting it would test the fake instead of the rule.
  */
 export interface PrePromptEnvSyncDeps {
-  syncEnv: typeof syncSandboxEnvForPrompt;
+  syncEnv: typeof syncSessionRuntimesEnvForPrompt;
   remintGrant: typeof remintGrantForAgentSwitch;
   scheduleSnapshot: typeof scheduleOpencodeSnapshotSync;
   generateTitle: typeof generateSessionTitleFromFirstPrompt;

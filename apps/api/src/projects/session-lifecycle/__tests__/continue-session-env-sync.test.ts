@@ -18,21 +18,16 @@
 // Same mocking caveat as the sibling engine.ts test files: `mock.module` is
 // process-global in bun:test, so this file must run on its own (the repo's
 // `--isolate` test runner already guarantees that).
-import { beforeEach, describe, expect, mock, test } from "bun:test";
-import {
-  projectSessions,
-  projects,
-  sessionLifecycleCommands,
-  sessionSandboxes,
-} from "@kortix/db";
-import type { SessionLifecycleCommandRow } from "../store";
-import { mintWireMessageId, wireIdTime } from "../../wire-message-id";
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { projectSessions, projects, sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
+import { mintWireMessageId, wireIdTime } from '../../wire-message-id';
+import type { SessionLifecycleCommandRow } from '../store';
 
-const SESSION_ID = "sess-inbox-delivery-1";
-const ACCOUNT_ID = "acct-1";
-const PROJECT_ID = "proj-1";
-const EXTERNAL_ID = "sandbox-1";
-const OC_SESSION_ID = "oc-1";
+const SESSION_ID = 'sess-inbox-delivery-1';
+const ACCOUNT_ID = 'acct-1';
+const PROJECT_ID = 'proj-1';
+const EXTERNAL_ID = 'sandbox-1';
+const OC_SESSION_ID = 'oc-1';
 
 // Anchored to the REAL clock: the re-mint corrects against the transcript only
 // within `MAX_WIRE_ID_CLOCK_CORRECTION` (1h), so ids fabricated at a fixed
@@ -54,10 +49,9 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({
  * `WIRE_ID_BACKDATE_MS` and so the case where the mint is LIFTED above the
  * transcript rather than merely clocked past it.
  */
-const OPENCODE_MINTED_ID = `msg_${((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, "0")}AbCdEfGhIjKlMn`;
+const OPENCODE_MINTED_ID = `msg_${((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}AbCdEfGhIjKlMn`;
 
-let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> =
-  [];
+const requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let sessionRow: Record<string, unknown> | null = null;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: {
@@ -83,37 +77,30 @@ let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
 
-mock.module("../../../config", () => ({
-  config: { KORTIX_URL: "https://api.test" },
-  SANDBOX_VERSION: "test",
+mock.module('../../../config', () => ({
+  config: { KORTIX_URL: 'https://api.test' },
+  SANDBOX_VERSION: 'test',
 }));
 
-mock.module("../../../shared/db", () => ({
+mock.module('../../../shared/db', () => ({
   hasDatabase: () => true,
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
-            if (table === projectSessions)
-              return sessionRow ? [sessionRow] : [];
-            if (table === projects)
-              return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
+            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
             // The aggregate `readDeliveredWireIdFloor` runs: always one row,
             // with a null when the session has never delivered anything.
             // Keyed on the PROJECTION, not the table: the admission gate reads
             // the same table for a different question, and answering it with a
             // floor row would make every send look like it lost the order race.
-            if (
-              table === sessionLifecycleCommands &&
-              projection &&
-              "newest" in projection
-            ) {
+            if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
               return [
                 {
-                  newest:
-                    deliveredFloor === null ? null : deliveredFloor.toString(),
+                  newest: deliveredFloor === null ? null : deliveredFloor.toString(),
                 },
               ];
             }
@@ -131,24 +118,24 @@ mock.module("../../../shared/db", () => ({
   },
 }));
 
-mock.module("../../session-title-generate", () => ({
+mock.module('../../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {},
 }));
 
-mock.module("../../routes/shared", () => ({
+mock.module('../../routes/shared', () => ({
   openSession: async (input: { sessionId: string }) => {
     events.push(`open:${input.sessionId}`);
     const delay = openDelayBySession[input.sessionId];
     if (delay) await delay;
     return {
-      stage: "ready",
-      sandbox: { external_id: EXTERNAL_ID, provider: "daytona" },
+      stage: 'ready',
+      sandbox: { external_id: EXTERNAL_ID, provider: 'daytona' },
       opencode_session_id: OC_SESSION_ID,
     };
   },
 }));
 
-mock.module("../../../sandbox-proxy/routes/preview", () => ({
+mock.module('../../../sandbox-proxy/routes/preview', () => ({
   forwardToSandbox: async (
     _externalId: string,
     _port: number,
@@ -164,33 +151,29 @@ mock.module("../../../sandbox-proxy/routes/preview", () => ({
   },
 }));
 
-mock.module("../../lib/sessions", () => ({
+mock.module('../../lib/sessions', () => ({
   createProjectSession: async () => {
-    throw new Error("not expected");
+    throw new Error('not expected');
   },
 }));
-mock.module("../actor", () => ({
-  resolveProjectAutomationActor: async () => "automation-user-1",
+mock.module('../actor', () => ({
+  resolveProjectAutomationActor: async () => 'automation-user-1',
   resolveAgentRunAttribution: async () => null,
 }));
-mock.module("../backpressure", () => ({
+mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
-mock.module("../store", () => ({
+mock.module('../store', () => ({
   promoteNextInboxRow: async () => null,
-  requeueForAdmission: async (
-    commandId: string,
-    reason: string,
-    availableAt: Date,
-  ) => {
+  requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
   },
   claimCreateSessionCommand: async () => {
-    throw new Error("not expected");
+    throw new Error('not expected');
   },
   claimDueLifecycleCommands: async () => claimed,
   enqueueContinueSessionCommand: async () => {
-    throw new Error("not expected");
+    throw new Error('not expected');
   },
   // The delivery path parks a prompt whose RUNTIME was down instead of
   // dead-lettering it. Present so the module mock stays complete.
@@ -201,13 +184,9 @@ mock.module("../store", () => ({
     failedCalls.push({ commandId, message });
   },
   markCommandQueued: async () => {
-    throw new Error("not expected");
+    throw new Error('not expected');
   },
-  markCommandForwarded: async (
-    commandId: string,
-    sessionId: string,
-    wireMessageId: string,
-  ) => {
+  markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
   markCommandSucceeded: async (commandId: string, result: unknown) => {
@@ -220,13 +199,13 @@ mock.module("../store", () => ({
   // Mirrors the real bound jsonb param so `persistedWireIds` can still read it.
   withRemintedWireId: (id: string) => JSON.stringify({ redeliveredMessageId: id }),
   resultFromExistingCommand: () => {
-    throw new Error("not expected");
+    throw new Error('not expected');
   },
 }));
 
-mock.module("../../opencode-mapping", () => ({
+mock.module('../../opencode-mapping', () => ({
   sandboxOpencodeEndpoint: async () => ({
-    url: "https://sandbox.test",
+    url: 'https://sandbox.test',
     headers: {},
   }),
 }));
@@ -234,27 +213,25 @@ mock.module("../../opencode-mapping", () => ({
 // The ONE thing this file is about: the runtime env sync that must precede
 // every inbox delivery. Recorded, never executed.
 let envSyncCalls: Array<Record<string, unknown>> = [];
-mock.module("../../lib/sandbox-env-sync", () => ({
-  syncSandboxEnvForPrompt: async (args: Record<string, unknown>) => {
+mock.module('../../lib/sandbox-env-sync', () => ({
+  syncSessionRuntimesEnvForPrompt: async (args: Record<string, unknown>) => {
     envSyncCalls.push(args);
   },
 }));
 
 // The slow (wake) path needs the box's service key and ingress to sync.
 let serviceKeyAvailable = true;
-mock.module("../../../platform/service-key", () => ({
-  serviceKeyForExternalId: async () =>
-    serviceKeyAvailable ? "svc-key-1" : null,
+mock.module('../../../platform/service-key', () => ({
+  serviceKeyForExternalId: async () => (serviceKeyAvailable ? 'svc-key-1' : null),
 }));
-mock.module("../../../sandbox-proxy/backend", () => ({
+mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({
-    url: "https://daemon.test",
+    url: 'https://daemon.test',
     headers: {},
   }),
 }));
 
-const { drainSessionLifecycleQueue, executeQueuedContinue } =
-  await import("../engine");
+const { drainSessionLifecycleQueue, executeQueuedContinue } = await import('../engine');
 
 /** Every `redeliveredMessageId` the drain persisted, read out of the jsonb
  *  merge parameter the UPDATE bound. */
@@ -262,13 +239,12 @@ function persistedWireIds(): string[] {
   const found: string[] = [];
   const seen = new Set<unknown>();
   const walk = (node: unknown) => {
-    if (!node || typeof node !== "object" || seen.has(node)) return;
+    if (!node || typeof node !== 'object' || seen.has(node)) return;
     seen.add(node);
     for (const value of Object.values(node as Record<string, unknown>)) {
-      if (typeof value === "string" && value.includes("redeliveredMessageId")) {
+      if (typeof value === 'string' && value.includes('redeliveredMessageId')) {
         const parsed = JSON.parse(value) as { redeliveredMessageId?: string };
-        if (parsed.redeliveredMessageId)
-          found.push(parsed.redeliveredMessageId);
+        if (parsed.redeliveredMessageId) found.push(parsed.redeliveredMessageId);
       } else walk(value);
     }
   };
@@ -276,25 +252,23 @@ function persistedWireIds(): string[] {
   return found;
 }
 
-function baseRow(
-  overrides: Partial<SessionLifecycleCommandRow> = {},
-): SessionLifecycleCommandRow {
+function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLifecycleCommandRow {
   const now = new Date(NOW_MS);
   return {
-    commandId: "cmd-1",
-    commandType: "continue_session",
-    source: "ui",
-    status: "running",
+    commandId: 'cmd-1',
+    commandType: 'continue_session',
+    source: 'ui',
+    status: 'running',
     projectId: PROJECT_ID,
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
     actorUserId: null,
     idempotencyKey: null,
     payload: {
-      text: "say hi",
-      clientMessageId: "q_1",
+      text: 'say hi',
+      clientMessageId: 'q_1',
       wireMessageId: SUBMITTED_WIRE_ID,
-      parts: [{ type: "text", text: "say hi" }],
+      parts: [{ type: 'text', text: 'say hi' }],
     },
     result: {},
     attempts: 0,
@@ -312,11 +286,11 @@ beforeEach(() => {
   sessionRow = {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
-    status: "running",
+    status: 'running',
     metadata: {},
-    sandboxProvider: "daytona",
-    baseRef: "main",
-    agentName: "agent",
+    sandboxProvider: 'daytona',
+    baseRef: 'main',
+    agentName: 'agent',
     opencodeSessionId: OC_SESSION_ID,
     sandboxUrl: `https://sandbox.test/p/${EXTERNAL_ID}/8000/`,
   };
@@ -335,7 +309,7 @@ beforeEach(() => {
     const href = String(url);
     // The staged-revert guard reads the session row; the re-mint and the
     // answered check read the message list.
-    if (href.includes("/message")) {
+    if (href.includes('/message')) {
       return new Response(JSON.stringify(transcript), { status: 200 });
     }
     return new Response(JSON.stringify({ id: OC_SESSION_ID }), { status: 200 });
@@ -360,25 +334,25 @@ beforeEach(() => {
 // dead URL although the API already had a live one — the sync that would have
 // rewritten it never ran.
 // ---------------------------------------------------------------------------
-describe("executeQueuedContinue — runtime env sync precedes every inbox delivery", () => {
-  test("an ordinary prompt (no opencodeEnv override) still syncs the box before it is sent", async () => {
+describe('executeQueuedContinue — runtime env sync precedes every inbox delivery', () => {
+  test('an ordinary prompt (no opencodeEnv override) still syncs the box before it is sent', async () => {
     const outcome = await executeQueuedContinue(baseRow());
-    expect(outcome).toBe("succeeded");
+    expect(outcome).toBe('succeeded');
     expect(envSyncCalls).toHaveLength(1);
     expect(envSyncCalls[0]).toMatchObject({
       projectId: PROJECT_ID,
       sessionId: SESSION_ID,
       externalId: EXTERNAL_ID,
-      providerName: "daytona",
+      providerName: 'daytona',
     });
     // The sync happened BEFORE the wire write.
     expect(capturedBodies).toHaveLength(1);
   });
 
-  test("a box whose service key cannot be read is not delivered blind — the prompt stays queued", async () => {
+  test('a box whose service key cannot be read is not delivered blind — the prompt stays queued', async () => {
     serviceKeyAvailable = false;
     const outcome = await executeQueuedContinue(baseRow());
-    expect(outcome).toBe("queued");
+    expect(outcome).toBe('queued');
     expect(envSyncCalls).toHaveLength(0);
     expect(capturedBodies).toHaveLength(0);
   });

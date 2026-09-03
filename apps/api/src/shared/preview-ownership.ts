@@ -11,9 +11,8 @@
  * with the rest of the /instances surface.
  */
 
-import { db } from './db';
-import { isPlatformAdmin } from './platform-roles';
-import { resolveAccountId } from './resolve-account';
+import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { and, eq, or, sql } from 'drizzle-orm';
 import {
   isProjectSessionVisibleTo,
   isTriggerCreatedSessionMetadata,
@@ -22,9 +21,10 @@ import {
 } from '../connectors/share';
 import { authorize } from '../iam';
 import { actorForUser } from '../iam/actor';
-import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { and, eq, or, sql } from 'drizzle-orm';
+import { db } from './db';
 import type { KortixUserContext } from './kortix-user-context';
+import { isPlatformAdmin } from './platform-roles';
+import { resolveAccountId } from './resolve-account';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -182,13 +182,14 @@ async function resolveSandboxRef(
   if (ciRow) return ciRow;
 
   const environmentColumns = {
-    sandboxId: sql<string>`coalesce(${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
+    sandboxId: sql<string>`coalesce(${sessionEnvironments.environmentId}::text, ${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
     accountId: sessionEnvironments.accountId,
     projectId: sessionEnvironments.projectId,
   };
   const environmentCondition = UUID_RE.test(previewSandboxId)
     ? or(
         eq(sessionEnvironments.externalId, previewSandboxId),
+        eq(sessionEnvironments.environmentId, previewSandboxId),
         sql`${sessionEnvironments.metadata}->>'environmentId' = ${previewSandboxId}`,
       )
     : eq(sessionEnvironments.externalId, previewSandboxId);

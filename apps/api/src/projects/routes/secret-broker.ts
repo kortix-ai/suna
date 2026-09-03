@@ -1,27 +1,22 @@
-import {
-  SecretBrokerRequestSchema,
-  SecretBrokerResponseSchema,
-} from '@kortix/api-contract';
 import { createRoute, z } from '@hono/zod-openapi';
+import { SecretBrokerRequestSchema, SecretBrokerResponseSchema } from '@kortix/api-contract';
+import { config } from '../../config';
 import { getAgentGrant } from '../../iam/agent-scope';
+import { getSessionRuntimeCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors, json } from '../../openapi';
-import { executeSecretBrokerRequest, SecretBrokerError } from '../../secrets/http-broker';
+import { requestEgressIp, verifyRuntimeEgressIp } from '../../platform/services/sandbox-egress-pin';
 import {
   classifyPresentedHandles,
   requestSurfaceText,
   summarizeHandleRefusals,
 } from '../../secrets/handle-substitution';
+import { SecretBrokerError, executeSecretBrokerRequest } from '../../secrets/http-broker';
 import { authorizeSecretRelay } from '../../secrets/relay-authorize';
 import { recordAuditEvent } from '../../shared/audit';
-import { intersectSecretGrants } from '../secrets';
-import { config } from '../../config';
 import { loadProjectForUser } from '../lib/access';
-import {
-  requestEgressIp,
-  verifySandboxEgressIp,
-} from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
 import { readBody } from '../lib/serializers';
+import { intersectSecretGrants } from '../secrets';
 
 projectsApp.openapi(
   createRoute({
@@ -49,10 +44,12 @@ projectsApp.openapi(
 
     const agentGrant = getAgentGrant(c);
     const sessionId = c.get('sessionId');
+    const runtimeCredential = getSessionRuntimeCredential(c);
     if (
       c.get('authType') !== 'pat' ||
       c.get('tokenProjectId') !== projectId ||
       !sessionId ||
+      !runtimeCredential ||
       !agentGrant
     ) {
       return c.json(
@@ -71,12 +68,14 @@ projectsApp.openapi(
     // what the token IS; this checks where it is being used FROM. Unpinned
     // sessions pass — see sandbox-egress-pin.ts on why that direction is the
     // safe one.
-    const pin = await verifySandboxEgressIp(sessionId, requestEgressIp(c));
+    const pin = await verifyRuntimeEgressIp(runtimeCredential, requestEgressIp(c));
     if (!pin.ok) {
       // Logged whether or not it blocks, so log-only mode still surfaces the
       // event — a kill switch that also silences the evidence is useless.
       console.warn('[secret-broker] refused an off-sandbox token use', {
         sessionId,
+        runtimeKind: runtimeCredential.kind,
+        runtimeId: runtimeCredential.runtimeId,
         projectId,
         pinned: pin.pinned,
         seen: pin.seen,

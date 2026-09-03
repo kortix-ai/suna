@@ -1,3 +1,4 @@
+import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
 /**
  * Binding a session's credential to the sandbox it was issued for.
  *
@@ -49,7 +50,7 @@
  */
 import { and, eq } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { sessionSandboxes } from '@kortix/db';
+import type { SessionRuntimeCredential } from '../../middleware/session-sandbox-credential';
 import { db } from '../../shared/db';
 
 /** Where the pin lives on `session_sandboxes.metadata`. Stable storage detail. */
@@ -80,20 +81,31 @@ export function requestEgressIp(c: Context): string | null {
  * First write wins: re-pinning on every daemon callback would let a later call
  * move the pin, which is exactly the property the boot-time pin exists to deny.
  */
-export async function pinSandboxEgressIp(sandboxId: string, ip: string | null): Promise<void> {
+export async function pinRuntimeEgressIp(
+  runtime: SessionRuntimeCredential,
+  ip: string | null,
+): Promise<void> {
   if (!ip) return;
+  const table = runtime.kind === 'environment' ? sessionEnvironments : sessionSandboxes;
+  const idColumn =
+    runtime.kind === 'environment' ? sessionEnvironments.environmentId : sessionSandboxes.sandboxId;
   const [row] = await db
-    .select({ metadata: sessionSandboxes.metadata })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sandboxId, sandboxId))
+    .select({ metadata: table.metadata })
+    .from(table)
+    .where(eq(idColumn, runtime.runtimeId))
     .limit(1);
   if (!row) return;
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
   if (typeof metadata[EGRESS_IP_KEY] === 'string' && metadata[EGRESS_IP_KEY]) return;
   await db
-    .update(sessionSandboxes)
+    .update(table)
     .set({ metadata: { ...metadata, [EGRESS_IP_KEY]: ip } })
-    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+    .where(eq(idColumn, runtime.runtimeId));
+}
+
+/** Legacy worker-only entry point. */
+export async function pinSandboxEgressIp(sandboxId: string, ip: string | null): Promise<void> {
+  return pinRuntimeEgressIp({ kind: 'worker', runtimeId: sandboxId, sessionId: sandboxId }, ip);
 }
 
 export type EgressPinVerdict =
@@ -110,17 +122,34 @@ export type EgressPinVerdict =
  * needs this (the secret-broker route) authenticates a session token and has no
  * sandbox id of its own — and resolving it here keeps the two from drifting.
  */
-export async function verifySandboxEgressIp(
-  sessionId: string,
+export async function verifyRuntimeEgressIp(
+  runtime: SessionRuntimeCredential,
   seen: string | null,
 ): Promise<EgressPinVerdict> {
+  const table = runtime.kind === 'environment' ? sessionEnvironments : sessionSandboxes;
+  const idColumn =
+    runtime.kind === 'environment' ? sessionEnvironments.environmentId : sessionSandboxes.sandboxId;
   const [row] = await db
-    .select({ metadata: sessionSandboxes.metadata })
-    .from(sessionSandboxes)
-    .where(and(eq(sessionSandboxes.sessionId, sessionId)))
+    .select({ metadata: table.metadata })
+    .from(table)
+    .where(and(eq(idColumn, runtime.runtimeId)))
     .limit(1);
   const pinned = ((row?.metadata ?? {}) as Record<string, unknown>)[EGRESS_IP_KEY];
   if (typeof pinned !== 'string' || !pinned) return { ok: true, reason: 'unpinned' };
   if (seen && seen === pinned) return { ok: true, reason: 'match', ip: pinned };
   return { ok: false, reason: 'mismatch', pinned, seen };
+}
+
+/** Legacy lookup for callers that have not adopted explicit runtime identity. */
+export async function verifySandboxEgressIp(
+  sessionId: string,
+  seen: string | null,
+): Promise<EgressPinVerdict> {
+  const [row] = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId })
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sessionId, sessionId))
+    .limit(1);
+  if (!row) return { ok: true, reason: 'unpinned' };
+  return verifyRuntimeEgressIp({ kind: 'worker', runtimeId: row.sandboxId, sessionId }, seen);
 }

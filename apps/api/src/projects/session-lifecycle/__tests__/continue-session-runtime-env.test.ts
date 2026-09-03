@@ -73,7 +73,7 @@ mock.module('../../../platform/service-key', () => ({
 }));
 
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async (input: Record<string, unknown>) => {
+  syncSessionRuntimesEnvForPrompt: async (input: Record<string, unknown>) => {
     events.push('sync');
     expect(input).toMatchObject({
       projectId: PROJECT_ID,

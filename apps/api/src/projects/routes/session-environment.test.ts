@@ -19,6 +19,9 @@ async function teardownSource(): Promise<string> {
     new URL('../../platform/services/session-environment-teardown.ts', import.meta.url),
   ).text();
 }
+async function envSyncSource(): Promise<string> {
+  return Bun.file(new URL('../lib/sandbox-env-sync.ts', import.meta.url)).text();
+}
 
 // The environment routes cannot be flow-covered locally (they provision a
 // REAL cloud sandbox, which the local flow profile excludes), so their
@@ -53,12 +56,14 @@ describe('session environment routes', () => {
 });
 
 describe('session environment service', () => {
-  test('the environment boots as THE SESSION: its token is the session service key, opencode off', async () => {
+  test('the environment boots with its own runtime token and OpenCode disabled', async () => {
     const source = await serviceSource();
     const provision = source.indexOf('const provider = getProvider');
-    expect(source.indexOf('sessionServiceKey(input.sessionId)')).toBeGreaterThan(-1);
+    expect(source).toContain('mintSessionRuntimeToken({');
+    expect(source).toContain("runtimeKind: 'environment'");
+    expect(source).toContain('runtimeId: environmentId');
     const envBlock = source.slice(provision, source.indexOf('} as never', provision));
-    expect(envBlock).toContain('KORTIX_TOKEN: token');
+    expect(envBlock).toContain('KORTIX_TOKEN: credential.secretKey');
     expect(envBlock).toContain("KORTIX_BOOTSTRAP_OPENCODE_SESSION: '0'");
     // The session branch already exists remotely; the box restores it.
     expect(source).toContain('restoreSessionBranch: true');
@@ -133,6 +138,23 @@ describe('session environment service', () => {
     const info = types.indexOf('export interface SessionEnvironmentInfo');
     const infoBlock = types.slice(info, types.indexOf('}', info));
     expect(infoBlock).toContain('previewUrl');
+  });
+});
+
+describe('two-runtime environment synchronization', () => {
+  test('pre-prompt sync pushes the session scope to an active environment', async () => {
+    const source = await envSyncSource();
+    const wrapper = source.slice(source.indexOf('syncSessionRuntimesEnvForPrompt'));
+    expect(wrapper).toContain('.from(sessionEnvironments)');
+    expect(wrapper).toContain("eq(sessionEnvironments.status, 'active')");
+    expect(wrapper).toContain('refreshModels: false');
+  });
+
+  test('secret CRUD fan-out targets workers and active environments', async () => {
+    const source = await envSyncSource();
+    const fanout = source.slice(source.indexOf('async function runProjectSecretPropagation'));
+    expect(fanout).toContain('.from(sessionSandboxes)');
+    expect(fanout).toContain('.from(sessionEnvironments)');
   });
 });
 
@@ -272,6 +294,6 @@ describe('an environment meters against its PARENT session', () => {
     // They are different values: `environmentId` is the id we minted and
     // passed to provider.create as its sandboxId; `externalId` is what the
     // provider handed back. `endComputeSession` looks up by the former.
-    expect(source).toContain('metadata as { environmentId?: string }');
+    expect(source).toContain('claimed?.environmentId');
   });
 });

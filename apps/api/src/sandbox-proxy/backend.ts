@@ -20,20 +20,20 @@
  * own status mapping on top so the same resolver serves HTTP and WebSocket.
  */
 
-import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { type SQL, and, eq, gt, ne, sql } from 'drizzle-orm';
 import { config } from '../config';
 import {
-  getProvider,
   type ProviderName,
   type ResolvedSandboxIngress,
   type SandboxIngressRequest,
   type SandboxIngressRoute,
+  getProvider,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
 import { db } from '../shared/db';
+import { KORTIX_USER_CONTEXT_HEADER, encodeKortixUserContext } from '../shared/kortix-user-context';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
-import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../shared/kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
@@ -194,7 +194,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
 
   if (!row) {
     const environmentColumns = {
-      sandboxId: sql<string>`coalesce(${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
+      sandboxId: sql<string>`coalesce(${sessionEnvironments.environmentId}::text, ${sessionEnvironments.metadata}->>'environmentId', ${sessionEnvironments.sessionId})`,
       externalId: sessionEnvironments.externalId,
       sessionId: sessionEnvironments.sessionId,
       agentName: sql<string | null>`(

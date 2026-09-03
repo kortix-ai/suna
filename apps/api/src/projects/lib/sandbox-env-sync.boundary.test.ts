@@ -17,12 +17,13 @@
 // fan-out is the caller that does NOT fail soft — a refusal reaches its report
 // verbatim, which is the only place the decision is observable as a message.
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { sessionEnvironments } from '@kortix/db';
 import { config } from '../../config';
 
-import * as realSecrets from '../secrets';
-import * as realSecretGrant from './secret-grant';
 import type { ProviderName } from '../../platform/providers';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
+import * as realSecrets from '../secrets';
+import * as realSecretGrant from './secret-grant';
 
 /** Which provider the single active sandbox row reports for the case in flight. */
 let sandboxProvider: ProviderName = 'daytona';
@@ -45,13 +46,18 @@ const SESSION_ROW = {
 mock.module('../../shared/db', () => ({
   db: {
     select: () => ({
-      from: () => ({
+      from: (table: unknown) => ({
         where: () => {
-          const rows = [{ ...SESSION_ROW, provider: sandboxProvider, metadata: null }];
+          const rows =
+            table === sessionEnvironments
+              ? []
+              : [{ ...SESSION_ROW, provider: sandboxProvider, metadata: null }];
           return {
             limit: async () => rows,
-            then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
-              Promise.resolve(rows).then(resolve, reject),
+            then: (
+              resolve: (value: typeof rows) => unknown,
+              reject?: (reason: unknown) => unknown,
+            ) => Promise.resolve(rows).then(resolve, reject),
           };
         },
       }),

@@ -2028,6 +2028,9 @@ export const sessionEnvironments = kortixSchema.table(
   'session_environments',
   {
     sessionId: text('session_id').primaryKey(),
+    /** Stable control-plane identity. The provider external id can change
+     *  when an environment is rebuilt. */
+    environmentId: uuid('environment_id'),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
     provider: sandboxProviderEnum('provider').default('daytona').notNull(),
@@ -2771,6 +2774,11 @@ export const accountTokens = kortixSchema.table(
      *  the reaper's reliable activity signal + precise billing. Null for
      *  non-session tokens (laptop CLI PATs, project-scoped operator tokens). */
     sessionId: text('session_id'),
+    /** Exact runtime principal for a session token. Null preserves legacy
+     *  worker tokens during rollout. */
+    runtimeKind: varchar('runtime_kind', { length: 16 }).$type<'worker' | 'environment'>(),
+    /** Stable worker or environment UUID. It is not the provider external id. */
+    runtimeId: uuid('runtime_id'),
     /** The STANDING IDENTITY this session token acts as. When set, the IAM
      *  engine authorizes the request as this service account (its own policies),
      *  not the launching user — `effective = SA standing role ∩ agentGrant`. The

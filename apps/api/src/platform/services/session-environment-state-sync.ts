@@ -11,6 +11,7 @@ async function reconcileEnvironmentByExternalId(
   const [row] = await db
     .select({
       sessionId: sessionEnvironments.sessionId,
+      environmentId: sessionEnvironments.environmentId,
       status: sessionEnvironments.status,
       metadata: sessionEnvironments.metadata,
     })
@@ -19,7 +20,8 @@ async function reconcileEnvironmentByExternalId(
     .limit(1);
   if (!row || row.status === 'stopped' || row.status === 'archived') return false;
 
-  const meteredId = (row.metadata as { environmentId?: unknown } | null)?.environmentId;
+  const meteredId =
+    row.environmentId ?? (row.metadata as { environmentId?: unknown } | null)?.environmentId;
   if (typeof meteredId === 'string') await endComputeSession(meteredId).catch(() => {});
 
   const [updated] = await db

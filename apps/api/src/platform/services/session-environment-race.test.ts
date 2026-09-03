@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { sessionEnvironments } from '@kortix/db';
 
 let environmentRow: Record<string, unknown> | null;
 let finishCreate: (value: {
@@ -23,6 +23,17 @@ mock.module('../../billing/services/compute-metering', () => ({
 
 mock.module('../../projects/lib/sessions', () => ({
   buildSessionSandboxEnvVars: async () => ({}),
+}));
+
+mock.module('./session-runtime-token', () => ({
+  mintSessionRuntimeToken: async () => ({
+    tokenId: '00000000-0000-4000-8000-000000000099',
+    secretKey: 'service-key',
+  }),
+}));
+
+mock.module('../../repositories/account-tokens', () => ({
+  revokeAccountToken: async () => true,
 }));
 
 mock.module('../../shared/daytona', () => ({
@@ -57,7 +68,6 @@ mock.module('../../shared/db', () => ({
       from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
-            if (table === sessionSandboxes) return [{ config: { serviceKey: 'service-key' } }];
             return environmentRow ? [environmentRow] : [];
           },
         }),

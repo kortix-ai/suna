@@ -1,3 +1,4 @@
+import { sessionEnvironments } from '@kortix/db';
 /**
  * Taking a session environment down.
  *
@@ -13,11 +14,11 @@
  * to callers.
  */
 import { eq } from 'drizzle-orm';
-import { sessionEnvironments } from '@kortix/db';
-import { db } from '../../shared/db';
-import { getDaytona } from '../../shared/daytona';
-import { withTimeout } from '../../shared/with-timeout';
 import { endComputeSession } from '../../billing/services/compute-metering';
+import { revokeAccountToken } from '../../repositories/account-tokens';
+import { getDaytona } from '../../shared/daytona';
+import { db } from '../../shared/db';
+import { withTimeout } from '../../shared/with-timeout';
 import type { SessionEnvironmentInfo } from './session-environment-types';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
@@ -32,7 +33,9 @@ async function readRow(sessionId: string) {
 }
 
 /** Stop the environment box; the row survives for a later resume. */
-export async function stopSessionEnvironment(sessionId: string): Promise<SessionEnvironmentInfo | null> {
+export async function stopSessionEnvironment(
+  sessionId: string,
+): Promise<SessionEnvironmentInfo | null> {
   const row = await readRow(sessionId);
   if (!row) return null;
   if (row.externalId && row.status === 'active') {
@@ -54,7 +57,8 @@ export async function stopSessionEnvironment(sessionId: string): Promise<Session
   }
   // Close the meter with the box. `environmentId` is the compute row's
   // sandbox id (the provider's externalId is a different value).
-  const meteredId = (row.metadata as { environmentId?: string } | null)?.environmentId;
+  const meteredId =
+    row.environmentId ?? (row.metadata as { environmentId?: string } | null)?.environmentId;
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
   const [updated] = await db
     .update(sessionEnvironments)
@@ -62,7 +66,13 @@ export async function stopSessionEnvironment(sessionId: string): Promise<Session
     .where(eq(sessionEnvironments.sessionId, sessionId))
     .returning();
   return updated
-    ? { sessionId, status: updated.status, externalId: updated.externalId, previewUrl: null, previewToken: null }
+    ? {
+        sessionId,
+        status: updated.status,
+        externalId: updated.externalId,
+        previewUrl: null,
+        previewToken: null,
+      }
     : null;
 }
 
@@ -78,7 +88,8 @@ export async function stopSessionEnvironment(sessionId: string): Promise<Session
 export async function deleteSessionEnvironment(sessionId: string): Promise<void> {
   const row = await readRow(sessionId);
   if (!row) return;
-  const meteredId = (row.metadata as { environmentId?: string } | null)?.environmentId;
+  const meteredId =
+    row.environmentId ?? (row.metadata as { environmentId?: string } | null)?.environmentId;
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
   if (row.externalId) {
     try {
@@ -96,6 +107,11 @@ export async function deleteSessionEnvironment(sessionId: string): Promise<void>
     } catch (err) {
       console.warn(`[session-env] delete of ${row.externalId} failed:`, err);
     }
+  }
+  const credentialTokenId = (row.config as { credentialTokenId?: string } | null)
+    ?.credentialTokenId;
+  if (credentialTokenId) {
+    await revokeAccountToken(credentialTokenId, row.accountId, row.projectId).catch(() => {});
   }
   await db.delete(sessionEnvironments).where(eq(sessionEnvironments.sessionId, sessionId));
 }

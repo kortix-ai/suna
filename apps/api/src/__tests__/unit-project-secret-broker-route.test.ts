@@ -93,7 +93,8 @@ const databaseMock = {
   select: () => ({
     from: (table: unknown) => ({
       where: () => {
-        if (table === projectSessions) return { limit: async () => (sessionRow ? [sessionRow] : []) };
+        if (table === projectSessions)
+          return { limit: async () => (sessionRow ? [sessionRow] : []) };
         // The egress pin reads the sandbox row to see whether this token is
         // being used from the box it was issued to. `sandboxRow` is null by
         // default, i.e. UNPINNED — which the route must allow, or every session
@@ -177,6 +178,8 @@ function buildApp() {
       authType: 'pat' | 'supabase';
       tokenProjectId?: string;
       sessionId?: string;
+      sandboxId?: string;
+      sessionRuntimeKind?: 'worker' | 'environment';
       agentGrant?: Record<string, unknown> | null;
     };
   }>();
@@ -184,7 +187,11 @@ function buildApp() {
     c.set('userId', USER_ID);
     c.set('authType', authType);
     if (tokenProjectId) c.set('tokenProjectId', tokenProjectId);
-    if (sessionId) c.set('sessionId', sessionId);
+    if (sessionId) {
+      c.set('sessionId', sessionId);
+      c.set('sandboxId', sessionId);
+      c.set('sessionRuntimeKind', 'worker');
+    }
     c.set('agentGrant', agentGrant);
     await next();
   });
@@ -336,9 +343,9 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     expect(sessionDenied.status).toBe(403);
     expect(await sessionDenied.json()).toMatchObject({ code: 'policy_denied' });
     expect(decrypted).toHaveLength(0);
-    expect(audits.every((event) => JSON.stringify(event).includes('shared-secret-value') === false)).toBe(
-      true,
-    );
+    expect(
+      audits.every((event) => JSON.stringify(event).includes('shared-secret-value') === false),
+    ).toBe(true);
   });
 
   test('accepts a broker handle materialized from an all grant narrowed by the session allowlist', async () => {
@@ -476,7 +483,10 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     test('a secret whose own policy denies this host is never decrypted', async () => {
       // Substitution must not widen who may spend: the destination is admitted
       // for the route's secret, not for this one.
-      handleRows = [handleFor(), secondHandle({ policySnapshot: { rules: [{ host: 'elsewhere.example' }] } })];
+      handleRows = [
+        handleFor(),
+        secondHandle({ policySnapshot: { rules: [{ host: 'elsewhere.example' }] } }),
+      ];
 
       const response = await brokerRequest();
 
@@ -513,7 +523,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
       expect(refused?.after).toMatchObject({ refusals: { forged: 1, stolen: 0, host_denied: 0 } });
     });
 
-    test("a VALID handle minted for another session is audited as stolen, not forged", async () => {
+    test('a VALID handle minted for another session is audited as stolen, not forged', async () => {
       // The tag verifies — this deployment minted it — but the lookup id is not
       // one of THIS session's active handles. Different incident, different
       // reason, and the difference has to survive into the audit row.
@@ -542,10 +552,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
     });
 
     test('an expired handle is not spendable', async () => {
-      handleRows = [
-        handleFor(),
-        secondHandle({ expiresAt: new Date(Date.now() - 60_000) }),
-      ];
+      handleRows = [handleFor(), secondHandle({ expiresAt: new Date(Date.now() - 60_000) })];
 
       await brokerRequest();
 
@@ -556,7 +563,11 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/broker', () => {
   });
 
   test('records broker failures without recording the secret', async () => {
-    brokerFailure = new MockSecretBrokerError('upstream_timeout', 'upstream request timed out', 504);
+    brokerFailure = new MockSecretBrokerError(
+      'upstream_timeout',
+      'upstream request timed out',
+      504,
+    );
 
     const response = await brokerRequest();
 

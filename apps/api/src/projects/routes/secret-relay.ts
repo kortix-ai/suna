@@ -35,8 +35,6 @@ import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
-  decodeRelayMeta,
-  encodeRelayStatus,
   RELAY_EOS_BYTES,
   RELAY_ERROR_HEADER,
   RELAY_META_HEADER,
@@ -46,38 +44,38 @@ import {
   RELAY_VERSION_HEADER,
   RelayCodecError,
   type SecretRelayMeta,
+  decodeRelayMeta,
+  encodeRelayStatus,
 } from '@kortix/api-contract/secret-relay';
 import { config } from '../../config';
 import { getAgentGrant } from '../../iam/agent-scope';
+import { getSessionRuntimeCredential } from '../../middleware/session-sandbox-credential';
 import { auth, errors } from '../../openapi';
-import {
-  assertPolicyAdmitsPath,
-  bodyEncoding,
-  MAX_REDIRECTS,
-  prepareRelayHead,
-  REDACTED,
-  SAFE_RESPONSE_HEADERS,
-  SecretBrokerError,
-  secretRepresentations,
-  substituteBuffer,
-  encodeSecretRepresentation,
-  type PreparedRelayHead,
-  type SecretSubstitution,
-} from '../../secrets/http-broker';
+import { requestEgressIp, verifyRuntimeEgressIp } from '../../platform/services/sandbox-egress-pin';
 import {
   classifyPresentedHandles,
   requestSurfaceText,
   summarizeHandleRefusals,
 } from '../../secrets/handle-substitution';
+import {
+  MAX_REDIRECTS,
+  type PreparedRelayHead,
+  REDACTED,
+  SAFE_RESPONSE_HEADERS,
+  SecretBrokerError,
+  type SecretSubstitution,
+  assertPolicyAdmitsPath,
+  bodyEncoding,
+  encodeSecretRepresentation,
+  prepareRelayHead,
+  secretRepresentations,
+  substituteBuffer,
+} from '../../secrets/http-broker';
 import { authorizeSecretRelay } from '../../secrets/relay-authorize';
 import { openUpstream } from '../../secrets/relay-transport';
-import { StreamSubstituter, type StreamReplacement } from '../../secrets/stream-substitute';
+import { type StreamReplacement, StreamSubstituter } from '../../secrets/stream-substitute';
 import { recordAuditEvent } from '../../shared/audit';
 import { loadProjectForUser } from '../lib/access';
-import {
-  requestEgressIp,
-  verifySandboxEgressIp,
-} from '../../platform/services/sandbox-egress-pin';
 import { projectsApp } from '../lib/app';
 
 /**
@@ -346,10 +344,12 @@ projectsApp.openapi(
 
     const agentGrant = getAgentGrant(c);
     const sessionId = c.get('sessionId');
+    const runtimeCredential = getSessionRuntimeCredential(c);
     if (
       c.get('authType') !== 'pat' ||
       c.get('tokenProjectId') !== projectId ||
       !sessionId ||
+      !runtimeCredential ||
       !agentGrant
     ) {
       c.header(RELAY_ERROR_HEADER, 'session_agent_token_required');
@@ -364,10 +364,12 @@ projectsApp.openapi(
 
     // Same egress pin as /broker: this checks WHERE the token is being used
     // from, not what it is. Unpinned sessions pass — see sandbox-egress-pin.ts.
-    const pin = await verifySandboxEgressIp(sessionId, requestEgressIp(c));
+    const pin = await verifyRuntimeEgressIp(runtimeCredential, requestEgressIp(c));
     if (!pin.ok) {
       console.warn('[secret-relay] refused an off-sandbox token use', {
         sessionId,
+        runtimeKind: runtimeCredential.kind,
+        runtimeId: runtimeCredential.runtimeId,
         projectId,
         pinned: pin.pinned,
         seen: pin.seen,
@@ -518,9 +520,7 @@ projectsApp.openapi(
     }
 
     const primaryEncoding = bodyEncoding(head.headers['content-type']);
-    const requestSubstituter = new StreamSubstituter(
-      requestPairs(head.admitted, primaryEncoding),
-    );
+    const requestSubstituter = new StreamSubstituter(requestPairs(head.admitted, primaryEncoding));
 
     // ── Disposal, tied to REQUEST LIFETIME rather than to a clean flush ────
     //
@@ -757,15 +757,11 @@ projectsApp.openapi(
             outcome: upstream.status >= 400 ? 'failure' : 'success',
             after: {
               upstream_status: upstream.status,
-              ...(substitutedSoFar.size > 0
-                ? { substituted: [...substitutedSoFar].sort() }
-                : {}),
+              ...(substitutedSoFar.size > 0 ? { substituted: [...substitutedSoFar].sort() } : {}),
               ...(streamingRequest
                 ? {
                     substitution: 'streamed_superset',
-                    substitution_candidates: hop.admitted
-                      .map((entry) => entry.identifier)
-                      .sort(),
+                    substitution_candidates: hop.admitted.map((entry) => entry.identifier).sort(),
                   }
                 : {}),
               ...(refusals.length > 0
@@ -838,11 +834,7 @@ projectsApp.openapi(
         // gate reading `size === 0`. It was saved by the separate
         // `bodyWasStreamed` check below — i.e. by ordering, not by the check
         // that is meant to enforce the invariant.
-        if (
-          hop.carriesSecret ||
-          hop.applied.size > 0 ||
-          requestSubstituter.applied.length > 0
-        ) {
+        if (hop.carriesSecret || hop.applied.size > 0 || requestSubstituter.applied.length > 0) {
           await recordAuditEvent({
             ...auditBase,
             action: 'secret.broker.failed',
