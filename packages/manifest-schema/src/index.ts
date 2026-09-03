@@ -54,7 +54,9 @@ import {
   validateAgentsV2,
   validateDefaultAgentV2,
   validateRuntimeV2,
+  validateSubprojectsV2,
   validateTriggerAgentRefsV2,
+  validateTriggerSubprojectRefsV2,
 } from './index.v2';
 
 export {
@@ -146,7 +148,12 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
+  type SubprojectBlockV2,
+  type SubprojectSessionsModeV2,
+  SUBPROJECT_SESSIONS_MODES_V2,
   resolveGrantSet,
+  validateSubprojectsV2,
+  validateTriggerSubprojectRefsV2,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
 } from './index.v2';
@@ -305,6 +312,8 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
+  const subprojectNames = validateSubprojectsV2(parsed.subprojects, 'subprojects', agentNames, issues);
+  validateTriggerSubprojectRefsV2(parsed.triggers, 'triggers', subprojectNames, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */

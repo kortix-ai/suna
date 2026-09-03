@@ -774,6 +774,11 @@ export const projectSessions = kortixSchema.table(
     sandboxUrl: text('sandbox_url'),
     opencodeSessionId: text('opencode_session_id'),
     agentName: text('agent_name').default('default').notNull(),
+    // The manifest `subprojects.<slug>` this session lives in, or NULL for a
+    // plain project session. TEXT, not a FK: the subproject is declared in
+    // kortix.yaml (like an agent name), and the IAM object grant that governs
+    // who may see it keys on this same slug (`object_type = 'subproject'`).
+    subproject: text('subproject'),
     status: projectSessionStatusEnum('status').default('queued').notNull(),
     error: text('error'),
     // Session ownership + org-visibility (default private to the creator).
@@ -832,6 +837,11 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_project').on(table.projectId),
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
+    // `GET /projects/:id/sessions?subproject=<slug>` and the subproject page's
+    // session count. Partial: most rows carry NULL and never need indexing.
+    index('idx_project_sessions_project_subproject')
+      .on(table.projectId, table.subproject)
+      .where(sql`${table.subproject} IS NOT NULL`),
     // Per-END-USER concurrency cap for Kortix-as-a-Backend: COUNT of a single
     // origin_ref's live sessions, checked on every backend session create.
     // Partial on the ACTIVE statuses (mirroring ACTIVE_SESSION_STATUSES in

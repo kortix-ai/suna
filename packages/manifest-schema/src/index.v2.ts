@@ -153,12 +153,43 @@ export interface AgentBlockV2 {
   workspace?: WorkspaceModeV2;
 }
 
+/**
+ * One entry of the v2 `subprojects:` map — a Claude/ChatGPT-style "project"
+ * INSIDE a Kortix project. It groups sessions, carries its own standing
+ * instructions and context files, may pin a default agent, and owns the
+ * triggers that name it (`triggers[].subproject`). Authorization is an IAM
+ * object grant (`object_type = 'subproject'`, closed by default, like agents)
+ * and lives server-side — nothing here is a permission.
+ */
+export interface SubprojectBlockV2 {
+  /** Display name. Defaults to the slug. */
+  name?: string;
+  description?: string;
+  /** Standing instructions, appended to the agent's system prompt for every
+   *  session inside this subproject. Inline markdown. */
+  instructions?: string;
+  /** Repo-relative files or directories the agent is told to read first. */
+  context?: string[];
+  /** Default agent for sessions started inside this subproject. Must name a
+   *  declared agent; omit to fall back to `default_agent`. A default, not a
+   *  binding: the person may pick any other agent they hold. */
+  agent?: string;
+  /** Session visibility inside the subproject. `private` (default): the
+   *  ordinary model — a session is its creator's unless shared. `shared`:
+   *  everyone granted the subproject may open every session in it. */
+  sessions?: SubprojectSessionsModeV2;
+}
+
+export const SUBPROJECT_SESSIONS_MODES_V2 = ['private', 'shared'] as const;
+export type SubprojectSessionsModeV2 = (typeof SUBPROJECT_SESSIONS_MODES_V2)[number];
+
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
 export interface ManifestV2 {
   kortix_version: 2;
   default_agent: string;
   runtime?: RuntimeV2;
   agents: Record<string, AgentBlockV2>;
+  subprojects?: Record<string, SubprojectBlockV2>;
   project?: Record<string, unknown>;
   env?: Record<string, unknown>;
   opencode?: Record<string, unknown>;
@@ -669,6 +700,145 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
     message:
       '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel connection is expressed as a connector (provider="channel").',
     severity: 'error',
+  });
+}
+
+/** The keys a `subprojects.<slug>` block may carry. Anything else is an
+ *  error, so a typo (`instruction:`) cannot silently become "no instructions". */
+const SUBPROJECT_BLOCK_KEYS_V2 = new Set([
+  'name',
+  'description',
+  'instructions',
+  'context',
+  'agent',
+  'sessions',
+]);
+
+/** A repo-relative path: non-empty, not absolute, no `..` segment. */
+function isRepoRelativePath(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const p = value.trim();
+  if (!p || p.startsWith('/') || p.startsWith('\\')) return false;
+  return !p.split(/[\\/]/).some((segment) => segment === '..');
+}
+
+/**
+ * `subprojects:` — an optional slug → block map. Returns the declared slugs
+ * so `triggers[].subproject` can be cross-validated. Dispatch: called from
+ * `index.ts`'s `validateManifestBodyV2`.
+ */
+export function validateSubprojectsV2(
+  node: unknown,
+  path: string,
+  agentNames: string[],
+  issues: ManifestIssue[],
+): string[] {
+  const names: string[] = [];
+  if (node === undefined || node === null) return names;
+  if (Array.isArray(node) || !isTable(node)) {
+    issues.push({
+      path,
+      message: '`subprojects` must be a map of subproject slug → block.',
+      severity: 'error',
+    });
+    return names;
+  }
+  for (const [slug, entry] of Object.entries(node)) {
+    const where = `${path}.${slug}`;
+    if (!SLUG_RE.test(slug)) {
+      issues.push({
+        path: where,
+        message: `"${slug}" is not a valid subproject slug (lowercase letters, digits, dashes, underscores).`,
+        severity: 'error',
+      });
+      continue;
+    }
+    names.push(slug);
+    if (!isTable(entry)) {
+      issues.push({
+        path: where,
+        message: 'a subproject must be a table (use `{}` for an empty one).',
+        severity: 'error',
+      });
+      continue;
+    }
+    for (const key of Object.keys(entry)) {
+      if (!SUBPROJECT_BLOCK_KEYS_V2.has(key)) {
+        issues.push({
+          path: `${where}.${key}`,
+          message: `"${key}" is not a subproject field (allowed: ${[...SUBPROJECT_BLOCK_KEYS_V2].join(', ')}).`,
+          severity: 'error',
+        });
+      }
+    }
+    expectStringOrAbsent(entry.name, `${where}.name`, issues);
+    expectStringOrAbsent(entry.description, `${where}.description`, issues);
+    expectStringOrAbsent(entry.instructions, `${where}.instructions`, issues);
+    if (
+      entry.sessions !== undefined &&
+      !(SUBPROJECT_SESSIONS_MODES_V2 as readonly unknown[]).includes(entry.sessions)
+    ) {
+      issues.push({
+        path: `${where}.sessions`,
+        message: `sessions must be one of ${SUBPROJECT_SESSIONS_MODES_V2.map((m) => `"${m}"`).join(', ')}.`,
+        severity: 'error',
+      });
+    }
+    if (entry.agent !== undefined && entry.agent !== null) {
+      const agent = typeof entry.agent === 'string' ? entry.agent.trim() : '';
+      if (!agent || !agentNames.includes(agent)) {
+        issues.push({
+          path: `${where}.agent`,
+          message: `agent "${String(entry.agent)}" does not match any declared agent in \`agents\`; omit it to fall back to \`default_agent\`.`,
+          severity: 'error',
+        });
+      }
+    }
+    if (entry.context !== undefined && entry.context !== null) {
+      if (!Array.isArray(entry.context)) {
+        issues.push({
+          path: `${where}.context`,
+          message: 'context must be a list of repo-relative paths.',
+          severity: 'error',
+        });
+      } else {
+        entry.context.forEach((item, i) => {
+          if (!isRepoRelativePath(item)) {
+            issues.push({
+              path: `${where}.context[${i}]`,
+              message: 'each context entry must be a non-empty repo-relative path (no leading "/" and no "..").',
+              severity: 'error',
+            });
+          }
+        });
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * v2 cross-validation: a trigger's `subproject` (if set) must name a declared
+ * subproject. Mirrors `validateTriggerAgentRefsV2`.
+ */
+export function validateTriggerSubprojectRefsV2(
+  node: unknown,
+  path: string,
+  subprojectNames: string[],
+  issues: ManifestIssue[],
+): void {
+  if (!Array.isArray(node)) return;
+  node.forEach((entry, i) => {
+    if (!isTable(entry) || entry.subproject === undefined || entry.subproject === null) return;
+    const where = `${path}[${i}].subproject`;
+    const name = typeof entry.subproject === 'string' ? entry.subproject.trim() : '';
+    if (!name || !subprojectNames.includes(name)) {
+      issues.push({
+        path: where,
+        message: `subproject "${String(entry.subproject)}" does not match any declared subproject in \`subprojects\`.`,
+        severity: 'error',
+      });
+    }
   });
 }
 
