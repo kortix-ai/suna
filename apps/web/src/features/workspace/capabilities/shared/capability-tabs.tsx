@@ -177,13 +177,6 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * column; the page body below is the flex-1 scroller.
  */
 /**
- * No trailing Settings tab any more. It trailed the row on the right until
- * 2026-09-02, when `/projects/<id>/config` was retired: its sections are the
- * Settings overlay's Workspace group now, and Review took a place in the row
- * proper. `MembersLaunchLink` keeps its `ml-auto` and is the only trailing
- * element.
- */
-/**
  * The hairline between Agents and everything an agent draws on (Skills
  * through Secrets). One `TabsList` still —
  * this is a `span`, not a second list, so the underline indicator and the

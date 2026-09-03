@@ -183,10 +183,6 @@ describe('CapabilityTabs gate wiring', () => {
     expect(bar).toContain('{library.map(renderTab)}');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
     expect(bar).not.toContain('CAPABILITY_TABS.map');
-    // One flat map, no trailing group. The bar had a `TRAILING_TABS` split
-    // while `config` sat at the far right of the row; that tab was retired on
-    // 2026-09-02 and `MembersLaunchLink` is the only trailing element now.
-    expect(bar).not.toContain('TRAILING_TABS');
     // The flags reach the gate from the bar itself, so a page cannot forget
     // them — and they arrive as one resolved map, so the bar names no flag key.
     expect(bar).toContain('useCapabilityTabFlags(projectId)');
