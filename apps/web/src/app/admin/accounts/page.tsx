@@ -1,23 +1,21 @@
 'use client';
 
 import {
-  ArrowDownIcon as ArrowDown,
   ArrowDownRightIcon as ArrowDownRight,
-  ArrowUpIcon as ArrowUp,
   ArrowUpRightIcon as ArrowUpRight,
   ProhibitIcon as Ban,
   CheckCircleIcon as CheckCircle2,
-  CaretLeftIcon as ChevronLeft,
-  CaretRightIcon as ChevronRight,
+  CheckIcon,
+  CopyIcon,
   CreditCardIcon as CreditCard,
   ArrowSquareOutIcon as ExternalLink,
   EyeIcon as Eye,
   FunnelIcon as Filter,
   KanbanIcon as FolderKanban,
   ClockCounterClockwiseIcon as History,
+  IdentificationCardIcon,
   KeyIcon as Key,
   EnvelopeIcon as Mail,
-  ArrowClockwiseIcon as RefreshCw,
   ShieldIcon as Shield,
   SlidersHorizontalIcon as SlidersHorizontal,
   UsersIcon as Users,
@@ -30,10 +28,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { IconInbox } from '@/components/ui/kortix-icons';
 import Loading from '@/components/ui/loading';
-import { PageSearchBar } from '@/components/ui/page-search-bar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -90,7 +88,10 @@ import { useDebounce } from '@/hooks/use-debounced-value';
 import { clearLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { cn } from '@/lib/utils';
 
-import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
+import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
+import { AdminEmptyFrame, AdminTableFrame } from '../_components/admin-panel';
+import { AdminPagination, AdminSearch, AdminSortHeader } from '../_components/admin-table';
+import { StatGrid, StatTile } from '../_components/stat-tile';
 import { adminLedgerRows } from './ledger-rows';
 import {
   MAX_COMPUTE_RATE_MULTIPLIER,
@@ -537,51 +538,36 @@ export default function AdminAccountsPage() {
   };
 
   return (
-    <SectionContainer>
-      <SectionHeader
-        icon={Users}
-        title="Accounts"
-        description={
-          'Filter, sort, and inspect every account. Grant or debit credits, review ledger, and see billing state.'
-        }
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="gap-1.5"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
-            Refresh
-          </Button>
-        }
-      />
-
-      <StatRow>
-        <StatPill
-          label={'Total (filtered)'}
+    <AdminPageShell
+      width="wide"
+      title="Accounts"
+      description="Filter, sort and inspect every account. Grant or debit credits, read the ledger, and see billing state."
+      action={<AdminRefreshButton busy={isFetching} onRefresh={() => void refetch()} />}
+    >
+      <StatGrid>
+        <StatTile
+          label="Total (filtered)"
           value={total.toLocaleString()}
-          hint={filtersCount > 0 ? 'Matches current filters' : 'All accounts'}
+          hint={filtersCount > 0 ? 'Matches the current filters' : 'All accounts'}
         />
-        <StatPill
+        <StatTile
           label="Paid"
           value={(summary?.paidCount ?? 0).toLocaleString()}
           tone="success"
-          hint={'Non-free tiers'}
+          hint="Non-free tiers"
         />
-        <StatPill
-          label={'Credits in set'}
+        <StatTile
+          label="Credits in set"
           value={formatCredits(summary?.totalCredits ?? 0)}
-          hint={'Sum of balances'}
+          hint="Sum of balances"
         />
-        <StatPill
-          label={'Past due'}
+        <StatTile
+          label="Past due"
           value={summary?.pastDueCount ?? 0}
           tone={(summary?.pastDueCount ?? 0) > 0 ? 'warning' : 'default'}
           hint={(summary?.pastDueCount ?? 0) > 0 ? 'Needs review' : 'All clear'}
         />
-      </StatRow>
+      </StatGrid>
 
       <FilterBar
         searchInput={searchInput}
@@ -602,37 +588,33 @@ export default function AdminAccountsPage() {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full rounded-2xl" />
+            <Skeleton key={i} className="h-12 w-full rounded-md" />
           ))}
         </div>
       ) : accounts.length === 0 ? (
-        <div className="border-border/60 bg-card rounded-2xl border">
+        <AdminEmptyFrame>
           <EmptyState
             icon={IconInbox}
+            size="sm"
             title={
-              search || filtersCount > 0 ? 'No accounts match your filters' : 'No accounts yet'
+              search || filtersCount > 0 ? 'No accounts match these filters' : 'No accounts yet'
             }
             description={
               search || filtersCount > 0
-                ? 'Try adjusting filters or clearing the search.'
+                ? 'Try adjusting the filters or clearing the search.'
                 : undefined
             }
             action={
               search || filtersCount > 0 ? (
                 <Button variant="outline" size="sm" onClick={resetFilters}>
-                  {'Clear filters'}
+                  Clear filters
                 </Button>
               ) : undefined
             }
           />
-        </div>
+        </AdminEmptyFrame>
       ) : (
-        <div
-          className={cn(
-            'border-border/60 overflow-hidden rounded-2xl border transition-opacity',
-            isFetching && 'opacity-70',
-          )}
-        >
+        <AdminTableFrame busy={isFetching}>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
@@ -682,7 +664,7 @@ export default function AdminAccountsPage() {
                       <div className="truncate text-sm font-medium">{accountLabelFor(account)}</div>
                       <div className="text-muted-foreground truncate text-xs">
                         {account.ownerEmail || 'No owner email'}
-                        <span className="mx-1.5 opacity-50">·</span>
+                        <span className="text-muted-foreground/40 mx-1.5">·</span>
                         <span className="font-mono">{account.accountId.slice(0, 8)}</span>
                       </div>
                     </div>
@@ -694,7 +676,7 @@ export default function AdminAccountsPage() {
                     <span
                       className={cn(
                         'font-mono text-sm',
-                        Number(account.balance ?? 0) < 0 && 'text-red-600 dark:text-red-400',
+                        Number(account.balance ?? 0) < 0 && 'text-kortix-red',
                       )}
                     >
                       {formatCredits(account.balance)}
@@ -723,41 +705,19 @@ export default function AdminAccountsPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </AdminTableFrame>
       )}
 
-      {pages > 1 && (
-        <div className="text-muted-foreground flex items-center justify-between text-sm">
-          <span>
-            Page {page} of {pages} · {total.toLocaleString()} accounts
-          </span>
-          <div className="flex gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2.5"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Prev
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2.5"
-              onClick={() => setPage((p) => Math.min(pages, p + 1))}
-              disabled={page === pages}
-            >
-              Next
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
+      <AdminPagination
+        page={page}
+        pages={pages}
+        total={total}
+        noun="accounts"
+        onPageChange={setPage}
+      />
 
       <AccountDetailSheet account={selectedAccount} onClose={() => setSelected(null)} />
-    </SectionContainer>
+    </AdminPageShell>
   );
 }
 
@@ -782,14 +742,16 @@ function FilterBar({
 }) {
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <PageSearchBar
-        value={searchInput}
-        onChange={onSearchChange}
-        placeholder={'Search by account, owner email, or account ID…'}
-      />
+      <div className="min-w-0 flex-1">
+        <AdminSearch
+          value={searchInput}
+          onChange={onSearchChange}
+          placeholder="Search accounts, owner emails, IDs"
+        />
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="border-input bg-card flex h-9 items-center gap-2 rounded-2xl border px-3 py-1.5 text-sm">
+        <label className="border-input bg-popover flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
           <Switch
             checked={filters.paidOnly}
             onCheckedChange={(v) => onFiltersChange({ ...filters, paidOnly: v })}
@@ -800,14 +762,9 @@ function FilterBar({
 
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-1.5">
+            <Button variant="outline" size="sm">
               <Filter className="h-3.5 w-3.5" />
               Filters
-              {filtersCount > 0 && (
-                <Badge variant="muted" size="sm" className="ml-1">
-                  {filtersCount}
-                </Badge>
-              )}
             </Button>
           </PopoverTrigger>
           <PopoverContent align="end" className="w-[320px] p-0">
@@ -822,7 +779,7 @@ function FilterBar({
             onFiltersChange({ ...filters, sortBy, sortDir });
           }}
         >
-          <SelectTrigger className="h-9 w-[170px] gap-1.5">
+          <SelectTrigger variant="outline" size="sm" arrow={false}>
             <SlidersHorizontal className="text-muted-foreground h-3.5 w-3.5" />
             <SelectValue placeholder="Sort" />
           </SelectTrigger>
@@ -899,9 +856,7 @@ function FiltersPanel({
       </div>
 
       <div className="border-border/60 space-y-2 border-b px-4 py-3">
-        <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-          Subscription
-        </div>
+        <div className="text-muted-foreground text-xs font-medium">Subscription</div>
         <div className="flex items-center justify-between text-sm">
           <span>{'Has active subscription'}</span>
           <Select
@@ -933,9 +888,7 @@ function FiltersPanel({
 
       <div className="border-border/60 space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            Tier
-          </div>
+          <div className="text-muted-foreground text-xs font-medium">Tier</div>
           {filters.tier.length > 0 && (
             <Button
               variant="ghost"
@@ -953,11 +906,9 @@ function FiltersPanel({
               {/* One heading, before the first grandfathered key — these are
                   still-honored plans no account can be moved onto today. */}
               {t.grandfathered && !TIER_OPTIONS[i - 1]?.grandfathered && (
-                <div className="text-muted-foreground/70 px-1.5 pt-2 pb-1 text-xs tracking-wider uppercase">
-                  Grandfathered
-                </div>
+                <div className="text-muted-foreground px-1.5 pt-2 pb-1 text-xs">Grandfathered</div>
               )}
-              <label className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
+              <label className="hover:bg-hover flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm">
                 <Checkbox
                   checked={filters.tier.includes(t.value)}
                   onCheckedChange={() => toggleTier(t.value)}
@@ -971,9 +922,7 @@ function FiltersPanel({
 
       <div className="border-border/60 space-y-2 border-b px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-            {'Payment status'}
-          </div>
+          <div className="text-muted-foreground text-xs font-medium">{'Payment status'}</div>
           {filters.paymentStatus.length > 0 && (
             <Button
               variant="ghost"
@@ -989,7 +938,7 @@ function FiltersPanel({
           {PAYMENT_STATUS_OPTIONS.map((p) => (
             <label
               key={p.value}
-              className="hover:bg-muted/40 flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm"
+              className="hover:bg-hover flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-sm"
             >
               <Checkbox
                 checked={filters.paymentStatus.includes(p.value)}
@@ -1002,9 +951,7 @@ function FiltersPanel({
       </div>
 
       <div className="space-y-2 px-4 py-3">
-        <div className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
-          Balance
-        </div>
+        <div className="text-muted-foreground text-xs font-medium">Balance</div>
         <div className="flex items-center gap-2">
           <Input
             type="number"
@@ -1104,15 +1051,17 @@ function ActiveChips({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {chips.map((chip) => (
-        <button
+        <Button
           key={chip.key}
           type="button"
+          size="sm"
+          variant="outline"
           onClick={chip.onRemove}
-          className="group border-border/60 bg-muted/30 hover:bg-muted/60 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors"
+          className="rounded-full"
         >
           <span>{chip.label}</span>
           <X className="text-muted-foreground group-hover:text-foreground h-3 w-3" />
-        </button>
+        </Button>
       ))}
       {chips.length > 1 && (
         <Button
@@ -1135,14 +1084,9 @@ function ActiveChips({
 // Sortable table header
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SortHeader({
-  label,
-  column,
-  sortBy,
-  sortDir,
-  onSort,
-  align = 'left',
-}: {
+/** The accounts table's sortable header — the shared `AdminSortHeader`, bound
+ *  to this page's column union. */
+function SortHeader(props: {
   label: string;
   column: AdminAccountsSortBy;
   sortBy: AdminAccountsSortBy;
@@ -1150,30 +1094,7 @@ function SortHeader({
   onSort: (col: AdminAccountsSortBy) => void;
   align?: 'left' | 'right';
 }) {
-  const active = sortBy === column;
-  return (
-    <TableHead className={align === 'right' ? 'text-right' : ''}>
-      <button
-        type="button"
-        onClick={() => onSort(column)}
-        className={cn(
-          'inline-flex items-center gap-1 text-xs font-medium tracking-wider uppercase transition-colors',
-          active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        {label}
-        {active ? (
-          sortDir === 'asc' ? (
-            <ArrowUp className="h-3 w-3" />
-          ) : (
-            <ArrowDown className="h-3 w-3" />
-          )
-        ) : (
-          <ArrowDown className="h-3 w-3 opacity-0" />
-        )}
-      </button>
-    </TableHead>
-  );
+  return <AdminSortHeader<AdminAccountsSortBy> {...props} />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1194,7 +1115,7 @@ function AccountDetailSheet({
     <Sheet open={!!account} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side="right"
-        className="w-full overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[1120px]"
+        className="w-full bg-background overflow-y-auto p-0 sm:!max-w-[640px] md:!max-w-[820px] lg:!max-w-[1120px]"
       >
         {account && <AccountDetail account={account} />}
       </SheetContent>
@@ -1282,125 +1203,221 @@ function OpenAsAccountButton({ account }: { account: AdminAccount }) {
   );
 }
 
+/**
+ * A one-line identity value you copy by clicking it. The copy glyph fades in on
+ * hover and swaps to a green check for ~1.5s after a copy. The whole row is the
+ * hit target — Jay's note: "the email should be copyable, not a decorative
+ * icon". Renders a plain muted line when there is no value.
+ */
+function CopyField({
+  icon: Icon,
+  value,
+  placeholder,
+  label,
+  mono = false,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  value: string | null | undefined;
+  placeholder: string;
+  label: string;
+  mono?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  if (!value) {
+    return (
+      <span className="text-muted-foreground flex items-center gap-1.5 text-xs">
+        <Icon className="size-3.5 shrink-0" />
+        {placeholder}
+      </span>
+    );
+  }
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      errorToast('Could not copy to the clipboard');
+    }
+  };
+
+  return (
+    <Hint label={copied ? 'Copied' : `Copy ${label}`} side="bottom">
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={`Copy ${label}`}
+        className="group text-muted-foreground hover:text-foreground focus-visible:ring-ring -mx-1 flex max-w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-0.5 text-xs transition-colors outline-none focus-visible:ring-2 active:scale-[0.98]"
+      >
+        <Icon className="size-3.5 shrink-0" />
+        <span className={cn('truncate', mono && 'font-mono')}>{value}</span>
+        <span className="relative inline-flex size-3 shrink-0 items-center justify-center">
+          {copied ? (
+            <CheckIcon className="text-kortix-green size-3" />
+          ) : (
+            <CopyIcon className="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
+          )}
+        </span>
+      </button>
+    </Hint>
+  );
+}
+
 function AccountDetail({ account }: { account: AdminAccount }) {
   const usersQuery = useAdminAccountUsers(account.accountId);
   const projectsQuery = useAdminAccountProjects(account.accountId);
   const ledgerQuery = useAdminAccountLedger(account.accountId, 100);
   const actions = billingActionsFor(account);
+  const balanceNegative = Number(account.balance ?? 0) < 0;
+  const usersCount = usersQuery.data?.users?.length;
+  const projectsCount = projectsQuery.data?.projects?.length;
 
   return (
-    <div className="flex flex-col">
-      <SheetHeader className="border-border/60 border-b p-6">
-        <SheetTitle className="flex items-center gap-2 text-lg">
-          {accountLabelFor(account)}
-          <PlanBadge account={account} />
-          {account.paymentStatus && account.paymentStatus !== 'active' && (
-            <Badge
-              variant={paymentStatusBadge(account.paymentStatus)}
-              size="sm"
-              className="capitalize"
-            >
-              {account.paymentStatus.replace(/_/g, ' ')}
-            </Badge>
-          )}
-        </SheetTitle>
-        <SheetDescription className="flex flex-col gap-0.5 text-left">
-          <span className="flex items-center gap-1.5 text-xs">
-            <Mail className="h-3 w-3" />
-            {account.ownerEmail || 'No owner email'}
-          </span>
-          <span className="font-mono text-xs">{account.accountId}</span>
-          <LiveSubscriptionLine accountId={account.accountId} />
-        </SheetDescription>
-        <div className="pt-3">
+    <div className="flex min-h-0 flex-col">
+      <SheetHeader className="border-border/60 gap-3 border-b px-6 py-5">
+        {/* Title + who/what/where badges on the left; the one invasive action
+            (Open as account) pinned top-right so it never hides under scroll. */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-2">
+            <SheetTitle className="truncate text-lg font-semibold tracking-tight">
+              {accountLabelFor(account)}
+            </SheetTitle>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <PlanBadge account={account} />
+              {account.paymentStatus && account.paymentStatus !== 'active' && (
+                <Badge
+                  variant={paymentStatusBadge(account.paymentStatus)}
+                  size="sm"
+                  className="capitalize"
+                >
+                  {account.paymentStatus.replace(/_/g, ' ')}
+                </Badge>
+              )}
+              {trialIsActive(account.trial) && (
+                <Badge variant="success" size="sm">
+                  Trial
+                </Badge>
+              )}
+            </div>
+          </div>
           <OpenAsAccountButton account={account} />
         </div>
+
+        <SheetDescription className="sr-only">
+          {`Account details for ${accountLabelFor(account)}`}
+        </SheetDescription>
+
+        {/* Identity: email and account id are both click-to-copy. */}
+        <div className="flex flex-col items-start gap-1">
+          <CopyField
+            icon={Mail}
+            value={account.ownerEmail}
+            placeholder="No owner email"
+            label="email"
+          />
+          <CopyField
+            icon={IdentificationCardIcon}
+            value={account.accountId}
+            placeholder="No account ID"
+            label="account ID"
+            mono
+          />
+          <LiveSubscriptionLine accountId={account.accountId} />
+        </div>
+
         {actions.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-3">
+          <div className="flex flex-wrap gap-1.5">
             {actions.map((a) => (
               <a
                 key={a.href}
                 href={a.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group border-border/60 bg-card text-foreground hover:bg-muted/40 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors"
+                className="group border-border bg-popover text-foreground hover:bg-hover inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors active:scale-[0.98]"
               >
                 <ServiceFavicon domain={a.domain} />
                 {a.label}
-                <ExternalLink className="text-muted-foreground/60 group-hover:text-foreground h-3 w-3" />
+                <ExternalLink className="text-muted-foreground group-hover:text-foreground size-3" />
               </a>
             ))}
           </div>
         )}
       </SheetHeader>
 
-      <div className="space-y-6 p-6">
-        <StatRow className="!grid-cols-2 lg:!grid-cols-4">
-          <StatPill label="Total" value={formatCredits(account.balance)} />
-          <StatPill label="Expiring" value={formatCredits(account.expiringCredits)} />
-          <StatPill label="Permanent" value={formatCredits(account.nonExpiringCredits)} />
-          <StatPill label="Daily" value={formatCredits(account.dailyCreditsBalance)} />
-        </StatRow>
+      <div className="space-y-6 px-6 py-6">
+        <StatGrid className="grid-cols-2 lg:grid-cols-4">
+          <StatTile
+            label="Total balance"
+            value={formatCredits(account.balance)}
+            tone={balanceNegative ? 'danger' : 'default'}
+          />
+          <StatTile label="Expiring" value={formatCredits(account.expiringCredits)} />
+          <StatTile label="Permanent" value={formatCredits(account.nonExpiringCredits)} />
+          <StatTile label="Daily" value={formatCredits(account.dailyCreditsBalance)} />
+        </StatGrid>
 
         <Tabs defaultValue="credits" className="w-full">
-          <TabsList className="h-auto w-full flex-wrap">
-            <TabsTrigger value="credits" className="gap-1.5">
-              <CreditCard className="h-3.5 w-3.5" />
+          {/* Underline section tabs — the brand's primary-tab style — replacing
+              the wrapping pill pad. Scrolls horizontally on a narrow sheet
+              rather than reflowing into a second row. */}
+          <TabsList
+            type="underline"
+            className="w-full [scrollbar-width:none] justify-start gap-4 overflow-x-auto [&::-webkit-scrollbar]:hidden"
+          >
+            <TabsTrigger value="credits" className="w-fit flex-none gap-1.5">
+              <CreditCard className="size-3.5 shrink-0" />
               Credits
             </TabsTrigger>
-            <TabsTrigger value="entitlements" className="gap-1.5">
-              <Key className="h-3.5 w-3.5" />
+            <TabsTrigger value="entitlements" className="w-fit flex-none gap-1.5">
+              <Key className="size-3.5 shrink-0" />
               Entitlements
-              {trialIsActive(account.trial) && (
-                <Badge variant="success" size="sm">
-                  trial
-                </Badge>
-              )}
             </TabsTrigger>
-            <TabsTrigger value="users" className="gap-1.5">
-              <Users className="h-3.5 w-3.5" />
+            <TabsTrigger value="users" className="w-fit flex-none gap-1.5">
+              <Users className="size-3.5 shrink-0" />
               Users
-              {usersQuery.data?.users && (
-                <Badge variant="muted" size="sm">
-                  {usersQuery.data.users.length}
+              {usersCount != null && (
+                <Badge variant="secondary" size="sm">
+                  {usersCount}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="projects" className="gap-1.5">
-              <FolderKanban className="h-3.5 w-3.5" />
+            <TabsTrigger value="projects" className="w-fit flex-none gap-1.5">
+              <FolderKanban className="size-3.5 shrink-0" />
               Projects
-              {projectsQuery.data?.projects && (
-                <Badge variant="muted" size="sm">
-                  {projectsQuery.data.projects.length}
+              {projectsCount != null && (
+                <Badge variant="secondary" size="sm">
+                  {projectsCount}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="ledger" className="gap-1.5">
-              <History className="h-3.5 w-3.5" />
+            <TabsTrigger value="ledger" className="w-fit flex-none gap-1.5">
+              <History className="size-3.5 shrink-0" />
               Ledger
             </TabsTrigger>
-            <TabsTrigger value="billing" className="gap-1.5">
-              <Shield className="h-3.5 w-3.5" />
+            <TabsTrigger value="billing" className="w-fit flex-none gap-1.5">
+              <Shield className="size-3.5 shrink-0" />
               Billing
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="credits" className="mt-4">
+          <TabsContent value="credits" className="mt-5">
             <CreditsTab account={account} />
           </TabsContent>
-          <TabsContent value="entitlements" className="mt-4">
+          <TabsContent value="entitlements" className="mt-5">
             <EntitlementsTab account={account} />
           </TabsContent>
-          <TabsContent value="users" className="mt-4">
+          <TabsContent value="users" className="mt-5">
             <UsersTab usersQuery={usersQuery} accountId={account.accountId} />
           </TabsContent>
-          <TabsContent value="projects" className="mt-4">
+          <TabsContent value="projects" className="mt-5">
             <ProjectsTab projectsQuery={projectsQuery} />
           </TabsContent>
-          <TabsContent value="ledger" className="mt-4">
+          <TabsContent value="ledger" className="mt-5">
             <LedgerTab ledgerQuery={ledgerQuery} />
           </TabsContent>
-          <TabsContent value="billing" className="mt-4">
+          <TabsContent value="billing" className="mt-5">
             <BillingTab account={account} />
           </TabsContent>
         </Tabs>
@@ -1489,7 +1506,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
           plan shown is the RESOLVED one the API reports — an active trial and
           the per-seat self-heal overlay the stored tier, and the entitlement
           writes below act on the account, not on that plan. */}
-      <div className="border-border/60 bg-card mb-4 space-y-3 rounded-2xl border p-4">
+      <div className="border-border/60 bg-popover mb-4 space-y-3 rounded-md border p-4">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="text-foreground text-sm font-medium">Plan</div>
@@ -1527,7 +1544,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
         </p>
       </div>
 
-      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+      <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (
             <Button
@@ -1760,7 +1777,7 @@ function OverridesCard({ account }: { account: AdminAccount }) {
   const effectiveMultiplier = account.computeRateMultiplier;
 
   return (
-    <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+    <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-foreground text-sm font-medium">Overrides</div>
@@ -1853,7 +1870,7 @@ function OverridesCard({ account }: { account: AdminAccount }) {
           {effectiveMultiplier !== undefined && (
             <p className="text-muted-foreground mt-2 text-xs">
               Sandbox compute currently bills at{' '}
-              <span className="text-foreground/80 tabular-nums">{effectiveMultiplier}×</span> list
+              <span className="text-foreground tabular-nums">{effectiveMultiplier}×</span> list
               price.
             </p>
           )}
@@ -2006,13 +2023,13 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       {/* Trial — an admin-issued overlay: the account BEHAVES as the trial tier
           until it ends, without touching credit_accounts.tier (Stripe owns
           that). Re-granting overwrites the window: extend = re-grant. */}
-      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+      <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-foreground text-sm font-medium">Trial</div>
             <p className="text-muted-foreground mt-0.5 text-xs">
               Emulates a paid tier for a fixed window. Billed tier stays{' '}
-              <span className="text-foreground/80">{tierKeyLabel(account.tier)}</span>.
+              <span className="text-foreground">{tierKeyLabel(account.tier)}</span>.
             </p>
           </div>
           <Badge variant={trialBadgeVariant(trial?.status ?? null)} size="sm">
@@ -2023,7 +2040,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
         {trial && trial.status !== 'none' ? (
           <div className="border-border/60 divide-border grid grid-cols-1 divide-y rounded-md border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="px-3 py-2.5">
-              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">Tier</div>
+              <div className="text-muted-foreground text-xs">Tier</div>
               <div className="mt-0.5 text-sm font-medium">
                 {trial.tier ? tierKeyLabel(trial.tier) : '—'}
                 {trial.seats != null && (
@@ -2038,7 +2055,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
                 and that window can still be in the future — so the countdown is
                 only meaningful while the trial is active. */}
             <div className="px-3 py-2.5">
-              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">
+              <div className="text-muted-foreground text-xs">
                 {isActive ? 'Ends' : 'Window ended'}
               </div>
               <div className="mt-0.5 text-sm font-medium">
@@ -2049,9 +2066,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               )}
             </div>
             <div className="px-3 py-2.5">
-              <div className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-                Started
-              </div>
+              <div className="text-muted-foreground text-xs">Started</div>
               <div className="mt-0.5 text-sm font-medium">{formatRelative(trial.startedAt)}</div>
               <div className="text-muted-foreground text-xs">{formatDateTime(trial.startedAt)}</div>
             </div>
@@ -2073,9 +2088,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
             <div className="space-y-1">
-              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-                Tier
-              </label>
+              <label className="text-muted-foreground text-xs">Tier</label>
               <Select value={tierKey} onValueChange={setTierKey}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -2094,9 +2107,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               </p>
             </div>
             <div className="space-y-1">
-              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-                Seats
-              </label>
+              <label className="text-muted-foreground text-xs">Seats</label>
               <Input
                 type="number"
                 min={1}
@@ -2108,9 +2119,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-                Credit grant ($)
-              </label>
+              <label className="text-muted-foreground text-xs">Credit grant ($)</label>
               <Input
                 type="number"
                 min={0}
@@ -2124,9 +2133,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
           </div>
 
           <div className="space-y-1">
-            <label className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-              Duration
-            </label>
+            <label className="text-muted-foreground text-xs">Duration</label>
             <div className="flex flex-wrap items-center gap-1.5">
               {TRIAL_DURATION_PRESETS.map((d) => (
                 <Button
@@ -2188,7 +2195,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       </div>
 
       {/* Managed models override — tri-state, null restores tier control. */}
-      <div className="border-border/60 bg-card space-y-3 rounded-2xl border p-4">
+      <div className="border-border/60 bg-popover space-y-3 rounded-md border p-4">
         <EntitlementRow
           title="Managed models"
           description="Force Kortix-credential models on, restrict the account to its own BYOK keys, or leave the decision to the effective tier."
@@ -2212,7 +2219,7 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       </div>
 
       {/* Enterprise flags. Demo = evaluation preview; entitled = signed contract. */}
-      <div className="border-border/60 bg-card space-y-4 rounded-2xl border p-4">
+      <div className="border-border/60 bg-popover space-y-4 rounded-md border p-4">
         <EntitlementRow
           title="Enterprise demo"
           description="Interactive preview of SSO, SCIM, advanced RBAC, and audit logs. Evaluation only — no billing change."
@@ -2246,15 +2253,13 @@ function EntitlementsTab({ account }: { account: AdminAccount }) {
       <OverridesCard account={account} />
 
       {/* Read-only context the operator needs before issuing a trial. */}
-      <div className="border-border/60 bg-card divide-border grid grid-cols-2 divide-x rounded-2xl border text-sm">
+      <div className="border-border/60 bg-popover divide-border grid grid-cols-2 divide-x rounded-md border text-sm">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-            Billing model
-          </span>
+          <span className="text-muted-foreground text-xs">Billing model</span>
           <span className="text-right font-medium">{account.billingModel || '—'}</span>
         </div>
         <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">Seats</span>
+          <span className="text-muted-foreground text-xs">Seats</span>
           <span className="text-right font-medium">{account.seatCount ?? '—'}</span>
         </div>
       </div>
@@ -2308,8 +2313,8 @@ function UsersTab({
 
   if (usersQuery.isLoading) {
     return (
-      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
-        <Loading className="h-4 w-4" />
+      <div className="border-border/60 bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
+        <Loading className="size-4 shrink-0" />
         {'Loading users…'}
       </div>
     );
@@ -2318,7 +2323,7 @@ function UsersTab({
   const users = usersQuery.data?.users ?? [];
   if (users.length === 0) {
     return (
-      <div className="border-border/60 bg-card rounded-2xl border">
+      <div className="border-border/60 bg-popover rounded-md border">
         <EmptyState
           icon={IconInbox}
           title={'No users on this account'}
@@ -2330,7 +2335,7 @@ function UsersTab({
   }
 
   return (
-    <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
+    <div className="border-border/60 bg-popover divide-border divide-y rounded-md border">
       {users.map((user) => {
         const banned = user.banned_until && new Date(user.banned_until) > new Date();
         const confirmed = !!user.email_confirmed_at;
@@ -2340,7 +2345,7 @@ function UsersTab({
               <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-medium">{user.email}</span>
                 {confirmed ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                  <CheckCircle2 weight="fill" className="text-kortix-green size-3.5 shrink-0" />
                 ) : (
                   <Badge variant="warning" size="sm">
                     unverified
@@ -2348,7 +2353,7 @@ function UsersTab({
                 )}
                 {banned && (
                   <Badge variant="destructive" size="sm" className="gap-1">
-                    <Ban className="h-3 w-3" />
+                    <Ban className="size-3 shrink-0" />
                     banned
                   </Badge>
                 )}
@@ -2374,20 +2379,20 @@ function UsersTab({
             </div>
             <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
               <div className="truncate">
-                <span className="text-muted-foreground/70">{'Last sign-in:'}</span>
-                <span className="text-foreground/80">
+                <span className="text-muted-foreground">{'Last sign-in:'}</span>
+                <span className="text-foreground">
                   {user.last_sign_in_at ? formatRelative(user.last_sign_in_at) : 'Never'}
                 </span>
               </div>
               <div className="truncate">
-                <span className="text-muted-foreground/70">{'Signed up:'}</span>
-                <span className="text-foreground/80">
+                <span className="text-muted-foreground">{'Signed up:'}</span>
+                <span className="text-foreground">
                   {user.signed_up_at ? formatRelative(user.signed_up_at) : '—'}
                 </span>
               </div>
               <div className="truncate">
-                <span className="text-muted-foreground/70">Provider: </span>
-                <span className="text-foreground/80 capitalize">{user.provider || '—'}</span>
+                <span className="text-muted-foreground">Provider: </span>
+                <span className="text-foreground capitalize">{user.provider || '—'}</span>
               </div>
               <div className="truncate font-mono text-xs">{user.user_id.slice(0, 8)}…</div>
             </div>
@@ -2405,8 +2410,8 @@ function ProjectsTab({
 }) {
   if (projectsQuery.isLoading) {
     return (
-      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
-        <Loading className="h-4 w-4" />
+      <div className="border-border/60 bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
+        <Loading className="size-4 shrink-0" />
         Loading projects…
       </div>
     );
@@ -2415,7 +2420,7 @@ function ProjectsTab({
   const projects = projectsQuery.data?.projects ?? [];
   if (projects.length === 0) {
     return (
-      <div className="border-border/60 bg-card rounded-2xl border">
+      <div className="border-border/60 bg-popover rounded-md border">
         <EmptyState
           icon={FolderKanban}
           title="No projects on this account"
@@ -2427,14 +2432,14 @@ function ProjectsTab({
   }
 
   return (
-    <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border">
+    <div className="border-border/60 bg-popover divide-border divide-y rounded-md border">
       {projects.map((project) => (
         <a
           key={project.projectId}
           href={`/projects/${project.projectId}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="hover:bg-muted/40 flex flex-col gap-2 px-4 py-3 text-sm transition-colors"
+          className="hover:bg-hover flex flex-col gap-2 px-4 py-3 text-sm transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2">
@@ -2450,22 +2455,22 @@ function ProjectsTab({
                 </Badge>
               )}
             </div>
-            <ExternalLink className="text-muted-foreground/60 h-3.5 w-3.5 shrink-0" />
+            <ExternalLink className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
           </div>
           <div className="text-muted-foreground grid grid-cols-2 gap-2 text-xs">
             <div className="truncate">
-              <span className="text-muted-foreground/70">Sessions: </span>
-              <span className="text-foreground/80">{project.sessionCount}</span>
+              <span className="text-muted-foreground">Sessions: </span>
+              <span className="text-foreground">{project.sessionCount}</span>
             </div>
             <div className="truncate">
-              <span className="text-muted-foreground/70">Last activity: </span>
-              <span className="text-foreground/80">
+              <span className="text-muted-foreground">Last activity: </span>
+              <span className="text-foreground">
                 {project.lastSessionAt ? formatRelative(project.lastSessionAt) : '—'}
               </span>
             </div>
             <div className="truncate">
-              <span className="text-muted-foreground/70">Updated: </span>
-              <span className="text-foreground/80">{formatRelative(project.updatedAt)}</span>
+              <span className="text-muted-foreground">Updated: </span>
+              <span className="text-foreground">{formatRelative(project.updatedAt)}</span>
             </div>
             <div className="truncate font-mono text-xs">{project.projectId.slice(0, 8)}…</div>
           </div>
@@ -2491,8 +2496,8 @@ function formatRelative(value: string | null) {
 function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAccountLedger> }) {
   if (ledgerQuery.isLoading) {
     return (
-      <div className="border-border/60 bg-card text-muted-foreground flex items-center gap-2 rounded-2xl border px-4 py-6 text-sm">
-        <Loading className="h-4 w-4" />
+      <div className="border-border/60 bg-popover text-muted-foreground flex items-center gap-2 rounded-md border px-4 py-6 text-sm">
+        <Loading className="size-4 shrink-0" />
         {'Loading ledger…'}
       </div>
     );
@@ -2501,7 +2506,7 @@ function LedgerTab({ ledgerQuery }: { ledgerQuery: ReturnType<typeof useAdminAcc
   const entries = ledgerQuery.data?.entries ?? [];
   if (entries.length === 0) {
     return (
-      <div className="border-border/60 bg-card rounded-2xl border">
+      <div className="border-border/60 bg-popover rounded-md border">
         <EmptyState
           icon={IconInbox}
           title={'No ledger entries'}
@@ -2576,41 +2581,37 @@ function BillingTab({ account }: { account: AdminAccount }) {
               href={a.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group border-border/60 bg-card hover:bg-muted/40 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+              className="group border-border/60 bg-popover hover:bg-hover inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               <ServiceFavicon domain={a.domain} />
               {a.label}
-              <ExternalLink className="text-muted-foreground/60 group-hover:text-foreground h-3 w-3" />
+              <ExternalLink className="text-muted-foreground group-hover:text-foreground h-3 w-3" />
             </a>
           ))}
         </div>
       )}
 
-      <div className="border-border/60 bg-card rounded-2xl border text-sm">
+      <div className="border-border/60 bg-popover rounded-md border text-sm">
         <div className="divide-border grid grid-cols-1 divide-y sm:grid-cols-2 sm:divide-x sm:divide-y-0">
           {summary.map(([label, value]) => (
             <div key={label} className="flex items-center justify-between gap-3 px-4 py-3">
-              <span className="text-muted-foreground/70 text-xs tracking-wider uppercase">
-                {label}
-              </span>
+              <span className="text-muted-foreground text-xs">{label}</span>
               <span className="text-right font-medium">{value}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="border-border/60 bg-card divide-border divide-y rounded-2xl border text-sm">
+      <div className="border-border/60 bg-popover divide-border divide-y rounded-md border text-sm">
         {idRows.map(({ label, value, href }) => (
           <div
             key={label}
             className="flex flex-col gap-1 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
           >
-            <span className="text-muted-foreground/70 shrink-0 text-xs tracking-wider uppercase sm:w-40">
-              {label}
-            </span>
+            <span className="text-muted-foreground shrink-0 text-xs sm:w-40">{label}</span>
             {value ? (
               <div className="flex min-w-0 flex-1 items-center gap-2">
-                <code className="text-foreground/90 bg-muted/30 min-w-0 flex-1 rounded px-2 py-1 font-mono text-xs break-all">
+                <code className="text-foreground bg-muted/30 min-w-0 flex-1 rounded px-2 py-1 font-mono text-xs break-all">
                   {value}
                 </code>
                 {href && (
@@ -2618,7 +2619,7 @@ function BillingTab({ account }: { account: AdminAccount }) {
                     href={href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="border-border/60 bg-card text-muted-foreground hover:bg-muted/40 hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
+                    className="border-border/60 bg-popover text-muted-foreground hover:bg-hover hover:text-foreground inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium transition-colors"
                     title={'Open in Stripe'}
                   >
                     <ServiceFavicon domain="stripe.com" className="h-3 w-3" />
