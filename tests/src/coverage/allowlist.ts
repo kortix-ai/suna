@@ -6,6 +6,45 @@ export interface AllowEntry {
 
 export const uncoveredAllow: AllowEntry[] = [
   {
+    method: "PATCH",
+    path: "/v1/auth/user",
+    reason:
+      "Headless profile-metadata write, the replacement for supabase.auth.updateUser({ data }). Covered at the unit level by apps/api/src/__tests__/unit-auth-user-metadata.test.ts (caller-bearer forwarding, .strict() refusal of a smuggled password/email, GoTrue error passthrough) and verified live against real GoTrue. No ke2e flow yet: the local test profile has no second confirmed user to attribute a metadata write to, and asserting it as the same user the flow already signs in as would test GoTrue, not us.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/sign-in/sso",
+    reason:
+      "Enterprise SSO discovery. Cannot be flow-covered on the local profile: SAML is disabled there, so the route can only ever answer saml_provider_disabled — asserting that would pin the absence of a provider, not the behaviour. Unit-covered in unit-auth-headless.test.ts (redirect URL returned, 404 passthrough for a domain with no IdP). Needs a staging flow once an IdP exists.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/mfa/factors",
+    reason:
+      "MFA enrol. Local Supabase ships MFA disabled (GOTRUE_MFA_TOTP_ENROLL_ENABLED=false), so the local profile cannot exercise it without changing Supabase config the profile does not own. Unit-covered in unit-auth-mfa.test.ts and verified end to end by hand against real GoTrue with TOTP enabled: enrol -> challenge -> verify with a generated code -> a token carrying aal2.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/mfa/factors/:*/challenge",
+    reason: "MFA challenge — same reason as POST /v1/auth/mfa/factors: MFA is disabled on the local test profile's Supabase.",
+  },
+  {
+    method: "POST",
+    path: "/v1/auth/mfa/factors/:*/verify",
+    reason: "MFA verify — same reason as POST /v1/auth/mfa/factors. This is the leg that produces an aal2 session, which authorize() step 6 requires; verified by hand, not by the local profile.",
+  },
+  {
+    method: "DELETE",
+    path: "/v1/auth/mfa/factors/:*",
+    reason: "MFA unenrol — same reason as POST /v1/auth/mfa/factors.",
+  },
+  {
+    method: "GET",
+    path: "/v1/projects/:*/git/connection",
+    reason:
+      "DEBT, not a considered exemption, and NOT introduced by this branch. The route exists on the app but was missing from tests/spec/routes.generated.json, so the gate never saw it; regenerating the manifest for the headless-auth routes surfaced it. Nothing covers it — it needs a flow. This entry keeps the gap visible instead of letting a stale manifest re-hide it.",
+  },
+  {
     method: "POST",
     path: "/v1/admin/api/accounts/:*/members/:*/role",
     reason:
