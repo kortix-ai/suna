@@ -349,6 +349,34 @@ export async function stageFastBuildContext(): Promise<StagedContext> {
  */
 export const PI_WORKER_ENTRYPOINT = '/usr/local/bin/pi-worker-entrypoint';
 
+/**
+ * The node flags every worker boot runs under — the "lock the file system on
+ * the harness" item from the design huddle, enforced by node's permission
+ * model rather than by care.
+ *
+ * Under `--permission` the process may READ only what is listed here — its own
+ * artifact and `/proc/uptime` (the boot clock) — and nothing else: every other
+ * fs read, every fs write, every child process and every worker thread is
+ * `ERR_ACCESS_DENIED`. That holds for pi's built-in tools (which never touch
+ * this disk anyway, see kortix-env.ts) AND for a user-authored tool bundled
+ * into the artifact, which is the case the isolation test cannot cover: it
+ * can only prove that the tools we ship stay off the disk, not that arbitrary
+ * in-process code does. Network stays open — the worker is nothing but
+ * network: the model gateway, the environment RPC, the durable store.
+ *
+ * Both boot paths — the cold entrypoint and park.mjs's post-claim spawn —
+ * derive their argv from this ONE function, and pi-worker-lockdown.test.ts
+ * drives the real compiled bundle through a tool turn under exactly these
+ * flags, so a flag the bundle cannot live with fails there, not on a box.
+ */
+export function piWorkerNodeArgs(runtimeDir: string): string[] {
+  return [
+    '--permission',
+    `--allow-fs-read=${runtimeDir}/session-worker.mjs`,
+    '--allow-fs-read=/proc/uptime',
+  ];
+}
+
 const PI_WORKER_ENTRYPOINT_SH = `#!/bin/sh
 # Boot a session on the compiled pi worker runtime.
 # Fails loudly: a worker that cannot fetch its exact artifact must not serve.
@@ -366,7 +394,9 @@ fi
 : "\${KORTIX_API_URL:?}" "\${KORTIX_TOKEN:?}" "\${KORTIX_PROJECT_ID:?}"
 : "\${KORTIX_PI_RUNTIME_REF:?}" "\${KORTIX_PI_RUNTIME_SHA:?}"
 node /opt/kortix/fetch-runtime.mjs
-exec node /opt/kortix/session-worker.mjs
+# Locked down (see piWorkerNodeArgs): reads limited to the artifact and the
+# boot clock; no other reads, no writes, no child processes.
+exec node ${piWorkerNodeArgs('/opt/kortix').join(' ')} /opt/kortix/session-worker.mjs
 `;
 
 const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session claims it.
@@ -375,11 +405,14 @@ const PI_WORKER_PARK_MJS = `// Parked pi worker box: idle until one session clai
 import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 
 const PORT = Number(process.env.PORT ?? 8000);
 const PARK_TOKEN = process.env.KORTIX_PI_PARK_TOKEN ?? '';
-const RUNTIME_DIR = process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix';
+// Resolved through realpath: the permission model compares the path node
+// actually opens, so a symlinked runtime dir (macOS's /var -> /private/var in
+// tests) would otherwise deny the worker its own entrypoint.
+const RUNTIME_DIR = realpathSync(process.env.KORTIX_PI_PARK_DIR ?? '/opt/kortix');
 // The claim, made durable.
 //
 // A claim arrives over HTTP and is spawned into a CHILD process, but the
@@ -435,7 +468,18 @@ async function boot(env) {
     console.error(JSON.stringify({ msg: 'claimed park boot FAILED at fetch', exit: fetchExit }));
     process.exit(1);
   }
-  const worker = spawn('node', [RUNTIME_DIR + '/session-worker.mjs'], { env: merged, stdio: 'inherit' });
+  // Same lockdown as the cold entrypoint (piWorkerNodeArgs in build-context.ts):
+  // a claimed box must not be the one boot path that runs the harness unconfined.
+  const worker = spawn(
+    'node',
+    [
+      '--permission',
+      '--allow-fs-read=' + RUNTIME_DIR + '/session-worker.mjs',
+      '--allow-fs-read=/proc/uptime',
+      RUNTIME_DIR + '/session-worker.mjs',
+    ],
+    { env: merged, stdio: 'inherit' },
+  );
   for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => worker.kill(sig));
   worker.on('exit', (code) => process.exit(code ?? 1));
 }
@@ -603,7 +647,7 @@ ENV NODE_ENV=production
 export function piWorkerImageFingerprint(): string {
   return createHash('sha256')
     .update(
-      `pi-worker-v1\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
+      `pi-worker-v2\0${buildPiWorkerDockerfile()}\0${PI_WORKER_ENTRYPOINT_SH}\0${PI_WORKER_FETCH_MJS}\0${PI_WORKER_PARK_MJS}`,
     )
     .digest('hex');
 }
