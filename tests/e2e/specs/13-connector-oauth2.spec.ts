@@ -85,7 +85,11 @@ test.describe("13 — Custom connector OAuth2", () => {
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/customize/agents$`),
     );
-    const connectorsTab = page.getByRole("link", { name: /^Connectors/i });
+    // `role=tab`, not `role=link`. The bar renders `<TabsTrigger asChild><Link>`
+    // (`capability-tabs.tsx`), and Radix merges its own `role="tab"` onto the
+    // anchor — so the element is a real <a> with a real href that no
+    // `getByRole('link')` will ever match.
+    const connectorsTab = page.getByRole("tab", { name: /^Connectors$/i });
     await expect(connectorsTab).toHaveAttribute(
       "href",
       `/projects/${projectId}/customize/connectors`,
