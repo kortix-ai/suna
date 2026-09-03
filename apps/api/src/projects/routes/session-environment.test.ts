@@ -222,6 +222,13 @@ describe('an environment meters against its PARENT session', () => {
     expect(call.slice(0, 300)).toContain('sandboxId: environmentId');
     // THE decision: attribution follows the session, not the environment.
     expect(call.slice(0, 300)).toContain('sessionId: input.sessionId');
+    expect(call.slice(0, 400)).toContain("workloadType: 'environment'");
+  });
+
+  test('the provider labels the compute box as an environment workload', async () => {
+    const source = await serviceSource();
+    const create = source.slice(source.indexOf('const result = await provider.create({'));
+    expect(create.slice(0, 500)).toContain("workloadType: 'environment'");
   });
 
   test('the window closes with the box, on stop and on delete', async () => {
@@ -240,6 +247,7 @@ describe('an environment meters against its PARENT session', () => {
     const resume = source.slice(source.indexOf('await resumeEnvironment(externalId)'));
     expect(resume.slice(0, 900)).toContain('startComputeSession({');
     expect(resume.slice(0, 900)).toContain('sessionId: input.sessionId');
+    expect(resume.slice(0, 900)).toContain("workloadType: 'environment'");
   });
 
   test('metering keys off environmentId, never the provider externalId', async () => {
@@ -247,6 +255,6 @@ describe('an environment meters against its PARENT session', () => {
     // They are different values: `environmentId` is the id we minted and
     // passed to provider.create as its sandboxId; `externalId` is what the
     // provider handed back. `endComputeSession` looks up by the former.
-    expect(source).toContain("metadata as { environmentId?: string }");
+    expect(source).toContain('metadata as { environmentId?: string }');
   });
 });

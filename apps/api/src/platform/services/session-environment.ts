@@ -25,19 +25,19 @@
  *   without an OpenCode session.
  */
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
 import { sessionEnvironments, sessionSandboxes } from '@kortix/db';
-import { db } from '../../shared/db';
-import { getDaytona } from '../../shared/daytona';
-import { withTimeout } from '../../shared/with-timeout';
-import { ensureSandboxImage } from '../../snapshots/builder';
+import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
+import { and, eq, sql } from 'drizzle-orm';
+import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 import type { GitBackedProject } from '../../projects/git';
 import { buildSessionSandboxEnvVars } from '../../projects/lib/sessions';
-import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
+import { getDaytona } from '../../shared/daytona';
+import { db } from '../../shared/db';
+import { withTimeout } from '../../shared/with-timeout';
+import { ensureSandboxImage } from '../../snapshots/builder';
 import { getProvider } from '../providers';
 import { classifyDaytonaState } from '../providers/daytona-state';
 import { decideEnvironmentLiveness, environmentReconcileWrite } from './environment-liveness';
-import { endComputeSession, startComputeSession } from '../../billing/services/compute-metering';
 import type { SessionEnvironmentInfo } from './session-environment-types';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
@@ -87,9 +87,11 @@ async function withPreview(row: {
         `Daytona get(${row.externalId})`,
       );
       const preview = await withTimeout(
-        (sandbox as unknown as {
-          getPreviewLink(port: number): Promise<{ url: string; token?: string }>;
-        }).getPreviewLink(8000),
+        (
+          sandbox as unknown as {
+            getPreviewLink(port: number): Promise<{ url: string; token?: string }>;
+          }
+        ).getPreviewLink(8000),
         PROVIDER_CALL_TIMEOUT_MS,
         `Daytona getPreviewLink(${row.externalId}:8000)`,
       );
@@ -185,7 +187,9 @@ async function reconcileEnvironmentStatus(
       ...(clearExternalId ? { externalId: null } : {}),
       updatedAt: new Date(),
     })
-    .where(and(eq(sessionEnvironments.sessionId, sessionId), eq(sessionEnvironments.status, 'active')))
+    .where(
+      and(eq(sessionEnvironments.sessionId, sessionId), eq(sessionEnvironments.status, 'active')),
+    )
     .returning();
   // A concurrent writer may have moved it already; re-read rather than assume.
   return updated ?? (await readRow(sessionId));
@@ -331,6 +335,7 @@ async function runEnvironmentWork(
           sessionId: input.sessionId,
           actorUserId: input.userId ?? null,
           provider: 'daytona',
+          workloadType: 'environment',
           spec: { ...ENVIRONMENT_METERING_SPEC },
           metadata: { workload: 'session-environment', externalId, resumed: true },
         });
@@ -359,9 +364,9 @@ async function markEnvironmentError(sessionId: string, err: unknown): Promise<vo
       // `providerMetadata`. With the key gone, `endComputeSession` can never
       // close the open window and the resume path opens none, so one error left
       // an environment running and metered nowhere, permanently.
-      metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify(
-        { lastError: message.slice(0, 500) },
-      )}::jsonb`,
+      metadata: sql`coalesce(${sessionEnvironments.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        lastError: message.slice(0, 500),
+      })}::jsonb`,
       updatedAt: new Date(),
     })
     .where(eq(sessionEnvironments.sessionId, sessionId))
@@ -397,12 +402,11 @@ async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promi
       userId: input.userId,
       name: `env-${input.sessionId.slice(0, 8)}`,
       sandboxId: environmentId,
+      workloadType: 'environment',
       snapshot: image.snapshotName,
-      // Environments have no session_sandboxes row, so the box reaper does not
-      // manage them yet: the provider's own idle timer is the ONLY stop. Keep
-      // it tight (a stopped box resumes on the next ensure) instead of the 12h
-      // backstop a reaper-managed session box gets. Metering + reaper tie-in
-      // is the recorded fast-follow.
+      // The provider idle timer is the environment's liveness ceiling. Keep it
+      // tight because the billing sweep caps accrual at the last observation
+      // plus this interval. A stopped box resumes on the next ensure.
       autoStopInterval: 60,
       envVars: {
         ...envVars,
@@ -424,6 +428,7 @@ async function provisionEnvironment(input: EnsureSessionEnvironmentInput): Promi
       sessionId: input.sessionId,
       actorUserId: input.userId ?? null,
       provider: 'daytona',
+      workloadType: 'environment',
       spec: { ...ENVIRONMENT_METERING_SPEC },
       metadata: { workload: 'session-environment', externalId: result.externalId },
     });
@@ -466,4 +471,3 @@ export {
   deleteSessionEnvironment,
   stopSessionEnvironment,
 } from './session-environment-teardown';
-

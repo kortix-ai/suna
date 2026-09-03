@@ -1485,10 +1485,7 @@ export const projectMonitorEvents = kortixSchema.table(
     firedAt: timestamp('fired_at', { withTimezone: true }),
   },
   (table) => [
-    check(
-      'project_monitor_events_kind_check',
-      sql`${table.kind} IN ('event', 'lifecycle')`,
-    ),
+    check('project_monitor_events_kind_check', sql`${table.kind} IN ('event', 'lifecycle')`),
     check(
       'project_monitor_events_status_check',
       sql`${table.status} IN ('pending', 'fired', 'skipped', 'suppressed', 'failed')`,
@@ -2051,7 +2048,6 @@ export const sessionEnvironments = kortixSchema.table(
   ],
 );
 
-
 /**
  * Durable per-turn ledger.
  *
@@ -2591,7 +2587,6 @@ export const sandboxes = kortixSchema.table(
     index('idx_sandboxes_status').on(table.status),
   ],
 );
-
 
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
@@ -3695,10 +3690,13 @@ export const sandboxComputeSessions = kortixSchema.table(
   },
   (table) => [
     check(
-      'sandbox_compute_sessions_workload_type_check',
+      'sandbox_compute_sessions_workload_type_check_v2',
       // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
       // `project_monitor_boxes.box_id`; it needs no dedicated join column.
-      sql`${table.workloadType} IN ('session', 'app', 'monitor')`,
+      // 'environment' = the session's lazy compute environment. It joins to
+      // `session_environments` through `session_id`; its `sandbox_id` is the
+      // durable metering identity stored in that row's metadata.
+      sql`${table.workloadType} IN ('session', 'app', 'monitor', 'environment')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
@@ -3751,9 +3749,7 @@ export const apps = kortixSchema.table(
      * App; the viewer's own IAM role is still the ceiling.
      * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
      */
-    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
-      .default('identity')
-      .notNull(),
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 }).default('identity').notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3801,11 +3797,7 @@ export const appAccessGrants = kortixSchema.table(
   },
   (table) => [
     index('app_access_grants_app_idx').on(table.appId),
-    uniqueIndex('app_access_grants_unique').on(
-      table.appId,
-      table.principalType,
-      table.principalId,
-    ),
+    uniqueIndex('app_access_grants_unique').on(table.appId, table.principalType, table.principalId),
   ],
 );
 

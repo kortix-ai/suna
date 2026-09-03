@@ -40,7 +40,12 @@ suite('migration ledger rename repair', () => {
       `);
 
       const migrationNames = readdirSync(migrationsDir)
-        .filter((filename) => filename.endsWith('.sql') || filename.endsWith('.concurrent.ts'))
+        .filter(
+          (filename) =>
+            filename.endsWith('.sql') ||
+            filename.endsWith('.concurrent.ts') ||
+            filename.endsWith('.nontransaction.ts'),
+        )
         .sort()
         .map((filename) => filename.replace(/\.sql$/, '').replace(/\.ts$/, ''));
       const connectorIndex = migrationNames.indexOf(migrationLedgerRepairConnectorName);

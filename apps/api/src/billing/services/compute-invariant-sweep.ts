@@ -8,6 +8,7 @@ import {
   appRuntimes,
   projectMonitorBoxes,
   sandboxComputeSessions,
+  sessionEnvironments,
   sessionSandboxes,
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
@@ -98,13 +99,19 @@ export function selectOpenComputeInvariantCandidates(limit = REAP_BATCH_SIZE) {
       monitorMetadata: projectMonitorBoxes.metadata,
       monitorProvider: projectMonitorBoxes.provider,
       monitorExternalId: projectMonitorBoxes.externalId,
+      environmentStatus: sessionEnvironments.status,
+      environmentUpdatedAt: sessionEnvironments.updatedAt,
+      environmentMetadata: sessionEnvironments.metadata,
+      environmentProvider: sessionEnvironments.provider,
+      environmentExternalId: sessionEnvironments.externalId,
     })
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
     .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
+    .leftJoin(projectMonitorBoxes, eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId))
     .leftJoin(
-      projectMonitorBoxes,
-      eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
+      sessionEnvironments,
+      eq(sessionEnvironments.sessionId, sandboxComputeSessions.sessionId),
     )
     .where(eq(sandboxComputeSessions.state, 'active'))
     .orderBy(sql`${sandboxComputeSessions.startedAt} asc`)
@@ -147,34 +154,50 @@ export async function reconcileOrphanComputeSessions(
     while (cursor < rows.length) {
       const row = rows[cursor++];
       try {
+        const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
         const isApp = row.workloadType === 'app';
         const isMonitor = row.workloadType === 'monitor';
+        const isEnvironment =
+          row.workloadType === 'environment' || computeMetadata.workload === 'session-environment';
         const runtimeStatus = isApp
           ? nonSessionRuntimeBillingStatus(row.appStatus)
           : isMonitor
             ? nonSessionRuntimeBillingStatus(row.monitorStatus)
-            : row.sbStatus;
+            : isEnvironment
+              ? row.environmentStatus
+              : row.sbStatus;
         const runtimeUpdatedAt = isApp
           ? row.appUpdatedAt
           : isMonitor
             ? row.monitorUpdatedAt
-            : row.sbUpdatedAt;
+            : isEnvironment
+              ? row.environmentUpdatedAt
+              : row.sbUpdatedAt;
         const runtimeMetadata = (
-          isApp ? row.appMetadata : isMonitor ? row.monitorMetadata : row.sbMetadata
+          isApp
+            ? row.appMetadata
+            : isMonitor
+              ? row.monitorMetadata
+              : isEnvironment
+                ? row.environmentMetadata
+                : row.sbMetadata
         ) as Record<string, unknown> | null;
         const provider = isApp
           ? row.appProvider
           : isMonitor
             ? row.monitorProvider
-            : row.sessionProvider;
+            : isEnvironment
+              ? row.environmentProvider
+              : row.sessionProvider;
         const externalId = isApp
           ? row.appExternalId
           : isMonitor
             ? row.monitorExternalId
-            : row.sessionExternalId;
+            : isEnvironment
+              ? row.environmentExternalId
+              : row.sessionExternalId;
         const startedAt = parseTimestamp(row.startedAt) ?? now;
         const openForMs = Math.max(0, now.getTime() - startedAt.getTime());
-        const computeMetadata = (row.computeMetadata ?? {}) as Record<string, unknown>;
         const unresolvedSince = parseTimestamp(computeMetadata.unresolvedSince);
         const lastAliveAt = lastAliveAtOf({
           metadata: computeMetadata,
@@ -187,11 +210,13 @@ export async function reconcileOrphanComputeSessions(
           hasProviderTarget: !!externalId && !!provider,
           runtimeStartFailed: hasFailedRuntimeStart(runtimeMetadata),
           wakeInProgress: runtimeWakeInProgress(runtimeMetadata, now),
-          beyondLivenessCeiling: isBeyondLivenessCeiling({
-            now,
-            lastAliveAt,
-            graceMs: livenessGraceMs,
-          }),
+          beyondLivenessCeiling:
+            !isEnvironment &&
+            isBeyondLivenessCeiling({
+              now,
+              lastAliveAt,
+              graceMs: livenessGraceMs,
+            }),
           openForMs,
           unresolvedCeilingMs,
           maxWindowMs,
@@ -215,10 +240,11 @@ export async function reconcileOrphanComputeSessions(
           // (44 of 66 open prod rows answered unknown), so track how long it has
           // been continuously unresolvable rather than treating it as transient.
           if (providerStatus === 'running') {
-            if (unresolvedSince) {
+            if (unresolvedSince || isEnvironment) {
               await updateComputeSessionMetadata(row.computeId, {
                 ...computeMetadata,
                 unresolvedSince: null,
+                ...(isEnvironment ? { lastAliveAt: now.toISOString() } : {}),
               });
             }
           } else if (
@@ -303,9 +329,10 @@ export async function countBillingInvariantViolations(): Promise<number> {
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
     .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
+    .leftJoin(projectMonitorBoxes, eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId))
     .leftJoin(
-      projectMonitorBoxes,
-      eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
+      sessionEnvironments,
+      eq(sessionEnvironments.sessionId, sandboxComputeSessions.sessionId),
     )
     .where(
       and(
@@ -319,7 +346,13 @@ export async function countBillingInvariantViolations(): Promise<number> {
           ${projectMonitorBoxes.boxId} IS NULL OR
           ${projectMonitorBoxes.status} NOT IN ('provisioning', 'starting', 'running')
         )) OR
-        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor') AND (
+        ((${sandboxComputeSessions.workloadType} = 'environment' OR
+          ${sandboxComputeSessions.metadata}->>'workload' = 'session-environment') AND (
+          ${sessionEnvironments.sessionId} IS NULL OR
+          ${sessionEnvironments.status} NOT IN ('provisioning', 'active')
+        )) OR
+        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor', 'environment') AND
+          ${sandboxComputeSessions.metadata}->>'workload' IS DISTINCT FROM 'session-environment' AND (
           ${sessionSandboxes.status} IS NULL OR ${sessionSandboxes.status} <> 'active'
         ))
       )`,
@@ -349,9 +382,10 @@ export async function countStaleLivenessWindows(now = new Date()): Promise<numbe
     .from(sandboxComputeSessions)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sandboxId, sandboxComputeSessions.sandboxId))
     .leftJoin(appRuntimes, eq(appRuntimes.runtimeId, sandboxComputeSessions.appRuntimeId))
+    .leftJoin(projectMonitorBoxes, eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId))
     .leftJoin(
-      projectMonitorBoxes,
-      eq(projectMonitorBoxes.boxId, sandboxComputeSessions.sandboxId),
+      sessionEnvironments,
+      eq(sessionEnvironments.sessionId, sandboxComputeSessions.sessionId),
     )
     .where(
       and(
@@ -359,7 +393,12 @@ export async function countStaleLivenessWindows(now = new Date()): Promise<numbe
         sql`(
         (${sandboxComputeSessions.workloadType} = 'app' AND ${appRuntimes.status} = 'running') OR
         (${sandboxComputeSessions.workloadType} = 'monitor' AND ${projectMonitorBoxes.status} = 'running') OR
-        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor') AND ${sessionSandboxes.status} = 'active')
+        ((${sandboxComputeSessions.workloadType} = 'environment' OR
+          ${sandboxComputeSessions.metadata}->>'workload' = 'session-environment') AND
+          ${sessionEnvironments.status} = 'active') OR
+        (${sandboxComputeSessions.workloadType} NOT IN ('app', 'monitor', 'environment') AND
+          ${sandboxComputeSessions.metadata}->>'workload' IS DISTINCT FROM 'session-environment' AND
+          ${sessionSandboxes.status} = 'active')
       )`,
         sql`coalesce(${sandboxComputeSessions.metadata}->>'lastAliveAt', ${sandboxComputeSessions.startedAt}::text) < ${cutoff}`,
       ),

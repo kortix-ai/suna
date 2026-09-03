@@ -50,7 +50,7 @@ export class SandboxTemplateNotFoundError extends Error {
  * verbatim as `sandbox_compute_sessions.workload_type`, so the union and that
  * column's CHECK constraint must stay in lockstep.
  */
-export type SandboxWorkloadType = 'session' | 'app' | 'monitor';
+export type SandboxWorkloadType = 'session' | 'app' | 'monitor' | 'environment';
 
 export interface CreateSandboxOpts {
   accountId: string;
