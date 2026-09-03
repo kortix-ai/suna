@@ -59,6 +59,7 @@ import {
   markCommandForwarded,
   markCommandQueued,
   markCommandSucceeded,
+  promoteNextInboxRow,
   requeueForAdmission,
   resultFromExistingCommand,
   withNextDeliveryAttempt,
@@ -1800,11 +1801,21 @@ export async function executeQueuedContinue(
       wireMessageId = replaced;
     }
     if (delivery === 'delivered') {
-      // A successful POST starts a turn. The terminal relay owns promotion of
-      // the next row. Promoting here can claim that row while the current turn
-      // is still active, then requeue it after the terminal relay already
-      // checked the queue. That lost wake adds the admission backoff between
-      // prompts and can grow to two seconds.
+      // OpenCode accepts mid-turn prompts into its own safe-boundary queue.
+      // Promote the next durable row now so a burst reaches that queue without
+      // waiting for terminal relay delivery. Turn-end and reaper promotion are
+      // recovery wakes if this asynchronous chain is lost.
+      void promoteNextInboxRow(row.sessionId)
+        .then((idempotencyKey) =>
+          idempotencyKey ? drainSessionLifecycleQueue({ idempotencyKey }) : null,
+        )
+        .catch((error) => {
+          logger.warn('[session-lifecycle] next inbox prompt promotion failed', {
+            session_id: row.sessionId,
+            command_id: row.commandId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
       tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }

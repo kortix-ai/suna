@@ -67,6 +67,8 @@ let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
 let promotionCalls: string[] = [];
+let promotionResult: string | null = null;
+let claimInputs: Array<{ idempotencyKey?: string }> = [];
 // Models the real database state after a drain claims same-session siblings:
 // every claimed row is `running` until the drain releases the tail.
 const simulatedInFlightCommands = new Set<string>();
@@ -164,7 +166,7 @@ mock.module('../backpressure', () => ({
 mock.module('../store', () => ({
   promoteNextInboxRow: async (sessionId: string) => {
     promotionCalls.push(sessionId);
-    return null;
+    return promotionResult;
   },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
@@ -173,7 +175,10 @@ mock.module('../store', () => ({
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
   },
-  claimDueLifecycleCommands: async () => claimed,
+  claimDueLifecycleCommands: async (input: { idempotencyKey?: string }) => {
+    claimInputs.push(input);
+    return input.idempotencyKey ? [] : claimed;
+  },
   enqueueContinueSessionCommand: async () => {
     throw new Error('not expected');
   },
@@ -299,6 +304,8 @@ beforeEach(() => {
   openDelayBySession = {};
   events = [];
   promotionCalls = [];
+  promotionResult = null;
+  claimInputs = [];
   simulatedInFlightCommands.clear();
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
@@ -446,7 +453,7 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
-  test('a prompt submitted into a live turn stays queued until that turn ends', async () => {
+  test('a prompt submitted into a live turn is forwarded with a reminted wire id', async () => {
     boxRow = {
       status: 'active',
       metadata: {
@@ -461,11 +468,20 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         },
       },
     };
+    transcript = [
+      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
+    ];
     const outcome = await executeQueuedContinue(baseRow());
 
-    expect(outcome).toBe('queued');
-    expect(capturedBodies).toHaveLength(0);
-    expect(requeues.map(({ reason }) => reason)).toEqual(['turn_active']);
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(1);
+    expect(requeues).toEqual([]);
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+    expect(forwardedCalls).toEqual([
+      { commandId: 'cmd-1', sessionId: SESSION_ID, wireMessageId: sent },
+    ]);
   });
 
   test('a second prompt sent inside the persistence lag clears the FIRST one’s id', async () => {
@@ -582,7 +598,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(capturedBodies).toHaveLength(2);
   });
 
-  test('one drain sends only the head prompt of a session and requeues its sibling', async () => {
+  test('one drain sends the FIFO head, then targets the promoted sibling', async () => {
     let releaseFirst!: () => void;
     openDelayBySession['sess-ordered'] = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -591,6 +607,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       baseRow({ commandId: 'cmd-1', sessionId: 'sess-ordered' }),
       baseRow({ commandId: 'cmd-2', sessionId: 'sess-ordered' }),
     ];
+    promotionResult = 'queue-next-idempotency-key';
     simulatedInFlightCommands.add('cmd-2');
 
     const drain = drainSessionLifecycleQueue({ limit: 10 });
@@ -604,12 +621,13 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
       { commandId: 'cmd-2', reason: 'older_prompt_pending' },
     ]);
-    // A successful POST starts a turn. The next prompt must wait for the
-    // terminal relay to promote it. Promoting here races that relay: it can
-    // claim the next row while the previous turn is still active, then requeue
-    // it after the terminal relay already looked for a queued row. The result
-    // is a backoff-sized pause between prompts.
-    await Bun.sleep(0);
-    expect(promotionCalls).toEqual([]);
+    // Accepted delivery is the normal wake for the next durable row. Turn-end
+    // and reaper promotion remain recovery paths for a lost chain kick.
+    await Bun.sleep(300);
+    expect(promotionCalls).toEqual(['sess-ordered']);
+    expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([
+      null,
+      'queue-next-idempotency-key',
+    ]);
   });
 });
