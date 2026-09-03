@@ -22,7 +22,6 @@
 
 import { projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { type SQL, and, eq, gt, ne, sql } from 'drizzle-orm';
-import { config } from '../config';
 import {
   type ProviderName,
   type ResolvedSandboxIngress,
