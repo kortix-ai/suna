@@ -34,6 +34,32 @@ function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }
 Readiness is server truth. The runtime is ready when `POST /start` returns
 `stage: 'ready'`. `useSession` does not run a separate client-side health check.
 
+### useSessionWorkspace(projectId, sessionId, options?)
+
+Mount `useSessionWorkspace` only in a surface that needs repository files,
+PTYs, or preview ports. A Pi session then provisions or resumes its separate
+environment. A one-box session reuses its control runtime without another API
+request.
+
+```tsx
+import { useSession, useSessionWorkspace } from '@kortix/sdk/react';
+
+function Terminal({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  const workspace = useSessionWorkspace(projectId, sessionId, {
+    enabled: session.phase === 'ready',
+  });
+
+  if (workspace.phase === 'resolving') return <Spinner />;
+  if (workspace.phase === 'error') return <Retry onClick={workspace.retry} />;
+  return <Pty serverUrl={workspace.runtimeUrl} />;
+}
+```
+
+`phase` is `idle`, `resolving`, `ready`, or `error`. Concurrent hooks share one
+React Query entry. The hook never redirects chat or event traffic away from the
+control runtime.
+
 ### Returns
 
 | Field | Type | What it holds |

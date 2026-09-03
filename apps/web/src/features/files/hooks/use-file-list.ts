@@ -19,11 +19,8 @@ export const fileListKeys = {
  * Uses GET /file?path=<path> which returns FileNode[].
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.
  */
-export function useFileList(
-  dirPath: string,
-  options?: { enabled?: boolean },
-) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const showHidden = useFilesStore((s) => s.showHidden);
 
   const query = useQuery<FileNode[]>({
@@ -52,10 +49,7 @@ export function useFileList(
     if (!query.data) return query.data;
     if (showHidden) return query.data;
     return query.data.filter(
-      (node) =>
-        !node.name.startsWith('.') ||
-        node.name === '.kortix' ||
-        node.name === '.opencode',
+      (node) => !node.name.startsWith('.') || node.name === '.kortix' || node.name === '.opencode',
     );
   }, [query.data, showHidden]);
 
@@ -67,7 +61,7 @@ export function useFileList(
  */
 export function useInvalidateFileList() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return (dirPath?: string) => {
     if (dirPath) {

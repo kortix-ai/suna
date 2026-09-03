@@ -167,6 +167,13 @@ export {
   type UseSessionResult,
   type UseSessionOptions,
 } from './use-session';
+export {
+  useSessionWorkspace,
+  deriveSessionWorkspacePhase,
+  sessionWorkspaceKey,
+  type SessionWorkspacePhase,
+  type UseSessionWorkspaceResult,
+} from './use-session-workspace';
 export { useSessionPicks, type SessionPicks } from './use-session-picks';
 export {
   useSessionPrompts,

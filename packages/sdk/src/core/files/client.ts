@@ -4,11 +4,11 @@
  *
  * Read (list/content/status/find) and write (upload/delete/mkdir/rename) all hit
  * the in-sandbox daemon for the active server; project/health go through the
- * opencode client. DOM-bound helpers (download / zip) stay in the host UI and
+ * control client. DOM-bound helpers (download / zip) stay in the host UI and
  * consume `readBlob`/`list` from here.
  */
 import { getClient, RuntimeNotReadyError } from '../runtime/client';
-import { getActiveOpenCodeUrl } from '../session/server-store/active';
+import { getActiveWorkspaceUrl } from '../session/server-store/active';
 import { authenticatedFetch } from '../http/auth';
 import { ApiError } from '../http/api/errors';
 import type {
@@ -52,15 +52,19 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 async function errorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
   let parsed: { error?: string } | null = null;
-  try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    /* not JSON */
+  }
   return parsed?.error || text || res.statusText || `HTTP ${res.status}`;
 }
 
 /**
  * Resolve the daemon base url for ONE operation — or refuse to run it.
  *
- * `getActiveOpenCodeUrl()` returns `''` on a billing-enabled deployment until a
- * session runtime is bound (`session/server-store/active.ts`). Interpolating
+ * `getActiveWorkspaceUrl()` returns `''` on a billing-enabled deployment until
+ * a session workspace is bound (`session/server-store/active.ts`). Interpolating
  * that `''` into a template makes the request URL RELATIVE, so the browser sent
  * the user's file AND their bearer token to the WEB origin
  * (`https://dev.kortix.com/file/upload`), which answered with the Next.js 404
@@ -78,7 +82,7 @@ async function errorMessage(res: Response): Promise<string> {
  * be impossible from this file.
  */
 function requireBaseUrl(baseUrl?: string): string {
-  const resolved = (baseUrl ?? getActiveOpenCodeUrl()).trim();
+  const resolved = (baseUrl ?? getActiveWorkspaceUrl()).trim();
   if (!resolved) throw new RuntimeNotReadyError();
   return resolved;
 }
@@ -147,7 +151,10 @@ export const toWorkspaceRelative = toDaemonPath;
 export async function listFiles(dirPath: string, baseUrl?: string): Promise<FileNode[]> {
   const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(dirPath) || '.';
-  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(daemonPath)}`, base);
+  const nodes = await fetchDaemonJson<FileNode[]>(
+    `/file?path=${encodeURIComponent(daemonPath)}`,
+    base,
+  );
   return nodes.map((node) => ({ ...node, path: node.absolute || `/workspace/${node.path}` }));
 }
 
@@ -155,7 +162,9 @@ export async function listFiles(dirPath: string, baseUrl?: string): Promise<File
 export async function readFile(filePath: string, baseUrl?: string): Promise<FileContent> {
   const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${base}/file/content?path=${encodeURIComponent(daemonPath)}`);
+  const response = await authenticatedFetch(
+    `${base}/file/content?path=${encodeURIComponent(daemonPath)}`,
+  );
   if (!response.ok) {
     throw new ApiError(await errorMessage(response), { status: response.status, response });
   }
@@ -163,10 +172,16 @@ export async function readFile(filePath: string, baseUrl?: string): Promise<File
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
-async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: string): Promise<Blob> {
+async function readFileRaw(
+  filePath: string,
+  fallbackMime?: string,
+  baseUrl?: string,
+): Promise<Blob> {
   const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${base}/file/raw?path=${encodeURIComponent(daemonPath)}`);
+  const response = await authenticatedFetch(
+    `${base}/file/raw?path=${encodeURIComponent(daemonPath)}`,
+  );
   if (!response.ok) {
     throw new ApiError(await errorMessage(response), { status: response.status, response });
   }
@@ -192,7 +207,9 @@ export async function readBlob(filePath: string, baseUrl?: string): Promise<Blob
   const base = requireBaseUrl(baseUrl);
   try {
     return await readFileRaw(filePath, undefined, base);
-  } catch { /* fall back to JSON content endpoint */ }
+  } catch {
+    /* fall back to JSON content endpoint */
+  }
   const result = await readFile(filePath, base);
   if (result.encoding === 'base64' && result.content) {
     const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
@@ -233,13 +250,19 @@ export async function findFiles(
 /** Ripgrep text search. Daemon `GET /find`. Tolerates flat + nested rg-JSON. */
 export async function findText(pattern: string, baseUrl?: string): Promise<FindMatch[]> {
   const base = requireBaseUrl(baseUrl);
-  const raw = await fetchDaemonJson<Array<Record<string, any>>>(`/find?pattern=${encodeURIComponent(pattern)}`, base);
+  const raw = await fetchDaemonJson<Array<Record<string, any>>>(
+    `/find?pattern=${encodeURIComponent(pattern)}`,
+    base,
+  );
   return raw.map((item) => ({
     path: typeof item.path === 'string' ? item.path : (item.path?.text ?? ''),
     lines: typeof item.lines === 'string' ? item.lines : (item.lines?.text ?? ''),
     line_number: item.line_number,
     absolute_offset: item.absolute_offset,
-    submatches: (item.submatches ?? []).map((s: { start: number; end: number }) => ({ start: s.start, end: s.end })),
+    submatches: (item.submatches ?? []).map((s: { start: number; end: number }) => ({
+      start: s.start,
+      end: s.end,
+    })),
   }));
 }
 
@@ -310,12 +333,17 @@ export function uploadTimeoutMsForBytes(bytes?: number): number {
 async function uploadErrorMessage(res: Response): Promise<string> {
   const text = await res.text().catch(() => '');
   let parsed: { error?: string; message?: string; data?: { message?: string } } | null = null;
-  try { parsed = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
+  try {
+    parsed = text ? JSON.parse(text) : null;
+  } catch {
+    /* not JSON */
+  }
   const jsonMessage = parsed?.error || parsed?.message || parsed?.data?.message;
   if (typeof jsonMessage === 'string' && jsonMessage.trim()) return jsonMessage.trim();
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('text/html') || /<html[\s>]/i.test(text)) {
-    if (res.status === 502 || /bad gateway/i.test(text)) return 'Bad gateway while reaching the sandbox upload service. Please retry.';
+    if (res.status === 502 || /bad gateway/i.test(text))
+      return 'Bad gateway while reaching the sandbox upload service. Please retry.';
     return res.statusText || `HTTP ${res.status}`;
   }
   return text.replace(/\s+/g, ' ').trim().slice(0, 500) || res.statusText || `HTTP ${res.status}`;
@@ -340,12 +368,16 @@ async function uploadWithRetry(
     }
     if (res.ok) return res.json();
     const message = await uploadErrorMessage(res);
-    lastError = new ApiError(`Upload failed (${res.status}): ${message}`, { status: res.status, response: res });
+    lastError = new ApiError(`Upload failed (${res.status}): ${message}`, {
+      status: res.status,
+      response: res,
+    });
     if (!isTransient(res.status) || attempt === UPLOAD_RETRY_DELAYS_MS.length) throw lastError;
     await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
   }
   if (lastError instanceof ApiError) throw lastError;
-  const message = lastError instanceof Error ? lastError.message : String(lastError || 'request failed');
+  const message =
+    lastError instanceof Error ? lastError.message : String(lastError || 'request failed');
   throw new ApiError(`Upload failed: ${message}`);
 }
 
@@ -461,7 +493,11 @@ export async function createFile(filePath: string, baseUrl?: string): Promise<Up
 }
 
 /** Copy a file (read source bytes → upload to dest). */
-export async function copyFile(sourcePath: string, destPath: string, baseUrl?: string): Promise<UploadResult[]> {
+export async function copyFile(
+  sourcePath: string,
+  destPath: string,
+  baseUrl?: string,
+): Promise<UploadResult[]> {
   const base = requireBaseUrl(baseUrl);
   return uploadToPath(destPath, await readBlob(sourcePath, base), base);
 }
@@ -590,7 +626,10 @@ export async function deleteFile(filePath: string, baseUrl?: string): Promise<bo
     body: JSON.stringify({ path: filePath }),
   });
   if (!res.ok) {
-    throw new ApiError(`Delete failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
+    throw new ApiError(`Delete failed (${res.status}): ${await errorMessage(res)}`, {
+      status: res.status,
+      response: res,
+    });
   }
   return res.json();
 }
@@ -603,7 +642,10 @@ export async function mkdir(dirPath: string, baseUrl?: string): Promise<boolean>
     body: JSON.stringify({ path: dirPath }),
   });
   if (!res.ok) {
-    throw new ApiError(`Mkdir failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
+    throw new ApiError(`Mkdir failed (${res.status}): ${await errorMessage(res)}`, {
+      status: res.status,
+      response: res,
+    });
   }
   return res.json();
 }
@@ -616,7 +658,10 @@ export async function renameFile(from: string, to: string, baseUrl?: string): Pr
     body: JSON.stringify({ from, to }),
   });
   if (!res.ok) {
-    throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
+    throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, {
+      status: res.status,
+      response: res,
+    });
   }
   return res.json();
 }

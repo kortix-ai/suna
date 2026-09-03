@@ -971,13 +971,15 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   useEffect(() => {
     if (!startReady || !sandbox?.external_id || switchedSandboxId === sandbox.sandbox_id) return;
     // Point the app's runtime at THIS session's box — no global "switch", just set
-    // the current runtime url. Every read (getClient, the SSE stream, files/
-    // terminal/git) resolves through it. `stage==='ready'` is server-proven, so the
-    // health effect below seeds connected+healthy with no client poll.
+    // the current control-runtime URL. Chat and the event stream resolve through
+    // it. Workspace surfaces resolve their environment independently.
     setCurrentRuntime(
       getSandboxUrlForExternalId(sandbox.external_id),
       sandbox.external_id,
       sandbox.sandbox_id,
+      (sandbox.metadata as Record<string, unknown> | undefined)?.sandbox_slug === 'pi-worker'
+        ? 'environment'
+        : 'worker',
     );
     setSwitchedSandboxId(sandbox.sandbox_id);
   }, [startReady, sandbox, switchedSandboxId]);
@@ -1046,8 +1048,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
   // other's. Nothing clears it on a server answer and nothing needs to — an
   // observation the server could make AFTER accepting the send outranks it —
   // so only the paths that know nothing is coming drop it.
-  const { noteSendReceipt, acceptSendReceipt, clearSendReceipt, noteAbortReceipt, settleAbortReceipt } =
-    useSessionWorkingStore.getState();
+  const {
+    noteSendReceipt,
+    acceptSendReceipt,
+    clearSendReceipt,
+    noteAbortReceipt,
+    settleAbortReceipt,
+  } = useSessionWorkingStore.getState();
 
   // Always call the hook (rules-of-hooks) so it stays in the same position
   // every render, but starve it with an empty session id when the chat engine
@@ -1484,9 +1491,8 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
      * serializes `'default'` when no agent was bound; that is not a real
      * roster agent, so it surfaces as `null` here.
      */
-    agentName: startData?.agent_name && startData.agent_name !== 'default'
-      ? startData.agent_name
-      : null,
+    agentName:
+      startData?.agent_name && startData.agent_name !== 'default' ? startData.agent_name : null,
     /** The serialized session_sandboxes row from /start (status, metadata, ids), or null. */
     sandbox,
     /** True once the runtime is switched in and ready (equivalent to phase==='ready'). */

@@ -1,14 +1,13 @@
 /**
- * The current session runtime — the ONE OpenCode daemon the app is talking to
- * right now (the sandbox of the session being viewed), as a proxy URL
- * `${backendUrl}/p/<external_id>/8000`.
+ * The current session runtime addresses. `url` is the control runtime that owns
+ * the model loop and event stream. `workspaceUrl` is the runtime that owns
+ * files, PTYs, and ports. They are equal for one-box sessions and distinct for
+ * Pi sessions.
  *
  * This replaces the old global "active server" machinery. A session binds here
- * (`useSession` sets it on open, clears it on unmount); every runtime read —
- * `getClient()`, the SSE stream, the file/terminal/git hooks — resolves through
- * it; switching sessions just sets a new url. There is no servers[] registry, no
- * `serverVersion`, no reset-cascade. `version` bumps on every change so the SSE
- * stream re-subscribes to the new daemon.
+ * `useSession` sets the control address on open and clears both addresses on
+ * unmount. Workspace surfaces resolve the data address lazily. There is no
+ * servers[] registry and no server-switch cascade.
  *
  * This module is part of the isomorphic core (reachable from the root
  * `@kortix/sdk` export), so it is a plain hand-rolled store — no zustand, no
@@ -22,6 +21,12 @@ export interface CurrentRuntimeState {
    *  scoped APIs like per-sandbox API keys that key on the DB row, not the
    *  external id (which the backend would mistake for the primary key). */
   dbSandboxId: string | null;
+  /** The owner of repository files, PTYs, and user-exposed ports. */
+  dataRuntimeKind: 'worker' | 'environment' | null;
+  /** Data-runtime URL. Null while a Pi environment is not attached. */
+  workspaceUrl: string | null;
+  /** Provider id for the data runtime. */
+  workspaceSandboxId: string | null;
   /**
    * True once this session's open-bundle has been applied (its runtime-state
    * roster — agents/commands/sessions — seeded into the query caches, or the
@@ -32,14 +37,20 @@ export interface CurrentRuntimeState {
    */
   bundleApplied: boolean;
   version: number;
+  /** Changes only when the workspace address changes. */
+  workspaceVersion: number;
 }
 
 let state: CurrentRuntimeState = {
   url: null,
   sandboxId: null,
   dbSandboxId: null,
+  dataRuntimeKind: null,
+  workspaceUrl: null,
+  workspaceSandboxId: null,
   bundleApplied: false,
   version: 0,
+  workspaceVersion: 0,
 };
 
 const listeners = new Set<() => void>();
@@ -66,12 +77,47 @@ export function setCurrentRuntime(
   url: string | null,
   sandboxId: string | null = null,
   dbSandboxId: string | null = null,
+  dataRuntimeKind: 'worker' | 'environment' | null = url ? 'worker' : null,
 ): void {
-  if (state.url === url && state.sandboxId === sandboxId && state.dbSandboxId === dbSandboxId)
+  const workspaceUrl = dataRuntimeKind === 'worker' ? url : null;
+  const workspaceSandboxId = dataRuntimeKind === 'worker' ? sandboxId : null;
+  if (
+    state.url === url &&
+    state.sandboxId === sandboxId &&
+    state.dbSandboxId === dbSandboxId &&
+    state.dataRuntimeKind === dataRuntimeKind &&
+    state.workspaceUrl === workspaceUrl &&
+    state.workspaceSandboxId === workspaceSandboxId
+  )
     return;
   // A new runtime: its bundle has not been applied yet, so the roster hooks
   // wait for it again rather than reading the previous session's seeded cache.
-  state = { url, sandboxId, dbSandboxId, bundleApplied: false, version: state.version + 1 };
+  state = {
+    url,
+    sandboxId,
+    dbSandboxId,
+    dataRuntimeKind,
+    workspaceUrl,
+    workspaceSandboxId,
+    bundleApplied: false,
+    version: state.version + 1,
+    workspaceVersion: state.workspaceVersion + 1,
+  };
+  for (const listener of listeners) listener();
+}
+
+/** Bind the repository/file/PTY/port runtime without changing the Pi control runtime. */
+export function setCurrentWorkspaceRuntime(
+  url: string | null,
+  sandboxId: string | null = null,
+): void {
+  if (state.workspaceUrl === url && state.workspaceSandboxId === sandboxId) return;
+  state = {
+    ...state,
+    workspaceUrl: url,
+    workspaceSandboxId: sandboxId,
+    workspaceVersion: state.workspaceVersion + 1,
+  };
   for (const listener of listeners) listener();
 }
 
@@ -99,4 +145,14 @@ export function getCurrentRuntimeSandboxId(): string | null {
 /** Read the current runtime DB sandbox id (platform `sandbox_id`) outside React. */
 export function getCurrentRuntimeDbSandboxId(): string | null {
   return state.dbSandboxId;
+}
+
+/** Read the workspace runtime URL outside React. */
+export function getCurrentWorkspaceRuntimeUrl(): string | null {
+  return state.workspaceUrl;
+}
+
+/** Read the workspace runtime provider id outside React. */
+export function getCurrentWorkspaceRuntimeSandboxId(): string | null {
+  return state.workspaceSandboxId;
 }
