@@ -21,6 +21,22 @@ linked, not inlined.
 
 ## Register
 
+### Read deployed capability and environment facts from the target, not the runner label (2026-09-03)
+
+**When:** writing browser assertions for a deployed preview, staging, or production target.
+**Incident:** the Pi gate called its target `custom`, while `/v1/health` correctly reported
+`preview`; another test required Platinum even though the target exposed Daytona only.
+**Rule:** read the environment and available providers from target responses, then assert the UI
+renders that exact contract. Do not translate runner labels or hard-code optional providers.
+**Enforcer:** `18-apps-ui.spec.ts` reads health; `12-sandbox-templates.spec.ts` reads provider coverage.
+
+### Browser fixtures must not require host CLIs that the test image does not install (2026-09-03)
+
+**When:** adding database setup to a deployed Playwright journey.
+**Incident:** three Pi browser journeys stopped at `spawnSync psql ENOENT` before opening the UI.
+**Rule:** use the shared `pg` client with parameterized SQL. Do not spawn `psql` from browser fixtures.
+**Enforcer:** `test-runner-contract.test.ts` rejects `execFileSync('psql', ...)` in the fixture helpers.
+
 ### Shell you GENERATE is expanded by the shell that writes it — transfer it base64, and prove the secret landed in one file (2026-09-02)
 
 **When:** emitting a shell snippet from a TS template literal

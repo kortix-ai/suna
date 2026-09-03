@@ -616,7 +616,7 @@ flow(
         '/v1/../.env',
         '/%2e%2e/%2e%2e/etc/passwd',
       ]) {
-        const response = await ctx.client.get(path);
+        const response = await ctx.client.get(path, { pathAsIs: true });
         response.status([400, 401, 403, 404]);
         if (/root:.*:0:0|private_key|BEGIN [A-Z ]*PRIVATE KEY/i.test(response.text())) {
           throw new Error(`${path} exposed sensitive file content`);

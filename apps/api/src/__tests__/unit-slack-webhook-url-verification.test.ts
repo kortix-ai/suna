@@ -5,6 +5,17 @@ let loadSigningSecretCalls = 0;
 let projectSigningSecret: string | null = null;
 const handledBlockActions: unknown[] = [];
 
+mock.module('../channels/slack-oauth-mode', () => ({
+  slackOauthMode: () => ({
+    available: false,
+    clientId: null,
+    clientSecret: null,
+    signingSecret: null,
+    scopes: '',
+    redirectUri: null,
+  }),
+}));
+
 const realInstallStore = await import('../channels/install-store');
 mock.module('../channels/install-store', () => ({
   ...realInstallStore,
@@ -111,4 +122,23 @@ describe('BYO Slack Events API URL verification', () => {
     expect(await res.text()).toBe('');
     expect(handledBlockActions).toEqual([payload]);
   });
+});
+
+describe('OAuth Slack webhook authentication', () => {
+  for (const [path, contentType] of [
+    ['/', 'application/json'],
+    ['/interactivity', 'application/x-www-form-urlencoded'],
+    ['/commands', 'application/x-www-form-urlencoded'],
+  ] as const) {
+    test(`rejects an unsigned ${path} request before checking OAuth configuration`, async () => {
+      const res = await slackWebhookApp.request(path, {
+        method: 'POST',
+        headers: { 'content-type': contentType },
+        body: contentType === 'application/json' ? '{}' : 'text=help',
+      });
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({ error: 'Invalid signature' });
+    });
+  }
 });
