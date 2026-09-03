@@ -93,10 +93,27 @@ export async function stopSession(input: {
     await provider.stop(sandbox.externalId);
   } catch (err) {
     if (!isAlreadyNotRunning(err) && !isLifecycleTransitionInProgress(err)) {
-      return {
-        status: 502,
-        body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
-      };
+      // The message alone cannot classify this refusal. Daytona answers
+      // "Sandbox is not in a stoppable state" both for a box it has ALREADY
+      // auto-stopped and for one mid-transition — and the first is the common
+      // case wherever no reaper writes `stopped` (a preview runs with
+      // KORTIX_WORKERS_ENABLED=false; measured 2026-09-03: 99 of 107 pi-lab
+      // sessions read `running` over boxes the provider had idled out, every
+      // stop answered 5xx, and the project sat on its 100-session cap with no
+      // way out through the product). Ask the provider which it is: a box that
+      // is already stopped or gone IS the outcome this request wanted, so
+      // reconcile our row; anything else is the failure it looks like. Same
+      // rule as apps/hosting.ts `stop`.
+      const providerStatus = await provider.getStatus(sandbox.externalId).catch(() => 'unknown' as const);
+      if (providerStatus !== 'stopped' && providerStatus !== 'removed') {
+        return {
+          status: 502,
+          body: {
+            error: err instanceof Error ? err.message : 'Failed to stop sandbox',
+            provider_status: providerStatus,
+          },
+        };
+      }
     }
     // Already stopped/gone on the provider side — proceed to reconcile our row.
   }

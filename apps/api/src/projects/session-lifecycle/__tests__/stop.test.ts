@@ -7,6 +7,9 @@ import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
+/** What the provider reports when a refused stop is double-checked. */
+let providerStatus: 'running' | 'stopped' | 'removed' | 'unknown' = 'running';
+let statusCalls: string[] = [];
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
 let updateCalls: Array<{
@@ -103,6 +106,11 @@ mock.module('../../../platform/providers', () => ({
       stopCalls.push(externalId);
       if (stopError) throw stopError;
     },
+    getStatus: async (externalId: string) => {
+      callOrder.push('provider.getStatus');
+      statusCalls.push(externalId);
+      return providerStatus;
+    },
   }),
 }));
 
@@ -153,6 +161,8 @@ beforeEach(() => {
   sandboxRow = null;
   stopCalls = [];
   stopError = null;
+  providerStatus = 'running';
+  statusCalls = [];
   pausedCompute = [];
   cacheInvalidations = [];
   updateCalls = [];
@@ -362,6 +372,54 @@ describe('stopSession', () => {
   });
 
   // T11: close the turn before the box loses power.
+  // Daytona's stop is not idempotent, and its refusal reads the same for a box
+  // it already idled out and for one mid-transition. The old code 502'd on the
+  // message alone, which is how a preview (no reaper ever writes `stopped`)
+  // ended up with 99 "running" sessions no stop could clear.
+  test('a refusal the provider cannot classify is resolved by asking it: already stopped → reconcile, 200', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    stopError = new Error('Sandbox is not in a stoppable state');
+    providerStatus = 'stopped';
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(statusCalls).toEqual(['ext-1']);
+    expect(callOrder).toEqual(['abort', 'provider.stop', 'provider.getStatus']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(updateCalls.find((c) => c.table === sessionSandboxes)?.updates.status).toBe('stopped');
+    expect(updateCalls.find((c) => c.table === projectSessions)?.updates.status).toBe('stopped');
+  });
+
+  test('the same refusal over a box the provider still reports running stays a 502, rows untouched', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    stopError = new Error('Sandbox is not in a stoppable state');
+    providerStatus = 'running';
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(502);
+    expect(result.body).toMatchObject({
+      error: 'Sandbox is not in a stoppable state',
+      provider_status: 'running',
+    });
+    expect(statusCalls).toEqual(['ext-1']);
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+  });
+
   describe('pre-stop abort', () => {
     test('issues the daemon abort BEFORE provider.stop() on a running box', async () => {
       sandboxRow = {
