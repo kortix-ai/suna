@@ -21,7 +21,7 @@
   "vars": {
     "TOOL_DAEMON_URL": "http://host.docker.internal:7070",
     "SCRIPT": "[{\"tool\":\"bash\",\"id\":\"call_fixed_1\",\"args\":{\"command\":\"echo AGENT_RAN_$((6*7)) > proof.txt && cat proof.txt\"}},{\"text\":\"I ran the command and wrote proof.txt\"}]",
-    "MODEL_PROVIDER": "openai-codex",
+    "MODEL_PROVIDER": "",
     "MODEL_ID": "gpt-5.6-luna",
     "MODEL_BASE_URL": ""
   }

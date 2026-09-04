@@ -96,6 +96,9 @@ dump.rdb
 **/.prompts/
 .cwc/
 test/
+# The cell worker's suites live in apps/pi-worker-js/test — the bare `test/` rule
+# above silently dropped all 43 of them from the first import commit.
+!apps/pi-worker-js/test/
 
 # The root .kortix/ dogfood project moved to the company operator repo; keep
 # any local per-clone leftovers out. Other vendored .kortix dirs stay ignored
