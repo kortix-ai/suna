@@ -710,9 +710,9 @@ for (const f of globSync('content/docs/**/*.mdx')) {
 
 ```bash
 cd /Users/jay/root/kortix/suna-docs/apps/web
-echo "Bare <Step> left (expect 0):"
+echo "Bare <Step> left (expect 8 — legacy-toml.mdx has 8 Steps with no heading in the source; Blume's Step.astro declares title?: string so these stay bare):"
 grep -rhoE '<Step>' --include='*.mdx' content/docs | wc -l
-echo "Titled steps (expect 46):"
+echo "Titled steps (expect 38):"
 grep -rhoE '<Step title="' --include='*.mdx' content/docs | wc -l
 echo "Steps imports left (expect 0):"
 grep -rhoE "fumadocs-ui/components/steps" --include='*.mdx' content/docs | wc -l
@@ -888,8 +888,25 @@ This is the acceptance check for the plan's hardest rule.
 
 ```bash
 cd /Users/jay/root/kortix/suna-docs/apps/web
-echo "App-component imports left (MUST be 0):"
-grep -rhoE "^import .* from '@/" --include='*.mdx' content/docs | wc -l
+# Fence-aware: an `import` inside a ``` fence is EXAMPLE SOURCE shown to readers
+# and must survive. Only a real top-of-file MDX import violates the rule. A plain
+# grep cannot tell the two apart and reports false positives (sdk/sign-in.mdx has
+# two fenced `@/lib/kortix-auth` examples; sdk/reference.mdx:668 is prose whose
+# wrapped line happens to begin with the word "import").
+echo "REAL (non-fenced) MDX imports left (MUST be 0):"
+python3 - <<'PYEOF'
+import pathlib, re
+real = []
+for f in sorted(pathlib.Path('content/docs').rglob('*.mdx')):
+    infence = False
+    for i, line in enumerate(f.read_text().split('\n'), 1):
+        if re.match(r'^\s*```', line):
+            infence = not infence; continue
+        if not infence and re.match(r"^import .* from ['\"]", line):
+            real.append((str(f), i, line.strip()))
+print(len(real))
+for r in real: print("  VIOLATION:", r)
+PYEOF
 echo "JSX icon props left (MUST be 0):"
 grep -rhoE 'icon=\{<' --include='*.mdx' content/docs | wc -l
 echo "fumadocs imports left (MUST be 0):"
