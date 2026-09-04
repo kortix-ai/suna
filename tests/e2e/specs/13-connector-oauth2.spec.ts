@@ -65,32 +65,49 @@ test.describe("13 — Custom connector OAuth2", () => {
     });
     await dismissOnboarding(page);
 
-    // A user opens the Customize index from the sidebar. This is a real
-    // link, so navigation also works before client hydration completes.
-    // The row lands on the index (Jay, 2026-08-17: "even with the index
-    // thing it should just be the home page") rather than jumping straight
-    // into a tab, so reaching Connectors specifically is a second real-link
-    // hop, off the index's own card grid.
+    // A user opens Customize from the sidebar. This is a real link, so
+    // navigation also works before client hydration completes.
+    //
+    // The row lands on AGENTS, not on an index. Customize is agent-centric
+    // (Marko, 2026-09-01: the agent is the object a person is granted), so
+    // `ProjectCustomizeNavItem` points at the first capability tab the caller
+    // may open — `capabilityTabHref(projectId, tab)`. The former index at
+    // `/customize` still resolves and redirects here, which is why every
+    // bookmark keeps working; it is simply no longer where the sidebar goes.
+    // Reaching Connectors is then one hop along the capability TAB BAR rather
+    // than a card on a chooser page.
     const customizeLink = page.getByRole("link", { name: /^Customize$/i });
     await expect(customizeLink).toHaveAttribute(
       "href",
-      `/projects/${projectId}/customize`,
+      `/projects/${projectId}/customize/agents`,
     );
     await customizeLink.click();
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${projectId}/customize$`),
+      new RegExp(`/projects/${projectId}/customize/agents$`),
     );
-    const connectorsCard = page.getByRole("link", { name: /^Connectors/i });
-    await expect(connectorsCard).toHaveAttribute(
+    // `role=tab`, not `role=link`. The bar renders `<TabsTrigger asChild><Link>`
+    // (`capability-tabs.tsx`), and Radix merges its own `role="tab"` onto the
+    // anchor — so the element is a real <a> with a real href that no
+    // `getByRole('link')` will ever match.
+    const connectorsTab = page.getByRole("tab", { name: /^Connectors$/i });
+    await expect(connectorsTab).toHaveAttribute(
       "href",
       `/projects/${projectId}/customize/connectors`,
     );
-    await connectorsCard.click();
+    await connectorsTab.click();
     await expect(page).toHaveURL(
       new RegExp(`/projects/${projectId}/customize/connectors$`),
     );
+    // The header action is a "New" MENU now (`NewEntityMenu`), not a single
+    // button: "Create in chat" hands the job to an agent, "Add a custom
+    // connector" opens the form. The old top-level button is gone.
+    //
+    // The menu item's accessible name carries its description too — "Add a
+    // custom connector OpenAPI, Postman, GraphQL, MCP or HTTP." — so the
+    // regex must NOT anchor the end.
+    await page.getByRole("button", { name: /^New$/i }).click();
     await page
-      .getByRole("button", { name: /^Add a custom connector$/i })
+      .getByRole("menuitem", { name: /^Add a custom connector/i })
       .click();
     await expect(
       page.getByRole("dialog", { name: /^Add a custom connector$/i }),

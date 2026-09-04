@@ -83,6 +83,8 @@ let huskOutcomeBySandbox: Record<
 /** Records husk-finalize and turn-clear calls in the order the pass makes them,
  *  so a test can assert the husk is closed BEFORE its record is deleted. */
 let lifecycleCallOrder: string[] = [];
+let promotedQueueSessions: string[] = [];
+let targetedQueueDrains: string[] = [];
 
 /**
  * What the DB returns for the LAST-MOMENT deadline re-read, when it differs from
@@ -457,6 +459,14 @@ const reapAndReconcileSandboxes = (
       promptRedeliveries.push(input);
       return 'requeued';
     },
+    promoteNextInboxRow: async (sessionId: string) => {
+      promotedQueueSessions.push(sessionId);
+      return `prompt:${sessionId}`;
+    },
+    drainSessionLifecycleQueue: async (input: { idempotencyKey?: string }) => {
+      if (input.idempotencyKey) targetedQueueDrains.push(input.idempotencyKey);
+      return { claimed: 1, completed: 1, failed: 0 };
+    },
   }, scope);
 
 const HOUR = 3_600_000;
@@ -500,6 +510,8 @@ beforeEach(() => {
   huskFinalizeCalls = [];
   huskOutcomeBySandbox = {};
   lifecycleCallOrder = [];
+  promotedQueueSessions = [];
+  targetedQueueDrains = [];
   freshDeadlineBySandbox = {};
   stopClaimDeniedBySandbox = {};
 });
@@ -1089,6 +1101,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     const result = await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
+    expect(promotedQueueSessions).toEqual(['sess-1']);
+    expect(targetedQueueDrains).toEqual(['prompt:sess-1']);
     expect(result.stopped).toBe(0);
     expect(result.lifecycleRenewed).toBe(1);
   });

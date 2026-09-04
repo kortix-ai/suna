@@ -170,6 +170,7 @@ import {
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
+  turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
@@ -2731,7 +2732,7 @@ projectsApp.openapi(
       // event. Returning before this write finished made a transient DB failure
       // look successful, so the daemon deduped the event and the active record
       // survived until reaper reconciliation.
-      await completeSandboxTurn(
+      const turnCompletion = await completeSandboxTurn(
         sessionId,
         status,
         {
@@ -2774,14 +2775,36 @@ projectsApp.openapi(
         void captureSessionTranscriptMirror(sessionId);
       }
       // THE TURN ENDED — the session's next queued prompt is admissible NOW.
-      // Fire-and-forget: the drain re-runs admission itself, and a lost kick
-      // falls back to the scheduler tick (bounded by the admission backoff).
+      // Await the durable promotion before acknowledging the terminal relay.
+      // The targeted drain remains asynchronous and re-runs admission itself;
+      // a lost kick falls back to the scheduler tick.
       // This is what makes the queue "send between every turn" without a
       // clock: the daemon's idle relay is the trigger.
+      let promotedPromptId: string | null = null;
       if (!childSession) {
-        void promoteNextInboxRow(sessionId)
-          .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
-          .catch(() => undefined);
+        if (turnCompletionAllowsQueuePromotion(turnCompletion)) {
+          promotedPromptId = await promoteNextInboxRow(sessionId);
+          if (promotedPromptId) {
+            void drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId }).catch((error) =>
+              console.warn('[turn-stream] targeted queue drain failed', {
+                sessionId,
+                promptId: promotedPromptId,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+          }
+        }
+        console.info('[turn-stream] terminal turn settlement', {
+          sessionId,
+          opencodeSessionId:
+            typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+          turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+          outcome: turnCompletion.outcome,
+          activeTurnCount: turnCompletion.activeTurnCount,
+          closedTurnCount: turnCompletion.closedTurnCount,
+          queuePromoted: promotedPromptId !== null,
+          promotedPromptId,
+        });
       }
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest
@@ -2808,7 +2831,16 @@ projectsApp.openapi(
         );
       }
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
-      return c.json({ ok });
+      return c.json({
+        ok,
+        turn_completion: {
+          outcome: turnCompletion.outcome,
+          active_turn_count: turnCompletion.activeTurnCount,
+          closed_turn_count: turnCompletion.closedTurnCount,
+        },
+        queue_promoted: promotedPromptId !== null,
+        promoted_prompt_id: promotedPromptId,
+      });
     }
 
     // `opencode_session` carries the canonical opencode ROOT id the sandbox just

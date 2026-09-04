@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+    <title>Sign in</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #141414;
+        color: rgba(255, 255, 255, 0.92);
+        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        -webkit-user-select: none;
+        user-select: none;
+        overflow: hidden;
+      }
+      form {
+        box-sizing: border-box;
+        height: 100%;
+        padding: 20px 20px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 18px;
+      }
+      #host { font-weight: 600; }
+      p.sub {
+        margin: 0 0 4px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 12px;
+      }
+      input[type="text"], input[type="password"] {
+        box-sizing: border-box;
+        width: 100%;
+        height: 30px;
+        padding: 0 9px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: #0a0a0a;
+        color: inherit;
+        font: inherit;
+        outline: none;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      input:focus { border-color: rgba(255, 255, 255, 0.45); }
+      .remember {
+        flex-direction: row;
+        align-items: center;
+        gap: 7px;
+        margin-top: 2px;
+      }
+      .remember input { margin: 0; accent-color: #ffffff; }
+      #error {
+        min-height: 16px;
+        font-size: 12px;
+        color: #ff6b6b;
+      }
+      .actions {
+        margin-top: auto;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      button {
+        height: 30px;
+        padding: 0 14px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 500;
+        cursor: default;
+      }
+      button.primary {
+        background: #ffffff;
+        border-color: #ffffff;
+        color: #0a0a0a;
+      }
+      button:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.45); outline-offset: 1px; }
+    </style>
+  </head>
+  <body>
+    <form id="form" autocomplete="off">
+      <h1>Sign in to <span id="host"></span></h1>
+      <p class="sub" id="realm"></p>
+      <label>
+        Username
+        <input id="user" type="text" name="username" autocapitalize="off" spellcheck="false" />
+      </label>
+      <label>
+        Password
+        <input id="pass" type="password" name="password" />
+      </label>
+      <label class="remember">
+        <input id="remember" type="checkbox" checked />
+        <span id="remember-label">Remember on this device</span>
+      </label>
+      <div id="error" role="alert" aria-live="assertive"></div>
+      <div class="actions">
+        <button type="button" id="cancel">Cancel</button>
+        <button type="submit" class="primary" id="submit">Sign In</button>
+      </div>
+    </form>
+    <script>
+      // Values arrive from the main process via preload (contextBridge); the
+      // page never sees Node. Every string is set with textContent — the host
+      // and realm come from the network and must never be parsed as HTML.
+      const api = window.kortixBasicAuth;
+      const $ = (id) => document.getElementById(id);
+      api.onInit((init) => {
+        $('host').textContent = init.host;
+        $('realm').textContent = init.realm
+          ? `The site says: "${init.realm}"`
+          : 'This site requires a username and password.';
+        $('user').value = init.user || '';
+        $('error').textContent = init.error || '';
+        if (!init.canRemember) {
+          $('remember').checked = false;
+          $('remember').disabled = true;
+          $('remember-label').textContent = 'Remember (unavailable: no OS keychain)';
+        }
+        ($('user').value ? $('pass') : $('user')).focus();
+      });
+      $('form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        api.submit({
+          user: $('user').value,
+          password: $('pass').value,
+          remember: $('remember').checked && !$('remember').disabled,
+        });
+      });
+      $('cancel').addEventListener('click', () => api.cancel());
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') api.cancel();
+      });
+    </script>
+  </body>
+</html>
