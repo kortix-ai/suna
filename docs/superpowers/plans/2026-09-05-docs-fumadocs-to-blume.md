@@ -399,7 +399,7 @@ git commit -m "feat(docs): add pinned Blume 1.5.3 project config"
 **Files:**
 - Create: `apps/web/scripts/codemod-docs-mdx.mjs`
 - Test: `apps/web/scripts/codemod-docs-mdx.test.ts`
-- Modify: 11 files under `apps/web/content/docs/`
+- Modify: 16 files under `apps/web/content/docs/`
 
 **Interfaces:**
 - Consumes: the directive renderer from Task 2.
@@ -533,7 +533,7 @@ Run: `cd apps/web && bun test scripts/codemod-docs-mdx.test.ts`
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Apply it to the 11 files that use Callout**
+- [ ] **Step 5: Apply it to the 16 files that use Callout**
 
 ```bash
 cd /Users/jay/root/kortix/suna-docs/apps/web
@@ -557,7 +557,7 @@ echo "Callout tags left (expect 0):"
 grep -rhoE '<Callout' --include='*.mdx' content/docs | wc -l
 echo "Directives added (expect 26):"
 grep -rhoE '^:::[a-z]+' --include='*.mdx' content/docs | wc -l
-echo "SDK example imports intact (expect 44):"
+echo "SDK example imports intact (expect 41 — unchanged from before the codemod):"
 grep -rhoE "from '@kortix/sdk" --include='*.mdx' content/docs | wc -l
 ```
 
