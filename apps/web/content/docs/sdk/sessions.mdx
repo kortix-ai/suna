@@ -3,8 +3,6 @@ title: Sessions
 description: Run a session, stream its events, and handle the errors it can throw.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 A session is one agent run, in its own sandbox, on its own git branch.
 `kortix.session(projectId, sessionId)` returns the handle for everything a
 session does: start it, send prompts, stream events, and read status. This
@@ -37,10 +35,10 @@ ID, and the branch name are the same value. See
 | `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
 | `s.commit(input?)` | — | Commits the agent's work |
 
-<Callout type="warn">
+:::warning
   `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
   without losing it, call `s.stop()` instead.
-</Callout>
+:::
 
 Use the streamed method when the caller displays reload progress:
 
@@ -422,11 +420,11 @@ The warm session carries the project's DEFAULT agent and sandbox. If the user
 picks a different one, abandon it and call `sessions.create()`: an unused warm
 session is hidden and reaped on its own.
 
-<Callout type="warn">
+:::warning
 `claimWarm()` is deprecated. A warm session is an ordinary session, so there is
 nothing to claim — navigate to it and prompt it. The call still works for
 consumers pinned to the older shape and is removed in the next major.
-</Callout>
+:::
 
 ## Handling errors
 

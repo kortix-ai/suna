@@ -4,7 +4,6 @@ description: Start and manage Kortix sessions from your backend with explicit co
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Callout } from 'fumadocs-ui/components/callout';
 
 Use a Kortix API key to start sessions from your server. Each session has one
 Kortix owner, one project, and one cost record.
@@ -161,10 +160,10 @@ For a Pipedream OAuth connection, call `pipedreamConnect()` and
 `pipedreamFinalize()`. Do not place its provider token in
 `updateCredential()`.
 
-<Callout type="info">
+:::info
   The connection object and new session binding input use `connection_id`.
   `authorization_id` remains a deprecated SDK input alias.
-</Callout>
+:::
 
 ## 4. Read and replace session scope
 

@@ -17,7 +17,6 @@ import {
   RobotIcon,
   UsersIcon,
 } from '@/lib/icons/ssr';
-import { Callout } from 'fumadocs-ui/components/callout';
 
 Kortix does work inside a [session](/docs/work/sessions): a branch and a sandbox for one
 unit of work. A session ends when its [change request](/docs/work/change-requests) (CR)
@@ -45,11 +44,11 @@ three ways a session can start.
 5. The agent opens a [change request](/docs/work/change-requests). You review
    it and merge it — the only way work reaches the default branch.
 
-<Callout type="info" title="Git is the only durable record">
+:::info[Git is the only durable record]
 Stopping a session pauses the sandbox but keeps its files. Deleting a session
 destroys the sandbox for good. Only work committed and pushed to the branch
 survives, and only a merged change request makes it permanent.
-</Callout>
+:::
 
 ## Three ways work runs
 

@@ -4,7 +4,6 @@ description: Run your own Kortix instance with Docker Compose, on a VPS or for e
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Callout } from 'fumadocs-ui/components/callout';
 
 Kortix runs as one Docker Compose stack: the frontend, the API, the LLM gateway, and the Supabase distribution. This page shows the three ways to install it, how updates work, and how to back up your data.
 
@@ -79,13 +78,13 @@ optionally a managed-git token. Sign up in the dashboard, then connect your
 own LLM key in the model picker. Self-hosted instances use your own key
 by default.
 
-<Callout type="info">
+:::info
 By default, only the platform admin can create new organization accounts. The
 platform admin is the super-admin flag on a membership, not a role.
 Any signed-in user can still join by invite or SSO. Opt out with
 `kortix self-host init --no-restrict-account-creation`, or re-enable the
 admin-only default with `--restrict-account-creation`.
-</Callout>
+:::
 
 Each API container has a 640 MiB memory limit by default.
 Keep this default on an 8 GiB host.
@@ -117,10 +116,10 @@ directories under `~/.config/kortix/self-host/<instance>/`: `volumes/db/data`
 `.env` file holds every secret and signing key it uses. Back up all three
 before you run a destructive command.
 
-<Callout type="warn">
+:::warning
 `kortix self-host uninstall` stops the stack, deletes its containers and
 volumes, and deletes the instance directory. This cannot be undone.
-</Callout>
+:::
 
 ## Learn more
 

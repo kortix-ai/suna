@@ -3,8 +3,6 @@ title: Self-hosting architecture
 description: How the self-hosted Docker Compose stack fits together, on the box and off it.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 This page shows how the pieces of a self-hosted Kortix instance fit
 together: one Docker Compose stack, plus the compute that stays outside it.
 For install steps, see the [self-hosting guide](/docs/host).
@@ -116,11 +114,11 @@ flowchart TB
 - **The image registry** — `docker.io/kortix/*`. The updater and
   `kortix self-host start` pull from it. It needs no credentials.
 
-<Callout type="warn">
+:::warning
 `kortix self-host uninstall` runs `docker compose down --volumes
 --remove-orphans` and deletes the instance directory. This removes your
 database and storage bind mounts. Back them up first.
-</Callout>
+:::
 
 ## Channels and updates
 
