@@ -193,6 +193,13 @@ const CHECKS = [
     suite: "dev-e2e.sh", file: "src/pitools.js",
     from: 'export const workspaceCwd = (env) => env.PT_WORKSPACE_CWD || "/home/user";',
     to:   'export const workspaceCwd = (env) => "/home/user";' },
+  // THE PUT BODY IS THE FILE. Measured on dev before this existed: the tool
+  // said "wrote 21 bytes" and the sandbox held the 35-byte JSON envelope.
+  { claim: "writeFile sends the bytes as the PUT body, not a JSON envelope",
+    expect: new RegExp("the written file holds"),
+    suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
+    from: '      const r = await api("PUT", "/files", { query: { path: abs(path) }, bytes });',
+    to:   '      const r = await api("PUT", "/files", { query: { path: abs(path) }, body: { content: new TextDecoder().decode(bytes) } });' },
 ];
 
 /**

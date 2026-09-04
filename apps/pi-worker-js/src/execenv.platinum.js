@@ -61,13 +61,19 @@ function rel(p, cwd, alsoInside) {
 export function platinumExecutionEnv({ apiUrl, key, sandboxId, cwd = "/home/user" }) {
   const base = `${String(apiUrl).replace(/\/+$/, "")}/v1/sandboxes/${sandboxId}`;
 
-  async function api(method, path, { query, body, raw, signal } = {}) {
+  // `bytes` is a raw body. PUT /files takes the request body AS THE FILE —
+  // Platinum reads c.req.arrayBuffer() and writes it verbatim. This used to
+  // send {content} as JSON, and measured on dev the file then held the JSON
+  // envelope: the tool reported "wrote 21 bytes", the sandbox held 35 bytes of
+  // {"content":"..."}. Every write and every edit did that.
+  async function api(method, path, { query, body, bytes, raw, signal } = {}) {
     const url = new URL(`${base}${path}`);
     for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, String(v));
     const res = await fetch(url, {
       method,
-      headers: { authorization: `Bearer ${key}`, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: { authorization: `Bearer ${key}`,
+        ...(bytes !== undefined ? { "content-type": "application/octet-stream" } : body !== undefined ? { "content-type": "application/json" } : {}) },
+      body: bytes !== undefined ? bytes : body !== undefined ? JSON.stringify(body) : undefined,
       signal,
     });
     if (raw) return res;
@@ -126,8 +132,10 @@ export function platinumExecutionEnv({ apiUrl, key, sandboxId, cwd = "/home/user
     },
 
     async writeFile(path, content) {
-      const text = typeof content === "string" ? content : new TextDecoder().decode(content);
-      const r = await api("PUT", "/files", { query: { path: abs(path) }, body: { content: text } });
+      // Bytes go as bytes: decoding them as UTF-8 first turned every byte that
+      // was not valid UTF-8 into U+FFFD, so an edit of a non-UTF-8 file rewrote it.
+      const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+      const r = await api("PUT", "/files", { query: { path: abs(path) }, bytes });
       return r.status === 200 ? ok(undefined) : fail(r.json?.error ?? `write ${r.status}`, path, codeFor(r.status, r.json?.error));
     },
 
@@ -199,7 +207,7 @@ export function platinumExecutionEnv({ apiUrl, key, sandboxId, cwd = "/home/user
 
     async createTempFile(options = {}) {
       const p = `${cwd}/.tmp/${options.prefix ?? "tmp"}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}${options.suffix ?? ""}`;
-      const r = await api("PUT", "/files", { query: { path: p }, body: { content: "" } });
+      const r = await api("PUT", "/files", { query: { path: p }, bytes: new Uint8Array(0) });
       return r.status === 200 ? ok(p) : fail(r.json?.error ?? "temp file failed", p);
     },
 

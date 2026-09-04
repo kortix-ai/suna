@@ -10,10 +10,11 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=55
+// EXPECTED_PASSES=58
 
 import { createEditTool, createReadTool, createWriteTool, createBashTool } from "@earendil-works/pi-agent-core";
 import { createServer } from "node:http";
+import { createConnection } from "node:net";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -82,6 +83,12 @@ const PORT = 7129;
 await rm(ROOT, { recursive: true, force: true });
 await mkdir(`${ROOT}/w`, { recursive: true });
 
+// A stale stub from a crashed run would hold the port and the new spawn would
+// fail silently (stdio is ignored) — every claim below would then run against
+// OLD stub code. Measured: one leaked stub made 3 claims fail for the wrong
+// reason. Busy port = named failure, not a run against the wrong server.
+const busy = await new Promise((r) => { const sock = createConnection({ host: "127.0.0.1", port: PORT }); sock.once("connect", () => { sock.destroy(); r(true); }); sock.once("error", () => r(false)); });
+if (busy) { console.log(`  FAIL  port ${PORT} is already in use — a leaked platinum-stub from an earlier run; kill it (lsof -i :${PORT}) and rerun`); process.exit(1); }
 const stub = spawn(process.execPath, [`${HERE}platinum-stub.mjs`], {
   env: { ...process.env, PORT: String(PORT), SANDBOX_KEY: "pt_live_envkey", SANDBOX_ID: "sbx_env", WORK_ROOT: ROOT },
   stdio: "ignore",
@@ -100,6 +107,25 @@ const run = (tool, id, input) => tool.execute(id, input, undefined, undefined, c
 let r = await env.writeFile("src/app.py", "one\ntwo\nthree\n");
 check("writeFile goes through PUT /files", r.ok, JSON.stringify(r));
 check("and lands on the sandbox filesystem", (await onDisk("src/app.py")).includes("two"));
+// THE PUT BODY IS THE FILE. Platinum's handler reads c.req.arrayBuffer() and
+// writes it verbatim; it has no {content} field. The client used to send one,
+// and the stub used to accept one — so 55 claims passed against a contract the
+// platform does not have, and on dev every written file held a JSON envelope.
+{
+  const src = readFileSync(SANDBOXES_SRC, "utf8");
+  const put = /\.put\('\/:id\/files',[\s\S]*?\n  \}\)/.exec(src)?.[0] ?? "";
+  check("PLATINUM'S PUT /files WRITES THE REQUEST BODY VERBATIM — read from its source, not assumed",
+    put.includes("c.req.arrayBuffer()") && !/body\.content|json\(\)\.content/.test(put), put ? `handler found; arrayBuffer=${put.includes("arrayBuffer")}` : "handler not found in sandboxes.ts");
+  const envelope = await fetch(`http://127.0.0.1:${PORT}/v1/sandboxes/sbx_env/files?path=${encodeURIComponent(`${ROOT}/w/env.txt`)}`,
+    { method: "PUT", headers: { authorization: "Bearer pt_live_envkey", "content-type": "application/json" }, body: '{"content":"x"}' });
+  check("and so does the stub: a literal {\"content\":\"x\"} body is stored as those 15 bytes, not unwrapped",
+    envelope.status === 200 && (await onDisk("env.txt")) === '{"content":"x"}', JSON.stringify(await onDisk("env.txt").catch(() => null)));
+  const every = new Uint8Array(256); for (let i = 0; i < 256; i++) every[i] = i;
+  const w = await env.writeFile("bin/all.bin", every);
+  const back = await env.readBinaryFile("bin/all.bin");
+  check("a write of bytes 0x00..0xFF reads back identical — bytes go as bytes, never through a text decoder",
+    w.ok && back.ok && back.value.length === 256 && back.value.every((b, i) => b === i), `wrote ok=${w.ok}; read ${back.value?.length} bytes, first mismatch at ${back.value ? [...back.value].findIndex((b, i) => b !== i) : "n/a"}`);
+}
 r = await env.fileInfo("src/app.py");
 check("fileInfo maps {is_dir,size,mtime} to pi's {kind,size,mtimeMs}",
   r.ok && r.value.kind === "file" && r.value.size > 0, JSON.stringify(r).slice(0, 100));

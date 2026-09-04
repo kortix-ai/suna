@@ -71,8 +71,14 @@ echo "$F" | grep -q "$MARK" && pass "the work landed in $SBX: marker read back t
 
 # Teardown BEFORE the summary, so the count includes the delete and a failed
 # delete is in the tally rather than after it.
+echo "== 6. a write through the env, read back byte for byte =="
+# PUT /files takes the body as the file. The client used to wrap it in JSON and
+# the sandbox held {"content":"..."} — measured on dev before this claim existed.
+cell "/prompt?c=w-$SES" -X POST -H 'content-type: application/json' -d "{\"text\":\"write\",\"script\":[{\"tool\":\"write\",\"id\":\"w1\",\"args\":{\"path\":\"pi-write.txt\",\"content\":\"$MARK-written\\n\"}},{\"text\":\"written\"}]}" >/dev/null
+W=$(curl -s -m 30 "$API/v1/sandboxes/$SBX/files?path=$CWD/pi-write.txt" "${H[@]}")
+[ "$W" = "$MARK-written" ] && pass "writeFile landed the exact bytes in $SBX — no JSON envelope around them" || fail "the written file holds: ${W:0:120}"
 trap - EXIT; cleanup
-EXPECTED_PASSES=7
+EXPECTED_PASSES=8
 echo
 [ "$FAIL" -eq 0 ] && echo "  the harness lives in a cell and the work lands on Platinum dev: ${PASS} claims" || echo "  ${FAIL} of $((PASS+FAIL)) claims failed"
 exit "$FAIL"

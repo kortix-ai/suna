@@ -51,6 +51,8 @@ function guestPath(p, fallback = "/") {
   return full;
 }
 
+// PUT /files takes the request body as the file, byte for byte, as Platinum does.
+const rawBody = (req) => new Promise((done) => { const parts = []; req.on("data", (c) => parts.push(c)); req.on("end", () => done(Buffer.concat(parts))); });
 const body = (req) => new Promise((done, fail) => {
   let raw = "";
   req.on("data", (c) => { raw += c; });
@@ -103,7 +105,11 @@ createServer(async (req, res) => {
       let full;
       try { full = guestPath(p); } catch (e) { return json(res, 400, { error: e.message }); }
       try {
-        let content = await readFile(full, "utf8");
+        const rawBytes = await readFile(full);
+        if (!url.searchParams.has("offset") && !url.searchParams.has("limit")) {
+          res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(rawBytes.length) }); return res.end(rawBytes);
+        }
+        let content = rawBytes.toString("utf8");
         const offset = url.searchParams.get("offset");
         const limit = url.searchParams.get("limit");
         if (offset || limit) {
@@ -120,9 +126,9 @@ createServer(async (req, res) => {
       if (!p) return json(res, 400, { error: "path required" });
       let full;
       try { full = guestPath(p); } catch (e) { return json(res, 400, { error: e.message }); }
-      const b = await body(req);
+      const raw = await rawBody(req);
       await mkdir(dirname(full), { recursive: true });
-      await writeFile(full, String(b.content ?? ""), "utf8");
+      await writeFile(full, raw);
       return json(res, 200, { ok: true, path: p });
     }
 
