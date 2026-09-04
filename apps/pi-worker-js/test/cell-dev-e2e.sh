@@ -29,7 +29,7 @@ H=(-H "Authorization: Bearer $TOK" -H "content-type: application/json")
 PASS=0; FAIL=0
 pass() { printf '  \033[32mPASS\033[0m %s\n' "$1"; PASS=$((PASS+1)); }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
-api() { curl -sS -m "${2:-60}" "${H[@]}" "$@"; }
+api() { local t=60; case "${1:-}" in ""|*[!0-9]*) ;; *) t=$1; shift;; esac; curl -sS -m "$t" "${H[@]}" "$@"; }
 mc() { docker run --rm --entrypoint sh quay.io/minio/mc -c "mc alias set d $EP $PT_S3_ACCESS_KEY $PT_S3_SECRET_KEY >/dev/null 2>&1; $1" 2>/dev/null; }
 
 echo "== 1. the gate and the template =="
@@ -57,7 +57,7 @@ print(json.dumps({"template":"pt-celld","runtime":"cell","worker":w,"name":"cell
   "env":{"CELLD_VAR_PT_API_URL":api,"CELLD_VAR_PT_SANDBOX_KEY":tok,"CELLD_VAR_PT_WORKSPACE_ID":ws,"CELLD_VAR_PT_WORKSPACE_CWD":"/root","CELLD_VAR_PT_AGENT_SCRIPTED":"1","CELLD_VAR_TOOL_DAEMON_TOKEN":"unused"}}))
 PY
 )
-R=$(api -X POST "$API/v1/sandboxes?wait_for_state=running&wait_timeout_ms=240000" 300 -d "$BODY"); CELL=$(echo "$R" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null)
+R=$(api 300 -X POST "$API/v1/sandboxes?wait_for_state=running&wait_timeout_ms=240000" -d "$BODY"); CELL=$(echo "$R" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null)
 [ -n "$CELL" ] && pass "cell created with worker=$WORKER: $CELL" || { fail "cell create: ${R:0:200}"; exit 1; }
 ROW=$(api "$API/v1/sandboxes/$CELL"); ORG=$(echo "$ROW" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("orgId",""))'); RW=$(echo "$ROW" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("worker"))')
 [ "$RW" = "$WORKER" ] && pass "the sandbox row carries worker=$WORKER" || fail "the row's worker is '$RW'"
@@ -73,10 +73,10 @@ echo "== 4. the bundle, deployed to the worker's folder, and adopted after a res
 npm run --silent build >/dev/null 2>&1 || { fail "build"; exit 1; }
 D=$(docker run --rm --platform linux/amd64 -v "$PWD:/app" -w /app -e AWS_ACCESS_KEY_ID="$PT_S3_ACCESS_KEY" -e AWS_SECRET_ACCESS_KEY="$PT_S3_SECRET_KEY" -e AWS_REGION="$REGION" pt-celld:0.3.0 celld deploy . --bucket "s3://$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER" --endpoint "$EP" --region "$REGION" 2>&1 | grep -oE "Current Version ID: [0-9a-f]+" | cut -d' ' -f4)
 [ -n "$D" ] && pass "celld deploy wrote version $D to workers/$WORKER/deploy/" || { fail "celld deploy failed"; exit 1; }
-api -X POST "$API/v1/sandboxes/$CELL/stop" >/dev/null; sleep 3; api -X POST "$API/v1/sandboxes/$CELL/start?wait_for_state=running" 120 >/dev/null; sleep 8
+api -X POST "$API/v1/sandboxes/$CELL/stop" >/dev/null; sleep 3; api 120 -X POST "$API/v1/sandboxes/$CELL/start?wait_for_state=running" >/dev/null; sleep 8
 P=$(mc "mc cat d/$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER/deploy/current.json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))')
 [ "$P" = "$D" ] && pass "the worker folder's deploy/current.json points at $D — the version this cell boots" || fail "pointer is '$P', deployed $D"
 trap - EXIT; cleanup
-EXPECTED_PASSES=8
+EXPECTED_PASSES=9
 if [ "$FAIL" -eq 0 ] && [ "$PASS" -ne "$EXPECTED_PASSES" ]; then printf '  \033[31mINCOMPLETE\033[0m %s claims ran, expected %s\n' "$PASS" "$EXPECTED_PASSES"; exit 1; fi
 printf '\n  the worker in a real cell on dev: %s passed, %s failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]
