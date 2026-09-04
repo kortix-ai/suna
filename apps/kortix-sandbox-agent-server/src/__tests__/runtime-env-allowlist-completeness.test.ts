@@ -71,17 +71,26 @@ const BOOT_ONLY_KORTIX_ENV_NAMES = new Set([
   // Connector MCP identity, materialized once at provision. A rotated
   // connector token is a new session, not a live push.
   'KORTIX_API_URL',
-  'KORTIX_CLI_TOKEN',
-  // Warm-fork proxy-mode flags. Daemon-injected at boot so a warm seed's
+  'KORTIX_TOKEN',
+  // The session PAT a 2026-07 box carries beside its service key; read only to
+  // pick the LLM gateway bearer at spawn, boot-only for the same reason as
+  // KORTIX_TOKEN.
+  'KORTIX_LLM_API_KEY',
+  // Warm-fork proxy-mode flag. Daemon-injected at boot so a warm seed's
   // provider config is session-independent; never posted by the API — see
   // buildOpencodeConfigContent's comment on `llmProxyUrl`/`connectorProxyUrl`.
+  // (KORTIX_LLM_PROXY_URL moved to OPENCODE_RUNTIME_ENV_NAMES: a live
+  // gateway→native toggle must be able to CLEAR it, because a set proxy URL
+  // reads as "gateway on" in hasKortixLlmGateway.)
   'KORTIX_CONNECTORS_PROXY_URL',
-  'KORTIX_LLM_PROXY_URL',
   // Local catalog-file override; operator/dev-only, not an API-driven field.
   'KORTIX_LLM_CATALOG_FILE',
   // Manual operator debug toggle (checked against `process.env` directly, not
   // part of the env-sync contract at all).
   'KORTIX_OPENCODE_DEBUG',
+  // Artifact identity is fixed before PID 1 starts. A live update installs a
+  // new artifact and daemon instead of changing this value through /env.
+  'KORTIX_COMPILED_RUNTIME_FORMAT',
   // Static project identity baked at seed — see the comment beside its read.
   'KORTIX_PROJECT_ID',
 ])
@@ -134,8 +143,8 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
     consumed.add('KORTIX_SECRET_CAPABILITIES')
     expect([...consumed].sort()).toEqual([
       'KORTIX_API_URL',
-      'KORTIX_CLI_TOKEN',
       'KORTIX_COMPILED_AGENT_CONFIG',
+      'KORTIX_COMPILED_RUNTIME_FORMAT',
       'KORTIX_CONNECTORS_MCP_ENABLED',
       'KORTIX_CONNECTORS_PROXY_URL',
       'KORTIX_LLM_API_KEY',
@@ -143,10 +152,10 @@ describe('OPENCODE_RUNTIME_ENV_NAMES — allowlist completeness', () => {
       'KORTIX_LLM_CATALOG_FILE',
       'KORTIX_LLM_PROXY_URL',
       'KORTIX_OPENCODE_DEBUG',
-      'KORTIX_OPENCODE_DENY_ENV',
       'KORTIX_OPENCODE_MODEL',
       'KORTIX_PROJECT_ID',
       'KORTIX_SECRET_CAPABILITIES',
+      'KORTIX_TOKEN',
     ])
   })
 })

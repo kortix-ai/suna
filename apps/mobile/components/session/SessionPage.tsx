@@ -35,7 +35,7 @@ import { Text as RNText } from 'react-native';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
-import { groupMessagesIntoTurns } from '@kortix/sdk/turns';
+import { groupMessagesIntoTurns } from '@kortix/sdk';
 import type { Turn, QuestionRequest, ToolPart } from '@/lib/opencode/types';
 import { useSession, replyToQuestion, rejectQuestion, useRenameSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
@@ -57,9 +57,6 @@ import { log } from '@/lib/logger';
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
 import { SandboxHealthPill } from './SandboxHealthPill';
 import { useRouter } from 'expo-router';
-import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
-import { useAudioRecordingHandlers } from '@/hooks/media/useAudioRecordingHandlers';
-import { transcribeAudio } from '@/lib/transcription';
 import { SessionTurn } from './SessionTurn';
 import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
@@ -266,23 +263,6 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
   const drainScheduledRef = useRef(false);
   const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
 
-
-  // ── Audio recording ──
-
-  const audioRecorder = useAudioRecorder();
-  // Dummy agent manager shape for useAudioRecordingHandlers compatibility
-  const dummyAgentManager = useMemo(() => ({ selectedAgent: null } as any), []);
-
-  // Track transcribed text to inject into SessionChatInput
-  const [pendingTranscription, setPendingTranscription] = useState<string | null>(null);
-  const transcribeAndAddToInput = useCallback(async (audioUri: string) => {
-    const transcribedText = await transcribeAudio(audioUri);
-    if (transcribedText) {
-      setPendingTranscription(transcribedText);
-    }
-  }, []);
-
-  const audioHandlers = useAudioRecordingHandlers(audioRecorder, dummyAgentManager, transcribeAndAddToInput);
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
@@ -963,15 +943,6 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
             onboardingMode={onboardingMode}
             initialText={savedInputText}
             onTextChange={(t) => { inputTextRef.current = t; }}
-            onAudioRecord={audioHandlers.handleStartRecording}
-            onCancelRecording={audioHandlers.handleCancelRecording}
-            onSendAudio={audioHandlers.handleSendAudio}
-            isRecording={audioRecorder.isRecording}
-            recordingDuration={audioRecorder.recordingDuration}
-            audioLevels={audioRecorder.audioLevels}
-            isTranscribing={audioHandlers.isTranscribing}
-            pendingTranscription={pendingTranscription}
-            onTranscriptionConsumed={() => setPendingTranscription(null)}
             agent={resolved.agent}
             agents={resolved.agents}
             model={resolved.model}

@@ -1,5 +1,7 @@
 /**
- * Three tabs, each answering one question and owning one list:
+ * The dialog's three tabs — `QUICK_LLM_TABS` in `gateway-view.tsx`, aliased
+ * here so the modal's prop types and the strip it renders can never name a
+ * different set. Adding a tab to the dialog is one edit, in that file.
  *
  *  - `providers` — "where do my models come from" (`ProviderConnect`): ONE
  *     flat list of providers, one key field each.
@@ -12,7 +14,9 @@
  * who was not that person had to scroll past it — so it became a tab, which is
  * exactly what a tab is for.
  */
-export type ActiveTab = 'providers' | 'models' | 'custom';
+import type { QuickLlmTab } from '@/features/workspace/customize/sections/gateway-view';
+
+export type ActiveTab = QuickLlmTab;
 
 export interface ProjectProviderModalProps {
   projectId: string;

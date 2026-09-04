@@ -6,8 +6,13 @@ import { useRouter } from 'next/navigation';
 
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
+  buildCreateRepoPayload,
+  buildLinkRepositoryPayload,
+} from '@/features/workspace/new/github-source';
+import {
   buildProvisionPayload,
   filterCreatableAccounts,
+  isForeignAccountList,
   resolveDefaultCreatableAccountId,
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
@@ -17,14 +22,18 @@ import {
   isManagedGitUnavailableError,
   isProjectLimitError,
 } from '@/lib/onboarding/ensure-first-project';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
-  listAccounts,
+  createProjectRepo,
+  linkRepository,
   provisionProject,
   provisionProjectStream,
   PROVISION_IN_FLIGHT_CODE,
+  type CreateProjectRepoInput,
   type KortixAccount,
   type KortixProject,
+  type LinkRepositoryInput,
   type ProvisionPhase,
   type ProvisionProjectInput,
   type ProvisionStreamEvent,
@@ -85,23 +94,58 @@ export function fingerprintOf(state: NewWorkspaceFormState): string {
  * the server and 403 "Owner or admin role required" — precisely the failure
  * the picker's owner/admin filter (Task 12) exists to prevent, reopened
  * through the server's default path. So the fallback is
- * `resolveDefaultCreatableAccountId` (email match → primary owner → first
+ * `resolveDefaultCreatableAccountId` (identity match → primary owner → first
  * creatable) against the SAME filtered list the picker itself renders from —
  * never the raw, unfiltered account list.
  *
+ * Two independent fail-closed checks (Task 2 item 3, G2), both of which
+ * throw rather than let a create proceed:
+ *
+ * 1. `creatableAccounts` itself must not be FOREIGN
+ *    (`isForeignAccountList` — two or more accounts, none of them
+ *    `userId`'s own). Checked BEFORE looking at `state.accountId` at all: a
+ *    poisoned list taints every id it could produce, including one an
+ *    explicit (but stale) pick already carried, not only the default tier.
+ *    `new-workspace-page.tsx` already disables submit and hides the account
+ *    name for this case (item 2) — this is the second, independent layer
+ *    for any caller that resolves a target id without going through that
+ *    page-level gate, e.g. a future host of `useCreateWorkspace`.
+ * 2. The resolved id — from an explicit `state.accountId` or from the
+ *    default below — must actually be one of `creatableAccounts`.
+ *    `state.accountId` is normally only ever set from an `AccountPicker`
+ *    selection, itself built from this exact list, so this should never fire
+ *    in ordinary use; it is the last line of defense against a resolved id
+ *    that is stale, or a caller that skipped the page's own gating, ever
+ *    reaching the network with the signed-in user's JWT.
+ *
  * Extracted out of `buildCreatePayload` (below) as its own function so the
  * account a create actually targets is resolved in exactly one place.
+ *
+ * `userId` is required, not optional (G4): an omitted argument used to
+ * compile clean and silently degrade to `undefined`, which made
+ * `isForeignAccountList` treat ANY 2+-account list as foreign and throw —
+ * a functional break for real multi-account users that every single-
+ * account test passed straight through. The type is `string | null`, not
+ * `| undefined`: a caller that genuinely cannot establish identity yet must
+ * say so explicitly with `null`, which already fails closed correctly (see
+ * `isForeignAccountList`'s doc comment) rather than by accidental omission.
  */
 export function resolveTargetAccountId(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
-  email?: string | null,
+  userId: string | null,
 ): string | undefined {
-  return (
-    state.accountId ??
-    resolveDefaultCreatableAccountId(creatableAccounts, email) ??
-    undefined
-  );
+  if (isForeignAccountList(creatableAccounts, userId)) {
+    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+  }
+  const resolved =
+    state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, userId) ?? undefined;
+  if (resolved === undefined) return undefined;
+  const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
+  if (!isCreatable) {
+    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+  }
+  return resolved;
 }
 
 /** The exact `POST /projects/provision` request body for one create attempt. */
@@ -109,12 +153,41 @@ export function buildCreatePayload(
   state: NewWorkspaceFormState,
   creatableAccounts: KortixAccount[],
   idempotencyKey: string,
+  userId: string | null,
 ): Record<string, unknown> {
   return {
     ...buildProvisionPayload(state),
-    account_id: resolveTargetAccountId(state, creatableAccounts),
+    account_id: resolveTargetAccountId(state, creatableAccounts, userId),
     idempotency_key: idempotencyKey,
   };
+}
+
+/**
+ * The `POST /projects/create-repo` body, with the create's target account
+ * resolved through the SAME `resolveTargetAccountId` the provision path uses.
+ *
+ * Resolved here rather than left to the server for the reason that function's
+ * own doc comment gives at length: an omitted `account_id` resolves to the
+ * caller's earliest-joined membership with NO role check, which for a user who
+ * joined someone else's account first is an account they cannot create in.
+ * That reasoning is about the SERVER's default, not about which route is being
+ * called, so it holds identically for all three sources.
+ */
+export function buildGitHubCreatePayload(
+  state: NewWorkspaceFormState,
+  creatableAccounts: KortixAccount[],
+  userId: string | null,
+): CreateProjectRepoInput {
+  return buildCreateRepoPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
+}
+
+/** The `POST /projects/link-repository` body. Same account resolution. */
+export function buildGitHubImportPayload(
+  state: NewWorkspaceFormState,
+  creatableAccounts: KortixAccount[],
+  userId: string | null,
+): LinkRepositoryInput {
+  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
 }
 
 /**
@@ -174,7 +247,20 @@ export function messageFor(error: unknown): string {
     return "Managed git isn't set up on this server. An admin needs to connect GitHub in Git settings before workspaces can be created.";
   }
   if (status === 409) {
-    return 'Another attempt to create this workspace is already in progress. Please wait a moment and try again.';
+    // Two different 409s reach here now, and they must not share a message.
+    // `provision_in_flight` carries a typed `code`
+    // (`PROVISION_IN_FLIGHT_CODE`); the GitHub sources' 409s do not — they are
+    // "install the Kortix GitHub App first" (`create-repo` and
+    // `link-repository`, `apps/api/src/projects/routes/r2.ts`) and "no
+    // available repository name near X". Both of those already say exactly
+    // what to do, so the server's own message is reused verbatim rather than
+    // being overwritten with a wait-and-retry line that is simply false for
+    // them.
+    const code = (error as { code?: string } | null | undefined)?.code;
+    if (code === PROVISION_IN_FLIGHT_CODE) {
+      return 'Another attempt to create this workspace is already in progress. Please wait a moment and try again.';
+    }
+    return message || 'Could not create the workspace. Try again.';
   }
   if (status === 502) return 'Could not create the workspace. Try again.';
   return message || 'Could not create the workspace. Try again.';
@@ -200,7 +286,7 @@ export function messageFor(error: unknown): string {
  * - `403` (wrong account / insufficient role) — retryable. Role and account
  *   membership are external state that CAN genuinely change between the
  *   failure and a later click, and `retry` re-closes over `creatableAccounts`
- *   (`useCreateWorkspace`'s own `['accounts']` query), which is refetched —
+ *   (`useCreateWorkspace`'s own `useAccountsList()` query), which is refetched —
  *   so a role grant made in the meantime can turn this into a success.
  * - `502` (bad gateway) — retryable. A transient upstream/gateway fault; a
  *   later attempt can land differently with no change on the client at all.
@@ -416,6 +502,15 @@ export type CreateOrchestrationClient = {
   attemptKeyFor: (fingerprint: string, now: number) => string;
   clearAttemptKey: (fingerprint: string) => void;
   runCreateAttempt: (payload: ProvisionProjectInput) => Promise<KortixProject>;
+  /**
+   * `source: 'github-create'` — `POST /projects/create-repo`. A separate slot
+   * rather than a branch inside `runCreateAttempt` because the three sources
+   * take three different payload TYPES; one slot per route keeps each one
+   * typed instead of collapsing them to `Record<string, unknown>`.
+   */
+  createGitHubRepoProject: (payload: CreateProjectRepoInput) => Promise<KortixProject>;
+  /** `source: 'github-import'` — `POST /projects/link-repository`. */
+  importGitHubRepoProject: (payload: LinkRepositoryInput) => Promise<KortixProject>;
   primeProjectCache: (accountId: string, project: KortixProject) => void;
   invalidateProjects: () => void;
   writeLastProjectId: (userId: string | null | undefined, projectId: string) => void;
@@ -438,6 +533,47 @@ export type CreateOrchestrationClient = {
 };
 
 export type CreateResult = { ok: true; project: KortixProject } | { ok: false; error: unknown };
+
+/**
+ * The one network call this create makes, chosen by `state.source`.
+ *
+ * Every source ends at the same `KortixProject`, which is what lets the
+ * success path in `runCreate` stay single — prime the cache, invalidate, write
+ * the cookie, enter onboarding — instead of growing a copy per source. The
+ * three routes differ only in what they send and which upstream repository
+ * they end up pointing at.
+ *
+ * `idempotencyKey` is non-null only for `managed`; `runCreate` owns that rule
+ * and this function asserts it rather than re-deriving it, so the two can
+ * never disagree about whether a key was minted.
+ */
+async function runSourceAttempt(
+  state: NewWorkspaceFormState,
+  creatableAccounts: KortixAccount[],
+  idempotencyKey: string | null,
+  // `string | null`, not `| undefined`: normalized once at the `runCreate`
+  // call site below so every `build*Payload` this function calls receives
+  // the same required, non-omittable identity argument they now require.
+  userId: string | null,
+  client: CreateOrchestrationClient,
+): Promise<KortixProject> {
+  if (state.source === 'github-create') {
+    return client.createGitHubRepoProject(
+      buildGitHubCreatePayload(state, creatableAccounts, userId),
+    );
+  }
+  if (state.source === 'github-import') {
+    return client.importGitHubRepoProject(
+      buildGitHubImportPayload(state, creatableAccounts, userId),
+    );
+  }
+  if (!idempotencyKey) {
+    throw new Error('runCreate: the managed source requires an idempotency key');
+  }
+  return client.runCreateAttempt(
+    buildCreatePayload(state, creatableAccounts, idempotencyKey, userId) as unknown as ProvisionProjectInput,
+  );
+}
 
 /**
  * The full sequence one submit runs:
@@ -478,16 +614,19 @@ export async function runCreate(
   client: CreateOrchestrationClient,
 ): Promise<CreateResult> {
   const fingerprint = fingerprintOf(state);
-  const idempotencyKey = client.attemptKeyFor(fingerprint, client.now());
-  const payload = buildCreatePayload(
-    state,
-    creatableAccounts,
-    idempotencyKey,
-  ) as unknown as ProvisionProjectInput;
+  // The key belongs to `POST /projects/provision` and nothing else — it is the
+  // only one of the three routes that accepts an `idempotency_key`. Minting one
+  // for a GitHub source would persist a key that is never sent and never
+  // cleared, so `usesIdempotencyKey` gates BOTH the mint and the clear rather
+  // than only the field in the payload.
+  const usesIdempotencyKey = state.source === 'managed';
+  const idempotencyKey = usesIdempotencyKey
+    ? client.attemptKeyFor(fingerprint, client.now())
+    : null;
 
   try {
-    const project = await client.runCreateAttempt(payload);
-    client.clearAttemptKey(fingerprint);
+    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId ?? null, client);
+    if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();
     client.writeLastProjectId(userId, project.project_id);
@@ -506,7 +645,8 @@ export async function runCreate(
  * only wires it to the live `queryClient`/`router`/`user` and to component
  * state.
  *
- * Fetches `['accounts']` itself — the same cache entry `new-workspace-page.tsx`,
+ * Reads the account list itself — the same user-scoped cache entry
+ * `new-workspace-page.tsx`,
  * `WorkspaceSwitcher` and `AccountSwitcher` already read — rather than taking
  * `creatableAccounts` as a parameter, so this hook can resolve the create's
  * target account (`resolveTargetAccountId`) without a second, page-specific
@@ -531,7 +671,7 @@ export function useCreateWorkspace(): {
   const [lastError, setLastError] = useState<unknown>(null);
   const [lastState, setLastState] = useState<NewWorkspaceFormState | null>(null);
 
-  const accountsQuery = useQuery({ queryKey: ['accounts'], queryFn: listAccounts, staleTime: 60_000 });
+  const accountsQuery = useAccountsList();
   const creatableAccounts = filterCreatableAccounts(accountsQuery.data ?? []);
 
   const create = useCallback(
@@ -551,6 +691,17 @@ export function useCreateWorkspace(): {
         // render progress. Nothing here consumes it, so nothing here holds
         // state for it.
         runCreateAttempt: (payload) => runProvisionAttempt(payload, () => {}),
+        // No stream and no idempotency retry on either GitHub route: neither
+        // emits provisioning phases and neither accepts an `idempotency_key`,
+        // so there is nothing for `runProvisionAttempt`'s machinery to do. A
+        // failed attempt surfaces through `messageFor` and the user presses
+        // Try again, which is the whole retry story for these two.
+        createGitHubRepoProject: createProjectRepo,
+        // `linkRepository` answers `{ project, git_connection }`; the
+        // orchestration only ever needs the project, and unwrapping HERE (not
+        // inside `runCreate`) keeps every source's success path identical.
+        importGitHubRepoProject: (payload) =>
+          linkRepository(payload).then((response) => response.project),
         // The optimistic write goes ONLY into the account this workspace
         // actually belongs to — the one entry a merge here can never get
         // wrong. `qk.projects.list()` (no account) is a DIFFERENT, sibling

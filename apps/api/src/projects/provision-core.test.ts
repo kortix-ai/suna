@@ -40,7 +40,7 @@ describe('provision phases', () => {
     expect(fnStart).toBeGreaterThan(-1);
 
     const emitValidating = source.indexOf("emit('validating')", fnStart);
-    const providerCheck = source.indexOf('MANAGED_GIT_PROVIDER', fnStart);
+    const providerCheck = source.indexOf('defaultManagedProviderId()', fnStart);
     const nameCheck = source.indexOf("name is required", fnStart);
     expect(emitValidating).toBeGreaterThan(-1);
     expect(providerCheck).toBeGreaterThan(-1);
@@ -76,6 +76,33 @@ describe('provision phases', () => {
 
     const between = source.slice(emitIndex, workIndex);
     expect(between.length).toBeLessThan(80);
+  });
+
+  // THE INVARIANT: a project always has a manifest. Seeding is the DEFAULT —
+  // a caller who says nothing (bare `POST /v1/projects/provision`, an agent,
+  // any integration) gets the starter. This used to be opt-in
+  // (`body.seed_starter === true`), which is how such a caller got a repo with
+  // no kortix.yaml, no agents and no skills, recorded `caller_opted_out` so the
+  // self-heal skipped it forever. Pinned here because the regression is silent:
+  // provisioning still returns 201 `{status:'active'}` for an empty repo.
+  test('seeding is the DEFAULT — only an explicit seed_starter:false opts out', async () => {
+    const source = await coreSource();
+
+    // The opt-out is an explicit `false`, never the absence of the flag.
+    expect(source).toContain('body.seed_starter === false');
+    expect(source).toContain('const seedStarter = !clientOwnsFirstCommit');
+
+    // The old opt-in form must be gone: `=== true` as the seed gate is exactly
+    // the defect. (`=== false` above legitimately contains neither.)
+    expect(source).not.toContain('body.seed_starter === true');
+  });
+
+  test('even an opt-out records expected:true, so an unpushed repo is still repaired', async () => {
+    const source = await coreSource();
+    // `caller_opted_out` recorded `expected:false`, which made
+    // shouldSelfHealManagedRepoSeed skip the repo permanently.
+    expect(source).toContain("reason: 'client_owns_first_commit'");
+    expect(source).not.toContain("reason: 'caller_opted_out'");
   });
 
   test("emit('seeding') is before the seed decision, never after the seed push starts", async () => {
@@ -115,7 +142,7 @@ describe('provision phases', () => {
   test('precomputes the Git hint after a verified seed only when fast boot is enabled', async () => {
     const source = await coreSource();
     const seedState = source.indexOf('const verifiedSeedState');
-    const gate = source.indexOf('if (config.KORTIX_FAST_COLD_BOOT_ENABLED');
+    const gate = source.indexOf('if (config.KORTIX_FAST_GIT_BOOT_ENABLED');
     const precompute = source.indexOf('resolveFastBootGitHintWithCache(', gate);
     expect(seedState).toBeGreaterThan(-1);
     expect(gate).toBeGreaterThan(seedState);

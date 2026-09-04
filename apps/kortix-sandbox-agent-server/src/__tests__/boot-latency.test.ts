@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +13,7 @@ import {
   catalogIsDegraded,
   hasKortixLlmGateway,
   scheduleCatalogWarmToPathForTests,
+  resetManagedModelsStateForTests,
 } from '../opencode'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
@@ -37,7 +38,13 @@ async function makeOriginRepo(): Promise<string> {
 }
 
 const tempDirs: string[] = []
+// The managed-models prefetch cache is module state in opencode.ts. Another
+// file in the same worker can leave a "live managed set" in it, and then the
+// catalog-floor assertions below read that set instead of the bundled floor
+// (order-dependent CI flake, 2026-08-27). Start every test from the baked state.
+beforeEach(() => resetManagedModelsStateForTests())
 afterEach(async () => {
+  resetManagedModelsStateForTests()
   await Promise.all(tempDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })))
 })
 
@@ -56,6 +63,23 @@ describe('clone depth configuration', () => {
 
   test('defaults to a shallow depth-1 clone', () => {
     expect(loadConfig(BASE_ENV as NodeJS.ProcessEnv).cloneDepth).toBe(1)
+  })
+
+  test('defaults compiled boot to off', () => {
+    expect(loadConfig(BASE_ENV as NodeJS.ProcessEnv).compiledBootMode).toBe('off')
+  })
+
+  test.each(['shadow', 'prefer', 'required'] as const)('accepts compiled boot mode %s', (mode) => {
+    expect(
+      loadConfig({ ...BASE_ENV, KORTIX_COMPILED_BOOT_MODE: mode } as NodeJS.ProcessEnv)
+        .compiledBootMode,
+    ).toBe(mode)
+  })
+
+  test('rejects an unknown compiled boot mode', () => {
+    expect(() =>
+      loadConfig({ ...BASE_ENV, KORTIX_COMPILED_BOOT_MODE: 'enabled' } as NodeJS.ProcessEnv),
+    ).toThrow()
   })
 
   test('no partial-clone filter is applied by default', () => {
@@ -158,7 +182,7 @@ describe('building the opencode boot config never touches the network', () => {
 
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1',
-    KORTIX_LLM_API_KEY: 'k-test',
+    KORTIX_TOKEN: 'k-test',
     KORTIX_API_URL: 'https://api.kortix.test/v1',
   }
 
@@ -247,7 +271,7 @@ describe('catalog written to disk is rebuilt to a known shape, never passed thro
     globalThis.fetch = realFetch
   })
 
-  const GATEWAY = { KORTIX_LLM_BASE_URL: 'https://gw.kortix.test/v1', KORTIX_LLM_API_KEY: 'k' }
+  const GATEWAY = { KORTIX_LLM_BASE_URL: 'https://gw.kortix.test/v1', KORTIX_TOKEN: 'k' }
 
   async function warmThenRead(catalog: unknown): Promise<Record<string, any> | null> {
     const dir = await mkdtemp(join(tmpdir(), 'kortix-warm-'))
@@ -259,7 +283,7 @@ describe('catalog written to disk is rebuilt to a known shape, never passed thro
         headers: { 'content-type': 'application/json' },
       })) as unknown as typeof fetch
 
-    scheduleCatalogWarmToPathForTests(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY, target)
+    scheduleCatalogWarmToPathForTests(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN, target)
     const deadline = Date.now() + 8_000
     while (Date.now() < deadline) {
       try {

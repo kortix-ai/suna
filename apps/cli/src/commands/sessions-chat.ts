@@ -14,6 +14,7 @@ import {
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
+import { queueSessionPrompt, type CreateSessionPromptResult } from './sessions-queue.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -172,6 +173,11 @@ session (or starts one with --new).
 
   --prompt, -p "<text>"   Send one message, print the reply, exit (one-shot).
                           Without it, opens an interactive REPL.
+  --queue                 One-shot only: put the prompt in the session's
+                          DURABLE inbox instead of handing it to the runtime,
+                          and return as soon as it is stored. Survives a
+                          sleeping or mid-turn sandbox; manage what is waiting
+                          with \`kortix sessions queue\`.
   --json                  One-shot only: print the reply as JSON (for scripts /
                           synchronous subagent calls).
   --new                   Start a fresh session and chat with it.
@@ -199,6 +205,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
   let agent: string | undefined;
   let wantNew = false;
   let json = false;
+  let queue = false;
   try {
     projectArg = takeFlagValue(rest, ['--project']);
     hostArg = takeFlagValue(rest, ['--host']);
@@ -206,6 +213,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     agent = takeFlagValue(rest, ['--agent']);
     wantNew = takeFlagBool(rest, ['--new']);
     json = takeFlagBool(rest, ['--json']);
+    queue = takeFlagBool(rest, ['--queue']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -215,11 +223,33 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('Pass at most one session id.')}\n`);
     return 2;
   }
+  if (queue && promptText === undefined) {
+    // The inbox stores a message; there is nothing to store for a REPL, and
+    // "queued" has no meaning for a turn you are sitting and watching.
+    process.stderr.write(`${status.err('--queue needs --prompt "<text>".')}\n`);
+    return 2;
+  }
   const opts: CtxOpts = { projectArg, hostArg };
 
   // ── Resolve which session to chat with ──────────────────────────────────
-  const sessionId = await resolveChatSessionId(positional[0], wantNew, promptText, opts);
+  const initialPromptSubmitted =
+    positional[0] === undefined && wantNew && promptText !== undefined && !queue;
+  const sessionId = await resolveChatSessionId(
+    positional[0],
+    wantNew,
+    queue ? undefined : promptText,
+    opts,
+    json,
+    agent,
+  );
   if (!sessionId) return 1;
+
+  // --queue is deliberately routed BEFORE loadSessionForChat: the whole point
+  // of the durable inbox is that it accepts a prompt for a session whose
+  // sandbox is asleep or mid-turn, and loadSessionForChat would wake it.
+  if (queue) {
+    return queuePrompt(sessionId, opts, promptText!, json);
+  }
 
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions chat');
   if (!resolved) return 1;
@@ -231,6 +261,7 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
 
   // ── One-shot ─────────────────────────────────────────────────────────────
   if (promptText !== undefined) {
+    if (initialPromptSubmitted) return waitForInitialReply(resolved, json);
     return sendAndPrint(resolved, promptText, extra, json);
   }
 
@@ -271,6 +302,77 @@ export async function runSessionsChat(argv: string[]): Promise<number> {
 }
 
 /**
+ * `chat --prompt --queue` — hand the message to the server-side inbox and
+ * return. No runtime call, so a stopped or busy session takes it just as
+ * readily as an idle one; the control plane delivers it at the next boundary.
+ */
+async function queuePrompt(
+  sessionId: string,
+  opts: CtxOpts,
+  text: string,
+  json: boolean,
+): Promise<number> {
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions chat ${sessionId} --prompt "…" --queue --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, projectId, session } = located.located;
+  let result: CreateSessionPromptResult;
+  try {
+    result = await queueSessionPrompt(client, projectId, session, text);
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(result);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(
+      result.deduped
+        ? `Already queued as ${C.bold}${result.prompt_id}${C.reset}`
+        : `Queued ${C.bold}${result.prompt_id}${C.reset} ${C.dim}(${result.state}) — \`kortix sessions queue ${session.session_id.split('-')[0]}\` to track it${C.reset}`,
+    )}\n`,
+  );
+  return 0;
+}
+
+/** Read the reply to the `initial_prompt` submitted by session creation. */
+async function waitForInitialReply(resolved: ResolvedSession, json: boolean): Promise<number> {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    try {
+      const messages = await withKortixScope(resolved.auth, async () =>
+        unwrapRuntime(
+          await resolved.runtime.session.messages({
+            sessionID: resolved.opencodeSessionId,
+            limit: 10,
+          }),
+        ),
+      );
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (!message || message.info.role !== 'assistant') continue;
+        const info = message.info as MessageWithParts['info'] & {
+          time?: { completed?: number };
+          error?: unknown;
+        };
+        if (info.time?.completed == null && !info.error) break;
+        if (json) emitJson(messageToJson(message));
+        else printMessage(message);
+        return info.error ? 1 : 0;
+      }
+    } catch (err) {
+      if (attempt === 119) return surfaceApiError(err);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  process.stderr.write(`${status.err('Timed out waiting for the initial prompt reply.')}\n`);
+  return 1;
+}
+
+/**
  * Resolve the target session id: explicit positional → --new (create) →
  * most-recent running session on the project. Prints guidance + returns null
  * when nothing is usable.
@@ -280,6 +382,8 @@ async function resolveChatSessionId(
   wantNew: boolean,
   initialPrompt: string | undefined,
   opts: CtxOpts,
+  quiet = false,
+  agent?: string,
 ): Promise<string | null> {
   if (explicit) return explicit;
 
@@ -289,16 +393,19 @@ async function resolveChatSessionId(
   if (wantNew) {
     const body: Record<string, unknown> = {};
     if (initialPrompt) body.initial_prompt = initialPrompt;
+    if (agent) body.agent_name = agent;
     try {
       const created = await ctx.client.post<ProjectSession>(
         `/projects/${ctx.projectId}/sessions`,
         body,
       );
-      process.stdout.write(
-        `${status.ok(`Started session ${C.bold}${created.session_id.split('-')[0]}${C.reset}`)} ${C.dim}(${created.status})${C.reset}\n`,
-      );
+      if (!quiet) {
+        process.stdout.write(
+          `${status.ok(`Started session ${C.bold}${created.session_id.split('-')[0]}${C.reset}`)} ${C.dim}(${created.status})${C.reset}\n`,
+        );
+      }
       if (created.status !== 'running') {
-        process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
+        if (!quiet) process.stdout.write(`  ${C.dim}Waiting for the sandbox to come up…${C.reset}\n`);
         const ready = await waitForRunning(ctx, created.session_id);
         if (!ready) return null;
       }

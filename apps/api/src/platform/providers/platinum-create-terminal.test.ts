@@ -48,7 +48,7 @@ const baseOpts = {
   accountId: 'acc_1',
   userId: 'usr_1',
   name: 'test-box',
-  envVars: { KORTIX_SANDBOX_TOKEN: 'tok_test' },
+  envVars: { KORTIX_TOKEN: 'tok_test' },
 };
 
 beforeEach(() => {

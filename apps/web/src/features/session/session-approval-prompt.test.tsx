@@ -78,14 +78,20 @@ describe('SessionApprovalNotice', () => {
     expect(html).toContain('href="https://dev.kortix.com/approve/tok-1"');
   });
 
-  test('expanded: cannot approve a call whose preview is incomplete', () => {
-    const incomplete: SessionAuditAction = {
+  test('expanded: a SHORTENED value is still approvable in place', () => {
+    // A mail carrying an attachment: recipient legible, blob described,
+    // `args_preview_complete` false. This used to render a disabled Approve
+    // beside a warning, so the run could only ever be killed.
+    const truncated: SessionAuditAction = {
       ...pendingAction,
-      result_summary: { args_preview: { to: 'a@b.c' }, args_preview_complete: false },
+      result_summary: {
+        args_preview: { to: 'a@b.c', attachment: '[204800 chars omitted]' },
+        args_preview_complete: false,
+      },
     };
     const html = render(
       <SessionApprovalNotice
-        rows={approvalNoticeRows([incomplete], {})}
+        rows={approvalNoticeRows([truncated], {})}
         expanded="exec-1"
         busy={{}}
         onToggle={() => undefined}
@@ -93,8 +99,30 @@ describe('SessionApprovalNotice', () => {
       />,
     );
 
-    expect(html).toContain('complete parameters are not available');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Approve this call/);
+    expect(html).toContain('[204800 chars omitted]');
+    expect(html).toContain('Approve this call');
+    expect(html).not.toContain('cannot be reviewed here');
+    expect(html).not.toMatch(/<button[^>]*disabled=""/);
+  });
+
+  test('expanded: a call with nothing recorded offers Deny only', () => {
+    const blind: SessionAuditAction = {
+      ...pendingAction,
+      result_summary: { args_preview_complete: false },
+    };
+    const html = render(
+      <SessionApprovalNotice
+        rows={approvalNoticeRows([blind], {})}
+        expanded="exec-1"
+        busy={{}}
+        onToggle={() => undefined}
+        onDecide={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('cannot be reviewed here');
+    expect(html).toContain('Deny');
+    expect(html).not.toContain('Approve this call');
   });
 
   test('a decision taken here is confirmed on the card, not navigated away from', () => {

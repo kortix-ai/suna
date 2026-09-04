@@ -3,28 +3,25 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_COALESCED_EVENT_TYPES,
+  DEFAULT_DROPPED_EVENT_TYPES,
+  DEFAULT_FLUSH_MS,
+  MAX_RELAY_BATCH_SIZE,
+  MAX_RETRY_MS_DEFAULT,
+  auditRelayConfigFromEnv,
   type OpenCodeAuditEvent,
   auditRelayToken,
+  computeRetryDelay,
   createAuditRelay,
+  retryAfterMs,
   sanitizeOpenCodeEvent,
 } from '../opencode-audit-relay';
 
 describe('OpenCode canonical audit relay', () => {
-  test('uses the sandbox credential and never the session PAT', () => {
-    expect(
-      auditRelayToken({
-        KORTIX_SANDBOX_TOKEN: 'kortix_sb_authoritative',
-        KORTIX_TOKEN: 'kortix_sb_legacy',
-        KORTIX_CLI_TOKEN: 'kortix_pat_must_not_be_used',
-      }),
-    ).toBe('kortix_sb_authoritative');
-    expect(
-      auditRelayToken({
-        KORTIX_SANDBOX_TOKEN: undefined,
-        KORTIX_TOKEN: 'kortix_sb_legacy',
-        KORTIX_CLI_TOKEN: 'kortix_pat_must_not_be_used',
-      }),
-    ).toBe('kortix_sb_legacy');
+  test('uses the single session credential', () => {
+    expect(auditRelayToken({ KORTIX_TOKEN: 'kortix_pat_session' })).toBe('kortix_pat_session');
+    expect(auditRelayToken({})).toBeNull();
   });
 
   test('uses deterministic ids and never forwards prompts, credentials, or raw output', () => {
@@ -433,5 +430,315 @@ describe('OpenCode canonical audit relay', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * Essentia 2026-08-26: the API returned 500 [57014] to this relay 445 times in
+ * 3 hours because every audit insert for one session queues on that session's
+ * `audit_session_sequences` row lock. The relay's flat 1s retry re-entered the
+ * lock queue every ~11s and kept the convoy alive.
+ */
+describe('audit relay backoff', () => {
+  const base = {
+    retryMs: 1_000,
+    maxRetryMs: MAX_RETRY_MS_DEFAULT,
+    jitter: 0.5,
+    serverRetryAfterMs: null,
+  };
+
+  test('doubles the wait for each consecutive rejection', () => {
+    // jitter 0.5 => multiplier exactly 1.0, so these are the raw steps.
+    expect([1, 2, 3, 4, 5].map((failures) => computeRetryDelay({ ...base, failures }))).toEqual([
+      1_000, 2_000, 4_000, 8_000, 16_000,
+    ]);
+  });
+
+  test('caps the wait so a recovered API is picked up promptly', () => {
+    expect(computeRetryDelay({ ...base, failures: 20 })).toBe(MAX_RETRY_MS_DEFAULT);
+    expect(computeRetryDelay({ ...base, failures: 200 })).toBe(MAX_RETRY_MS_DEFAULT);
+  });
+
+  test('jitters +/-25% so two sandboxes never resynchronize their retries', () => {
+    expect(computeRetryDelay({ ...base, failures: 3, jitter: 0 })).toBe(3_000);
+    expect(computeRetryDelay({ ...base, failures: 3, jitter: 0.999 })).toBe(4_998);
+  });
+
+  test("never undercuts the server's Retry-After", () => {
+    // The 503 the API now returns for a contended session sequence lock.
+    expect(computeRetryDelay({ ...base, failures: 1, serverRetryAfterMs: 5_000 })).toBe(5_000);
+    // ...but a longer self-imposed backoff wins over a short server hint.
+    expect(computeRetryDelay({ ...base, failures: 6, serverRetryAfterMs: 5_000 })).toBe(30_000);
+  });
+
+  test('reads Retry-After only off an error that carries it', () => {
+    expect(retryAfterMs(Object.assign(new Error('503'), { retryAfterMs: 5_000 }))).toBe(5_000);
+    expect(retryAfterMs(new Error('503'))).toBeNull();
+    expect(retryAfterMs(Object.assign(new Error('503'), { retryAfterMs: -1 }))).toBeNull();
+    expect(retryAfterMs(null)).toBeNull();
+  });
+
+  test('a recovered batch resets the ladder', async () => {
+    const attempts: number[] = [];
+    let now = Date.now();
+    let fail = true;
+    const relay = createAuditRelay(
+      async () => {
+        attempts.push(Date.now() - now);
+        if (fail) throw new Error('audit batch rejected: 503');
+      },
+      { batchSize: 1, flushMs: 5, retryMs: 5, maxRetryMs: 40, jitter: () => 0.5 },
+    );
+    relay.enqueue({ type: 'session.idle', properties: { info: { id: 'ses_a' } } });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const failedAttempts = attempts.length;
+    expect(failedAttempts).toBeGreaterThan(1);
+
+    fail = false;
+    now = Date.now();
+    await relay.stop();
+    // The queue drains once the server recovers; nothing was dropped.
+    expect(attempts.length).toBeGreaterThan(failedAttempts);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Emission volume. Essentia 2026-08-26: 3,395 POSTs to
+// /v1/projects/:p/sessions/:s/audit/events across 20 sessions in one hour,
+// 680 ms median, 2,265 s cumulative. One local session
+// (08891820-0cd9-4fe7-bcfd-2431375ff75d) shows the mechanism: 117,437 relayed
+// OpenCode events in 64 minutes, of which 107,394 (91.4%) are per-token
+// `message.part.delta` and 384 are `server.heartbeat`. At the old
+// batchSize=50 that is 4,848 POSTs for ONE session.
+// ---------------------------------------------------------------------------
+describe('audit relay emission volume', () => {
+  const drain = () => new Promise((resolve) => setTimeout(resolve, 40));
+
+  test('never relays a per-token stream delta or a server heartbeat', async () => {
+    const sent: OpenCodeAuditEvent[][] = [];
+    const relay = createAuditRelay(
+      async (events) => {
+        sent.push(events);
+      },
+      { flushMs: 5 },
+    );
+    for (let i = 0; i < 500; i += 1) {
+      relay.enqueue({
+        type: 'message.part.delta',
+        properties: { sessionID: 'ses_a', messageID: 'msg_a', partID: 'prt_a', delta: `t${i}` },
+      });
+      relay.enqueue({ type: 'server.heartbeat', properties: { sessionID: 'ses_a' } });
+    }
+    relay.enqueue({ type: 'session.idle', properties: { sessionID: 'ses_a' } });
+    await relay.stop();
+    const flat = sent.flat();
+    expect(flat.map((event) => event.type)).toEqual(['session.idle']);
+    expect(relay.stats().dropped).toBe(1_000);
+  });
+
+  test('a dropped class never reaches the durable spool either', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'audit-drop-'));
+    const spoolPath = join(dir, 'spool.json');
+    try {
+      const relay = createAuditRelay(async () => {}, { spoolPath, flushMs: 100_000 });
+      relay.enqueue({ type: 'session.created', properties: { sessionID: 'ses_a' } });
+      relay.enqueue({ type: 'message.part.delta', properties: { sessionID: 'ses_a' } });
+      const spool = JSON.parse(readFileSync(spoolPath, 'utf8')) as { queue: OpenCodeAuditEvent[] };
+      expect(spool.queue.map((event) => event.type)).toEqual(['session.created']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('collapses repeated streaming states but never a transition', async () => {
+    const sent: OpenCodeAuditEvent[][] = [];
+    const relay = createAuditRelay(
+      async (events) => {
+        sent.push(events);
+      },
+      { flushMs: 100_000 },
+    );
+    // 400 text-part updates for ONE part: identical identity, identical phase.
+    for (let i = 0; i < 400; i += 1) {
+      relay.enqueue({
+        type: 'message.part.updated',
+        properties: {
+          sessionID: 'ses_a',
+          part: { id: 'prt_text', type: 'text', messageID: 'msg_a', sessionID: 'ses_a' },
+          time: 1_787_043_616_510 + i,
+        },
+      });
+    }
+    // One tool part walking pending -> running -> completed. Each state is a
+    // distinct forensic fact and must survive.
+    for (const status of ['pending', 'running', 'completed']) {
+      relay.enqueue({
+        type: 'message.part.updated',
+        properties: {
+          sessionID: 'ses_a',
+          part: {
+            id: 'prt_tool',
+            type: 'tool',
+            callID: 'call_1',
+            messageID: 'msg_a',
+            state: { status },
+          },
+        },
+      });
+    }
+    await relay.flush();
+    const flat = sent.flat();
+    const partType = (event: OpenCodeAuditEvent): unknown =>
+      (event.input_summary.part as Record<string, unknown> | undefined)?.type;
+    expect(flat.filter((event) => partType(event) === 'text')).toHaveLength(1);
+    expect(
+      flat.filter((event) => event.tool_call_id === 'call_1').map((event) => event.phase),
+    ).toEqual(['pending', 'running', 'completed']);
+    expect(relay.stats().coalesced).toBe(399);
+  });
+
+  test('coalescing keeps the newest state and preserves relative order', async () => {
+    const sent: OpenCodeAuditEvent[][] = [];
+    const relay = createAuditRelay(
+      async (events) => {
+        sent.push(events);
+      },
+      { flushMs: 100_000 },
+    );
+    const partUpdate = (time: number) => ({
+      type: 'message.part.updated',
+      properties: {
+        sessionID: 'ses_a',
+        part: { id: 'prt_text', type: 'text', messageID: 'msg_a' },
+        time,
+      },
+    });
+    relay.enqueue(partUpdate(1));
+    relay.enqueue({ type: 'permission.asked', properties: { sessionID: 'ses_a', id: 'perm_1' } });
+    relay.enqueue(partUpdate(2));
+    await relay.flush();
+    const flat = sent.flat();
+    // The superseded copy is gone; the survivor sits AFTER the permission event
+    // it now post-dates, so occurred_at stays monotonic within the batch.
+    expect(flat.map((event) => event.type)).toEqual([
+      'permission.asked',
+      'message.part.updated',
+    ]);
+    expect(flat[1]?.input_summary.time).toBe(2);
+  });
+
+  test('a forensic class is never coalesced', async () => {
+    const sent: OpenCodeAuditEvent[][] = [];
+    const relay = createAuditRelay(
+      async (events) => {
+        sent.push(events);
+      },
+      { flushMs: 100_000 },
+    );
+    for (let i = 0; i < 5; i += 1) {
+      relay.enqueue({ type: 'permission.asked', properties: { sessionID: 'ses_a', id: 'perm_1' } });
+      relay.enqueue({ type: 'file.edited', properties: { sessionID: 'ses_a', path: 'a.ts' } });
+      relay.enqueue({ type: 'question.asked', properties: { sessionID: 'ses_a', id: 'q_1' } });
+    }
+    await relay.flush();
+    expect(sent.flat()).toHaveLength(15);
+    expect(relay.stats().coalesced).toBe(0);
+  });
+
+  test('defaults to one POST per 200 events, the API batch ceiling', async () => {
+    const sizes: number[] = [];
+    const relay = createAuditRelay(
+      async (events) => {
+        sizes.push(events.length);
+      },
+      { flushMs: 100_000 },
+    );
+    for (let i = 0; i < 200; i += 1) {
+      relay.enqueue({ type: 'file.edited', properties: { sessionID: 'ses_a', path: `f${i}.ts` } });
+    }
+    await drain();
+    expect(sizes).toEqual([200]);
+  });
+
+  test('a partial batch still leaves on the timer, and the timer runs from the oldest pending event', async () => {
+    const at: number[] = [];
+    const t0 = Date.now();
+    const relay = createAuditRelay(
+      async () => {
+        at.push(Date.now() - t0);
+      },
+      { flushMs: 400 },
+    );
+    // A steady trickle far below batchSize, spread over 150 ms. One POST goes
+    // out 400 ms after the FIRST event — not 400 ms after the last one, which
+    // a steady stream could postpone forever.
+    for (let i = 0; i < 6; i += 1) {
+      relay.enqueue({ type: 'file.edited', properties: { sessionID: 'ses_a', path: `f${i}.ts` } });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(at).toHaveLength(1);
+    expect(at[0]).toBeGreaterThanOrEqual(380);
+    expect(at[0]).toBeLessThan(560);
+    await relay.stop();
+    expect(relay.stats().sent).toBe(6);
+  });
+
+  test('clamps a misconfigured batch size to the API ceiling', () => {
+    expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_BATCH_SIZE: '5000' }).batchSize).toBe(
+      MAX_RELAY_BATCH_SIZE,
+    );
+    expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_BATCH_SIZE: '0' }).batchSize).toBe(
+      DEFAULT_BATCH_SIZE,
+    );
+    expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_BATCH_SIZE: '25' }).batchSize).toBe(25);
+  });
+
+  test('batch size, cadence, drops and coalescing are all configurable', () => {
+    expect(auditRelayConfigFromEnv({})).toEqual({
+      batchSize: DEFAULT_BATCH_SIZE,
+      flushMs: DEFAULT_FLUSH_MS,
+      dropTypes: [...DEFAULT_DROPPED_EVENT_TYPES],
+      coalesceTypes: [...DEFAULT_COALESCED_EVENT_TYPES],
+    });
+    expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_FLUSH_MS: '750' }).flushMs).toBe(750);
+    // An explicitly empty list turns the filter off; unset keeps the default.
+    expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_DROP_TYPES: '' }).dropTypes).toEqual([]);
+    expect(
+      auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_DROP_TYPES: 'a.b, c.d' }).dropTypes,
+    ).toEqual(['a.b', 'c.d']);
+    expect(auditRelayConfigFromEnv({ KORTIX_AUDIT_RELAY_COALESCE: '0' }).coalesceTypes).toEqual([]);
+  });
+
+  test('replays the real Essentia-shaped event mix into ~1 POST per 200 kept events', async () => {
+    // Ratios measured on kortix.audit_events for session
+    // 08891820-0cd9-4fe7-bcfd-2431375ff75d (117,437 relayed events / 64 min).
+    const sent: OpenCodeAuditEvent[][] = [];
+    const relay = createAuditRelay(
+      async (events) => {
+        sent.push(events);
+      },
+      { flushMs: 100_000 },
+    );
+    let relayed = 0;
+    for (let turn = 0; turn < 20; turn += 1) {
+      const messageId = `msg_${turn}`;
+      relay.enqueue({ type: 'message.updated', properties: { sessionID: 'ses_a', info: { id: messageId, role: 'assistant' } } });
+      relayed += 1;
+      for (let token = 0; token < 500; token += 1) {
+        relay.enqueue({ type: 'message.part.delta', properties: { sessionID: 'ses_a', messageID: messageId, partID: 'prt_t', delta: 'x' } });
+        relay.enqueue({ type: 'message.part.updated', properties: { sessionID: 'ses_a', part: { id: 'prt_t', type: 'text', messageID: messageId }, time: token } });
+        relay.enqueue({ type: 'session.status', properties: { sessionID: 'ses_a', status: { type: 'busy' } } });
+        relayed += 3;
+      }
+      relay.enqueue({ type: 'server.heartbeat', properties: { sessionID: 'ses_a' } });
+      relay.enqueue({ type: 'session.idle', properties: { sessionID: 'ses_a' } });
+      relayed += 2;
+    }
+    await relay.stop();
+    expect(relayed).toBe(30_060);
+    // Before this change: ceil(30060 / 50) = 602 POSTs.
+    expect(sent.length).toBeLessThanOrEqual(3);
+    expect(sent.flat().length).toBeLessThanOrEqual(200);
   });
 });

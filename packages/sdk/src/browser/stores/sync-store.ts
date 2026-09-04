@@ -16,6 +16,7 @@ import {
 	isWithinRewindWindow,
 	stageSessionRewind,
 } from "../../core/session/rewind";
+import { isRetryableTurnError } from "../../core/turns/open-turn";
 import { ascendingId } from "./sync-store/ascending-id";
 import { Binary } from "./sync-store/binary";
 import { writeStreamCache } from "./sync-store/stream-cache";
@@ -56,6 +57,20 @@ export function sameSessionStatus(
 	return a.attempt === b.attempt && a.message === b.message && a.next === b.next;
 }
 
+/**
+ * WHO minted a status-bearing event handed to `applyEvent`. A tab-synthesized
+ * event (`markSessionIdleLocally`, `markSessionAbortedLocally`, the hydrate
+ * snapshot fill) carries `synthetic: true` — a field no wire `Event` has — and
+ * its status write lands with `'local'` origin so it can never contradict the
+ * control plane's turn authority (`WorkingStreamInput.origin`). Everything off
+ * the wire stays `'wire'`.
+ */
+function syntheticEventOrigin(event: unknown): "wire" | "local" {
+	return (event as { synthetic?: boolean } | null | undefined)?.synthetic === true
+		? "local"
+		: "wire";
+}
+
 /** The two `Part` variants that carry streaming `.text` (vs. tool/file/etc.
  *  parts, which don't). Narrows a `Part` down so `.text` is safe to read
  *  without a cast — every `Part` member shares `id`/`sessionID`/`messageID`/
@@ -85,6 +100,15 @@ function isTextLikePart(part: Part): part is TextLikePart {
 // cancelled tool call stayed on screen), and `applyPartDelta` dropped deltas
 // (the assistant appeared to hang mid-sentence).
 // ============================================================================
+
+/**
+ * How coarsely `sessionActivityAt` is stamped.
+ *
+ * One second: far finer than any consumer needs (the projection compares it
+ * against observations bounded in tens of seconds) and coarse enough that a
+ * runtime streaming at ~140ms per frame updates it once, not seven times.
+ */
+const ACTIVITY_STAMP_RESOLUTION_MS = 1_000;
 
 /** The index of `id` in `list`, or `-1`. Binary first, linear on a miss. */
 function indexOfId<T>(list: readonly T[], id: string, idOf: (item: T) => string): number {
@@ -138,6 +162,48 @@ interface SyncState {
 	messages: Record<string, Message[]>;
 	parts: Record<string, Part[]>;
 	sessionStatus: Record<string, SessionStatus>;
+	/**
+	 * WHO minted each session's current `sessionStatus` value: `'wire'` for the
+	 * runtime's own SSE frame, `'local'` for a tab-synthesized one (the
+	 * missing-busy sweep, a synthetic abort, `clearSession`). Absent means
+	 * `'wire'` — the field is additive.
+	 *
+	 * `useSessionWorking` threads this into `projectWorking`
+	 * (`WorkingStreamInput.origin`): only the runtime's own idle frame may
+	 * contradict the control plane's open `/turn` row. Without the bit, one
+	 * fabricated idle vetoed the lifecycle authority for the rest of a quiet
+	 * turn (dev, 2026-08-24).
+	 */
+	sessionStatusOrigin: Record<string, "wire" | "local">;
+	/**
+	 * When each session's current `sessionStatus` value LANDED in this store —
+	 * stamped by `setStatus` on any state change (a new value, or an origin
+	 * flip over an unchanged value, which is a new observation), and preserved
+	 * across same-value rewrites exactly like the status object's identity.
+	 *
+	 * The store used to keep no arrival time, and freshness was stamped by
+	 * whichever component observed the slot. Two failures grew out of that: a
+	 * remount re-stamped a dead stream's last idle frame as brand new, and the
+	 * reconnect status fill could not tell a frame the live stream just
+	 * delivered from one a dead stream left behind — so it protected both
+	 * (`shouldSkipStatusFill`). Absent means the slot predates this slice; the
+	 * readers fall back to their old stamping.
+	 */
+	sessionStatusAt: Record<string, number>;
+	/**
+	 * When the RUNTIME'S OWN OUTPUT last reached this tab, per session.
+	 *
+	 * Not a status, not a poll — the instant a streamed part or message landed.
+	 * `projectWorking` reads it as the one input that is not an observer of the
+	 * runtime but the runtime itself (see `WorkingActivityInput`): a composer
+	 * showing its send arrow over a transcript that is visibly streaming is what
+	 * its absence looked like.
+	 *
+	 * QUANTIZED to `ACTIVITY_STAMP_RESOLUTION_MS`. A busy runtime emits parts
+	 * every few tens of milliseconds; stamping each one would re-render every
+	 * subscriber at that rate for a value nothing needs to the millisecond.
+	 */
+	sessionActivityAt: Record<string, number>;
 	diffs: Record<string, FileDiff[]>;
 	todos: Record<string, Todo[]>;
 	/**
@@ -223,7 +289,7 @@ interface SyncState {
 		delta: string,
 		eventID?: string,
 	) => void;
-	setStatus: (sessionID: string, status: SessionStatus) => void;
+	setStatus: (sessionID: string, status: SessionStatus, origin?: "wire" | "local") => void;
 	setDiff: (sessionID: string, diffs: FileDiff[]) => void;
 	setTodo: (sessionID: string, todos: Todo[]) => void;
 	/**
@@ -326,6 +392,8 @@ interface SyncState {
 	 */
 	markOptimisticInboxBacked: (sessionID: string, messageID: string) => void;
 	clearOptimisticMessages: (sessionID: string) => void;
+	/** Record that the runtime produced output for this session just now. */
+	noteSessionActivity: (sessionID: string, atMs?: number) => void;
 	/**
 	 * The runtime's id for an optimistic message that was superseded under a
 	 * DIFFERENT id (the control plane re-mints a wire id that would sort below
@@ -1028,6 +1096,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	messages: {},
 	parts: {},
 	sessionStatus: {},
+	sessionStatusOrigin: {},
+	sessionStatusAt: {},
+	sessionActivityAt: {},
 	diffs: {},
 	todos: {},
 	sessionRevert: {},
@@ -1237,7 +1308,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
-	setStatus: (sessionID, status) =>
+	setStatus: (sessionID, status, origin = "wire") =>
 		set((s) => {
 			// A value that did not change is not news. `useSessionWorking` stamps
 			// its stream observation from this object's IDENTITY, so an
@@ -1245,8 +1316,24 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// `STREAM_OBSERVATION_MAX_MS` from zero on every write — the bound
 			// that stops a dead stream from deciding was never reached. See
 			// `sameSessionStatus`.
-			if (sameSessionStatus(s.sessionStatus[sessionID], status)) return s;
-			return { sessionStatus: { ...s.sessionStatus, [sessionID]: status } };
+			if (sameSessionStatus(s.sessionStatus[sessionID], status)) {
+				// The VALUE is not news, but who said it can be: a wire frame
+				// landing over a fabricated one (or the reverse) changes what the
+				// frame is allowed to decide. Update only the origin — the status
+				// object keeps its identity so nothing re-stamps a stale value.
+				// The arrival stamp DOES move: an origin flip is a new observation
+				// (`use-session-working` re-stamps on it for the same reason).
+				if ((s.sessionStatusOrigin[sessionID] ?? "wire") === origin) return s;
+				return {
+					sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+					sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+				};
+			}
+			return {
+				sessionStatus: { ...s.sessionStatus, [sessionID]: status },
+				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: origin },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
+			};
 		}),
 
 	setDiff: (sessionID, diffs) =>
@@ -1406,9 +1493,59 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 	},
 
 	registerOptimisticEcho: (sessionID, optimisticID, echoID) => {
-		if (!isOptimistic(sessionID, optimisticID)) return;
 		if (optimisticID === echoID) return;
-		recordOptimisticEcho(sessionID, optimisticID, echoID);
+		// The caller always names the id the ROW reports as this prompt's origin
+		// — its `wire_message_id`, the id this tab minted and painted. That id
+		// stops being optimistic the moment the FIRST echo supersedes it, and
+		// after a Stop takes the prompt back out of the runtime the bubble on
+		// screen is that echo (`reclaimRemovedMessage` re-marks it optimistic),
+		// not the wire id. Registering against the wire id alone therefore did
+		// nothing on every second and later re-mint, and the drain re-mints on
+		// every one of them: the re-delivery's echo then matched no alias, and
+		// with more than one send in flight the ordinal fallback correctly
+		// refuses to guess — so the echo was dropped and the prompt stayed on
+		// screen as a bubble nothing would ever confirm.
+		//
+		// Follow the chain to the id that IS on screen and register from there.
+		const live = isOptimistic(sessionID, optimisticID)
+			? optimisticID
+			: optimisticEchoes.get(sessionID)?.get(optimisticID);
+		if (!live || live === echoID || !isOptimistic(sessionID, live)) return;
+		recordOptimisticEcho(sessionID, live, echoID);
+
+		// THE ECHO MAY ALREADY BE ON SCREEN. The row is read on a poll, and the
+		// runtime echoes a delivered prompt within milliseconds of the drain
+		// writing the re-mint — so the frame usually wins the race, and with a
+		// burst in flight it lands unmatched (see `message.updated`) and is
+		// placed as an ordinary message. Registering the alias and stopping
+		// there would leave the user's text on screen twice, forever: one
+		// bubble the runtime will never confirm again, beside the message it
+		// already confirmed. So the pairing is honoured whichever side arrives
+		// second — the alias retires the bubble here exactly as the echo would
+		// have retired it there.
+		if (!get().messages[sessionID]?.some((m) => m.id === echoID)) return;
+		releaseConfirmedOptimisticId(sessionID, live, echoID);
+		set((s) => {
+			const list = s.messages[sessionID] ?? [];
+			if (!list.some((m) => m.id === live)) return s;
+			// The echo keeps its own place: it was inserted by time, and the
+			// bubble it replaces carried no server position to inherit.
+			let next = list.filter((m) => m.id !== live);
+			// A `session.error` stub keyed to the bubble follows it onto the
+			// real id, or its error detaches from the turn — same rule as the
+			// SSE swap above.
+			next = rekeyStubParent(sessionID, next, live, echoID);
+			const newParts = { ...s.parts };
+			const bridge = newParts[live];
+			delete newParts[live];
+			// Bridge the typed text until the server's own part frame lands, so
+			// the bubble never blinks empty across the swap.
+			if (bridge?.length && !newParts[echoID]?.length) {
+				newParts[echoID] = bridge;
+				trackId(bridgedPartIds, sessionID, echoID);
+			}
+			return { messages: { ...s.messages, [sessionID]: next }, parts: newParts };
+		});
 	},
 
 	reclaimRemovedMessage: (sessionID, messageID) => {
@@ -1452,6 +1589,17 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		});
 	},
 
+	noteSessionActivity: (sessionID, atMs) => {
+		if (!sessionID) return;
+		const now = atMs ?? Date.now();
+		const previous = get().sessionActivityAt[sessionID];
+		// Quantized: a busy runtime emits parts every few tens of milliseconds and
+		// nothing reads this to the millisecond. Without the floor, every
+		// subscriber re-renders at the stream's own rate for a timestamp.
+		if (previous !== undefined && now - previous < ACTIVITY_STAMP_RESOLUTION_MS) return;
+		set((s) => ({ sessionActivityAt: { ...s.sessionActivityAt, [sessionID]: now } }));
+	},
+
 	clearOptimisticMessages: (sessionID) => {
 		set((s) => {
 			const list = s.messages[sessionID];
@@ -1489,10 +1637,18 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			const nextParts = { ...s.parts };
 			for (const message of existingMessages) delete nextParts[message.id];
 			deleteOrphanPartBuckets(nextParts, [sessionID]);
+			const nextActivity = { ...s.sessionActivityAt };
+			delete nextActivity[sessionID];
 			return {
 				messages: { ...s.messages, [sessionID]: [] },
 				parts: nextParts,
+				sessionActivityAt: nextActivity,
 				sessionStatus: { ...s.sessionStatus, [sessionID]: { type: "idle" } as SessionStatus },
+				// Fabricated, not observed — a cache handoff says nothing about
+				// whether the runtime is running. Marked local so it can never
+				// veto the control plane's open turn (`WorkingStreamInput.origin`).
+				sessionStatusOrigin: { ...s.sessionStatusOrigin, [sessionID]: "local" as const },
+				sessionStatusAt: { ...s.sessionStatusAt, [sessionID]: Date.now() },
 				diffs: { ...s.diffs, [sessionID]: [] },
 				todos: { ...s.todos, [sessionID]: [] },
 				sessionRevert: { ...s.sessionRevert, [sessionID]: null },
@@ -1578,7 +1734,11 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		return result;
 	},
 
-	hydrate: (sessionID, msgs, opts) =>
+	hydrate: (sessionID, msgs, opts) => {
+		// Set inside the updater below when a RUNTIME read shows the transcript
+		// moved while its tail is still open — the runtime's own output reaching
+		// this tab by pull instead of push. Stamped after the set() commits.
+		let stampRuntimeActivity = false;
 		set((s) => {
 			// An authoritative load — the disk repaint itself, or a reconcile —
 			// re-establishes the session, so its entry is no longer a fragment.
@@ -1607,7 +1767,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			// server's own page order, which is not an id order, so `incoming[0].id`
 			// is no longer the smallest id in the page. (That this comparison is an
 			// id comparison at all is a separate open question — see B-note in
-			// PROGRESS.md — deliberately left as-is here.)
+			// deliberately left as-is here.)
 			let droppedPhantoms: Set<string> | null = null;
 			const provisional = fromCache ? undefined : cacheSourcedIds.get(sessionID);
 			if (provisional && provisional.size > 0 && incoming.length > 0) {
@@ -1677,6 +1837,46 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			//
 			// The rule is now identity-based, in two passes.
 			const existingIds = new Set(existing.map((m) => m.id));
+
+			// ---- Runtime-read activity evidence. ----
+			// Movement on a transcript this tab ALREADY held, with the tail still
+			// open, observed by a runtime read: the runtime is producing output
+			// right now, whatever the stream's last status frame claimed. Guards,
+			// each load-bearing (asserted in the test file): an initial fill is
+			// history, not movement; a completed tail is a finished turn and must
+			// not paint busy on a returning tab; a cache repaint is this tab's own
+			// disk, not the runtime speaking.
+			if (!fromCache && existingAll.length > 0) {
+				const tail = incoming[incoming.length - 1];
+				const tailOpen =
+					!!tail &&
+					tail.role === "assistant" &&
+					!(tail as { time?: { completed?: number } }).time?.completed &&
+					!(tail as { error?: unknown }).error;
+				if (tailOpen) {
+					stampRuntimeActivity =
+						incoming.some((m) => !existingIds.has(m.id)) ||
+						msgs.some((entry) => {
+							const mid = entry?.info?.id;
+							if (!mid || isOptimistic(sessionID, mid) || !existingIds.has(mid)) {
+								return false;
+							}
+							const prev = s.parts[mid];
+							if (!prev || prev.length === 0) return (entry.parts?.length ?? 0) > 0;
+							const prevById = new Map(prev.map((p) => [p.id, p]));
+							return (entry.parts ?? []).some((p) => {
+								if (!p?.id) return false;
+								const prevPart = prevById.get(p.id);
+								if (!prevPart) return true;
+								return (
+									isTextLikePart(p) &&
+									isTextLikePart(prevPart) &&
+									(p.text?.length ?? 0) > (prevPart.text?.length ?? 0)
+								);
+							});
+						});
+				}
+			}
 
 			// The echo may arrive under the optimistic message's OWN id: the host
 			// minted the wire id and painted the bubble with it. That is a
@@ -1987,7 +2187,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				messages: { ...s.messages, [sessionID]: merged },
 				parts: newParts,
 			};
-		}),
+		});
+		// Outside the updater: `noteSessionActivity` runs its own set(), and the
+		// stamp is quantized there. This is the evidence `projectWorking`'s
+		// content-first rule needs to outrank a stale wire idle frame whose veto
+		// would otherwise silence every fresh `/turn` read for the rest of a turn
+		// the SSE stream stopped reporting (prod, 2026-08-26).
+		if (stampRuntimeActivity) get().noteSessionActivity(sessionID);
+	},
 
 	reset: () => {
 		optimisticIds.clear();
@@ -2009,6 +2216,9 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			messages: {},
 			parts: {},
 			sessionStatus: {},
+			sessionStatusOrigin: {},
+			sessionStatusAt: {},
+			sessionActivityAt: {},
 			diffs: {},
 			todos: {},
 			sessionRevert: {},
@@ -2040,6 +2250,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 		const store = get();
 		switch (event.type) {
 			case "message.updated": {
+				{
+					const info = (event.properties as { info?: { sessionID?: string } })?.info;
+					const sid =
+						info?.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
+					if (sid) get().noteSessionActivity(sid);
+				}
 				const info = (event.properties as { info: Message }).info;
 				if (!info?.sessionID) return;
 				// The user cancelled this message; the runtime's husk stays dead.
@@ -2120,10 +2336,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						// The ordinal guess is only safe when there is exactly ONE
 						// in-flight send it could be. With a burst in flight, a
 						// part-less echo that matches neither a part id nor a
-						// registered alias WAITS: the hydrate that follows carries
-						// the parts (identity match), and consuming the oldest
-						// bubble here handed one message's echo another message's
-						// text (measured: the first bubble of a burst vanished).
+						// registered alias consumes NOTHING: taking the oldest
+						// bubble handed one message's echo another message's text
+						// (measured: the first bubble of a burst vanished).
+						//
+						// Consuming nothing is not the same as DISCARDING the echo,
+						// and this branch used to `return` on it — dropping the
+						// server's own message on the floor. Nothing re-reads a
+						// healthy stream, so the delivered prompt stayed missing
+						// until a reload, and the `message.part.updated` behind it
+						// re-created the id as an ASSISTANT message: the user's
+						// words in the agent's voice, with the real reply
+						// re-parented onto whichever bubble happened to sort last.
+						// That is the whole "only the first queued prompt shows up"
+						// report. The echo is placed like any other message now; the
+						// bubble it belongs to is retired the moment the inbox row
+						// names the pairing (`registerOptimisticEcho`), one poll
+						// behind at worst.
 						const eligible = optimisticUsers.filter(
 							(m) =>
 								isDispatched(info.sessionID, m.id) &&
@@ -2133,7 +2362,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						);
 						const matched =
 							byPartId ?? byAlias ?? (eligible.length === 1 ? eligible[0] : undefined);
-						if (!matched && eligible.length > 1) return;
 						const optIds = matched ? [matched.id] : [];
 						if (optIds.length > 0) {
 							// Clean up optimistic tracking, remembering the runtime id
@@ -2205,6 +2433,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
+				// The runtime just produced output. This is the evidence
+				// `projectWorking` trusts above every observer — see
+				// `sessionActivityAt`.
+				{
+					const sid =
+						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
+					if (sid) get().noteSessionActivity(sid);
+				}
 
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
@@ -2350,12 +2586,12 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 					status: SessionStatus;
 				};
 				if (props.sessionID && props.status)
-					store.setStatus(props.sessionID, props.status);
+					store.setStatus(props.sessionID, props.status, syntheticEventOrigin(event));
 				return;
 			}
 		case "session.idle": {
 			const sessionID = (event.properties as { sessionID: string }).sessionID;
-			if (sessionID) store.setStatus(sessionID, { type: "idle" });
+			if (sessionID) store.setStatus(sessionID, { type: "idle" }, syntheticEventOrigin(event));
 			// Streaming finished for THIS session — clear only its own delta
 			// tracking so future message.part.updated snapshots for it are
 			// accepted normally. Never the whole map: another session may
@@ -2372,8 +2608,23 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			if (!props.sessionID || !props.error) return;
 			const sid = props.sessionID;
 			const error = props.error;
-			// Mark session idle — errors terminate the response.
-			store.setStatus(sid, { type: "idle" });
+			// Most errors terminate the response. A RETRYABLE one does not:
+			// OpenCode stamps `data.isRetryable === true` and keeps writing the
+			// SAME assistant message, and apps/api reaches the same conclusion
+			// from this same event (`isTerminalTurnEnd`,
+			// apps/api/src/projects/sandbox-deadline-policy.ts:295). Writing
+			// `idle` here made a live turn byte-identical to a finished one, and
+			// `endedByRuntime` (core/session/working.ts) then vetoed the still-open
+			// ledger row with no time bound — the Stop button disappeared mid-turn
+			// and the partial answer read as complete.
+			//
+			// The status slot is LEFT ALONE rather than set to `retry`: the frame
+			// already there is the runtime's own last word, and overwriting it
+			// would re-stamp its arrival time and restart every freshness window
+			// that depends on it.
+			if (!isRetryableTurnError(error)) {
+				store.setStatus(sid, { type: "idle" }, syntheticEventOrigin(event));
+			}
 			// Clear only this session's delta tracking — see the idle handler
 			// above and the comment above deltaActiveParts.
 			deltaActiveParts.delete(sid);

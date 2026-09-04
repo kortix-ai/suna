@@ -3,14 +3,15 @@ import {
   WARM_BUILD_SLUG_SUFFIX,
   isWarmBuildSlug,
   templateSlugFromBuildSlug,
-  warmBuildSlug,
-} from '../snapshots/ppwarm-names';
+} from '../snapshots/build-slug';
 
-describe('warm build slug ↔ template slug', () => {
-  it('round-trips a template slug through its warm build slug', () => {
-    expect(warmBuildSlug('default')).toBe('default-warm');
-    expect(templateSlugFromBuildSlug(warmBuildSlug('default'))).toBe('default');
-    expect(templateSlugFromBuildSlug(warmBuildSlug('custom-gpu'))).toBe('custom-gpu');
+// The per-project warm baker is gone, but the `<templateSlug>-warm` rows it wrote
+// to project_snapshot_builds are permanent history. These helpers still have to
+// map those historical slugs back to a real template slug.
+describe('warm build slug -> template slug', () => {
+  it('maps a historical warm build slug back to its template slug', () => {
+    expect(templateSlugFromBuildSlug('default-warm')).toBe('default');
+    expect(templateSlugFromBuildSlug('custom-gpu-warm')).toBe('custom-gpu');
   });
 
   it('leaves a plain template slug untouched', () => {
@@ -19,6 +20,7 @@ describe('warm build slug ↔ template slug', () => {
   });
 
   it('recognises the warm suffix', () => {
+    expect(WARM_BUILD_SLUG_SUFFIX).toBe('-warm');
     expect(isWarmBuildSlug(`anything${WARM_BUILD_SLUG_SUFFIX}`)).toBe(true);
     expect(isWarmBuildSlug('warm')).toBe(false);
     expect(isWarmBuildSlug('warm-ish')).toBe(false);
@@ -26,12 +28,5 @@ describe('warm build slug ↔ template slug', () => {
 
   it('strips only the trailing suffix, not an internal one', () => {
     expect(templateSlugFromBuildSlug('warm-build-warm')).toBe('warm-build');
-  });
-
-  // The regression this whole change exists for: `default-warm` reached the rebuild
-  // and fix-with-agent routes as if it were a template slug, resolved to nothing,
-  // and surfaced as 502 / 400 respectively.
-  it('maps the build slug that broke Retry build back to a real template', () => {
-    expect(templateSlugFromBuildSlug('default-warm')).toBe('default');
   });
 });

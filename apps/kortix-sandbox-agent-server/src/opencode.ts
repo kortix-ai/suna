@@ -38,7 +38,7 @@ export type VerifiedReloadResult =
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
-import { access, constants, open, stat } from 'node:fs/promises'
+import { access, constants, open, readFile, realpath, stat } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util'
 
 import { AGENT_ENV_SH } from './agent-env-file'
@@ -74,6 +74,16 @@ const READY_TIMEOUT_MS = 20_000
 // by proc.on('exit'); after ready we only need an occasional liveness ping, so
 // drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
 const READY_LIVENESS_MS = 5_000
+// Liveness hysteresis. A single failed liveness probe used to downgrade
+// `ok -> starting`, and proxy.ts then 503s every opencode-bound request
+// ("opencode not ready") while state !== 'ok'. A BUSY but healthy opencode
+// (mid-heavy-turn) can miss one 2 s `/session` probe and get gated off while
+// it is actively serving. So an `ok` session only downgrades after
+// READY_LIVENESS_DOWNGRADE_THRESHOLD consecutive failures (a real wedge), and
+// re-probes faster (READY_LIVENESS_RECHECK_MS) once a probe starts failing so
+// both recovery and a genuine wedge are detected quickly.
+const READY_LIVENESS_DOWNGRADE_THRESHOLD = 3
+const READY_LIVENESS_RECHECK_MS = 2_000
 
 export const OPENCODE_HOME = homedir()
 const OPENCODE_DATA_HOME = `${OPENCODE_HOME}/.local/share`
@@ -95,13 +105,10 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
  * bad — a user connects a ChatGPT/Codex account, the UI confirms it, and the
  * next turn still runs on the account they replaced.
  *
- * `KORTIX_OPENCODE_DENY_ENV` belongs to the same family (`withoutDeniedProviderEnv`
- * strips native provider keys at spawn) and is included for the same reason.
  */
 export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
   OPENCODE_AUTH_JSON_SECRET,
-  'KORTIX_OPENCODE_DENY_ENV',
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
@@ -134,11 +141,26 @@ export function requiresRespawn(changedNames: readonly string[]): boolean {
   )
 }
 
+/**
+ * The bearer OpenCode presents to the Kortix LLM gateway. Current boxes carry
+ * one session PAT as KORTIX_TOKEN. A box provisioned before 2026-08 carries a
+ * `kortix_sb_` service key there — valid for the daemon and the API, unknown to
+ * the gateway — and its session PAT under KORTIX_LLM_API_KEY (the variable the
+ * daemon of that era used). Prefer whichever is a PAT; never invent one.
+ */
+export function pickLlmGatewayKey(env: NodeJS.ProcessEnv): string | undefined {
+  const token = env.KORTIX_TOKEN?.trim()
+  const legacy = env.KORTIX_LLM_API_KEY?.trim()
+  if (token?.startsWith('kortix_pat_')) return token
+  if (legacy?.startsWith('kortix_pat_')) return legacy
+  return token || legacy || undefined
+}
+
 /** True when OpenCode uses the single synthetic `kortix` LLM provider. */
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     env.KORTIX_LLM_PROXY_URL ||
-    (env.KORTIX_LLM_BASE_URL && env.KORTIX_LLM_API_KEY),
+    (env.KORTIX_LLM_BASE_URL && env.KORTIX_TOKEN),
   )
 }
 
@@ -167,6 +189,42 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Native-mode counterpart of {@link normalizeGatewayModelRefs}: a `kortix/…`
+ * ref left behind by a gateway→native toggle (compiled agent config, repo
+ * config, model prefs) names a provider that does not exist off-gateway.
+ * `kortix/<provider>/<model>` unwraps to the native ref; a bare
+ * `kortix/<managed-id>` is DELETED so opencode's own default applies instead
+ * of every turn dying on ModelNotFound.
+ */
+function normalizeNativeModelRefs(config: Record<string, unknown>): void {
+  const nativize = (ref: string): string | undefined => {
+    if (!ref.startsWith('kortix/')) return ref
+    const inner = ref.slice('kortix/'.length)
+    const slash = inner.indexOf('/')
+    if (slash <= 0 || slash === inner.length - 1) return undefined
+    return inner
+  }
+  for (const key of ['model', 'small_model'] as const) {
+    if (typeof config[key] === 'string' && config[key].trim()) {
+      const next = nativize((config[key] as string).trim())
+      if (next === undefined) delete config[key]
+      else config[key] = next
+    }
+  }
+  const agents = config.agent
+  if (!agents || typeof agents !== 'object' || Array.isArray(agents)) return
+  for (const value of Object.values(agents)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    const agent = value as Record<string, unknown>
+    if (typeof agent.model === 'string' && agent.model.trim()) {
+      const next = nativize(agent.model.trim())
+      if (next === undefined) delete agent.model
+      else agent.model = next
+    }
+  }
+}
+
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has four
 // independent contributors, any of which may apply:
@@ -188,10 +246,10 @@ export async function buildOpencodeConfigContent(
     secretCapabilitiesInstructionPath?: string | null
   } = {},
 ): Promise<string | undefined> {
-  const connectorToken = env.KORTIX_CLI_TOKEN
+  const connectorToken = env.KORTIX_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
-  const llmApiKey = env.KORTIX_LLM_API_KEY
+  const llmApiKey = pickLlmGatewayKey(env)
 
   // Warm-fork no-restart path (stateful only). When the daemon runs the localhost
   // LLM proxy it exports KORTIX_LLM_PROXY_URL; the provider then points baseURL at
@@ -237,15 +295,40 @@ export async function buildOpencodeConfigContent(
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
       : null
-  if (
-    !hasConnectorMcp &&
+  // Native mode (no gateway): the session's model pin still has to reach
+  // opencode's config — without an explicit `model`, opencode's default is
+  // catalog-order-dependent (Provider.defaultModel walks the models.dev map in
+  // file order). `kortix/<a>/<b>` strips to the native ref it wraps (a pin
+  // stored while the gateway was on); a bare `kortix/<managed-id>` has no
+  // native provider and is ignored.
+  const nativeSessionModel = (() => {
+    if (hasLlmGateway) return undefined
+    const raw = env.KORTIX_OPENCODE_MODEL?.trim()
+    if (!raw) return undefined
+    const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+    const slash = ref.indexOf('/')
+    if (slash <= 0 || slash === ref.length - 1) return undefined
+    return ref
+  })()
+
+  // Returning undefined hands the raw OPENCODE_CONFIG_CONTENT straight to
+  // opencode — fine, unless native mode must first scrub `kortix/…` refs out
+  // of it (a config authored or baked while the gateway was on).
+  const nativeScrubNeeded =
     !hasLlmGateway &&
-    !isSlackSession &&
-    !hasCompiledAgentConfig &&
-    !injectedSkillsDir &&
-    !secretCapabilitiesInstructionPath
-  )
-    return undefined
+    typeof env.OPENCODE_CONFIG_CONTENT === 'string' &&
+    env.OPENCODE_CONFIG_CONTENT.includes('"kortix/')
+
+  // (0) Kortix owns the OpenCode binary: the daemon converges it to the
+  // manifest pin (runtime-assets.ts) with `pnpm add -g --allow-build`. OpenCode's
+  // own autoupdate (`autoupdate` unset = on) runs whenever a human launches the
+  // CLI/TUI in the Session terminal and installs via plain `pnpm add -g`, which
+  // skips the postinstall: the launcher becomes a 479-byte stub, the old global
+  // dir is deleted and `/opt/kortix/opencode.current` dangles. Essentia
+  // 2026-08-22 (session dead, "Still waking this session up") and again
+  // 2026-08-25 on two boxes. This contributor ALWAYS applies, so the composed
+  // config is never `undefined` any more.
+  const KORTIX_MANAGED_OPENCODE_OVERLAY: Record<string, unknown> = { autoupdate: false }
 
   let base: Record<string, unknown> = {}
   if (hasCompiledAgentConfig) {
@@ -320,7 +403,7 @@ export async function buildOpencodeConfigContent(
           // placeholder token; the proxy injects the real per-session token
           // upstream (so the baked config is session-independent → no restart on
           // restore). Direct mode (cold/Daytona): the real token + api url, as before.
-          KORTIX_CLI_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
+          KORTIX_TOKEN: connectorProxyMode ? CONNECTOR_PROXY_PLACEHOLDER_KEY : connectorToken!,
           KORTIX_API_URL: connectorProxyMode ? connectorProxyUrl! : apiUrl!,
           PATH: '/usr/local/bin:/usr/bin:/bin',
           // Lets the CLI target the project-explicit gateway route. Optional —
@@ -391,6 +474,16 @@ export async function buildOpencodeConfigContent(
     // and BYOK handling. Free models are managed gateway models too, so the
     // selector has one stable catalog before the sandbox has booted.
     out.enabled_providers = ['kortix']
+  } else {
+    // Native mode: opencode connects providers itself from the API keys in its
+    // process env (the project's model-credential secrets, delivered because
+    // the gateway is off). Scrub any `kortix/…` refs a gateway→native toggle
+    // left in the base config, then layer in the session pin; provider config,
+    // catalog, and small_model stay fully opencode-native.
+    normalizeNativeModelRefs(out)
+    if (nativeSessionModel && (!('model' in out) || typeof out.model !== 'string')) {
+      out.model = nativeSessionModel
+    }
   }
 
   // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
@@ -408,6 +501,7 @@ export async function buildOpencodeConfigContent(
     out.permission = { ...permission, question: 'deny' }
   }
 
+  Object.assign(out, KORTIX_MANAGED_OPENCODE_OVERLAY)
   return JSON.stringify(out)
 }
 
@@ -422,6 +516,36 @@ type KortixProviderOpts = {
   /** Live managed lineup fetched from `${gateway}/models?scope=managed`, or
    *  null when it was unavailable (then the BUNDLED managed set fills gaps). */
   managedOverlay?: Record<string, KortixGatewayModel> | null
+}
+
+// The composer's Thinking control lists `Object.keys(model.variants)` and sends
+// the pick as `variant` on the prompt; OpenCode resolves that id against THIS
+// provider map. On-gateway the web derives the ids from the API's
+// `reasoning_options` (packages/sdk provider-selection.ts, via
+// @kortix/llm-catalog's generationControlCapabilities), so the provider must
+// publish the SAME ids or a picked tier silently does nothing. Mirror of that
+// derivation (this package cannot import @kortix/llm-catalog): an `effort`
+// knob → its values verbatim; a `budget_tokens` knob → the low/medium/high
+// tiers the gateway's Claude mapping accepts; anything else → no variants.
+// Each variant carries `reasoningEffort`, which `@ai-sdk/openai-compatible`
+// serializes as the `reasoning_effort` the gateway reads. OpenCode keeps an
+// explicit config `variants` map verbatim (its own derivation for an
+// openai-compatible package would keep only low/medium/high — verified on
+// 1.18.21 via /config/providers).
+const BUDGET_TOKENS_EFFORT_TIERS = ['low', 'medium', 'high'] as const
+
+export function variantsFromReasoningOptions(
+  model: Pick<KortixGatewayModel, 'reasoning_options'>,
+): Record<string, Record<string, unknown>> | undefined {
+  const options = Array.isArray(model.reasoning_options) ? model.reasoning_options : []
+  const effort = options.find((o) => o && o.type === 'effort')
+  const ids: string[] = effort?.values?.length
+    ? effort.values.filter((v): v is string => typeof v === 'string' && v.length > 0)
+    : options.some((o) => o && o.type === 'budget_tokens')
+      ? [...BUDGET_TOKENS_EFFORT_TIERS]
+      : []
+  if (ids.length === 0) return undefined
+  return Object.fromEntries(ids.map((id) => [id, { reasoningEffort: id }]))
 }
 
 function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> {
@@ -440,7 +564,8 @@ function buildKortixProvider(opts: KortixProviderOpts): Record<string, unknown> 
       // value through makes the entire config invalid and prevents startup.
       // Preserve every runtime capability while dropping only that UI field.
       const { provider: _catalogProvider, ...opencodeModel } = model
-      return [id, opencodeModel]
+      const variants = opencodeModel.variants ?? variantsFromReasoningOptions(model)
+      return [id, variants ? { ...opencodeModel, variants } : opencodeModel]
     }),
   )
   // opencode talks to the Kortix gateway over the OpenAI-compatible wire:
@@ -685,35 +810,6 @@ export async function writeKortixOpencodeConfig(
   return configPath
 }
 
-/**
- * Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from an
- * OpenCode child. With any such key in its env, OpenCode auto-connects a NATIVE
- * provider and calls it directly — bypassing the gateway (no logs / spend /
- * budgets) and leaving stale models that survive a BYOK disconnect. The gateway
- * must be the only LLM path, so the API hands us the exact names to strip
- * (Codex/OpenCode subscription auth is excluded — materializeOpencodeAuth has
- * already consumed it into auth.json). This only shapes the child's env; the
- * container itself keeps what it holds.
- */
-export function withoutDeniedProviderEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const denied = (env.KORTIX_OPENCODE_DENY_ENV || '')
-    .split(',')
-    .map((name) => name.trim())
-    .filter(Boolean)
-  const next: NodeJS.ProcessEnv = { ...env }
-  let withheld = 0
-  for (const name of denied) {
-    if (name in next) {
-      delete next[name]
-      withheld++
-    }
-  }
-  if (withheld > 0) {
-    logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
-  }
-  return next
-}
-
 const GATEWAY_MODELS_RETRY_DELAYS_MS = [400, 800]
 // Per-request hard cap. `opencode serve` cannot bind its port until
 // buildOpencodeConfigContent (which awaits this fetch) returns — so a slow/degraded
@@ -839,17 +935,22 @@ export function withManagedOverlay(
 }
 
 /**
- * Fetch ONLY the managed lineup: `GET ${base}/models?scope=managed` (~3KB,
- * versus ~3.3MB for the full project catalog — which is why the full fetch
- * gets no place on the boot path). Returns null on failure or an empty set
- * (a free-tier account legitimately has no managed models; callers then keep
- * whatever the disk catalog holds).
+ * Fetch the project's SERVABLE set: `GET ${base}/models?scope=picker` (~80KB
+ * — managed models the account may use + the providers its secrets connect +
+ * routing-named ids, i.e. exactly the list the web picker shows; versus
+ * ~3.3MB for the full org catalog, which is why the full fetch gets no place
+ * on the boot path). Overlaid on the baked catalog, so a BYOK model added to
+ * models.dev after the image was built registers on the `kortix` provider
+ * instead of answering `ModelNotFound` (the same failure the managed-only
+ * fetch fixed for managed models on 2026-08-19). Returns null on failure or
+ * an empty set (a free-tier account with no connected provider legitimately
+ * has nothing; callers then keep whatever the disk catalog holds).
  */
 export async function fetchManagedModels(
   baseUrl: string,
   apiKey: string,
 ): Promise<Record<string, KortixGatewayModel> | null> {
-  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=managed`
+  const url = `${baseUrl.replace(/\/+$/, '')}/models?scope=picker`
   const deadline = Date.now() + MANAGED_MODELS_TOTAL_BUDGET_MS
   for (let attempt = 0; attempt < MANAGED_MODELS_ATTEMPTS; attempt++) {
     if (Date.now() >= deadline) break
@@ -864,14 +965,14 @@ export async function fetchManagedModels(
       const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
       const models = body.models ?? {}
       if (Object.keys(models).length === 0) {
-        logger.info(`[opencode] managed listing is empty at ${url}; keeping the on-disk catalog`)
+        logger.info(`[opencode] servable listing is empty at ${url}; keeping the on-disk catalog`)
         return null
       }
       // Remote JSON becomes OpenCode's provider config — rebuild it to a known
       // shape before it can get anywhere near the config or the disk.
       const clean = sanitizeCatalogForDisk(models)
       if (!clean) return null
-      logger.info(`[opencode] fetched ${Object.keys(clean).length} managed models from ${url}`)
+      logger.info(`[opencode] fetched ${Object.keys(clean).length} servable models from ${url}`)
       return clean
     } catch (err) {
       logger.warn(
@@ -882,7 +983,7 @@ export async function fetchManagedModels(
       await new Promise((resolve) => setTimeout(resolve, 200))
     }
   }
-  logger.warn(`[opencode] managed models unavailable (${url}); using the bundled managed set`)
+  logger.warn(`[opencode] servable models unavailable (${url}); using the baked catalog + bundled managed set`)
   return null
 }
 
@@ -1087,6 +1188,10 @@ type KortixGatewayModel = {
   provider?: string
   reasoning?: boolean
   reasoning_options?: KortixReasoningOption[]
+  // Explicit OpenCode variant map (id → request overlay). Present when the
+  // catalog ships one; otherwise derived from `reasoning_options` at config
+  // build (see variantsFromReasoningOptions).
+  variants?: Record<string, Record<string, unknown>>
   tool_call?: boolean
   attachment?: boolean
   temperature?: boolean
@@ -1153,15 +1258,6 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
     limit: { context: 1_048_575, output: 384_000 },
     cost: { input: 1.74, output: 3.48, cache_read: 0.145 },
   },
-  'glm-5.2': {
-    name: 'GLM 5.2',
-    provider: 'kortix',
-    reasoning: true,
-    tool_call: true,
-    attachment: false,
-    temperature: true,
-    limit: { context: 1_000_000, output: 131_072 },
-  },
   'muse-spark-1.2': {
     name: 'Muse Spark 1.2',
     provider: 'kortix',
@@ -1210,21 +1306,22 @@ export const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
       context_over_200k: { input: 4, output: 12, cache_read: 1 },
     },
   },
-  // Second Kortix-managed AsterLab model (Kimi K3). Same `kortix` provider
-  // branding + `aster` transport (ASTER_API_KEY) as GLM 5.2.
-  // `temperature:false` — models.dev advertises Kimi K3 as
-  // `temperature:false` (it rejects a client-sent temperature), matching
-  // capabilitiesOf() in the served catalog. Must NOT advertise temperature
-  // support or OpenCode sends one and 400s the turn.
-  // 'kimi-k3': {
-  //   name: 'Kimi K3',
-  //   provider: 'kortix',
-  //   reasoning: true,
-  //   tool_call: true,
-  //   attachment: true,
-  //   temperature: false,
-  //   limit: { context: 1_048_576, output: 131_072 },
-  // },
+  // Mirrors @kortix/llm-catalog `glm-5.3-flash` (added 2026-08-27). Capabilities
+  // = models.dev openrouter/z-ai/glm-5.3-flash: effort low/high/max, image
+  // input, temperature:true, structured_output:true. Limit = the safe
+  // intersection of the pinned z-ai + novita hosts.
+  'glm-5.3-flash': {
+    name: 'GLM 5.3 Flash',
+    provider: 'kortix',
+    reasoning: true,
+    reasoning_options: [{ type: 'effort', values: ['low', 'high', 'max'] }],
+    tool_call: true,
+    attachment: true,
+    structured_output: true,
+    temperature: true,
+    limit: { context: 1_048_576, output: 131_072 },
+    cost: { input: 0.075, output: 0.25, cache_read: 0.015 },
+  },
   'openai/gpt-5.5': {
     name: 'GPT-5.5',
     provider: 'openai',
@@ -1422,6 +1519,36 @@ export interface OpencodeBinaryDetectionOptions {
   resolveInstalledNative?: () => Promise<string>
   publishNativeLink?: (nativePath: string, linkPath: string) => Promise<void>
   findOnPath?: (bin: string) => Promise<string | null>
+  isStubLauncher?: (path: string) => Promise<boolean>
+}
+
+/**
+ * True when `launcherPath` is — or is a pnpm shim for — the tiny shell stub pnpm
+ * leaves in place of a native OpenCode when the package's postinstall did not
+ * run. The real launcher is a >100 MB executable; pnpm's shim is a short shell
+ * script that `exec`s it and names it in a trailing `# cmd-shim-target=` line.
+ * Conservative by construction: anything this cannot read or resolve is NOT a
+ * stub, so a false positive can never take a working launcher away.
+ */
+export async function isStubOpencodeLauncher(launcherPath: string): Promise<boolean> {
+  try {
+    const target = await realpath(launcherPath)
+    const info = await stat(target)
+    if (info.size > 64 * 1024) return false
+    const text = await readFile(target, 'utf8')
+    if (/postinstall script was not run/i.test(text)) return true
+    // pnpm's cmd-shim: follow one hop to the package's own launcher.
+    const shimTarget =
+      text.match(/^#\s*cmd-shim-target=(.+)$/m)?.[1]?.trim() ??
+      text.match(/"?([^"\s]+opencode-ai\/bin\/opencode(?:\.exe)?)"?/)?.[1]
+    if (!shimTarget) return false
+    const resolved = shimTarget.replace(/^\$basedir/, dirname(target))
+    const binInfo = await stat(resolved).catch(() => null)
+    if (!binInfo || binInfo.size > 64 * 1024) return false
+    return /postinstall script was not run/i.test(await readFile(resolved, 'utf8'))
+  } catch {
+    return false
+  }
 }
 
 export async function detectOpencodeBinary(
@@ -1438,7 +1565,15 @@ export async function detectOpencodeBinary(
   // an availability fallback only when that verified launcher disappeared.
   if (!options.nativeBinaryFastPathEnabled) {
     const pathLauncher = await findOnPath('opencode')
-    if (pathLauncher) return pathLauncher
+    // A pnpm launcher that resolves to the postinstall-less stub OpenCode's own
+    // autoupdate leaves behind (479 bytes: "opencode-ai's postinstall script was
+    // not run") exits at once; spawning it puts the daemon in a respawn loop
+    // with "binary not found" and the session never wakes (Essentia
+    // 2026-08-22, re-armed 2026-08-25). Never launch it; fall through to the
+    // managed links, which the convergence pass repairs.
+    if (pathLauncher && !(await (options.isStubLauncher ?? isStubOpencodeLauncher)(pathLauncher))) {
+      return pathLauncher
+    }
     if (await checkExecutable(currentLink)) return currentLink
     if (await checkExecutable(systemLink)) return systemLink
     return null
@@ -1496,7 +1631,47 @@ async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   return cfg.workspace
 }
 
-type OpencodeState = 'starting' | 'ok' | 'down'
+export type OpencodeState = 'starting' | 'ok' | 'down'
+
+export interface LivenessDecisionInput {
+  /** The supervisor's current opencode state. */
+  state: OpencodeState
+  /** Did THIS liveness probe get a healthy answer from opencode? */
+  ready: boolean
+  /** Consecutive failed liveness probes so far (only meaningful while `ok`). */
+  consecutiveFailures: number
+  /** Downgrade `ok -> starting` only on the Nth consecutive failure. */
+  threshold: number
+}
+
+export interface LivenessDecision {
+  state: OpencodeState
+  consecutiveFailures: number
+  /** True on the transition that actually gated opencode off — for logging. */
+  downgraded: boolean
+}
+
+/**
+ * Decide the next opencode state from one liveness-probe result, with
+ * hysteresis. Pure + deterministic — see opencode-liveness-hysteresis.test.ts.
+ *
+ * - a ready probe is always `ok` and clears the failure count;
+ * - an `ok` session TOLERATES failures below `threshold` (stays `ok`), and
+ *   downgrades to `starting` only on the Nth consecutive failure;
+ * - any other non-ready state resolves to `starting` (unchanged from the
+ *   pre-hysteresis behaviour), with the counter reset.
+ */
+export function nextLivenessState(input: LivenessDecisionInput): LivenessDecision {
+  if (input.ready) return { state: 'ok', consecutiveFailures: 0, downgraded: false }
+  if (input.state === 'ok') {
+    const consecutiveFailures = input.consecutiveFailures + 1
+    if (consecutiveFailures >= input.threshold) {
+      return { state: 'starting', consecutiveFailures, downgraded: true }
+    }
+    return { state: 'ok', consecutiveFailures, downgraded: false }
+  }
+  return { state: 'starting', consecutiveFailures: 0, downgraded: false }
+}
 
 export type Opencode = {
   prefetchBinary(): Promise<boolean>
@@ -1505,6 +1680,20 @@ export type Opencode = {
   stop(signal?: NodeJS.Signals): Promise<void>
   restart(): Promise<void>
   reloadConfig(opts?: { mustRespawn?: boolean }): Promise<ReloadConfigResult>
+  /**
+   * The workspace (repo checkout, config-dir deps, injected skills) landed
+   * AFTER this process spawned. Rewrite the composed config with the same
+   * inputs a spawn uses and dispose every OpenCode instance in place, so the
+   * next directory-scoped request re-detects the git root and re-reads config
+   * without a respawn. False when dispose is unavailable (caller restarts).
+   */
+  reloadForWorkspace(): Promise<boolean>
+  /**
+   * Open the directory-scoped probe gate: the workspace (checkout + config-dir
+   * deps + injected skills) is complete, so OpenCode may now create its
+   * per-directory Instance. See `deferDirectoryProbe`.
+   */
+  markWorkspaceReady(): void
   /**
    * Boot the new opencode, verify it serves, then swap and retire the old one.
    * Never leaves the session without an opencode.
@@ -1540,6 +1729,24 @@ export type Opencode = {
 export interface OpencodeSupervisorOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
+  /**
+   * First HTTP response of ANY status from the spawned process: the port is
+   * bound and bun has finished loading the binary. The gap to
+   * onFirstReadyResponse is then OpenCode's Instance init for the workspace.
+   */
+  onFirstListeningResponse?: () => void
+  /**
+   * Start with the directory-scoped readiness probe CLOSED. OpenCode creates
+   * an Instance for a directory on the first directory-scoped request, and it
+   * reads that directory's `node_modules` (local tools) ONCE per process: an
+   * Instance created before the checkout landed keeps a tool registry whose
+   * imports failed, for the life of the process (dev, 2026-08-27:
+   * `ResolveMessage: Cannot find module '@mendable/firecrawl-js' from
+   * /workspace/.kortix/opencode/tools/scrape_webpage.ts`). The early-spawn
+   * boot path therefore probes liveness on a non-Instance route until
+   * `markWorkspaceReady()`.
+   */
+  deferDirectoryProbe?: boolean
   binaryPathOverride?: string
   binaryPathResolverOverride?: () => Promise<string | null>
   nativeBinaryFastPathEnabled?: boolean
@@ -1581,12 +1788,25 @@ export function createOpencodeSupervisor(
   let currentProjectEnv = projectEnv
   let child: ChildProcess | null = null
   let activePort = cfg.opencodeInternalPort
+  // The port each spawned opencode was told to serve on. THIS is the truth
+  // about where the live process listens; `activePort` is only the plan for the
+  // next spawn. Every reader of the live port goes through livePort(), so the
+  // two can never disagree the way they did on Essentia 2026-08-25 (daemon
+  // `starting` on 4096 for two hours while its own child served on 4097).
+  const childPorts = new WeakMap<ChildProcess, number>()
+  function livePort(): number {
+    return (child ? childPorts.get(child) : undefined) ?? activePort
+  }
   let binaryPath: string | null = null
   let stopping = false
   let restartDelayMs = 500
   let state: OpencodeState = 'starting'
+  /** Consecutive failed liveness probes while `ok` (see nextLivenessState). */
+  let livenessFailures = 0
   let readinessTimer: ReturnType<typeof setTimeout> | null = null
   let firstReadyResponseReported = false
+  let firstListeningResponseReported = false
+  let directoryProbeOpen = options.deferDirectoryProbe !== true
   let readyResponseProcess: ChildProcess | null = null
   const readyResponseWaiters = new Set<() => void>()
   let opencodeCwd = cfg.workspace
@@ -1689,11 +1909,33 @@ export function createOpencodeSupervisor(
    * it exits: it is on trial, and a candidate that dies is a verdict, not an
    * outage.
    */
+  /**
+   * Compose + write the Kortix OpenCode config exactly as a spawn does: the
+   * injected managed-skills dir under the CURRENT config dir and the secret
+   * capability instruction. Shared by spawn and by the in-place reloads so a
+   * reload can never drop a contributor the spawn declared.
+   */
+  async function writeComposedConfig(baseEnv: NodeJS.ProcessEnv): Promise<string | null> {
+    let secretCapabilitiesInstructionPath: string | null = null
+    try {
+      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return writeKortixOpencodeConfig(baseEnv, {
+      configPath: options.configPathOverride,
+      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
+      secretCapabilitiesInstructionPath,
+    })
+  }
+
   async function spawnChild(
     bin: string,
     opts: { port?: number; supervise?: boolean } = {},
   ): Promise<ChildProcess> {
-    const port = opts.port ?? activePort
+    const port = opts.port ?? livePort()
     const supervise = opts.supervise !== false
     sweepBunExtractions()
     try {
@@ -1723,10 +1965,7 @@ export function createOpencodeSupervisor(
       PORT: undefined,
       APP_PORT: undefined,
     })
-
     materializeOpencodeAuth(env)
-
-    env = withoutDeniedProviderEnv(env)
 
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited
@@ -1735,20 +1974,14 @@ export function createOpencodeSupervisor(
     if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
-
-    let secretCapabilitiesInstructionPath: string | null = null
-    try {
-      secretCapabilitiesInstructionPath = writeSecretCapabilitiesInstruction(baseEnv)
-    } catch (err) {
-      logger.warn('[opencode] secret capability instruction file unavailable; env catalog remains available', {
-        err: err instanceof Error ? err.message : String(err),
-      })
+    // The standalone binary already embeds a models.dev snapshot, and Kortix
+    // injects its managed provider catalog below. A remote catalog refresh adds
+    // network contention without adding a model that this session can use.
+    if (process.env.KORTIX_COMPILED_RUNTIME_FORMAT === 'kortix.compiled-runtime.v1') {
+      env.OPENCODE_DISABLE_MODELS_FETCH = '1'
     }
-    const configPath = await writeKortixOpencodeConfig(baseEnv, {
-      configPath: options.configPathOverride,
-      injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
-      secretCapabilitiesInstructionPath,
-    })
+
+    const configPath = await writeComposedConfig(baseEnv)
     if (configPath) {
       env.OPENCODE_CONFIG = configPath
       delete env.OPENCODE_CONFIG_CONTENT
@@ -1773,6 +2006,7 @@ export function createOpencodeSupervisor(
       stdio: ['ignore', 'inherit', 'inherit'],
       detached: true,
     })
+    childPorts.set(proc, port)
     proc.on('error', (err) => {
       logger.error('[opencode] spawn error', err)
     })
@@ -1961,9 +2195,23 @@ export function createOpencodeSupervisor(
     if (!binaryPath) return { ok: false, reason: 'opencode binary not resolved yet' }
     if (stopping) return { ok: false, reason: 'supervisor is shutting down' }
 
-    const candidatePort = activePort === currentCfg.opencodeInternalPort
+    const candidatePort = livePort() === currentCfg.opencodeInternalPort
       ? currentCfg.opencodeStandbyPort
       : currentCfg.opencodeInternalPort
+    // The idle half must be idle. `opencode serve --port <busy>` exits at once
+    // with ServeError (verified on 1.18.23), but `probeUntilReady` asks the
+    // PORT, not the process: whatever already answers there — the incumbent,
+    // if `activePort` has drifted from where opencode really listens — would
+    // "prove" a candidate that is already dead, and promotion would then kill
+    // the only opencode the box has. Decline instead, loudly.
+    if (await checkReady(candidatePort)) {
+      logger.error('[opencode] candidate port already answers; port pair is desynced, keeping the running instance', {
+        livePort: livePort(),
+        candidatePort,
+        pid: child?.pid ?? null,
+      })
+      return { ok: false, reason: `port ${candidatePort} already answers; the port pair is desynced` }
+    }
     let candidate: ChildProcess
     try {
       candidate = await spawnChild(binaryPath, { port: candidatePort, supervise: false })
@@ -2042,7 +2290,8 @@ export function createOpencodeSupervisor(
     }
   }
 
-  async function checkReady(port = activePort): Promise<boolean> {
+  async function checkReady(port = livePort()): Promise<boolean> {
+    if (!directoryProbeOpen) return false
     return probeOpencodeSessionApi(`http://127.0.0.1:${port}`, currentCfg.projectTarget, 2_000)
   }
 
@@ -2068,18 +2317,21 @@ export function createOpencodeSupervisor(
     const baseEnv = currentProjectEnv
       ? mergeProjectEnv(process.env, currentProjectEnv)
       : process.env
-    const written = await writeKortixOpencodeConfig(baseEnv, {
-      configPath: options.configPathOverride,
-    }).catch((err) => {
+    const written = await writeComposedConfig(baseEnv).catch((err) => {
       logger.warn('[opencode] could not rewrite config for reload', {
         err: (err as Error).message,
       })
       return null
     })
     if (!written) return false
+    return disposeInstances()
+  }
+
+  /** `POST /global/dispose`: every instance re-reads config on its next request. */
+  async function disposeInstances(): Promise<boolean> {
     try {
       const res = await fetch(
-        `http://127.0.0.1:${activePort}/global/dispose`,
+        `http://127.0.0.1:${livePort()}/global/dispose`,
         { method: 'POST', signal: AbortSignal.timeout(15_000) },
       )
       // Content-type matters: the SPA catch-all also answers 200, so a status
@@ -2132,14 +2384,30 @@ export function createOpencodeSupervisor(
     if (stopping) return
     // Poll fast until ready (quick boot detection), then slow to a liveness ping.
     // The forever-100ms poll cost ~55% of a core per idle sandbox (READY_LIVENESS_MS).
-    const interval = state === 'ok' ? READY_LIVENESS_MS : READY_POLL_MS
+    // Once ok, probe slowly (liveness). But the moment a liveness probe starts
+    // failing, re-probe faster so a real wedge downgrades quickly AND a busy
+    // opencode's recovery is seen quickly — without ever gating it off on one blip.
+    const interval =
+      state === 'ok'
+        ? livenessFailures > 0
+          ? READY_LIVENESS_RECHECK_MS
+          : READY_LIVENESS_MS
+        : READY_POLL_MS
     readinessTimer = setTimeout(async () => {
       if (stopping) return
-      const probedPort = activePort
+      const probedPort = livePort()
       const probedChild = child
-      const ready = await checkReady(probedPort)
+      // Closed gate → liveness only, on a route that creates no Instance.
+      const probe = directoryProbeOpen
+        ? await probeOpencodeReadiness(`http://127.0.0.1:${probedPort}`, currentCfg.projectTarget, 2_000)
+        : ((await probeOpencodeListening(`http://127.0.0.1:${probedPort}`, 2_000)) ? 'listening' : 'down')
+      const ready = probe === 'ready'
+      if (probe !== 'down' && !firstListeningResponseReported && probedChild === child) {
+        firstListeningResponseReported = true
+        options.onFirstListeningResponse?.()
+      }
       if (stopping) return
-      if (probedPort !== activePort) {
+      if (probedPort !== livePort()) {
         scheduleReadinessProbe()
         return
       }
@@ -2148,14 +2416,33 @@ export function createOpencodeSupervisor(
         return
       }
       if (ready) {
+        if (livenessFailures > 0) {
+          logger.info('[opencode] liveness recovered', { afterFailures: livenessFailures })
+        }
         if (probedChild) reportReadyResponse(probedChild)
+        livenessFailures = 0
         markReady()
-      } else if (state !== 'starting') {
-        state = 'starting'
+      } else {
+        const decision = nextLivenessState({
+          state,
+          ready: false,
+          consecutiveFailures: livenessFailures,
+          threshold: READY_LIVENESS_DOWNGRADE_THRESHOLD,
+        })
+        livenessFailures = decision.consecutiveFailures
+        if (decision.downgraded) {
+          logger.warn('[opencode] liveness failed repeatedly; marking not-ready', {
+            consecutiveFailures: livenessFailures,
+            threshold: READY_LIVENESS_DOWNGRADE_THRESHOLD,
+            port: probedPort,
+          })
+        }
+        state = decision.state
       }
       scheduleReadinessProbe()
     }, interval)
   }
+
 
   return {
     prefetchBinary() {
@@ -2256,6 +2543,12 @@ export function createOpencodeSupervisor(
     async restart() {
       await this.stop('SIGTERM')
       restartDelayMs = 500
+      // A restart is where a freshly converged OpenCode must take effect. The
+      // binary path is memoised at boot — before the convergence pass could
+      // have installed anything — so a restart that kept it would spawn the
+      // baked binary forever (prod, 2026-09-01: 1.18.23 installed, 1.17.11
+      // kept running until the daemon itself was relaunched).
+      binaryResolutionPromise = null
       await this.start()
       // A PLANNED restart strands its turn exactly like a crash does, and only
       // the crash path was cleaning up: `proc.on('exit')` returns early while
@@ -2300,13 +2593,43 @@ export function createOpencodeSupervisor(
      * a future opencode that drops the endpoint degrades to today's behaviour
      * rather than silently not applying the config.
      */
+    markWorkspaceReady() {
+      if (directoryProbeOpen) return
+      directoryProbeOpen = true
+      logger.info('[opencode] workspace ready; directory-scoped readiness probe opened')
+    },
+    async reloadForWorkspace(): Promise<boolean> {
+      if (stopping || !child) return false
+      // The composed config was written at spawn, when the workspace's
+      // injected-skills dir did not exist yet: rewrite it now so the FIRST
+      // Instance init reads the complete config.
+      const baseEnv = currentProjectEnv
+        ? mergeProjectEnv(process.env, currentProjectEnv)
+        : process.env
+      const written = await writeComposedConfig(baseEnv).catch((err) => {
+        logger.warn('[opencode] could not rewrite config for workspace reload', {
+          err: (err as Error).message,
+        })
+        return null
+      })
+      if (!written) return false
+      // Instances are created lazily by the first directory-scoped request.
+      // If none answered yet, nothing has read the old config or the missing
+      // git root — there is nothing to dispose, and disposing would only
+      // fail against a port that is still coming up (a restart would then
+      // throw away a perfectly good boot).
+      if (readyResponseProcess !== child) {
+        logger.info('[opencode] workspace landed before the first instance; no dispose needed')
+        return true
+      }
+      // An Instance already answered for this directory, i.e. it was created
+      // before the workspace was complete. Its tool registry / module
+      // resolution is process-cached, so dispose is NOT enough — take the
+      // restart. With the probe gate this is a fallback, not the normal path.
+      logger.warn('[opencode] an instance answered before the workspace was ready; restarting instead of disposing')
+      return false
+    },
     async reloadConfig(opts: { mustRespawn?: boolean } = {}): Promise<ReloadConfigResult> {
-      // Some settings are not IN the config file — they shape the child's
-      // PROCESS env at spawn, and a dispose cannot re-run that. The provider-key
-      // deny-list is the live case: `withoutDeniedProviderEnv` strips native
-      // keys when the child is spawned, so disposing after a gateway-mode
-      // toggle would leave those keys exactly as they were — routing around the
-      // gateway's budgets and logging, or failing to restore BYOK.
       // A dispose re-reads the config in place — same process, no turn lost.
       if (!opts.mustRespawn && (await tryDisposeReload())) {
         return { how: 'disposed', turnEnded: false }
@@ -2331,7 +2654,7 @@ export function createOpencodeSupervisor(
       if (!proven.ok) return { outcome: 'kept-old', reason: proven.reason }
 
       const previous = child
-      const previousPort = activePort
+      const previousPort = livePort()
       activePort = proven.port
       child = proven.candidate
       superviseChild(proven.candidate)
@@ -2393,11 +2716,11 @@ export function createOpencodeSupervisor(
     },
 
     getActivePort() {
-      return activePort
+      return livePort()
     },
 
     getInternalUrl() {
-      return `http://127.0.0.1:${activePort}`
+      return `http://127.0.0.1:${livePort()}`
     },
 
     getBinaryPath() {
@@ -2476,6 +2799,20 @@ export async function waitForOpencodeReady(
 
 /** Richer boot probe: 'down' = port not answering at all, 'listening' = answers
  *  HTTP but /session not 2xx yet, 'ready' = /session 2xx/3xx. */
+/**
+ * Is the process serving HTTP at all? Any status counts, and the path is
+ * deliberately NOT directory-scoped: OpenCode answers unknown paths from its
+ * SPA catch-all, so this never creates an Instance for a directory.
+ */
+async function probeOpencodeListening(baseUrl: string, timeoutMs = 1_000): Promise<boolean> {
+  try {
+    await fetch(`${baseUrl}/kortix-liveness-probe`, { signal: AbortSignal.timeout(timeoutMs) })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function probeOpencodeReadiness(
   baseUrl: string,
   directory: string,

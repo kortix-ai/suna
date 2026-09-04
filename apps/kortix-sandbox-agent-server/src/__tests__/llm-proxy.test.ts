@@ -117,8 +117,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_TOKEN: 'real-session-token',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
@@ -142,8 +141,7 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
       KORTIX_CONNECTORS_PROXY_URL: 'http://127.0.0.1:4320',
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_TOKEN: 'real-session-token',
       KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
@@ -152,22 +150,21 @@ describe('buildOpencodeConfigContent — proxy mode vs direct mode', () => {
 
     expect(cfg.mcp['kortix-connectors'].command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
     expect(cfg.mcp['kortix-connectors'].environment.KORTIX_API_URL).toBe('http://127.0.0.1:4320')
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
-    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_CLI_TOKEN).not.toBe('real-session-exec-token')
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_TOKEN).toBe(CONNECTOR_PROXY_PLACEHOLDER_KEY)
+    expect(cfg.mcp['kortix-connectors'].environment.KORTIX_TOKEN).not.toBe('real-session-exec-token')
   })
 
   test('DIRECT mode (cold/Daytona): real key + token baked, unchanged', async () => {
     const json = await buildOpencodeConfigContent({
       KORTIX_API_URL: 'https://api.kortix.test/v1',
       KORTIX_LLM_BASE_URL: 'https://gateway.kortix.test/v1/llm',
-      KORTIX_LLM_API_KEY: 'real-session-llm-key',
-      KORTIX_CLI_TOKEN: 'real-session-exec-token',
+      KORTIX_TOKEN: 'real-session-token',
       KORTIX_LLM_CATALOG_FILE: catalog,
     } as NodeJS.ProcessEnv)
     expect(json).toBeDefined()
     const cfg = JSON.parse(json!)
     expect(cfg.provider.kortix.options.baseURL).toBe('https://gateway.kortix.test/v1/llm')
-    expect(cfg.provider.kortix.options.apiKey).toBe('real-session-llm-key')
+    expect(cfg.provider.kortix.options.apiKey).toBe('real-session-token')
     expect(cfg.mcp).toBeUndefined()
   })
 })
@@ -180,7 +177,7 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
     writeFileSync(frozen, JSON.stringify({ models: { 'retired-model': { name: 'Retired' } } }))
 
     const liveModels = {
-      'glm-5.2': { name: 'GLM 5.2' },
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash' },
       'claude-sonnet-4.6': { name: 'Claude Sonnet 4.6' },
     }
     const server = Bun.serve({
@@ -210,7 +207,7 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
     const dir = mkdtempSync(join(tmpdir(), 'catalog-current-'))
     const frozen = join(dir, 'frozen.json')
     const refreshed = join(dir, 'refreshed.json')
-    const liveModels = { 'glm-5.2': { name: 'GLM 5.2' } }
+    const liveModels = { 'glm-5.3-flash': { name: 'GLM 5.3 Flash' } }
     writeFileSync(frozen, JSON.stringify({ models: liveModels }))
 
     const server = Bun.serve({
@@ -230,6 +227,89 @@ describe('refreshGatewayCatalogFile — warm snapshot catalog recovery', () => {
       expect(JSON.parse(readFileSync(refreshed, 'utf8'))).toEqual({ models: liveModels })
     } finally {
       server.stop(true)
+    }
+  })
+})
+
+describe('in-sandbox inline image window (Essentia 2026-08-25: >128 MiB vision bodies 413d at the edge)', () => {
+  afterEach(() => {
+    stopLlmProxy()
+    delete process.env.KORTIX_LLM_MAX_INLINE_IMAGES
+  })
+
+  function countingUpstream() {
+    let seen: { images: number; bytes: number; contentLength: string | null; auth: string | null } | null = null
+    const server = Bun.serve({
+      port: 0,
+      maxRequestBodySize: 512 * 1024 * 1024,
+      async fetch(req) {
+        const text = await req.text()
+        const body = JSON.parse(text) as { messages: Array<{ content: Array<{ type: string }> }> }
+        const images = body.messages.flatMap((m) => m.content).filter((p) => p.type === 'image_url').length
+        seen = { images, bytes: text.length, contentLength: req.headers.get('content-length'), auth: req.headers.get('authorization') }
+        return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } })
+      },
+    })
+    return { url: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true), seen: () => seen }
+  }
+
+  const img = (n: number) => ({ type: 'image_url', image_url: { url: `data:image/png;base64,${'A'.repeat(64 * 1024)}${n}` } })
+
+  test('a model request over the window leaves the sandbox with only the most recent images', async () => {
+    const up = countingUpstream()
+    try {
+      startLlmProxy(14321, up.url, 'real-token')
+      const messages = [
+        { role: 'user', content: [{ type: 'text', text: 'a' }, ...Array.from({ length: 15 }, (_, i) => img(i))] },
+        { role: 'user', content: [{ type: 'text', text: 'b' }, ...Array.from({ length: 15 }, (_, i) => img(15 + i))] },
+      ]
+      const res = await fetch(`${llmProxyBaseUrl()}/v1/llm/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${LLM_PROXY_PLACEHOLDER_KEY}` },
+        body: JSON.stringify({ model: 'x', messages }),
+      })
+      expect(res.status).toBe(200)
+      const seen = up.seen()!
+      expect(seen.images).toBe(12) // DEFAULT_IMAGE_WINDOW.keepOnOverflow
+      expect(seen.auth).toBe('Bearer real-token')
+      expect(Number(seen.contentLength)).toBe(seen.bytes)
+      expect(seen.bytes).toBeLessThan(15 * 64 * 1024)
+    } finally {
+      up.stop()
+    }
+  })
+
+  test('a request under the window and a non-model path stream through untouched', async () => {
+    const up = countingUpstream()
+    try {
+      startLlmProxy(14322, up.url, 'real-token')
+      const messages = [{ role: 'user', content: [{ type: 'text', text: 'a' }, img(1), img(2)] }]
+      const res = await fetch(`${llmProxyBaseUrl()}/v1/llm/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages }),
+      })
+      expect(res.status).toBe(200)
+      expect(up.seen()!.images).toBe(2)
+    } finally {
+      up.stop()
+    }
+  })
+
+  test('KORTIX_LLM_MAX_INLINE_IMAGES=0 disables the window', async () => {
+    process.env.KORTIX_LLM_MAX_INLINE_IMAGES = '0'
+    const up = countingUpstream()
+    try {
+      startLlmProxy(14323, up.url, 'real-token')
+      const messages = [{ role: 'user', content: Array.from({ length: 25 }, (_, i) => img(i)) }]
+      await fetch(`${llmProxyBaseUrl()}/v1/llm/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'x', messages }),
+      })
+      expect(up.seen()!.images).toBe(25)
+    } finally {
+      up.stop()
     }
   })
 })

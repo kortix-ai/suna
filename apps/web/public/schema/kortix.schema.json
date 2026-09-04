@@ -475,6 +475,7 @@
                   "type": "string",
                   "enum": [
                     "pipedream",
+                    "composio",
                     "mcp",
                     "openapi",
                     "postman",
@@ -513,8 +514,7 @@
                   "enum": [
                     "slack",
                     "teams",
-                    "email",
-                    "voice"
+                    "email"
                   ]
                 },
                 "credential": {},
@@ -628,22 +628,6 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_email"
-                      }
-                    }
-                  },
-                  "then": {
-                    "properties": {
-                      "provider": {
-                        "const": "channel"
-                      }
-                    }
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "slug": {
-                        "const": "kortix_voice"
                       }
                     }
                   },
@@ -819,8 +803,6 @@
                           "project.read",
                           "project.write",
                           "project.delete",
-                          "project.cr.open",
-                          "project.cr.merge",
                           "project.session.read",
                           "project.session.start",
                           "project.session.stop",
@@ -849,6 +831,8 @@
                           "project.gitops.read",
                           "project.gitops.push",
                           "project.gitops.merge",
+                          "project.gitops.ref.any",
+                          "project.gitops.ref.delete",
                           "project.secret.read",
                           "project.secret.write",
                           "project.connector.read",
@@ -861,6 +845,8 @@
                           "project.review.submit",
                           "project.review.act",
                           "project.credentials.issue",
+                          "project.cr.open",
+                          "project.cr.merge",
                           "project.session.exec",
                           "project.gateway.routing.edit",
                           "project.schedule.read",
@@ -973,7 +959,8 @@
           "runtime": {
             "type": "string",
             "enum": [
-              "opencode"
+              "opencode",
+              "pi"
             ]
           },
           "agents": {
@@ -1077,8 +1064,6 @@
                           "project.read",
                           "project.write",
                           "project.delete",
-                          "project.cr.open",
-                          "project.cr.merge",
                           "project.session.read",
                           "project.session.start",
                           "project.session.stop",
@@ -1107,6 +1092,8 @@
                           "project.gitops.read",
                           "project.gitops.push",
                           "project.gitops.merge",
+                          "project.gitops.ref.any",
+                          "project.gitops.ref.delete",
                           "project.secret.read",
                           "project.secret.write",
                           "project.connector.read",
@@ -1119,6 +1106,8 @@
                           "project.review.submit",
                           "project.review.act",
                           "project.credentials.issue",
+                          "project.cr.open",
+                          "project.cr.merge",
                           "*"
                         ]
                       }
@@ -1585,6 +1574,7 @@
                   "type": "string",
                   "enum": [
                     "pipedream",
+                    "composio",
                     "mcp",
                     "openapi",
                     "postman",
@@ -1623,8 +1613,7 @@
                   "enum": [
                     "slack",
                     "teams",
-                    "email",
-                    "voice"
+                    "email"
                   ]
                 },
                 "credential": {
@@ -1740,22 +1729,6 @@
                     "properties": {
                       "slug": {
                         "const": "kortix_email"
-                      }
-                    }
-                  },
-                  "then": {
-                    "properties": {
-                      "provider": {
-                        "const": "channel"
-                      }
-                    }
-                  }
-                },
-                {
-                  "if": {
-                    "properties": {
-                      "slug": {
-                        "const": "kortix_voice"
                       }
                     }
                   },

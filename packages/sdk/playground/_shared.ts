@@ -11,7 +11,7 @@
  *
  * Optional:
  *   KORTIX_PROJECT_ID / KORTIX_SESSION_ID  — pin a project/session
- *   KORTIX_MODEL=glm-5.2         — per-send model override (the local
+ *   KORTIX_MODEL=glm-5.3-flash   — per-send model override (the local
  *     stack's default model currently 400s on `max_tokens`, so set this)
  */
 import {

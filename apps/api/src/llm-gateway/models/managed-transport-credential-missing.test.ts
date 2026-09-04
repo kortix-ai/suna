@@ -1,10 +1,28 @@
 import { describe, expect, mock, test } from 'bun:test';
 
-// KORTIX_MANAGED_PROVIDER_ENABLED is ON, but the `aster` transport has no
-// credential — the exact shape of every deployment that loads ASTER_API_KEY
-// from a secret store the process cannot reach. The managed lineup must then
-// offer only what it can actually serve, and the platform default must degrade
-// to one of those rather than 400 on every selection.
+const configuredModels = [
+  {
+    id: 'glm-5.3-flash',
+    name: 'GLM 5.3 Flash',
+    upstreamModelId: 'z-ai/glm-5.3-flash',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    tier: 'balanced',
+    vision: false,
+    limit: { context: 64_000, output: 8_000 },
+    openrouterProvider: { order: ['z-ai'] },
+  },
+  {
+    id: 'managed-bedrock-test',
+    name: 'Managed Bedrock Test',
+    upstreamModelId: 'us.anthropic.claude-sonnet-4-6',
+    transport: 'bedrock',
+    pricingRef: 'anthropic/claude-sonnet-4-6',
+    tier: 'flagship',
+    vision: true,
+    limit: { context: 1_000_000, output: 64_000 },
+  },
+];
 
 mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -17,18 +35,16 @@ mock.module('../../config', () => ({
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_ENABLED') return true;
         if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return true;
-        if (key === 'LLM_GATEWAY_MANAGED_MODELS') return undefined;
+        if (key === 'LLM_GATEWAY_MANAGED_MODELS') return JSON.stringify(configuredModels);
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return '';
-        if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'glm-5.2';
+        if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'glm-5.3-flash';
         if (key === 'LLM_GATEWAY_VISION_MODEL') return undefined;
         if (key === 'LLM_GATEWAY_FALLBACK_POLICIES') return [];
         if (key === 'AWS_BEDROCK_REGION') return 'us-west-2';
         if (key === 'AWS_BEDROCK_API_KEY') return 'bedrock-key';
-        if (key === 'OPENROUTER_API_KEY') return 'openrouter-key';
+        if (key === 'OPENROUTER_API_KEY') return undefined;
         if (key === 'OPENROUTER_API_URL') return 'https://openrouter.ai/api/v1';
-        if (key === 'ASTER_API_KEY') return undefined;
-        if (key === 'ASTER_API_URL') return 'https://api.asterlab.ai/v1';
         return target[key];
       },
     },
@@ -74,49 +90,27 @@ const { gatewayModelCatalog, managedModels } = await import('./catalog-models');
 const { managedPickerModels } = await import('./picker-catalog');
 const { resolveCandidates } = await import('../resolution/resolve-candidates');
 
-describe('a managed model whose transport credential is missing is never OFFERED', () => {
-  test('the configured lineup still lists it — config and credentials are different questions', () => {
-    expect(RUNTIME_MANAGED_MODELS.map((m) => m.id)).toContain('glm-5.2');
+describe('a managed model whose transport credential is missing is never offered', () => {
+  test('keeps the configured model but removes it from every served catalog', () => {
+    expect(RUNTIME_MANAGED_MODELS.map((model) => model.id)).toContain('glm-5.3-flash');
+    expect(SERVED_MANAGED_MODELS.map((model) => model.id)).toEqual(['managed-bedrock-test']);
+    expect(managedModels()['glm-5.3-flash']).toBeUndefined();
+    expect(gatewayModelCatalog('proj')['glm-5.3-flash']).toBeUndefined();
+    expect(managedPickerModels().map((model) => model.id)).not.toContain('kortix/glm-5.3-flash');
   });
 
-  test('the served lineup drops it and keeps every credentialed transport', () => {
-    const served = SERVED_MANAGED_MODELS.map((m) => m.id);
-    expect(served).not.toContain('glm-5.2');
-    expect(served).toContain('deepseek-v4-flash');
-  });
-
-  test('the served model catalog does not advertise it', () => {
-    expect(managedModels()['glm-5.2']).toBeUndefined();
-    expect(managedModels()['deepseek-v4-flash']).toBeDefined();
-    expect(gatewayModelCatalog('proj')['glm-5.2']).toBeUndefined();
-    expect(gatewayModelCatalog(undefined)['glm-5.2']).toBeUndefined();
-  });
-
-  test('the compact picker does not offer it', () => {
-    expect(managedPickerModels().map((m) => m.id)).not.toContain('kortix/glm-5.2');
-  });
-});
-
-describe('the platform default model is always resolvable', () => {
-  test('degrades away from the unreachable configured default', () => {
-    expect(platformDefaultModelId()).not.toBe('glm-5.2');
-    expect(SERVED_MANAGED_MODELS.map((m) => m.id)).toContain(platformDefaultModelId());
-  });
-
-  test('resolving the platform default yields a real upstream candidate', async () => {
+  test('degrades the unreachable platform default to a credentialed model', async () => {
+    expect(platformDefaultModelId()).toBe('managed-bedrock-test');
     const candidates = await resolveCandidates(
       { userId: 'u', accountId: 'a', projectId: 'p' },
       platformDefaultModelId(),
     );
-    expect(candidates.length).toBeGreaterThan(0);
-    // 2026-08-10 slim-down: with aster uncredentialed the only served managed
-    // model is deepseek-v4-flash (openrouter transport).
-    expect(candidates[0]?.apiKey).toBe('openrouter-key');
+    expect(candidates[0]?.apiKey).toBe('bedrock-key');
   });
 
-  test('naming the unreachable model explicitly still refuses, with an actionable reason', async () => {
+  test('refuses an explicit request for the uncredentialed model', async () => {
     await expect(
-      resolveCandidates({ userId: 'u', accountId: 'a', projectId: 'p' }, 'glm-5.2'),
+      resolveCandidates({ userId: 'u', accountId: 'a', projectId: 'p' }, 'glm-5.3-flash'),
     ).rejects.toMatchObject({ name: 'GatewayResolutionError' });
   });
 });

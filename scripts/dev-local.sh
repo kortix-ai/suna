@@ -29,6 +29,16 @@ for _arg in "$@"; do
   esac
 done
 
+# Instance identity for BACKGROUND work on the shared local Supabase. Worktrees
+# (`pnpm worktree`, scripts/worktree/lib/launch-env.ts) export their worktree
+# name; this primary stack is `primary`. With it set, the lifecycle drain hands
+# back commands whose sandbox another instance provisioned, env-sync fan-outs
+# skip foreign boxes, and the box reaper leaves them alone — so this stack's
+# quick-tunnel URL never lands in a worktree's sandbox (2026-08-22 incidents).
+# Launcher-only: deployed environments never set it (one KORTIX_URL) and every
+# scope check is then a no-op. See apps/api/src/projects/instance-scope.ts.
+export KORTIX_INSTANCE_ID="${KORTIX_INSTANCE_ID:-primary}"
+
 load_local_env() {
   # pnpm --filter runs each package from its own directory, where Bun/Next may
   # auto-load package .env files. Be explicit here: use the app env files for
@@ -58,11 +68,6 @@ load_local_env() {
   # Default only — the shared .env (decrypted above) or a personal .env.local
   # (below) decides the real provider order (e.g. "platinum,daytona").
   export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona}"
-  # Warm SNAPSHOT baking OFF for local dev. The [warm-bake] builder (gated by
-  # warmSnapshotsEnabled() = KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET)
-  # keeps trying to bake a `kortix-warm-runtime-*` base on Daytona's experimental
-  # region, which flakes locally with "internal error" and spams the logs.
-  export KORTIX_WARM_SNAPSHOT_ENABLED=false
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard
@@ -504,7 +509,6 @@ KORTIX_BILLING_INTERNAL_ENABLED=true
 DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
 DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
 DAYTONA_TARGET=${DAYTONA_TARGET:-us}
-KORTIX_WARM_SNAPSHOT_ENABLED=${KORTIX_WARM_SNAPSHOT_ENABLED:-false}
 DAYTONA_WARM_TARGET=${DAYTONA_WARM_TARGET:-}
 TUNNEL_SIGNING_SECRET=${TUNNEL_SIGNING_SECRET:-dev-local-tunnel-signing-secret-32chars}
 API_KEY_SECRET=${API_KEY_SECRET:-dev-local-api-key-secret-please-32chars}

@@ -8,6 +8,7 @@ import {
   isImmediateOfflineSignal,
   isImmediateOfflineStatus,
   nextPollDelay,
+  runtimeErrorFromHealth,
   RUNTIME_EVIDENCE_FRESH_MS,
   shouldCountProbeFailure,
   shouldIgnoreProbeFailure,
@@ -258,6 +259,54 @@ describe('bootingSinceAt tracks the not-yet-healthy stretch', () => {
     useSandboxConnectionStore.setState({ bootingSinceAt: null });
     resetForServerSwitch();
     expect(useSandboxConnectionStore.getState().bootingSinceAt).not.toBeNull();
+  });
+
+  // RC-3 — a PARKED sandbox (the platform answered from the session row without
+  // dialling the box: `hop === 'control_plane'`) is not booting. Arming the
+  // stall clock for it escalates an idle session to "Still waking… taking
+  // longer than usual" forever, because nothing is actually starting and the
+  // 503 repeats on every 150ms tick. The parked path must NOT arm the clock,
+  // and must clear one a prior mount armed.
+  test('setOpenCodeHealth(parked) does NOT arm the boot-stall clock', () => {
+    useSandboxConnectionStore.setState({ bootingSinceAt: null });
+    setOpenCodeHealth(false, undefined, null, { parked: true });
+    expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
+  });
+
+  test('setOpenCodeHealth(parked) clears a clock a prior mount armed', () => {
+    useSandboxConnectionStore.setState({ bootingSinceAt: Date.now() - 60_000 });
+    setOpenCodeHealth(false, undefined, null, { parked: true });
+    expect(useSandboxConnectionStore.getState().bootingSinceAt).toBeNull();
+  });
+
+  test('a genuine booting box (no parked flag) still arms the clock', () => {
+    useSandboxConnectionStore.setState({ bootingSinceAt: null });
+    setOpenCodeHealth(false);
+    expect(useSandboxConnectionStore.getState().bootingSinceAt).not.toBeNull();
+  });
+});
+
+// RC-1 — a normal cold boot returns `{status:'starting', reason:'schema not
+// ready'}` (503). That `reason` used to land in `store.runtimeError`, and the
+// route painted a terminal "OpenCode runtime is not ready" card from it. Only
+// a genuine `boot_error` is an error; `reason`/`message`/`status` are routine
+// progress and must NEVER become the store's runtimeError.
+describe('runtimeErrorFromHealth — only a real boot_error is an error', () => {
+  test('surfaces boot_error when present', () => {
+    expect(runtimeErrorFromHealth({ boot_error: 'daemon crashed at import' })).toBe(
+      'daemon crashed at import',
+    );
+  });
+
+  test('routine boot progress (reason/message/status) is NOT an error', () => {
+    expect(runtimeErrorFromHealth({ status: 'starting', reason: 'schema not ready' })).toBeNull();
+    expect(runtimeErrorFromHealth({ message: 'booting' })).toBeNull();
+    expect(runtimeErrorFromHealth({ status: 'starting' })).toBeNull();
+  });
+
+  test('null/empty health carries no error', () => {
+    expect(runtimeErrorFromHealth(null)).toBeNull();
+    expect(runtimeErrorFromHealth({})).toBeNull();
   });
 });
 

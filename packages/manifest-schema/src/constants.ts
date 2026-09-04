@@ -40,8 +40,20 @@ export const RESERVED_ENV_NAME_PREFIXES = ['KORTIX_', 'OPENCODE_'] as const;
 
 /** Process-level names the sandbox sets itself; overriding them breaks boot. */
 export const RESERVED_ENV_NAMES: ReadonlySet<string> = new Set([
-  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
-  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+  'PORT',
+  'PATH',
+  'HOME',
+  'PWD',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'HOSTNAME',
+  'TERM',
+  'TMPDIR',
+  'NODE_ENV',
+  'NODE_OPTIONS',
+  'LD_PRELOAD',
+  'LD_LIBRARY_PATH',
 ]);
 
 /**
@@ -136,7 +148,17 @@ export function formatDurationSeconds(seconds: number): string {
 // runtime parser's PROVIDERS in apps/api/src/projects/connectors.ts — enforced
 // by apps/api/src/__tests__/unit-connectors-parse.test.ts. `computer` is
 // deliberately absent: it is synth-only and never written to a manifest.
-export const CONNECTOR_PROVIDERS = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http', 'channel'] as const;
+export const CONNECTOR_PROVIDERS = [
+  'pipedream',
+  'composio',
+  'mcp',
+  'openapi',
+  'postman',
+  'graphql',
+  'http',
+  'channel',
+] as const;
+export type ConnectorProvider = (typeof CONNECTOR_PROVIDERS)[number];
 export const CONNECTOR_AUTH_TYPES = [
   'bearer',
   'basic',
@@ -151,7 +173,7 @@ export const CONNECTOR_AUTH_TYPES = [
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'voice'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -161,7 +183,6 @@ export const RESERVED_SLUG_PROVIDERS: Readonly<Record<string, string>> = {
   kortix_slack: 'channel',
   kortix_teams: 'channel',
   kortix_email: 'channel',
-  kortix_voice: 'channel',
   computer: 'computer',
 };
 export const CONNECTOR_POLICY_ACTIONS = ['always_run', 'require_approval', 'block'] as const;
@@ -203,8 +224,6 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.read',
   'project.write',
   'project.delete',
-  'project.cr.open',
-  'project.cr.merge',
   'project.session.read',
   'project.session.start',
   'project.session.stop',
@@ -234,6 +253,8 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.gitops.read',
   'project.gitops.push',
   'project.gitops.merge',
+  'project.gitops.ref.any',
+  'project.gitops.ref.delete',
   'project.secret.read',
   'project.secret.write',
   'project.connector.read',
@@ -263,6 +284,22 @@ export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
  * or be recommended for new manifests) and instead surfaced as a
  * deprecation warning by `validateGrantList`.
  */
+/**
+ * `kortix_cli` spellings that are still ACCEPTED but are the pre-cutover name
+ * for another leaf. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
+ * because they were the same capability named twice; a manifest that still
+ * lists one keeps validating and is rewritten to the value here when the grant
+ * is resolved.
+ *
+ * This is the single source: apps/api's grant canonicalizer imports it rather
+ * than keeping a second copy, and the CLI's `validate --scopes` annotates from
+ * it. Two hand-written copies of a key table is how they drift.
+ */
+export const DEPRECATED_KORTIX_CLI_ALIASES: Readonly<Record<string, string>> = {
+  'project.cr.open': 'project.gitops.push',
+  'project.cr.merge': 'project.gitops.merge',
+};
+
 export const LEGACY_TOLERATED_KORTIX_CLI_ACTIONS: readonly string[] = [
   'project.session.exec',
   'project.gateway.routing.edit',
@@ -297,7 +334,7 @@ export const LEGACY_SANDBOX_KEYS = [
   'gpu',
 ] as const;
 
-export const V2_RUNTIME_VALUES = ['opencode'] as const;
+export const V2_RUNTIME_VALUES = ['opencode', 'pi'] as const;
 export const AGENT_MODES_V2 = ['primary', 'subagent', 'all'] as const;
 export const WORKSPACE_MODES_V2 = ['runtime', 'read', 'branch'] as const;
 export const PERMISSION_ACTIONS_V2 = ['ask', 'allow', 'deny'] as const;

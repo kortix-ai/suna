@@ -18,14 +18,24 @@ import { describe, expect, test } from 'bun:test'
 import { isBlockingTurnRequest } from '../proxy'
 
 describe('isBlockingTurnRequest', () => {
-  test('both blocking turn endpoints match', () => {
+  test('all three blocking turn endpoints match', () => {
     expect(isBlockingTurnRequest('POST', '/session/ses_abc/message')).toBe(true)
     expect(isBlockingTurnRequest('POST', '/session/ses_abc/command')).toBe(true)
+    expect(isBlockingTurnRequest('POST', '/session/ses_abc/summarize')).toBe(true)
   })
 
   test('/command matches — the omission that produced "upstream unreachable"', () => {
     expect(isBlockingTurnRequest('post', '/session/ses_abc/command')).toBe(true)
     expect(isBlockingTurnRequest('POST', '/session/ses_abc/command?x=1')).toBe(true)
+  })
+
+  test('/summarize matches — same omission, one endpoint over (2026-08-26: every /compact died at the 10s bound)', () => {
+    // opencode holds `POST /session/:id/summarize` open until the whole
+    // summary turn is done — 30s+ with a large model over a long transcript.
+    expect(isBlockingTurnRequest('post', '/session/ses_abc/summarize')).toBe(true)
+    expect(isBlockingTurnRequest('POST', '/session/ses_abc/summarize?x=1')).toBe(true)
+    expect(isBlockingTurnRequest('GET', '/session/ses_abc/summarize')).toBe(false)
+    expect(isBlockingTurnRequest('POST', '/session/ses_abc/summarizes')).toBe(false)
   })
 
   test('the non-blocking sibling keeps the short bound', () => {
@@ -56,7 +66,7 @@ describe('the two proxy layers agree on which calls block', () => {
     import.meta.url,
   ).pathname
 
-  test('apps/api bounds the same two endpoints', async () => {
+  test('apps/api bounds the same three endpoints', async () => {
     const source = await Bun.file(API_PREDICATE).text()
     const match = source.match(
       /export function isLongTurnCompletionRequest[\s\S]*?\n}/,
@@ -65,6 +75,7 @@ describe('the two proxy layers agree on which calls block', () => {
     const body = match![0]
     expect(body).toContain('message')
     expect(body).toContain('command')
+    expect(body).toContain('summarize')
   })
 
   test('every path apps/api treats as long-turn, the daemon does too', async () => {
@@ -74,11 +85,13 @@ describe('the two proxy layers agree on which calls block', () => {
     for (const path of [
       '/session/ses_abc/message',
       '/session/ses_abc/command',
+      '/session/ses_abc/summarize',
       '/session/ses_abc/prompt_async',
       '/session/ses_abc/messages',
+      '/session/ses_abc/summarizes',
     ]) {
-      const apiSaysLong = /\/\(\?:message\|command\)/.test(source)
-        ? /\/session\/[^/]+\/(?:message|command)(?:$|[/?#])/.test(path)
+      const apiSaysLong = /\/\(\?:message\|command\|summarize\)/.test(source)
+        ? /\/session\/[^/]+\/(?:message|command|summarize)(?:$|[/?#])/.test(path)
         : null
       expect(apiSaysLong).not.toBeNull()
       expect(isBlockingTurnRequest('POST', path)).toBe(apiSaysLong as boolean)

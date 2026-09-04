@@ -26,7 +26,6 @@ kortix.session(pid, sid); // id-bound session handle → see Sessions
 kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
-kortix.transcribe; // speech-to-text
 kortix.connectStatus; // easy-connect (Pipedream) status
 kortix.marketplace; // public marketplace catalog
 kortix.validateToken; // pasted-API-key check
@@ -40,6 +39,7 @@ kortix.runtime(); // OpenCode REST compatibility client
 | --- | --- |
 | `list()` · `get(accountId)` | accounts you belong to · one account |
 | `create({ name })` · `updateName(accountId, name)` | create · rename an account |
+| `branding.get(accountId)` · `branding.update(accountId, { app_name })` · `branding.uploadAsset(accountId, kind, file)` · `branding.removeAsset(accountId, kind)` · `branding.reset(accountId)` | organization branding (Enterprise): own logo / icon / favicon and product name; `kind` is `logo` · `icon` · `favicon`, or `logo_dark` · `icon_dark` · `favicon_dark` for the dark-scheme variant |
 | `members(accountId)` · `invite(accountId, input)` | list members · invite one |
 | `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | assign the account role · remove a member |
 | `invites(accountId)` | pending invites |
@@ -216,7 +216,7 @@ await p.llmCatalog();
 
 #### `p.tokens` — project-scoped API keys
 
-Auto-minted at session create as `KORTIX_CLI_TOKEN`; can also be minted by hand.
+Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
 
 | method | what |
 | --- | --- |

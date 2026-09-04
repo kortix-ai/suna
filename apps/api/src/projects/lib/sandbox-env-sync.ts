@@ -4,9 +4,8 @@ import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
+import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import type { ProviderName } from '../../platform/providers';
 import {
   intersectSecretGrants,
@@ -29,6 +28,7 @@ import {
   workspaceModeFromSessionMetadata,
 } from './session-sandbox-metadata';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
 import type { NetworkBoundarySecretBinding } from '../../secrets/network-boundary';
 
 /** Resolve the LLM gateway URL used by every supported remote provider. */
@@ -148,10 +148,7 @@ export function __resetPromptModelSignatureCacheForTests(): void {
  *     would silently stop propagating an unrelated secret rotation.
  *   - `snapshot.capabilitiesJson` — pushed as `KORTIX_SECRET_CAPABILITIES`,
  *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
- *   - the LLM-gateway triple (`enabled`, `baseUrl`, `denyEnv`) — the daemon
- *     maps these onto `KORTIX_LLM_API_KEY` / `KORTIX_LLM_BASE_URL` /
- *     `KORTIX_OPENCODE_DENY_ENV`, the model/token/key values the task calls
- *     out by name.
+ *   - the LLM-gateway mode and base URL.
  *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
  *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
  *     see `continueSession`/engine.ts). Omitting it would silently drop that
@@ -165,7 +162,6 @@ function promptModelSignature(input: {
   capabilitiesJson: string;
   llmGatewayEnabled: boolean;
   llmGatewayBaseUrl?: string;
-  llmGatewayDenyEnv?: string;
   opencodeEnv?: Record<string, string | null>;
 }): string {
   const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
@@ -176,7 +172,6 @@ function promptModelSignature(input: {
     input.capabilitiesJson,
     input.llmGatewayEnabled,
     input.llmGatewayBaseUrl ?? '',
-    input.llmGatewayDenyEnv ?? '',
     opencodeEnvEntries,
   ]);
 }
@@ -493,7 +488,6 @@ async function postEnvToDaemon(args: {
   opencodeEnv?: Record<string, string | null>;
   llmGatewayEnabled?: boolean;
   llmGatewayBaseUrl?: string;
-  llmGatewayDenyEnv?: string;
   requireAgentEnvProof?: boolean;
 }): Promise<{
   opencodeState: string | null;
@@ -540,7 +534,6 @@ async function postEnvToDaemon(args: {
         ? {
             llmGatewayEnabled: args.llmGatewayEnabled,
             ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
-            llmGatewayDenyEnv: args.llmGatewayDenyEnv ?? '',
           }
         : {}),
     }),
@@ -708,12 +701,11 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(args.projectId);
+  const llmGatewayEnabled = await projectLlmGatewayEnabledById(args.projectId);
   lap('gateway-flag');
   const llmGatewayBaseUrl = llmGatewayEnabled
     ? llmGatewayBaseUrlForProvider(args.providerName)
     : undefined;
-  const llmGatewayDenyEnv = llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '';
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last time THIS process pushed to THIS sandbox. The daemon already no-ops a
@@ -728,7 +720,6 @@ export async function syncSandboxEnvForPrompt(args: {
     capabilitiesJson: snapshot.capabilitiesJson,
     llmGatewayEnabled,
     llmGatewayBaseUrl,
-    llmGatewayDenyEnv,
     opencodeEnv: args.opencodeEnv,
   });
   const refreshModels = lastPromptModelSignature.get(args.externalId) !== signature;
@@ -754,7 +745,6 @@ export async function syncSandboxEnvForPrompt(args: {
     opencodeEnv: args.opencodeEnv,
     llmGatewayEnabled,
     llmGatewayBaseUrl,
-    llmGatewayDenyEnv,
   });
   // Remember only AFTER a successful push. A throw below (network/HTTP
   // failure) must leave the memo alone so the next prompt retries with
@@ -818,15 +808,20 @@ async function runProjectSecretPropagation(
     results: [],
   };
   try {
-    const rows = await db
+    const allRows = await db
       .select({
         externalId: sessionSandboxes.externalId,
         sessionId: sessionSandboxes.sessionId,
         provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
+        metadata: sessionSandboxes.metadata,
       })
       .from(sessionSandboxes)
       .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
+    // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): a box another
+    // API instance provisioned must not receive THIS instance's env (its
+    // `KORTIX_URL`-derived gateway URL). No-op when KORTIX_INSTANCE_ID is unset.
+    const rows = allRows.filter((r) => sandboxBelongsToThisInstance(r.metadata));
 
     report.active_sandboxes = rows.length;
     const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
@@ -1000,7 +995,6 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
           refreshModels: true,
           llmGatewayEnabled: enabled,
           llmGatewayBaseUrl: enabled ? llmGatewayBaseUrlForProvider(row.provider as ProviderName) : undefined,
-          llmGatewayDenyEnv: enabled ? nativeProviderEnvNames().join(',') : '',
         });
         await markSandboxLlmGatewayMode(row.sessionId, enabled);
       } catch (err) {
@@ -1016,15 +1010,6 @@ export async function propagateLlmGatewayModeToActiveSandboxes(
       err instanceof Error ? err.message : err,
     );
   }
-}
-
-async function resolveProjectLlmGatewayEnabled(projectId: string): Promise<boolean> {
-  const [project] = await db
-    .select({ metadata: projects.metadata })
-    .from(projects)
-    .where(eq(projects.projectId, projectId))
-    .limit(1);
-  return projectLlmGatewayEnabled(project?.metadata);
 }
 
 async function markSandboxLlmGatewayMode(
@@ -1104,6 +1089,35 @@ async function runBounded<T>(
  * Callers that are already restarting the box pay nothing extra; a caller doing
  * this mid-session is interrupting a turn and must say so.
  */
+/**
+ * A push target that exists but is not `active` is a control-plane DIVERGENCE,
+ * not an ordinary miss, and it must say so.
+ *
+ * Every push below used to filter the lookup on `status = 'active'` and return a
+ * bare `'no active sandbox'`, which no caller logged. A session whose row said
+ * `stopped` while its VM was genuinely running — serving prompts the whole time
+ * — therefore received no secret, model or scope push for HOURS, and the only
+ * visible symptom was an agent that could not see a secret the UI insisted it
+ * had (prod 2026-08-27, session b3848cf5). `backend.ts` deliberately refuses to
+ * heal a row whose deadline has expired, so nothing else reconciles this and
+ * nothing else reports it.
+ *
+ * `sessionSandboxes.status` is NOT NULL, so callers guard on a truthy value
+ * only to stay compatible with test doubles that select a narrower row shape.
+ */
+function nonActiveSandboxSkip(
+  what: string,
+  input: { sessionId: string; projectId?: string },
+  status: string,
+): { applied: false; reason: string } {
+  console.warn(`[env-sync] skipping ${what} — sandbox row is not active`, {
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    sandboxStatus: status,
+  });
+  return { applied: false, reason: `sandbox row is '${status}', not active` };
+}
+
 export async function pushSessionAgentConfigToSandbox(input: {
   projectId: string;
   sessionId: string;
@@ -1151,14 +1165,25 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // downgrade to no agents at all. Leave the box as it is.
     if (!compiled) return { applied: false, reason: 'no compiled agent config' };
 
+    // Selected WITHOUT the status filter so a non-active row can be NAMED. The
+    // filtered form returned a bare 'no active sandbox' and the caller logged
+    // nothing, so a session whose row said `stopped` while its VM was genuinely
+    // running — serving prompts the whole time — silently received no secret or
+    // config push for HOURS. Prod 2026-08-27, session b3848cf5: every push
+    // since the secret was created was skipped this way, and the only visible
+    // symptom was an agent that could not see a secret the UI said it had.
     const [row] = await db
-      .select({ externalId: sessionSandboxes.externalId, config: sessionSandboxes.config })
+      .select({
+        externalId: sessionSandboxes.externalId,
+        config: sessionSandboxes.config,
+        status: sessionSandboxes.status,
+      })
       .from(sessionSandboxes)
-      .where(
-        and(eq(sessionSandboxes.sessionId, input.sessionId), eq(sessionSandboxes.status, 'active')),
-      )
+      .where(eq(sessionSandboxes.sessionId, input.sessionId))
       .limit(1);
-    if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+    if (!row?.externalId) return { applied: false, reason: 'no sandbox for session' };
+    if (row.status && row.status !== 'active')
+      return nonActiveSandboxSkip('agent-config push', input, row.status);
 
     const config = (row.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
@@ -1214,16 +1239,14 @@ export async function pushSessionModelToSandbox(input: {
       .select({
         externalId: sessionSandboxes.externalId,
         config: sessionSandboxes.config,
+        status: sessionSandboxes.status,
       })
       .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sessionId, input.sessionId),
-          eq(sessionSandboxes.status, 'active'),
-        ),
-      )
+      .where(eq(sessionSandboxes.sessionId, input.sessionId))
       .limit(1);
     if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+    if (row.status && row.status !== 'active')
+      return nonActiveSandboxSkip('model push', input, row.status);
 
     const config = (row.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
@@ -1300,16 +1323,14 @@ export async function pushSessionScopeToSandbox(input: {
         externalId: sessionSandboxes.externalId,
         provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
+        status: sessionSandboxes.status,
       })
       .from(sessionSandboxes)
-      .where(
-        and(
-          eq(sessionSandboxes.sessionId, input.sessionId),
-          eq(sessionSandboxes.status, 'active'),
-        ),
-      )
+      .where(eq(sessionSandboxes.sessionId, input.sessionId))
       .limit(1);
     if (!row?.externalId) return { applied: false, reason: 'no active sandbox' };
+    if (row.status && row.status !== 'active')
+      return nonActiveSandboxSkip('scope push', input, row.status);
 
     const config = (row.config || {}) as Record<string, unknown>;
     const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
@@ -1321,7 +1342,7 @@ export async function pushSessionScopeToSandbox(input: {
     const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
     if (!snapshot) return { applied: false, reason: 'no env snapshot' };
 
-    const llmGatewayEnabled = await resolveProjectLlmGatewayEnabled(input.projectId);
+    const llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
     const { url, headers } = await resolveSandboxIngress(row.externalId, {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
@@ -1340,7 +1361,6 @@ export async function pushSessionScopeToSandbox(input: {
       llmGatewayBaseUrl: llmGatewayEnabled
         ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
         : undefined,
-      llmGatewayDenyEnv: llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     });
     await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
     return { applied: true };

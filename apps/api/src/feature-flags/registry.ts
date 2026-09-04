@@ -163,42 +163,29 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'voice',
-    name: 'Voice',
-    description:
-      'Give the agent a live voice call it can start and hold a real spoken conversation in: it listens continuously, answers in its own voice, and hands work off to itself in the background while the call continues. The agent spawns the call and shares a join link with whoever should be on it — it does not join a meeting itself.',
-    stability: 'experimental',
-    // Always listable; a project turns it on in Settings like any other flag.
-    // Credentials (LIVEKIT_*) are still resolved server-side per project and a
-    // missing one surfaces as an error at spawn time — which is the right place
-    // to find out, rather than the feature silently not existing.
-    available: () => true,
-    // Explicit opt-in: a project enables voice in Settings.
-    platformDefault: () => false,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Voice has no HTTP routes of its own; the flag IS the registration — it ' +
-      'decides whether the kortix_voice channel connector materializes ' +
-      '(connectors/channel-materialize.ts).',
-  },
-  {
     key: 'llm_gateway',
     name: 'LLM Gateway',
     description:
-      'Route this project through the managed Kortix LLM gateway. Toggling it refreshes active sandboxes so provider mode follows the project setting.',
+      'Route this project through the managed Kortix LLM gateway (managed models, metering, budgets). Off, the sandbox runs native OpenCode model management: your provider API keys are injected as ordinary env vars and models are native provider/model refs. Toggling refreshes active sandboxes either way.',
     stability: 'experimental',
     // Master kill switch: when off, the feature disappears and every project
     // falls back to native OpenCode provider behavior.
     available: () => config.LLM_GATEWAY_ENABLED,
-    // Fleet rollout switch. Operators can default the gateway on for every
-    // project, while explicit project overrides still win and the master
+    // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
+    // Turning the flag OFF per project is the first-class native path — the
+    // deliberate lever for deployments (e.g. Essentia) that bring their own
+    // keys end to end. Explicit project overrides always win, and the master
     // availability gate above remains the emergency kill switch.
     platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
     enforcement: 'behavioral',
     enforcementNote:
-      'Enablement decides KORTIX_LLM_* env injection at sandbox provision plus ' +
-      'the gated llm-catalog/model-picker routes; toggling propagates to active ' +
-      'sandboxes via propagateLlmGatewayModeToActiveSandboxes.',
+      'Enablement forks the whole model path: KORTIX_LLM_* env injection at ' +
+      'sandbox provision, provider-key secret delivery (withheld when on, ' +
+      'plaintext env when off — projects/secrets.ts materializeSecretDelivery), ' +
+      'gateway model validation vs native provider/model refs, the gated ' +
+      'llm-catalog/model-picker/model-defaults routes, and gateway title ' +
+      'generation. Toggling propagates to active sandboxes via ' +
+      'propagateLlmGatewayModeToActiveSandboxes.',
   },
   {
     key: 'review_center',
@@ -277,14 +264,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'secrets_egress',
     name: 'Network-Enforced Secrets',
     description:
-      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment. Still in testing — enable it to try handle substitution across providers.',
+      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment and the "Enforce at the network" option is hidden.',
     stability: 'experimental',
     available: () => true,
-    // Off by default. Until a project opts in, a new secret can only be an
-    // environment variable (the value loads into the sandbox) or disabled — the
-    // "Enforce at the network" option is hidden and the write routes refuse to
-    // move a secret into egress delivery.
-    platformDefault: () => false,
+    // On by default (Marko, 2026-09-03). The OPTION is available; a new secret
+    // still defaults to an environment variable — enforcing at the network is
+    // a per-secret choice. A project that turns the flag off hides the option
+    // and the write routes refuse to move a secret into egress delivery.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'No dedicated routes. The secret write paths (POST /secrets and PUT ' +
@@ -292,6 +279,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'moves a secret INTO egress delivery when the flag is off. A secret that ' +
       'is already egress keeps serving and stays editable, so turning the flag ' +
       'off never strands an existing enforced secret.',
+  },
+  {
+    key: 'pi_worker',
+    name: 'Pi Worker Runtime (compiled)',
+    description:
+      'Compile boot artifacts for every push: a pi-based worker runtime .mjs per commit (agent config from kortix.yaml baked in at that exact sha, downloadable per ref+sha) plus the OpenCode compiled-boot artifacts for this project even where KORTIX_COMPILED_BOOT_MODE is off. Harness/worker split experiment. Sessions boot ON the worker when the manifest also sets `runtime: pi`; without that manifest line sessions keep the OpenCode path.',
+    stability: 'experimental',
+    available: () => true,
+    // Explicit opt-in per project. Off ⇒ no artifact is compiled on push and
+    // the download route answers 403.
+    platformDefault: () => false,
+    enforcement: 'routes',
   },
 ];
 

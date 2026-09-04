@@ -12,7 +12,7 @@ describe('chooseEffectiveModel', () => {
     expect(
       chooseEffectiveModel({
         agentDefault: 'claude-opus-4.8',
-        projectDefault: 'glm-5.2',
+        projectDefault: 'glm-5.3-flash',
         accountDefault: 'deepseek-v4-flash',
       }),
     ).toEqual({ model: 'claude-opus-4.8', source: 'agent' });
@@ -20,8 +20,8 @@ describe('chooseEffectiveModel', () => {
 
   test('project default wins over account when no agent default', () => {
     expect(
-      chooseEffectiveModel({ projectDefault: 'glm-5.2', accountDefault: 'deepseek-v4-flash' }),
-    ).toEqual({ model: 'glm-5.2', source: 'project' });
+      chooseEffectiveModel({ projectDefault: 'glm-5.3-flash', accountDefault: 'deepseek-v4-flash' }),
+    ).toEqual({ model: 'glm-5.3-flash', source: 'project' });
   });
 
   test('account default applies when nothing more specific', () => {
@@ -40,7 +40,7 @@ describe('chooseEffectiveModel', () => {
     // to the account BYOK default.
     expect(
       chooseEffectiveModel({
-        agentDefault: 'glm-5.2',
+        agentDefault: 'glm-5.3-flash',
         accountDefault: 'anthropic/claude-sonnet-4.6',
         freeModelsOnly: true,
       }),
@@ -49,7 +49,7 @@ describe('chooseEffectiveModel', () => {
 
   test('free tier: a kortix/-prefixed managed default is also dropped', () => {
     expect(
-      chooseEffectiveModel({ projectDefault: 'kortix/glm-5.2', freeModelsOnly: true }),
+      chooseEffectiveModel({ projectDefault: 'kortix/glm-5.3-flash', freeModelsOnly: true }),
     ).toEqual({ model: null, source: 'platform' });
   });
 
@@ -64,21 +64,26 @@ describe('toWireModel / toOpencodeModelRef', () => {
   test('strips the opencode-only kortix/ prefix to the bare wire id', () => {
     expect(toWireModel('kortix/claude-sonnet-4.6')).toBe('claude-sonnet-4.6');
     expect(toWireModel('anthropic/claude-sonnet-4.6')).toBe('anthropic/claude-sonnet-4.6');
-    expect(toWireModel('glm-5.2')).toBe('glm-5.2');
+    expect(toWireModel('glm-5.3-flash')).toBe('glm-5.3-flash');
   });
 
-  test('re-prefixes a bare managed id to the opencode ref; leaves BYOK/codex alone', () => {
-    expect(toOpencodeModelRef('glm-5.2')).toBe('kortix/glm-5.2');
+  test('puts every gateway model under the kortix OpenCode provider', () => {
+    expect(toOpencodeModelRef('glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
     expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash');
-    // 2026-08-10 slim-down: a deactivated managed id is no longer re-prefixed.
-    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('claude-opus-4.8');
-    expect(toOpencodeModelRef('kortix/glm-5.2')).toBe('kortix/glm-5.2');
-    expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe('anthropic/claude-sonnet-4.6');
-    expect(toOpencodeModelRef('codex/gpt-5.5')).toBe('codex/gpt-5.5');
+    expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
+    expect(toOpencodeModelRef('kortix/glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
+    expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe(
+      'kortix/anthropic/claude-sonnet-4.6',
+    );
+    expect(toOpencodeModelRef('codex/gpt-5.6-sol')).toBe('kortix/codex/gpt-5.6-sol');
   });
 
   test('round-trips a managed id through wire → opencode', () => {
-    expect(toOpencodeModelRef(toWireModel('kortix/glm-5.2'))).toBe('kortix/glm-5.2');
+    expect(toOpencodeModelRef(toWireModel('kortix/glm-5.3-flash'))).toBe('kortix/glm-5.3-flash');
+    expect(toWireModel(toOpencodeModelRef('codex/gpt-5.6-sol'))).toBe('codex/gpt-5.6-sol');
+    expect(toWireModel(toOpencodeModelRef('anthropic/claude-sonnet-4.6'))).toBe(
+      'anthropic/claude-sonnet-4.6',
+    );
   });
 });
 
@@ -113,8 +118,8 @@ describe('degradeUnservableDefault — stale default guard', () => {
   });
 
   test('managed default is trusted without a probe (bare id and kortix/ ref)', async () => {
-    expect(await degradeUnservableDefault('glm-5.2', { hasProject: true }, neverProbe)).toBe(
-      'glm-5.2',
+    expect(await degradeUnservableDefault('glm-5.3-flash', { hasProject: true }, neverProbe)).toBe(
+      'glm-5.3-flash',
     );
     expect(
       await degradeUnservableDefault('kortix/deepseek-v4-flash', { hasProject: true }, neverProbe),
@@ -167,7 +172,7 @@ describe('degradeUnservableDefault — stale default guard', () => {
     ).toBeNull();
   });
 
-  test('unservable default + a fallback that finds a connected provider → the fallback model, not platform (the essentia bug)', async () => {
+  test('unservable default + a fallback that finds a connected provider → the fallback model, not platform', async () => {
     // A stale/disconnected openrouter default degrades to whatever the project
     // ACTUALLY has connected (e.g. its own OpenAI BYOK key) instead of silently
     // falling all the way to a platform default that may ALSO be unusable
@@ -200,8 +205,8 @@ describe('degradeUnservableDefault — stale default guard', () => {
     const neverFallback = () => {
       throw new Error('fallback must not be called for a trusted managed ref');
     };
-    expect(await degradeUnservableDefault('glm-5.2', { hasProject: true }, neverProbe, neverFallback)).toBe(
-      'glm-5.2',
+    expect(await degradeUnservableDefault('glm-5.3-flash', { hasProject: true }, neverProbe, neverFallback)).toBe(
+      'glm-5.3-flash',
     );
   });
 });

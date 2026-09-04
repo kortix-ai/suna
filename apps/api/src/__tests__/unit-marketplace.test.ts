@@ -192,7 +192,6 @@ describe('marketplace catalog', () => {
       'kortix-computer',
       'kortix-connectors',
       'kortix-marketplace',
-      'kortix-voice',
       'kortix-memory',
       'kortix-onboarding',
       'kortix-slack',

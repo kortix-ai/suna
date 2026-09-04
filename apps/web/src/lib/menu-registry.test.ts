@@ -185,15 +185,15 @@ describe('graduated capability entries are not shadowed by Customize', () => {
   });
 
   test('Connectors and Skills navigate to standalone pages', () => {
-    expect(skillsItem!.href).toBe('/projects/{projectId}/skills');
-    expect(connectorsItem!.href).toBe('/projects/{projectId}/connectors');
+    expect(skillsItem!.href).toBe('/projects/{projectId}/customize/skills');
+    expect(connectorsItem!.href).toBe('/projects/{projectId}/customize/connectors');
   });
 
   // The Connectors page hosts `PoliciesPanel` behind `?rules=1`, so this entry
   // opens the Global rules sheet instead of merely landing near it.
   test('proj-connectors-policies deep-links into Global rules', () => {
     expect(policiesItem).toBeDefined();
-    expect(policiesItem!.href).toBe('/projects/{projectId}/connectors?rules=1');
+    expect(policiesItem!.href).toBe('/projects/{projectId}/customize/connectors?rules=1');
     expect(policiesItem!.label).not.toContain('Customize');
   });
 });

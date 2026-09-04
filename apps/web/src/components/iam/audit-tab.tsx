@@ -142,7 +142,6 @@ const SOURCES = [
   { label: 'Provider', value: 'provider' },
   { label: 'Automation', value: 'automation' },
   { label: 'Connector', value: 'connector' },
-  { label: 'Voice', value: 'voice' },
   { label: 'Tunnel', value: 'tunnel' },
   { label: 'API', value: 'api' },
   { label: 'CLI client', value: 'cli' },
@@ -251,8 +250,9 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.action,
   ].filter(Boolean).length;
   const hasFilter = filterCount > 0;
-  const activeQuickFilter = QUICK_FILTERS.find((preset) => isQuickFilterActive(filter, preset))
-    ?.label;
+  const activeQuickFilter = QUICK_FILTERS.find((preset) =>
+    isQuickFilterActive(filter, preset),
+  )?.label;
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
@@ -1148,4 +1148,3 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
     </div>
   );
 }
-

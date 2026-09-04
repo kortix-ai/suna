@@ -22,13 +22,6 @@ const password = "E2eFeatureFlagsUi123!";
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
-/** The badge each stability renders as (experimental-tab.tsx STABILITY_BADGE). */
-const STABILITY_BADGE: Record<string, string> = {
-  experimental: "Experimental",
-  beta: "Beta",
-  stable: "Stable",
-};
-
 interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
@@ -81,16 +74,17 @@ async function dismissOnboarding(page: Page): Promise<void> {
 }
 
 /**
- * Feature flags graduated out of the Settings overlay's Experimental tab a
- * second time, onto the Customize bar's Settings tab
- * (`/projects/[id]/config?section=feature-flags`, `settings-tabs.ts`
- * GRADUATED map: `experimental` -> `feature-flags`). The pane's own copy
- * reverted to "Feature flags" at the new location
- * (`project-settings-sections.ts`'s `FEATURE_FLAGS_SECTION`), so the page
- * title is that, not "Experimental" any more. Navigate straight there.
+ * Feature flags is a Workspace row of the Settings overlay (2026-09-02;
+ * `/projects/[id]/config` is gone). `/settings/<tab>` is the overlay's
+ * deep-link route: it opens the store on that tab and lands on the project
+ * page with the overlay over it. The rail row is labelled "Feature flags"
+ * (`settings/rail.ts`), which is the heading `SettingsTabHeader` renders.
+ *
+ * Called AFTER `dismissOnboarding` on purpose: that helper asserts zero open
+ * dialogs, and the overlay is one.
  */
 async function openFeatureFlags(page: Page, projectId: string): Promise<Locator> {
-  await page.goto(`/projects/${projectId}/config?section=feature-flags`, {
+  await page.goto(`/projects/${projectId}/settings/feature-flags`, {
     waitUntil: "domcontentloaded",
   });
   await expect(
@@ -199,17 +193,19 @@ test.describe("19 — Feature flags UI", () => {
       });
       await dismissOnboarding(page);
 
-      // (b) every available flag renders a row with a stability badge and an
-      //     origin line.
+      // (b) every available flag renders a row with an origin line.
+      //
+      // NO stability badge. The Experimental / Beta / Stable labels were
+      // removed on 2026-09-03 (Marko: "a flag is on or off") — see
+      // `experimental-tab.tsx`'s header. `stability` is still served by
+      // `buildFeatureFlagCatalog`, it is simply not rendered any more, so
+      // asserting a badge here was asserting a deleted element.
       const panel = await openFeatureFlags(page, project.id);
       await expect(panel.getByRole("switch")).toHaveCount(flags.length);
       for (const flag of flags) {
         const row = flagRow(panel, page, flag.name);
         await expect(row).toHaveCount(1);
         await expect(row.getByText(flag.name, { exact: true })).toBeVisible();
-        const badge = STABILITY_BADGE[flag.stability];
-        if (!badge) throw new Error(`unknown stability: ${flag.stability}`);
-        await expect(row.getByText(badge, { exact: true })).toBeVisible();
         await expect(
           row.getByText(originLabel(flag), { exact: true }),
         ).toBeVisible();
@@ -252,12 +248,14 @@ test.describe("19 — Feature flags UI", () => {
       );
       expect(persisted).toMatchObject({ enabled: true, overridden: true });
 
-      await page.reload({ waitUntil: "domcontentloaded" });
+      // A reload alone is not enough any more: the overlay's deep-link route
+      // resolved to the project page, so reloading brings the project home
+      // back with the overlay closed and its store state gone. Land on the
+      // project, clear onboarding (that helper asserts zero dialogs), then
+      // reopen the pane through the same deep link.
+      await page.goto(`/projects/${project.id}`, { waitUntil: "domcontentloaded" });
       await dismissOnboarding(page);
-      await expect(
-        page.getByRole("heading", { name: "Feature flags", exact: true }),
-      ).toBeVisible({ timeout: 30_000 });
-      const reopened = page.locator("body");
+      const reopened = await openFeatureFlags(page, project.id);
       const targetRow = flagRow(reopened, page, target.name);
       await expect(targetRow.getByRole("switch")).toHaveAttribute(
         "aria-checked",

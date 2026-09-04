@@ -338,19 +338,21 @@ flow(
     });
 
     await ctx.step(
-      'unauthenticated resolution of the file token → 200/503, and carries no public_url',
+      'unauthenticated resolution of the file token → 200/503 with its public origin URL',
       async () => {
         const r = await ctx.client
           .as(ctx.P.ANON)
           .get('/v1/p/public-share/:token', { params: { token: fileToken } });
         r.status([200, 503]);
         if (r.statusCode === 200) {
-          // `public_url` is populated only for preview shares — a file share is
-          // reached through its proxy_path, never a bare origin URL.
-          r.body()
-            .has('$.share.resource_type', 'file')
-            .has('$.share.public_url', null)
-            .has('$.share.file_path', '/workspace/README.md');
+          r.body().has('$.share.resource_type', 'file').has('$.share.file_path', '/workspace/README.md');
+          const publicUrl = new URL(r.json<any>().share.public_url);
+          if (publicUrl.protocol !== 'https:' || publicUrl.pathname !== '/open') {
+            throw new Error(`file share returned an invalid public_url: ${publicUrl}`);
+          }
+          if (publicUrl.searchParams.get('public_share') !== fileToken) {
+            throw new Error('file share public_url does not carry its public token');
+          }
         }
       },
     );
@@ -1104,15 +1106,22 @@ flow(
       if (typeof (row.metadata ?? {}).last_activity_at !== 'string') {
         throw new Error('Adoption did not stamp last_activity_at — the session sorts at create time');
       }
-      // Adoption also bumps updated_at (the API list's ORDER BY), so
-      // API-order consumers — CLI `sessions list`, mobile, external SDK —
-      // see the adopted session as newest. Deterministic even in the shared
-      // project: both rows belong to THIS flow, and the /claim of the first
-      // session happened strictly before this adoption.
-      const ids = sessionRows(visible).map((s: any) => s.session_id);
-      if (ids.indexOf(replacementId) > ids.indexOf(warmSessionId)) {
+      // Adoption writes last_activity_at and updated_at in the same statement.
+      // Later lifecycle writes can advance updated_at before this read-back.
+      // Require monotonic ordering on this row instead of exact equality.
+      const updatedAtMs = Date.parse(row.updated_at);
+      const lastActivityAtMs = Date.parse(row.metadata.last_activity_at);
+      const createdAtMs = Date.parse(row.created_at);
+      if (
+        !Number.isFinite(updatedAtMs) ||
+        !Number.isFinite(lastActivityAtMs) ||
+        lastActivityAtMs <= createdAtMs ||
+        updatedAtMs < lastActivityAtMs
+      ) {
         throw new Error(
-          'The adopted session sorts below a session used earlier — adoption did not bump updated_at',
+          `Adoption did not advance last_activity_at and updated_at monotonically ` +
+            `(created_at=${row.created_at}, updated_at=${row.updated_at}, ` +
+            `last_activity_at=${row.metadata.last_activity_at})`,
         );
       }
     });

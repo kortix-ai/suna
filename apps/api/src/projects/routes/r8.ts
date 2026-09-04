@@ -22,24 +22,24 @@ import {
   projectSessions,
   type sessionLifecycleCommands,
   sessionSandboxes,
-  sessionTurns,
 } from '@kortix/db';
-import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, asc, desc, eq, ne } from 'drizzle-orm';
 import {
   assertAgentSessionWorkspaceAllowsRepository,
   assertProjectCapability,
   loadProjectForUser,
   loadVisibleSession,
+  sessionIsTombstoned,
 } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
-import { assertAgentScope } from '../../iam/agent-scope';
+import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
+import { resolveChangeRequestBase } from '../change-request-policy';
 import { PROJECT_ACTIONS } from '../../iam';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
 import { AnyObject, ChangeRequestSchema, SessionStartResultSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
 import {
   continueSession,
   deleteInboxPrompt,
@@ -56,13 +56,18 @@ import {
 import { settleInboxHoldAfterStopInBackground } from '../session-lifecycle/inbox-hold-settle';
 import { cancelForwardedPrompt, findInboxRowIdByMessageId } from '../session-lifecycle/cancel-forwarded';
 import {
-  PROMPT_TEXT_PREVIEW_CHARS,
   flattenPromptText,
   sanitizeInboxPromptParts,
 } from '../session-lifecycle/prompt-parts';
 import { isWarmProjectSession } from '../lib/warm-sessions';
 import { dropWarmSessionMarkerOnAdopt } from './warm-sessions';
 import { refreshCrTips } from './shared';
+import { readSessionTurnState } from '../lib/session-turn-read';
+import {
+  type PromptRow,
+  promptState,
+  serializePrompt,
+} from '../lib/session-prompt-view';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
@@ -107,6 +112,10 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     stl.mark('session-loaded');
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // A deleted session must not answer `stage: "stopped"` — that reads as
+    // restartable and the UI offers a Restart that can never work. 404, the
+    // same answer the read-by-id gives (see sessionIsTombstoned).
+    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     // The agent this session will actually run has to still be one the caller
     // may run — grants change after a session is created, and `/start` is what
     // resumes a hibernated box days later. The session's stored `agent_name`
@@ -207,6 +216,9 @@ projectsApp.openapi(
     // Restart is reserved for the session owner or an account owner/admin.
     const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
+    // Same tombstone rule as /start: a deleted session's restart used to 202
+    // and silently do nothing the UI could see.
+    if (sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
     if (!visible.canManageLifecycle) {
       return c.json(
         {
@@ -378,126 +390,12 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
-    // `session_sandboxes.session_id` is UNIQUE, so this is the session's one
-    // box. A box that is not running holds no live turn whatever its metadata
-    // still says — the same predicate settleOrphanedSandboxTurns uses to close
-    // every ledger row left open on a stopped box. Served by
-    // idx_session_sandboxes_session (plain Index Scan; measured, see below).
-    const [box] = await db
-      .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, sessionId))
-      .limit(1);
-    const authority =
-      box && RUNNING_SANDBOX_STATUSES.has(box.status) ? storedSandboxTurns(box.metadata) : [];
-
-    // Decoration only, keyed by the tokens the authority already named: the
-    // ledger owns `accepted_at`, and it fills in an identity the authority may
-    // not carry yet. It never adds or removes a turn — an open row whose token
-    // the authority no longer holds is a swallowed settle, not a running turn.
-    // Bounded by the authority's own token list, so this is a primary-key
-    // lookup and needs no ORDER BY and no LIMIT: measured as `Index Scan using
-    // session_turns_pkey (turn_token = ANY (...))`, with the session scope as a
-    // filter — kept because a token must never read another session's row.
-    const ledger = new Map<
-      string,
-      {
-        messageId: string | null;
-        opencodeSessionId: string | null;
-        startedAt: Date;
-        acceptedAt: Date | null;
-      }
-    >();
-    if (authority.length > 0) {
-      const rows = await db
-        .select({
-          turnToken: sessionTurns.turnToken,
-          messageId: sessionTurns.messageId,
-          opencodeSessionId: sessionTurns.opencodeSessionId,
-          startedAt: sessionTurns.startedAt,
-          acceptedAt: sessionTurns.acceptedAt,
-        })
-        .from(sessionTurns)
-        .where(
-          and(
-            eq(sessionTurns.sessionId, sessionId),
-            inArray(
-              sessionTurns.turnToken,
-              authority.map((turn) => turn.token),
-            ),
-          ),
-        );
-      for (const row of rows) ledger.set(row.turnToken, row);
-    }
-
-    const live = authority
-      .map((turn) => {
-        const row = ledger.get(turn.token);
-        // The authority's own instant first: it is what the grant statement
-        // wrote. The ledger start is the fallback for a legacy `activeTurn`
-        // record, which carries none.
-        const startedAt =
-          turn.startedAtMs !== null ? new Date(turn.startedAtMs) : (row?.startedAt ?? null);
-        return {
-          startedAtMs: startedAt ? startedAt.getTime() : null,
-          turn: {
-            turn_token: turn.token,
-            // State comes from the authority: `acceptSandboxTurn` promotes the
-            // authority entry in statement one and UPSERTs the ledger in
-            // statement two, so a swallowed second write leaves the row saying
-            // `delivering` for a turn OpenCode has accepted.
-            state: turn.state,
-            message_id: turn.messageId ?? row?.messageId ?? null,
-            opencode_session_id: turn.opencodeSessionId || row?.opencodeSessionId || null,
-            started_at: startedAt ? startedAt.toISOString() : null,
-            accepted_at: row?.acceptedAt ? row.acceptedAt.toISOString() : null,
-          },
-        };
-      })
-      // Newest start first, then by token so two turns minted in the same
-      // millisecond — or two legacy records with no instant at all — still
-      // come back in a stable order.
-      .sort(
-        (a, b) =>
-          (b.startedAtMs ?? 0) - (a.startedAtMs ?? 0) ||
-          a.turn.turn_token.localeCompare(b.turn.turn_token),
-      )
-      .map((entry) => entry.turn);
-    if (live.length > 0) return c.json({ turns: live });
-
-    const [ended] = await db
-      .select({
-        turnToken: sessionTurns.turnToken,
-        endReason: sessionTurns.endReason,
-        endedAt: sessionTurns.endedAt,
-      })
-      .from(sessionTurns)
-      .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.state, 'ended')))
-      // `ended_at` is nullable, so it cannot order this on its own. Measured
-      // with EXPLAIN ANALYZE on real Postgres at 20k rows over 200 sessions:
-      // `Bitmap Index Scan on session_turns_session_idx` for the session scope,
-      // then a top-N heapsort over that session's rows only — the index orders
-      // by started_at, not by ended_at, so the sort is expected and bounded by
-      // one session's history.
-      .orderBy(desc(sessionTurns.endedAt), desc(sessionTurns.startedAt))
-      .limit(1);
-    // `last_ended` is OMITTED, never null: its absence is the only thing that
-    // separates "this session has never run a turn" from "the last one ended".
-    // It is HISTORY, and history is what the swallowed ledger write costs: a
-    // lost settle leaves the previous terminal row as the newest one. Liveness
-    // above does not depend on it.
-    return c.json({
-      turns: [],
-      ...(ended
-        ? {
-            last_ended: {
-              turn_token: ended.turnToken,
-              end_reason: ended.endReason,
-              ended_at: ended.endedAt ? ended.endedAt.toISOString() : null,
-            },
-          }
-        : {}),
-    });
+    // Server truth about the turns running right now. The read lives in
+    // `lib/session-turn-read.ts` so the session-open bundle answers from the
+    // SAME projection instead of a second copy — two projections of one
+    // lifecycle authority is how a client ends up holding two disagreeing
+    // answers to "is this session working?".
+    return c.json(await readSessionTurnState(sessionId));
   },
 );
 
@@ -552,87 +450,6 @@ const RemovedSessionPromptSchema = z.object({
   overrides: z.any().nullable(),
 });
 
-type PromptRow = typeof sessionLifecycleCommands.$inferSelect;
-
-/**
- * Map a durable command row onto the inbox's four user-visible states.
- *
- * `succeeded` no longer means "never appears". A FORWARDED row is `succeeded`
- * so the drain can never re-claim it, and still unanswered: OpenCode has
- * persisted the message and queued it behind the turn in flight. It reads
- * `delivering` until the `session_turns` ledger confirms a turn consumed it —
- * which is what keeps the composer working across that interval instead of
- * showing the user nothing. Only a `delivered` row disappears; it IS the
- * transcript by then.
- */
-function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
-  state: 'queued' | 'delivering' | 'waiting' | 'failed';
-  reason: string | null;
-} {
-  const result = (row.result ?? {}) as Record<string, unknown>;
-  // TERMINAL FIRST, above every marker on the row. A row can be given up on
-  // while it still carries `forwarded` — `deadLetter` (redelivery.ts) is
-  // exactly that — and reading the marker first made it `delivering` for ever:
-  // the strip filters in-flight rows out, `countLiveInboxPrompts` counts them
-  // as live work, and the sweep scans `succeeded` only. Nothing could close it.
-  // `failed` is the state that carries the retry, which is the way out.
-  if (row.status === 'failed' || row.status === 'dead_lettered') {
-    return { state: 'failed', reason: null };
-  }
-  // Then HELD: a held row is waiting on the USER, not on the session — the stop
-  // button put it there, and only an explicit send or "send now" takes it out.
-  // It outranks the markers below: a held row is not in line at all, and that
-  // is true of a forwarded row Stop paused just as much as of a queued one.
-  if (result.held === true) return { state: 'waiting', reason: 'held' };
-  // Then FORWARDED, above `running`: this is a `succeeded` row, so every branch
-  // below would otherwise fall through to `queued` and show a prompt that is
-  // already at OpenCode as if it had never been sent.
-  if (result.status === 'forwarded') return { state: 'delivering', reason: 'forwarded' };
-  if (row.status === 'running') return { state: 'delivering', reason: null };
-  const admission = result.admission_reason;
-  if (typeof admission === 'string') return { state: 'waiting', reason: admission };
-  return { state: 'queued', reason: null };
-}
-
-function serializePrompt(row: PromptRow) {
-  const payload = (row.payload ?? {}) as Record<string, unknown>;
-  const result = (row.result ?? {}) as Record<string, unknown>;
-  const { state, reason } = promptState(row);
-  return {
-    prompt_id: row.commandId,
-    client_message_id: typeof payload.clientMessageId === 'string' ? payload.clientMessageId : '',
-    // The id the message ACTUALLY carries in the transcript, when known: the
-    // drain re-mints a mid-turn prompt above the live turn's ids, and the strip
-    // hides a row the moment the transcript shows its message — a client-minted
-    // id here left the row on screen beside its own bubble until the next poll.
-    message_id:
-      typeof result.forwarded_message_id === 'string'
-        ? result.forwarded_message_id
-        : typeof payload.redeliveredMessageId === 'string'
-          ? payload.redeliveredMessageId
-          : typeof payload.wireMessageId === 'string'
-            ? payload.wireMessageId
-            : '',
-    // The id the CLIENT painted its bubble under. `message_id` above moves to
-    // the re-minted id the moment the drain places the prompt — before the
-    // runtime echoes it — and a client that only knew `message_id` drew the
-    // row beside its own bubble for that window (a second dimmed copy for
-    // ~0.4 s on every mid-turn send). Both ids name one prompt.
-    wire_message_id: typeof payload.wireMessageId === 'string' ? payload.wireMessageId : '',
-    client_sent_at_ms:
-      typeof payload.clientSentAtMs === 'number' ? payload.clientSentAtMs : null,
-    state,
-    reason,
-    text: (typeof payload.text === 'string' ? payload.text : '').slice(
-      0,
-      PROMPT_TEXT_PREVIEW_CHARS,
-    ),
-    attempts: row.attempts,
-    last_error: row.lastError ?? null,
-    created_at: row.createdAt.toISOString(),
-    available_at: row.availableAt.toISOString(),
-  };
-}
 
 function serializeRemovedPrompt(row: PromptRow) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
@@ -816,6 +633,11 @@ projectsApp.openapi(
             ? stored.wireMessageId
             : messageId,
       deduped: enqueued.deduped,
+      // The write's place on the SERVER clock — stamped after the enqueue
+      // settled. Clients rank queue snapshots on this one clock, so a read
+      // issued before this POST carries an older stamp and can never erase
+      // the row it confirmed (JAY-728).
+      observed_at: new Date().toISOString(),
     };
     if (enqueued.deduped) return c.json(response, 200);
 
@@ -844,7 +666,10 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(z.object({ prompts: z.array(SessionPromptSchema) }), 'Pending prompts'),
+      200: json(
+        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
+        'Pending prompts',
+      ),
       ...errors(400, 404),
     },
   }),
@@ -865,12 +690,15 @@ projectsApp.openapi(
     const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
+    // Captured BEFORE the read: an answer is only as fresh as the moment it
+    // was asked. Clients rank queue snapshots on this server clock (JAY-728).
+    const observedAt = new Date().toISOString();
     // Scoped to INBOX rows — see `listInboxPrompts`. `continue_session` is also
     // how triggers, Slack and approval-resume deliver, and listing those put an
     // automation's internal prompt in the user's own queue.
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
 
-    return c.json({ prompts: rows.map(serializePrompt) });
+    return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
   },
 );
 
@@ -1021,7 +849,9 @@ projectsApp.openapi(
     const requeued = await retryInboxPrompt(sessionId, promptId);
     if (!requeued) return c.json({ error: 'Not found' }, 404);
 
-    void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
+    void drainSessionLifecycleQueue(
+      requeued.idempotencyKey ? { idempotencyKey: requeued.idempotencyKey } : { limit: 1 },
+    ).catch(() => undefined);
     return c.json(serializePrompt(requeued), 200);
   },
 );
@@ -1038,7 +868,10 @@ projectsApp.openapi(
       body: { content: { 'application/json': { schema: AnyObject } }, required: true },
     },
     responses: {
-      200: json(z.object({ prompts: z.array(SessionPromptSchema) }), 'Hold applied'),
+      200: json(
+        z.object({ prompts: z.array(SessionPromptSchema), observed_at: z.string() }),
+        'Hold applied',
+      ),
       ...errors(400, 404),
     },
   }),
@@ -1077,6 +910,9 @@ projectsApp.openapi(
     }
 
     await holdInboxPrompts(sessionId, body.held);
+    // After the write, before the read-back — either instant orders this
+    // snapshot correctly against the hold it just applied (JAY-728).
+    const observedAt = new Date().toISOString();
     const rows = await listInboxPrompts(sessionId, PROMPT_LIST_LIMIT);
     if (body.held) {
       // The instant marking above is what the client waits for; what a Stop
@@ -1086,7 +922,7 @@ projectsApp.openapi(
     } else {
       void drainSessionLifecycleQueue({ limit: 1 }).catch(() => undefined);
     }
-    return c.json({ prompts: rows.map(serializePrompt) });
+    return c.json({ prompts: rows.map(serializePrompt), observed_at: observedAt });
   },
 );
 
@@ -1195,15 +1031,13 @@ projectsApp.openapi(
     const description = normalizeString(body.description) ?? '';
     const headRef = normalizeString(body.head_ref ?? body.headRef);
     if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
-    const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? loaded.row.defaultBranch;
-    if (baseRef === headRef) {
-      return c.json({ error: 'head_ref and base_ref must differ' }, 400);
-    }
-
+    // The session must be resolved BEFORE the base, because a session's own
+    // base is what the change request targets.
     let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
+    let sessionBaseRef: string | null = null;
     if (originSessionId) {
       const [sessionRow] = await db
-        .select({ sessionId: projectSessions.sessionId })
+        .select({ sessionId: projectSessions.sessionId, baseRef: projectSessions.baseRef })
         .from(projectSessions)
         .where(
           and(
@@ -1213,6 +1047,21 @@ projectsApp.openapi(
         )
         .limit(1);
       if (!sessionRow) originSessionId = null;
+      else sessionBaseRef = normalizeString(sessionRow.baseRef);
+    }
+
+    const baseDecision = resolveChangeRequestBase({
+      requested: normalizeString(body.base_ref ?? body.baseRef),
+      sessionBase: sessionBaseRef,
+      projectDefault: loaded.row.defaultBranch,
+      actorIsSession: isProjectSessionPrincipal(c),
+    });
+    if (!baseDecision.ok) {
+      return c.json({ error: baseDecision.error, code: baseDecision.code }, 400);
+    }
+    const baseRef = baseDecision.baseRef;
+    if (baseRef === headRef) {
+      return c.json({ error: 'head_ref and base_ref must differ' }, 400);
     }
 
     // Resolve current tips so the CR has anchored SHAs from the start, and

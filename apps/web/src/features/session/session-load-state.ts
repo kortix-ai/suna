@@ -7,6 +7,42 @@ export function gatedRuntimeError(input: {
   return input.phase === 'error' ? input.runtimeError : null;
 }
 
+/**
+ * The SAME phase gate for the connection store's boot/readiness error
+ * (`runtimeBootError`, `sandbox-connection-store.runtimeError`).
+ *
+ * A cold boot's routine 503 (`{status:'starting', reason:'schema not ready'}`)
+ * no longer lands in that field at all — the SDK's `runtimeErrorFromHealth`
+ * keeps only a genuine `boot_error` (RC-1). This is the second half of that
+ * fix: even a genuine boot error must not paint a terminal card while `/start`
+ * is still in flight. `derivePhase` holds `phase` at `'starting'` until
+ * `/start` settles or gives up (~61.5s worst case), so gating the boot error on
+ * `phase === 'error'` means it can only become terminal AFTER the server has
+ * had its say — never on a transient mid-boot blip.
+ */
+export function gatedRuntimeBootError<T>(input: {
+  phase: UseSessionResult['phase'];
+  runtimeBootError: T;
+}): T | null {
+  return input.phase === 'error' ? input.runtimeBootError : null;
+}
+
+/**
+ * Runtime transport loss is local to the live layer when the conversation has
+ * a resolved OpenCode identity. The cached transcript remains useful and must
+ * not be replaced by a full-page error.
+ */
+export function runtimeErrorPresentation(input: {
+  chatSessionId: string | null;
+  runtimeError: unknown;
+  runtimeBootError: unknown;
+}): { replaceSession: boolean; inlineRecovery: boolean } {
+  const hasRuntimeError = Boolean(input.runtimeError || input.runtimeBootError);
+  if (!hasRuntimeError) return { replaceSession: false, inlineRecovery: false };
+  if (input.chatSessionId) return { replaceSession: false, inlineRecovery: true };
+  return { replaceSession: true, inlineRecovery: false };
+}
+
 export function canMountSessionChat(input: {
   switched: boolean;
   opencodeSessionId: string | null;
@@ -51,12 +87,44 @@ export function resolveSessionContentState(input: {
   hasRuntimeSession: boolean;
   hasMessages: boolean;
   hasOptimisticPrompt: boolean;
+  /**
+   * A message read has SUCCEEDED for this session — `useSessionSync`'s
+   * `isLoading === false`, which the store sets only when an authoritative read
+   * lands.
+   *
+   * Without this, "the session object exists" was taken as proof the
+   * conversation had been read, and those are two different requests. The
+   * session GET is small and lands first; the message read is the big one and
+   * is the one that loses to a waking box. When it lost, the page rendered the
+   * full shell — header, composer, empty thread — over a session with a long
+   * history, and the user saw an EMPTY CONVERSATION rather than a wait
+   * (screenshot, essentia 2026-08-24: composer live, thread blank, runtime
+   * terminal holding the whole session).
+   *
+   * Optional so existing callers keep their behaviour; `undefined` means the
+   * caller does not track it and the old rule applies.
+   */
+  transcriptLoaded?: boolean;
 }) {
   const sessionResolved = input.runtimeReady && input.sessionFetched;
   const isNotFound =
     !input.hasRuntimeSession && sessionResolved && !input.hasMessages && !input.hasOptimisticPrompt;
+  const readOutstanding = input.transcriptLoaded === false;
+  // On an EXISTING session (a runtime session is known), the transcript read
+  // decides — not the inbox. The prompt-inbox rows are one fast DB read off
+  // the open bundle, and letting them count as "content" dismissed the loader
+  // onto a page of user-only bubbles; the assistant replies then popped in
+  // seconds later when the mirror/runtime read landed (Jay, 2026-08-28). The
+  // paint is atomic: hold the loader until the first read lands, then paint
+  // the whole conversation at once. Messages already on screen are never
+  // hidden, and a caller that does not track the read keeps the old rule.
+  //
+  // On a BRAND-NEW session there is no transcript to wait for, so the
+  // optimistic first prompt is the page — the Enter-paints-now contract.
   const isDataLoading =
-    !input.hasRuntimeSession && !isNotFound && !input.hasMessages && !input.hasOptimisticPrompt;
+    !isNotFound &&
+    !input.hasMessages &&
+    (input.hasRuntimeSession ? readOutstanding : !input.hasOptimisticPrompt);
 
   return { isNotFound, isDataLoading };
 }

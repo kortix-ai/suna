@@ -17,9 +17,11 @@ import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { softNavigate } from '@/lib/navigation/router-bridge';
+import { normalizeAppPathname } from '@kortix/sdk';
 import { playSound } from '@/lib/sounds';
 import type { SoundEvent } from '@/stores/sound-store';
+import { projectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Types
@@ -38,6 +40,9 @@ export interface WebNotificationPayload {
   tag?: string;
   /** Session ID to navigate to when clicked */
   sessionId?: string;
+  /** Project the session belongs to, captured when the notification is raised.
+   *  Without it there is no routable URL — see `navigateToSession`. */
+  projectId?: string | null;
   /** Optional click handler — by default focuses the window and navigates to session */
   onClick?: () => void;
 }
@@ -108,11 +113,38 @@ function playNotificationPing() {
 // ============================================================================
 
 /**
- * Navigate to a session by opening/activating its tab and navigating to it.
+ * The project a session belongs to, read from the URL at the moment the
+ * notification is RAISED — not when it is clicked.
+ *
+ * The event that raises a notification comes off that session's own live
+ * stream, so the user is on `/projects/<id>/sessions/<sid>` right then. By the
+ * time they click, minutes later, they may be anywhere, so reading the path at
+ * click time would resolve the wrong project or none at all.
  */
-function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { forceNavigation?: boolean }) {
+function currentProjectId(): string | null {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(/^\/projects\/([^/]+)/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Navigate to a session by opening/activating its tab and navigating to it.
+ *
+ * `projectId` is required for a real URL. `/sessions/<id>` — what this used to
+ * build — is not a route at all: it is a leftover of the instance-scoped scheme
+ * in `INSTANCE_SCOPED_ROUTES`, so every OS-notification click reloaded the SPA
+ * onto a 404. Without a project id there is no honest destination, so the click
+ * only focuses the window rather than navigating somewhere wrong.
+ */
+function navigateToSession(
+  sessionId: string,
+  sessionTitle?: string,
+  opts?: { forceNavigation?: boolean; projectId?: string | null },
+) {
+  const projectId = opts?.projectId ?? currentProjectId();
+  if (!projectId) return;
+  const href = projectSessionHref(projectId, sessionId);
   try {
-    const href = `/sessions/${sessionId}`;
     // Open/activate the tab in the tab store + pushState
     openTabAndNavigate({
       id: sessionId,
@@ -120,13 +152,15 @@ function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { fo
       type: 'session',
       href,
     });
-    // Only use location.assign for native notification clicks where the
-    // browser may be in the background and client-side routing won't work.
+    // A native notification click can arrive while the tab is backgrounded, so
+    // the tab store's pushState alone may not bring the session into view.
+    // `softNavigate` routes through the App Router; `window.location.assign`
+    // here tore down and rebooted the whole SPA on every notification click.
     if (opts?.forceNavigation && window.location.pathname !== href) {
-      window.location.assign(href);
+      softNavigate(href);
     }
   } catch {
-    window.location.href = `/sessions/${sessionId}`;
+    softNavigate(href);
   }
 }
 
@@ -227,7 +261,7 @@ export function sendWebNotification(
     try {
       notification = new Notification(payload.title, {
         body: payload.body,
-        icon: '/favicon.png',
+        icon: '/favicon.svg',
         tag: payload.tag,
         // Auto-close after 8 seconds
         requireInteraction: false,
@@ -237,7 +271,10 @@ export function sendWebNotification(
         window.focus();
         notification?.close();
         if (payload.sessionId) {
-          navigateToSession(payload.sessionId, payload.body, { forceNavigation: true });
+          navigateToSession(payload.sessionId, payload.body, {
+            forceNavigation: true,
+            projectId: payload.projectId,
+          });
         }
         payload.onClick?.();
       };
@@ -285,7 +322,9 @@ function showInAppToast(payload: WebNotificationPayload) {
             action: {
               label: 'Open',
               onClick: () => {
-                navigateToSession(payload.sessionId!, payload.body);
+                navigateToSession(payload.sessionId!, payload.body, {
+                  projectId: payload.projectId,
+                });
               },
             },
           }
@@ -314,6 +353,8 @@ export function notifyTaskComplete(sessionId: string, sessionTitle?: string) {
     body: `${label} has finished.`,
     tag: `completion:${sessionId}`,
     sessionId,
+    // Captured now, while the raising event proves which project is open.
+    projectId: currentProjectId(),
   });
 }
 
@@ -335,6 +376,8 @@ export function notifySessionError(
     body: `${label}: ${errorTitle}`,
     tag: `error:${sessionId}`,
     sessionId,
+    // Captured now, while the raising event proves which project is open.
+    projectId: currentProjectId(),
   });
 }
 
@@ -356,6 +399,8 @@ export function notifyQuestion(
     body: `${label}: ${questionText.slice(0, 100)}`,
     tag: `question:${sessionId}`,
     sessionId,
+    // Captured now, while the raising event proves which project is open.
+    projectId: currentProjectId(),
   });
 }
 
@@ -377,5 +422,7 @@ export function notifyPermissionRequest(
     body: `${label} needs permission for: ${toolName}`,
     tag: `permission:${sessionId}`,
     sessionId,
+    // Captured now, while the raising event proves which project is open.
+    projectId: currentProjectId(),
   });
 }

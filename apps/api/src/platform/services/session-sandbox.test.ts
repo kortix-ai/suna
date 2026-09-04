@@ -88,10 +88,8 @@ let imageResolutionQueue: Array<{
   slug: string;
   contentHash: string;
   isDefault: boolean;
-  isProjectImage?: boolean;
   built: boolean;
 }> = [];
-let projectImageDeleteCalls: Array<{ snapshotName: string; provider: string }> = [];
 let standardImageDeleteCalls: Array<{ slug?: string; provider?: string }> = [];
 let accountTokenCreateCalls: Array<Record<string, unknown>> = [];
 let serviceAccountCreateCalls: Array<Record<string, unknown>> = [];
@@ -102,14 +100,13 @@ let activeRouting: {
   activeExternalTemplateId: string | null;
   activeSnapshotName: string | null;
 } | null = null;
-let projectImageResolved = false;
+let agentGrantError: Error | null = null;
 const testConfig = {
   ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
   KORTIX_URL: 'http://localhost:8008',
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
   LLM_GATEWAY_BASE_URL: undefined,
-  KORTIX_FAST_COLD_BOOT_CONFIGURED: false,
   KORTIX_FAST_COLD_BOOT_ENABLED: false,
 };
 function compile(condition: unknown): { sql: string; params: unknown[] } {
@@ -278,7 +275,7 @@ mock.module('./provider-balancer', () => ({
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  routedPerProjectWarmImageName: () => 'kpp2-test',
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     const queued = imageResolutionQueue.shift();
@@ -288,7 +285,6 @@ mock.module('../../snapshots/builder', () => ({
       slug: 'default',
       contentHash: 'hash-1',
       isDefault: true,
-      isProjectImage: projectImageResolved,
       built: false,
     };
   },
@@ -317,12 +313,6 @@ mock.module('../../snapshots/builder', () => ({
     standardImageDeleteCalls.push(opts);
   },
   resolveTemplate: async (_project: unknown, _slug: unknown) => ({}),
-}));
-
-mock.module('../../snapshots/project-image-delete', () => ({
-  deleteProjectSandboxImage: async (snapshotName: string, provider: string) => {
-    projectImageDeleteCalls.push({ snapshotName, provider });
-  },
 }));
 
 let onProviderEvent: (() => void) | null = null;
@@ -380,7 +370,10 @@ mock.module('../../projects/lib/network-secret-boundary', () => ({
 
 mock.module('../../projects/agents', () => ({
   ...realAgents,
-  resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => null,
+  resolveAgentGrant: async (_agentName: string, _gitProject: unknown) => {
+    if (agentGrantError) throw agentGrantError;
+    return null;
+  },
 }));
 
 mock.module('../../llm-gateway/enablement', () => ({
@@ -429,15 +422,13 @@ beforeEach(() => {
   imageRequests = [];
   fastImageRequests = [];
   imageResolutionQueue = [];
-  projectImageDeleteCalls = [];
   standardImageDeleteCalls = [];
   accountTokenCreateCalls = [];
   serviceAccountCreateCalls = [];
   networkBoundaryBindings = [];
   providerSyncCalls = [];
   activeRouting = null;
-  projectImageResolved = false;
-  testConfig.KORTIX_FAST_COLD_BOOT_CONFIGURED = false;
+  agentGrantError = null;
   testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
 });
 
@@ -460,6 +451,14 @@ function baseOpts() {
 }
 
 describe('provisionSessionSandbox — mid-provision delete race', () => {
+  test('refuses to mint a session token when the agent grant cannot be resolved', async () => {
+    agentGrantError = new Error('manifest unavailable');
+
+    await expect(provisionSessionSandbox(baseOpts())).rejects.toThrow('manifest unavailable');
+    expect(accountTokenCreateCalls).toHaveLength(0);
+    expect(providerCreateCalls).toBe(0);
+  });
+
   test('meta sessions receive a full project grant without a standing service-account ceiling', async () => {
     await provisionSessionSandbox({
       ...baseOpts(),
@@ -509,6 +508,62 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(envVars).not.toHaveProperty('KORTIX_LLM_AI_SDK_NATIVE');
   });
 
+  test('injects one session credential under one canonical environment name', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+    expect(Object.keys(envVars).filter((name) => name.endsWith('_TOKEN'))).toEqual(['KORTIX_TOKEN']);
+    expect(envVars.KORTIX_OPENCODE_DENY_ENV).toBeUndefined();
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
+  });
+
+  test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {
+    // Instance scoping for background work on a shared DB (projects/instance-scope.ts).
+    // The stamp is what lets another local API instance recognise this box as
+    // not its own and hand its queued work back.
+    (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID = 'wt-instance-a';
+    try {
+      const opened = waitFor((resolve) => {
+        onComputeOpened = resolve;
+      });
+      await provisionSessionSandbox(baseOpts());
+      await opened;
+
+      const finishCall = updateCalls.find(
+        (call) =>
+          call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+      );
+      expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBe('wt-instance-a');
+    } finally {
+      delete (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('no KORTIX_INSTANCE_ID → no instanceId stamp (deployed environments are untouched)', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    await provisionSessionSandbox(baseOpts());
+    await opened;
+
+    const finishCall = updateCalls.find(
+      (call) =>
+        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
+    );
+    expect((finishCall?.updates.metadata as Record<string, unknown>).instanceId).toBeUndefined();
+  });
+
   test('the fast flag keeps the standard image so the edge optimization stays isolated', async () => {
     process.env.KORTIX_FAST_COLD_BOOT_ENABLED = 'true';
     const opened = waitFor((resolve) => {
@@ -544,7 +599,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a restricted workspace cannot boot an activated project-image id', async () => {
+  test('a restricted workspace cannot boot an activated template id', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_activated_project_image',
@@ -566,7 +621,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a shared-image fallback cannot boot an activated project-image id with another name', async () => {
+  test('a resolved image cannot boot an activated template id recorded under another name', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_activated_project_image',
@@ -584,15 +639,17 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a missing project image deletes that exact image, re-resolves to the intact base, and succeeds', async () => {
-    const projectImageName = 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa';
+  test('a missing image named like a retired project image heals through the SAME slug rebuild path', async () => {
+    // The per-project image system is gone: there is no longer a second delete
+    // path keyed on the image name. Every snapshot-missing heal now deletes by
+    // (slug, provider) and re-resolves, whatever the stale image was called.
+    const legacyProjectImageName = 'kortix-ppwarm-00000000-37a8eec1-aaaaaaaaaaaa';
     imageResolutionQueue = [
       {
-        snapshotName: projectImageName,
+        snapshotName: legacyProjectImageName,
         slug: 'default',
         contentHash: 'hash-1',
         isDefault: true,
-        isProjectImage: true,
         built: false,
       },
       {
@@ -603,7 +660,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         built: false,
       },
     ];
-    providerCreateErrors.daytona = `snapshot ${projectImageName} not found`;
+    providerCreateErrors.daytona = `snapshot ${legacyProjectImageName} not found`;
     providerCreateErrorLimits.daytona = 3;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
@@ -612,10 +669,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(projectImageDeleteCalls).toEqual([
-      { snapshotName: projectImageName, provider: 'daytona' },
-    ]);
-    expect(standardImageDeleteCalls).toEqual([]);
+    expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
     expect(imageRequests).toHaveLength(2);
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-base-intact');
   });
@@ -646,19 +700,17 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(baseOpts());
     await opened;
 
-    expect(projectImageDeleteCalls).toEqual([]);
     expect(standardImageDeleteCalls).toEqual([{ slug: 'default', provider: 'daytona' }]);
     expect(imageRequests).toHaveLength(2);
     expect(providerCreateOpts.at(-1)?.snapshot).toBe('kortix-default-rebuilt');
   });
 
-  test('a per-project image uses the activated id when its image name matches', async () => {
+  test('the resolved image boots by the activated id when its image name matches', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_current_project_image',
       activeSnapshotName: 'snap-test-1',
     };
-    projectImageResolved = true;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -671,13 +723,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a per-project image name-boots when its image name differs from the activated image', async () => {
+  test('the resolved image name-boots when its name differs from the activated image', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_older_project_image',
       activeSnapshotName: 'snap-project-older',
     };
-    projectImageResolved = true;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -690,13 +741,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
-  test('a per-project image name-boots when activated image metadata is missing', async () => {
+  test('the resolved image name-boots when the activation records no image name', async () => {
     activeRouting = {
       activeProvider: 'platinum',
       activeExternalTemplateId: 'tpl_without_image_name',
       activeSnapshotName: null,
     };
-    projectImageResolved = true;
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -724,27 +774,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     expect(providerIdCreateCalls).toEqual([]);
     expect(providerCreateCalls).toBe(1);
-  });
-
-  test('explicit FAST false never boots a project image by external id', async () => {
-    testConfig.KORTIX_FAST_COLD_BOOT_CONFIGURED = true;
-    testConfig.KORTIX_FAST_COLD_BOOT_ENABLED = false;
-    activeRouting = {
-      activeProvider: 'platinum',
-      activeExternalTemplateId: 'tpl_activated_project_image',
-      activeSnapshotName: 'snap-test-1',
-    };
-    projectImageResolved = true;
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
-    await opened;
-
-    expect(providerIdCreateCalls).toEqual([]);
-    expect(providerCreateCalls).toBe(1);
-    expect(providerCreateOpts[0]?.snapshot).toBe('snap-test-1');
   });
 
   test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
@@ -956,5 +985,60 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     );
     expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
     expect(preserved?.updates.metadata).toMatchObject({ stoppedDuringProvisioning: true });
+  });
+});
+
+describe('pi worker pool claim (P1.8)', () => {
+  test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
+    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
+    const claim = source.indexOf('const pooledClaim =');
+    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
+    const refill = source.indexOf('void maintainPiWorkerPool()', claim);
+    const externalId = source.indexOf('bgExternalId = result.externalId', claim);
+    expect(claim).toBeGreaterThan(-1);
+    // Claim sits BEFORE the provider create and only for pi worker boots on
+    // daytona; the refill kick fires after either path, before activation.
+    const gate = source.slice(claim, create);
+    expect(gate).toContain("opts.metadata?.pi_worker_boot === true && providerName === 'daytona'");
+    expect(gate).toContain('claimParkedPiWorkerBox(providerCreateInput.envVars ?? {})');
+    expect(create).toBeGreaterThan(claim);
+    expect(refill).toBeGreaterThan(create);
+    expect(externalId).toBeGreaterThan(refill);
+    // A claim failure must NEVER fail the session — it degrades to cold create.
+    expect(gate).toContain('return null');
+  });
+
+  test('a claimed box records the pool path in its provision timeline', async () => {
+    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
+    const claim = source.indexOf('if (pooledClaim) {');
+    const mark = source.indexOf("tl.mark('pool-claim')", claim);
+    const elseBranch = source.indexOf('} else {', claim);
+    expect(claim).toBeGreaterThan(-1);
+    expect(mark).toBeGreaterThan(claim);
+    expect(mark).toBeLessThan(elseBranch);
+  });
+});
+
+describe('pi worker pool — stale-label hazard', () => {
+  test('reap and claim both re-verify the park label on the direct object', async () => {
+    const source = await Bun.file(new URL('./pi-worker-pool.ts', import.meta.url)).text();
+    // Maintain: every listed box passes verifyStillParked BEFORE the
+    // dead/stale/over-age triage that feeds the reap list.
+    const verify = source.indexOf('async function verifyStillParked');
+    const maintain = source.indexOf('export function maintainPiWorkerPool');
+    const verifyCall = source.indexOf('await verifyStillParked(box.externalId)', maintain);
+    const triage = source.indexOf("state === 'stopped'", maintain);
+    expect(verify).toBeGreaterThan(-1);
+    expect(verifyCall).toBeGreaterThan(maintain);
+    expect(verifyCall).toBeLessThan(triage);
+    // An unknowable box is never reapable.
+    const verifyBody = source.slice(verify, source.indexOf('}', source.indexOf('catch', verify)));
+    expect(verifyBody).toContain('return false');
+    // Claim: the direct object's labels gate the dial.
+    const claim = source.indexOf('export async function claimParkedPiWorkerBox');
+    const gate = source.indexOf("liveLabels[PARK_LABEL] !== '1'", claim);
+    const dial = source.indexOf('/kortix/claim', claim);
+    expect(gate).toBeGreaterThan(claim);
+    expect(gate).toBeLessThan(dial);
   });
 });

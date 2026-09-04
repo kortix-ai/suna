@@ -1,4 +1,4 @@
-import type { GatewayConfig, GatewayHooks, ListModelsOptions } from './domain';
+import type { GatewayHooks, ListModelsOptions } from './domain';
 import {
   type AnthropicMessagesRequest,
   anthropicMessagesToChat,
@@ -12,7 +12,6 @@ import {
   handleChatCompletions,
 } from './pipeline';
 import { gatewayErrorResponse } from './pipeline/error-response';
-import { CircuitBreaker } from './resilience';
 
 // Anthropic Messages API error `type` values by HTTP status — used only to
 // shape the JSON envelope for clients speaking the Anthropic wire format; the
@@ -43,46 +42,13 @@ function anthropicErrorResponse(status: number, message: string): Response {
   );
 }
 
-export function createGateway(
-  hooks: GatewayHooks,
-  config: GatewayConfig = {},
-  deps: GatewayDeps = {},
-) {
+export function createGateway(hooks: GatewayHooks, deps: GatewayDeps = {}) {
   const logger = deps.logger ?? console;
-  const captureBodies = config.captureBodies ?? true;
-  const breakers = new Map<string, CircuitBreaker>();
-
-  const breakerFor = (provider: string): CircuitBreaker => {
-    const existing = breakers.get(provider);
-    if (existing) return existing;
-    const created = new CircuitBreaker(config.breaker);
-    breakers.set(provider, created);
-    return created;
-  };
-
-  // A request/response log exists to show exactly what was sent and received.
-  // No size cap here: a capped "preview" is a log that lies about what the
-  // gateway actually did. `JSON.stringify` still runs once to reject values
-  // that can't be persisted (cycles, BigInt) — the same failure mode as
-  // before, just without truncating anything that succeeds.
-  const capture = (value: unknown): unknown => {
-    if (!captureBodies) return undefined;
-    try {
-      JSON.stringify(value);
-      return value;
-    } catch {
-      return undefined;
-    }
-  };
-
   const runtime: HandlerRuntime = {
     hooks,
-    config,
     logger,
     fetchImpl: deps.fetchImpl,
-    captureBodies,
-    capture,
-    breakerFor,
+    imageWindow: deps.imageWindow,
   };
 
   const jsonResponse = (data: unknown, status = 200): Response =>
@@ -124,7 +90,7 @@ export function createGateway(
       if (!hooks.listModels) return jsonResponse({ models: {} });
       const models = await hooks.listModels(principal, opts);
       logger.info(
-        `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : ''} ` +
+        `[gateway] models ${Object.keys(models).length}${opts?.managedOnly ? ' (managed only)' : opts?.scope === 'picker' ? ' (picker)' : ''} ` +
           `for acct=${principal.accountId.slice(0, 8)}`,
       );
       return jsonResponse({ models });
@@ -142,34 +108,34 @@ export function createGateway(
     }
   };
 
-  const breakerHealth = (): BreakerHealth[] =>
-    Array.from(breakers.entries()).map(([provider, breaker]) => ({
-      provider,
-      state: breaker.current,
-      failures: breaker.failureCount,
-    }));
-
   // Anthropic Messages API ingress: translate the Anthropic-shaped request
-  // into the gateway's internal OpenAI chat.completions representation,
-  // drive it through the SAME `handleChatCompletions` pipeline used by the
-  // OpenAI-compat surface (so auth/billing/routing/failover/trace are
-  // identical), then translate the OpenAI response back to Anthropic shape.
+  // into the internal OpenAI chat.completions representation, use the same
+  // auth/routing/dispatch/settlement path, then translate the response back.
   // Translation happens entirely around the pipeline call — the pipeline
   // itself never sees or produces Anthropic-shaped data.
   const messages = async (req: ChatCompletionRequest): Promise<Response> => {
     let anthropicBody: Record<string, unknown>;
     try {
       anthropicBody = JSON.parse(req.rawBody) as Record<string, unknown>;
+      req.rawBody = '';
     } catch {
+      req.rawBody = '';
       return anthropicErrorResponse(400, 'Invalid JSON body');
     }
 
     const streaming = anthropicBody.stream === true;
     const chatBody = anthropicMessagesToChat(anthropicBody as unknown as AnthropicMessagesRequest);
+    // Read what the response translation needs BEFORE dispatch, so neither the
+    // Anthropic body nor the translated one has to stay reachable across the
+    // upstream call.
+    const model = typeof chatBody.model === 'string' ? chatBody.model : undefined;
+    (anthropicBody as unknown) = null;
 
     const upstream = await handleChatCompletions(runtime, {
       authorization: req.authorization,
-      rawBody: JSON.stringify(chatBody),
+      rawBody: '',
+      parsedBody: chatBody as Record<string, unknown>,
+      signal: req.signal,
     });
 
     if (!upstream.ok) {
@@ -185,7 +151,6 @@ export function createGateway(
 
     const contentType = upstream.headers.get('content-type') ?? '';
     if (streaming && contentType.includes('text/event-stream') && upstream.body) {
-      const model = typeof chatBody.model === 'string' ? chatBody.model : undefined;
       const anthropicStream = chatSseToAnthropicSse(upstream.body, { model });
       return new Response(anthropicStream, {
         status: 200,
@@ -207,12 +172,5 @@ export function createGateway(
       handleChatCompletions(runtime, req),
     messages,
     listModels,
-    breakerHealth,
   };
-}
-
-export interface BreakerHealth {
-  provider: string;
-  state: 'closed' | 'open' | 'half-open';
-  failures: number;
 }

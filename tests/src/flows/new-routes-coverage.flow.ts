@@ -21,12 +21,14 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).get('/metrics');
       r.status(401);
     });
-    await ctx.step('internal metrics endpoint is mounted or explicitly disabled', async () => {
-      const r = await ctx.client
-        .withBearer(ctx.env.internalServiceKey!, 'INTERNAL_OBSERVABILITY')
-        .get('/metrics');
-      r.status([200, 404]);
-    });
+    if (ctx.env.capabilities.internalCron) {
+      await ctx.step('internal metrics endpoint is mounted or explicitly disabled', async () => {
+        const r = await ctx.client
+          .withBearer(ctx.env.internalServiceKey!, 'INTERNAL_OBSERVABILITY')
+          .get('/metrics');
+        r.status([200, 404]);
+      });
+    }
     await ctx.step('LLM gateway health endpoint is mounted', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/router/health');
       r.status([200, 404]);
@@ -190,6 +192,9 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/snapshot',
+      'GET /v1/projects/:projectId/sessions/:sessionId/open-bundle',
+      'GET /v1/projects/:projectId/sessions/:sessionId/events',
     ],
   },
   async (ctx) => {
@@ -231,6 +236,224 @@ flow(
           params: { projectId: project.id, sessionId: ZERO_UUID },
         });
       response.status(404);
+    });
+
+    await ctx.step('Session snapshot answers every leg in ONE round trip', async () => {
+      // The bundle is what a session view opens with: one call replacing the
+      // session row + /turn + /prompts + /transcript + /model-defaults. Two
+      // claims are asserted here because both are contract, not detail:
+      // (1) every sub-object is TRI-STATE (`known`), so a degraded leg reads
+      // as unknown and never as an empty queue or an idle turn; and
+      // (2) the turn leg is the SAME projection `GET .../turn` serves, so the
+      // two reads can never disagree about whether the session is working.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{
+        observed_at: string;
+        session: { session_id: string };
+        turn: { known: boolean; turns?: unknown[] };
+        queue: { known: boolean; prompts?: unknown[]; held?: boolean };
+        transcript: { known: boolean };
+        config: { known: boolean; llm_gateway_enabled: boolean };
+        models: { known: boolean };
+      }>();
+      for (const leg of ['turn', 'queue', 'transcript', 'config', 'models'] as const) {
+        if (typeof body[leg]?.known !== 'boolean') {
+          throw new Error(`${leg} must carry a boolean 'known', got ${JSON.stringify(body[leg])}`);
+        }
+      }
+      if (body.session.session_id !== session.id) {
+        throw new Error(`bundle answered for the wrong session: ${body.session.session_id}`);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}T/.test(body.observed_at)) {
+        throw new Error(`observed_at must stamp the envelope, got ${body.observed_at}`);
+      }
+      if (body.turn.known !== true || (body.turn.turns ?? null)?.length !== 0) {
+        throw new Error(`a fresh session must read as a KNOWN idle turn: ${JSON.stringify(body.turn)}`);
+      }
+      if (body.queue.known !== true || (body.queue.prompts ?? null)?.length !== 0) {
+        throw new Error(`a fresh session must read as a KNOWN empty queue: ${JSON.stringify(body.queue)}`);
+      }
+      const single = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/turn', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      single.status(200);
+      const singleBody = single.json<{ turns: unknown[]; last_ended?: unknown }>();
+      const { known: _known, ...bundleTurn } = body.turn as Record<string, unknown>;
+      if (JSON.stringify(bundleTurn) !== JSON.stringify(singleBody)) {
+        throw new Error(
+          `bundle turn must equal GET /turn: ${JSON.stringify(bundleTurn)} vs ${JSON.stringify(singleBody)}`,
+        );
+      }
+    });
+
+    await ctx.step('The /open-bundle alias serves the same snapshot envelope', async () => {
+      // Every published `@kortix/sdk` requests `/open-bundle`
+      // (`getSessionOpenBundle`); the #6987 rename to `/snapshot` left those
+      // clients 404ing and silently falling back to 6-8 serial reads per
+      // session open. The alias is the same handler — assert the same
+      // tri-state envelope answers, so shipped SDKs keep the accelerator.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/open-bundle', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{
+        observed_at: string;
+        session: { session_id: string };
+        turn: { known: boolean };
+        queue: { known: boolean };
+      }>();
+      if (body.session.session_id !== session.id) {
+        throw new Error(`alias answered for the wrong session: ${body.session.session_id}`);
+      }
+      if (typeof body.turn?.known !== 'boolean' || typeof body.queue?.known !== 'boolean') {
+        throw new Error(`alias must serve the tri-state envelope: ${JSON.stringify(body)}`);
+      }
+      if (!/^\d{4}-\d{2}-\d{2}T/.test(body.observed_at)) {
+        throw new Error(`observed_at must stamp the envelope, got ${body.observed_at}`);
+      }
+    });
+
+    await ctx.step('Session snapshot carries a TRI-STATE runtime leg', async () => {
+      // The leg that replaces seven proxied reads of the box (`/agent`
+      // `/command` `/config` `/session` `/session/status` `/permission`
+      // `/question`). A fresh session has no projection yet, so the honest
+      // answer is `known:false` with a REASON — never an empty agent roster,
+      // which is the defect the tri-state contract exists to prevent.
+      const session = await ctx.fixtures.session(project);
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+          params: { projectId: project.id, sessionId: session.id },
+        });
+      response.status(200);
+      const body = response.json<{ runtime: { known: boolean; reason?: string; state?: unknown } }>();
+      if (typeof body.runtime?.known !== 'boolean') {
+        throw new Error(`runtime must carry a boolean 'known', got ${JSON.stringify(body.runtime)}`);
+      }
+      if (body.runtime.known === false) {
+        const allowed = ['no_projection', 'identity_mismatch', 'stale', 'leg_failed'];
+        if (!allowed.includes(String(body.runtime.reason))) {
+          throw new Error(`unknown runtime reason: ${JSON.stringify(body.runtime)}`);
+        }
+        if ('state' in body.runtime) {
+          throw new Error('a refused runtime leg must not also carry a state document');
+        }
+      }
+    });
+
+    await ctx.step('Session events stream serves control events with NO sandbox attached', async () => {
+      // The stream's load-bearing property: it is a 200 that keeps delivering
+      // control-plane facts even when the box is stopped, missing or
+      // unreachable. A stream that errored because a sandbox was absent would
+      // send every client straight back to polling.
+      //
+      // Raw fetch, not ctx.client: this response never ends, so a buffered read
+      // would hang the flow rather than assert on it.
+      const session = await ctx.fixtures.session(project);
+      const token = (ctx.P.OWNER as { auth?: { token?: string } }).auth?.token;
+      if (!token) ctx.skip('OWNER principal has no bearer token on this target');
+
+      const controller = new AbortController();
+      const startedAt = Date.now();
+      try {
+        const response = await fetch(
+          `${ctx.env.apiUrl}/projects/${project.id}/sessions/${session.id}/events`,
+          {
+            headers: { accept: 'text/event-stream', authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          },
+        );
+        if (response.status !== 200) {
+          throw new Error(`stream must open 200, got ${response.status}`);
+        }
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!contentType.includes('text/event-stream')) {
+          throw new Error(`stream must be an event stream, got ${contentType}`);
+        }
+        // Never compressed: a gzip stream buffers, and a buffered event stream
+        // is a broken event stream.
+        if (response.headers.get('content-encoding')) {
+          throw new Error('the stream must never be compressed');
+        }
+        if (!response.headers.get('x-kortix-control-epoch')) {
+          throw new Error('the stream must name its control epoch');
+        }
+
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const events: string[] = [];
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline && !events.includes('kortix.control.turn')) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          for (const line of buffer.split('\n')) {
+            if (line.startsWith('event: ')) events.push(line.slice(7).trim());
+          }
+          buffer = buffer.slice(buffer.lastIndexOf('\n') + 1);
+        }
+        await reader.cancel().catch(() => {});
+
+        if (events[0] !== 'kortix.stream.hello') {
+          throw new Error(`the first frame must be the handshake, got ${JSON.stringify(events)}`);
+        }
+        if (!events.includes('kortix.control.turn')) {
+          throw new Error(
+            `the control channel must deliver a turn snapshot within ${Date.now() - startedAt}ms, got ${JSON.stringify(events)}`,
+          );
+        }
+      } finally {
+        controller.abort();
+      }
+    });
+
+    await ctx.step('Session events stream refuses an anonymous caller', async () => {
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status([401, 403, 404]);
+    });
+
+    await ctx.step('Session events stream returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/events', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
+    });
+
+    await ctx.step('Session snapshot returns 404 for an unknown session', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status(404);
+    });
+
+    await ctx.step('Session snapshot refuses an anonymous caller', async () => {
+      // It carries the transcript and the prompt queue — session CONTENT.
+      const response = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/projects/:projectId/sessions/:sessionId/snapshot', {
+          params: { projectId: project.id, sessionId: ZERO_UUID },
+        });
+      response.status([401, 403, 404]);
     });
 
     await ctx.step('Session turn read refuses an anonymous caller', async () => {

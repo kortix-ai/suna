@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { InflightBudget } from './inflight-budget';
+import { DEFAULT_BODY_AMPLIFICATION, InflightBudget } from './inflight-budget';
 
 const MiB = 1024 * 1024;
 
@@ -42,7 +42,11 @@ describe('InflightBudget', () => {
   // Anti-deadlock: an empty gateway must always accept one admissible request,
   // or a single big turn could never run at all.
   test('an idle budget always admits one request at the per-request ceiling', () => {
-    const b = new InflightBudget({ maxBytes: 128 * MiB, perRequestMaxBytes: 128 * MiB, amplification: 1 });
+    const b = new InflightBudget({
+      maxBytes: 128 * MiB,
+      perRequestMaxBytes: 128 * MiB,
+      amplification: 1,
+    });
     const r = b.admit(128 * MiB);
     expect(r.ok).toBe(true);
   });
@@ -61,6 +65,32 @@ describe('InflightBudget', () => {
     expect(b.admit(100).ok).toBe(true);
   });
 
+  test('a lease can grow with a chunked body without exceeding the process budget', () => {
+    const b = new InflightBudget({ maxBytes: 100, perRequestMaxBytes: 100, amplification: 1 });
+    const first = b.admit(10);
+    const second = b.admit(60);
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+
+    expect(first.resize(40)).toEqual({ ok: true });
+    expect(b.inflightBytes).toBe(100);
+    expect(first.resize(41)).toEqual({ ok: false, reason: 'overloaded' });
+    expect(b.inflightBytes).toBe(100);
+  });
+
+  test('a failed resize keeps the original reservation and release remains exact', () => {
+    const b = new InflightBudget({ maxBytes: 100, perRequestMaxBytes: 50, amplification: 1 });
+    const lease = b.admit(20);
+    expect(lease.ok).toBe(true);
+    if (!lease.ok) return;
+
+    expect(lease.resize(51)).toEqual({ ok: false, reason: 'too_large' });
+    expect(b.inflightBytes).toBe(20);
+    lease.release();
+    expect(b.inflightBytes).toBe(0);
+  });
+
   test('accounts for the amplification factor, not just the wire bytes', () => {
     // A body costs more than its wire size once it is a UTF-16 string plus a
     // parsed object graph. A budget that ignored that would admit ~3x what the
@@ -76,7 +106,11 @@ describe('InflightBudget', () => {
   });
 
   test('many concurrent small requests are unaffected', () => {
-    const b = new InflightBudget({ maxBytes: 10 * MiB, perRequestMaxBytes: 1 * MiB, amplification: 1 });
+    const b = new InflightBudget({
+      maxBytes: 10 * MiB,
+      perRequestMaxBytes: 1 * MiB,
+      amplification: 1,
+    });
     const leases = [];
     for (let i = 0; i < 500; i++) {
       const r = b.admit(1_000);
@@ -89,11 +123,13 @@ describe('InflightBudget', () => {
 
   test('the default amplification is applied when none is given', () => {
     // Guards the safe default: a budget constructed without an explicit
-    // amplification must NOT count raw wire bytes, or it admits ~3x what the
-    // process can hold.
-    const b = new InflightBudget({ maxBytes: 300, perRequestMaxBytes: 300 });
+    // amplification must NOT count raw wire bytes, or it admits many times
+    // what the process can actually hold. The constant is asserted through
+    // the export so the two can never drift.
+    const b = new InflightBudget({ maxBytes: 3000, perRequestMaxBytes: 3000 });
     b.admit(50);
-    expect(b.inflightBytes).toBe(150);
+    expect(b.inflightBytes).toBe(50 * DEFAULT_BODY_AMPLIFICATION);
+    expect(DEFAULT_BODY_AMPLIFICATION).toBeGreaterThanOrEqual(3);
   });
 
   test('a zero budget disables admission control entirely', () => {

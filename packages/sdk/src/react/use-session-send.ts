@@ -188,6 +188,23 @@ export interface SendRecoveryOptions {
    * apps/web's `ProviderModelNotFoundError` special-casing) injects its own
    * classifier that wraps it. */
   classify?: (error: unknown) => KortixSendError;
+  /**
+   * Does the durable prompt inbox already hold this send?
+   *
+   * A prompt that goes to `POST .../prompts` becomes a CONTROL-PLANE row
+   * waiting for admission. It is not in OpenCode's transcript and will not be
+   * until the gate delivers it — so the message rehydrate below, which asks the
+   * RUNTIME, always answers "no such message" for one. Acting on that answer
+   * deleted the user's bubble while the row it could not see was already
+   * running: reported from a live self-host as "it queues the message and
+   * starts running it, but doesn't show in the frontend".
+   *
+   * The POST carries a `clientMessageId`, so this ambiguity is resolvable
+   * rather than guessable. Provide this for an inbox-backed send and the
+   * recovery asks the right authority. A lookup that throws keeps the bubble:
+   * not knowing is not evidence of loss.
+   */
+  inboxRowExists?: () => Promise<boolean>;
 }
 
 /**
@@ -219,6 +236,31 @@ export function recoverFromSendFailure(
   // NAMED: a slow failure must not drop the receipt of a send submitted after
   // it whose POST is still on the wire. See `clearSendReceipt`.
   useSessionWorkingStore.getState().clearSendReceipt(sessionId, messageId);
+
+  // The inbox is the authority for an inbox-backed send, and it outranks
+  // everything below: a row the control plane holds means the prompt was NOT
+  // lost, however the response to this tab ended.
+  if (options.inboxRowExists) {
+    void options
+      .inboxRowExists()
+      .then((exists) => {
+        if (!exists) {
+          useSyncStore.getState().optimisticRemove(sessionId, messageId);
+          return;
+        }
+        // The send succeeded after all. Put the receipt back so the composer
+        // keeps saying so until `GET .../turn` reports the turn the inbox
+        // admits, exactly as a clean send would have.
+        useSessionWorkingStore
+          .getState()
+          .noteSendReceipt(sessionId, { messageId, atMs: Date.now() });
+      })
+      .catch(() => {
+        // Unreachable inbox: the prompt's fate is unknown, and an unknown fate
+        // is not a deletion. The bubble stays; the inbox poll reconciles it.
+      });
+    return classified;
+  }
 
   let client: OpenCodeMessagesClient;
   try {
@@ -333,7 +375,18 @@ export function applyOptimisticAbort(sessionId: string): void {
   if (!msgs) return;
   for (let i = msgs.length - 1; i >= 0; i--) {
     const msg = msgs[i];
-    if (msg.role === 'assistant' && !msg.error) {
+    if (msg.role !== 'assistant') continue;
+    // STOP at the newest assistant message, whatever state it is in. The abort
+    // belongs to the turn the user just stopped, and that is the last one.
+    //
+    // This used to be `msg.role === 'assistant' && !msg.error`, which SKIPPED
+    // an already-errored newest message and kept walking — so stopping a turn
+    // whose assistant message already carried an error (an earlier interrupt,
+    // or a turn that failed) stamped "Interrupted" onto a COMPLETED turn
+    // further up the transcript. The marker appeared detached, above the turn
+    // it belonged to, instead of at the end of it.
+    if (msg.error) break;
+    {
       // Typed as the wider `MessageError` (not just the literal shape below)
       // so the assertion further down overlaps with `AssistantMessage.error`'s
       // real union — see `MessageError` in the sync store.
@@ -687,12 +740,21 @@ export async function stopWithReceipt(
   }
 
   const settlement = awaitAbortSettlement(runAbort);
-  // `awaitAbortSettlement` never rejects — it resolves with how the abort ended
-  // (acknowledged, failed, or timed out). Any of those is the instant from
-  // which a server read can see the abort's effect, or fail to.
-  void settlement.then(() =>
-    useSessionWorkingStore.getState().settleAbortReceipt(workingSessionId, Date.now()),
-  );
+  // `awaitAbortSettlement` never rejects — it resolves with how the abort ended:
+  // acknowledged, failed, or TIMED OUT. Only the first two are answers.
+  //
+  // `settledAtMs` means "the instant from which a server read can see this
+  // abort's effect", and a timeout is precisely the case where nobody said that.
+  // Settling on it wrote 5s of clock into an evidence field: `abortFloor` in
+  // `projectWorking` dropped from Infinity to a real instant, the next `/turn`
+  // read — issued while the cancel was still in flight, `abortOpenCodeSession`
+  // retries twice — cleared it, and the Stop button came back mid-cancel. The
+  // receipt is left unsettled instead and `OPTIMISTIC_ABORT_MAX_MS` bounds it,
+  // which is the bound that exists for exactly this case.
+  void settlement.then((result) => {
+    if (result?.status === 'timed-out') return;
+    useSessionWorkingStore.getState().settleAbortReceipt(workingSessionId, Date.now());
+  });
   return settlement;
 }
 

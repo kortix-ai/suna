@@ -30,6 +30,7 @@ import {
   type SandboxIngressRequest,
   type SandboxIngressRoute,
 } from '../platform/providers';
+import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
@@ -254,9 +255,13 @@ export async function resolveSandboxIngress(
 
   const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
   if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
-  const ingress = await getProvider(record.provider as ProviderName).resolveIngress(record.externalId, request);
+  const provider = getProvider(record.provider as ProviderName);
+  const ingress = await provider.resolveIngress(record.externalId, request);
 
-  previewLinkCache.set(key, { ingress, expiresAt: Date.now() + CACHE_TTL_MS });
+  const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
+  if (cacheTtlMs > 0) {
+    previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+  }
   return ingress;
 }
 
@@ -326,8 +331,30 @@ export async function wakeSandbox(externalId: string): Promise<void> {
       console.log(`[PREVIEW] Wake refused for expired sandbox ${externalId}`);
       return;
     }
-    await getProvider(record.provider as ProviderName).ensureRunning(externalId);
+    const provider = getProvider(record.provider as ProviderName);
+    // Read the provider state BEFORE starting: a box that was actually stopped
+    // comes back with no runtime, and every turn open on it is over. Without
+    // this the fresh runtime's first idle read closed such turns `completed`
+    // and the interrupted prompt was never redelivered (Essentia 2026-08-25).
+    const before =
+      typeof provider.getStatus === 'function'
+        ? await provider.getStatus(externalId).catch(() => 'unknown' as const)
+        : ('unknown' as const);
+    await provider.ensureRunning(externalId);
     console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
+    if (before === 'stopped') {
+      await recoverTurnsAfterRuntimeRestart({
+        sandboxId: record.sandboxId,
+        sessionId: record.sessionId,
+        externalId,
+        hold: false,
+      }).catch((err) =>
+        console.warn(
+          `[PREVIEW] turn recovery after wake failed for ${externalId}:`,
+          err instanceof Error ? err.message : err,
+        ),
+      );
+    }
   } catch (e) {
     console.error(`[PREVIEW] Failed to wake sandbox ${externalId}:`, e);
   }

@@ -1,7 +1,6 @@
 import { and, eq, or, sql } from 'drizzle-orm';
 
 import { projectSessions } from '@kortix/db';
-import type { createGateway } from '@kortix/llm-gateway';
 import { config } from '../config';
 import { logger as appLogger } from '../lib/logger';
 import {
@@ -10,6 +9,7 @@ import {
   deleteGatewayKey,
 } from '../llm-gateway/gateway-keys';
 import { toWireModel } from '../llm-gateway/resolution/effective';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { db } from '../shared/db';
 import { PLACEHOLDER_TITLE_SQL_PATTERN, isPlaceholderOpencodeTitle } from './lib/opencode-title';
 import type { ProjectSessionRow } from './lib/serializers';
@@ -55,19 +55,20 @@ const TITLE_SYSTEM_PROMPT =
 // compare-and-set in `persistTitle`.
 const inFlight = new Set<string>();
 
-// The same pipeline the API mounts, run directly in-process so title generation
-// behaves identically whether the gateway is in-process or a standalone pod — we
-// never depend on the pod's URL for our own internal call. Loaded LAZILY: a
-// title is fire-and-forget, so importing this module must not drag the whole
-// gateway (routing, policy engine, catalog) into every consumer's load graph.
-let gatewaySingleton: ReturnType<typeof createGateway> | null = null;
-async function internalGateway(): Promise<ReturnType<typeof createGateway>> {
-  if (!gatewaySingleton) {
-    const { createGateway } = await import('@kortix/llm-gateway');
-    const { createInProcessGatewayHooks } = await import('../llm-gateway/hooks');
-    gatewaySingleton = createGateway(createInProcessGatewayHooks());
+function standaloneGatewayUrl(): string | null {
+  const target =
+    config.LLM_GATEWAY_PROXY_TARGET ||
+    (config.LLM_GATEWAY_PROXY_PORT
+      ? `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+      : '');
+  if (!target) return null;
+  try {
+    const url = new URL(target);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return `${target.replace(/\/+$/, '')}/v1/chat/completions`;
+  } catch {
+    return null;
   }
-  return gatewaySingleton;
 }
 
 /** Normalize a model-generated title: strip wrapping quotes, collapse
@@ -219,8 +220,17 @@ async function generateViaGateway(
   promptText: string,
 ): Promise<string | null> {
   const rawBody = titleCompletionBody(model, promptText);
-  const gateway = await internalGateway();
-  const res = await gateway.chatCompletions({ authorization, rawBody });
+  const gatewayUrl = standaloneGatewayUrl();
+  if (!gatewayUrl) {
+    appLogger.warn('[title-generate] standalone gateway is not configured');
+    return null;
+  }
+  const res = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: { authorization, 'content-type': 'application/json' },
+    body: rawBody,
+    signal: AbortSignal.timeout(DEFAULT_GENERATION_TIMEOUT_MS),
+  });
   if (!res.ok) {
     appLogger.warn('[title-generate] gateway returned non-200', { status: res.status, model });
     return null;
@@ -393,6 +403,10 @@ export interface GenerateSessionTitleOptions {
     excludedModel?: string,
   ) => Promise<string | null>;
   generationTimeoutMs?: number;
+  /** The project's `llm_gateway` mode (defaults to the DB read). Off ⇒ no
+   *  gateway pipeline runs and the deterministic prompt excerpt titles the
+   *  session. */
+  resolveLlmGatewayEnabled?: (projectId: string) => Promise<boolean>;
 }
 
 async function generateWithDeadline(
@@ -477,18 +491,31 @@ export async function generateSessionTitleFromFirstPrompt(
     // create sees the user's actual message.
     const promptText = storedTitleSource(row) ?? suppliedText;
 
+    // Two paths on the project's `llm_gateway` flag. Gateway OFF ⇒ this hook
+    // runs NO gateway pipeline at all — no key mint, no resolution, no usage
+    // event; the deterministic prompt-excerpt below is the title. (In native
+    // mode the session's model ref is a native `provider/model` id the
+    // in-process gateway cannot serve, and titling through the gateway would
+    // be exactly the traffic the flag turns off.)
+    const llmGatewayEnabled = await (options.resolveLlmGatewayEnabled ?? projectLlmGatewayEnabledById)(
+      input.projectId,
+    );
+
     // Prefer the model the user actually picked for this turn (from the prompt
     // body); the session's stored `opencode_model` is only the boot default and
     // goes stale the moment the model is switched. Both are known-servable —
     // one is being served right now, the other was validated at create — so
     // only the last resort has to prove itself.
-    const model =
-      input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null;
+    const model = llmGatewayEnabled
+      ? input.modelHint?.trim() || sessionModel(row) || (await fallbackModel(input)) || null
+      : null;
     let title: string | null = null;
     if (!model) {
-      appLogger.warn('[title-generate] no servable model to title with', {
-        sessionId: input.sessionId,
-      });
+      if (llmGatewayEnabled) {
+        appLogger.warn('[title-generate] no servable model to title with', {
+          sessionId: input.sessionId,
+        });
+      }
     } else {
       const minted = await mint(input.accountId, input.projectId, input.userId);
       if (minted) {

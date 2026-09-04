@@ -1,27 +1,22 @@
 'use client';
 
-import { ArrowUpRightIcon, SidebarSimpleIcon as PanelLeft } from '@phosphor-icons/react';
+import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { Button } from '@/components/ui/button';
-import Hint from '@/components/ui/hint';
 import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  sidebarOpenerLabel,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
 import { getProjectDetail } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
 import {
   CAPABILITY_TABS,
+  PRIMARY_TABS,
   activeCapabilityTab,
   capabilityTabHref,
   type CapabilityTab,
@@ -58,12 +53,23 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  * Optimistic while a probe is in flight: a tab disappears only on a denial we
  * actually received, so a slow `/effective` never blanks the bar for a
  * manager mid-navigation.
+ *
+ * Review is additionally flag-gated on `review_center` — the same gate the
+ * retired config page's Review section carried, so a flag that hides the
+ * inbox hides every way in. Flags default OFF here, unlike permissions: a
+ * flag is a fact the project detail already holds, not a probe in flight.
  */
+export interface CapabilityTabFlags {
+  reviewEnabled: boolean;
+}
+
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
+  flags: CapabilityTabFlags = { reviewEnabled: false },
 ): readonly CapabilityTab[] {
   if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
   return CAPABILITY_TABS.filter((tab) => {
+    if (tab.key === 'review' && !flags.reviewEnabled) return false;
     const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
     return pref ? caps[pref.action]?.allowed !== false : true;
   });
@@ -104,49 +110,23 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
 
   return (
     <Link
-      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}`}
-      prefetch={false}
+      /* `from=customize` is what earns the project panel a "Back to Customize"
+         breadcrumb instead of the hub's own "All projects". This link is the
+         ONLY way that marker gets set, so the panel can rely on there being a
+         Customize entry in history to go back to. */
+      href={`/accounts/${accountId}?tab=access-projects&project=${projectId}&from=customize`}
+      /* `prefetch={false}` disabled every prefetch path, not just the viewport
+         one: `next/dist/client/app-dir/link.js:108` derives `prefetchEnabled`
+         from it, and both `onMouseEnter` and `onTouchStart` return early when
+         it is off. The segment cache was therefore empty at click time and the
+         click ran the RSC fetch cold — the fetch that degrades into a full
+         document load on an auth bounce, a build-id skew, or a network blip. */
+      prefetch
       className="text-muted-foreground hover:text-foreground ml-auto flex w-fit flex-none items-center gap-1 px-1 py-3 text-sm font-medium whitespace-nowrap transition-colors"
     >
       Members
       <ArrowUpRightIcon className="size-3 opacity-60" aria-hidden />
     </Link>
-  );
-}
-
-/**
- * Sidebar opener — same rules as project-home / session header / sessions
- * inventory. Always on mobile (sheet has no docked affordance); desktop only
- * while the panel is undocked — ProjectSidebar already carries collapse when
- * expanded.
- *
- * Sits in flow with the tabs. Do not absolute-position it over the tab row:
- * that is how hit targets collide.
- */
-function CapabilitySidebarToggle() {
-  const sidebar = useOptionalSidebar();
-  // Shared gate — see sidebar-opener.ts. Must be called before the early
-  // return, and it already covers the `!sidebar` case.
-  const show = useShowPageSidebarOpener();
-  if (!sidebar || !show) return null;
-
-  const label = sidebarOpenerLabel(sidebar);
-
-  return (
-    <Hint label={label} side="bottom">
-      <Button
-        type="button"
-        aria-label={label}
-        variant="ghost"
-        size="icon"
-        onClick={sidebar.toggleSidebar}
-        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
-        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground shrink-0 cursor-pointer active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
-    </Hint>
   );
 }
 
@@ -170,16 +150,31 @@ function CapabilitySidebarToggle() {
  * column; the page body below is the flex-1 scroller.
  */
 /**
- * Settings trails the row, on the right — one `TabsList`, so the underline
- * indicator, keyboard roving, and `role="tablist"` semantics stay unified;
- * only the visual position of this tab changes. It reads as "how it's
- * configured", a different register from the build-the-agent tabs to its
- * left, and the gap says so without a second list or a divider. `ml-auto`
- * now lives on `MembersLaunchLink` (the first trailing element in DOM order,
- * rendered just before this array's tabs) — Settings trails it with no
- * further margin of its own.
+ * No trailing Settings tab any more. It trailed the row on the right until
+ * 2026-09-02, when `/projects/<id>/config` was retired: its sections are the
+ * Settings overlay's Workspace group now, and Review took a place in the row
+ * proper. `MembersLaunchLink` keeps its `ml-auto` and is the only trailing
+ * element.
+ */
+/**
+ * The hairline between Agents and everything an agent draws on (Skills
+ * through Secrets). One `TabsList` still —
+ * this is a `span`, not a second list, so the underline indicator and the
+ * keyboard roving stay unified. It is `aria-hidden` because the grouping is
+ * visual: a screen reader walks seven tabs either way.
+ */
+/**
+ * Settings trails the row, on the right, after the Members link — one
+ * `TabsList`, so the underline indicator, keyboard roving and `role="tablist"`
+ * stay unified; only the visual position of this tab changes. It reads as
+ * "how the project is configured", a different register from the build-the-
+ * agent tabs to its left, and the gap says so without a second list.
  */
 const TRAILING_TABS: readonly CapabilityTab['key'][] = ['config'];
+
+function GroupSeam() {
+  return <span aria-hidden className="bg-border mx-1 h-4 w-px shrink-0 self-center" />;
+}
 
 export function CapabilityTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname();
@@ -190,14 +185,27 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const tabs = visibleCapabilityTabs(caps);
+  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
+  const tabs = visibleCapabilityTabs(caps, { reviewEnabled });
+
+  const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
+  const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));
+  const library = leading.filter((tab) => !PRIMARY_TABS.includes(tab.key));
+  const trailing = tabs.filter((tab) => TRAILING_TABS.includes(tab.key));
+  const renderTab = (tab: CapabilityTab) => (
+    <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
+      <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
+        {tab.label}
+      </Link>
+    </TabsTrigger>
+  );
 
   return (
     <div
       className="kx-titlebar-row relative flex shrink-0 items-center gap-1 border-b px-2"
       data-sidebar-collapsed={sidebar?.state === 'collapsed' || undefined}
     >
-      <CapabilitySidebarToggle />
+      <SidebarToggle />
       <Tabs value={activeKey ?? ''} className="min-w-0 flex-1">
         <TabsList
           type="underline"
@@ -205,21 +213,13 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
           size="lg"
           className="h-auto w-full justify-start gap-5 border-b-0 px-2"
         >
-          {tabs.filter((tab) => !TRAILING_TABS.includes(tab.key)).map((tab) => (
-            <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
-              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                {tab.label}
-              </Link>
-            </TabsTrigger>
-          ))}
+          {primary.map(renderTab)}
+          {/* The seam only earns its pixel when both groups are drawn — a
+              role that holds only Agents gets no dangling bar. */}
+          {primary.length > 0 && library.length > 0 ? <GroupSeam /> : null}
+          {library.map(renderTab)}
           <MembersLaunchLink projectId={projectId} />
-          {tabs.filter((tab) => TRAILING_TABS.includes(tab.key)).map((tab) => (
-            <TabsTrigger key={tab.key} value={tab.key} asChild className="w-fit flex-none px-1 py-3">
-              <Link href={capabilityTabHref(projectId, tab.key)} prefetch={true}>
-                {tab.label}
-              </Link>
-            </TabsTrigger>
-          ))}
+          {trailing.map(renderTab)}
         </TabsList>
       </Tabs>
     </div>

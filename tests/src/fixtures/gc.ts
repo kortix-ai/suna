@@ -10,6 +10,7 @@ import { Client } from "../core/client";
 import { mapWithConcurrency } from "../core/concurrency";
 import { loadEnv, type Env } from "../core/env";
 import { log } from "../core/log";
+import { supabaseAdminHeaders } from "../core/supabase-admin";
 import { adminDeleteUser, passwordGrant } from "./supabase";
 
 const SYNTH_PASSWORD = "Ke2e-passw0rd-Aa1!";
@@ -93,7 +94,9 @@ async function listTestUsersViaApi(env: Env): Promise<SupaUser[]> {
   const out: SupaUser[] = [];
   for (let page = 1; page <= 100; page++) {
     const res = await fetch(`${env.supabaseUrl}/auth/v1/admin/users?page=${page}&per_page=200`, {
-      headers: { apikey: env.supabaseAnonKey!, authorization: `Bearer ${env.supabaseServiceRoleKey!}` },
+      headers: supabaseAdminHeaders(env.supabaseServiceRoleKey!, {
+        anonKey: env.supabaseAnonKey!,
+      }),
     });
     if (!res.ok) throw new Error(`admin list users failed: ${res.status} ${await res.text()}`);
     const body = (await res.json()) as { users?: SupaUser[] };

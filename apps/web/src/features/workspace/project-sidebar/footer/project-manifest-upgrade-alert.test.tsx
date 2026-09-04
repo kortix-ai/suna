@@ -35,9 +35,12 @@ describe('ProjectManifestUpgradeAlertView — v1/v2 visibility', () => {
 
   test('expanded body explains the v1→v2 migration and offers the action', () => {
     const html = render({ visible: true, pending: false, onMigrate: () => {}, defaultOpen: true });
-    expect(html).toContain('Migrate to v2');
+    expect(html).toContain('Start upgrade');
     expect(html).toContain('kortix.toml');
     expect(html).toContain('kortix.yaml');
+    // The row promises nothing happens without review — the reassurance IS the
+    // reason someone clicks a migration they did not ask for.
+    expect(html).toContain('Nothing changes until you approve it');
   });
 
   test('disables the migrate action while the session is being created', () => {
@@ -55,7 +58,7 @@ describe('ProjectManifestUpgradeAlertView — click wiring', () => {
       calls += 1;
     };
     const html = render({ visible: true, pending: false, onMigrate, defaultOpen: true });
-    expect(html).toContain('Migrate to v2');
+    expect(html).toContain('Start upgrade');
     onMigrate();
     expect(calls).toBe(1);
   });

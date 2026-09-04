@@ -47,23 +47,56 @@ describe('/new page: no invented constraints', () => {
   });
 
   test('issues no MUTATING request on mount — only reads, and only submit ever writes', () => {
-    // Task 12 wires an accounts READ on mount (below), so "zero requests" is
-    // no longer the right bar. The bar this page must hold is "zero WRITES":
-    // no effect, and no mutation, can fire without the user pressing submit.
-    expect(code).not.toContain('useEffect(');
+    // Task 12 wires an accounts READ on mount, so "zero requests" is no longer
+    // the right bar. The bar this page must hold is "zero WRITES": nothing can
+    // fire without the user pressing submit.
     expect(code).not.toContain('useMutation(');
+
+    // ONE effect is allowed, and it is the signed-out guard. Counted, not
+    // spot-checked: "no useEffect" was the old bar and it is exactly the kind
+    // of assertion a second effect slips past when it is relaxed to a
+    // `toContain`. The body is pinned too, so this stays a WRITE ban rather
+    // than an effect budget.
+    // Back to ZERO effects. The signed-out guard this page needs is the shared
+    // `useSignedOutRedirect()` hook — one copy for all eight surfaces that had
+    // hand-rolled it, and the only place the `isSigningOut()` stand-down has to
+    // be written.
+    expect(code).not.toContain('useEffect(');
+    expect(code).toContain('useSignedOutRedirect();');
+
     // Paired presence check: there IS a submit path, just not an eager one.
     expect(code).toContain('onSubmit');
   });
 
-  test('reads the account list on mount through the shared ["accounts"] cache key, not a page-local one', () => {
+  test('a session that dies while the page is mounted does not leave a dead form up', () => {
+    // Middleware gates the REQUEST, not the mounted document: a token that
+    // expires here, or a sign-out in another tab, otherwise leaves a signed-out
+    // user on a create form whose submit can only 401. The hook owns the
+    // redirect; this page only has to call it.
+    expect(code).toContain("from '@/lib/auth/use-signed-out-redirect'");
+    expect(code).toContain('useSignedOutRedirect();');
+  });
+
+  test('reads the account list through the shared user-scoped hook, not a page-local query', () => {
     // Regression pin: an idempotent GET is allowed and expected here — it is
-    // what makes AccountPicker and the real submit-gate count possible. A
-    // page-local query key would duplicate the request WorkspaceSwitcher /
-    // AccountSwitcher already make instead of sharing their cache entry.
-    expect(code).toContain('useQuery({');
-    expect(code).toContain("queryKey: ['accounts']");
-    expect(code).toContain('queryFn: listAccounts');
+    // what makes AccountPicker and the real submit-gate count possible.
+    //
+    // The bar CHANGED, and not for style. This page used to hand-type
+    // `useQuery({ queryKey: ['accounts'], queryFn: listAccounts })`. That key
+    // carries no signed-in user, so a leftover single-account list belonging
+    // to the PREVIOUS user was readable here byte-for-byte — and this page
+    // resolves its create target out of that list, so the create went out
+    // with a foreign `account_id` under the new user's JWT (403). A
+    // page-local `useQuery` is now banned on both counts: it duplicates the
+    // request WorkspaceSwitcher / AccountSwitcher already make, AND it
+    // re-opens that hole. `useAccountsList()` is the only reader.
+    expect(code).toContain('const accountsQuery = useAccountsList();');
+    expect(code).toContain("from '@/hooks/account/use-accounts-list'");
+
+    // The ban, asserted as an absence AND paired with the presence above, so
+    // deleting the read outright cannot make this test pass.
+    expect(code).not.toContain('useQuery(');
+    expect(code).not.toContain('listAccounts');
   });
 });
 
@@ -72,7 +105,17 @@ describe('/new page: escape hatch for a user with zero workspaces', () => {
     expect(code).toContain('<AccountPicker');
     expect(code).toContain('fallbackLabel={user?.email}');
     expect(code).toContain('Log out');
-    expect(code).toContain('signOut()');
+    // `performSignOut()`, not the old bare `void signOut()`. Spelled in full on
+    // purpose: `signOut()` is a SUBSTRING of `performSignOut()`, so the previous
+    // assertion could not tell the fixed control from the broken one — which
+    // neither awaited the sign-out nor navigated, and so signed the user out
+    // and left them sitting on this form.
+    expect(code).toContain('void performSignOut();');
+    // ...and it now says so while it works. The sign-out makes a server round
+    // trip this control never made before and is bounded at four steps, which
+    // is long enough that a silent button reads as a dead one.
+    expect(code).toContain('disabled={signingOut}');
+    expect(code).toContain("{signingOut ? 'Signing out' : 'Log out'}");
 
     // Rendered ahead of the <form>, not gated behind form state — a user
     // blocked by an invalid/incomplete form must still be able to leave.
@@ -235,8 +278,13 @@ describe('/new page: layout shape (design is a release gate here)', () => {
    * together — a test that fails five times is not a test anyone reads.
    */
   test('Advanced renders, currently without a name gate', () => {
-    expect(code).toContain('<AdvancedFields state={state} onChange={setState} />');
+    expect(code).toContain('<AdvancedFields');
     expect(code).not.toContain('{showIcon ? <AdvancedFields');
+    // `effectiveAccountId`, not `state.accountId`: the GitHub queries inside
+    // are account-scoped and `state.accountId` is legitimately null for a
+    // single-account user, which would leave them disabled for exactly those
+    // users.
+    expect(code).toContain('accountId={effectiveAccountId}');
   });
 
   test('icon and name sit in one field group; submit is a sibling below it', () => {
@@ -277,15 +325,26 @@ describe('/new page: AccountPicker wiring', () => {
     expect(pickerIndex).toBeGreaterThan(0);
     expect(pickerIndex).toBeLessThan(formIndex);
 
+    // Review round 1, Important 3: `accounts` is ALWAYS the REAL
+    // `creatableAccounts` list — the page used to hand AccountPicker a
+    // falsified, sometimes-emptied stand-in (`pickerAccounts`,
+    // `resolveAccountsForPicker`) to suppress rendering, which made
+    // `accounts` stop meaning "the accounts the user can create in" while
+    // `value` still named one of them. Suppression is now the EXPLICIT
+    // `showAccountLine` prop below, decided once by `shouldShowAccountLine`.
     expect(picker).toContain('accounts={creatableAccounts}');
     expect(picker).not.toContain('accounts={accounts}');
-    // Effective id = explicit pick OR email-matched / primary default.
+    expect(picker).not.toContain('accounts={pickerAccounts}');
+    // Effective id = explicit pick OR identity-matched / primary default —
+    // null outright for a FOREIGN list (Task 2 item 2).
     expect(picker).toContain('value={effectiveAccountId}');
     expect(picker).toContain(
       "onChange={(accountId) => setState((s) => ({ ...s, accountId }))}",
     );
     expect(picker).toContain('fallbackLabel={user?.email}');
-    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.email)');
+    expect(picker).toContain('showAccountLine={showAccountLine}');
+    expect(code).toContain('shouldShowAccountLine(creatableAccounts, userId)');
+    expect(code).toContain('resolveDefaultCreatableAccountId(creatableAccounts, userId)');
     expect(code).toContain('void create(effectiveState)');
   });
 
@@ -293,16 +352,40 @@ describe('/new page: AccountPicker wiring', () => {
     expect(code).toContain("from '@/features/workspace/new/account-picker'");
   });
 
-  test('the SAME creatableAccounts value feeds both the picker and the submit gate — no count mismatch', () => {
-    // "What the user can pick" and "what gates submit" must be the exact same
-    // list. Counting references to the shared variable, rather than checking
-    // each site in isolation, is what catches a future edit that reintroduces
-    // two different lists (e.g. a second, slightly different filter for one
-    // of the two call sites).
+  // Review round 1, Important 2: `user?.id` (`string | undefined`) is
+  // normalized to `string | null` exactly once, so every identity-aware call
+  // below shares one coercion instead of each caller silently omitting it.
+  test('user?.id is normalized to a required, non-omittable userId exactly once, and every identity-aware call uses it', () => {
+    expect(code).toContain('const userId = user?.id ?? null;');
+    expect(code).not.toContain('isForeignAccountList(creatableAccounts, user?.id)');
+    expect(code).not.toContain('shouldShowAccountLine(creatableAccounts, user?.id)');
+    expect(code).not.toContain('resolveDefaultCreatableAccountId(creatableAccounts, user?.id)');
+  });
+
+  test('the SAME creatableAccounts value feeds AccountPicker directly, the default resolver, the foreign-list check, the show-line decision, and the submit gate — no count mismatch', () => {
+    // "What the user can pick" and "what gates submit" must be derived from
+    // the exact same list. Counting references to the shared variable, rather
+    // than checking each site in isolation, is what catches a future edit
+    // that reintroduces two different lists (e.g. a second, slightly
+    // different filter for one of the call sites).
     const creatableRefs = code.match(/creatableAccounts/g) ?? [];
-    // Declaration + default resolver + AccountPicker accounts= +
-    // isSubmittable length + zero-state note length === 0 = 5.
-    expect(creatableRefs).toHaveLength(5);
+    // Declaration + isForeignAccountList + shouldShowAccountLine +
+    // default resolver + AccountPicker's own accounts= (review round 1,
+    // Important 3 — reverted from the falsified `pickerAccounts` stand-in
+    // back to the real list) + isSubmittable length + zero-state note
+    // length === 0 = 7.
+    expect(creatableRefs).toHaveLength(7);
+  });
+
+  test('a FOREIGN accounts list (item 2, G2 fail closed) nulls the effective account id and blocks submit', () => {
+    expect(code).toContain(
+      'const foreignAccountList = isForeignAccountList(creatableAccounts, userId);',
+    );
+    expect(code).toContain('const defaultAccountId = foreignAccountList');
+    expect(code).toContain(
+      'const effectiveAccountId = foreignAccountList ? null : (state.accountId ?? defaultAccountId);',
+    );
+    expect(code).toContain('!foreignAccountList');
   });
 });
 
@@ -323,6 +406,37 @@ describe('/new page: zero-creatable-accounts state', () => {
     // regardless of their real access — without this gate, EVERY user would
     // see the "you need access" note for one frame on every visit.
     const noteGuard = code.match(/\{[^{}]*creatableAccounts\.length === 0[^{}]*\? \(/)?.[0];
+    expect(noteGuard).toBeDefined();
+    expect(noteGuard).toContain('!accountsQuery.isLoading');
+  });
+});
+
+describe('/new page: foreign-accounts-list state (B3)', () => {
+  // Before this, `foreignAccountList` (2+ creatable accounts, none the
+  // user's own) nulled the account id and blocked submit with NOTHING telling
+  // the user why: no picker (the top bar collapses to bare identity text via
+  // `showAccountLine={false}`), no "Create in" line, a permanently disabled
+  // button. After Task 10 scoped `['accounts']` to the signed-in user, the
+  // only user who can still reach this state is a legitimate one (no
+  // personal account, owner/admin on 2+ team accounts via SAML JIT or a
+  // direct invite acceptance) — a silent dead end for a real user is strictly
+  // worse than the 403 this branch set out to fix.
+  test('renders a reason with an escape hatch instead of a silent dead end', () => {
+    expect(code).toContain('!accountsQuery.isLoading && foreignAccountList');
+    expect(code).toContain("We can't tell which of your accounts is yours");
+    expect(code).toContain('mailto:support@kortix.ai');
+    // Same restrained treatment as the sibling zero-accounts note — no new
+    // chrome introduced for this one state.
+    expect(code).not.toContain('<InfoBanner');
+  });
+
+  test('the note is gated on accountsQuery.isLoading, same reason as the zero-accounts note', () => {
+    // `foreignAccountList` is computed from `creatableAccounts`, which is
+    // `[]` for every user during the load window — `isForeignAccountList`
+    // returns `false` for an empty list (length < 2), so this specific note
+    // cannot flash on its own; the gate still has to be asserted directly so
+    // a future change to that short-circuit cannot silently drop it.
+    const noteGuard = code.match(/\{[^{}]*foreignAccountList[^{}]*\? \(/)?.[0];
     expect(noteGuard).toBeDefined();
     expect(noteGuard).toContain('!accountsQuery.isLoading');
   });

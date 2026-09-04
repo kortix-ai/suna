@@ -127,6 +127,7 @@ export * from './use-teams-installations';
 export * from './use-tunnel';
 export * from './use-admin-sandboxes';
 export * from './use-authenticated-preview-url';
+export * from './use-static-file-preview';
 export * from './run-pty-command';
 export * from './runtime-actions';
 
@@ -158,3 +159,24 @@ export * from './use-project-name';
 export * from './use-project-session';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+
+// "Sign in with Kortix" — the browser half of `createKortixAuth`
+// (`@kortix/sdk/server`): the viewer hook and the sign-in link.
+export {
+  useKortixViewer,
+  fetchKortixViewer,
+  SignInWithKortix,
+  kortixSignInHref,
+  kortixSignOutHref,
+  KORTIX_AUTH_DEFAULT_BASE_PATH,
+  type KortixViewerInfo,
+  type KortixViewerState,
+  type SignInWithKortixProps,
+} from './sign-in-with-kortix';
+
+// Kortix Apps — the viewer of a Kortix-hosted App (no login of its own).
+// Kept across the runtime-client revert; no runtime-client dependency.
+export {
+  useKortixAppViewer,
+  type KortixAppViewerState,
+} from './use-kortix-app-viewer';

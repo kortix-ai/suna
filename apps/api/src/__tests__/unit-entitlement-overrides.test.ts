@@ -293,6 +293,7 @@ describe('invariants', () => {
     expect([...OVERRIDE_KEYS].sort() as string[]).toEqual(
       [
         'auditAccess',
+        'branding',
         'computeRateMultiplier',
         'demoEnterprise',
         'enterpriseEntitled',

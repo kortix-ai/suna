@@ -1,5 +1,6 @@
+import { VALID_TABS } from '@/features/accounts/hub/sections';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -8,10 +9,9 @@ import {
   channelsHref,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import {
-  ALL_PROJECT_SETTINGS_SECTIONS,
-  projectSettingsSectionHref,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
-import { SUBMENU_PAGE_BY_ID } from '@/features/workspace/command-palette';
+  SETTINGS_TAB_SUBMENU_PAGE,
+  SUBMENU_PAGE_BY_ID,
+} from '@/features/workspace/command-palette';
 import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
 import { getItemsForSurface } from '@/lib/menu-registry';
 
@@ -48,6 +48,65 @@ import { getItemsForSurface } from '@/lib/menu-registry';
 
 const PROJECT_TOKEN = '{projectId}';
 const ACCOUNT_TOKEN = '{accountId}';
+
+/**
+ * Every routable path under `src/app`, as a segment list.
+ *
+ * Route groups (`(app)`, `(capabilities)`) are stripped — they organize files,
+ * not URLs — and a directory counts only when it holds a `page.tsx`, which is
+ * what makes a path routable in the App Router. `[id]`, `[...slug]` and
+ * `[[...slug]]` stay as-is and are matched structurally below.
+ */
+function collectRoutes(dir: string, segments: string[] = [], out: string[][] = []): string[][] {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  if (entries.some((e) => e.isFile() && e.name === 'page.tsx')) out.push(segments);
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    // A route group contributes no URL segment; `@slot` and `_private`
+    // directories contribute no route at all.
+    if (entry.name.startsWith('@') || entry.name.startsWith('_')) continue;
+    const isGroup = entry.name.startsWith('(') && entry.name.endsWith(')');
+    collectRoutes(join(dir, entry.name), isGroup ? segments : [...segments, entry.name], out);
+  }
+  return out;
+}
+
+const APP_DIR = join(import.meta.dir, '..', 'app');
+const ROUTES = collectRoutes(APP_DIR);
+
+/**
+ * One href's path against one route's segments.
+ *
+ * A literal segment must match exactly. A dynamic one (`[id]`) matches any
+ * single segment, which is what lets the registry's own `{projectId}` and
+ * `{accountId}` tokens stand in for the ids they are replaced by at render.
+ * A catch-all (`[...slug]`) swallows the remainder; the optional form
+ * (`[[...slug]]`) also matches a path that stops before it.
+ */
+function routeMatches(route: string[], path: string[]): boolean {
+  let r = 0;
+  for (const actual of path) {
+    const segment = route[r];
+    if (segment === undefined) return false;
+    if (segment.startsWith('[[...') || segment.startsWith('[...')) return true;
+    const isDynamic = segment.startsWith('[') && segment.endsWith(']');
+    if (!isDynamic && segment !== actual) return false;
+    r++;
+  }
+  if (r === route.length) return true;
+  return route.length === r + 1 && route[r]!.startsWith('[[...');
+}
+
+/** Whether any route in `src/app` serves this href. */
+function isLiveRoute(href: string): boolean {
+  const path = href.split('?')[0]!.split('#')[0]!.split('/').filter(Boolean);
+  return ROUTES.some((route) => routeMatches(route, path));
+}
 
 const paletteRows = getItemsForSurface('commandPalette').filter(
   (item) => !LEGACY_PALETTE_HIDDEN.has(item.id),
@@ -87,58 +146,31 @@ describe('every capability tab has a palette row', () => {
   });
 });
 
-describe('every project settings section has a palette row', () => {
-  for (const section of ALL_PROJECT_SETTINGS_SECTIONS) {
-    test(`"${section.label}" (?section=${section.key}) is reachable`, () => {
-      const href = projectSettingsSectionHref(PROJECT_TOKEN, section.key);
-      expect({ section: section.key, href, hasRow: paletteHrefs.has(href) }).toEqual({
-        section: section.key,
-        href,
-        hasRow: true,
-      });
-    });
-  }
-
-  test('the two flag-gated sections carry the SAME flag their section does', () => {
-    // `projectSettingsSections` pushes Review only when `reviewEnabled` and
-    // Voice only when `voiceEnabled`. A palette row without the matching
-    // `requiresFlag` outlives its own pane and lands on a section the sub-nav
-    // does not render.
-    expect(rowFor(projectSettingsSectionHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe(
-      'review_center',
-    );
-    expect(rowFor(projectSettingsSectionHref(PROJECT_TOKEN, 'voice'))?.requiresFlag).toBe('voice');
+describe('the flag-gated capability tab', () => {
+  test('Review carries the same flag its tab does', () => {
+    // `/projects/<id>/config` and its `?section=` rows are gone (2026-09-02);
+    // its configuration sections are Settings-overlay tabs, whose palette rows
+    // are DERIVED from the rail and covered by `command-palette.test.tsx`.
+    // Review is the one section that became a capability tab, and its row
+    // must hide exactly when the tab does.
+    expect(rowFor(capabilityTabHref(PROJECT_TOKEN, 'review'))?.requiresFlag).toBe('review_center');
   });
 });
 
 describe('every account section has a palette row', () => {
   /**
-   * Read out of the page's source rather than imported, exactly as
-   * `features/workspace/settings/route-contract.test.ts` does: importing
-   * `/accounts/[id]/page.tsx` drags every IAM tab module in with it, and the
-   * allowlist is a `const … as const` literal that a regex can read
-   * faithfully.
+   * `VALID_TABS` used to be a private `const … as const` inside
+   * `/accounts/[id]/page.tsx`, so this read the page's source and parsed it
+   * with a regex — importing the page drags every IAM tab module in with it.
+   * The allowlist is an exported constant of the hub catalog now
+   * (`features/accounts/hub/sections.ts`), which imports only icons, so the
+   * join is a plain import and cannot silently stop matching.
    */
-  const source = readFileSync(
-    join(import.meta.dir, '..', 'app', '(app)', 'accounts', '[id]', 'page.tsx'),
-    'utf8',
-  );
-  const block = source.match(/const VALID_TABS = \[([\s\S]*?)\] as const;/);
-
-  test('the page still declares a VALID_TABS allowlist this test can read', () => {
-    expect(block).not.toBeNull();
-  });
-
-  const tabs = (block?.[1] ?? '')
-    .split(',')
-    .map((line) => line.trim().replace(/^['"]|['"]$/g, ''))
-    .filter(Boolean);
-
   test('the allowlist is not empty', () => {
-    expect(tabs.length).toBeGreaterThan(0);
+    expect(VALID_TABS.length).toBeGreaterThan(0);
   });
 
-  for (const tab of tabs) {
+  for (const tab of VALID_TABS) {
     test(`?tab=${tab} is reachable`, () => {
       const href = `/accounts/${ACCOUNT_TOKEN}?tab=${tab}`;
       expect({ tab, href, hasRow: paletteHrefs.has(href) }).toEqual({ tab, href, hasRow: true });
@@ -153,7 +185,8 @@ describe('the two rows that answer in-palette instead of navigating', () => {
     // instead. Pin both directions: every key names a live palette row, and
     // the two rows this change added map to the pages they promise.
     expect(SUBMENU_PAGE_BY_ID['review-changes']).toBe('changes');
-    expect(SUBMENU_PAGE_BY_ID['proj-config-feature-flags']).toBe('flags');
+    // Feature flags is a derived settings row now, keyed by overlay tab.
+    expect(SETTINGS_TAB_SUBMENU_PAGE['feature-flags']).toBe('flags');
     for (const id of Object.keys(SUBMENU_PAGE_BY_ID)) {
       expect({ id, isRow: paletteRows.some((item) => item.id === id) }).toEqual({
         id,
@@ -195,5 +228,71 @@ describe('the destinations that need a resolved id at runtime', () => {
     const row = paletteRows.find((item) => item.id === 'review-changes');
     expect(row?.requiresProject).toBe(true);
     expect(row?.requiresSession).toBeUndefined();
+  });
+});
+
+/**
+ * ============================================================================
+ * THE OTHER DIRECTION: EVERY ROW POINTS AT A ROUTE THAT EXISTS.
+ * ============================================================================
+ *
+ * Everything above pins that each destination HAS a row. Nothing pinned the
+ * reverse, and that is the half a real defect walked through: `/projects/<id>/
+ * config` was deleted on 2026-09-02, and `proj-config-feature-flags` kept
+ * pointing at it until 2026-09-03. Typing "feature flag" offered that row
+ * first, under Navigation, and selecting it navigated to a 404 instead of
+ * opening the Feature flags pane.
+ *
+ * Deleting a route is the moment this breaks, and it breaks silently: the
+ * registry is a plain data table, so no import goes red and no type narrows.
+ * Reading `src/app` from disk is what makes the two facts one fact.
+ */
+describe('every palette row points at a live route', () => {
+  test('the route table was actually found', () => {
+    // A wrong `APP_DIR` would make every assertion below vacuously pass.
+    expect(ROUTES.length).toBeGreaterThan(50);
+    expect(ROUTES.some((r) => r.join('/') === 'projects/[id]/files')).toBe(true);
+  });
+
+  test('/projects/[id]/customize/settings is live again, so its row may point at it', () => {
+    // The route this test exists because of. It was deleted on 2026-09-02
+    // and brought back on 2026-09-03 with the Customize bar's Settings tab.
+    expect(isLiveRoute('/projects/{projectId}/customize/settings')).toBe(true);
+  });
+
+  for (const row of paletteRows.filter((item) => item.kind === 'navigate' && item.href)) {
+    test(`"${row.label}" (${row.id}) → ${row.href}`, () => {
+      expect({ id: row.id, href: row.href, live: isLiveRoute(row.href!) }).toEqual({
+        id: row.id,
+        href: row.href,
+        live: true,
+      });
+    });
+  }
+});
+
+describe('the /config sections are reached through the Settings tab rows', () => {
+  test('exactly the four section rows point at /config', () => {
+    // The Customize bar's Settings tab and its sections came back on
+    // 2026-09-03 (Marko) when the overlay's Workspace group was removed;
+    // Review stays a capability tab and has no `/config` row.
+    const rows = paletteRows
+      .filter((item) => item.href?.includes('/customize/settings'))
+      .map((item) => item.id)
+      .sort();
+    expect(rows).toEqual([
+      'proj-config-feature-flags',
+      'proj-config-general',
+      'proj-config-sandbox',
+      'proj-config-upgrades',
+    ]);
+  });
+
+  test('Feature flags is reachable as the Settings tab row', () => {
+    // The overlay's derived row is gone with its Workspace group; the
+    // registry row points at the live `/config?section=feature-flags`, which
+    // the route loop above proves exists.
+    expect(SETTINGS_TAB_SUBMENU_PAGE['feature-flags']).toBe('flags');
+    expect(paletteRows.some((item) => item.id === 'proj-config-feature-flags')).toBe(true);
   });
 });

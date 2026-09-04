@@ -121,6 +121,7 @@ export { useVersionStore, useSelectedVersion } from './store/version-store';
 
 // Components
 export {
+  DRIVE_ACTION_ROW_CLASS,
   DriveExplorer,
   FileContentRenderer,
   FileSearch,

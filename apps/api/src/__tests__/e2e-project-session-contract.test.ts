@@ -63,6 +63,7 @@ let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let lastSessionInsertValues: Record<string, unknown> | null = null;
 const lifecycleCommandInserts: Array<Record<string, unknown>> = [];
+let lifecycleDrainClaimWhere: unknown = null;
 let lastSessionListWhere: unknown = null;
 // `active_since` / `deadline_at` are assigned by a DB trigger, never by
 // application code, so these HTTP-contract fixtures deliberately omit them —
@@ -133,6 +134,7 @@ function resetState() {
   activeSessionCount = 0;
   lastSessionInsertValues = null;
   lifecycleCommandInserts.length = 0;
+  lifecycleDrainClaimWhere = null;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
@@ -252,6 +254,17 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
+// The fresh-session fast-boot hint is ALWAYS resolved at session create
+// (2026-08-27): against this fixture's fake repo URL the mirror clone fails
+// slowly (~0.4 s), which let fire-and-forget provisions from earlier tests
+// land inside a later test's counter window. Resolve it instantly here; the
+// hint itself is covered by fast-boot-git-hint.test.ts and the REST flows.
+const realFastBootGitHint = await import('../projects/lib/fast-boot-git-hint');
+mock.module('../projects/lib/fast-boot-git-hint', () => ({
+  ...realFastBootGitHint,
+  resolveFastBootGitHintWithCache: async () => undefined,
+}));
+
 mock.module('../projects/git', () => ({
   MergeConflictError: class MergeConflictError extends Error {},
   createRemoteSessionBranch: async () => {
@@ -299,6 +312,7 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -338,13 +352,6 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => undefined,
   ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: 'kortix-ppwarm-test',
-    tip: 'a'.repeat(40),
-    built: false,
-    provider: 'daytona',
-  }),
-  routedPerProjectWarmImageName: () => 'kpp2-test',
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
@@ -624,7 +631,11 @@ mock.module('../shared/db', () => ({
           then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
             Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
           },
-          orderBy: async () => {
+          orderBy: () => {
+            if (table === sessionLifecycleCommands) {
+              lifecycleDrainClaimWhere = predicate ?? null;
+              return { limit: async () => [] };
+            }
             if (table === projectSecrets) return secretRows;
             if (table === projectSessions) {
               // Recorded so a test can assert WHICH predicate the list route
@@ -632,9 +643,9 @@ mock.module('../shared/db', () => ({
               // asserting on the response alone would pass even if the filter
               // were never applied.
               lastSessionListWhere = predicate ?? null;
-              return sessionRow ? [sessionRow] : [];
+              return Promise.resolve(sessionRow ? [sessionRow] : []);
             }
-            return [];
+            return Promise.resolve([]);
           },
           limit: async () => {
             if (fields && Object.keys(fields).includes('activeCount'))
@@ -1235,6 +1246,8 @@ describe('project session API contract', () => {
           initSucceededAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
           opencodeReadyWaitStartedAt: staleReadyWaitStartedAt,
           opencodeReadyWaitReason: 'unreachable',
+          opencodeUnreachableWaitStartedAt: staleReadyWaitStartedAt,
+          opencodeNotReadyWaitStartedAt: staleReadyWaitStartedAt,
           runtimeIdentityState: 'unavailable',
           runtimeUnavailableReason: 'runtime_not_ready_timeout',
         },
@@ -1269,6 +1282,8 @@ describe('project session API contract', () => {
     const resumedMetadata = sessionSandboxRows[0]!.metadata as Record<string, unknown>;
     expect(resumedMetadata.opencodeReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.opencodeReadyWaitReason).toBeUndefined();
+    expect(resumedMetadata.opencodeUnreachableWaitStartedAt).toBeUndefined();
+    expect(resumedMetadata.opencodeNotReadyWaitStartedAt).toBeUndefined();
     expect(resumedMetadata.runtimeIdentityState).toBeUndefined();
     expect(resumedMetadata.runtimeUnavailableReason).toBeUndefined();
     expect(resumedMetadata.runtimeWakeStartedAt).toEqual(expect.any(String));
@@ -1386,17 +1401,141 @@ describe('project session API contract', () => {
       { method: 'POST' },
     );
     expect(response.status).toBe(200);
+    // The cooldown is NOT a terminal answer: the server itself re-attempts once
+    // it lapses, so the honest stage is `starting` and `retriable` is true.
+    // It says WHICH check failed and WHEN it will try again.
     expect(await response.json()).toMatchObject({
-      stage: 'stopped',
-      retriable: false,
+      stage: 'starting',
+      retriable: true,
       reason: 'runtime_wake_cooldown',
+      action: 'cooling_down',
+      boot: { phase: 'resuming', actively_starting: false },
       sandbox: { status: 'stopped' },
       failure: {
         category: 'sandbox-provider',
         retryable: true,
+        evidence: { check: 'start_failed', attempts: 1 },
       },
     });
+    // …and the cooldown still holds the provider off: exactly one start.
     expect(providerStartCalls).toBe(1);
+    expect(failureMetadata.runtimeStartFailureCount).toBe(1);
+  });
+
+  test('an expired wake cooldown RE-ATTEMPTS on the next /start — no restart needed', async () => {
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-expired-wake-failure',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_wake_failed',
+          runtimeWakeError: 'start_failed',
+          runtimeWakeRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    // Essentia 2026-08-26: this gate used to answer `false` for ever, so the
+    // stamp could only be cleared by a human pressing Restart (sessions
+    // e06ad0c4 and 9c8749ac). Past the cooldown it is permission to try again.
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-expired-wake-failure',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+    await flushUntil(() => providerStartCalls > 0);
+    expect(providerStartCalls).toBe(1);
+
+    const response = await createApp().request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+
+    expect(response.status).toBe(200);
+    // The re-attempt is a live wake, not a replayed stamp.
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.stage).toBe('starting');
+    expect(body.retriable).toBe(true);
+    expect(body.reason).not.toBe('runtime_wake_failed');
+  });
+
+  test('the automatic rung re-baselines the boot clocks but KEEPS the failure accounting', async () => {
+    // Essentia 2026-08-26, session 29861dfa / box inqwpv4a. Attempt 1's
+    // `opencodeBootWaitFirstSeenAt` survived the cooldown rung, so attempt 2's
+    // boot was judged against a 10-minute cap that had already run ~7 minutes.
+    // It was parked at 13:34:49.202 — 14 ms before its daemon claimed its first
+    // turn at 13:34:49.216.
+    sessionRow = { ...sessionRow!, status: 'stopped', error: null };
+    const attempt1 = new Date(Date.now() - 11 * 60_000).toISOString();
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        baseUrl: null,
+        status: 'stopped',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          stopReason: 'runtime_boot_failed',
+          runtimeParkReason: 'runtime_not_ready_timeout',
+          runtimeStartFailureCount: 2,
+          runtimeStartFailedAt: attempt1,
+          runtimeStartRetryAfterAt: new Date(Date.now() - 1_000).toISOString(),
+          // Attempt 1's clocks, which nothing used to clear.
+          opencodeBootWaitFirstSeenAt: attempt1,
+          opencodeNotReadyWaitStartedAt: attempt1,
+          opencodeReadyWaitReason: 'not_ready',
+          opencodeBootPhase: 'config-deps|opencode=starting',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+      },
+    ];
+
+    expect(
+      await resumeStoppedSandbox({
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        provider: 'platinum',
+        externalId: 'platinum-rung-rebaseline',
+        metadata: sessionSandboxRows[0]!.metadata as Record<string, unknown>,
+      }),
+    ).toBe(true);
+
+    const claimed = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    // Every readiness clock is gone: attempt 2 boots against a clean budget.
+    expect(claimed.opencodeBootWaitFirstSeenAt).toBeUndefined();
+    expect(claimed.opencodeBootPhase).toBeUndefined();
+    expect(claimed.opencodeNotReadyWaitStartedAt).toBeUndefined();
+    expect(claimed.opencodeReadyWaitReason).toBeUndefined();
+    // …and the escalation accounting survives, unlike a human Restart.
+    expect(claimed.runtimeStartFailureCount).toBe(2);
+    expect(claimed.runtimeStartFailedAt).toBe(attempt1);
+    // The claim is live, so /start reports a wake rather than a stamp.
+    expect(typeof claimed.runtimeWakeId).toBe('string');
   });
 
   test('concurrent stopped-session resumes issue one provider start and open one meter', async () => {
@@ -1631,7 +1770,7 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
 
     sessionSandboxRows = [
@@ -1655,16 +1794,7 @@ describe('project session API contract', () => {
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://gitlab.com/acme/private-project.git',
-      source: 'project_credential',
-      auth: {
-        username: 'x-access-token',
-        token: 'gitlab-project-token',
-        type: 'basic',
-      },
-    });
+    expect(cloneRes.status).toBe(404);
   });
 
   test('derives session origin from the caller token without session attribution fields', async () => {
@@ -1767,18 +1897,12 @@ describe('project session API contract', () => {
     const patCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${SESSION_AGENT_PAT}` },
     });
-    expect(patCloneRes.status).toBe(403);
-    expect(await patCloneRes.json()).toMatchObject({
-      message: 'session workspace does not allow repository access',
-    });
+    expect(patCloneRes.status).toBe(404);
 
     const sandboxCloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
-    expect(sandboxCloneRes.status).toBe(403);
-    expect(await sandboxCloneRes.json()).toMatchObject({
-      error: 'sandbox workspace does not allow repository access',
-    });
+    expect(sandboxCloneRes.status).toBe(404);
 
     for (const suffix of ['diff', 'merge-preview']) {
       const crRes = await app.request(
@@ -1981,6 +2105,9 @@ describe('project session API contract', () => {
     const env = lastProvisionInput!.extraEnvVars ?? {};
     expect(env).not.toHaveProperty('KORTIX_END_USER_REF');
     expect(env).not.toHaveProperty('KORTIX_ORIGIN_REF');
+    // Native mode (llm_gateway off — the default): the pin is stored and
+    // delivered as OpenCode's own `provider/model` ref, never rebadged
+    // `kortix/…`.
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.GMAIL_TOKEN).toBe('g-secret');
     expect(env.STRIPE_SECRET).toBeUndefined();
@@ -2083,16 +2210,7 @@ describe('project session API contract', () => {
     const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
       headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
     });
-    expect(cloneRes.status).toBe(200);
-    expect(await cloneRes.json()).toMatchObject({
-      repo_url: 'https://git.example.test/legacy-private-project',
-      source: 'project_credential',
-      auth: {
-        username: 'x-access-token',
-        token: 'legacy-git-token',
-        type: 'basic',
-      },
-    });
+    expect(cloneRes.status).toBe(404);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -3366,7 +3484,7 @@ describe('project session API contract', () => {
         metadata: {
           initStatus: 'ready',
           initSucceededAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
-          opencodeReadyWaitStartedAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
           opencodeReadyWaitReason: 'unreachable',
         },
         lastUsedAt: null,
@@ -3397,6 +3515,71 @@ describe('project session API contract', () => {
     const parkedMetadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
     expect(parkedMetadata.runtimeIdentityState).toBeUndefined();
     expect(parkedMetadata.stopReason).toBe('runtime_boot_failed');
+
+    // The park stamps a retry clock, so the immediate re-poll is a COOLDOWN,
+    // not the 10-hour `stage:"failed"` replay session 9c8749ac lived in.
+    expect(typeof parkedMetadata.runtimeStartRetryAfterAt).toBe('string');
+    expect(parkedMetadata.runtimeStartFailureCount).toBe(1);
+
+    const retry = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      reason: 'runtime_wake_cooldown',
+      action: 'cooling_down',
+      sandbox: { external_id: 'box-opencode-dead', status: 'stopped' },
+      failure: { retryable: true, evidence: { attempts: 1 } },
+    });
+    // The cooldown is what holds the provider off — not a permanent verdict.
+    expect(providerStartCalls).toBe(0);
+  });
+
+  test('dashboard start resets the readiness clock when not-ready changes to unreachable', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'platinum',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'platinum',
+        externalId: 'box-readiness-reason-change',
+        baseUrl: null,
+        status: 'active',
+        config: {},
+        metadata: {
+          initStatus: 'ready',
+          opencodeReadyWaitStartedAt: new Date(Date.now() - 31_000).toISOString(),
+          opencodeReadyWaitReason: 'not_ready',
+        },
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'running';
+    opencodeEnsureReason = 'unreachable';
+
+    const before = Date.now();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'starting', reason: 'unreachable' });
+    const metadata = sessionSandboxRows[0]?.metadata as Record<string, unknown>;
+    expect(metadata.opencodeReadyWaitReason).toBe('unreachable');
+    expect(Date.parse(String(metadata.opencodeReadyWaitStartedAt))).toBeGreaterThanOrEqual(before);
+    expect(providerStopCalls).toBe(0);
   });
 
   test('restart of a provider-removed sandbox refuses replacement and preserves identity', async () => {
@@ -3749,6 +3932,9 @@ describe('project session API contract', () => {
     });
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
+    await flushUntil(() => lifecycleDrainClaimWhere !== null);
+    const drainClaim = new PgDialect().sqlToQuery(lifecycleDrainClaimWhere as SQL);
+    expect(drainClaim.params).toContain(`prompt:${SESSION_ID}:pending-first`);
   });
 
   test('a pending prompt with data-URL file parts rides the row; an empty one makes no row', async () => {
@@ -3872,18 +4058,20 @@ describe('project session API contract', () => {
     expect(lastProvisionInput).not.toBeNull();
 
     const env = lastProvisionInput!.extraEnvVars ?? {};
-    expect(env.OPENAI_API_KEY).toBeUndefined();
+    // Native mode (llm_gateway off — the default): a provider key IS the box's
+    // credential. It is stored `broker`/`llm_gateway` (defaultToGateway) but
+    // DELIVERS plaintext so OpenCode's native provider management can
+    // auto-connect. Gateway mode withholds it — see
+    // secret-delivery-withholding.test.ts.
+    expect(env.OPENAI_API_KEY).toBe('sk-test-openai');
     expect(env.LOCAL_BUILD_SECRET).toBe('local-build-value');
 
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
-    const expectedRepoUrl =
-      process.env.KORTIX_GIT_PROXY === 'true'
-        ? new URL(
-            `/v1/git/${PROJECT_ID}.git`,
-            process.env.KORTIX_URL ?? 'https://test.kortix.local',
-          ).toString()
-        : projectRow.repoUrl;
+    const expectedRepoUrl = new URL(
+      `/v1/git/${PROJECT_ID}.git`,
+      process.env.KORTIX_URL ?? 'https://test.kortix.local',
+    ).toString();
     expect(env.KORTIX_REPO_URL).toBe(expectedRepoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
     // LLM/tool-router URLs are no longer injected — the sandbox derives any
@@ -3891,7 +4079,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_LLM_TOKEN).toBeUndefined();
     expect(env.KORTIX_LLM_BASE_URL).toBeUndefined();
     expect(env.TAVILY_API_URL).toBeUndefined();
-    expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
+    expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
@@ -3942,7 +4130,7 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BASE_REF).toBe('dev');
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBeUndefined();
   });
 
   test('persists runtime_context separately and injects one server-owned JSON envelope', async () => {

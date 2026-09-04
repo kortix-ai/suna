@@ -129,7 +129,7 @@ export function SessionBusyIndicator({
             </span>
             {elapsed ? (
               <span className="text-muted-foreground/70 shrink-0 text-sm leading-5 tabular-nums">
-                &middot; {elapsed}
+                {elapsed}
               </span>
             ) : null}
           </span>

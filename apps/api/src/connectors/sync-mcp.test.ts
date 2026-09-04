@@ -40,6 +40,62 @@ const MCP_SPEC = {
 
 const UNUSED_PROJECT = {} as GitBackedProject;
 
+describe('Composio catalog materialization', () => {
+  test('uses a catalog-only tool fetch and normalizes actions', async () => {
+    const previous = process.env.COMPOSIO_API_KEY;
+    process.env.COMPOSIO_API_KEY = 'test-key';
+    try {
+      const result = await resolveCatalog(
+        { projectId: 'project-1' } as GitBackedProject,
+        {
+          ...MCP_SPEC,
+          slug: 'search',
+          provider: 'composio',
+          app: 'composio_search',
+          url: null,
+          transport: null,
+        },
+        {
+          composioCatalogTools: async (input) => {
+            expect(input).toMatchObject({
+              projectId: 'project-1',
+              connectorSlug: 'search',
+              toolkit: 'composio_search',
+            });
+            return [
+              {
+                type: 'function',
+                function: {
+                  name: 'COMPOSIO_SEARCH_QUERY',
+                  description: 'Search',
+                  parameters: { type: 'object' },
+                },
+              },
+            ];
+          },
+        },
+      );
+
+      expect(result).toMatchObject({
+        server: null,
+        actions: [
+          {
+            path: 'query',
+            binding: {
+              kind: 'composio',
+              toolkit: 'composio_search',
+              toolSlug: 'COMPOSIO_SEARCH_QUERY',
+            },
+          },
+        ],
+      });
+    } finally {
+      if (previous === undefined) delete process.env.COMPOSIO_API_KEY;
+      else process.env.COMPOSIO_API_KEY = previous;
+    }
+  });
+});
+
 describe('MCP catalog materialization', () => {
   test('uses the execution credential path and normalizes authenticated tools', async () => {
     const requests: Array<{ headers: Record<string, string>; body?: string }> = [];

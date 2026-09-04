@@ -87,34 +87,65 @@ function textOf(content: unknown): string {
 // the provider also depends on).
 const EMPTY_CONTENT_PLACEHOLDER = '(no content)';
 
-type UserContentPart = { type: 'text'; text: string } | { type: 'image'; image: URL | Uint8Array };
+// Images travel as AI SDK `file` parts (the SDK itself rewrites `image` parts
+// to `file` parts and flags `image` as deprecated). `mediaType` is the full
+// IANA type from the data URL, or the top-level `image` segment when the URL
+// omits it — providers resolve the subtype from the base64 signature.
+type InlineImagePart = {
+  type: 'file';
+  data: { type: 'data'; data: string } | { type: 'url'; url: URL };
+  mediaType: string;
+};
+type UserContentPart = { type: 'text'; text: string } | InlineImagePart;
 
 // A user message is "empty" for Bedrock unless it carries an image or at least
 // one non-whitespace text part.
 function nonEmptyUserContent(content: string | UserContentPart[]): string | UserContentPart[] {
   if (typeof content === 'string') return content.trim() ? content : EMPTY_CONTENT_PLACEHOLDER;
-  const hasImage = content.some((p) => p.type === 'image');
+  const hasImage = content.some((p) => p.type === 'file');
   const hasText = content.some((p) => p.type === 'text' && p.text.trim().length > 0);
   return hasImage || hasText ? content : EMPTY_CONTENT_PLACEHOLDER;
 }
 
-// Decode a `data:` URL into raw bytes suitable for inline file data. The
-// AI SDK's `convertToLanguageModelV4FilePart` converts a plain string URL to
-// `{type:'url', url: URL}`, which `@ai-sdk/amazon-bedrock` rejects with
-// `UnsupportedFunctionalityError: File URL data` — Bedrock's Converse API
-// only accepts inline (base64) image data, not URL references. Converting
-// data URLs to `Uint8Array` makes them reach the SDK as inline data, which
-// Bedrock serializes correctly as `image: { format, source: { bytes } }`.
-function decodeDataUrl(url: string): Uint8Array | URL {
-  if (!url.startsWith('data:')) return new URL(url);
+// Translate an OpenAI `image_url` into the AI SDK image part WITHOUT copying
+// or decoding the image bytes.
+//
+// A `data:` URL is handed over as tagged inline data `{type:'data', data:
+// <base64>}` plus its media type. The AI SDK's `convertToLanguageModelV4FilePart`
+// returns tagged data as-is, and both `@ai-sdk/anthropic` and
+// `@ai-sdk/amazon-bedrock` serialize a base64 STRING through
+// `convertToBase64(value)`, which is the identity for strings. The base64
+// substring therefore travels from the parsed request body to the provider
+// payload with zero decode and zero re-encode.
+//
+// The previous implementation decoded to `Uint8Array` via
+// `atob(raw).split('').map(...)` — one JS string per byte — which measured at
+// ~13x the base64 length in resident memory per image (89 MB for a 6.7 MB
+// image) and then had provider-utils re-encode the bytes through a
+// `String.fromCodePoint` concat loop. A 28 MB, 40-screenshot request went
+// through that path and OOM-killed a 512 MiB gateway (Essentia, 2026-08-22).
+//
+// Bedrock's Converse API still needs inline data rather than a URL reference
+// (`UnsupportedFunctionalityError: File URL data`), which the tagged inline
+// form satisfies. A non-data URL stays a `URL`.
+export function imageContentFromUrl(url: string): InlineImagePart {
+  const remote = (): InlineImagePart => ({
+    type: 'file',
+    data: { type: 'url', url: new URL(url) },
+    mediaType: 'image',
+  });
+  if (!url.startsWith('data:')) return remote();
   const comma = url.indexOf(',');
-  if (comma === -1) return new URL(url);
-  const raw = url.slice(comma + 1);
-  try {
-    return new Uint8Array(atob(raw).split('').map((c) => c.charCodeAt(0)));
-  } catch {
-    return new URL(url);
-  }
+  if (comma === -1) return remote();
+  const header = url.slice(5, comma); // "<mediaType>[;base64]"
+  if (!header.toLowerCase().includes(';base64')) return remote();
+  const semicolon = header.indexOf(';');
+  const mediaType = (semicolon === -1 ? header : header.slice(0, semicolon)).trim();
+  return {
+    type: 'file',
+    data: { type: 'data', data: url.slice(comma + 1) },
+    mediaType: mediaType || 'image',
+  };
 }
 
 function translateUserContent(content: unknown): string | UserContentPart[] {
@@ -125,7 +156,7 @@ function translateUserContent(content: unknown): string | UserContentPart[] {
     const part = raw as { type?: string; text?: string; image_url?: { url?: string } };
     if (part?.type === 'text') parts.push({ type: 'text', text: String(part.text ?? '') });
     else if (part?.type === 'image_url' && part.image_url?.url) {
-      parts.push({ type: 'image', image: decodeDataUrl(part.image_url.url) });
+      parts.push(imageContentFromUrl(part.image_url.url));
     }
   }
   return parts.length ? parts : textOf(content);
@@ -661,7 +692,10 @@ function resolveThinkingRequest(
 function applyAnthropicThinking(
   resolved: ResolvedThinking,
 ): Pick<AnthropicProviderOptions, 'thinking' | 'effort'> {
-  return { thinking: { type: 'adaptive' }, effort: resolved.effort };
+  return {
+    thinking: { type: 'adaptive', display: 'summarized' },
+    effort: resolved.effort,
+  };
 }
 
 // @ai-sdk/amazon-bedrock — current-gen Bedrock Claude (Sonnet 5, Opus 4.5+/4.8)
@@ -681,7 +715,13 @@ function applyAnthropicThinking(
 function applyBedrockThinking(
   resolved: ResolvedThinking,
 ): Pick<BedrockProviderOptions, 'reasoningConfig'> {
-  return { reasoningConfig: { type: 'adaptive', maxReasoningEffort: resolved.effort } };
+  return {
+    reasoningConfig: {
+      type: 'adaptive',
+      maxReasoningEffort: resolved.effort,
+      display: 'summarized',
+    },
+  };
 }
 
 // A Bedrock-family model resolves to one of two DIFFERENT wire contracts.
@@ -694,6 +734,43 @@ function applyBedrockThinking(
 // model.ts's `isNovaModel` regex (the existing Bedrock model-id discriminator).
 function isBedrockClaudeModel(resolvedModel: string | undefined): boolean {
   return /anthropic\.claude/i.test(resolvedModel ?? '');
+}
+
+// OpenAI models on Bedrock (`global.openai.gpt-5.6-*`, `openai.gpt-5.5`,
+// `openai.gpt-oss-*`) are served by Bedrock core (Converse). The reasoning
+// knob travels as `additionalModelRequestFields.reasoning: { effort }` — the
+// OpenAI Responses shape. VERIFIED against real Bedrock (us-west-2,
+// 2026-08-25, global.openai.gpt-5.6-sol): `reasoning.effort` returns 200 for
+// every published tier (none/low/medium/high/xhigh/max) and 400
+// `unsupported_value` for an unpublished one (`minimal`); the flat
+// `reasoning_effort` that @ai-sdk/amazon-bedrock 5.0.59 emits for its
+// `isOpenAIModel` branch is REJECTED by GPT-5.6 with 400 `unknown_parameter`
+// (gpt-oss-120b accepts both shapes, so the nested one is the universal
+// OpenAI-on-Bedrock wire). `reasoningEffort`, `reasoningConfig` and
+// `thinking` are all `unknown_parameter` too. `summary: 'auto'` makes the
+// model return its reasoning as a content block (the thinking the composer
+// shows), matching opencode's `reasoningSummary: 'auto'` for OpenAI. Before
+// this branch existed the bedrock adapter returned `{}` for every non-Claude
+// model, so a client's `reasoning_effort` (or the project's configured
+// default) was silently dropped for GPT-5.6 on Bedrock.
+function isBedrockOpenAiModel(resolvedModel: string | undefined): boolean {
+  return /(^|\.)openai\./i.test(resolvedModel ?? '');
+}
+
+// Models that answered `unknown_parameter` for the reasoning field once. The
+// wire shape below is verified (#6893), but the next provider surface that
+// publishes an OpenAI ladder and rejects the field must cost one retry, never
+// the turn: the pipeline notes a rejection here and re-dispatches once without
+// it; every later request to that model skips the field.
+const bedrockOpenAiReasoningEffortRejected = new Set<string>();
+export function noteBedrockOpenAiRejectsReasoningEffort(resolvedModel: string): void {
+  bedrockOpenAiReasoningEffortRejected.add(resolvedModel);
+}
+export function bedrockOpenAiRejectsReasoningEffort(resolvedModel: string | undefined): boolean {
+  return !!resolvedModel && bedrockOpenAiReasoningEffortRejected.has(resolvedModel);
+}
+export function resetBedrockOpenAiReasoningEffortRejectionsForTests(): void {
+  bedrockOpenAiReasoningEffortRejected.clear();
 }
 
 const ANTHROPIC_CACHE_CONTROL = { type: 'ephemeral' } as const;
@@ -1019,9 +1096,31 @@ const bedrockAdapter: ProviderAdapter = {
   optionsKey: () => 'bedrock',
   buildProviderOptions(req) {
     const options: BedrockProviderOptions = {};
+    // OpenAI-on-Bedrock: forward the (capability-gated, see normalizeRequest)
+    // effort as the OpenAI-native field. Nothing else — `cachePoint` and
+    // `reasoningConfig` are Claude-Converse-only and 403 here.
+    if (isBedrockOpenAiModel(req.resolvedModel)) {
+      if (
+        typeof req.reasoningEffort === 'string' &&
+        !bedrockOpenAiRejectsReasoningEffort(req.resolvedModel)
+      ) {
+        options.additionalModelRequestFields = {
+          reasoning: { effort: req.reasoningEffort, summary: 'auto' },
+        };
+      }
+      return options;
+    }
     // `reasoningConfig:{type:'adaptive'}` is a Claude-Converse-only primitive.
-    // Non-Claude Bedrock models (`global.openai.*`, Nova, …) 403 on it — never
-    // attach it for them.
+    // Other non-Claude Bedrock models (Nova, Grok, DeepSeek, …) 403 on it —
+    // never attach it for them. Their own effort wires are not mapped yet
+    // (Nova 2 / Grok 4.6 publish reasoning_options on models.dev; the Converse
+    // field shape for them is unverified), so an effort that reaches here is
+    // DROPPED. Not refused: #6887 briefly answered 400 `unsupported_param`
+    // here, and the first turn of a fresh project on dev proved that opencode
+    // sends a default effort for every reasoning-capable model (the user never
+    // picked a tier) — refusing the parameter refused the model, including
+    // the managed Grok default. Map the wire when it is verified; until then
+    // the model runs at its own default.
     if (!isBedrockClaudeModel(req.resolvedModel)) return options;
     const thinking = resolveThinkingRequest(req.raw, req.reasoningEffort);
     // Adaptive thinking carries no token budget to clamp — the model manages
@@ -1177,4 +1276,3 @@ export function buildAiSdkArgs(
       | undefined,
   };
 }
-

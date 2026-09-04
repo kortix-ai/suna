@@ -9,6 +9,7 @@ import {
 } from '@kortix/db';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { parse as parseYaml } from 'yaml';
 
 import { mockIamAssignments, mockIamEngineAllowAll, mockIamReadModels } from './helpers/iam-mocks';
 
@@ -71,6 +72,7 @@ let githubInstallationStateConsumed: boolean;
 let ownerRepoListCalls: any[];
 let installationRepoListCalls: any[];
 let platformAdmin: boolean;
+let selfHostOperator: boolean;
 
 function setTestAuth(userId = USER_ID, userEmail = 'starter@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
@@ -112,6 +114,7 @@ function resetState() {
   ownerRepoListCalls = [];
   installationRepoListCalls = [];
   platformAdmin = false;
+  selfHostOperator = false;
   installationRows = [
     {
       installationRowId: '00000000-0000-4000-a000-000000000041',
@@ -154,6 +157,11 @@ const realPlatformRoles = await import('../shared/platform-roles');
 mock.module('../shared/platform-roles', () => ({
   ...realPlatformRoles,
   isPlatformAdmin: async () => platformAdmin,
+  // The managed-git PAT paths ask the NARROWER question — a cloud platform
+  // admin is not a self-host operator, and `managed-kortix` holds every
+  // customer's repo. `selfHostOperator` is a separate switch from
+  // `platformAdmin` on purpose: the test below asserts they differ.
+  isSelfHostOperator: async () => selfHostOperator,
 }));
 
 const realAuthMiddleware = await import('../middleware/auth');
@@ -213,7 +221,7 @@ mock.module('../projects/git', () => ({
 // resolves cleanly. We stub the helpers projects/index calls so the
 // fire-and-forget snapshot kickoff in the create paths is a no-op here.
 mock.module('../snapshots/builder', () => ({
-  routedPerProjectWarmImageName: () => 'kpp2-test',
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({
     snapshotName: 'kortix-default-test',
     slug: 'default',
@@ -251,12 +259,6 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ healed: 0 }),
   reconcileProjectTemplates: async () => {},
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: 'kortix-ppwarm-test',
-    tip: 'a'.repeat(40),
-    built: false,
-    provider: 'daytona',
-  }),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
@@ -662,6 +664,13 @@ describe('create-repo starter scaffold contract', () => {
     // The manifest IS shipped and names the project.
     const manifest = files.find((file) => file.path === 'kortix.yaml');
     expect(manifest?.content).toContain('name: "Company OS"');
+    if (!manifest) throw new Error('starter is missing kortix.yaml');
+    const parsedManifest = parseYaml(manifest.content) as {
+      triggers?: Array<{ slug?: string; enabled?: boolean }>;
+    };
+    expect(
+      parsedManifest.triggers?.find((trigger) => trigger.slug === 'harness-reflector'),
+    ).toEqual(expect.objectContaining({ enabled: false }));
     expect(files.some((file) => file.path.includes('/agent-tunnel/'))).toBe(false);
   });
 
@@ -882,7 +891,7 @@ describe('create-repo starter scaffold contract', () => {
   test('forwards bounded search options to the managed GitHub repository lister', async () => {
     process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
     process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
-    platformAdmin = true;
+    selfHostOperator = true;
 
     const app = createApp();
     const response = await app.request(
@@ -920,7 +929,7 @@ describe('create-repo starter scaffold contract', () => {
     );
     expect(repositories.status).toBe(403);
     expect(await repositories.json()).toEqual({
-      error: 'Managed GitHub repository import requires platform admin access',
+      error: 'Managed GitHub repository import is only available to a self-host operator',
     });
     expect(ownerRepoListCalls).toEqual([]);
 
@@ -935,7 +944,54 @@ describe('create-repo starter scaffold contract', () => {
     });
     expect(linked.status).toBe(403);
     expect(await linked.json()).toEqual({
-      error: 'Managed GitHub repository import requires platform admin access',
+      error: 'Managed GitHub repository import is only available to a self-host operator',
+    });
+  });
+
+  test('THE FIX: a cloud platform admin is NOT a self-host operator — the managed org stays closed', async () => {
+    // Reported 2026-08-29: "why can I import anyone else's project". The PAT
+    // paths were gated on `isPlatformAdmin`, which is ALSO true for Kortix
+    // staff. On cloud, MANAGED_GIT_GITHUB_OWNER is `managed-kortix` — every
+    // customer's project repo — so a staff admin was shown the whole org in
+    // the /new import picker and could have imported any of it.
+    //
+    // `platformAdmin = true` with `selfHostOperator = false` is exactly that
+    // person. Everything below must refuse them.
+    installationRows = [];
+    process.env.MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    process.env.MANAGED_GIT_GITHUB_TOKEN = 'managed-token';
+    platformAdmin = true;
+    selfHostOperator = false;
+
+    const app = createApp();
+
+    // 1. The synthetic installation is not even offered.
+    const installations = await app.request(
+      `/v1/projects/github/installations?account_id=${ACCOUNT_ID}`,
+    );
+    expect(installations.status).toBe(200);
+    expect(await installations.json()).toMatchObject({ installed: false, installations: [] });
+
+    // 2. Listing the org is refused, and no upstream call is made.
+    const repositories = await app.request(
+      `/v1/projects/github/repositories?account_id=${ACCOUNT_ID}&installation_id=pat`,
+    );
+    expect(repositories.status).toBe(403);
+    expect(ownerRepoListCalls).toEqual([]);
+
+    // 3. Importing another customer's repo by name is refused outright.
+    const linked = await app.request('/v1/projects/link-repository', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: ACCOUNT_ID,
+        installation_id: 'pat',
+        repo_full_name: 'managed-kortix/someone-elses-project',
+      }),
+    });
+    expect(linked.status).toBe(403);
+    expect(await linked.json()).toEqual({
+      error: 'Managed GitHub repository import is only available to a self-host operator',
     });
   });
 

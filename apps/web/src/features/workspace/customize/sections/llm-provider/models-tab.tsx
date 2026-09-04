@@ -107,7 +107,7 @@ export function ModelsTab({
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-1 px-6 text-center">
         <p className="text-foreground text-sm">No models yet</p>
         <p className="text-muted-foreground max-w-xs text-xs text-pretty">
-          Add a key on the API keys tab. The models it unlocks show up here.
+          Add a key on the Providers tab. The models it unlocks show up here.
         </p>
       </div>
     );

@@ -16,7 +16,7 @@ import { describe, expect, test } from 'bun:test';
 // `.filter` / `.map` (the connectors-view Slack test uses the same pattern).
 
 // The agents surface moved from this overlay section to the standalone
-// `/projects/[id]/agent` page; the guard follows the code, because the config
+// `/projects/[id]/customize/agents` page; the guard follows the code, because the config
 // fields it reads (and the ways they can come back undefined) did not change.
 const capabilities = join(
   import.meta.dir,
@@ -26,16 +26,18 @@ const capabilities = join(
   'agents',
 );
 const agentsPage = readFileSync(join(capabilities, 'agents-page.tsx'), 'utf8');
-const agentDetailAside = readFileSync(join(capabilities, 'agent-detail-aside.tsx'), 'utf8');
+// The agent's skills picker moved from the detail aside to the routed agent
+// page (Customize is agent-centric, 2026-09-01); the guard moved with it.
+const agentPage = readFileSync(join(capabilities, 'agent-page.tsx'), 'utf8');
 const configEntityView = readFileSync(
   join(import.meta.dir, '..', 'sections', 'component', 'config-entity-view.tsx'),
   'utf8',
 );
 
 describe('chunk-22256 .filter/.map guard regression', () => {
-  test('the agent aside does not call config.skills.map unguarded', () => {
-    expect(agentDetailAside).not.toContain('config.skills.map(');
-    expect(agentDetailAside).toContain('toArray(config.skills).map(');
+  test('the agent page does not call config.skills.map unguarded', () => {
+    expect(agentPage).not.toContain('config.skills.map(');
+    expect(agentPage).toContain('toArray(config.skills).map(');
   });
 
   test('the agents page does not call config.agents.filter unguarded', () => {

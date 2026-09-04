@@ -61,7 +61,6 @@
     "expensify-common": "^2.0.168",
     "expo": "~54.0.20",
     "expo-apple-authentication": "^8.0.7",
-    "expo-audio": "^1.0.13",
     "expo-auth-session": "^7.0.8",
     "expo-av": "^16.0.7",
     "expo-blur": "~15.0.7",

@@ -12,6 +12,9 @@ import {
 import { dismissOnboarding, featureFlagRow, selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
+
+/** A hostname is full of dots; a raw interpolation into a RegExp would match too much. */
+const escapeRe = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const databaseUrl = process.env.KE2E_DATABASE_URL || process.env.E2E_DATABASE_URL;
 const password = 'E2eAppsUi123!';
@@ -124,12 +127,9 @@ test.describe('18 — Kortix Apps UI', () => {
       page.off('request', recordDisabledRequest);
 
       // Enable through the flag list — the only activation path. The gate
-      // screen's "Feature flags" row is a real link now
-      // (`feature-gate-screen.tsx`), to
-      // `/projects/[id]/config?section=feature-flags` — Feature flags
-      // graduated out of the Settings overlay's Experimental tab onto the
-      // Customize bar's Settings tab, same as every other project-config pane
-      // (`settings-tabs.ts` GRADUATED map).
+      // screen's "Feature flags" row is a real link
+      // (`feature-gate-screen.tsx`) to `/projects/[id]/settings/feature-flags`,
+      // the Settings overlay's deep-link route for its Feature flags tab.
       await page.getByRole('link', { name: 'Feature flags' }).click();
       const panel = page.locator('body');
       await expect(
@@ -158,7 +158,18 @@ test.describe('18 — Kortix Apps UI', () => {
       await page.goto(`/projects/${project.id}/apps`, {
         waitUntil: 'domcontentloaded',
       });
-      await expect(page.getByText('No Apps deployed', { exact: true })).toBeVisible();
+      // A feature mutation can leave this client route mounted without starting
+      // its newly-enabled query. Reload and require the exact list response
+      // before asserting the empty state.
+      const emptyListResponse = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'GET' &&
+          response.url().endsWith(`/v1/projects/${project.id}/apps`),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      expect((await emptyListResponse).status()).toBe(200);
+      await dismissOnboarding(page);
+      await expect(page.getByText('No Apps yet', { exact: true })).toBeVisible();
 
       const seeded = await api<AppResponse>(
         session.access_token,
@@ -214,8 +225,12 @@ test.describe('18 — Kortix Apps UI', () => {
       // Same assertions as before — they just live where the controls do.
       const seededCard = page.getByRole('button', { name: 'Open Seed App' });
       await expect(seededCard).toBeVisible();
-      await expect(seededCard.getByText(seeded.url, { exact: true })).toBeVisible();
       await expect(seededCard.getByText('Deploy to see a live preview.')).toBeVisible();
+      // The hostname is NOT on the tile. Every App's URL is the same
+      // `<generated-key>.apps.<domain>` shape, so a column of them differs only
+      // in a token nobody reads — a third of the caption spent on noise. It
+      // moved to the control that opens the App, asserted below.
+      await expect(seededCard.getByText(seededUrl.host, { exact: true })).toHaveCount(0);
       // Never deployed, so it must not claim to be running.
       await expect(seededCard.getByText('Not deployed', { exact: true })).toBeVisible();
 
@@ -224,10 +239,21 @@ test.describe('18 — Kortix Apps UI', () => {
       const appModal = page.getByRole('dialog', { name: 'Seed App App' });
       await expect(appModal).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/apps`));
-      await expect(appModal.getByRole('button', { name: 'Suspend App' })).toBeDisabled();
-      await expect(appModal.getByRole('link', { name: 'Open in a new tab' })).toBeVisible();
+      await expect(
+        appModal.getByRole('button', { name: 'Put this App to sleep' }),
+      ).toBeDisabled();
+      // …and this is where the URL went: the control that opens the App names
+      // the host it will open, so the tile can stay a picture of the App.
+      const openInNewTab = appModal.getByRole('link', { name: 'Open in a new tab' });
+      await expect(openInNewTab).toBeVisible();
+      // Containment, not an exact shape: this App has no deployment, so the
+      // href is the App's own URL rather than a signed session URL, and the two
+      // differ in query and trailing slash. What must hold either way is that
+      // the control points at THIS App's host.
+      await expect(openInNewTab).toHaveAttribute('href', new RegExp(escapeRe(seededUrl.host)));
 
-      await appModal.getByRole('button', { name: 'Show versions' }).click();
+      await appModal.getByRole('button', { name: 'More actions' }).click();
+      await page.getByRole('menuitem', { name: 'Earlier versions' }).click();
       await expect(appModal.getByText('No deployments yet.')).toBeVisible();
 
       const copy = appModal.getByRole('button', { name: 'Copy code' });

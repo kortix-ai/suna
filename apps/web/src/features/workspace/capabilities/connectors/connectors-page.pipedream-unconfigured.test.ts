@@ -33,37 +33,48 @@ const catalog = readFileSync(join(import.meta.dir, 'catalog', 'use-catalog.ts'),
  * Drop any one and the 501 card comes back — silently, and only on the
  * deployments that cannot report it.
  */
-describe('connectors page without Pipedream', () => {
+describe('connectors page without a Connect provider', () => {
   test('the Easy Connect queries are gated on the deployment probe', () => {
     // Both Pipedream-backed queries run off ONE derived flag, so neither can be
     // gated while the other is forgotten. `source === 'easy-connect'` reaching
     // an `enabled:` line again is the regression: it is true on exactly the
     // deployments that answer 501.
-    expect(catalog).toContain('const pipedreamStatus = usePipedreamStatus(');
+    expect(catalog).toContain('const connectStatus = useConnectProviderStatus(');
     expect(catalog).toContain('const easyConnectRunnable =');
     expect(catalog).toContain('enabled: opts.enabled && easyConnectRunnable,');
-    expect(catalog).toContain(
-      'enabled: opts.enabled && easyConnectRunnable && !searching && category === null,',
-    );
+    expect(catalog).toContain("easyConnectProvider === 'pipedream'");
     expect(catalog).not.toContain("enabled: opts.enabled && source === 'easy-connect'");
   });
 
-  test('a probe that failed does not stand in for a provider that is missing', () => {
-    // `unknown` is not `absent`. A probe that could not run says nothing about
-    // whether Pipedream is configured, and refusing to load a catalogue that
-    // probably exists is the worse of the two mistakes — the real failure is
-    // then reported by the catalogue query, in the one place that can retry it.
+  test('a failed probe attempts Composio and never silently falls back to Pipedream', () => {
+    // `unknown` is not `absent`. The safe automatic provider is Composio. A
+    // failed status probe must surface the Composio catalogue error rather than
+    // quietly spending against the legacy Pipedream account.
     expect(catalog).toContain(
-      "(pipedreamStatus === 'configured' || pipedreamStatus === 'unknown')",
+      "(connectStatus.state === 'configured' || connectStatus.state === 'unknown')",
     );
+    expect(catalog).toContain("return { state: 'unknown', provider: 'composio' };");
+    expect(catalog).not.toContain("provider: 'auto'");
+    expect(catalog).not.toContain('connectCatalogEndpointUnavailable');
     expect(catalog).toContain('retry: false,');
+  });
+
+  test('an open tab revalidates provider selection after a Composio deployment', () => {
+    expect(catalog).toContain("queryKey: ['connect-status', 'composio-first-v2']");
+    expect(catalog).toContain("refetchOnMount: 'always'");
+    expect(catalog).not.toContain('staleTime: Infinity');
+  });
+
+  test('Composio wins whenever both managed providers are configured', () => {
+    expect(catalog).toContain("const provider = providers.includes('composio')");
+    expect(catalog).toContain(": providers.includes('pipedream')");
   });
 
   test('the wait for the probe reads as loading, not as an empty catalogue', () => {
     // A disabled react-query reports neither loading nor data. Without this the
     // grid would paint "no results" for a round trip, before the request it is
     // waiting on had even started.
-    expect(catalog).toContain("pipedreamStatus === 'asking' ||");
+    expect(catalog).toContain("connectStatus.state === 'asking' ||");
   });
 
   test('the probe outlives the tabs it closes', () => {
@@ -71,8 +82,8 @@ describe('connectors page without Pipedream', () => {
     // and All off when it answers `absent`, which turns `enabled` off with
     // them; a probe that then stopped answering would reopen the tabs, which
     // would re-enable the probe — a strip that flickers forever.
-    expect(catalog).toContain("usePipedreamStatus(source === 'easy-connect')");
-    expect(catalog).not.toContain('usePipedreamStatus(opts.enabled');
+    expect(catalog).toContain("useConnectProviderStatus(source === 'easy-connect')");
+    expect(catalog).not.toContain('useConnectProviderStatus(opts.enabled');
   });
 
   test('the tab strip goes only when the catalogue is CONFIRMED absent', () => {
@@ -80,15 +91,15 @@ describe('connectors page without Pipedream', () => {
     // is a different catalogue backend entirely, so a project with that flag on
     // keeps Discovery and All whatever Pipedream's status is — and with the flag
     // off, Pipedream is the only catalogue left, so its absence removes both.
-    expect(page).toContain('const pipedreamStatus = usePipedreamStatus(!discoverEnabled);');
+    expect(page).toContain('const connectStatus = useConnectProviderStatus(!discoverEnabled);');
     expect(page).toContain(
-      "const catalogueAvailable = discoverEnabled || pipedreamStatus !== 'absent';",
+      "const catalogueAvailable = discoverEnabled || connectStatus.state !== 'absent';",
     );
     // `!== 'absent'`, never `=== 'configured'`: `asking` must render the page
     // exactly as it always has. Almost every deployment does have Pipedream,
     // and dropping two tabs for a beat on every load to spare a minority one
     // failed request is the wrong trade.
-    expect(page).not.toContain("pipedreamStatus === 'configured'");
+    expect(page).not.toContain("connectStatus.state === 'configured'");
   });
 
   test('the strip is removed, not disabled, and leaves no empty row behind', () => {

@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import {
   directSubsessions,
   isMetaCoordinatorSession,
@@ -9,12 +10,14 @@ import {
   matchesStatusFilters,
   SESSION_DISPLAY_STATUS_LABELS,
   sessionDisplayStatus,
+  sessionIsShared,
   sessionSource,
   spawnedBySessionId,
   type SessionDisplayStatus,
   type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -40,7 +43,6 @@ import {
   groupSessionsByCoordinator,
   projectSessionsRefetchInterval,
   resolveSessionListViewState,
-  sessionLastActivityAt,
   shortRelative,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { SessionFilterMenu } from '@/features/workspace/project-sidebar/session-filter-menu';
@@ -83,8 +85,7 @@ import {
   WebhooksLogoIcon as Webhook,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { format, formatDistanceToNowStrict } from 'date-fns';
-import Link from 'next/link';
+import { formatDistanceToNowStrict } from 'date-fns';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
@@ -110,8 +111,26 @@ const SESSION_RELATIVE_TIME_CLASS =
  *  through tailwind-merge, and `p-2` survives outright — leaving a 16px icon
  *  overflowing an 8px content box, centered by coincidence rather than by
  *  layout, with a different hover fill than the other two. */
-const SESSION_MENU_TRIGGER_CLASS =
-  'text-muted-foreground hover:text-sidebar-foreground shrink-0 focus:ring-0 focus-visible:ring-0';
+const SESSION_MENU_TRIGGER_CLASS = cn(
+  'text-muted-foreground shrink-0 transition-none',
+  'focus:ring-0 focus-visible:ring-0',
+  // An OPAQUE hover fill, and the reason it has to be opaque:
+  //
+  // `variant="ghost"` hovers to `bg-foreground/10`. `background-color` is one
+  // property, so on the row trigger that 10% tint did not sit on top of the
+  // `bg-(--session-row-surface)` mask — it REPLACED it. The mask exists to hide
+  // the truncated session title running underneath the glyph, so hovering
+  // punched a translucent hole in it and the title bled through: the washed-out
+  // grey square in the bug report, with a muted `⋯` floating in it.
+  //
+  // `sidebar-accent` is surface-2, one opaque step above the row's own
+  // surface-1 (`--card`) on hover. The square reads as lifted, stays a solid
+  // mask, and needs no pseudo-element to stack a tint above a fill.
+  'hover:bg-sidebar-accent data-[state=open]:bg-sidebar-accent',
+  // Full contrast once the pointer is on it — the glyph is a control now, not a
+  // marker.
+  'hover:text-foreground data-[state=open]:text-foreground',
+);
 
 /** Every row that can carry a `⋯` is this tall, so the trigger's 24px square is
  *  centered in an identical 32px line at all three levels. */
@@ -383,7 +402,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     };
 
     return (
-      <FadedScrollArea className="h-full min-h-0 space-y-1">
+      <FadedScrollArea fadeColor="from-background" className="h-full min-h-0 space-y-px">
         {grouped.sections.map((section) => (
           <SessionListSection
             key={section.id}
@@ -403,7 +422,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               <div key={group.session.session_id} className="space-y-px">
                 {renderSessionNode(group.session, false)}
                 {group.children.length > 0 && (
-                  <div className="border-border ml-3.5 space-y-px border-l-2 pl-1">
+                  <div className="border-border ml-3.5 space-y-1 border-l-2 pl-1">
                     {group.children.map((child) => renderSessionNode(child, true))}
                   </div>
                 )}
@@ -416,7 +435,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col space-y-2">
+    <div className="flex h-full min-h-0 flex-col space-y-px">
       <SessionListHeader
         projectId={projectId}
         sessions={sessions}
@@ -480,12 +499,12 @@ function SessionListHeader({
         SESSION_ROW_HEIGHT_CLASS,
       )}
     >
-      <Link
+      <HoverPrefetchLink
         href={`/projects/${projectId}/sessions`}
-        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium transition-colors duration-150"
+        className="text-muted-foreground hover:text-sidebar-foreground flex min-w-0 flex-1 flex-row items-center self-stretch text-sm font-medium"
       >
         <span className="truncate">Sessions</span>
-      </Link>
+      </HoverPrefetchLink>
       {sessions.length > 0 && (
         <DropdownMenu onOpenChange={onMenuOpenChange}>
           <SessionFilterMenu
@@ -549,7 +568,7 @@ function SessionListSection({
     <Disclosure
       open={open}
       onOpenChange={onOpenChange}
-      className="group/section space-y-px"
+      className="group/section space-y-1"
       transition={{ duration: 0.15, ease: 'easeOut' }}
     >
       <DisclosureTrigger>
@@ -562,7 +581,7 @@ function SessionListSection({
           <span className="truncate">{section.label}</span>
           <CaretRightIcon
             aria-hidden
-            className="size-3 shrink-0 opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
+            className="size-3 shrink-0 opacity-0 transition-transform duration-150 ease-out group-hover/section-header:opacity-100 group-data-[state=open]/section:rotate-90"
           />
           <SessionSectionMenu
             projectId={projectId}
@@ -604,13 +623,13 @@ function SessionSectionMenu({
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="ghost"
+          variant="secondary"
           size="icon-xs"
           type="button"
           aria-label="Section options"
           className={cn(
             SESSION_MENU_TRIGGER_CLASS,
-            'relative ml-auto opacity-0 transition-opacity duration-150',
+            'relative ml-auto opacity-0',
             'before:absolute before:-inset-1',
             'group-hover/section-header:opacity-100 data-[state=open]:opacity-100',
           )}
@@ -684,22 +703,17 @@ function ProjectSessionRow({
     requestAnimationFrame(() => fn());
   };
 
-  const activity = (() => {
-    try {
-      const date = new Date(sessionLastActivityAt(session));
-      return {
-        relative: formatDistanceToNowStrict(date, { addSuffix: false }),
-        exact: format(date, 'MMM d, yyyy, h:mm a'),
-      };
-    } catch {
-      return null;
-    }
-  })();
-
   const source = sessionSource(session);
   const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
   const isMeta = isMetaCoordinatorSession(session);
   const spawnedBy = spawnedBySessionId(session);
+
+  // Resolved here, not left to the children, for two reasons: the strip must not
+  // render at all when it is empty (an empty flex item still draws the row's
+  // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
+  // the hover shift below only makes sense when there is something to shift.
+  const showSpawnedBy = Boolean(spawnedBy) && !nested;
+  const hasIndicators = showSpawnedBy || Boolean(SourceIcon) || sessionIsShared(session);
 
   return (
     <div className="group/session-list block">
@@ -708,20 +722,29 @@ function ProjectSessionRow({
           // --session-row-surface paints the row AND the title fade in the same
           // style pass. Do not transition background — transition-colors made the
           // fill ease for 150ms while the fade snapped, which read as a flicker.
-          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-[color] duration-150',
+          // Paint with the variable (not bg-card + a different surface token) so
+          // the end fade can never disagree with the row fill.
+          'relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 transition-none',
           isActive
-            ? 'text-sidebar-foreground bg-[var(--session-row-surface)] font-medium [--session-row-surface:var(--sidebar-border)]'
-            : 'text-muted-foreground hover:text-sidebar-foreground bg-[var(--session-row-surface)] [--session-row-surface:var(--sidebar)] hover:[--session-row-surface:var(--sidebar-border)]',
+            ? 'text-sidebar-foreground bg-(--session-row-surface) font-medium [--session-row-surface:var(--card)]'
+            : 'text-muted-foreground hover:text-sidebar-foreground bg-(--session-row-surface) [--session-row-surface:var(--background)] hover:[--session-row-surface:var(--card)]',
         )}
       >
-        <Link
+        {/* HoverPrefetchLink, not `<Link>`: a bare Link prefetches every row in
+            the viewport, so opening ONE session made the browser fetch the RSC
+            payload of every OTHER session in the sidebar — 19-20 dynamic server
+            renders (~24KB each) per open, 21 hits on this one route where 1 is
+            correct. The prefetch now starts on hover/focus/touch. */}
+        <HoverPrefetchLink
           href={href}
           onClick={onNavigate}
           aria-busy={isSwitching || undefined}
           aria-current={isActive ? 'page' : undefined}
           className="flex min-w-0 flex-1 items-center gap-2 self-stretch"
         >
-          <SessionStatusDot session={session} reviewCount={reviewCount} />
+          <div className="size-4 shrink-0">
+            <SessionStatusDot session={session} reviewCount={reviewCount} />
+          </div>
 
           {isMeta && (
             <Hint side="top" label="Meta coordinator">
@@ -733,138 +756,169 @@ function ProjectSessionRow({
 
           <SessionTitle title={displayTitle} className={cn(isActive && 'font-medium')} />
 
+          {/* Same pill the Review row wears (project-change-requests-nav.tsx):
+              `Badge` at `size="tabular"` — rounded-[5px], min-w-5, mono tabular
+              figures. It was a hand-rolled `rounded-full` span, which is the one
+              badge shape this system does not use, so a subagent count and a
+              review count rendered as two different objects while meaning the
+              same thing: "N of these live under this row". Neutral fill, not the
+              Review row's yellow — yellow is reserved for work awaiting you, and
+              a subagent count is structure, not a request. */}
           {childCount > 0 && (
-            <span className="bg-sidebar-accent/60 text-muted-foreground shrink-0 rounded-full px-1.5 py-0.5 text-xs tabular-nums">
-              {childCount}
-            </span>
-          )}
-        </Link>
-
-        <div className="flex shrink-0 items-center gap-0" data-session-indicators="true">
-          {spawnedBy && !nested && (
-            <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
-              <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
-                <SpawnedBy className="size-3" />
-              </span>
-            </Hint>
-          )}
-          {SourceIcon && (
-            <span
-              className="flex size-4 shrink-0 items-center justify-center"
-              data-session-source="true"
+            <Badge
+              variant="transparent"
+              size="tabular"
+              className="bg-sidebar-accent/60 text-muted-foreground"
             >
-              <Hint
-                side="top"
-                label={
-                  source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
-                }
-              >
-                <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
-                  <SourceIcon className="size-3" />
+              {childCount}
+            </Badge>
+          )}
+        </HoverPrefetchLink>
+
+        {/* Spawned-by · source (Slack/Telegram/email/schedule/webhook) · shared,
+            and whatever markers get added here later. These are ambient state,
+            readable at rest; the `⋯` is the action. They occupy the SAME slot,
+            so hovering the row (or leaving its menu open) hands the slot to the
+            trigger and hides the strip.
+
+            Hidden with `opacity-0`, never `hidden`/`w-0`: the strip stays in
+            flow at its natural width, so the title's truncation point is fixed
+            and the text cannot reflow as the pointer crosses the row. It goes
+            `pointer-events-none` at the same time — an invisible icon must not
+            swallow a click meant for the trigger underneath it.
+
+            The trade: those icons' tooltips are unreachable, because reaching
+            an icon means hovering the row, which hides it. Accepted — they are
+            markers to be glanced at, not controls.
+
+            No transition, matching the trigger: the `⋯` appears instantly, and
+            a fade would leave both drawn on top of each other mid-cross. */}
+        {hasIndicators && (
+          <div
+            className={cn(
+              'flex shrink-0 items-center gap-0 transition-none',
+              'group-hover/session-list:pointer-events-none group-hover/session-list:opacity-0',
+              'group-has-data-[state=open]/session-list:pointer-events-none group-has-data-[state=open]/session-list:opacity-0',
+            )}
+            data-session-indicators="true"
+          >
+            {showSpawnedBy && spawnedBy && (
+              <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
+                <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">
+                  <SpawnedBy className="size-3" />
                 </span>
               </Hint>
-            </span>
-          )}
-          <SessionSharedIcon session={session} />
-
-          <div className="relative w-10 min-w-10 shrink-0">
-            {activity && (
-              <span
-                className={cn(
-                  SESSION_RELATIVE_TIME_CLASS,
-                  // pr-1 (4px), not pr-1.5: the timestamp and the `⋯` swap in
-                  // this same slot on hover, so the text's right edge must land
-                  // on the GLYPH's right edge, not the button's. The 16px glyph
-                  // is inset 4px inside its 24px box — match that, or the two
-                  // states sit 2px apart and the swap visibly shifts.
-                  'pr-1 transition-opacity duration-150',
-                  'opacity-100 group-hover/session-list:opacity-0 group-has-data-[state=open]/session-list:opacity-0',
-                )}
-                title={`Last activity: ${activity.exact}`}
-                aria-label={`Last activity: ${activity.relative}`}
-              >
-                {shortRelative(activity.relative)}
-              </span>
             )}
-
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  type="button"
-                  aria-label={tHardcodedUi.raw(
-                    'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
-                  )}
-                  className={cn(
-                    SESSION_MENU_TRIGGER_CLASS,
-                    'absolute top-1/2 right-0 -translate-y-1/2 transition-opacity duration-150',
-                    activity
-                      ? cn(
-                          'pointer-events-none opacity-0',
-                          'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
-                          'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
-                        )
-                      : 'opacity-100',
-                  )}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                >
-                  <DotsThreeIcon className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="right" className="w-44">
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
-                >
-                  <PencilSimpleIcon />
-                  Rename
-                </DropdownMenuItem>
-                {/* Shown to everyone who can open the session: the owner
-                    changes access here, everyone else reads who has it. */}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onShare(session))}
-                >
-                  <Share />
-                  {session.can_manage_sharing !== false ? 'Share' : 'Who has access'}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  disabled={isRestarting}
-                  onSelect={() =>
-                    deferAfterClose(() => onRestart(session.session_id, displayTitle))
+            {SourceIcon && (
+              <span
+                className="flex size-4 shrink-0 items-center justify-center"
+                data-session-source="true"
+              >
+                <Hint
+                  side="top"
+                  label={
+                    source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label
                   }
                 >
-                  {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
-                  Restart
-                </DropdownMenuItem>
-                {/* Lifecycle, not sharing: a project manager keeps Stop on a
-                    session they did not create. */}
-                {session.status === 'running' && session.can_manage_lifecycle !== false && (
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    disabled={isStopping}
-                    onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
-                  >
-                    {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
-                    Stop
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  className="cursor-pointer"
-                  onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
-                >
-                  <TrashIcon />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  <span className="text-muted-foreground/70 flex size-4 items-center justify-center">
+                    <SourceIcon className="size-3" />
+                  </span>
+                </Hint>
+              </span>
+            )}
+            <SessionSharedIcon session={session} />
           </div>
-        </div>
+        )}
+
+        {/* Out of flow on purpose. This trigger is a sibling of the link and of
+            the indicator strip, absolutely positioned against the row itself —
+            it reserves NO width, so the title measures against the full row and
+            truncates only at the real edge. It used to sit inside a `relative`
+            wrapper at the end of the indicator strip; that wrapper was still a
+            flex item, so it (and the timestamp slot it once held) ate width the
+            title needed.
+
+            `right-2` matches the row's own `px-2`, so the 24px square spans
+            `[W-32, W-8]` and the 16px glyph `[W-28, W-12]` — the exact geometry
+            the Sessions header and every section header use. All three `⋯`
+            glyphs stay on one vertical axis.
+
+            It paints `--session-row-surface` (the same variable that fills the
+            row) so a long title passing underneath is masked, not shown through
+            the glyph. `hover:bg-foreground/10` from `variant="ghost"` survives
+            tailwind-merge and still lights the square on direct hover. */}
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              aria-label={tHardcodedUi.raw(
+                'componentsProjectsProjectSessionList.line312JsxAttrAriaLabelSessionActions',
+              )}
+              className={cn(
+                SESSION_MENU_TRIGGER_CLASS,
+                'absolute top-1/2 right-1 z-10 -translate-y-1/2',
+                'bg-(--session-row-surface)',
+                'pointer-events-none opacity-0',
+                'group-hover/session-list:pointer-events-auto group-hover/session-list:opacity-100',
+                'focus-visible:pointer-events-auto focus-visible:opacity-100',
+                'data-[state=open]:pointer-events-auto data-[state=open]:opacity-100',
+              )}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            >
+              <DotsThreeIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="right" className="w-44">
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onRename(session.session_id, displayTitle))}
+            >
+              <PencilSimpleIcon />
+              Rename
+            </DropdownMenuItem>
+            {/* Shown to everyone who can open the session: the owner
+                changes access here, everyone else reads who has it. */}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onShare(session))}
+            >
+              <Share />
+              {session.can_manage_sharing !== false ? 'Share' : 'Who has access'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              disabled={isRestarting}
+              onSelect={() => deferAfterClose(() => onRestart(session.session_id, displayTitle))}
+            >
+              {isRestarting ? <Loading className="size-4 shrink-0" /> : <RotateCcw />}
+              Restart
+            </DropdownMenuItem>
+            {/* Lifecycle, not sharing: a project manager keeps Stop on a
+                session they did not create. */}
+            {session.status === 'running' && session.can_manage_lifecycle !== false && (
+              <DropdownMenuItem
+                className="cursor-pointer"
+                disabled={isStopping}
+                onSelect={() => deferAfterClose(() => onStop(session.session_id, displayTitle))}
+              >
+                {isStopping ? <Loading className="size-4 shrink-0" /> : <Square />}
+                Stop
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onSelect={() => deferAfterClose(() => onDelete(session.session_id, displayTitle))}
+            >
+              <TrashIcon />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -886,10 +940,12 @@ function ProjectSubsessionRow({
     : '';
 
   return (
-    <Link href={href} className="block">
+    // Same reason as ProjectSessionRow: sub-session rows are session routes too,
+    // so prefetching them on mount multiplies the per-open RSC storm.
+    <HoverPrefetchLink href={href} className="block">
       <div
         className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
+          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm',
           isActive ? 'bg-sidebar-accent text-sidebar-foreground font-medium' : '',
         )}
       >
@@ -899,7 +955,7 @@ function ProjectSubsessionRow({
         </span>
         {relative && <span className={SESSION_RELATIVE_TIME_CLASS}>{relative}</span>}
       </div>
-    </Link>
+    </HoverPrefetchLink>
   );
 }
 
@@ -941,6 +997,7 @@ function SessionStatusDot({
     display === 'needs-you'
       ? `${reviewCount} awaiting your review`
       : SESSION_DISPLAY_STATUS_LABELS[display];
+
 
   return (
     <Hint side="right" label={<span className="text-xs">{label}</span>}>

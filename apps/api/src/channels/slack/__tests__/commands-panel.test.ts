@@ -7,11 +7,8 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 process.env.SLACK_REQUIRE_USER_IDENTITY = 'false';
 
 mock.module('../../../config', () => ({
-  // KORTIX_MANAGED_PROVIDER_ENABLED must be on: RUNTIME_MANAGED_MODELS is empty
-  // without it, so `isRuntimeManagedModelId('glm-5.2')` is false and
-  // `toOpencodeModelRef` skips the `kortix/` prefix — which silently defeats the
-  // canonicalization this file exists to pin. (scripts/test.env sets it, but a
-  // config mock replaces the module, so it has to be restated here.)
+  // Keep the managed catalog enabled because this file exercises the real model
+  // picker. scripts/test.env sets it, but this config mock replaces that module.
   config: {
     FRONTEND_URL: 'https://app.test',
     SLACK_REQUIRE_USER_IDENTITY: false,
@@ -39,24 +36,24 @@ mock.module('../selection', () => ({
   setChannelModel: mock(async () => true),
 }));
 
-let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
+let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
 mock.module('../model-gate', () => ({ channelModelContext: async () => gate }));
 
 mock.module('../../../llm-gateway/models/picker', () => ({
   listPickerModels: async () => ({
     models: [
-      { id: 'kortix/glm-5.2', label: 'GLM 5.2', provider: 'kortix', managed: true, hint: 'Balanced, fast' },
+      { id: 'kortix/glm-5.3-flash', label: 'GLM 5.3 Flash', provider: 'kortix', managed: true, hint: 'Balanced, fast' },
       { id: 'kortix/claude-opus-4.8', label: 'Claude Opus 4.8', provider: 'kortix', managed: true, hint: 'Most capable' },
     ],
-    projectDefault: { model: 'glm-5.2', source: 'platform', label: 'GLM 5.2' },
+    projectDefault: { model: 'glm-5.3-flash', source: 'platform', label: 'GLM 5.3 Flash' },
   }),
-  labelForModelRef: (ref: string) => (ref.includes('glm') ? 'GLM 5.2' : ref),
+  labelForModelRef: (ref: string) => (ref.includes('glm') ? 'GLM 5.3 Flash' : ref),
 }));
 
 let servable = true;
 mock.module('../../../llm-gateway/resolution/default-model', () => ({
   isModelServableForAccount: async () => servable,
-  resolveEffectiveModel: async () => ({ model: 'glm-5.2', source: 'project' }),
+  resolveEffectiveModel: async () => ({ model: 'glm-5.3-flash', source: 'project' }),
 }));
 
 mock.module('../participants', () => ({
@@ -88,7 +85,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   selection = { projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null };
-  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
+  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
   servable = true;
   setChannelModel.mockClear();
 });
@@ -117,15 +114,15 @@ describe('/kortix models → real served catalog', () => {
     const resp = await handleSlashCommand('models', '', ctx);
     const ids = actionIds(resp);
     expect(ids).toContain('set_model_default');
-    expect(ids).toContain('set_model_kortix/glm-5.2');
+    expect(ids).toContain('set_model_kortix/glm-5.3-flash');
     expect(ids).toContain('set_model_kortix/claude-opus-4.8');
   });
 });
 
 describe('/kortix model <id> → servability gate (never store a 404)', () => {
   test('servable id is stored as the opencode ref', async () => {
-    const resp = await handleSlashCommand('model', 'glm-5.2', ctx);
-    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'kortix/glm-5.2');
+    const resp = await handleSlashCommand('model', 'glm-5.3-flash', ctx);
+    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'kortix/glm-5.3-flash');
     expect(resp.text).toContain('set to');
   });
 

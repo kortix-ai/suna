@@ -1,6 +1,7 @@
 import { logger } from '../lib/logger';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import type { ConnectorAttachmentStore } from './attachments';
+import { executeComposio } from './composio';
 import {
   EMAIL_CHANNEL_CONNECTOR_SLUG,
   SLACK_CHANNEL_CONNECTOR_SLUG,
@@ -46,7 +47,15 @@ export interface GatewayConnector {
   connectionMetadata?: Record<string, unknown>;
   slug: string;
   provider:
-    'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http' | 'channel' | 'computer';
+    | 'pipedream'
+    | 'composio'
+    | 'mcp'
+    | 'openapi'
+    | 'postman'
+    | 'graphql'
+    | 'http'
+    | 'channel'
+    | 'computer';
   platform?: string | null;
   /** Server-side machine allowlist for a Computers connector profile. */
   tunnelIds?: string[] | null;
@@ -192,6 +201,17 @@ export interface GatewayDeps {
     accountId: string;
     userId: string | null;
   }): Promise<ExecResult>;
+  /** Composio execution through server-side sessions. */
+  executeComposio?(input: {
+    projectId: string;
+    connectorSlug: string;
+    connectionId: string;
+    sessionId: string | null;
+    toolkit: string;
+    toolSlug: string;
+    args: Record<string, unknown>;
+    connectedAccountId: string | null;
+  }): Promise<ExecResult>;
   /**
    * Computer (Agent Computer Tunnel) execution — required for `computer`
    * connectors. Verifies the selected machine belongs to the connector's
@@ -208,20 +228,6 @@ export interface GatewayDeps {
     method: string;
     args: Record<string, unknown>;
   }): Promise<ComputerCallOutcome>;
-  /**
-   * Voice (LiveKit) channel execution — required for the `kortix_voice`
-   * channel connector's `{ kind: 'voice' }`-bound actions. `op` is the
-   * action's connector-relative path (`spawn_room` / `join_gmeet` /
-   * `join_zoom`); only `spawn_room` is implemented, the rest resolve to a
-   * `not_implemented` outcome the gateway maps onto a clear, actionable error.
-   */
-  executeVoiceCall?(input: {
-    projectId: string;
-    accountId: string;
-    sessionId: string | null;
-    op: string;
-    args: Record<string, unknown>;
-  }): Promise<VoiceCallOutcome>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
 }
@@ -236,17 +242,6 @@ export type ComputerCallOutcome =
       message: string;
     }
   | { ok: false; kind: 'no_machine'; message: string }
-  | { ok: false; kind: 'error'; message: string };
-
-/**
- * Result of a voice channel action (`spawn_room` / `join_gmeet` / `join_zoom`).
- * `not_implemented` is its own outcome (not folded into `error`) so a caller
- * can tell "this mechanism doesn't exist yet" apart from a real failure —
- * `message` is expected to say what to do instead, e.g. "use spawn_room".
- */
-export type VoiceCallOutcome =
-  | { ok: true; data: unknown }
-  | { ok: false; kind: 'not_implemented'; message: string }
   | { ok: false; kind: 'error'; message: string };
 
 export interface CallInput {
@@ -344,6 +339,18 @@ async function connectorUsable(
   _input: CallInput,
   credentialOverride?: string | null,
 ): Promise<{ ok: true; secret: string | null } | { ok: false; reason: string }> {
+  // Composio never uses connector credentials. Its account binding and session
+  // id are server-owned fields on the selected connector_connections row. This
+  // branch also lets no-auth toolkits execute without inventing a credential.
+  if (connector.provider === 'composio') {
+    if (!connector.connectionId) return { ok: false, reason: 'composio_connection_missing' };
+    if (!connector.hasAuth || connector.connectionMetadata?.is_no_auth === true) {
+      return { ok: true, secret: null };
+    }
+    return typeof connector.connectionMetadata?.connected_account_id === 'string'
+      ? { ok: true, secret: null }
+      : { ok: false, reason: 'needs_auth' };
+  }
   // Credential — none needed (public), or the one shared project credential.
   // (`per_user` — each member's own — was removed 2026-07-05; every connector
   // now resolves the shared, userId-null credential.)
@@ -680,37 +687,6 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       return { status: 'error', reason: outcome.message };
     }
 
-    // Voice channel: server-side room creation, not an outbound HTTP call —
-    // route through GatewayDeps.executeVoiceCall instead of executeCall, same
-    // shape as the computer branch above.
-    if (connector.provider === 'channel' && connector.platform === 'voice') {
-      if (action.binding.kind !== 'voice') {
-        throw new Error(`voice connector has unexpected binding kind "${action.binding.kind}"`);
-      }
-      if (!deps.executeVoiceCall) throw new Error('voice runner not wired');
-      const outcome = await deps.executeVoiceCall({
-        projectId: input.projectId,
-        accountId: input.accountId,
-        sessionId: input.sessionId ?? null,
-        op: action.binding.op,
-        args: executionArgs,
-      });
-      if (outcome.ok) {
-        await audit(deps, input, connector, 'ok', action.risk, {
-          op: action.binding.op,
-        });
-        return { status: 'ok', data: outcome.data, risk: action.risk };
-      }
-      await audit(deps, input, connector, 'error', action.risk, {
-        reason: outcome.message.slice(0, 500),
-        kind: outcome.kind,
-      });
-      if (outcome.kind !== 'not_implemented') {
-        logger.warn(`[connector] ${fullPath} voice call failed: ${outcome.message.slice(0, 500)}`);
-      }
-      return { status: 'error', reason: outcome.message };
-    }
-
     let result: ExecResult;
     if (connector.provider === 'pipedream') {
       const b = action.binding;
@@ -748,6 +724,31 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       } else {
         throw new Error(`pipedream connector has unexpected binding kind "${b.kind}"`);
       }
+    } else if (connector.provider === 'composio') {
+      const b = action.binding;
+      if (b.kind !== 'composio') {
+        throw new Error(`composio connector has unexpected binding kind "${b.kind}"`);
+      }
+      if (!connector.connectionId) throw new Error('composio_connection_missing');
+      const persistedSessionId =
+        typeof connector.connectionMetadata?.session_id === 'string'
+          ? connector.connectionMetadata.session_id
+          : null;
+      const connectedAccountId =
+        typeof connector.connectionMetadata?.connected_account_id === 'string'
+          ? connector.connectionMetadata.connected_account_id
+          : null;
+      const runner = deps.executeComposio ?? executeComposio;
+      result = await runner({
+        projectId: input.projectId,
+        connectorSlug: input.connectorSlug,
+        connectionId: connector.connectionId,
+        sessionId: persistedSessionId,
+        toolkit: b.toolkit,
+        toolSlug: b.toolSlug,
+        args: executionArgs,
+        connectedAccountId,
+      });
     } else {
       let providerArgs = executionArgs;
       if (connector.provider === 'channel' && connector.platform === 'email') {

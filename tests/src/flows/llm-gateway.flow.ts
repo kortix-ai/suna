@@ -23,18 +23,15 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /health'] }
   });
 });
 
-// GW-1b — the in-API-mounted LLM gateway health (apps/api/src/llm-gateway/wire.ts,
-// mountLlmGateway: `llm.get('/health', ...)` mounted at app.route('/v1/llm', llm)).
-// Distinct from GW-1's bare standalone-gateway-pod /health — this is served by
-// the in-process API when LLM_GATEWAY_ENABLED, with no auth in front of it.
+// GW-1b — the API's public streaming bridge to standalone gateway health.
 flow('GW-1b', { domain: 'llm-gateway', tags: ['smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
-  await ctx.step('in-API LLM gateway health mount is public', async () => {
+  await ctx.step('the API gateway health bridge reaches the standalone service', async () => {
     const r = await ctx.client.get('/v1/llm/health');
     r.status(200)
       .body()
-      .has('$.status', 'ok')
+      .has('$.status', 'healthy')
       .has('$.service', 'kortix-llm-gateway')
-      .has('$.mode', 'in-process');
+      .has('$.checks.api.status', 'up');
   });
 });
 
@@ -53,7 +50,7 @@ flow(
   async (ctx) => {
     const body = {
       principal: { accountId: '00000000-0000-4000-a000-000000000000' },
-      input: { requestedModel: 'glm-5.2' },
+      input: { requestedModel: 'glm-5.3-flash' },
     };
     await ctx.step('no internal token → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/internal/gateway/resolve-route', body);
@@ -308,12 +305,12 @@ flow(
     const params = { projectId: project.id };
     const policy = {
       defaultModel: 'codex/gpt-5.6-sol',
-      visionModel: 'glm-5.2',
-      defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+      visionModel: 'glm-5.3-flash',
+      defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
       rules: [
         {
           model: 'openai/gpt-5.5',
-          fallbackModels: ['glm-5.2'],
+          fallbackModels: ['glm-5.3-flash'],
           fallbackOn: 'transient',
         },
       ],
@@ -370,7 +367,7 @@ flow(
         .body()
         .has('$.project', savedProject)
         .has('$.effective.defaultModel', 'codex/gpt-5.6-sol')
-        .has('$.effective.defaultFallback.models', ['glm-5.2']);
+        .has('$.effective.defaultFallback.models', ['glm-5.3-flash']);
 
       const read = await ctx.client
         .as(ctx.P.OWNER)
@@ -391,10 +388,10 @@ flow(
         .body()
         .has('$.route.policyId', 'project:default')
         .has('$.route.primaryModel', 'codex/gpt-5.6-sol')
-        .has('$.route.fallbackModels', ['glm-5.2'])
+        .has('$.route.fallbackModels', ['glm-5.3-flash'])
         .has('$.route.fallbackOn', 'any-error')
         .has('$.models[0].model', 'codex/gpt-5.6-sol')
-        .has('$.models[1].model', 'glm-5.2')
+        .has('$.models[1].model', 'glm-5.3-flash')
         .exists('$.models[0].available')
         .exists('$.models[1].available');
 
@@ -410,7 +407,7 @@ flow(
         .body()
         .has('$.route.policyId', 'project:exact:openai/gpt-5.5')
         .has('$.route.primaryModel', 'openai/gpt-5.5')
-        .has('$.route.fallbackModels', ['glm-5.2'])
+        .has('$.route.fallbackModels', ['glm-5.3-flash'])
         .has('$.route.fallbackOn', 'transient');
     });
 

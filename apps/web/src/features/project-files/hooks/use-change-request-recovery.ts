@@ -2,8 +2,7 @@
 
 import { errorToast } from '@/components/ui/toast';
 import { useProjectContext } from '@/features/project-files/context';
-import { createProjectSession } from '@kortix/sdk';
-import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
+import { createProjectSession, markSessionFresh } from '@kortix/sdk';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';

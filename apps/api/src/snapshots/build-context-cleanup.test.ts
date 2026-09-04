@@ -25,7 +25,7 @@ setTestEnv('KORTIX_URL', 'https://api.example.test');
 setTestEnv('FRONTEND_URL', 'http://localhost:3000');
 setTestEnv('INTERNAL_KORTIX_ENV', 'dev');
 
-const { stageBuildContext, stageWarmFromBaseContext } = await import('./build-context');
+const { stageBuildContext } = await import('./build-context');
 
 const testRoots: string[] = [];
 const envNames = [
@@ -84,15 +84,13 @@ async function createStagingFixture(): Promise<{ tempBase: string }> {
   return { tempBase };
 }
 
-function invalidWarmRepo() {
-  return {
-    cloneUrl: 'https://git.example.test/repo.git',
-    cloneHeaders: {},
-    branch: 'main;invalid',
-    tip: 'a'.repeat(40),
-    originUrl: 'https://api.example.test/git/repo.git',
-  };
-}
+/**
+ * A Dockerfile that stages fine and then fails the buildah-portability guard —
+ * the last step of `stageBuildContext`, so the failure lands AFTER the context
+ * dir and every staged artifact exist. That is exactly the window the cleanup
+ * has to cover.
+ */
+const UNPORTABLE_DOCKERFILE = 'FROM ubuntu:24.04\nRUN cat <<EOF\nhello\nEOF\n';
 
 async function observeCreatedContext(
   tempBase: string,
@@ -145,29 +143,12 @@ describe('snapshot build-context failure cleanup', () => {
   test('stageBuildContext removes its exact context directory after staging fails', async () => {
     const tempBase = currentTempBase();
     const { contextDir, error } = await observeCreatedContext(tempBase, 'kortix-snap-', () =>
-      stageBuildContext('cleanup-test', 'FROM ubuntu:24.04', invalidWarmRepo()),
+      stageBuildContext('cleanup-test', UNPORTABLE_DOCKERFILE),
     );
 
     expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain('not buildah-portable');
     expect(contextDir.startsWith(join(tempBase, 'kortix-snap-'))).toBe(true);
-    expect(await stat(contextDir).catch((caught) => (caught as NodeJS.ErrnoException).code)).toBe(
-      'ENOENT',
-    );
-    expect(await readdir(tempBase)).toEqual([]);
-  });
-
-  test('stageWarmFromBaseContext removes its exact context directory after staging fails', async () => {
-    const tempBase = currentTempBase();
-    const { contextDir, error } = await observeCreatedContext(tempBase, 'kortix-snap-warm-', () =>
-      stageWarmFromBaseContext(
-        'cleanup-test',
-        'registry.example.test/kortix-base:latest',
-        invalidWarmRepo(),
-      ),
-    );
-
-    expect(error).toBeInstanceOf(Error);
-    expect(contextDir.startsWith(join(tempBase, 'kortix-snap-warm-'))).toBe(true);
     expect(await stat(contextDir).catch((caught) => (caught as NodeJS.ErrnoException).code)).toBe(
       'ENOENT',
     );

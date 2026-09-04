@@ -36,6 +36,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq, isNotNull, sql } from 'drizzle-orm';
 
 import { type SandboxProviderName, config } from '../../config';
+import { endComputeSession } from '../../billing/services/compute-metering';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { preserveEstablishedRuntime } from '../runtime-identity';
@@ -44,7 +45,8 @@ import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 /** How many parked rows one pass may examine. */
 const PARKED_VERIFY_BATCH = 60;
 
-export type ParkedRuntimeAction = 'preserve-lost' | 'heal-restored' | 'verified' | 'skip';
+export type ParkedRuntimeAction =
+  'preserve-lost' | 'heal-restored' | 'stop-pending' | 'settle-stop-pending' | 'verified' | 'skip';
 
 /**
  * Provider states that PROVE the sandbox object still exists and is settled.
@@ -61,6 +63,7 @@ export function decideParkedRuntime(input: {
   providerStatus: string;
   identityState: string | null;
   wakeInProgress: boolean;
+  stopPending: boolean;
 }): ParkedRuntimeAction {
   // A live wake owns this row. Two components acting on one sandbox is how a
   // wake gets cancelled underneath itself.
@@ -77,6 +80,12 @@ export function decideParkedRuntime(input: {
     // Only a settled, present state is proof the runtime came back. `unknown`
     // (a timeout or 5xx) is not — healing on it would resurrect a dead session.
     return PRESENT_AND_SETTLED.has(input.providerStatus) ? 'heal-restored' : 'skip';
+  }
+
+  if (input.stopPending) {
+    if (input.providerStatus === 'running') return 'stop-pending';
+    if (input.providerStatus === 'stopped') return 'settle-stop-pending';
+    return 'skip';
   }
 
   // Everything else — including `unknown` and a terminal-but-present box — is
@@ -138,6 +147,7 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
         identityState:
           typeof metadata.runtimeIdentityState === 'string' ? metadata.runtimeIdentityState : null,
         wakeInProgress: runtimeWakeInProgress(metadata, now),
+        stopPending: typeof metadata.providerStopPendingAt === 'string',
       });
       examined += 1;
 
@@ -173,15 +183,54 @@ export async function verifyParkedRuntimes(now = new Date()): Promise<{
         continue;
       }
 
+      if (action === 'stop-pending' || action === 'settle-stop-pending') {
+        const stopPendingAt = metadata.providerStopPendingAt as string;
+        await db.transaction(async (tx) => {
+          const [owned] = await tx
+            .select({ sandboxId: sessionSandboxes.sandboxId })
+            .from(sessionSandboxes)
+            .where(
+              and(
+                eq(sessionSandboxes.sandboxId, row.sandboxId),
+                eq(sessionSandboxes.status, 'stopped'),
+                sql`${sessionSandboxes.metadata}->>'providerStopPendingAt' = ${stopPendingAt}`,
+                sql`${sessionSandboxes.metadata}->>'runtimeWakeId' IS NULL`,
+              ),
+            )
+            .for('update')
+            .limit(1);
+          if (!owned) return;
+
+          // Hold the row lock through the external stop. A concurrent wake
+          // cannot claim and start this runtime between our check and pause.
+          if (action === 'stop-pending') {
+            await getProvider(row.provider as SandboxProviderName).stop(externalId);
+          }
+          await endComputeSession(row.sandboxId);
+          await tx
+            .update(sessionSandboxes)
+            .set({
+              metadata: sql`(
+                coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
+                  - 'providerStopPendingAt'
+                ) || ${JSON.stringify({ parkedVerifiedAt: now.toISOString() })}::jsonb`,
+              updatedAt: now,
+            })
+            .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+        });
+        continue;
+      }
+
       if (action === 'verified') {
         // Stamp only. Rotation depends on this, so it must happen even when
         // nothing interesting was found.
         await db
           .update(sessionSandboxes)
           .set({
-            metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify(
-              { parkedVerifiedAt: now.toISOString() },
-            )}::jsonb`,
+            metadata: sql`(
+              coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)
+                - 'providerStopPendingAt'
+              ) || ${JSON.stringify({ parkedVerifiedAt: now.toISOString() })}::jsonb`,
           })
           .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
       }

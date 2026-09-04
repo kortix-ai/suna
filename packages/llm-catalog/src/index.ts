@@ -4,6 +4,9 @@ export {
   DEFAULT_ENABLEMENT_WINDOW_MONTHS,
   defaultEnabledModelIds,
   type EnablementCandidate,
+  autoSeedDefaultModel,
+  autoSeedableModels,
+  bedrockInferenceProfileRank,
 } from './enablement';
 
 // ─── Kortix-owned provider auth requirements ────────────────────────────────
@@ -73,15 +76,11 @@ export {
 // they're only ever used in native mode, where every listed var is read
 // directly by the upstream SDK. No mismatch there; no override needed.
 //
-// NOTE: deliberately inlined here (not a separate ./auth-requirements
-// module) — this package publishes dist/ via `tsc` with
-// moduleResolution:"Bundler" (see tsconfig.build.json), which does not emit
-// the explicit .js extensions plain Node ESM needs on relative imports.
-// Every other export in this package has always lived in this one file for
-// the same reason; keep new code here too rather than reintroducing a
-// cross-file import that only breaks post-publish (`bun test`/`tsc --noEmit`
-// both resolve it fine in-repo, which is why this class of bug doesn't show
-// up until the SDK's install-smoke test actually runs the published tarball).
+// NOTE: this package publishes dist/ via `tsc` with
+// moduleResolution:"Bundler" (see tsconfig.build.json). Turbopack consumes the
+// extensionless workspace source. `tsc-alias --resolve-full-paths` adds `.js`
+// to the emitted relative import for plain Node ESM. The SDK install smoke
+// imports the React entry and enforces the packed output.
 
 export interface ProviderAuthMethod {
   /** Optional label, surfaced only if a provider ever exposes >1 method in the UI (none do today — the connect form always uses methods[0]). */
@@ -223,6 +222,11 @@ export interface CatalogModel {
   id: string;
   name: string;
   released?: string | null;
+  // models.dev lifecycle marker, mirrored verbatim ("active" | "deprecated"
+  // | ... — models.dev adds values; absent means active). opencode hides
+  // `deprecated` entries in the sandbox; every Kortix picker source that
+  // stands in for the runtime must apply the same rule.
+  status?: string;
   // Capabilities mirrored from models.dev by
   // apps/web/scripts/enrich-llm-catalog-capabilities.ts.
   // Single source of truth — consumers derive flags from these, never hardcode.
@@ -432,13 +436,11 @@ export interface ManagedModel {
   // The upstream's own model id, interpreted per `transport`:
   //   'bedrock'      → a Bedrock id (`us.anthropic.claude-opus-4-8`)
   //   'openrouter'   → an OpenRouter slug (`deepseek/deepseek-v4-flash`)
-  //   'aster'        → an AsterLab OpenAI-compatible model id (`glm-5.2`)
   upstreamModelId: string;
   // Which upstream + wire format carries it:
   //   'bedrock'      → Anthropic-on-Bedrock InvokeModel payload (Claude only)
   //   'openrouter'   → OpenRouter openai-compatible chat completions
-  //   'aster'        → AsterLab openai-compatible chat completions
-  transport: 'aster' | 'bedrock' | 'openrouter';
+  transport: 'bedrock' | 'openrouter';
   // Optional provider id used for model-picker branding. Routing still uses
   // `transport`; this field does not select or authenticate an upstream.
   providerBrand?: string;
@@ -511,11 +513,10 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // (`anthropic/claude-...` → the user's own key) without the two ever colliding.
 //
 // Every managed model runs through OUR keys and is billed as Kortix credits with
-// markup, so the gateway enforces budgets/logging/spend on all of them. GLM
-// runs through AsterLab. DeepSeek V4 Flash runs on OpenRouter.
+// markup, so the gateway enforces budgets/logging/spend on all of them.
 //
-// 2026-08-10: Claude Opus 4.8 / Claude Sonnet 4.6 (Bedrock) and Kimi K3
-// (AsterLab) are deactivated — their entries are kept below, commented out, so
+// 2026-08-10: Claude Opus 4.8 / Claude Sonnet 4.6 (Bedrock) are deactivated —
+// their entries are kept below, commented out, so
 // reactivation is a diff-review away. Consequences of a removed id:
 // stored account/project/agent defaults pointing at one degrade to the
 // platform default via `degradeUnservableDefault` (the servability probe
@@ -527,8 +528,12 @@ export function pricingRefLookupCandidates(pricingRef: string): string[] {
 // vision, which restores an image-input path after the Claude removal
 // (LLM_GATEWAY_VISION_MODEL defaults to gpt-5.6-luna, the cheapest vision
 // model), and DeepSeek V4 Flash became the platform default (cheapest
-// credible agentic coder; beats GLM 5.2 on every published agentic
-// benchmark while costing ~10x less per unit of work).
+// credible agentic coder).
+//
+// 2026-08-27: GLM 5.3 Flash added (OpenRouter transport, Z.ai first-party
+// endpoint). Cheapest managed model with vision ($0.075/$0.25 vs Luna's
+// $0.20/$1.20); LLM_GATEWAY_VISION_MODEL deliberately stays on gpt-5.6-luna
+// until the reroute target is re-evaluated on quality, not price alone.
 export const MANAGED_MODELS: ManagedModel[] = [
   {
     // Grok 4.6 through OpenRouter's first-party xAI endpoint. The explicit
@@ -590,48 +595,6 @@ export const MANAGED_MODELS: ManagedModel[] = [
   //   tier: 'balanced',
   //   vision: true,
   //   limit: { context: 1_000_000, output: 64_000 },
-  // },
-  {
-    id: 'glm-5.2',
-    name: 'GLM 5.2',
-    upstreamModelId: 'glm-5.2',
-    transport: 'aster',
-    pricingRef: 'z-ai/glm-5.2',
-    pricing: {
-      inputPerMillion: 1,
-      cachedInputPerMillion: 0.2,
-      cacheWritePerMillion: 1,
-      outputPerMillion: 4,
-    },
-    tier: 'balanced',
-    vision: false,
-    limit: { context: 1_000_000, output: 131_072 },
-  },
-  // {
-  //   // Kimi K3 (Moonshot AI) served through AsterLab's OpenAI-compatible
-  //   // endpoint — same `aster` transport + ASTER_API_KEY as GLM 5.2, so no new
-  //   // credential is needed. AsterLab accepts the bare `kimi-k3` slug on
-  //   // https://api.asterlab.ai/v1/chat/completions. `pricingRef` resolves to a
-  //   // REAL models.dev entry (moonshotai/kimi-k3), so capability lookups borrow
-  //   // the real reasoning_options (toggle + effort low/high/max) and
-  //   // temperature:false (K3 rejects a client-sent temperature) instead of the
-  //   // permissive synthetic fallback. `pricing` is the published Moonshot
-  //   // upstream rate ($3/$15, $0.30 cache read); Aster is an OpenAI-compatible
-  //   // proxy — verify against Aster's own price list and adjust via the
-  //   // LLM_GATEWAY_MANAGED_MODELS overlay if Aster's rate differs.
-  //   id: 'kimi-k3',
-  //   name: 'Kimi K3',
-  //   upstreamModelId: 'kimi-k3',
-  //   transport: 'aster',
-  //   pricingRef: 'moonshotai/kimi-k3',
-  //   pricing: {
-  //     inputPerMillion: 3,
-  //     cachedInputPerMillion: 0.3,
-  //     outputPerMillion: 15,
-  //   },
-  //   tier: 'balanced',
-  //   vision: true,
-  //   limit: { context: 1_048_576, output: 131_072 },
   // },
   {
     id: 'deepseek-v4-flash',
@@ -803,6 +766,51 @@ export const MANAGED_MODELS: ManagedModel[] = [
     limit: { context: 1_050_000, output: 128_000 },
     openrouterProvider: {
       order: ['openai'],
+      allow_fallbacks: true,
+    },
+  },
+  {
+    // Z.ai's GLM 5.3 Flash (released 2026-08-26) via OpenRouter. 12 endpoints
+    // serve the slug (measured 2026-08-27) and they are NOT interchangeable:
+    //  - `z-ai` (first-party) and `novita`: $0.075/$0.25, cache read $0.015,
+    //    1_048_576 ctx / 131_072 max out, tools + reasoning_effort, 99.1% /
+    //    99.8% 30m uptime. Pinned in that order. Verified live: a tool-call
+    //    request with this exact `provider` block landed on Z.AI (HTTP 200,
+    //    4.95s, finish_reason:tool_calls, cost 1.49e-5 USD = this entry's
+    //    rate to the cent); `z-ai` alone with allow_fallbacks:false also 200s,
+    //    which proves the slug. Novita was 429 "rate-limited upstream" on the
+    //    shared pool at measurement time — a second choice, not a first.
+    //  - `gmicloud`: same price but status -2 / 86.9% uptime → explicit `ignore`.
+    //  - `reka/fp8` and `io-net/fp8` cap context at 262_144 and `reka` caps
+    //    output at 48_000 — they cannot hold a session this entry advertises.
+    //  - every other host (venice, modal, parasail, together, cloudflare,
+    //    deepinfra, baseten) bills 2x ($0.15/$0.50): the fallback pool.
+    // The advertised limit is the SAFE INTERSECTION of the two pinned hosts.
+    // `pricingRef` resolves on LIVE models.dev (openrouter/z-ai/glm-5.3-flash:
+    // effort low/high/max, image+video input, temperature:true,
+    // structured_output:true); the committed catalog.generated.json predates
+    // the release, so snapshot-only consumers use the synthetic record until
+    // the weekly regen (same as muse-spark-1.2 on 2026-08-10).
+    // PRICE NOTE: $0.075/$0.25 is OpenRouter's current rate on the pinned
+    // hosts, shown there as a 50% launch discount off $0.15/$0.50. If the
+    // discount ends, or a turn falls back off the pinned hosts, upstream cost
+    // is 2x this entry — bump `pricing` (or overlay LLM_GATEWAY_MANAGED_MODELS).
+    id: 'glm-5.3-flash',
+    name: 'GLM 5.3 Flash',
+    upstreamModelId: 'z-ai/glm-5.3-flash',
+    transport: 'openrouter',
+    pricingRef: 'openrouter/z-ai/glm-5.3-flash',
+    pricing: {
+      inputPerMillion: 0.075,
+      cachedInputPerMillion: 0.015,
+      outputPerMillion: 0.25,
+    },
+    tier: 'fast',
+    vision: true,
+    limit: { context: 1_048_576, output: 131_072 },
+    openrouterProvider: {
+      order: ['z-ai', 'novita'],
+      ignore: ['gmicloud'],
       allow_fallbacks: true,
     },
   },

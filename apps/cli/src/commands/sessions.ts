@@ -10,7 +10,12 @@ import {
   takeFlagValue,
   takeFlagValues,
 } from '../command-helpers.ts';
-import { runSessionsAnswer, runSessionsApprove, runSessionsPending } from './sessions-approvals.ts';
+import {
+  runSessionsAnswer,
+  runSessionsApprove,
+  runSessionsConnectorApprovals,
+  runSessionsPending,
+} from './sessions-approvals.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { runSessionsConnect } from './sessions-connect.ts';
 import type { Auth } from '../api/auth.ts';
@@ -31,7 +36,17 @@ import {
   validateUploadSources,
   writeSessionFile,
 } from './sessions-files.ts';
+import {
+  runSessionsCompact,
+  runSessionsModel,
+  runSessionsStart,
+  runSessionsStop,
+  runSessionsWarm,
+} from './sessions-lifecycle.ts';
+import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
+import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
+import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
 
@@ -80,12 +95,20 @@ Subcommands:
                                       (repeatable).
   chat [<session-id>]               Talk to a session's agent (REPL, or
                                     one-shot with --prompt). --new starts one.
+                                    --queue stores the prompt in the session's
+                                    durable inbox instead of handing it to the
+                                    runtime.
+  queue <session-id> [<sub>]        The durable prompt inbox: ls (default), rm
+                                    <prompt-id>, now <prompt-id>, hold,
+                                    release. --json.
   connect [<session-id>]            Attach local OpenCode to the running
                                     session sandbox. Pass args after --.
   shell [<session-id>]              Open a raw interactive terminal (PTY) in
                                     the sandbox — no agent, just a shell.
                                     Reattaches to the existing one; --new
-                                    starts fresh.
+                                    starts fresh. Add \`ls\` to list the
+                                    session's terminals, or \`kill <pty-id>\`
+                                    to end one.
   log [<session-id>]                Print a session's recent messages
                                     (read-only) — peek at what an agent is
                                     doing without sending it anything.
@@ -98,6 +121,10 @@ Subcommands:
   answer <session-id> [<req-id>]    Answer a pending question.
                                     --option <value> (repeatable),
                                     --text "<answer>", --reject.
+  approvals <session-id> [<sub>]    Governed CONNECTOR calls waiting on a human
+                                    (durable, unlike \`pending\`): ls (default),
+                                    approve <execution-id>, deny
+                                    <execution-id>. --json.
   digest                            Compact review of recent sessions for
                                     reflection: metadata + compressed
                                     transcript snippets with tool outputs
@@ -113,6 +140,8 @@ Subcommands:
                                     two sandboxes. Sandbox refs are
                                     <session-id>:<path>; -r for directories.
                                     Overwrites the exact destination path.
+  files <session-id> <sub>          The sandbox's LIVE workspace: ls, status,
+                                    find, write, touch, mkdir, mv, rm. --json.
   info <session-id>                 Show one session. --json.
   scope <session-id>                Read or replace the session's secret and
                                     connector access. Changes apply to the next
@@ -121,9 +150,16 @@ Subcommands:
                                     --no-connectors, --require-connector,
                                     --no-required-connectors, --json.
                                     Alias: access.
+  share <session-id>                Who inside Kortix can open this session.
+                                    --mode private|project|members, --member
+                                    <id|email>, --group <id>, --show, --json.
+  links <session-id> [<sub>]        Public, unauthenticated links onto one
+                                    preview port or one workspace file: ls
+                                    (default), create, revoke <share-id>.
   preview <session-id> [port]       Print a clickable preview URL for a port
                                     in the session's sandbox (default 3000).
                                     Root-served (assets work). --port, --json.
+                                    --list prints the named candidates instead.
   reload <session-id>               Pull the repo and recompile the session's
                                     agent config from git, into the RUNNING
                                     sandbox — the way to pick up a merged
@@ -136,9 +172,20 @@ Subcommands:
                                     --status only reports whether the session
                                     is behind, changing nothing. --json.
   restart <session-id>              Restart (re-provision) a session.
+  stop <session-id>                 Pause a session — the sandbox stops in
+                                    place, disk kept. --json.
+  start <session-id>                Wake a session (provision or resume) and
+                                    resolve its runtime. --wait, --json.
+  warm                              Pre-create the session you are about to
+                                    use, so the box is already up.
+                                    --exclude <session-id>, --json.
+  model <session-id> <model-id>     Change the model a session runs. A live
+                                    box restarts, ending the turn in flight.
+  compact <session-id>              Summarize the conversation and continue
+                                    from the summary.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
-  rm <session-id>                   Stop + delete a session.
+  rm <session-id>...                Stop + delete one or more sessions.
   open <session-id>                 Open the dashboard URL for a session.
 
 Global options:
@@ -202,6 +249,38 @@ export async function runSessions(argv: string[]): Promise<number> {
   if (sub === 'scope' || sub === 'access') {
     return runSessionsScope(argv.slice(1));
   }
+  // Everything below owns its own flag parsing (repeatable flags, positional
+  // subcommands, or a stdin body), so route before the shared parse.
+  if (sub === 'queue') {
+    return runSessionsQueue(argv.slice(1));
+  }
+  if (sub === 'approvals') {
+    return runSessionsConnectorApprovals(argv.slice(1));
+  }
+  if (sub === 'share' || sub === 'sharing') {
+    return runSessionsShare(argv.slice(1));
+  }
+  if (sub === 'links' || sub === 'link') {
+    return runSessionsLinks(argv.slice(1));
+  }
+  if (sub === 'files') {
+    return runSessionsFiles(argv.slice(1));
+  }
+  if (sub === 'stop' || sub === 'pause') {
+    return runSessionsStop(argv.slice(1));
+  }
+  if (sub === 'start' || sub === 'wake') {
+    return runSessionsStart(argv.slice(1));
+  }
+  if (sub === 'warm') {
+    return runSessionsWarm(argv.slice(1));
+  }
+  if (sub === 'model') {
+    return runSessionsModel(argv.slice(1));
+  }
+  if (sub === 'compact' || sub === 'summarize') {
+    return runSessionsCompact(argv.slice(1));
+  }
   const rest = argv.slice(1);
   // None of the subcommands below (ls/new/info/preview/restart/rename/rm/
   // open) own dedicated help text or parse -h/--help themselves, so without
@@ -215,6 +294,7 @@ export async function runSessions(argv: string[]): Promise<number> {
   const json = takeFlagBool(rest, ['--json']);
   const wait = takeFlagBool(rest, ['--wait']);
   const connectAfter = takeFlagBool(rest, ['--connect']);
+  const listPreviews = takeFlagBool(rest, ['--list']);
   let projectFlag: string | undefined;
   let promptFlag: string | undefined;
   let hostFlag: string | undefined;
@@ -254,7 +334,9 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsInfo(rest[0], ctxOpts, json);
     case 'preview':
     case 'url':
-      return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts, json);
+      return listPreviews
+        ? sessionsPreviewCandidates(rest[0], ctxOpts, json)
+        : sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts, json);
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
     case 'reload':
@@ -263,7 +345,7 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsRename(rest[0], rest[1], ctxOpts);
     case 'rm':
     case 'delete':
-      return sessionsRm(rest[0], ctxOpts);
+      return sessionsRm(rest, ctxOpts, json);
     case 'open':
       return sessionsOpen(rest[0], ctxOpts);
     default:
@@ -578,27 +660,36 @@ async function sessionsNew(
   return 0;
 }
 
-/** Deliver a prompt through the shipped OpenCode REST runtime. */
+/**
+ * Deliver a prompt through the durable inbox — the ONE source of truth for
+ * prompt delivery (`session_lifecycle_commands`), same path as the web composer
+ * and `kortix ... queue`. NOT a direct runtime send: the previous
+ * `runtime.session.promptAsync` here bypassed the inbox, so a CLI prompt got
+ * none of its durability/ordering/exactly-once guarantees. The engine forwards
+ * to the box as soon as it is ready, so no `ensureReady()` is needed here.
+ */
 async function sendPromptToSession(
   ctx: { auth: Auth; projectId: string },
   session: ProjectSession,
   text: string,
 ): Promise<void> {
   const handle = kortixFromAuth(ctx.auth).session(ctx.projectId, session.session_id);
-  const ready = await handle.ensureReady();
-  // Carry the session's persisted model + agent: an async prompt without them
-  // is stored but never processed (OpenCode falls back to its own default
-  // model, which Kortix sandboxes don't provision).
+  // Carry the session's persisted model + agent: a prompt delivered without
+  // them lets OpenCode fall back to a model Kortix sandboxes don't provision.
   const defaults = sessionPromptDefaults(session);
-  const result = await handle.runtime.session.promptAsync({
-    sessionID: ready.opencodeSessionId,
+  await handle.prompts.create({
+    clientMessageId: randomUUID(),
+    messageId: wireMessageId(),
     parts: [{ type: 'text', text }],
-    ...defaults,
+    ...(defaults.agent || defaults.model
+      ? {
+          overrides: {
+            ...(defaults.agent ? { agent: defaults.agent } : {}),
+            ...(defaults.model ? { model: defaults.model } : {}),
+          },
+        }
+      : {}),
   });
-  if (result?.error) {
-    const detail = (result.error as { data?: { message?: string } })?.data?.message;
-    throw new Error(`prompt delivery failed${detail ? `: ${detail}` : ''}`);
-  }
 }
 
 export async function prepareClientCreatedBranch(
@@ -741,6 +832,71 @@ async function sessionsPreview(
   process.stdout.write(`\n  ${C.dim}port    ${C.reset}${port}\n`);
   process.stdout.write(`  ${C.dim}sandbox ${C.reset}${ext}\n`);
   process.stdout.write(`  ${C.dim}preview ${C.reset}${C.cyan}${url}${C.reset}\n\n`);
+  return 0;
+}
+
+/**
+ * `sessions preview <id> --list` — the named preview candidates the API knows
+ * about, the same list the dashboard's preview tab offers. Their ids are what
+ * `sessions links create --preview <id>` takes; `status` is advisory (the API
+ * reports `unknown` rather than probing the box).
+ */
+async function sessionsPreviewCandidates(
+  sessionId: string | undefined,
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n`);
+    return 2;
+  }
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions preview ${sessionId} --list --host ${host}`,
+  );
+  if (!located) return 1;
+
+  interface PreviewCandidate {
+    id: string;
+    label: string;
+    port: number;
+    path: string;
+    status: string;
+    source: string;
+  }
+  let candidates: PreviewCandidate[];
+  try {
+    const body = await located.located.client.get<{ candidates: PreviewCandidate[] }>(
+      `/projects/${located.located.projectId}/sessions/${located.located.session.session_id}/previews`,
+    );
+    candidates = body.candidates ?? [];
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(candidates);
+    return 0;
+  }
+  if (candidates.length === 0) {
+    process.stdout.write(`  ${C.dim}No preview candidates.${C.reset}\n`);
+    return 0;
+  }
+  const idW = Math.max(...candidates.map((c) => c.id.length), 2);
+  const labelW = Math.max(...candidates.map((c) => c.label.length), 5);
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}${pad('ID', idW)}   ${pad('LABEL', labelW)}   PORT    PATH${C.reset}\n`,
+  );
+  for (const c of candidates) {
+    process.stdout.write(
+      `  ${C.cyan}${pad(c.id, idW)}${C.reset}   ${pad(c.label, labelW)}   ${pad(String(c.port), 6)}  ${c.path}\n`,
+    );
+  }
+  process.stdout.write(
+    `\n  ${C.dim}Open one: ${C.reset}${C.cyan}kortix sessions preview ${shortId(sessionId)} --port <port>${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -932,27 +1088,67 @@ async function sessionsRename(
   return 0;
 }
 
-async function sessionsRm(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
-  if (!sessionId) {
+/**
+ * Delete one or more sessions.
+ *
+ * The dashboard's selection bar deletes a whole batch, so the CLI takes a list
+ * too. Deleted sequentially and independently: one 403 must not strand the
+ * rest, so every id is attempted and the failures are summarized at the end.
+ */
+async function sessionsRm(
+  sessionIds: string[],
+  opts: CtxOpts,
+  json = false,
+): Promise<number> {
+  const ids = sessionIds.filter((a) => !a.startsWith('-'));
+  if (ids.length === 0) {
     process.stderr.write(`${status.err('Pass a session id.')}\n`);
     return 2;
   }
-  const located = await locateSessionAnywhere(
-    sessionId,
-    opts,
-    (host) => `kortix sessions rm ${sessionId} --host ${host}`,
-  );
-  if (!located) return 1;
-  const canonicalSessionId = located.located.session.session_id;
 
-  try {
-    await located.located.client.delete(
-      `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
+  const results: Array<{ session_id: string; deleted: boolean; error?: string }> = [];
+  for (const sessionId of ids) {
+    const located = await locateSessionAnywhere(
+      sessionId,
+      opts,
+      (host) => `kortix sessions rm ${sessionId} --host ${host}`,
     );
-  } catch (err) {
-    return surfaceApiError(err);
+    if (!located) {
+      results.push({ session_id: sessionId, deleted: false, error: 'not found' });
+      continue;
+    }
+    const canonicalSessionId = located.located.session.session_id;
+    try {
+      await located.located.client.delete(
+        `/projects/${located.located.projectId}/sessions/${canonicalSessionId}`,
+      );
+      results.push({ session_id: canonicalSessionId, deleted: true });
+      if (!json) {
+        process.stdout.write(
+          `${status.ok(`Deleted ${C.bold}${shortId(canonicalSessionId)}${C.reset}`)}\n`,
+        );
+      }
+    } catch (err) {
+      surfaceApiError(err);
+      results.push({
+        session_id: canonicalSessionId,
+        deleted: false,
+        error: (err as Error).message,
+      });
+    }
   }
-  process.stdout.write(`${status.ok(`Deleted ${C.bold}${shortId(canonicalSessionId)}${C.reset}`)}\n`);
+
+  const failed = results.filter((r) => !r.deleted);
+  if (json) {
+    emitJson(results);
+    return failed.length > 0 ? 1 : 0;
+  }
+  if (failed.length > 0) {
+    process.stderr.write(
+      `${status.err(`${failed.length} of ${results.length} session${results.length === 1 ? '' : 's'} could not be deleted: ${failed.map((f) => shortId(f.session_id)).join(', ')}`)}\n`,
+    );
+    return 1;
+  }
   return 0;
 }
 

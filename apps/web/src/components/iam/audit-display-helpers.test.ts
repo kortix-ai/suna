@@ -85,6 +85,12 @@ describe('audit HTTP route registry', () => {
       describeAuditAction(`PUT /v1/connectors/projects/${UID}/connectors/github/secret-binding`)
         .title,
     ).toBe('Updated connector secret binding');
+    expect(describeAuditAction(`GET /v1/git/${UID}/compiled-checkout`).title).toBe(
+      'Downloaded compiled project checkout',
+    );
+    expect(describeAuditAction(`GET /v1/git/${UID}/compiled-runtime`).title).toBe(
+      'Downloaded compiled session runtime',
+    );
   });
 
   test('preserves the compact raw route fallback for an unknown route', () => {

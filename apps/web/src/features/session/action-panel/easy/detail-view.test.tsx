@@ -85,6 +85,7 @@ describe('persistent layer — the terminal lives inside this shell, not beside 
     );
     expect(html).toContain('pty-socket');
     expect(html).toContain('Terminal');
+    expect(html).toContain('aria-label="Full screen"');
     // The shared CARD_FRAME, worn by whichever layer is up. Exactly one card
     // is on screen here — the duplicated standalone terminal frame this work
     // deleted would have produced a second.

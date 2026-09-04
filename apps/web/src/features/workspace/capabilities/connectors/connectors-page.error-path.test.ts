@@ -77,6 +77,15 @@ describe('connectors page error path', () => {
     expect(source.match(/if \(slug\)/g)).toHaveLength(2);
   });
 
+  test('a newly created connector waits for a fresh list before missing-detail cleanup', () => {
+    expect(source).toContain('const [pendingDetail, setPendingDetail] = useState<');
+    expect(source).toContain(
+      'setPendingDetail({ slug, dataUpdatedAt: connectorsQuery.dataUpdatedAt });',
+    );
+    expect(source).toContain('connectorsQuery.dataUpdatedAt > pendingDetail.dataUpdatedAt');
+    expect(source).toContain('pendingDetail.slug !== detailSlug');
+  });
+
   test('the plus button opens the custom form only', () => {
     // The whole point of the redesign. If `AddAppPanel` ever comes back to
     // this page, the catalogue is behind a modal again and the four tabs are

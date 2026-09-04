@@ -77,6 +77,27 @@ async function resolveLiveOpencodePort(sandboxId: string): Promise<number> {
   }
 }
 
+/**
+ * How often the proxy pings BOTH legs of a preview WebSocket.
+ *
+ * A terminal is idle by nature: a shell sitting at its prompt emits nothing,
+ * and a user reading output types nothing. Measured on a real Platinum box, the
+ * API→sandbox leg is dropped after exactly 60 s with no bytes on it — the
+ * browser can only render that as close code `1006`, which is the
+ * "Connection closed (1006)" / "Reconnecting in Ns (code 1006)" ladder users
+ * hit on every environment, once a minute, forever.
+ *
+ * Nothing else on this path can fix it. The daemon does not ping, the browser
+ * does not ping, and no data byte may be injected in either direction: an
+ * upstream byte is typed into the user's shell and a downstream byte is printed
+ * into their terminal. A WebSocket PING is a control frame — it keeps the
+ * connection non-idle at every hop and is invisible to xterm and to the PTY.
+ *
+ * 25 s clears the 60 s provider-edge cut with two pings to spare, and also
+ * clears Cloudflare's ~100 s WebSocket idle timeout on the browser leg.
+ */
+export const PREVIEW_WS_KEEPALIVE_MS = 25_000;
+
 /** Per-connection state stashed on the upgraded socket's `data`. */
 export interface PreviewWsData {
   type: 'preview-ws';
@@ -86,6 +107,8 @@ export interface PreviewWsData {
   upstream?: WebSocket;
   ready?: boolean;
   queue?: Array<string | Buffer | ArrayBuffer | Uint8Array>;
+  /** Interval that pings both legs — see PREVIEW_WS_KEEPALIVE_MS. */
+  keepalive?: ReturnType<typeof setInterval>;
 }
 
 /** Minimal shape of the Bun server WebSocket we touch. */
@@ -93,6 +116,35 @@ interface ServerWs {
   data: PreviewWsData;
   send: (data: string | ArrayBufferView | ArrayBuffer) => void;
   close: (code?: number, reason?: string) => void;
+  /** Bun's ServerWebSocket sends a PING control frame. */
+  ping?: (data?: string | ArrayBufferView | ArrayBuffer) => void;
+}
+
+/**
+ * Ping both legs once. Exported so the keepalive is unit-tested without a
+ * socket pair: it must ping the CLIENT and the UPSTREAM, and a throw on one leg
+ * must not stop the other.
+ */
+export function pingPreviewWsLegs(ws: ServerWs): void {
+  try {
+    ws.ping?.();
+  } catch {
+    // A socket that rejects a ping is closing; its own close handler cleans up.
+  }
+  const upstream = ws.data.upstream as (WebSocket & { ping?: () => void }) | undefined;
+  if (!upstream || upstream.readyState !== WebSocket.OPEN) return;
+  try {
+    upstream.ping?.();
+  } catch {
+    // Same: the upstream close handler tears the pair down.
+  }
+}
+
+/** Stop the keepalive. Idempotent — both close paths call it. */
+export function stopPreviewWsKeepalive(state: PreviewWsData): void {
+  if (!state.keepalive) return;
+  clearInterval(state.keepalive);
+  state.keepalive = undefined;
 }
 
 /** True when the path is a path-based preview route eligible for WS proxying. */
@@ -221,8 +273,12 @@ async function resolveUpgradeForPrincipal(input: {
   // Strip our own auth credentials before forwarding — opencode authenticates
   // via the Daytona preview token header, not our query params.
   const upstreamQuery = new URLSearchParams(input.search);
+  // `wake=1` is OUR resume signal (see shouldWakeStoppedSandboxForWsAttach) and
+  // means nothing to the daemon — strip it with the credentials.
+  const wakeRequested = upstreamQuery.get('wake') === '1';
   upstreamQuery.delete('token');
   upstreamQuery.delete('public_share');
+  upstreamQuery.delete('wake');
   const queryString = upstreamQuery.toString() ? `?${upstreamQuery.toString()}` : '';
 
   try {
@@ -236,6 +292,7 @@ async function resolveUpgradeForPrincipal(input: {
       // A PreviewPrincipal's sessionId is the SANDBOX's own token binding, never
       // a Supabase login id — so it is also the correct agent binding.
       boundCredentialSessionId: callerSessionId,
+      wakeRequested,
     });
     if (!upstream.ok) {
       return { ok: false, status: upstream.status, message: upstream.message };
@@ -296,6 +353,10 @@ export const previewWsHandlers = {
       for (const msg of queued) {
         try { upstream.send(msg as any); } catch {}
       }
+      // Armed only once the pair is actually established — a ping before the
+      // upstream opens has nothing to keep alive.
+      stopPreviewWsKeepalive(state);
+      state.keepalive = setInterval(() => pingPreviewWsLegs(ws), PREVIEW_WS_KEEPALIVE_MS);
     };
 
     upstream.onmessage = (ev: MessageEvent) => {
@@ -303,10 +364,12 @@ export const previewWsHandlers = {
     };
 
     upstream.onclose = (ev: CloseEvent) => {
+      stopPreviewWsKeepalive(state);
       try { ws.close(sanitizePreviewWsCloseCode(ev.code), (ev.reason || '').slice(0, 120)); } catch {}
     };
 
     upstream.onerror = () => {
+      stopPreviewWsKeepalive(state);
       try { ws.close(4502, 'upstream error'); } catch {}
     };
   },
@@ -322,6 +385,9 @@ export const previewWsHandlers = {
   },
 
   close(ws: ServerWs) {
+    // The interval holds a reference to the socket pair. Leaving it armed after
+    // a close leaks one timer per terminal the box has ever opened.
+    stopPreviewWsKeepalive(ws.data);
     try { ws.data.upstream?.close(); } catch {}
   },
 };

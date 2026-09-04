@@ -2,6 +2,8 @@ import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
+import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -36,6 +38,29 @@ export function withNextDeliveryAttempt(payload: SQL): SQL {
     ${payload},
     '{deliveryAttempt}',
     to_jsonb(COALESCE((${sessionLifecycleCommands.payload}->>'deliveryAttempt')::int, 0) + 1))`;
+}
+
+/**
+ * Record a re-minted wire id WITHOUT losing the earlier ones.
+ *
+ * The scalar `redeliveredMessageId` stays the LATEST id — every floor read
+ * (`readDeliveredWireIdFloor`) and the already-answered guard want the newest.
+ * But a prompt can be re-minted more than once (it waits behind a live turn,
+ * then a strand re-places it), and OVERWRITING the scalar dropped the first
+ * re-minted id: a `session_turns` ledger row keyed on THAT id then matched no
+ * inbox row (`wireMessageIdMatches`), so the confirmation, the redelivery and
+ * the strand-reconcile all missed it and the row read `delivering` for ever.
+ *
+ * So the ids are APPENDED to `redeliveredMessageIds` as well — the array
+ * `wireMessageIdMatches` tests with `@>`, so ANY id the prompt was ever placed
+ * under names its row. Returns the new payload expression; compose it with
+ * `withNextDeliveryAttempt` when the write also advances the attempt counter.
+ */
+export function withRemintedWireId(id: string): SQL {
+  return sql`jsonb_set(
+    ${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: id })}::jsonb,
+    '{redeliveredMessageIds}',
+    coalesce(${sessionLifecycleCommands.payload}->'redeliveredMessageIds', '[]'::jsonb) || ${JSON.stringify([id])}::jsonb)`;
 }
 
 export function createSessionCommandPayload(command: CreateSessionCommand): QueuedCreateSessionPayload {
@@ -115,6 +140,15 @@ export interface QueuedContinueSessionPayload {
    * before the POST, so a crash between mint and delivery reuses one id.
    */
   redeliveredMessageId?: string;
+  /**
+   * EVERY id a re-mint has ever placed this row under, appended in order.
+   *
+   * `redeliveredMessageId` above is only the LATEST; a prompt re-minted twice
+   * keeps both here so a ledger row keyed on the FIRST still names its inbox
+   * row (`wireMessageIdMatches` tests membership with `@>`). Written by
+   * `withRemintedWireId`; absent on a row that never waited or re-delivered.
+   */
+  redeliveredMessageIds?: string[];
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;
@@ -268,9 +302,11 @@ export async function enqueueContinueSessionCommand(
  * Reading a display marker to make a correctness decision is how the id got
  * sent stale; the payload merge (`||`) is the durable half.
  */
+export type InboxAdmissionReason = 'older_prompt_pending' | 'turn_active';
+
 export async function requeueForAdmission(
   commandId: string,
-  reason: 'older_prompt_pending',
+  reason: InboxAdmissionReason,
   availableAt: Date,
 ): Promise<void> {
   await db
@@ -294,10 +330,10 @@ export async function requeueForAdmission(
 /**
  * Make the session's NEXT queued inbox row due now.
  *
- * Called the instant a delivery lands (forwarded or delivered). Without it the
- * next row waited out whatever `requeueForAdmission` backoff it had accrued
- * while its sibling was in flight — visible dead air between two messages the
- * user typed one after the other. Only rows the admission gate put back
+ * Called after the terminal relay or reaper proves the current turn ended.
+ * Without it the next row waits out whatever `requeueForAdmission` backoff it
+ * accrued while its sibling was active — visible dead air between two messages
+ * the user typed one after the other. Only rows the admission gate put back
  * (`admission_reason` set) or plain queued rows; never a HELD row (Stop parked
  * it) and never a row whose `available_at` is a deliberate future schedule
  * without a refusal marker. Returns the promoted row's idempotency key so the
@@ -319,7 +355,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
         sql`(${sessionLifecycleCommands.result} ? 'admission_reason' OR ${sessionLifecycleCommands.availableAt} <= now())`,
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(1);
   if (!next) return null;
   await db
@@ -614,6 +650,181 @@ export async function markCommandFailed(
       });
     }
   }
+
+  // Surface the failure on the trigger runtime row too. markCommandFailed parks
+  // the session (above) so the next reuse fire self-heals, but until now it left
+  // `projectTriggerRuntime.last_status` frozen at "queued" — the triggers API/UI
+  // never showed the dead-letter, so the operator's queue-age alarm was the only
+  // (and a misleading) signal. Flip it to "failed" with the error.
+  if (typeof payload.triggerSlug === 'string') {
+    await markTriggerRuntimeDeliveryFailed({
+      projectId: row.projectId,
+      slug: payload.triggerSlug,
+      when: new Date(),
+      error,
+    }).catch(() => {});
+  }
+}
+
+/**
+ * How many times a prompt re-attempts delivery into a runtime that was DOWN.
+ *
+ * Bounded because "the runtime is coming back" is a claim with an expiry date:
+ * a box that never returns must eventually hand the user a failed row with a
+ * retry button instead of a prompt that is queued for ever.
+ */
+export const MAX_RUNTIME_UNREACHABLE_RETRIES = 3;
+
+/**
+ * Backoff before each re-attempt, indexed by the number of unreachable attempts
+ * already spent. Deliberately COARSE: a stopped box comes back when a person
+ * opens the session or a wake finishes, which is tens of seconds to minutes —
+ * not the 2 s ladder `markCommandFailed` uses for a transient error. The wake
+ * itself re-arms the row the instant the runtime is confirmed back
+ * (`reArmRuntimeBlockedPrompts`), so this ladder is the FLOOR, not the plan.
+ */
+const RUNTIME_UNREACHABLE_BACKOFF_MS = [30_000, 120_000, 480_000] as const;
+
+/** Set by {@link parkPromptForUnreachableRuntime} on a row waiting for a box. */
+export const RUNTIME_UNREACHABLE_REASON = 'runtime_unreachable';
+
+export function runtimeUnreachableRetries(payload: unknown): number {
+  const value = (payload as { runtimeUnreachableRetries?: unknown } | null)
+    ?.runtimeUnreachableRetries;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+/**
+ * The runtime was DOWN when this prompt tried to go out. Keep the prompt.
+ *
+ * Not `markCommandFailed(retryable: true)`, for three reasons the delivery path
+ * cannot express through that function:
+ *
+ *  1. `attempts` is the DEAD-LETTER budget. A box being asleep is not the
+ *     prompt failing, so the claim's increment is given back — the same trade
+ *     `requeueForAdmission` makes for a prompt that waits out a live turn.
+ *     Without it three naps retire a message the runtime never even saw.
+ *  2. The backoff is minutes, not seconds. Polling a stopped box every two
+ *     seconds finds it stopped.
+ *  3. The next attempt must carry a FRESH idempotency key. The proxy claims
+ *     `idem:<sandbox>\0<session>\0<key>` for `DEDUPE_TTL_MS` (10 min) on the
+ *     POST that just failed, and every backoff step here is inside that window;
+ *     re-POSTing under the same key would be answered
+ *     `200 {"deduplicated": true}` and the row would be closed having delivered
+ *     nothing. `withNextDeliveryAttempt` is exactly the writer-side rule for
+ *     "this row went out and is going out again".
+ *
+ * Returns false when the budget is spent — the caller then dead-letters through
+ * `markCommandFailed`, which owns the alerting and the session-park policy.
+ */
+export async function parkPromptForUnreachableRuntime(
+  commandId: string,
+  error: string,
+  opts: { sessionId?: string | null; now?: Date } = {},
+): Promise<{ parked: boolean; retries: number }> {
+  const now = opts.now ?? new Date();
+  const [current] = await db
+    .select({ payload: sessionLifecycleCommands.payload })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.commandId, commandId))
+    .limit(1);
+  if (!current) return { parked: false, retries: 0 };
+
+  const spent = runtimeUnreachableRetries(current.payload);
+  if (spent >= MAX_RUNTIME_UNREACHABLE_RETRIES) return { parked: false, retries: spent };
+  const retries = spent + 1;
+  const backoff =
+    RUNTIME_UNREACHABLE_BACKOFF_MS[Math.min(spent, RUNTIME_UNREACHABLE_BACKOFF_MS.length - 1)]!;
+
+  // Carry the Stop through. `stopPausedOnDelivery` means the user pressed Stop
+  // while this row was inside `continueSession`; the hold has to survive a park
+  // exactly as it survives a forward (`markCommandForwarded`), or the one prompt
+  // Stop was meant to catch is the one that slips out on the next re-arm.
+  const stopPaused =
+    (current.payload as { stopPausedOnDelivery?: unknown } | null)?.stopPausedOnDelivery === 'true' ||
+    (current.payload as { stopPausedOnDelivery?: unknown } | null)?.stopPausedOnDelivery === true;
+
+  const result: Record<string, unknown> = {
+    delivery_blocked: RUNTIME_UNREACHABLE_REASON,
+    runtime_retries: retries,
+    ...(stopPaused ? { held: true, stop_paused: true } : {}),
+  };
+
+  const [row] = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'queued',
+      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+      // Give the claim's increment back: see (1) above.
+      attempts: sql`GREATEST(${sessionLifecycleCommands.attempts} - 1, 0)`,
+      availableAt: new Date(now.getTime() + backoff),
+      lockedBy: null,
+      lockedUntil: null,
+      lastError: error,
+      result,
+      payload: sql`jsonb_set(
+        ${withNextDeliveryAttempt(sql`${sessionLifecycleCommands.payload} - 'stopPausedOnDelivery'`)},
+        '{runtimeUnreachableRetries}',
+        to_jsonb(${retries}::int))`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, commandId),
+        ne(sessionLifecycleCommands.status, 'dead_lettered'),
+      ),
+    )
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  if (!row) return { parked: false, retries: spent };
+
+  logger.info('[session-lifecycle] prompt parked — runtime unreachable, will re-attempt', {
+    command_id: commandId,
+    session_id: opts.sessionId ?? null,
+    runtime_retries: retries,
+    max_retries: MAX_RUNTIME_UNREACHABLE_RETRIES,
+    backoff_ms: backoff,
+    error,
+  });
+  return { parked: true, retries };
+}
+
+/**
+ * The runtime is BACK. Make every prompt this session parked on it due now.
+ *
+ * Called from the one place that knows a runtime just became reachable again
+ * (`recoverTurnsAfterRuntimeRestart`), so the user's message goes out on the
+ * wake rather than on the backoff ladder's next rung.
+ *
+ * HELD rows are left exactly where they are: `held` means the user pressed
+ * Stop, and a wake is not consent to send. Only rows this park itself put down
+ * (`result.delivery_blocked`) are re-armed — a row queued for any other reason
+ * already has its own schedule.
+ *
+ * Returns the number of rows re-armed.
+ */
+export async function reArmRuntimeBlockedPrompts(
+  sessionId: string,
+  now = new Date(),
+): Promise<number> {
+  const rows = await db
+    .update(sessionLifecycleCommands)
+    .set({ availableAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, sessionId),
+        eq(sessionLifecycleCommands.status, 'queued'),
+        sql`${sessionLifecycleCommands.result}->>'delivery_blocked' = ${RUNTIME_UNREACHABLE_REASON}`,
+        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', 'false') <> 'true'`,
+      ),
+    )
+    .returning({ commandId: sessionLifecycleCommands.commandId });
+  if (rows.length > 0) {
+    logger.info('[session-lifecycle] runtime back — re-arming prompts parked on it', {
+      session_id: sessionId,
+      prompts: rows.length,
+    });
+  }
+  return rows.length;
 }
 
 /**
@@ -672,7 +883,12 @@ export async function claimDueLifecycleCommands(input: {
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.availableAt), asc(sessionLifecycleCommands.createdAt))
+    .orderBy(
+      asc(sessionLifecycleCommands.availableAt),
+      asc(inboxSentAtSql),
+      asc(inboxWireIdSql),
+      asc(sessionLifecycleCommands.commandId),
+    )
     .limit(input.limit);
 
   const claimed: SessionLifecycleCommandRow[] = [];

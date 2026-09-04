@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { shouldLoadOlderHistory } from './session-older-autoload';
+import {
+  OLDER_AUTOLOAD_MAX_PAGES,
+  nextOlderAutoloadArm,
+  olderAutoloadExhausted,
+  shouldLoadOlderHistory,
+} from './session-older-autoload';
 
 const IN_VIEW = {
+  readerScrolledUp: true,
   isIntersecting: true,
   hasOlder: true,
   isLoadingOlder: false,
@@ -9,8 +15,48 @@ const IN_VIEW = {
 };
 
 describe('older-history autoload', () => {
+  // A transcript never sheds what it pulls: turns stay in the DOM, their parts
+  // stay in the sync store, and their images keep decoded bitmaps alive. Left
+  // uncapped, idle scrolling walks a long thread's whole history into memory —
+  // the retention behind a tab Chrome discards and reloads on its own. Reading
+  // further back stays possible; it just stops being something a scroll does by
+  // itself.
+  test('stops pulling by itself once the auto-load budget is spent', () => {
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, autoLoadedPages: OLDER_AUTOLOAD_MAX_PAGES })).toBe(
+      false,
+    );
+    expect(
+      shouldLoadOlderHistory({ ...IN_VIEW, autoLoadedPages: OLDER_AUTOLOAD_MAX_PAGES - 1 }),
+    ).toBe(true);
+  });
+
+  test('an explicit pull is never budgeted — only the sentinel is', () => {
+    // The manual control calls `loadOlder` directly; the budget lives on the
+    // automatic path so a reader who asks for more always gets it.
+    expect(olderAutoloadExhausted({ hasOlder: true, autoLoadedPages: OLDER_AUTOLOAD_MAX_PAGES })).toBe(
+      true,
+    );
+    expect(olderAutoloadExhausted({ hasOlder: false, autoLoadedPages: 99 })).toBe(false);
+    expect(olderAutoloadExhausted({ hasOlder: true, autoLoadedPages: 0 })).toBe(false);
+  });
+
+  test('a missing budget behaves like a fresh session, not like an exhausted one', () => {
+    expect(shouldLoadOlderHistory(IN_VIEW)).toBe(true);
+  });
+
   test('pulls the previous page once the top sentinel comes into view', () => {
     expect(shouldLoadOlderHistory(IN_VIEW)).toBe(true);
+  });
+
+  /**
+   * Measured on a real session: a first page shorter than the viewport put the
+   * top sentinel inside its 400px margin on MOUNT, so a session open cost
+   * three reads (`limit=20` + two `before=` pages) before the reader touched
+   * anything. History is for readers who reach for it.
+   */
+  test('does not pull before the reader has scrolled up, even with the sentinel in view', () => {
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, readerScrolledUp: false })).toBe(false);
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, readerScrolledUp: undefined })).toBe(false);
   });
 
   test('does not pull while the sentinel is out of view', () => {
@@ -30,5 +76,36 @@ describe('older-history autoload', () => {
   // failure mode the manual button structurally could not have.
   test('stops auto-pulling after a failed pull, until an explicit retry', () => {
     expect(shouldLoadOlderHistory({ ...IN_VIEW, lastPullFailed: true })).toBe(false);
+  });
+});
+
+/**
+ * The re-arm debounce (FINDINGS-B fix #6). After a pull, the sentinel must
+ * leave the rootMargin zone before it can pull again — otherwise a prepend that
+ * lands 50 short turns without pushing the sentinel out of the 400px margin
+ * re-fires the observer immediately and chains pulls in one paint.
+ */
+describe('older-history re-arm debounce', () => {
+  test('a disarmed sentinel does not pull even while intersecting and eligible', () => {
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, armed: false })).toBe(false);
+    expect(shouldLoadOlderHistory({ ...IN_VIEW, armed: true })).toBe(true);
+    // Absent latch behaves like the old, always-armed path.
+    expect(shouldLoadOlderHistory(IN_VIEW)).toBe(true);
+  });
+
+  test('a pull disarms the sentinel', () => {
+    expect(nextOlderAutoloadArm({ armed: true, isIntersecting: true, didPull: true })).toBe(false);
+  });
+
+  test('staying in the zone after a pull keeps it disarmed — no chained pull', () => {
+    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: true, didPull: false })).toBe(false);
+  });
+
+  test('leaving the zone re-arms it', () => {
+    expect(nextOlderAutoloadArm({ armed: false, isIntersecting: false, didPull: false })).toBe(true);
+  });
+
+  test('re-entering the zone while armed keeps it armed', () => {
+    expect(nextOlderAutoloadArm({ armed: true, isIntersecting: true, didPull: false })).toBe(true);
   });
 });

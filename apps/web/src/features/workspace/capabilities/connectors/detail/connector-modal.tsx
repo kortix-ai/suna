@@ -15,6 +15,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import Loading from '@/components/ui/loading';
 import {
@@ -46,6 +47,10 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Close } from '@/features/icon/icons/close';
 import { foldKey } from '@/features/workspace/capabilities/connectors/catalog/catalog-entry';
 import { connectorDisplayName } from '@/features/workspace/capabilities/connectors/connector-filter';
+import {
+  composioConnectionIsAuthorized,
+  isManagedConnectorProvider,
+} from '@/features/workspace/capabilities/connectors/provider-label';
 import { ConnectorAccounts } from './connector-accounts';
 import { ConnectorSettings } from './connector-settings';
 import { CONNECTOR_TAB_LABEL, type ConnectorTab, connectorTabs } from './connector-tabs';
@@ -173,11 +178,11 @@ function ConnectorModalBody({
   onChanged: () => void;
   onRemoved: () => void;
 }) {
+  const isManagedProvider = isManagedConnectorProvider(connector.provider);
   const isPipedream = connector.provider === 'pipedream';
   const isChannel = connector.provider === 'channel';
   const isComputer = connector.provider === 'computer';
   const usesProjectAuthorization = connector.authorizationStrategy === 'project';
-  const connected = usesProjectAuthorization && connector.secretSet;
   const displayName = connectorDisplayName(connector);
 
   const tabs = connectorTabs(connector, { canWrite });
@@ -198,6 +203,11 @@ function ConnectorModalBody({
   const myPrivateConnection = connectionsQuery.data?.connections.find(
     (p) => p.connector_alias === connector.slug && p.owner_type === 'member',
   );
+  const selectedConnection = usesProjectAuthorization ? projectConnection : myPrivateConnection;
+  const connected =
+    connector.provider === 'composio'
+      ? composioConnectionIsAuthorized(selectedConnection?.metadata)
+      : usesProjectAuthorization && connector.secretSet;
 
   const reconnect = usePipedreamConnect(projectId, connector.slug, onChanged);
 
@@ -268,11 +278,12 @@ function ConnectorModalBody({
 
   const showConnectCta =
     canWrite &&
-    Boolean(connector.authSecret) &&
+    (isManagedProvider || Boolean(connector.authSecret)) &&
     !connected &&
     !isChannel &&
     usesProjectAuthorization;
-  const showReconnectCta = canWrite && Boolean(connector.authSecret) && connected && !isChannel;
+  const showReconnectCta =
+    canWrite && (isManagedProvider || Boolean(connector.authSecret)) && connected && !isChannel;
 
   return (
     <>
@@ -303,19 +314,19 @@ function ConnectorModalBody({
               <Button
                 size="sm"
                 className="gap-1.5 active:scale-[0.96]"
-                onClick={() => (isPipedream ? reconnect.mutate() : setCredOpen(true))}
-                disabled={strategyUpdating || (isPipedream && reconnect.isPending)}
+                onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
+                disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
               >
-                {isPipedream && reconnect.isPending ? (
+                {isManagedProvider && reconnect.isPending ? (
                   <Loading className="size-4 shrink-0" />
                 ) : (
                   <PlusIcon className="size-4 shrink-0" weight="bold" />
                 )}
-                {isPipedream ? 'Connect' : 'Add credential'}
+                {isManagedProvider ? 'Connect' : 'Add credential'}
               </Button>
             ) : null}
             {showReconnectCta ? (
-              isPipedream ? (
+              isManagedProvider ? (
                 <Button
                   size="sm"
                   variant="outline"
@@ -353,11 +364,47 @@ function ConnectorModalBody({
         </div>
       </ModalHeader>
 
-      <ModalBody className="max-h-[70vh] overflow-hidden p-0">
+      <ModalBody className="flex max-h-[70vh] flex-col overflow-hidden p-0">
+        {/* Not connected is the one state a person opening this modal must not
+            miss — an agent granted this connector cannot use it until someone
+            acts (Marko, 2026-09-03: "if it isn't connected we should make it
+            very clear"). The header's status chip says it; this says what to do. */}
+        {!connected && !isChannel && !isComputer && connectionsQuery.isSuccess ? (
+          <InfoBanner
+            tone="warning"
+            title={`${displayName} is not connected`}
+            className="shrink-0 rounded-none border-x-0 border-t-0"
+            action={
+              showConnectCta ? (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => (isManagedProvider ? reconnect.mutate() : setCredOpen(true))}
+                  disabled={strategyUpdating || (isManagedProvider && reconnect.isPending)}
+                >
+                  {isManagedProvider && reconnect.isPending ? (
+                    <Loading className="size-4 shrink-0" />
+                  ) : null}
+                  {isManagedProvider ? 'Connect now' : 'Add credential'}
+                </Button>
+              ) : !usesProjectAuthorization ? (
+                <Button size="sm" variant="outline" onClick={startPrivateSession}>
+                  Connect my account
+                </Button>
+              ) : undefined
+            }
+          >
+            {usesProjectAuthorization
+              ? canWrite
+                ? 'Agents granted this connector cannot call it until a project connection is authorized.'
+                : 'Agents granted this connector cannot call it until a project admin authorizes a connection.'
+              : 'Each person connects their own account. Start a session that requires it to be walked through the connection.'}
+          </InfoBanner>
+        ) : null}
         <Tabs
           value={tab}
           onValueChange={(next) => setSelectedTab(next as ConnectorTab)}
-          className="flex min-h-0 flex-col gap-0 overflow-y-auto lg:h-[70vh] lg:flex-row lg:overflow-hidden"
+          className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto lg:flex-row lg:overflow-hidden"
         >
           <TabsList
             type="underline"

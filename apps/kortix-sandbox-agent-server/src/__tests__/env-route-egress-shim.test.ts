@@ -28,23 +28,45 @@ import { buildOpencodeApp } from '../proxy'
 
 const TEST_TOKEN = 'egress-shim-test-kortix-token-32ch'
 const TEST_ENV_DIR = mkdtempSync(join(tmpdir(), 'kortix-env-shim-'))
-/** Well clear of the daemon's own 4319/4320/4321 block. */
-const PORT = 45322
-const SESSION_ENV = {
-  KORTIX_EGRESS_SHIM_PORT: String(PORT),
-  KORTIX_API_URL: 'https://api.kortix.test/v1',
-  KORTIX_PROJECT_ID: 'proj-hot-push',
-  KORTIX_CLI_TOKEN: 'kortix_pat_hot_push',
-} as const
 
+/**
+ * A fresh kernel-assigned port per test, never a fixed number. The CI packages
+ * lane can run this suite concurrently with — or right on the heels of —
+ * another run on the same runner, and two processes sharing one fixed port
+ * turn the arm/squat assertions into flakes. The ephemeral range is also
+ * inherently clear of the daemon's own 4319/4320/4321 block.
+ */
+function ephemeralPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as net.AddressInfo
+      probe.close(() => resolve(port))
+    })
+  })
+}
+
+const SESSION_ENV_NAMES = [
+  'KORTIX_EGRESS_SHIM_PORT',
+  'KORTIX_API_URL',
+  'KORTIX_PROJECT_ID',
+  'KORTIX_TOKEN',
+  'KORTIX_SECRET_CAPABILITIES',
+] as const
+
+let port = 0
 let testEnvFileSequence = 0
 let restoreEnv: Array<[string, string | undefined]> = []
 let squatter: net.Server | null = null
 
-beforeEach(() => {
-  restoreEnv = Object.entries(SESSION_ENV).map(([name]) => [name, process.env[name]])
-  restoreEnv.push(['KORTIX_SECRET_CAPABILITIES', process.env.KORTIX_SECRET_CAPABILITIES])
-  for (const [name, value] of Object.entries(SESSION_ENV)) process.env[name] = value
+beforeEach(async () => {
+  port = await ephemeralPort()
+  restoreEnv = SESSION_ENV_NAMES.map((name) => [name, process.env[name]])
+  process.env.KORTIX_EGRESS_SHIM_PORT = String(port)
+  process.env.KORTIX_API_URL = 'https://api.kortix.test/v1'
+  process.env.KORTIX_PROJECT_ID = 'proj-hot-push'
+  process.env.KORTIX_TOKEN = 'kortix_pat_hot_push'
   delete process.env.KORTIX_SECRET_CAPABILITIES
 })
 
@@ -87,6 +109,7 @@ function baseConfig(): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -174,10 +197,10 @@ describe('env route — mid-session boundary rules arm the shim', () => {
     expect(json.egress_shim_hosts).toEqual(['api.weather.test'])
     // Written AFTER the arm, so the agent's shells get the proxy on this push
     // rather than on the next one.
-    expect(readFileSync(envFile, 'utf8')).toContain(`export HTTPS_PROXY='http://127.0.0.1:${PORT}'`)
+    expect(readFileSync(envFile, 'utf8')).toContain(`export HTTPS_PROXY='http://127.0.0.1:${port}'`)
     // And the respawn triggered by the same push inherits it — a catalog change
     // is respawn-required, so this is the path opencode itself takes.
-    expect(proxyAtReload).toEqual([`http://127.0.0.1:${PORT}`])
+    expect(proxyAtReload).toEqual([`http://127.0.0.1:${port}`])
   })
 
   it('withdrawing the last boundary secret stops the listener and stops exporting the proxy', async () => {
@@ -239,8 +262,11 @@ describe('env route — mid-session boundary rules arm the shim', () => {
   })
 
   it('a listener that cannot bind still lets the rest of the env push land', async () => {
+    // The squatter binds first and OWNS the port the shim is pointed at, so
+    // the collision is deterministic instead of racing another process for it.
     squatter = net.createServer()
-    await new Promise<void>((resolve) => squatter!.listen(PORT, '127.0.0.1', () => resolve()))
+    await new Promise<void>((resolve) => squatter!.listen(0, '127.0.0.1', () => resolve()))
+    process.env.KORTIX_EGRESS_SHIM_PORT = String((squatter.address() as net.AddressInfo).port)
 
     const { opencode } = fakeOpencode()
     const { app } = buildTestApp(opencode)

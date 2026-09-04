@@ -8,8 +8,14 @@ const configState: Record<string, unknown> = {
 };
 mock.module('../config', () => ({ config: configState }));
 
-const { previewBaseDomain, previewOriginFor, previewUrlTemplate, resolvePreviewHost, sandboxHostLabel } =
-  await import('./preview-hosts');
+const {
+  previewBaseDomain,
+  previewOriginFor,
+  previewUrlTemplate,
+  resolvePreviewHost,
+  sandboxHostLabel,
+  warnIfPreviewOriginsMissing,
+} = await import('./preview-hosts');
 
 const SBX = 'sbx_01M0G4HXCM32BX5R1GPYZDYC1H';
 const LABEL = 'sbx-01m0g4hxcm32bx5r1gpyzdyc1h';
@@ -158,5 +164,56 @@ describe('previewOriginFor', () => {
       sandboxLabel: LABEL,
       local: false,
     });
+  });
+});
+
+describe('warnIfPreviewOriginsMissing', () => {
+  /** Collects the warnings a boot would emit. */
+  const spy = () => {
+    const calls: Array<{ message: string; meta?: Record<string, unknown> }> = [];
+    return {
+      calls,
+      warn: (message: string, meta?: Record<string, unknown>) => calls.push({ message, meta }),
+    };
+  };
+
+  test('warns on a public deployment with no preview domain — the silent-downgrade case', () => {
+    configState.KORTIX_URL = 'https://api.essentia.kortix.cloud';
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
+    const log = spy();
+    warnIfPreviewOriginsMissing(log);
+    expect(log.calls).toHaveLength(1);
+    expect(log.calls[0]!.message).toContain('no KORTIX_PREVIEW_BASE_DOMAIN');
+    expect(log.calls[0]!.meta?.kortix_url).toBe('https://api.essentia.kortix.cloud');
+  });
+
+  test('silent once a preview domain is configured', () => {
+    configState.KORTIX_URL = 'https://api.essentia.kortix.cloud';
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = 'p.essentia.kortix.cloud';
+    const log = spy();
+    warnIfPreviewOriginsMissing(log);
+    expect(log.calls).toEqual([]);
+  });
+
+  test.each([
+    ['localhost', 'https://localhost:8008'],
+    ['a *.localhost host', 'https://api.my-worktree.localhost:8008'],
+    ['a quick cloudflared tunnel', 'https://random-words-here.trycloudflare.com'],
+    ['plain http', 'http://api.example.com'],
+    ['an unset KORTIX_URL', ''],
+  ])('stays silent for %s — the path form is correct there', (_label, url) => {
+    configState.KORTIX_URL = url;
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
+    const log = spy();
+    warnIfPreviewOriginsMissing(log);
+    expect(log.calls).toEqual([]);
+  });
+
+  test('never throws — a warning must never become an outage', () => {
+    configState.KORTIX_URL = 'not a url';
+    configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
+    const log = spy();
+    expect(() => warnIfPreviewOriginsMissing(log)).not.toThrow();
+    expect(log.calls).toEqual([]);
   });
 });

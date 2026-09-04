@@ -97,3 +97,44 @@ describe('DocMarkdown table cells', () => {
     expect(html).not.toContain('node=');
   });
 });
+
+// The docs renderer shares `MarkdownCode` and the same `li` path-wrapping walk
+// as UnifiedMarkdown, so it carried the same fence regression. See
+// `unified-markdown.test.tsx` for the full account.
+
+const FENCE_IN_LIST_MD = [
+  '1. Install:',
+  '',
+  '   ```bash',
+  '   cd ~/UnrealEngine',
+  '   ./Setup.sh',
+  '   ```',
+  '',
+].join('\n');
+
+/**
+ * The text a reader sees, with the markup removed.
+ *
+ * Asserting on raw markup is only stable while the fence is UNHIGHLIGHTED:
+ * where Shiki's grammar loads synchronously it emits one span per token, so
+ * `cd ~/UnrealEngine` lands in two elements and a substring match on the HTML
+ * misses. Splitting on the tag delimiters — rather than a `replace()` that
+ * reads as an HTML sanitizer it is not — keeps this a test-only text
+ * extractor.
+ */
+function visibleText(html: string): string {
+  return html
+    .split('<')
+    .map((chunk, index) => (index === 0 ? chunk : chunk.slice(chunk.indexOf('>') + 1)))
+    .join('');
+}
+
+describe('DocMarkdown code fence inside a list', () => {
+  test('renders the snippet, not a stringified React element', () => {
+    const html = renderToStaticMarkup(withIntl(<DocMarkdown content={FENCE_IN_LIST_MD} />));
+
+    expect(visibleText(html)).not.toContain('[object Object]');
+    expect(visibleText(html)).toContain('./Setup.sh');
+    expect(html).not.toContain('Click to preview');
+  });
+});

@@ -218,7 +218,8 @@ channels:
     name: 'v1: sandbox template slug reserved ("default")',
     format: 'toml',
     valid: false,
-    input: 'kortix_version = 1\n[[sandbox.templates]]\nslug = "default"\nimage = "python:3.12-slim"\n',
+    input:
+      'kortix_version = 1\n[[sandbox.templates]]\nslug = "default"\nimage = "python:3.12-slim"\n',
   },
   {
     name: 'v1: cron trigger missing cron/run_at',
@@ -268,8 +269,7 @@ channels:
     name: 'sandbox.templates[].dockerfile rejects a ".." traversal segment',
     format: 'toml',
     valid: false,
-    input:
-      'kortix_version = 1\n[[sandbox.templates]]\nslug = "py"\ndockerfile = "../Dockerfile"\n',
+    input: 'kortix_version = 1\n[[sandbox.templates]]\nslug = "py"\ndockerfile = "../Dockerfile"\n',
   },
 
   // ─── shared sections: connectors.auth ──────────────────────────────────
@@ -335,16 +335,11 @@ channels:
 
   // ─── shared sections: reserved connector slugs ─────────────────────────
   {
-    name: 'reserved slug "kortix_voice" rejects a mismatched provider',
-    format: 'toml',
-    valid: false,
-    input: 'kortix_version = 1\n[[connectors]]\nslug = "kortix_voice"\nprovider = "pipedream"\napp = "x"\n',
-  },
-  {
     name: 'reserved slug "computer" rejects a mismatched (otherwise-valid) provider — regression guard for the computer-slug accept bug',
     format: 'toml',
     valid: false,
-    input: 'kortix_version = 1\n[[connectors]]\nslug = "computer"\nprovider = "pipedream"\napp = "x"\n',
+    input:
+      'kortix_version = 1\n[[connectors]]\nslug = "computer"\nprovider = "pipedream"\napp = "x"\n',
   },
   {
     name: 'provider="computer" is always rejected (synth-only, never hand-authored)',
@@ -505,19 +500,22 @@ connectors:
     name: 'v2: flat `model` on agent block rejected',
     format: 'yaml',
     valid: false,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    model: anthropic/claude-sonnet-5\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    model: anthropic/claude-sonnet-5\n',
   },
   {
     name: 'v2: flat `description` on agent block rejected',
     format: 'yaml',
     valid: false,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    description: "Handles support"\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    description: "Handles support"\n',
   },
   {
     name: 'v2: nested `opencode:` sub-object rejected outright',
     format: 'yaml',
     valid: false,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    opencode:\n      mode: primary\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    opencode:\n      mode: primary\n',
   },
   {
     name: 'v2: flat `disable` rejected',
@@ -617,7 +615,8 @@ connectors:
     name: 'v2: [[channels]] rejected outright',
     format: 'yaml',
     valid: false,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nchannels:\n  - platform: slack\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\nchannels:\n  - platform: slack\n',
   },
   {
     name: 'v2: missing agents map',
@@ -641,7 +640,8 @@ connectors:
     name: 'v2: invalid agent name key',
     format: 'yaml',
     valid: false,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  "Not Valid":\n    workspace: runtime\n  w: {}\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  "Not Valid":\n    workspace: runtime\n  w: {}\n',
   },
   {
     name: 'v2: kortix_cli rejects a non-grantable action',
@@ -656,10 +656,11 @@ connectors:
     input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: ["*"]\n',
   },
   {
-    name: 'v2: kortix_cli rejects a legacy-tolerated action outright (clean break, unlike v1\'s warn-only tolerance)',
+    name: "v2: kortix_cli rejects a legacy-tolerated action outright (clean break, unlike v1's warn-only tolerance)",
     format: 'yaml',
     valid: false,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: [project.schedule.read]\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    kortix_cli: [project.schedule.read]\n',
   },
   {
     name: 'v1: kortix_cli accepts a legacy-tolerated action (warn-only, still valid)',
@@ -683,7 +684,8 @@ connectors:
     name: 'v2: skills explicit list accepted',
     format: 'yaml',
     valid: true,
-    input: 'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    skills: [pdf-export, web-research]\n',
+    input:
+      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    skills: [pdf-export, web-research]\n',
   },
   {
     name: 'v2: skills "all" sentinel accepted',
@@ -765,15 +767,21 @@ describe('JSON Schema vs. imperative validator — accept/reject conformance', (
 
 describe('JSON Schema documents are themselves valid JSON Schema (ajv compiles them)', () => {
   test('kortix.v1.schema.json compiles', () => {
-    expect(() => new Ajv2020({ strict: false }).compile(KORTIX_V1_JSON_SCHEMA as Record<string, unknown>)).not.toThrow();
+    expect(() =>
+      new Ajv2020({ strict: false }).compile(KORTIX_V1_JSON_SCHEMA as Record<string, unknown>),
+    ).not.toThrow();
   });
 
   test('kortix.v2.schema.json compiles', () => {
-    expect(() => new Ajv2020({ strict: false }).compile(KORTIX_V2_JSON_SCHEMA as Record<string, unknown>)).not.toThrow();
+    expect(() =>
+      new Ajv2020({ strict: false }).compile(KORTIX_V2_JSON_SCHEMA as Record<string, unknown>),
+    ).not.toThrow();
   });
 
   test('kortix.schema.json (combined) compiles', () => {
-    expect(() => new Ajv2020({ strict: false }).compile(KORTIX_JSON_SCHEMA as Record<string, unknown>)).not.toThrow();
+    expect(() =>
+      new Ajv2020({ strict: false }).compile(KORTIX_JSON_SCHEMA as Record<string, unknown>),
+    ).not.toThrow();
   });
 
   test('each document declares the expected stable $id', () => {

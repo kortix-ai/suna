@@ -5,7 +5,6 @@
  * labels and the actor are derived from the kind + agent. See review-center.tsx.
  */
 
-import { looksLikeMarkdown } from '@/lib/markdown-detect';
 import type { ApiReviewItem, ReviewVerdict } from '@kortix/sdk';
 import type {
   ApprovalAction,
@@ -93,29 +92,16 @@ const lines = (s: string): string[] =>
 
 function changeDetail(d: AnyRec, row: ApiReviewItem): ChangeDetail {
   const adv = rec(d.advanced);
-  // A free-form description that's real markdown (agent-written CR bodies
-  // often are) is carried whole and rendered as markdown in the modal —
-  // line-splitting it into checkmark rows would show raw `##`/`**` noise.
-  // Plain text keeps the designed per-line treatment; a native structured
-  // `whatChanged` array always wins.
+  // The description is plain text: one bullet per line. A native structured
+  // `whatChanged` array always wins over the free-form description.
   const description = str(d.description);
   const native = arrOf<string>(d.whatChanged);
-  const descriptionMarkdown =
-    !native && description && looksLikeMarkdown(description) ? description : undefined;
   const whatChanged =
-    native ??
-    (descriptionMarkdown
-      ? []
-      : description
-        ? lines(description)
-        : row.summary
-          ? [row.summary]
-          : []);
+    native ?? (description ? lines(description) : row.summary ? [row.summary] : []);
   return {
     crId: str(d.cr_id),
     number: typeof d.number === 'number' ? d.number : undefined,
     whatChanged,
-    descriptionMarkdown,
     impact: str(d.impact) ?? '',
     verification: arrOf<ChangeDetail['verification'][number]>(d.verification) ?? [],
     previewUrl: str(d.previewUrl) ?? str(d.preview_url),
@@ -182,6 +168,9 @@ function approvalDetail(d: AnyRec, row: ApiReviewItem): ApprovalDetail {
         actionPath: path,
         rawArgsPreview: hasArgsPreview ? rawArgsPreview : undefined,
         reviewComplete: d.args_preview_complete === true,
+        // The API omits `args_preview` entirely for a viewer without argument
+        // visibility, which is indistinguishable from "the row recorded none".
+        previewAuthorized: d.args_preview_authorized !== false,
         connectorRisk: str(d.risk) ?? null,
         policySource: 'Requires approval',
       },

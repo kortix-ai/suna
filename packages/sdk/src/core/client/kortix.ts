@@ -21,6 +21,9 @@ import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
 import * as P from '../rest/projects-client';
+import * as A from '../rest/platform-client/auth';
+import type { HeadlessAuthApi } from '../rest/platform-client/auth';
+import { createKortixSession } from '../auth/session';
 import { getSessionHealth } from '../session/health';
 import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
 import { loadPreviewUrlTemplate } from '../session/preview-config';
@@ -137,12 +140,41 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     return resolvePreviewOptions({ sandboxId, apiBaseUrl, backendPort });
   }
 
+  /**
+   * Headless regular auth — sign-up, sign-in (password, magic link, social),
+   * refresh, password reset, sign-out — through the Kortix API, never
+   * Supabase. `session()` returns a store whose `getToken` refreshes itself;
+   * pass it to `createKortix({ getToken: session.getToken })`.
+   */
+  const auth: HeadlessAuthApi = {
+    signUp: A.signUp,
+    signInWithPassword: A.signInWithPassword,
+    sendMagicLink: A.sendMagicLink,
+    verifyOtp: A.verifyOtp,
+    signInWithProvider: A.signInWithProvider,
+    exchangeCode: A.exchangeCode,
+    refresh: A.refreshSession,
+    resetPassword: A.resetPassword,
+    updatePassword: A.updatePassword,
+    user: A.authUser,
+    signOut: A.signOut,
+    session: createKortixSession,
+  };
+
   /** Account-scoped operations. */
   const accounts = {
     list: P.listAccounts,
     get: P.getAccount,
     create: P.createAccount,
     updateName: P.updateAccountName,
+    /** Organization branding (Enterprise): own logo / icon / favicon (light + dark) and product name. */
+    branding: {
+      get: P.getAccountBranding,
+      update: P.updateAccountBranding,
+      uploadAsset: P.uploadAccountBrandingAsset,
+      removeAsset: P.removeAccountBrandingAsset,
+      reset: P.resetAccountBranding,
+    },
     leave: P.leaveAccount,
     members: P.listAccountMembers,
     invite: P.inviteAccountMember,
@@ -219,6 +251,16 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     /** Auto-provisioned agent identities — the principal picker for binding a
      *  role to an agent. */
     agentIdentities: P.listAgentIdentities,
+    /** "Sign in with Kortix" app registry — pair a client with `createKortixAuth`
+     *  from `@kortix/sdk/server`. The secret is returned once, on create/rotate. */
+    oauthClients: {
+      list: P.listOAuthClients,
+      get: P.getOAuthClient,
+      create: P.createOAuthClient,
+      update: P.updateOAuthClient,
+      rotateSecret: P.rotateOAuthClientSecret,
+      remove: P.deleteOAuthClient,
+    },
     /** Ask the engine. This is the ONLY authorization read a client should make:
      *  probe the LEAF a route asserts, never a role label. */
     can: P.probeEffectivePermission,
@@ -417,8 +459,10 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         get: (appId: string) => P.getApp(projectId, appId),
         update: (...a: DropFirst<Parameters<typeof P.updateApp>>) => P.updateApp(projectId, ...a),
         access: {
-          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) => P.getAppAccess(projectId, ...a),
-          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) => P.updateAppAccess(projectId, ...a),
+          get: (...a: DropFirst<Parameters<typeof P.getAppAccess>>) =>
+            P.getAppAccess(projectId, ...a),
+          update: (...a: DropFirst<Parameters<typeof P.updateAppAccess>>) =>
+            P.updateAppAccess(projectId, ...a),
           session: (...a: DropFirst<Parameters<typeof P.createAppAccessSession>>) =>
             P.createAppAccessSession(projectId, ...a),
         },
@@ -729,9 +773,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
             P.disconnectEmail(projectId, connectorSlug),
           updatePolicy: (...a: DropFirst<Parameters<typeof P.updateEmailPolicy>>) =>
             P.updateEmailPolicy(projectId, ...a),
-        },
-        voice: {
-          setBotName: (name: string) => P.setMeetBotName(projectId, name),
         },
       },
 
@@ -1048,6 +1089,12 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Compact server-side transcript read (text + tool calls, no tool inputs/outputs) — callable with project-scoped session tokens. */
       transcript: (options?: Parameters<typeof P.getSessionTranscript>[2]) =>
         P.getSessionTranscript(projectId, sessionId, options),
+      /** The DURABLE server-side transcript mirror, in sync-store shape
+       *  (OpenCode message envelopes verbatim, attachment bytes and tool
+       *  inputs/outputs stripped). This is the read that answers while the
+       *  sandbox is stopped or still waking. */
+      transcriptSync: (options?: Parameters<typeof P.getSessionTranscriptSync>[2]) =>
+        P.getSessionTranscriptSync(projectId, sessionId, options),
       /** Which turns are running right now, and how did the last one end?
        *  Server truth from the control plane's lifecycle authority, independent
        *  of the live stream. */
@@ -1064,10 +1111,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         /** Hold (or release) the whole queue — what the Stop button writes. */
         hold: (held: boolean) => P.holdSessionPrompts(projectId, sessionId, held),
       },
-      /** This session's live voice-call transcript (spoken turns + ask_kortix/run_command calls). */
-      voiceTranscript: (options?: Parameters<typeof P.getVoiceTranscript>[2]) =>
-        P.getVoiceTranscript(projectId, sessionId, options),
-
       /**
        * Resolve THIS handle's own runtime (idempotent): provisions/resumes the
        * sandbox (long-poll until ready) and caches the resolved OpenCode session
@@ -1270,6 +1313,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   return {
     /** The platform config in effect (for diagnostics). */
     config,
+    /** Headless regular auth — see `auth` above. */
+    auth,
     accounts,
     /** Identity and access — assignments, roles, permissions, groups, probes. */
     iam,
@@ -1286,8 +1331,6 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     billing,
     /** Public share links for a sandbox port (`/v1/p/share`, sandbox-scoped). */
     sandboxShares,
-    /** Speech-to-text transcription (`/transcription` — not project-scoped). */
-    transcribe: P.transcribeAudio,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */

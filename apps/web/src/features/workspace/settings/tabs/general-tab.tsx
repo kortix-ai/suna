@@ -147,7 +147,9 @@ import {
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
+import { useAuth } from '@/features/providers/auth-provider';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
+import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
 
@@ -165,7 +167,7 @@ import {
   type KortixProject,
   type ProjectInput,
 } from '@kortix/sdk';
-import { contract, qk } from '@kortix/sdk/react';
+import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -401,8 +403,14 @@ export async function runProjectArchive(
   remainingProjectCountBeforeArchive: number | null,
   client: RunProjectArchiveClient,
   onSuppress: () => void,
+  /** Forget this project as the remembered landing target (JAY-729). Runs
+   *  only after the archive lands — a failed archive leaves a project that
+   *  still renders, so its cookie must survive. Unlike `onSuppress` it does
+   *  not depend on the remaining count: forgetting is about THIS project. */
+  onForget?: () => void,
 ): Promise<void> {
   await client.archiveProject(projectId);
+  onForget?.();
   if (remainingProjectCountBeforeArchive !== null && remainingProjectCountBeforeArchive <= 1) {
     onSuppress();
   }
@@ -471,6 +479,25 @@ function GeneralWorkspaceCard({
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
     onError: (error: Error) => errorToast(error.message || 'Failed to update workspace icon'),
+    // The icon is read from THREE caches and this mutation used to write back
+    // to one. `setQueryData` above repaints the sidebar switcher, which reads
+    // `qk.project.summary`; the projects grid and ⌘K read a
+    // `qk.projects.list(accountId)` entry, and the project-home heading reads
+    // `qk.project.detail` through `useProjectName` / `useProjectIcon`. Neither
+    // of those two was touched, so a new icon showed in the sidebar and stayed
+    // stale everywhere else until eviction.
+    //
+    // Exactly the bug `invalidateProjectIdentity` was written for when the
+    // project NAME had it (see its doc comment in
+    // `@kortix/sdk/react/invalidate-project.ts` — note it needs the
+    // `qk.projects.scope()` PREFIX, since `list()` and `list(accountId)` are
+    // siblings, not parent and child). The rename mutation above reaches it
+    // through `renameOnSettled`; this one calls it directly, because there is
+    // no optimistic write here to snapshot or roll back.
+    //
+    // `onSettled`, not `onSuccess`: a rejected save must re-sync too, or the
+    // caches keep whatever the failed attempt left them believing.
+    onSettled: () => invalidateProjectIdentity(queryClient, project.project_id),
   });
 
   // `draft.name` is always the SERVER-confirmed name (`project.name`), never
@@ -539,6 +566,7 @@ function GeneralWorkspaceCard({
  *  returns `null` otherwise), so nothing here fetches on panel open. */
 export function GeneralTab({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [archiveOpen, setArchiveOpen] = useState(false);
 
   const projectQuery = useQuery({
@@ -576,6 +604,9 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         accountProjectCountForArchive(accountProjectsQuery.data),
         { archiveProject },
         suppressAutoProjectAfterDelete,
+        // The archived project must stop being where `/` and the settings
+        // exit land (JAY-729) — otherwise they redirect into a 404 gate.
+        () => forgetLastProjectId(user?.id, projectId),
       ),
     onSuccess: () => {
       successToast('Workspace archived');
@@ -599,7 +630,8 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       generalFieldsSlot={
         project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
       }
-      gitRepoSlot={<GitView projectId={projectId} />}
+      // No `gitRepoSlot`: Git repo is its own Settings section since
+      // 2026-09-03 (`project-settings-sections.ts`).
       canDelete={canDelete}
       workspaceName={project?.name}
       archiveOpen={archiveOpen}

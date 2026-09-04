@@ -48,22 +48,14 @@ describe('Daytona snapshot not-found classifier', () => {
   });
 });
 
-describe('DaytonaAdapter.buildSnapshot input validation (FROM-base fast path)', () => {
-  const BASE_SPEC = { spec: {}, slug: 'default-warm' };
-
-  test('rejects when none of image, userDockerfile, baseImageRef are set', async () => {
-    await expect(
-      daytonaProvider.buildSnapshot({ snapshotName: 'kortix-tpl-x', ...BASE_SPEC }),
-    ).rejects.toThrow('none of image, userDockerfile, baseImageRef set');
-  });
-
-  test('rejects baseImageRef without warmRepo before touching the network', async () => {
+describe('DaytonaAdapter.buildSnapshot input validation', () => {
+  test('rejects when neither image nor userDockerfile is set', async () => {
     await expect(
       daytonaProvider.buildSnapshot({
-        snapshotName: 'kortix-ppwarm-x',
-        baseImageRef: 'registry.example/kortix-default-abc:latest',
-        ...BASE_SPEC,
+        snapshotName: 'kortix-tpl-x',
+        spec: {},
+        slug: 'default',
       }),
-    ).rejects.toThrow('baseImageRef requires warmRepo');
+    ).rejects.toThrow('neither image nor userDockerfile set');
   });
 });

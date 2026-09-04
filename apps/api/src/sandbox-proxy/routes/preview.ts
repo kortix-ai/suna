@@ -1,3 +1,5 @@
+import { stripInlineAttachmentBytes } from '../inline-attachments';
+import { timeUpstream } from '../../middleware/upstream-timing';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -14,6 +16,7 @@ import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
+import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
 import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
@@ -47,6 +50,11 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
+import {
+  recordSseStreamEnd,
+  shouldBypassIngressCache,
+  trackSseBytes,
+} from '../sse-stall';
 import {
   DEFAULT_AGENT_SENTINEL,
   type PrePromptEnvSyncDeps,
@@ -110,7 +118,8 @@ const preview = new Hono<{
 
 // Hop-by-hop + caller-controlled headers we never forward upstream. Auth is
 // replaced with the sandbox service key, trace headers are regenerated, and
-// Accept-Encoding is forced to identity (raw byte passthrough).
+// Accept-Encoding is forced to identity (raw byte passthrough) EXCEPT on the
+// paths named by `forwardsClientEncoding` below.
 // Cookies may contain the caller's raw __preview_session credential and must
 // never reach arbitrary user-controlled apps running inside the sandbox.
 // `x-kortix-service-call` marks a DIRECT platform→daemon call. The daemon gates
@@ -130,6 +139,32 @@ export const STRIP_FORWARD_HEADERS = new Set([
   'content-length',
   KORTIX_SERVICE_CALL_HEADER.toLowerCase(),
 ]);
+
+/**
+ * Which upstream paths get the CLIENT's `Accept-Encoding` instead of `identity`.
+ *
+ * Identity is the right default and stays the default: this proxy REWRITES some
+ * bodies on the way back (`stripInlineAttachmentBytes` does `await
+ * upstream.text()` on a transcript list), and a rewriter handed gzip bytes
+ * produces garbage. Forcing identity is what makes that safe without every
+ * future rewrite having to remember to decompress.
+ *
+ * The daemon's `/kortix/opencode/*` namespace is the exception, and it earns it:
+ *   • nothing on this proxy rewrites those bodies — the projection is already
+ *     the trimmed shape, so there is nothing left to strip;
+ *   • the whole point of the namespace is byte reduction across THIS hop.
+ *     `/kortix/opencode/state` is 8.7 KB raw and 0.9 KB gzipped (WS-Z1 §5);
+ *     forcing identity here would throw away 90% of the saving before the
+ *     response ever reaches the API's own compressor.
+ *
+ * `/events` is excluded even inside that namespace: the daemon never gzips an
+ * event stream, and asking it to would be asking for a buffered one.
+ */
+export function forwardsClientEncoding(port: number, remainingPath: string): boolean {
+  if (port !== 8000) return false;
+  if (!/^\/kortix\/opencode(?:$|\/)/.test(remainingPath)) return false;
+  return !/^\/kortix\/opencode\/events(?:$|[/?#])/.test(remainingPath);
+}
 
 // The pre-prompt turn-start gate lives in ../pre-prompt-env-sync.ts so a unit
 // test can reach it without evaluating this route — importing this file caches
@@ -725,6 +760,38 @@ export function shouldAutoResumeStoppedSandbox(
   }
   return opts.browserNavigation === true && !carriesSessionData(upstreamPort);
 }
+
+/**
+ * Should a WebSocket UPGRADE wake a stopped box?
+ *
+ * The HTTP data path wakes a parked box on explicit user intent
+ * (`shouldAutoResumeStoppedSandbox`). The WebSocket path had no such branch at
+ * all: it answered `503 sandbox not ready` and stopped there. A browser never
+ * sees that status — a refused upgrade surfaces only as close code `1006` — so
+ * the terminal reconnected against a parked box forever, and nothing in the
+ * loop could ever wake it. Reloading the page did not help either: the panel's
+ * `GET /kortix/pty` is a GET on a session-data port, which by policy also never
+ * resumes. The terminal was therefore unrecoverable until the user prompted the
+ * agent (a POST) or restarted the session.
+ *
+ * A terminal ATTACH is the same class of intent as a session mutation: a human
+ * opened the panel or pressed "Reconnect now". The client marks exactly those
+ * two connects with `wake=1` and NEVER marks its automatic backoff retries, so
+ * the "passive resurrection" the resume policy exists to prevent (polling,
+ * hydration, background reconnects) still cannot wake a box.
+ *
+ * Pure + exported so the gate is unit-tested without provisioning a box.
+ */
+export function shouldWakeStoppedSandboxForWsAttach(
+  status: string,
+  remainingPath: string,
+  opts: { wakeRequested: boolean; accessKind?: string },
+): boolean {
+  if (status !== 'stopped') return false;
+  if (!opts.wakeRequested) return false;
+  if (opts.accessKind && opts.accessKind !== 'principal') return false;
+  return classifyPtyWebSocketPath(remainingPath) !== null;
+}
 /**
  * Is this a proxied attempt at the daemon's DESTRUCTIVE branch reset?
  *
@@ -1102,11 +1169,28 @@ export async function forwardToSandbox(
   // have no evidence about the box.
   let lastAttemptHop: ProxyHop = 'provider_ingress';
 
+  // The one SSE endpoint proxied per sandbox. Its streams get a byte-counting
+  // passthrough (below), and a previous stream that answered 200 without EVER
+  // writing a byte — the stale-cached-ingress signature, which produces no
+  // error status and therefore never invalidated anything — costs the next
+  // connect its cache entry, so it re-resolves instead of re-dialling the
+  // same dead address for the rest of the 5-minute TTL. See `sse-stall.ts`.
+  const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
+  /** Set per attempt: did we hand the daemon the CLIENT's Accept-Encoding? */
+  let upstreamEncodingForwarded = false;
+  const sseStallKey = `${sandboxId}:${port}`;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const budgetRemainingMs = PROXY_RETRY_BUDGET_MS - (Date.now() - proxyStartedAt);
     if (budgetRemainingMs <= 500) break; // out of budget → friendly page below
     try {
       lastAttemptHop = 'provider_ingress';
+      if (isSseEventStreamRequest && attempt === 0 && shouldBypassIngressCache(sseStallKey)) {
+        console.warn(
+          `[PREVIEW] previous /global/event stream for ${sandboxId}:${port} delivered 0 bytes — re-resolving ingress`,
+        );
+        invalidatePreviewLink(sandboxId, port);
+      }
       const ingress = await resolveSandboxIngress(record, ingressRequest);
       ptl.mark('ingress');
       lastAttemptHop = portFailureHop(upstreamPort);
@@ -1234,7 +1318,16 @@ export async function forwardToSandbox(
         if (STRIP_FORWARD_HEADERS.has(name)) continue;
         headers.set(key, value);
       }
-      headers.set('Accept-Encoding', 'identity');
+      upstreamEncodingForwarded = forwardsClientEncoding(port, remainingPath);
+      if (upstreamEncodingForwarded) {
+        // Pass the caller's own negotiation through, so the daemon can gzip and
+        // the compressed bytes reach the client untouched (the API's compress
+        // middleware passes a body that already carries `content-encoding`).
+        const clientEncoding = incomingHeaders.get('accept-encoding');
+        headers.set('Accept-Encoding', clientEncoding?.trim() || 'identity');
+      } else {
+        headers.set('Accept-Encoding', 'identity');
+      }
       for (const [key, value] of Object.entries(getTraceHeaders())) {
         headers.set(key, value);
       }
@@ -1331,17 +1424,24 @@ export async function forwardToSandbox(
           );
         }
         if (nonReplayableWrite) promptDeliveryMayHaveReachedUpstream = true;
-        upstream = await fetch(targetUrl, {
-          method,
-          headers,
-          body: requestBody,
-          redirect: 'manual',
-          signal: attemptController.signal,
-          // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
-          // not in the lib RequestInit type.
-          decompress: false,
-          duplex: 'half',
-        } as RequestInit);
+        // Timed, so the response carries `Server-Timing: up;dur=…, api;dur=…`.
+        // A HAR of a session open otherwise shows one opaque number for a
+        // proxied read and no way to tell the sandbox hop from this API's own
+        // work — which is exactly what blocked attributing the ~1.7 s on
+        // `/p/<ext>/8000/agent`. Retries accumulate.
+        upstream = await timeUpstream(() =>
+          fetch(targetUrl, {
+            method,
+            headers,
+            body: requestBody,
+            redirect: 'manual',
+            signal: attemptController.signal,
+            // Bun extensions: no decompression (raw byte passthrough), duplex streaming —
+            // not in the lib RequestInit type.
+            decompress: false,
+            duplex: 'half',
+          } as RequestInit),
+        );
       } finally {
         clearTimeout(connectTimer);
       }
@@ -1524,6 +1624,93 @@ export async function forwardToSandbox(
           exposed ? `${exposed}, ${EFFECTIVE_MESSAGE_ID_HEADER}` : EFFECTIVE_MESSAGE_ID_HEADER,
         );
       }
+      // The transcript list leaves the API WITHOUT its attachment bytes.
+      //
+      // The daemon strips these too (kortix-sandbox-agent-server/src/proxy.ts)
+      // and that is the right home. This second pass exists for every sandbox
+      // still running an older daemon image — a self-host does not rebuild
+      // its templates on our schedule, and the read that motivated this
+      // (20 messages = 7-19 MB, dying on a 30s browser deadline, retried
+      // forever) was on exactly such a box. Idempotent by construction: a
+      // reference is not a `data:` url, so a list the daemon already stripped
+      // passes through with zero work.
+      const listMatch =
+        method === 'GET' && upstream.ok
+          ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
+          : null;
+      if (
+        listMatch &&
+        (upstream.headers.get('content-type') ?? '').includes('application/json')
+      ) {
+        const sessionID = decodeURIComponent(listMatch[1] ?? '');
+        const text = await upstream.text();
+        let body = text;
+        try {
+          const stripped = stripInlineAttachmentBytes(
+            JSON.parse(text),
+            (messageID, partID) =>
+              `/kortix/part/${encodeURIComponent(sessionID)}/${encodeURIComponent(messageID)}/${encodeURIComponent(partID)}`,
+          );
+          if (stripped.stripped > 0) {
+            body = JSON.stringify(stripped.value);
+            console.info(
+              `[PREVIEW] stripped ${stripped.stripped} inline attachment part(s), ${stripped.savedBytes} bytes, from ${sandboxId} ${remainingPath}`,
+            );
+          }
+        } catch {
+          // Not the JSON we expected — pass it through untouched. This path
+          // must never be the reason a transcript read fails.
+        }
+        respHeaders.delete('content-length');
+        respHeaders.delete('content-encoding');
+        respHeaders.set('content-type', 'application/json; charset=utf-8');
+        return new Response(body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: respHeaders,
+        });
+      }
+
+      // SSE gets the byte-counting passthrough (chunks untouched, backpressure
+      // preserved): a stream that ends having delivered ZERO bytes marks this
+      // sandbox so the next connect re-resolves ingress — see `sse-stall.ts`.
+      if (isSseEventStreamRequest && upstream.ok && upstream.body) {
+        respHeaders.delete('content-length');
+        return new Response(
+          trackSseBytes(upstream.body, (bytes) => recordSseStreamEnd(sseStallKey, bytes)),
+          {
+            status: upstream.status,
+            statusText: upstream.statusText,
+            headers: respHeaders,
+          },
+        );
+      }
+
+      // When we forwarded the client's `Accept-Encoding` (the
+      // `/kortix/opencode/*` namespace), the daemon answered gzipped and the
+      // ~1.4 s provider hop carried 0.9 KB instead of 8.7 KB — which is the
+      // entire point. But `fetch` DECODES a `Content-Encoding` body per the
+      // WHATWG spec while leaving the header and the compressed
+      // `Content-Length` on the response object. Measured on Bun 1.3:
+      // 55 compressed bytes on the wire, `content-encoding: gzip`,
+      // `content-length: 55`, and 4,012 DECOMPRESSED bytes out of
+      // `arrayBuffer()`. Forwarding those two headers with a decoded body is a
+      // response no client can read, so both go. The API's own compress
+      // middleware then re-compresses for the API->client hop; the two hops
+      // negotiate independently, and the expensive one is the one that shrank.
+      if (upstreamEncodingForwarded && respHeaders.has('content-encoding')) {
+        respHeaders.set('x-kortix-upstream-encoding', respHeaders.get('content-encoding')!);
+        respHeaders.delete('content-encoding');
+        respHeaders.delete('content-length');
+        const exposedEncoding = respHeaders.get('Access-Control-Expose-Headers');
+        respHeaders.set(
+          'Access-Control-Expose-Headers',
+          exposedEncoding
+            ? `${exposedEncoding}, x-kortix-upstream-encoding`
+            : 'x-kortix-upstream-encoding',
+        );
+      }
+
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -1638,6 +1825,10 @@ export async function resolvePreviewWsUpstream(opts: {
   /** The caller's AGENT/SANDBOX token binding. Only the trigger-session manager
    *  override reads it (connectors/share.ts). REQUIRED, same reasoning. */
   boundCredentialSessionId: string | null;
+  /** The client marked this attach as user-initiated (`wake=1`): the panel's
+   *  first connect, or "Reconnect now". Automatic backoff retries never set it.
+   *  See `shouldWakeStoppedSandboxForWsAttach`. */
+  wakeRequested?: boolean;
 }): Promise<
   | { ok: true; url: string; headers: Record<string, string> }
   | { ok: false; status: number; message: string }
@@ -1646,7 +1837,7 @@ export async function resolvePreviewWsUpstream(opts: {
   const callerSessionId = opts.callerSessionId;
   const boundCredentialSessionId = opts.boundCredentialSessionId;
 
-  const record = await loadSandbox(sandboxId);
+  let record = await loadSandbox(sandboxId);
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
 
   const ingressRequest = {
@@ -1682,7 +1873,28 @@ export async function resolvePreviewWsUpstream(opts: {
     };
   }
   if (record.status !== 'active') {
-    return { ok: false, status: 503, message: 'sandbox not ready' };
+    // A user-initiated terminal attach resumes a parked box, exactly like a
+    // session mutation does on the HTTP path. Without this the socket can only
+    // loop: the browser sees 1006, retries, and nothing ever wakes the sandbox.
+    if (
+      shouldWakeStoppedSandboxForWsAttach(record.status, remainingPath, {
+        wakeRequested: opts.wakeRequested === true,
+        accessKind: 'principal',
+      })
+    ) {
+      const resumeExternalId = record.externalId;
+      await resumeStoppedSandboxByExternalId(resumeExternalId).catch((err) => {
+        console.warn(`[preview-ws] auto-resume failed for ${resumeExternalId}:`, err);
+        return false;
+      });
+      // The resume flips the row to 'active' immediately; the box finishes
+      // booting in the background and the client's next retry connects.
+      const resumed = await loadSandbox(sandboxId);
+      if (resumed) record = resumed;
+    }
+    if (record.status !== 'active') {
+      return { ok: false, status: 503, message: `sandbox not ready (status: ${record.status})` };
+    }
   }
 
   const ingress = await resolveSandboxIngress(record, ingressRequest);

@@ -16,6 +16,8 @@ export interface AppAccessPolicy {
   member_ids: string[];
   group_ids: string[];
   password_configured: boolean;
+  /** What the gate tells this App about its viewer — see apps/viewer.ts. */
+  viewer_token_scope: 'off' | 'identity' | 'api';
 }
 
 export type AppAccessPrincipalValidation =
@@ -135,6 +137,7 @@ export async function serializeAppAccessPolicy(
       .filter((grant) => grant.principalType === 'group')
       .map((grant) => grant.principalId),
     password_configured: Boolean(row.accessPasswordHash),
+    viewer_token_scope: (row.viewerTokenScope ?? 'identity') as 'off' | 'identity' | 'api',
   };
 }
 
@@ -183,6 +186,7 @@ export async function persistAppAccessPolicy(
     memberIds?: string[];
     groupIds?: string[];
     password?: string;
+    viewerTokenScope?: 'off' | 'identity' | 'api';
   },
 ): Promise<typeof apps.$inferSelect> {
   const memberIds = [...new Set(input.memberIds ?? [])];
@@ -195,6 +199,7 @@ export async function persistAppAccessPolicy(
     const [updated] = await tx.update(apps).set({
       accessMode: input.mode,
       accessPasswordHash: passwordHash,
+      ...(input.viewerTokenScope ? { viewerTokenScope: input.viewerTokenScope } : {}),
       accessRevision: sql`${apps.accessRevision} + 1`,
       updatedAt: new Date(),
     }).where(and(

@@ -6,22 +6,26 @@ const managedModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   upstreamModelId: z.string().min(1),
-  transport: z.enum(['aster', 'bedrock', 'openrouter']),
+  transport: z.enum(['bedrock', 'openrouter']),
   providerBrand: z.string().min(1).optional(),
   pricingRef: z.string().min(1),
-  pricing: z.object({
-    inputPerMillion: z.number().nonnegative(),
-    outputPerMillion: z.number().nonnegative(),
-    cachedInputPerMillion: z.number().nonnegative().optional(),
-    cacheWritePerMillion: z.number().nonnegative().optional(),
-    contextOver200k: z.object({
+  pricing: z
+    .object({
       inputPerMillion: z.number().nonnegative(),
       outputPerMillion: z.number().nonnegative(),
       cachedInputPerMillion: z.number().nonnegative().optional(),
       cacheWritePerMillion: z.number().nonnegative().optional(),
-      contextThreshold: z.number().int().positive(),
-    }).optional(),
-  }).optional(),
+      contextOver200k: z
+        .object({
+          inputPerMillion: z.number().nonnegative(),
+          outputPerMillion: z.number().nonnegative(),
+          cachedInputPerMillion: z.number().nonnegative().optional(),
+          cacheWritePerMillion: z.number().nonnegative().optional(),
+          contextThreshold: z.number().int().positive(),
+        })
+        .optional(),
+    })
+    .optional(),
   tier: z.enum(['flagship', 'balanced', 'fast']),
   vision: z.boolean(),
   limit: z.object({
@@ -101,9 +105,10 @@ export function isRuntimeManagedModelId(id: string): boolean {
 // messaging say "this model needs the managed provider, which is off here"
 // instead of the misleading "no such model".
 const BUNDLED_BY_ID = new Map(BUNDLED_MANAGED_MODELS.map((model) => [model.id, model] as const));
+const RETIRED_MANAGED_MODEL_IDS = new Set(['glm-5.2']);
 
 export function isKnownManagedModelId(id: string): boolean {
-  return BUNDLED_BY_ID.has(id);
+  return BUNDLED_BY_ID.has(id) || RETIRED_MANAGED_MODEL_IDS.has(id);
 }
 
 /**
@@ -113,7 +118,7 @@ export function isKnownManagedModelId(id: string): boolean {
  *
  * `RUNTIME_MANAGED_MODELS` answers "which models did the operator configure",
  * which is not the same question. Offering a configured-but-uncredentialed model
- * is what made the picker advertise `glm-5.2` while every selection of it 400'd.
+ * can make the picker advertise a model while every selection of it fails.
  */
 export function servedManagedModels(
   models: readonly ManagedModel[],
@@ -132,8 +137,8 @@ function bareManagedId(ref: string): string {
  *
  * `LLM_GATEWAY_DEFAULT_MODEL` is what an operator asked for; it is not
  * necessarily servable. When the configured default is a managed id this
- * deployment cannot reach (its transport credential is absent — e.g. `glm-5.2`
- * with no ASTER_API_KEY), every `auto` request and every "use the default" pick
+ * deployment cannot reach because its transport credential is absent, every
+ * `auto` request and every "use the default" pick
  * dies with a resolution error the user cannot act on. Degrade to a served
  * managed model instead — flagship first, then catalog order.
  *

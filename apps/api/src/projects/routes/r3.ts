@@ -10,7 +10,6 @@ import { kickRoutedPreBuild, templateBuildProviders } from '../../snapshots/buil
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
-import { parseBasicAuthHeader } from '../git-backends';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, identifierKeyConflicts, isValidIdentifier, isValidSecretName, resolveProjectSecretForConsumer } from '../secrets';
 import {
@@ -19,6 +18,7 @@ import {
 } from '../lib/sandbox-env-sync';
 import { isGatewayManagedEnv } from '../../llm-gateway/sandbox-credentials';
 import { seedProjectDefaultModelOnConnect } from '../../llm-gateway/models/seed-default';
+import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   SecretConsumerSchema,
@@ -38,19 +38,16 @@ import {
   projectSecrets,
   projectSessionSecretHandles,
   projects,
-  sessionSandboxes,
   type SecretEgressPolicy,
 } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
-  assertAgentSessionWorkspaceAllowsRepository,
   loadProjectForUser,
   assertProjectCapability,
 } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
-import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
+import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection, type SecretAgentGrantConfig } from '../lib/serializers';
-import { sessionWorkspaceAllowsRepositoryAccess } from '../lib/session-workspace-access';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
@@ -221,7 +218,7 @@ projectsApp.openapi(
 // middleware enforces that the URL's `:projectId` matches the token's
 // project_id, so the token is useless outside this one project. They're
 // auto-minted at session-create time and injected into the sandbox as
-// `KORTIX_CLI_TOKEN` so the in-container CLI works with zero config.
+// `KORTIX_TOKEN` so the in-container CLI works with zero config.
 
 
 projectsApp.openapi(
@@ -361,111 +358,6 @@ projectsApp.openapi(
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId, projectId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
-},
-);
-
-// GET /v1/projects/:projectId/git/clone-credential
-// Runtime-only clone credential fetch. A session sandbox calls this endpoint
-// with its sandbox-scoped KORTIX_TOKEN and gets a fresh provider credential
-// just-in-time. Browser sessions must not receive raw Git tokens.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'get',
-    path: '/{projectId}/git/clone-credential',
-    tags: ['github'],
-    summary: 'GET /:projectId/git/clone-credential',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(403, 404),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const authType = (c as any).get('authType') as string | undefined;
-  const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
-
-  let projectRow: typeof projects.$inferSelect | null = null;
-
-  if (authType === 'pat') {
-    if (tokenProjectId !== projectId) {
-      return c.json({ error: 'clone credentials require a project-scoped runtime token' }, 403);
-    }
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertAgentSessionWorkspaceAllowsRepository(c, loaded.row.accountId, projectId);
-    projectRow = loaded.row;
-  } else if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
-    const accountId = (c as any).get('accountId') as string | undefined;
-    const sandboxId = (c as any).get('sandboxId') as string | undefined;
-    if (!accountId || !sandboxId) {
-      return c.json({ error: 'clone credentials require a sandbox token' }, 403);
-    }
-    const [sandbox] = await db
-      .select({
-        sandboxId: sessionSandboxes.sandboxId,
-        sessionId: sessionSandboxes.sessionId,
-      })
-      .from(sessionSandboxes)
-      .where(and(
-        eq(sessionSandboxes.sandboxId, sandboxId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-        inArray(sessionSandboxes.status, ['provisioning', 'active']),
-      ))
-      .limit(1);
-    if (!sandbox) {
-      return c.json({ error: 'sandbox token is not scoped to this project' }, 403);
-    }
-    if (
-      !(await sessionWorkspaceAllowsRepositoryAccess({
-        sessionId: sandbox.sessionId,
-        accountId,
-        projectId,
-      }))
-    ) {
-      return c.json({ error: 'sandbox workspace does not allow repository access' }, 403);
-    }
-    const [row] = await db
-      .select()
-      .from(projects)
-      .where(and(
-        eq(projects.projectId, projectId),
-        eq(projects.accountId, accountId),
-      ))
-      .limit(1);
-    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-    projectRow = row;
-  } else {
-    return c.json({ error: 'clone credentials are only available to runtime tokens' }, 403);
-  }
-  if (!projectRow) return c.json({ error: 'Not found' }, 404);
-
-  const gitAuth = await resolveProjectGitAuth(projectRow);
-  const upstream = await resolveProjectUpstream(projectRow, 'write');
-  const credential = parseBasicAuthHeader(upstream?.headers.Authorization);
-  if (!credential) {
-    return c.json({
-      repo_url: upstream?.url ?? projectRow.repoUrl,
-      auth: null,
-      source: gitAuth.authSource,
-    });
-  }
-
-  return c.json({
-    repo_url: upstream?.url ?? projectRow.repoUrl,
-    auth: {
-      username: credential.username,
-      token: credential.token,
-      type: 'basic',
-    },
-    source: gitAuth.authSource,
-    expires_at: null,
-  });
 },
 );
 
@@ -760,11 +652,25 @@ projectsApp.openapi(
   ) {
     return c.json({ error: 'Agent sessions cannot change secret delivery policy' }, 403);
   }
-  const defaultToGateway =
-    requestedStrategy === undefined &&
-    requestedConsumer === undefined &&
-    isGatewayManagedEnv(name);
-  const explicitStrategy = (requestedStrategy ?? (defaultToGateway ? 'broker' : undefined)) as
+  // The server does NOT infer delivery from the secret's NAME.
+  //
+  // It used to: a create with no `strategy`/`consumer` whose name matched any
+  // provider credential env in the models.dev catalogue was stamped
+  // `broker`/`llm_gateway`. That catalogue has 204 providers and one of them,
+  // `github-copilot`, claims `GITHUB_TOKEN` — so an ordinary GitHub PAT was
+  // classified as a model credential and withheld from the sandbox. The user
+  // set a secret, the agent could not read it, and nothing said why (prod
+  // 2026-08-27). Any name a provider happens to claim had the same problem;
+  // carving out one name would only move it.
+  //
+  // The callers that actually mean "model credential" all say so explicitly —
+  // web provider-connect, the custom-provider form, `kortix providers set`, and
+  // the Codex OAuth flow, which writes its row directly with `strategyLocked`.
+  // Every other caller means "a secret for my sandbox", which is now what they
+  // get. The web secrets manager already sent `runtime`/`sandbox` outright, so
+  // this also ends a split-brain where the same name landed differently
+  // depending on which surface created it.
+  const explicitStrategy = requestedStrategy as
     | 'runtime'
     | 'broker'
     | 'egress'
@@ -772,12 +678,10 @@ projectsApp.openapi(
     | undefined;
   const explicitConsumer =
     requestedConsumer === undefined
-      ? defaultToGateway
-        ? 'llm_gateway'
-        : requestedStrategy === 'runtime'
-          ? 'sandbox'
-          : requestedStrategy === 'egress'
-            ? 'network'
+      ? requestedStrategy === 'runtime'
+        ? 'sandbox'
+        : requestedStrategy === 'egress'
+          ? 'network'
           : requestedStrategy === 'denied'
             ? null
             : undefined
@@ -946,8 +850,10 @@ projectsApp.openapi(
 
   // First provider connect on a default-less project → seed a sensible project
   // default model (that provider's flagship). Detached + idempotent; never seeds
-  // over an existing default.
-  if (value !== null && isGatewayManagedEnv(name)) {
+  // over an existing default. Gateway projects only: model defaults are a
+  // gateway-catalog concept — off-gateway, OpenCode resolves its own default
+  // from the keys now in the box, and a seeded wire id would be a dead ref.
+  if (value !== null && isGatewayManagedEnv(name) && projectLlmGatewayEnabled(loaded.row.metadata)) {
     void seedProjectDefaultModelOnConnect({
       projectId,
       accountId: loaded.row.accountId,

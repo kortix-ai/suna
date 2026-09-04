@@ -144,6 +144,30 @@ describe('only GRANTED rows may vote on a shared key (Strix HIGH)', () => {
 });
 
 describe('materializeSecretDelivery', () => {
+  test('withholds model credentials even when a legacy row says runtime', async () => {
+    // A LEGACY row: written before `consumer` existed, so it carries no stamp.
+    // The fixture used to say `consumer: 'sandbox'`, which today is what the
+    // secrets UI stamps on a HUMAN's own secret — conflating "legacy" with
+    // "explicitly a sandbox secret". That conflation is what withheld a
+    // project's own GITHUB_TOKEN (models.dev maps `github-copilot` to that
+    // name). An unstamped row still strips; see `gatewayStripsRow`.
+    const provider = row('openai', 'OPENAI_API_KEY', {
+      strategy: 'runtime',
+    });
+    const env = envFor([provider]);
+
+    await materializeSecretDelivery([provider], env, {
+      sessionId: 'session-1',
+      llmGatewayEnabled: true,
+      grantEnv: 'all',
+      mintHandleFor: async () => {
+        throw new Error('must not mint');
+      },
+    });
+
+    expect(env).toEqual({});
+  });
+
   test('replaces a managed broker value with a session handle', async () => {
     const brokered = row('provider', 'PROVIDER_KEY', {
       strategy: 'broker',
@@ -163,6 +187,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([brokered], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['provider'],
       mintHandleFor: async (selected) => {
         minted.push(selected.secretId);
@@ -194,6 +219,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([boundary], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['gh'],
       mintHandleFor: async (selected) => {
         minted.push(selected.secretId);
@@ -217,6 +243,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([boundary], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['gh'],
       mintHandleFor: async () => {
         throw new Error('mintHandleFor must not be called without a policy');
@@ -242,6 +269,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([boundary], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['something-else'],
       mintHandleFor: async (selected) => {
         minted.push(selected.secretId);
@@ -269,6 +297,7 @@ describe('materializeSecretDelivery', () => {
 
       await materializeSecretDelivery([brokered], env, {
         sessionId: 'session-1',
+        llmGatewayEnabled: true,
         grantEnv,
         mintHandleFor: async () => {
           mintCount += 1;
@@ -289,6 +318,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([brokered], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['provider'],
       mintHandleFor: async () => 'must-not-mint',
     });
@@ -306,6 +336,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([gateway], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['provider'],
       mintHandleFor: async () => {
         mintCount += 1;
@@ -326,6 +357,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([gateway], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['provider'],
       mintHandleFor: async () => 'must-not-mint',
     });
@@ -344,6 +376,7 @@ describe('materializeSecretDelivery', () => {
 
     await materializeSecretDelivery([selected], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['provider'],
       mintHandleFor: async () => {
         mintCount += 1;
@@ -356,12 +389,85 @@ describe('materializeSecretDelivery', () => {
     expect(mintCount).toBe(0);
   });
 
+  // ── Native mode (project `llm_gateway` flag OFF) ─────────────────────────
+  // The same stored rows ARE the box's credentials: gateway-managed names stay,
+  // and `consumer: 'llm_gateway'` rows deliver plaintext so OpenCode's native
+  // provider management auto-connects from the process env.
+
+  test('native mode delivers a model credential runtime row as plaintext', async () => {
+    const provider = row('openai', 'OPENAI_API_KEY', {
+      strategy: 'runtime',
+      consumer: 'sandbox',
+    });
+    const env = envFor([provider]);
+
+    await materializeSecretDelivery([provider], env, {
+      sessionId: 'session-1',
+      llmGatewayEnabled: false,
+      grantEnv: 'all',
+      mintHandleFor: async () => {
+        throw new Error('must not mint');
+      },
+    });
+
+    expect(env).toEqual({ OPENAI_API_KEY: 'value-of-openai' });
+  });
+
+  test('native mode delivers a broker/llm_gateway provider key as plaintext, no mint', async () => {
+    const gateway = row('provider', 'PROVIDER_KEY', {
+      strategy: 'broker',
+      consumer: 'llm_gateway',
+    });
+    const env = envFor([gateway]);
+    let mintCount = 0;
+
+    await materializeSecretDelivery([gateway], env, {
+      sessionId: 'session-1',
+      llmGatewayEnabled: false,
+      grantEnv: ['provider'],
+      mintHandleFor: async () => {
+        mintCount += 1;
+        return 'must-not-mint';
+      },
+    });
+
+    expect(env).toEqual({ PROVIDER_KEY: 'value-of-provider' });
+    expect(mintCount).toBe(0);
+  });
+
+  test('native mode still brokers an http_broker secret by handle', async () => {
+    const brokered = row('provider', 'PROVIDER_KEY', {
+      strategy: 'broker',
+      egressPolicy: {
+        backend: 'kortix_fetch',
+        inject: { kind: 'header', name: 'authorization' },
+        rules: [
+          {
+            host: 'api.example.com',
+            inject: { kind: 'header', name: 'authorization' },
+          },
+        ],
+      },
+    });
+    const env = envFor([brokered]);
+
+    await materializeSecretDelivery([brokered], env, {
+      sessionId: 'session-1',
+      llmGatewayEnabled: false,
+      grantEnv: ['provider'],
+      mintHandleFor: async () => 'kortix-handle',
+    });
+
+    expect(env).toEqual({ PROVIDER_KEY: 'kortix-handle' });
+  });
+
   test('does not add a selected key that the grant resolver excluded', async () => {
     const selected = row('provider', 'PROVIDER_KEY', { strategy: 'runtime' });
     const env: Record<string, string> = {};
 
     await materializeSecretDelivery([selected], env, {
       sessionId: 'session-1',
+      llmGatewayEnabled: true,
       grantEnv: ['different-provider'],
       mintHandleFor: async () => 'must-not-mint',
     });

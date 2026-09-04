@@ -130,6 +130,13 @@ export async function runProviders(argv: string[]): Promise<number> {
     process.stdout.write(LOGIN_HELP);
     return 0;
   }
+  // The root help promises `kortix providers <subcommand> --help`. Only
+  // login/oauth own dedicated help text (handled above); every other
+  // subcommand would otherwise treat `--help` as an ordinary positional arg.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let enterpriseFlag: string | undefined;
@@ -379,7 +386,18 @@ async function providersSet(
 
   try {
     for (const [name, value] of Object.entries(values)) {
-      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, { name, value });
+      // `kortix providers set` is the BYOK model-credential command — it KNOWS
+      // this value is a provider key, so it says so. It used to omit the pair
+      // and lean on the server inferring "model credential" from the secret's
+      // NAME, which is a guess the server has no business making: models.dev
+      // claims `GITHUB_TOKEN` for `github-copilot`, so an ordinary GitHub PAT
+      // was classified as a Copilot key and withheld from the sandbox.
+      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+        name,
+        value,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+      });
     }
   } catch (err) {
     return surfaceApiError(err);

@@ -13,7 +13,6 @@ import {
   BuildRow,
   SnapshotsTabView,
   describeBuildOutcome,
-  isProjectAcceleratorBuild,
 } from './snapshots-tab';
 
 /**
@@ -58,67 +57,6 @@ const runtimeStatus = (overrides: Partial<SandboxRuntimeStatus> = {}): SandboxRu
   ...overrides,
 });
 
-const accelerator = (overrides: Partial<ProjectSnapshotBuild> = {}): ProjectSnapshotBuild =>
-  build({
-    slug: 'default-warm',
-    template_slug: 'default',
-    snapshot_name: 'kortix-ppwarm-00ead866-f5c859f984f2',
-    ...overrides,
-  });
-
-describe('project accelerator build presentation', () => {
-  test('identifies historical and exact scoped project images as accelerators', () => {
-    expect(isProjectAcceleratorBuild(accelerator())).toBe(true);
-    expect(
-      isProjectAcceleratorBuild(
-        accelerator({ snapshot_name: 'kortix-ppwarm-historical-provider-value' }),
-      ),
-    ).toBe(true);
-    expect(
-      isProjectAcceleratorBuild(
-        accelerator({
-          snapshot_name:
-            'kpp2-111111111111-222222222222-3333333333333333-4444444444444444',
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      isProjectAcceleratorBuild(
-        build({
-          slug: 'worker-warm',
-          template_slug: 'worker-warm',
-          snapshot_name: 'kortix-tpl-worker',
-        }),
-      ),
-    ).toBe(false);
-  });
-
-  test('does not label malformed kpp2 values as project accelerators', () => {
-    expect(
-      isProjectAcceleratorBuild(accelerator({ snapshot_name: 'kpp2-not-an-image' })),
-    ).toBe(false);
-  });
-
-  test.each([
-    'kortix-ppwarm-00ead866-f5c859f984f2',
-    'kpp2-111111111111-222222222222-3333333333333333-4444444444444444',
-  ])('labels project image %s as a repository accelerator', (snapshotName) => {
-    const html = renderBuildRow('automatic', {
-      slug: 'default-warm',
-      template_slug: 'default',
-      snapshot_name: snapshotName,
-    });
-
-    expect(html).toContain('Repository accelerator');
-    expect(html).not.toContain('>default-warm<');
-  });
-});
-
-/**
- * The wording decision, tested without a DOM — the part most likely to drift
- * back into jargon. Same reasoning `disclosure.tsx` gives for extracting
- * `resolveDisclosureToggle`.
- */
 describe('describeBuildOutcome', () => {
   test('says what each state means in a plain sentence', () => {
     expect(describeBuildOutcome(build({ status: 'ready' }))).toMatchObject({
@@ -153,20 +91,19 @@ describe('describeBuildOutcome', () => {
     }
   });
 
-  test('an accelerator failure says sessions are unaffected; a template failure does not', () => {
-    expect(describeBuildOutcome(accelerator({ status: 'failed' }), null).summary).toBe(
-      'Didn’t finish — sessions still start normally',
-    );
-    expect(describeBuildOutcome(build({ status: 'failed' }), null).summary).not.toContain(
-      'sessions still start normally',
-    );
-  });
-
-  test('names an accelerator by what it is, never by its slug', () => {
-    expect(describeBuildOutcome(accelerator({ status: 'ready' }))).toMatchObject({
-      title: 'Repository accelerator',
-      summary: 'Head start ready for the next session',
+  test('names every build by its template slug — there is no second naming rule', () => {
+    // The retired per-project warm image used to be retitled "Repository
+    // accelerator" here. That system is gone; a row is its slug, always.
+    expect(describeBuildOutcome(build({ status: 'ready', slug: 'default' }))).toMatchObject({
+      title: 'default',
+      summary: 'Ready for new sessions',
     });
+    expect(
+      describeBuildOutcome(
+        build({ status: 'failed', slug: 'default-warm', snapshot_name: 'kortix-ppwarm-x' }),
+        null,
+      ),
+    ).toMatchObject({ title: 'default-warm', summary: 'Didn’t finish' });
   });
 });
 
@@ -310,18 +247,23 @@ describe('SnapshotsTabView', () => {
     expect(out).toContain('No builds recorded yet.');
   });
 
-  test('renders the project accelerator section only when accelerator builds exist', () => {
-    const withAccelerator = renderToStaticMarkup(
+  test('renders a retired warm-image build as an ordinary build-log row', () => {
+    const out = renderToStaticMarkup(
       <TooltipProvider>
-        <SnapshotsTabView acceleratorBuilds={[accelerator()]} />
+        <SnapshotsTabView
+          templateBuilds={[
+            build({
+              slug: 'default-warm',
+              template_slug: 'default',
+              snapshot_name: 'kortix-ppwarm-00ead866-f5c859f984f2',
+            }),
+          ]}
+        />
       </TooltipProvider>,
     );
-    expect(withAccelerator).toContain('Project accelerator');
-    expect(withAccelerator).toContain('Repository accelerator');
-    expect(withAccelerator).toContain('never stops a session');
-
-    const without = renderToStaticMarkup(<SnapshotsTabView />);
-    expect(without).not.toContain('Project accelerator');
+    expect(out).toContain('Build log');
+    expect(out).not.toContain('Project accelerator');
+    expect(out).not.toContain('Repository accelerator');
   });
 
   test('shows the blocked status banner with a Rebuild action for a manager', () => {
@@ -406,7 +348,7 @@ describe('SnapshotsTabView', () => {
 
   test('renders no pane heading of its own — SandboxTabView, mounted above it, owns the shared one', () => {
     // Snapshots merged into the Sandbox templates section on
-    // `/projects/[id]/config`. `SandboxTabView` carries the shared heading
+    // `/projects/[id]/customize/settings`. `SandboxTabView` carries the shared heading
     // (title, description, and the `/docs/work/runtime` Docs link) for the
     // whole merged pane; a second one here would be a duplicate, not a fix.
     const out = renderToStaticMarkup(<SnapshotsTabView />);

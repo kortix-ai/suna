@@ -29,7 +29,8 @@ import { join } from 'node:path'
 const OPENCODE_SRC = readFileSync(join(import.meta.dir, '..', 'opencode.ts'), 'utf8')
 
 function disposeReloadBody(): string {
-  const body = OPENCODE_SRC.split('async function tryDisposeReload(')[1]?.split('\n  }\n')[0]
+  // tryDisposeReload + the disposeInstances helper it delegates the HTTP call to.
+  const body = OPENCODE_SRC.split('async function tryDisposeReload(')[1]?.split('async function waitUntilReady(')[0]
   expect(body).toBeTruthy()
   return body as string
 }
@@ -39,10 +40,22 @@ describe('tryDisposeReload', () => {
     // Dispose re-reads from disk. Calling it without rewriting first would
     // re-read the same bytes and apply nothing.
     const body = disposeReloadBody()
-    const wrote = body.indexOf('writeKortixOpencodeConfig(')
+    // Via the shared writer, so a reload declares the same contributors
+    // (injected skills dir, secret-capability instruction) as a spawn.
+    const wrote = body.indexOf('writeComposedConfig(')
     const disposed = body.indexOf('/global/dispose')
     expect(wrote).toBeGreaterThanOrEqual(0)
     expect(disposed).toBeGreaterThan(wrote)
+  })
+
+
+  test('the shared writer declares the injected skills dir, like a spawn', () => {
+    const start = OPENCODE_SRC.indexOf('async function writeComposedConfig(')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const body = OPENCODE_SRC.slice(start, OPENCODE_SRC.indexOf('async function spawnChild(', start))
+    expect(body).toContain("injectedSkillsDir: join(currentOpencodeConfigDir, 'skills')")
+    expect(body).toContain('secretCapabilitiesInstructionPath')
+    expect(body).toContain('writeKortixOpencodeConfig(')
   })
 
   test('composes the config from the SAME env spawnChild uses', () => {
@@ -74,11 +87,7 @@ describe('tryDisposeReload', () => {
     expect(body).toContain('catch')
   })
 
-  test('a deny-list change forces a respawn — dispose cannot re-run env shaping', () => {
-    // KORTIX_OPENCODE_DENY_ENV is not IN the config file. `withoutDeniedProviderEnv`
-    // strips native provider keys when the child is SPAWNED, so disposing after a
-    // gateway-mode toggle leaves those keys exactly as they were — routing around
-    // the gateway's budgets and logging, or failing to restore BYOK.
+  test('the env route passes credential-carrier changes to the respawn gate', () => {
     const ENV_ROUTE = readFileSync(join(import.meta.dir, '..', 'routes', 'env.ts'), 'utf8')
     // The route used to inline `opencodeEnvNames.includes('KORTIX_OPENCODE_DENY_ENV')`.
     // The invariant is unchanged; the mechanism moved into `requiresRespawn`,
@@ -132,10 +141,6 @@ describe('requiresRespawn', () => {
     expect(requiresRespawn(['OPENCODE_AUTH_JSON'])).toBe(true)
   })
 
-  test('the deny-list still forces one — dispose cannot re-shape the child env', () => {
-    expect(requiresRespawn(['KORTIX_OPENCODE_DENY_ENV'])).toBe(true)
-  })
-
   test('an ordinary secret takes the fast path', () => {
     // ~51ms vs ~8s, and it does not sever an in-flight turn. Respawning for
     // every secret would make the fast path pointless.
@@ -152,10 +157,8 @@ describe('requiresRespawn', () => {
     // discovering it when a user reports stale credentials.
     const SPAWN_SRC = OPENCODE_SRC.split('async function spawnChild(')[1]?.split('\n  }\n')[0] ?? ''
     expect(SPAWN_SRC).toContain('materializeOpencodeAuth(env)')
-    expect(SPAWN_SRC).toContain('withoutDeniedProviderEnv(env)')
     expect([...RESPAWN_REQUIRED_ENV_NAMES].sort()).toEqual([
       'CODEX_AUTH_JSON',
-      'KORTIX_OPENCODE_DENY_ENV',
       'KORTIX_SECRET_CAPABILITIES',
       'OPENCODE_AUTH_JSON',
     ])

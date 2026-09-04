@@ -94,10 +94,23 @@ export function isPendingAction(a: SessionAuditAction): boolean {
 interface UseSessionAuditOptions {
   /** Skip the query entirely (e.g. not the active session / missing ids). */
   enabled?: boolean;
-  /** Poll cadence in ms — pending items resolve out-of-band. Default 20s. */
-  refetchInterval?: number | false;
+  /** Own the one audit poll timer for this session. Cache readers leave this off. */
+  poll?: boolean;
   /** Suppress the global error toast (for the always-mounted header nudge). */
   silent?: boolean;
+  /**
+   * Rows to ask for. Every consumer of THIS hook reads pending approvals, which
+   * the server returns most-recent first, so 100 is plenty — the deep timeline
+   * moved to `useSessionAuditTimeline`. The query key ignores the limit (all
+   * consumers share one cache entry), so the first fetch's limit is the one
+   * that runs: a 1000 default here re-imposed the heavy read on every session
+   * open even after callers asked for 100.
+   */
+  limit?: number;
+}
+
+export function sessionAuditPollMs(data: Pick<SessionAudit, 'actions'> | undefined): number {
+  return data?.actions.some(isPendingAction) ? 5_000 : SESSION_AUDIT_REFETCH_MS;
 }
 
 export function useSessionAudit(
@@ -110,13 +123,14 @@ export function useSessionAudit(
     queryKey: sessionAuditKey(projectId, sessionId),
     // `enabled` guards presence, so the `?? ''` fallbacks are never exercised.
     queryFn: () =>
-      getSessionAudit(projectId ?? '', sessionId ?? '', 1000, {
+      getSessionAudit(projectId ?? '', sessionId ?? '', options?.limit ?? 100, {
         showErrors: !options?.silent,
         includeEvents: false,
       }),
     enabled,
     staleTime: 10_000,
-    refetchInterval: options?.refetchInterval ?? SESSION_AUDIT_REFETCH_MS,
+    refetchOnMount: options?.poll ? true : false,
+    refetchInterval: options?.poll ? (query) => sessionAuditPollMs(query.state.data) : false,
   });
 }
 

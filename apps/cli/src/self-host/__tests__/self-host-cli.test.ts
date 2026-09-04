@@ -101,8 +101,13 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(env.KORTIX_UPDATE_TIME).toBe('02:00');
     expect(env.KORTIX_UPDATE_TZ).toBe('America/New_York');
     expect(env.KORTIX_ALLOW_DOWNTIME).toBe('0');
-    expect(env.CONNECTOR_AUTH_PROVIDER).toBe('pipedream');
+    expect(env.CONNECTOR_AUTH_PROVIDER).toBe('composio');
     expect(env.KORTIX_SELF_HOST_CONNECTIONS_REVIEWED).toBe('false');
+    expect(env.COMPOSIO_API_KEY).toBe('');
+    expect(env.PIPEDREAM_CLIENT_ID).toBe('');
+    expect(env.PIPEDREAM_CLIENT_SECRET).toBe('');
+    expect(env.PIPEDREAM_PROJECT_ID).toBe('');
+    expect(env.KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('false');
     expect(env.INTEGRATION_AUTH_PROVIDER).toBeUndefined();
     expect(env.KORTIX_SELF_HOST_INTEGRATIONS_REVIEWED).toBeUndefined();
 
@@ -216,6 +221,22 @@ describe('kortix self-host (generic Docker CLI)', () => {
     const reinit = await run(['init', '--yes']);
     expect(reinit.code).toBe(0);
     expect(readEnv().KORTIX_ALLOW_DOWNTIME).toBe('1');
+  });
+
+  test('Composio enables connectors while legacy Pipedream rollback requires all credentials', async () => {
+    await run(['init', '--yes']);
+
+    await run(['env', 'set', 'CONNECTOR_AUTH_PROVIDER=pipedream', 'PIPEDREAM_CLIENT_ID=legacy-client-id']);
+    expect(readEnv().KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('false');
+
+    await run(['env', 'set', 'PIPEDREAM_CLIENT_SECRET=legacy-client-secret', 'PIPEDREAM_PROJECT_ID=legacy-project-id']);
+    expect(readEnv().KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('true');
+
+    await run(['env', 'set', 'PIPEDREAM_PROJECT_ID=', 'CONNECTOR_AUTH_PROVIDER=composio', 'COMPOSIO_API_KEY=not-a-real-composio-key']);
+    const configured = readEnv();
+    expect(configured.CONNECTOR_AUTH_PROVIDER).toBe('composio');
+    expect(configured.COMPOSIO_API_KEY).toBe('not-a-real-composio-key');
+    expect(configured.KORTIX_PUBLIC_CONNECTORS_ENABLED).toBe('true');
   });
 
   test('KORTIX_APP_REPLICAS flips to 2 once a domain is configured, back to 1 without one', async () => {
@@ -542,6 +563,64 @@ describe('kortix self-host (generic Docker CLI)', () => {
     expect(staleCheck?.ok).toBe(false);
     expect(staleCheck?.detail).toContain('stale');
   });
+
+  // Sandbox preview origins are a MUST on a public domain, and their absence is
+  // invisible at runtime: the /v1/p/ path proxy answers 200 and the app inside
+  // it quietly loses every root-absolute link. `doctor` is the gate that turns
+  // that silence into a non-zero exit. It stays silent on a laptop instance,
+  // where the path form (and the client-built *.localhost origin) is correct.
+  test('doctor FAILS when a domain instance has no preview base domain, and passes once it is set', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+
+    const missing = await run(['doctor', '--json']);
+    const missingCheck = (JSON.parse(missing.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
+      .find((c) => c.name === 'preview-origins');
+    expect(missingCheck?.ok).toBe(false);
+    expect(missingCheck?.detail).toContain('KORTIX_PREVIEW_BASE_DOMAIN');
+    // The whole point: a degraded preview setup must make `doctor` exit non-zero.
+    expect(JSON.parse(missing.stdout).ok).toBe(false);
+    expect(missing.code).not.toBe(0);
+    // And it must hand the operator the exact command, not just a complaint.
+    expect(missingCheck?.detail).toContain('kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com');
+
+    await run(['env', 'set', 'KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com']);
+    const set = await run(['doctor', '--json']);
+    const setCheck = (JSON.parse(set.stdout).checks as Array<{ name: string; ok: boolean; detail: string }>)
+      .find((c) => c.name === 'preview-origins');
+    expect(setCheck?.ok).toBe(true);
+    expect(setCheck?.detail).toBe('p.kortix.example.com');
+  }, 60_000);
+
+  test('doctor does NOT raise preview-origins on a domain-less (laptop) instance — the path form is correct there', async () => {
+    await run(['init', '--yes']);
+    const { stdout } = await run(['doctor', '--json']);
+    const checks = JSON.parse(stdout).checks as Array<{ name: string }>;
+    expect(checks.find((c) => c.name === 'preview-origins')).toBeUndefined();
+  });
+
+  // Sets the preview domain by editing .env directly rather than via `env set`.
+  // `env set` restarts the services the key touches (caddy + kortix-api), and
+  // two `status` renders on top of that docker work blew the 15s default in CI.
+  // The `env set` path is already covered black-box by the doctor test above;
+  // what this one asserts is the STATUS WORDING, which only needs the file.
+  test('status shows preview origins as NOT configured on a domain instance, and names the domain once set', async () => {
+    await run(['init', '--yes', '--domain', 'kortix.example.com']);
+    const missing = await run(['status']);
+    expect(missing.stdout).toContain('preview origins NOT configured');
+
+    const envFile = join(configRoot, instance, '.env');
+    writeFileSync(
+      envFile,
+      readFileSync(envFile, 'utf8').replace(
+        /^KORTIX_PREVIEW_BASE_DOMAIN=.*$/m,
+        'KORTIX_PREVIEW_BASE_DOMAIN=p.kortix.example.com',
+      ),
+    );
+
+    const set = await run(['status']);
+    expect(set.stdout).toContain('*.p.kortix.example.com');
+    expect(set.stdout).not.toContain('NOT configured');
+  }, 60_000);
 
   // `connect-github` is deprecated: managed git is now configured in the web
   // dashboard (Settings → Git), not by this CLI — the App-manifest flow it

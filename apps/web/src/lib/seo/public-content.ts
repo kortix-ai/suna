@@ -64,8 +64,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/docs',
   '/download',
   '/enterprise',
-  '/help',
-  '/help/credits',
   '/connectors',
   '/legal',
   '/marketplace',
@@ -167,21 +165,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'help',
-    title: 'Kortix Help Center',
-    description: 'Guides for billing, credits, and everyday Kortix questions.',
-    htmlPath: '/help',
-  },
-  {
-    kind: 'marketing',
-    slug: 'help/credits',
-    title: 'Kortix credits explained',
-    description:
-      'What credits are, how Kortix sessions consume them, and how to manage your balance and subscription.',
-    htmlPath: '/help/credits',
-  },
-  {
-    kind: 'marketing',
     slug: 'enterprise',
     title: 'Kortix Enterprise',
     description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
@@ -200,7 +183,8 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'support',
     title: 'Kortix support',
-    description: 'Support resources and contact information for Kortix.',
+    description:
+      'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.',
     htmlPath: '/support',
   },
   // The product pages. Each one's layout.tsx reads its title/description back
@@ -241,7 +225,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'channels',
     title: 'Kortix Channels',
     description:
-      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email and voice are in preview.',
+      'Connect Slack or Microsoft Teams to a Kortix project and a message in a thread starts a session. The agent works on its own cloud computer and replies in the same thread. Email is in preview.',
     htmlPath: '/channels',
     markdownPath: '/markdown/channels.md',
   },
@@ -372,6 +356,36 @@ export function parseFrontmatter(source: string): Record<string, string> {
   return result;
 }
 
+/**
+ * A tag's attribute text, including values that are JSX expressions.
+ *
+ * `[^>]*` stood in for this, which is right until an attribute VALUE contains
+ * a `>` — and `icon={<RocketIcon />}` does. The tag then appeared to end
+ * inside the expression: every matcher below missed, and a docs card fell
+ * through to the prose path as the literal `} title="Quickstart" href=…`
+ * instead of becoming `- [Quickstart](/docs/quickstart)`.
+ *
+ * One level of braces, deliberately — that is what a JSX attribute value is
+ * here, and a nested-brace grammar is not something to hand-roll in a regex.
+ */
+const MDX_TAG_ATTRS = String.raw`((?:[^>{]|\{[^{}]*\})*)`;
+
+const MDX_TAG_NAME = String.raw`([A-Z][A-Za-z0-9_.]*)`;
+const MDX_PAIRED_TAG = new RegExp(
+  String.raw`^\s*<${MDX_TAG_NAME}\b${MDX_TAG_ATTRS}>([\s\S]*?)<\/\1>\s*$`,
+);
+const MDX_SELF_CLOSING_TAG = new RegExp(String.raw`^\s*<${MDX_TAG_NAME}\b${MDX_TAG_ATTRS}\/>\s*$`);
+const MDX_OPENING_TAG = new RegExp(String.raw`^\s*<${MDX_TAG_NAME}\b${MDX_TAG_ATTRS}>\s*$`);
+
+/**
+ * True when the line closes the tag it opened — a `>` that is not inside a
+ * JSX expression. `line.includes('>')` answered this before, and stopped
+ * joining continuation lines one attribute too early on `icon={<X />}`.
+ */
+function closesTag(text: string): boolean {
+  return text.replace(/\{[^{}]*\}/g, '').includes('>');
+}
+
 const MDX_WRAPPER_TAGS = new Set(['Cards', 'KeyFacts', 'StatGrid', 'Steps']);
 const MDX_BLOCK_TAGS = new Set(['Callout', 'Card', 'Fact', 'Step']);
 
@@ -422,7 +436,7 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     return undefined;
   }
 
-  const paired = /^\s*<([A-Z][A-Za-z0-9_.]*)\b([^>]*)>([\s\S]*?)<\/\1>\s*$/.exec(line);
+  const paired = MDX_PAIRED_TAG.exec(line);
   if (paired) {
     const [, tag, rawAttrs, body] = paired;
     const attrs = parseMdxAttributes(rawAttrs);
@@ -434,7 +448,7 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     return undefined;
   }
 
-  const selfClosing = /^\s*<([A-Z][A-Za-z0-9_.]*)\b([^>]*)\/>\s*$/.exec(line);
+  const selfClosing = MDX_SELF_CLOSING_TAG.exec(line);
   if (selfClosing) {
     const [, tag, rawAttrs] = selfClosing;
     const attrs = parseMdxAttributes(rawAttrs);
@@ -444,7 +458,7 @@ function renderMdxTagLine(line: string, stack: MdxRenderContext[]): string | nul
     return undefined;
   }
 
-  const opening = /^\s*<([A-Z][A-Za-z0-9_.]*)\b([^>]*)>\s*$/.exec(line);
+  const opening = MDX_OPENING_TAG.exec(line);
   if (!opening) return undefined;
 
   const [, tag, rawAttrs] = opening;
@@ -512,9 +526,9 @@ export function renderPlainMarkdownFromMdx(source: string): string {
       continue;
     }
 
-    if (/^\s*<[A-Z][A-Za-z0-9_.]*\b/.test(line) && !line.includes('>')) {
+    if (/^\s*<[A-Z][A-Za-z0-9_.]*\b/.test(line) && !closesTag(line)) {
       const tagLines = [line.trim()];
-      while (index + 1 < lines.length && !tagLines.join(' ').includes('>')) {
+      while (index + 1 < lines.length && !closesTag(tagLines.join(' '))) {
         index += 1;
         tagLines.push(lines[index].trim());
       }

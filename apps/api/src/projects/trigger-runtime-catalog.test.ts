@@ -79,4 +79,20 @@ describe('reconcileProjectTriggerRuntime', () => {
     });
     expect(removed).toEqual(['existing']);
   });
+
+  test('preserves rows when a non-destructive read observes a stale manifest', async () => {
+    const removed: string[] = [];
+    const store: TriggerRuntimeCatalogStore = {
+      list: async () => [{ slug: 'new-trigger' }],
+      upsert: async () => {},
+      remove: async (_projectId, slug) => {
+        removed.push(slug);
+      },
+    };
+
+    await expect(
+      reconcileProjectTriggerRuntimeWithStore('project-1', [], store, { pruneStale: false }),
+    ).resolves.toEqual({ upserted: 0, removed: 0 });
+    expect(removed).toEqual([]);
+  });
 });

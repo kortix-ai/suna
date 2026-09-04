@@ -10,19 +10,19 @@ import type { FlatModel } from '../model-flatten';
 import type { ModelDefaultControls } from '../model-selector';
 import { ModelSelector } from '../model-selector';
 import { ReasoningEffortSelector } from '../reasoning-effort-selector';
-import { VoiceRecorder } from '../voice-recorder';
 import { SendStopControl } from './send-stop-control';
 
 /**
  * The composer's bottom toolbar — the familiar one, now scoped to the two
  * controls that describe WHAT will answer.
  *
- *  - LEFT: model, reasoning effort — inline, showing their current value at
- *    rest. Variant (thinking mode) stays folded inside the model popover: it
- *    is a setting on top of the selected model, not a peer of it. Reasoning
- *    effort is NOT — it is a per-project setting, so it sits beside the model
- *    rather than two clicks inside it.
- *  - RIGHT: voice, send/stop.
+ *  - LEFT: model, thinking effort — inline, showing their current value at
+ *    rest. Thinking effort IS the model variant (`local.model.variant`): one
+ *    knob, per session, in both runtime modes. It used to be split — a
+ *    "Thinking mode" row folded inside the model popover off-gateway and a
+ *    project-level routing-policy chip on-gateway (#6872) — which put the
+ *    same setting in two places with two scopes. The popover row is gone.
+ *  - RIGHT: send/stop.
  *
  * Attach, agent, and token progress used to sit here. They now live in the
  * row BELOW the card (`composer.tsx`, directly after the card element) so the
@@ -31,14 +31,9 @@ import { SendStopControl } from './send-stop-control';
  * (context ring, hard right). Do not re-add them here — they would render
  * twice.
  *
- * Reasoning effort's placement is contested and was resolved deliberately.
- * `main` removed it from this bar (PR #6381: "it lives inside the
- * session-overrides panel — the bar keeps only agent + model") and its
- * overrides panel does carry a working control. This branch keeps it here as
- * well, by explicit decision, which means it is reachable from both places.
- * If that duplication is unwanted, the fix is to delete the
- * `ReasoningEffortSelector` render below plus the `reasoningMenuOpen` pair —
- * not to assume a merge dropped it by accident.
+ * The effort control's placement was resolved deliberately: it sits here,
+ * glanceable at rest, and the `/` palette's "Set reasoning effort" row opens
+ * it (`reasoningMenuOpen`). Do not fold it back into the model popover.
  *
  * Two earlier passes are recorded here so they are not re-attempted:
  *
@@ -96,14 +91,9 @@ export interface ComposerToolbarProps {
    * beside send/stop because send is the action that commits the path — the
    * warning lives at the moment it matters, not in a banner above the card.
    */
-  rewind?: { pending?: boolean; onRestore: () => void };
+  rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void };
   /** Rendered FIRST in the left cluster, before the model selector. */
   leading?: React.ReactNode;
-
-  onTranscription: (text: string) => void;
-  voiceDisabled: boolean;
-  /** Counter that starts a recording from the `/` palette — see `VoiceRecorder`. */
-  voiceStartRequestId?: number | null;
 
   isSending: boolean;
   isBusy: boolean;
@@ -142,9 +132,6 @@ export function ComposerToolbar({
   toolbarSlot,
   rewind,
   leading,
-  onTranscription,
-  voiceDisabled,
-  voiceStartRequestId,
   isSending,
   isBusy,
   onStop,
@@ -177,9 +164,6 @@ export function ComposerToolbar({
             providers={providers}
             defaultControls={modelDefaultControls}
             triggerLabelClassName="max-w-[7rem]"
-            variants={variants}
-            selectedVariant={selectedVariant}
-            onVariantChange={onVariantChange}
             projectId={projectId}
             open={modelMenuOpen}
             onOpenChange={onModelMenuOpenChange}
@@ -187,8 +171,9 @@ export function ComposerToolbar({
         )}
 
         <ReasoningEffortSelector
-          model={selectedModel}
-          projectId={projectId}
+          variants={variants}
+          selectedVariant={selectedVariant}
+          onVariantChange={onVariantChange}
           open={reasoningMenuOpen}
           onOpenChange={onReasoningMenuOpenChange}
         />
@@ -198,36 +183,36 @@ export function ComposerToolbar({
         {rewind && (
           <HoverCard openDelay={0} closeDelay={0}>
             <HoverCardTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={rewind.pending}
-                onClick={rewind.onRestore}
-                className="text-muted-foreground hover:text-foreground gap-1.5"
-              >
-                {rewind.pending ? (
-                  <Loading className="size-3.5 shrink-0" />
-                ) : (
-                  <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
-                )}
-                Restore
-              </Button>
+              {/* The span, not the button, carries the hover: the Button base
+                  sets `disabled:pointer-events-none`, so a disabled trigger
+                  would never open the card that explains WHY it is disabled. */}
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={rewind.pending || rewind.disabled}
+                  onClick={rewind.onRestore}
+                  className="text-muted-foreground hover:text-foreground gap-1.5"
+                >
+                  {rewind.pending ? (
+                    <Loading className="size-3.5 shrink-0" />
+                  ) : (
+                    <ArrowCounterClockwiseIcon className="size-3.5 shrink-0" />
+                  )}
+                  Restore
+                </Button>
+              </span>
             </HoverCardTrigger>
             <HoverCardContent className="px-3 py-2 text-sm text-balance">
-              Session rewound — sending a new prompt commits this path. Restore keeps the removed
-              messages and file changes.
+              {rewind.disabled && !rewind.pending
+                ? 'The agent is still working — restore is available once it finishes or you stop it.'
+                : 'Session rewound — sending a new prompt commits this path. Restore keeps the removed messages and file changes.'}
             </HoverCardContent>
           </HoverCard>
         )}
 
         {toolbarSlot}
-
-        <VoiceRecorder
-          onTranscription={onTranscription}
-          disabled={voiceDisabled}
-          startRequestId={voiceStartRequestId}
-        />
 
         <SendStopControl
           isSending={isSending}

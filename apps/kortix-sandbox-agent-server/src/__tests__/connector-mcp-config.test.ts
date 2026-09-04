@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { buildOpencodeConfigContent } from '../opencode'
 
-const ENV = { KORTIX_CLI_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
+const ENV = { KORTIX_TOKEN: 'tok-123', KORTIX_API_URL: 'https://api.kortix.test/v1' }
 
 const GATEWAY_CATALOG = {
   'anthropic/claude-opus-4.8': { name: 'Claude Opus 4.8', provider: 'anthropic', reasoning: true, tool_call: true, attachment: true, temperature: true },
@@ -54,9 +54,10 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
   })
 
   test('a missing injected dir contributes nothing', async () => {
-    expect(
-      await buildOpencodeConfigContent({}, { injectedSkillsDir: '/nonexistent-skills-dir' }),
-    ).toBeUndefined()
+    const parsed = JSON.parse(
+      (await buildOpencodeConfigContent({}, { injectedSkillsDir: '/nonexistent-skills-dir' }))!,
+    )
+    expect(parsed.skills).toBeUndefined()
   })
 
   test('loads the generated secret capability guide without replacing project instructions', async () => {
@@ -72,7 +73,8 @@ describe('buildOpencodeConfigContent — injected managed skills', () => {
 
 describe('buildOpencodeConfigContent — optional connector MCP server', () => {
   test('does not register connector MCP by default; CLI is the primary Connector path', async () => {
-    expect(await buildOpencodeConfigContent(ENV)).toBeUndefined()
+    const parsed = JSON.parse((await buildOpencodeConfigContent(ENV))!)
+    expect(parsed.mcp).toBeUndefined()
   })
 
   test('registers the connector MCP server only when explicitly enabled', async () => {
@@ -84,7 +86,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
       type: 'local',
       enabled: true,
       environment: {
-        KORTIX_CLI_TOKEN: 'tok-123',
+        KORTIX_TOKEN: 'tok-123',
         KORTIX_API_URL: 'https://api.kortix.test/v1',
         PATH: '/usr/local/bin:/usr/bin:/bin',
       },
@@ -92,11 +94,33 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
     expect(server.command).toEqual(['/usr/local/bin/kortix', 'connectors', 'mcp'])
   })
 
-  test('returns undefined when no contributor applies', async () => {
-    expect(await buildOpencodeConfigContent({})).toBeUndefined()
-    expect(await buildOpencodeConfigContent({ KORTIX_CLI_TOKEN: 'tok-123' })).toBeUndefined()
-    expect(await buildOpencodeConfigContent({ KORTIX_API_URL: 'https://api.kortix.test/v1' })).toBeUndefined()
-    expect(await buildOpencodeConfigContent({ ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '0' })).toBeUndefined()
+  test('registers nothing session-specific when no contributor applies', async () => {
+    for (const env of [
+      {},
+      { KORTIX_TOKEN: 'tok-123' },
+      { KORTIX_API_URL: 'https://api.kortix.test/v1' },
+      { ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '0' },
+    ]) {
+      const parsed = JSON.parse((await buildOpencodeConfigContent(env))!)
+      expect(parsed.mcp).toBeUndefined()
+      expect(parsed.provider).toBeUndefined()
+    }
+  })
+
+  test('always disables OpenCode autoupdate — the daemon owns the binary', async () => {
+    // A human running `opencode` in the Session terminal triggered OpenCode's
+    // own upgrade (plain `pnpm add -g`, no postinstall) on two Essentia boxes
+    // on 2026-08-25, leaving a 479-byte launcher stub and a dangling
+    // /opt/kortix/opencode.current. The next OpenCode restart would have booted
+    // the stub. Every composed config now pins autoupdate off, and a base
+    // config cannot turn it back on.
+    for (const env of [{}, ENV, { ...ENV, KORTIX_CONNECTORS_MCP_ENABLED: '1' }]) {
+      expect(JSON.parse((await buildOpencodeConfigContent(env))!).autoupdate).toBe(false)
+    }
+    const parsed = JSON.parse(
+      (await buildOpencodeConfigContent({ OPENCODE_CONFIG_CONTENT: JSON.stringify({ autoupdate: true }) }))!,
+    )
+    expect(parsed.autoupdate).toBe(false)
   })
 
   test('merges onto pre-existing inline config without clobbering it', async () => {
@@ -127,7 +151,7 @@ describe('buildOpencodeConfigContent — optional connector MCP server', () => {
 describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+    KORTIX_TOKEN: 'kyolo_abc123',
     KORTIX_LLM_CATALOG_FILE: CATALOG_FILE,
   }
 
@@ -173,7 +197,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
     )
     const models = config.provider.kortix.models
     expect(Object.keys(models).length).toBeGreaterThan(0)
-    expect(models['glm-5.2']).toBeDefined()
+    expect(models['glm-5.3-flash']).toBeDefined()
     expect(Date.now() - started).toBeLessThan(1_000)
   })
 
@@ -244,7 +268,7 @@ describe('buildOpencodeConfigContent — Kortix LLM gateway provider', () => {
 describe('buildOpencodeConfigContent — gateway provider allowlist', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+    KORTIX_TOKEN: 'kyolo_abc123',
     KORTIX_LLM_CATALOG_FILE: CATALOG_FILE,
   }
 
@@ -313,7 +337,7 @@ describe('buildOpencodeConfigContent — Slack sessions deny the question tool',
 describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX_COMPILED_AGENT_CONFIG)', () => {
   const GATEWAY_ENV = {
     KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-    KORTIX_LLM_API_KEY: 'kyolo_abc123',
+    KORTIX_TOKEN: 'kyolo_abc123',
     KORTIX_LLM_CATALOG_FILE: CATALOG_FILE,
   }
   const COMPILED = JSON.stringify({
@@ -333,8 +357,10 @@ describe('buildOpencodeConfigContent — server-compiled v2 agent config (KORTIX
     })
   })
 
-  test('a v1 project (no KORTIX_COMPILED_AGENT_CONFIG) is unaffected: still undefined with no other contributor', async () => {
-    expect(await buildOpencodeConfigContent({})).toBeUndefined()
+  test('a v1 project (no KORTIX_COMPILED_AGENT_CONFIG) is unaffected: no agent map with no other contributor', async () => {
+    const parsed = JSON.parse((await buildOpencodeConfigContent({}))!)
+    expect(parsed.agent).toBeUndefined()
+    expect(parsed.model).toBeUndefined()
   })
 
   test('the gateway overlay normalizes compiled top-level and agent models', async () => {

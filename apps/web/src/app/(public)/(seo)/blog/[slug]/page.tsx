@@ -134,7 +134,7 @@ export default async function BlogPostPage(props: PageProps) {
         publisher: {
           '@type': 'Organization',
           name: 'Kortix',
-          logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.png` },
+          logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.svg` },
         },
         image: entry.cover ? `${siteMetadata.url}${entry.cover}` : `${siteMetadata.url}/banner.png`,
         url: postUrl,

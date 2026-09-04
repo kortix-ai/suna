@@ -19,6 +19,7 @@ export async function reconcileProjectTriggerRuntimeWithStore(
   projectId: string,
   specs: readonly GitTriggerSpec[],
   store: TriggerRuntimeCatalogStore,
+  options: { pruneStale?: boolean } = {},
 ): Promise<{ upserted: number; removed: number }> {
   const existing = await store.list(projectId);
   const existingBySlug = new Map(existing.map((row) => [row.slug, row]));
@@ -38,7 +39,10 @@ export async function reconcileProjectTriggerRuntimeWithStore(
     }
   }
 
-  const stale = existing.filter((row) => !declaredSlugs.has(row.slug));
+  const stale =
+    options.pruneStale === false
+      ? []
+      : existing.filter((row) => !declaredSlugs.has(row.slug));
   for (const row of stale) {
     await store.remove(projectId, row.slug);
   }

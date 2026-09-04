@@ -102,7 +102,13 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     expect(outcome).toBe('no-session');
   });
 
-  test('reopen reports a terminal failure → failed (do not keep retrying a dead box)', async () => {
+  // A DOWN RUNTIME IS NOT A FAILED DELIVERY. This loop stops re-trying a dead
+  // box in-line — that part was always right — but the outcome it reports has
+  // to say WHY, because the drain turns 'failed' into a dead-letter on the
+  // first attempt. Essentia 2026-08-26: a queued prompt delivered while the box
+  // was unreachable went `state:failed, attempts:1` and was never re-tried when
+  // the box came back minutes later.
+  test('reopen reports a parked runtime → unreachable (stop retrying HERE, keep the prompt)', async () => {
     const outcome = await deliverWithRetry({
       opened: ready('ext-1', 'oc-1'),
       reopen: async () => ({ stage: 'failed', externalId: null, opencodeSessionId: null }),
@@ -110,6 +116,28 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
       now: stepNow(1000),
       sleepFn: noSleep,
     });
-    expect(outcome).toBe('failed');
+    expect(outcome).toBe('unreachable');
+  });
+
+  test('reopen reports a hibernated box → unreachable, not failed', async () => {
+    const outcome = await deliverWithRetry({
+      opened: ready('ext-1', 'oc-1'),
+      reopen: async () => ({ stage: 'stopped', externalId: null, opencodeSessionId: null }),
+      send: async () => false,
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('unreachable');
+  });
+
+  test('a MISSING session stays terminal — there is nothing to come back to', async () => {
+    const outcome = await deliverWithRetry({
+      opened: ready('ext-1', 'oc-1'),
+      reopen: async () => null,
+      send: async () => false,
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('no-session');
   });
 });

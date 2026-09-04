@@ -26,6 +26,7 @@ import os from 'node:os';
 import postgres from 'postgres';
 import { config } from '../config';
 import { logger } from '../lib/logger';
+import { LEADER_ELECTION_POOL_MAX } from './database-capacity';
 
 const LOCK_KEY = 'background-workers';
 
@@ -247,7 +248,7 @@ export function startLeaderElection(
   // pool. prepare:false matches the Supabase-pooler app client.
   sql = postgres(config.DATABASE_URL, {
     prepare: false,
-    max: 1,
+    max: LEADER_ELECTION_POOL_MAX,
     idle_timeout: 30,
     connect_timeout: 10,
     onnotice: () => {},

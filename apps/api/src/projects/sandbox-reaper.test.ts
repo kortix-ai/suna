@@ -3,6 +3,7 @@ import { appRuntimes, projectSessions, sandboxComputeSessions, sessionSandboxes 
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
 import { mockConfigModule } from './reaping/test-support/mock-config';
+import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
@@ -82,6 +83,8 @@ let huskOutcomeBySandbox: Record<
 /** Records husk-finalize and turn-clear calls in the order the pass makes them,
  *  so a test can assert the husk is closed BEFORE its record is deleted. */
 let lifecycleCallOrder: string[] = [];
+let promotedQueueSessions: string[] = [];
+let targetedQueueDrains: string[] = [];
 
 /**
  * What the DB returns for the LAST-MOMENT deadline re-read, when it differs from
@@ -190,13 +193,15 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 // `mock.module` is process-global in bun, so a factory returning only `{ config }`
 // strips every other named export (e.g. SANDBOX_VERSION) for every sibling suite
 // in the same process — which is what made this whole directory unrunnable.
-mock.module('../config', () =>
-  mockConfigModule({
-    KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
-    KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
-    ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
-  }),
-);
+// Hoisted so a test can flip `KORTIX_INSTANCE_ID` at call time (the
+// instance-scope helper reads config per call, never at import).
+const reaperConfigModule = mockConfigModule({
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
+  KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
+  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+});
+const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
+mock.module('../config', () => reaperConfigModule);
 
 mock.module('../shared/db', () => ({
   db: {
@@ -454,6 +459,14 @@ const reapAndReconcileSandboxes = (
       promptRedeliveries.push(input);
       return 'requeued';
     },
+    promoteNextInboxRow: async (sessionId: string) => {
+      promotedQueueSessions.push(sessionId);
+      return `prompt:${sessionId}`;
+    },
+    drainSessionLifecycleQueue: async (input: { idempotencyKey?: string }) => {
+      if (input.idempotencyKey) targetedQueueDrains.push(input.idempotencyKey);
+      return { claimed: 1, completed: 1, failed: 0 };
+    },
   }, scope);
 
 const HOUR = 3_600_000;
@@ -492,10 +505,13 @@ beforeEach(() => {
   promptRedeliveries = [];
   clearedTurnReasons = [];
   unconfirmedTurnDrips = [];
+  __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
   huskFinalizeCalls = [];
   huskOutcomeBySandbox = {};
   lifecycleCallOrder = [];
+  promotedQueueSessions = [];
+  targetedQueueDrains = [];
   freshDeadlineBySandbox = {};
   stopClaimDeniedBySandbox = {};
 });
@@ -757,6 +773,69 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(
       updateCalls.some((c) => c.table === projectSessions && c.updates.status === 'stopped'),
     ).toBe(true);
+  });
+
+  test('INSTANCE SCOPE: a box stamped by ANOTHER API instance is never probed or stopped here', async () => {
+    // Shared local DB (projects/instance-scope.ts): instance A must never stop
+    // instance B's boxes, however expired they look from here.
+    reaperConfig.KORTIX_INSTANCE_ID = 'wt-a';
+    try {
+      candidates = [
+        candidate({
+          deadlineAt: new Date(NOW.getTime() - 1),
+          metadata: { instanceId: 'primary' },
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(statusCalls).toEqual([]);
+      expect(stops).toEqual([]);
+      expect(r.stopped).toBe(0);
+      expect(
+        updateCalls.some((c) => c.table === sessionSandboxes && c.updates.status === 'stopped'),
+      ).toBe(false);
+    } finally {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('INSTANCE SCOPE: own-stamped and legacy (unstamped) boxes are reaped as before', async () => {
+    reaperConfig.KORTIX_INSTANCE_ID = 'wt-a';
+    try {
+      candidates = [
+        candidate({ deadlineAt: new Date(NOW.getTime() - 1), metadata: { instanceId: 'wt-a' } }),
+        candidate({
+          sandboxId: 'sb-2',
+          sessionId: 'sess-2',
+          externalId: 'ext-2',
+          deadlineAt: new Date(NOW.getTime() - 1),
+          metadata: null,
+        }),
+      ];
+      statusByExternal['ext-1'] = 'running';
+      statusByExternal['ext-2'] = 'running';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(stops.sort()).toEqual(['ext-1', 'ext-2']);
+      expect(r.stopped).toBe(2);
+    } finally {
+      delete reaperConfig.KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('INSTANCE SCOPE off (unset): a foreign-looking stamp changes nothing', async () => {
+    candidates = [
+      candidate({ deadlineAt: new Date(NOW.getTime() - 1), metadata: { instanceId: 'primary' } }),
+    ];
+    statusByExternal['ext-1'] = 'running';
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(stops).toEqual(['ext-1']);
+    expect(r.stopped).toBe(1);
   });
 
   test('a box with an observed turn SURVIVES — its deadline is still ahead', async () => {
@@ -1022,6 +1101,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     const result = await reapAndReconcileSandboxes(NOW);
 
     expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'active-token' }]);
+    expect(promotedQueueSessions).toEqual(['sess-1']);
+    expect(targetedQueueDrains).toEqual(['prompt:sess-1']);
     expect(result.stopped).toBe(0);
     expect(result.lifecycleRenewed).toBe(1);
   });
@@ -1723,6 +1804,42 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(activeTurnRenewalCalls).toEqual([]);
     expect(r.stopped).toBe(0);
     expect(r.lifecycleRenewed).toBe(1);
+  });
+
+  // ═══ THE PROBE ITSELF WAS THE LOAD ═══
+  // Essentia 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // 345 times in an hour after `unknown`; every ask made OpenCode serialise
+  // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
+  // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
+  test('REGRESSION: after an unknown answer the box is not re-probed until its back-off elapses', async () => {
+    candidates = [unknownTurnCandidate(NOW.getTime() - 10 * 60_000)];
+    statusByExternal['ext-1'] = 'running';
+    turnObservationByToken['mute-token'] = 'unknown';
+
+    await reapAndReconcileSandboxes(NOW);
+    expect(turnObservationCalls).toHaveLength(1);
+    expect(unconfirmedTurnDrips).toEqual(['sb-1']);
+
+    // 10 s later: still inside the 20 s back-off — dripped, NOT probed.
+    unconfirmedTurnDrips = [];
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 10_000));
+    expect(turnObservationCalls).toHaveLength(1);
+    expect(unconfirmedTurnDrips).toEqual(['sb-1']);
+
+    // 25 s later: back-off elapsed — probed again; still unknown → back-off doubles to 40 s.
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 25_000));
+    expect(turnObservationCalls).toHaveLength(2);
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 55_000));
+    expect(turnObservationCalls).toHaveLength(2);
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 70_000));
+    expect(turnObservationCalls).toHaveLength(3);
+
+    // A readable answer clears it: the next pass probes at once.
+    turnObservationByToken['mute-token'] = 'active';
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 200_000));
+    expect(turnObservationCalls).toHaveLength(4);
+    await reapAndReconcileSandboxes(new Date(NOW.getTime() + 201_000));
+    expect(turnObservationCalls).toHaveLength(5);
   });
 
   // ═══ THE BILLED DEAD TIME THIS CLOSES ═══

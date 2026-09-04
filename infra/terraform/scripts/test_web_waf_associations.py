@@ -40,6 +40,20 @@ class WebWafAssociationTests(unittest.TestCase):
         )
         self.assertIn('alb.name != "kortix-prod-web-alb"', config)
 
+    def test_common_rules_exclude_only_registered_oauth_loopback_authorize_requests(self):
+        config = (
+            ROOT / "terraform/compliance-monitoring/use2-security.tf"
+        ).read_text()
+        self.assertIn("scope_down_statement", config)
+        self.assertIn('search_string         = "/v1/oauth/authorize"', config)
+        self.assertIn('single_query_argument {', config)
+        self.assertIn('name = "redirect_uri"', config)
+        self.assertIn('regex_match_statement {', config)
+        self.assertIn(
+            'regex_string = "^http://(localhost|127\\\\.0\\\\.0\\\\.1)"', config
+        )
+        self.assertIn('search_string         = "GET"', config)
+
 
 if __name__ == "__main__":
     unittest.main()

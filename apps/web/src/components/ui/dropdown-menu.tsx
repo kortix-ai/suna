@@ -8,6 +8,7 @@ import * as React from 'react';
 import {
   MENU_LABEL,
   MENU_PANEL,
+  MENU_PANEL_STATIC,
   MENU_SEPARATOR,
   MENU_SHORTCUT,
   menuRow,
@@ -26,6 +27,18 @@ import { triggerVariants, type TriggerVariantProps } from './trigger-variants';
  * itself lower.
  */
 const DROPDOWN_PANEL = cn(MENU_PANEL, 'min-w-[14rem] overflow-hidden');
+
+/**
+ * The submenu panel: the same surface, with the enter/exit animation removed.
+ *
+ * A submenu is the one panel that opens INTO the pointer's path — you are
+ * already moving right, toward the first row, when it mounts. `animate-in`
+ * (fade + `zoom-in-95` + a 2-unit slide, ~150ms) spent that whole window
+ * moving the rows away from the cursor, which reads as the menu lagging behind
+ * the hand. The root menu keeps its animation: it opens where you clicked, not
+ * where you are heading.
+ */
+const DROPDOWN_SUB_PANEL = cn(MENU_PANEL_STATIC, 'min-w-[14rem] overflow-hidden');
 
 const DropdownMenu = DropdownMenuPrimitive.Root;
 
@@ -90,24 +103,19 @@ const DropdownMenuSubContent = React.forwardRef<
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
   }
->(({ className, side, align, sideOffset = 5, style, ...props }, ref) => {
+  // `side` and `align` are accepted, swallowed, and unused. Radix's SubContent
+  // places itself (a submenu always opens on the inline edge of its trigger)
+  // and does not take either prop, so they are destructured only to keep them
+  // off the DOM node. They previously selected a `slide-in-from-*` class; that
+  // was the enter animation, which this panel no longer has.
+>(({ className, side: _side, align: _align, sideOffset = 5, style, ...props }, ref) => {
   const depth = useDialogDepth();
 
   return (
     <DropdownMenuPrimitive.SubContent
       ref={ref}
       sideOffset={sideOffset}
-      className={cn(
-        DROPDOWN_PANEL,
-        className,
-        side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
-        side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
-        side === 'left' && 'data-[side=left]:slide-in-from-right-2',
-        side === 'right' && 'data-[side=right]:slide-in-from-left-2',
-        align === 'start' && 'data-[align=start]:slide-in-from-end-2',
-        align === 'center' && 'data-[align=center]:slide-in-from-center-2',
-        align === 'end' && 'data-[align=end]:slide-in-from-start-2',
-      )}
+      className={cn(DROPDOWN_SUB_PANEL, className)}
       style={{ zIndex: floatingZ(depth), ...style }}
       {...props}
     />
@@ -182,6 +190,24 @@ const DropdownMenuCheckboxItem = React.forwardRef<
 ));
 DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName;
 
+/**
+ * The label column of a radio row.
+ *
+ * `flex-1` is what pushes the check to the row's far edge — but the span used
+ * to stop there, i.e. it was a BLOCK. Tailwind's Preflight sets
+ * `svg { display: block }`, so any radio row with a leading icon rendered the
+ * icon on its own line above the label. Every other row component
+ * (`Item`, `CheckboxItem`, `SubTrigger`) escapes this because `MENU_ROW_BASE`
+ * makes the row itself the flex container and their children are direct
+ * children of it; only `RadioItem` interposes this wrapper.
+ *
+ * Two consumers had already worked around it by hand-wrapping their children
+ * in exactly this class (`user-menu-shared.tsx`, `reasoning-effort-selector.tsx`)
+ * — the workaround is now the component's job. `gap-2` matches `MENU_ROW_BASE`
+ * so an icon+label pair is spaced identically whichever row type holds it.
+ */
+const RADIO_LABEL = 'flex min-w-0 flex-1 items-center gap-2';
+
 const DropdownMenuRadioItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.RadioItem>,
   // `size` used to be 'default' | 'sm' | 'lg' here while every sibling row used
@@ -219,11 +245,11 @@ const DropdownMenuRadioItem = React.forwardRef<
       {side === 'left' ? (
         <>
           {indicator}
-          <span className="min-w-0 flex-1">{children}</span>
+          <span className={RADIO_LABEL}>{children}</span>
         </>
       ) : (
         <>
-          <span className="min-w-0 flex-1">{children}</span>
+          <span className={RADIO_LABEL}>{children}</span>
           {indicator}
         </>
       )}

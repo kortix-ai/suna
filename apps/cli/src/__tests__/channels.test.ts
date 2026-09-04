@@ -11,7 +11,7 @@ const ORIGINAL_STDOUT_WRITE = process.stdout.write;
 const ORIGINAL_STDERR_WRITE = process.stderr.write;
 
 const ENV_KEYS = [
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_TOKEN',
   'KORTIX_API_URL',
   'KORTIX_PROJECT_ID',
@@ -135,6 +135,10 @@ function mockApi() {
     }
     if (url.includes('/channels/teams/installation') && method === 'GET') {
       return json(teamsInstall ?? null);
+    }
+    if (url.includes('/channels/teams/installation') && method === 'DELETE') {
+      teamsInstall = null;
+      return json({ status: 'disconnected' });
     }
     return new Response(JSON.stringify({ error: `unexpected ${method} ${url}` }), { status: 500 });
   }) as typeof fetch;
@@ -355,10 +359,16 @@ describe('kortix channels --platform teams', () => {
     expect(stripAnsi(stderr)).toContain("--platform must be 'slack' or 'teams'");
   });
 
-  test('disconnect --platform teams → not-yet-supported error', async () => {
+  test('disconnect --platform teams DELETEs the Teams installation', async () => {
+    teamsInstall = TEAMS_INSTALLATION;
     const code = await runChannels(['disconnect', '--platform', 'teams']);
-    expect(code).toBe(2);
-    expect(stripAnsi(stderr)).toContain('not yet supported');
+    expect(code).toBe(0);
+    expect(
+      requests.some(
+        (r) => r.method === 'DELETE' && r.url.includes('/channels/teams/installation'),
+      ),
+    ).toBe(true);
+    expect(stripAnsi(stdout)).toContain('Disconnected');
   });
 
   test('default (no --platform) still routes to Slack', async () => {

@@ -275,8 +275,8 @@ function EmailSurface() {
         </div>
       </div>
 
-      {/* The channel enum is closed: slack, teams, email, voice. Slack is live,
-          Teams is behind an operator switch, email and voice are experimental.
+      {/* The channel enum is closed: slack, teams, email. Slack is live,
+          Teams is behind an operator switch, and email is experimental.
 
           Hidden on phones. It wraps to three lines there and takes ~56px off a
           frame that could not already fit the Kortix reply — and a rollout
@@ -284,7 +284,7 @@ function EmailSurface() {
           same status is stated on /channels, which is where a reader who cares
           about it goes. */}
       <div className="border-border text-muted-foreground hidden shrink-0 border-t px-4 py-3 text-center text-xs sm:block">
-        Slack is live · Teams, email and voice are rolling out · or start sessions from the API
+        Slack is live · Teams and email are rolling out · or start sessions from the API
       </div>
     </div>
   );

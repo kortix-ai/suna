@@ -11,10 +11,23 @@ const SHA = 'a'.repeat(40);
 
 describe('ephemeral self-host preview stack', () => {
   it('routes every public surface through one origin', () => {
-    const caddy = buildPreviewCaddyfile();
+    const caddy = buildPreviewCaddyfile('preview.example.test');
     expect(caddy).toContain(':8080');
     expect(caddy).toContain('@api path /v1*');
     expect(caddy).toContain('reverse_proxy kortix-api:8008');
+    // Every API route mounted outside `/v1` in `apps/api/src/index.ts`. Without
+    // these the shared preview origin sends them to the frontend, which answers
+    // 307 -> /auth (SYS-1/8/9, SCIM-1..5, GW-1/8/10/12, SEC-J all failed on it).
+    for (const path of [
+      '/health',
+      '/health/*',
+      '/metrics',
+      '/scim/v2/*',
+      '/internal/*',
+      '/.well-known/oauth-authorization-server',
+    ]) {
+      expect(caddy.split('\n').find((line) => line.startsWith('  @api path '))).toContain(path);
+    }
     expect(caddy).toContain('@supabase path /auth/v1* /rest/v1* /storage/v1*');
     expect(caddy).toContain('reverse_proxy supabase-kong:8000');
     expect(caddy).toContain('handle_path /_gateway/*');
@@ -24,6 +37,58 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('handle_path /_mailpit/*');
     expect(caddy).toContain('reverse_proxy mailpit:8025');
     expect(caddy).toContain('reverse_proxy frontend:3000');
+  });
+
+  // 2026-08-30: pi.kortix.com answered 502 through every redeploy. A branch
+  // environment is reused in place, so `compose up -d` recreates `frontend` and
+  // `kortix-api` while `preview-edge` keeps running — and for the ~10-30s the
+  // swap takes, Caddy's dial is refused and the browser gets a raw 502. The
+  // stable hostname is only as stable as its worst upstream window.
+  it('rides out a container swap instead of 502ing through a redeploy', () => {
+    const caddy = buildPreviewCaddyfile('preview.example.test');
+    // A snippet is a TOP-LEVEL form. Declared inside the site block, the
+    // adapter fails outright with `File to import not found: swap_tolerant`.
+    expect(caddy.indexOf('(swap_tolerant) {')).toBeLessThan(caddy.indexOf(':8080 {'));
+    expect(caddy).toContain('lb_try_duration 30s');
+    expect(caddy).toContain('lb_try_interval 250ms');
+    // Every upstream that a deploy recreates, not just the frontend.
+    for (const upstream of ['kortix-api:8008', 'supabase-kong:8000', 'llm-gateway:8090', 'frontend:3000']) {
+      const block = caddy.slice(caddy.indexOf(`reverse_proxy ${upstream}`));
+      expect(block.slice(0, block.indexOf('\n  }'))).toContain('import swap_tolerant');
+    }
+    // And when the budget really is exhausted, a coherent page rather than the
+    // provider's bare 502.
+    expect(caddy).toContain('handle_errors {');
+    expect(caddy).toContain('Retry-After 15');
+  });
+
+  it('accepts either a GitHub App or a PAT as managed-git configuration', () => {
+    const base = [
+      'POSTGRES_PASSWORD=p',
+      'SUPABASE_ANON_KEY=a',
+      'SUPABASE_SERVICE_ROLE_KEY=s',
+      'INTERNAL_SERVICE_KEY=i',
+    ].join('\n');
+    const stack = { origin: 'https://x.example.test', sha: SHA, apiImage: 'a', gatewayImage: 'g', frontendImage: 'f' };
+    const app = {
+      KORTIX_GITHUB_APP_ID: '1',
+      KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
+      KORTIX_GITHUB_APP_SLUG: 's',
+      MANAGED_GIT_GITHUB_INSTALL_ID: '2',
+      MANAGED_GIT_GITHUB_OWNER: 'o',
+    };
+    // The App shape still works unchanged.
+    expect(applyPreviewEnvironment(base, stack, app).testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
+    // A PAT alone is enough — an App that lacks `administration: write` cannot
+    // create a repo, and before this the preview had no way to work around it.
+    const pat = { MANAGED_GIT_GITHUB_OWNER: 'o', MANAGED_GIT_GITHUB_TOKEN: 't' };
+    const patEnv = applyPreviewEnvironment(base, stack, pat);
+    expect(patEnv.testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
+    expect(patEnv.runtimeEnv).toContain('MANAGED_GIT_GITHUB_TOKEN=t');
+    // An owner on its own still is not managed git.
+    expect(() => applyPreviewEnvironment(base, stack, { MANAGED_GIT_GITHUB_OWNER: 'o' })).toThrow(
+      /MANAGED_GIT_GITHUB_OWNER plus either/,
+    );
   });
 
   it('adds preview ingress, Mailpit, direct database access, and preview-only Auth capacity', () => {
@@ -37,6 +102,24 @@ describe('ephemeral self-host preview stack', () => {
     expect(overlay).not.toContain('volumes/db/data');
   });
 
+  // 2026-09-01: a redeploy of pi.kortix.com made every `POST /sessions` answer
+  // 500 `could not read Username for 'https://github.com'`. Cause: the git
+  // mirror lives at `/tmp/kortix/git-cache` (mirror.ts `cacheRoot()`) and
+  // kortix-api had NO volumes, so recreating the container deleted it. On a
+  // real deployment that is a slow re-clone; on a preview it is DATA LOSS,
+  // because the preview App cannot create repos (403) and a seeded project's
+  // history therefore exists nowhere else. The org held none of the preview's
+  // repos, and `/tmp/kortix/git-cache` was simply gone.
+  it('keeps the git mirror across a container recreate', () => {
+    const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
+    // Mounted at the PARENT of git-cache so sibling caches survive too.
+    expect(overlay).toContain('kortix-git-cache:/tmp/kortix');
+    // A named volume needs its top-level declaration or compose refuses the file.
+    expect(overlay).toMatch(/\nvolumes:\n  kortix-git-cache:/);
+    const apiBlock = overlay.slice(overlay.indexOf('  kortix-api:'));
+    expect(apiBlock.slice(0, apiBlock.indexOf('\n\nvolumes:'))).toContain('volumes:');
+  });
+
   it('rejects every runtime secret outside the explicit allowlist', () => {
     expect(PREVIEW_RUNTIME_SECRET_ALLOWLIST).toEqual([
       'DAYTONA_API_KEY',
@@ -47,6 +130,7 @@ describe('ephemeral self-host preview stack', () => {
       'KORTIX_GITHUB_APP_SLUG',
       'MANAGED_GIT_GITHUB_INSTALL_ID',
       'MANAGED_GIT_GITHUB_OWNER',
+      'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
     ]);
     expect(() =>
@@ -109,6 +193,19 @@ describe('ephemeral self-host preview stack', () => {
         },
         {},
       ),
-    ).toThrow('complete managed GitHub App configuration');
+    ).toThrow('MANAGED_GIT_GITHUB_OWNER plus either');
+  });
+
+  // 2026-08-27: every Server Action on the preview 500'd with `Invalid Server
+  // Actions request` — surfaced in the browser as minified React error #441 —
+  // because the sandbox ingress sets `x-forwarded-host` to the INTERNAL host
+  // (`*.aec.local`) while the browser's `origin` is the public one, and Next's
+  // CSRF guard compares the two. The whole auth flow was unusable.
+  it('pins the PUBLIC host on the Next upstream for Server Actions', () => {
+    const caddy = buildPreviewCaddyfile('8080-abc.eu-west.sbx.platinum.dev');
+    expect(caddy).toContain('X-Forwarded-Host 8080-abc.eu-west.sbx.platinum.dev');
+    expect(caddy).toContain('X-Forwarded-Proto https');
+    const frontendBlock = caddy.slice(caddy.indexOf('reverse_proxy frontend:3000'));
+    expect(frontendBlock).toContain('X-Forwarded-Host');
   });
 });

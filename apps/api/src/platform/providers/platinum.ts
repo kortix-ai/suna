@@ -39,8 +39,10 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
+import type { SandboxExecOptions, SandboxExecResult } from './index';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
+import { currentInstanceId, sandboxBelongsToThisInstance } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
 import { platinumJson } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
@@ -315,6 +317,10 @@ export class PlatinumProvider implements SandboxProvider {
         'kortix.env': config.INTERNAL_KORTIX_ENV,
         'kortix.workload': workloadType,
         ...(opts.sandboxId ? { 'kortix.sandbox_id': opts.sandboxId } : {}),
+        // Instance scope for local dev on a shared DB (projects/instance-scope.ts):
+        // `listManagedRunningSandboxes` skips another instance's boxes. Absent
+        // in deployed environments.
+        ...(currentInstanceId() ? { 'kortix.instance': currentInstanceId()! } : {}),
       },
     };
     if (dedup) {
@@ -500,6 +506,27 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  async exec(
+    externalId: string,
+    command: string[],
+    opts: SandboxExecOptions,
+  ): Promise<SandboxExecResult> {
+    const response = await platinumJson<PlatinumExecResponse>(`/v1/sandboxes/${externalId}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ cmd: command, timeout_ms: opts.timeoutMs }),
+      signal: AbortSignal.timeout(opts.timeoutMs + 30_000),
+    });
+    const result = response.result;
+    if (!result) {
+      throw new Error(`Platinum exec on ${externalId} returned no result: ${response.error ?? 'unknown'}`);
+    }
+    return {
+      exitCode: typeof result.exit_code === 'number' ? result.exit_code : -1,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? result.error ?? '',
+    };
+  }
+
   async renewLifecycle(externalId: string): Promise<void> {
     // Platinum resets last_activity_at before dispatching every /exec request.
     // One bounded no-op therefore renews its native idle timer without changing
@@ -551,6 +578,10 @@ export class PlatinumProvider implements SandboxProvider {
         const metadata = sandbox.metadata ?? {};
         if (String(metadata['kortix.managed'] ?? '') !== 'true') continue;
         if (String(metadata['kortix.env'] ?? '') !== config.INTERNAL_KORTIX_ENV) continue;
+        // Instance scope beside the env scope: another local instance's box is
+        // not ours to stop. Unstamped boxes stay everyone's. No-op when
+        // KORTIX_INSTANCE_ID is unset.
+        if (!sandboxBelongsToThisInstance({ instanceId: metadata['kortix.instance'] })) continue;
         if (String(sandbox.state ?? '').toLowerCase() !== 'running') continue;
         const rawCreatedAt = sandbox.created_at ?? sandbox.createdAt ?? null;
         const createdAt = rawCreatedAt ? new Date(rawCreatedAt) : null;

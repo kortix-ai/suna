@@ -1,18 +1,18 @@
 'use client';
 
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useParams, usePathname } from 'next/navigation';
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import {
   activeCapabilityTab,
+  capabilityTabHref,
   type CapabilityTab,
 } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { useProjectPageCans } from '@/lib/use-project-can';
 
 /**
  * The one project-configuration entry in the sidebar:
@@ -24,9 +24,12 @@ import { useSettingsPanelStore } from '@/stores/settings-panel-store';
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
  * workspace switcher already opens, one level up — a second row to an
  * identical destination. The overlay itself, and its Mod+, keyboard
- * shortcut, are unchanged; only this row's `<SidebarMenuItem>` is gone. See
- * `useSettingsKeyboardShortcut` below and `workspace-switcher.tsx`'s "User
- * Settings" row.
+ * shortcut, are unchanged; only this row's `<SidebarMenuItem>` is gone. The
+ * shortcut moved out of this file on 2026-09-02 — it now sits with the surface
+ * it opens (`settings/settings-shortcut.ts`, mounted by `SettingsPanel`), so
+ * it binds wherever the panel is mounted rather than wherever this sidebar is.
+ * The keycap it advertises is printed on `workspace-switcher.tsx`'s "Settings"
+ * row, which is the row that opens the same overlay.
  */
 
 /**
@@ -45,21 +48,28 @@ import { useSettingsPanelStore } from '@/stores/settings-panel-store';
  * `proj-commands` palette entry and the Settings row).
  */
 export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: string }[] = [
-  // Models and Secrets graduated out of the Settings overlay's sub-nav onto
-  // their own top-level tabs. Their read leaves are carried over unchanged
-  // from `lib/project-actions.ts`'s `CUSTOMIZE_SECTION_ACCESS` map
-  // (`llm-management` -> project.read, `secrets` -> secret.read) — moving
-  // where a section is reachable FROM never changed who can reach it. Models
-  // leads the bar (Jay, 2026-08-17).
-  { key: 'models', action: PROJECT_ACTIONS.PROJECT_READ },
-  { key: 'connectors', action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ },
+  // Agents lead the bar (Marko, 2026-09-01): an agent is the object a person
+  // is granted, so the row lands on the list of them. Skills — the other
+  // thing you build — follows. Both keep the read leaves they always had.
   { key: 'agent', action: PROJECT_ACTIONS.PROJECT_AGENT_READ },
   { key: 'skills', action: PROJECT_ACTIONS.PROJECT_SKILL_READ },
+  { key: 'connectors', action: PROJECT_ACTIONS.PROJECT_CONNECTOR_READ },
   // Triggers covers both schedules and webhooks — two views of one resource,
   // a project trigger — so it has one leaf. `project.trigger.read` is in
   // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), so every project
   // role that could open these panes in the Settings overlay still can here.
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
+  // Review — the inbox, on the bar since 2026-09-02 (it was a section of the
+  // retired `/config` page). Same read leaf `CUSTOMIZE_SECTION_ACCESS.review`
+  // gated the section on; the `review_center` flag is applied by the bar
+  // (`visibleCapabilityTabs`), not by this permission list.
+  { key: 'review', action: PROJECT_ACTIONS.PROJECT_REVIEW_READ },
+  // Models and Secrets graduated out of the Settings overlay's sub-nav onto
+  // their own top-level tabs. Their read leaves are carried over unchanged
+  // from `lib/project-actions.ts`'s `CUSTOMIZE_SECTION_ACCESS` map
+  // (`llm-management` -> project.read, `secrets` -> secret.read) — moving
+  // where a section is reachable FROM never changed who can reach it.
+  { key: 'models', action: PROJECT_ACTIONS.PROJECT_READ },
   // Channels is NOT a row here any more. It is a scope of the Connectors page
   // (`channelsHref`), and it always gated on `project.connector.read` — the
   // same leaf the Connectors row above already probes, so folding it in
@@ -70,7 +80,7 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // the SAME leaf the row itself gates on above, rather than inventing a
   // narrower one: anyone who can see the Customize row at all can open this
   // tab, so a second, stricter probe here could only ever produce a row that
-  // leads nowhere.
+  // leads nowhere. Retired 2026-09-02, back 2026-09-03 (Marko).
   { key: 'config', action: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE },
 ];
 
@@ -83,64 +93,28 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
  * be called from a loop that short-circuits.
  */
 function useCapabilityTab(projectId: string | undefined): CapabilityTab['key'] | null {
-  const canModels = useProjectCan(projectId, TAB_PREFERENCE[0].action);
-  const canConnectors = useProjectCan(projectId, TAB_PREFERENCE[1].action);
-  const canAgents = useProjectCan(projectId, TAB_PREFERENCE[2].action);
-  const canSkills = useProjectCan(projectId, TAB_PREFERENCE[3].action);
-  const canTriggers = useProjectCan(projectId, TAB_PREFERENCE[4].action);
-  const canSecrets = useProjectCan(projectId, TAB_PREFERENCE[5].action);
-  const canConfig = useProjectCan(projectId, TAB_PREFERENCE[6].action);
-
-  const probes = [
-    canModels,
-    canConnectors,
-    canAgents,
-    canSkills,
-    canTriggers,
-    canSecrets,
-    canConfig,
-  ];
-  const hit = probes.findIndex((p) => p.allowed || p.isLoading);
+  // ONE request. These used to be seven `useProjectCan` singles, and each one
+  // is its own `GET …/iam/members/:me/effective?action=…` plus a CORS
+  // preflight — fourteen round trips on every project page open, for a
+  // sidebar row. `useCans` sends the list to `effective:batch` and answers all
+  // seven from one response; the order below is still the preference order.
+  const results = useProjectPageCans(projectId);
+  const hit = TAB_PREFERENCE.findIndex((tab) => {
+    const probe = results[tab.action];
+    return !!probe && (probe.allowed || probe.isLoading);
+  });
   return hit === -1 ? null : TAB_PREFERENCE[hit].key;
 }
 
 /**
- * Mod+, — printed on the Settings row, so it does what that row does: open the
- * Settings overlay. A keycap that opens something other than the row it sits
- * on is worse than no keycap.
- */
-export function useSettingsKeyboardShortcut() {
-  const openSettings = useSettingsPanelStore((s) => s.openSettings);
-  const isMobile = useIsMobile();
-  const { setOpenMobile } = useSidebar();
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.shiftKey &&
-        !event.altKey &&
-        event.key === ','
-      ) {
-        event.preventDefault();
-        openSettings();
-        if (isMobile) setOpenMobile(false);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [openSettings, isMobile, setOpenMobile]);
-}
-
-/**
  * Customize — the top-of-panel entry, mounted directly under New session. It
- * navigates to `/projects/<id>/customize`, the Customize INDEX — a card grid
- * over every top-level capability tab (Connectors / Agents / Skills /
- * Triggers / Models / Secrets / Settings) — rather than
- * jumping straight into whichever tab the caller happens to be able to read
- * first. The old jump-to-first-tab behavior meant most people never discovered
- * the other tabs unless they went looking; landing on the index instead
- * introduces the whole surface every time.
+ * navigates to the FIRST capability tab the caller may open — Agents, for
+ * anyone who can read them — through `capabilityTabHref`. Customize is
+ * agent-centric (Marko, 2026-09-01): the agent is the object a person is
+ * granted, so the row lands on the list of agents, not on a chooser page
+ * that introduces seven equal tabs. The former index at `/customize` still
+ * resolves — it redirects here through the same `TAB_PREFERENCE` — so every
+ * bookmark, palette entry and shortcut that names it keeps working.
  *
  * Gated TWICE, on two different questions:
  *
@@ -170,7 +144,9 @@ export function useSettingsKeyboardShortcut() {
  *
  * A real `<Link prefetch>`, not `router.push` — same reason as
  * ProjectFilesNavItem: the button form cannot be prefetched, so every click
- * pays for the RSC payload and the route chunk cold.
+ * pays for the RSC payload and the route chunk cold. It is hover-gated
+ * (`HoverPrefetchLink`) because prefetching on mount charged every session open
+ * a full dynamic render of /customize, whether or not anyone went there.
  *
  * Sliders, not a second gear: two identical gear rows in one panel read as a
  * duplicate, not as two ways in. No keycap either — Mod+, is printed on the
@@ -182,11 +158,12 @@ export function ProjectCustomizeNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const canCustomize = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ);
+  const caps = useProjectPageCans(projectId);
+  const canCustomize = caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ];
   const tab = useCapabilityTab(projectId);
-  // Active on the index itself (`/customize`, no deeper segment) AND on any
-  // capability tab it links out to — the row should stay lit while browsing
-  // Connectors from the index, not just while sitting on the index.
+  // Active on the legacy index (`/customize`, for the instant before it
+  // redirects) AND on any capability tab — the row stays lit while browsing
+  // Connectors or one agent's page, not just on the landing tab.
   const isActive =
     !!pathname &&
     (pathname === `/projects/${projectId}/customize` || activeCapabilityTab(pathname) !== null);
@@ -209,9 +186,9 @@ export function ProjectCustomizeNavItem() {
         asChild
         isActive={isActive}
         tooltip="Customize"
-        className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+        className="group/menu-button text-sidebar-foreground relative"
       >
-        <Link href={`/projects/${projectId}/customize`} prefetch onClick={handleClick}>
+        <HoverPrefetchLink href={capabilityTabHref(projectId, tab)} prefetch onClick={handleClick}>
           <span className="shrink-0">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -231,9 +208,8 @@ export function ProjectCustomizeNavItem() {
             </svg>
           </span>
           Customize
-        </Link>
+        </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
 }
-

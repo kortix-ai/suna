@@ -55,6 +55,8 @@ Roles:
   permissions <role> [--json]         List just a role's permissions.
   actions [--json]                    Legacy catalog — use \`kortix permissions ls\`.
   create <key> --name <n> [opts]      Create a custom role.
+  edit <role> [--name <n>]            Rename / re-describe a custom role. Its
+       [--desc <t>|--no-desc]         key never changes. Needs role.update.
   set-actions <role> --actions a,b    Replace a custom role's permissions.
   rm <role>                           Delete a custom role.
 
@@ -73,8 +75,9 @@ A <role> may be its key (e.g. "support_agent") or its role id.
 A principal is "member:<user-id>", "group:<group-id>", or "token:<sa-id>".
 
 Options:
-  --name <n>         Display name (create).
-  --desc <text>      Description (create).
+  --name <n>         Display name (create, edit).
+  --desc <text>      Description (create, edit).
+  --no-desc          Clear the description (edit).
   --scope <s>        account|project — resource type of a created role,
                      or the scope of an assignment (default: project).
   --actions <list>   Comma-separated action keys (create / set-actions).
@@ -105,12 +108,22 @@ export async function runRoles(argv: string[]): Promise<number> {
   }
   const sub = argv[0];
   const rest = argv.slice(1);
+  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
+  // subcommands below own dedicated help text, so without this a bare
+  // `--help` falls through as an ordinary positional arg and the command
+  // runs (or fails on auth) instead of printing usage.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
+  }
   const f: Record<string, string | undefined> = {};
   let json = false;
+  let clearDesc = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
     f.name = takeFlagValue(rest, ['--name']);
     f.desc = takeFlagValue(rest, ['--desc', '--description']);
+    clearDesc = takeFlagBool(rest, ['--no-desc', '--no-description']);
     f.scope = takeFlagValue(rest, ['--scope']);
     f.actions = takeFlagValue(rest, ['--actions']);
     f.to = takeFlagValue(rest, ['--to']);
@@ -234,6 +247,45 @@ export async function runRoles(argv: string[]): Promise<number> {
         });
         process.stdout.write(
           `${status.ok(`Created role ${C.bold}${role.key}${C.reset} (${actions.length} permission${actions.length === 1 ? '' : 's'}, scope ${resourceType})`)}\n`,
+        );
+        return 0;
+      }
+
+      case 'edit': {
+        // Rename / re-describe only. The key is the stable identifier every
+        // exported policy file and grant references, so it is not editable —
+        // change it by creating a new role and re-binding.
+        const ref = positional[0];
+        if (!ref) return missing('a role key or id');
+        if (f.name === undefined && f.desc === undefined && !clearDesc) {
+          return missing('--name, --desc or --no-desc');
+        }
+        if (f.desc !== undefined && clearDesc) {
+          process.stderr.write(
+            `${status.err('--desc and --no-desc are mutually exclusive.')}\n`,
+          );
+          return 2;
+        }
+        const { roles } = await ctx.client.get<{ roles: IamRole[] }>(`${base}/roles`);
+        const role = findRole(roles, ref);
+        if (!role) return notFound(`role "${ref}"`);
+        if (role.is_system) {
+          process.stderr.write(
+            `${status.err('Built-in roles cannot be edited — clone it as a custom role instead.')}\n`,
+          );
+          return 2;
+        }
+        const body: Record<string, unknown> = {};
+        if (f.name !== undefined) body.name = f.name;
+        if (f.desc !== undefined) body.description = f.desc;
+        if (clearDesc) body.description = null;
+        const updated = await ctx.client.patch<IamRole>(
+          `${base}/roles/${encodeURIComponent(role.role_id)}`,
+          body,
+        );
+        if (json) return emitJson(updated), 0;
+        process.stdout.write(
+          `${status.ok(`Updated role ${C.bold}${updated.key}${C.reset} — ${updated.name}`)}\n`,
         );
         return 0;
       }

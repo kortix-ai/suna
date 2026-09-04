@@ -35,6 +35,7 @@ import {
   isOneTrustJsonParseNoise,
   isOperationErrorPopErrorScopeNoise,
   isPaperShaderNullContextNoise,
+  isPaperShaderImageUniformNoise,
   isPaperShaderWebGLUnsupportedNoise,
   isRedefineWebdriverNoise,
   isRuntimeNotReadyNoiseMessage,
@@ -10637,5 +10638,189 @@ test('a bare prefix with no variable name is NOT matched (over-match guard)', ()
     }),
     false,
     'expected the bare prefix (no variable name) to keep reporting',
+  )
+})
+
+// ---------------------------------------------------------------------------
+// `app:///executors/<chunkId>.js` browser-extension injected source
+// ---------------------------------------------------------------------------
+//
+// Better Stack, Kortix Frontend prod (10+ occurrences): `TypeError: Cannot read
+// properties of undefined (reading 'M_ID')`, call site `Y` in
+// `app:///executors/200.js`. `M_ID` is not a first-party identifier and this
+// app has no `executors/` path — first-party bundles are `app:///_next/…` and
+// de-minify to `apps/web/src/…`. The chunk id varies with the extension build,
+// so the pattern anchors on the `executors/<digits>.js` shape.
+
+const EXECUTORS_EXTENSION_FRAME = {
+  filename: 'app:///executors/200.js',
+  function: 'Y',
+}
+
+test('classifies the app:///executors/<n>.js extension frame as an injected source', () => {
+  assert.equal(isInjectedAppSource('app:///executors/200.js'), true)
+  assert.equal(isInjectedAppSource('app:///executors/1.js'), true)
+  assert.equal(isInjectedAppSource('app:///executors/99213.js'), true)
+})
+
+test('drops the M_ID extension throw from app:///executors/200.js', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'M_ID')",
+            stacktrace: { frames: [EXECUTORS_EXTENSION_FRAME] },
+          },
+        ],
+      },
+    }),
+    true,
+    'expected the executors/200.js extension TypeError to be dropped',
+  )
+})
+
+test('does NOT treat first-party or near-worded paths as the executors extension source', () => {
+  for (const filename of [
+    // First-party bundles and de-minified sources.
+    'app:///_next/static/chunks/main.js',
+    'app:///_next/static/immutable/chunks/0bebnz4f11ksh.js',
+    'apps/web/src/features/executors/200.js',
+    // Same directory name, but not the extension's synthetic origin/shape.
+    'https://kortix.com/executors/200.js',
+    'app:///executors/main.js',
+    'app:///executors/200.js.map',
+    'app:///nested/executors/200.js',
+  ]) {
+    assert.equal(
+      isInjectedAppSource(filename),
+      false,
+      `expected "${filename}" to NOT be treated as the executors extension source`,
+    )
+  }
+})
+
+test('keeps reporting the same M_ID message from a first-party frame', () => {
+  // The suppression is frame-anchored, not message-anchored: if first-party
+  // code ever throws this exact message it must still page us.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: "Cannot read properties of undefined (reading 'M_ID')",
+            stacktrace: {
+              frames: [{ filename: 'apps/web/src/features/session/session-chat.tsx' }],
+            },
+          },
+        ],
+      },
+    }),
+    false,
+    'expected a first-party M_ID throw to keep reporting',
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Paper Shaders `u_noiseTexture` image-uniform load race
+// ---------------------------------------------------------------------------
+//
+// Better Stack, Kortix Frontend prod (10+ occurrences): `Error: Paper Shaders:
+// image for uniform u_noiseTexture must be fully loaded`, call site `?` in
+// `app:///_next/static/immutable/chunks/2-qxa2k33wllw.js`. The library's own
+// `img.complete` assertion, thrown when its shader mount beats its bundled
+// noise bitmap's decode. Transient and library-internal.
+
+const PAPER_SHADER_IMAGE_UNIFORM_MESSAGE =
+  'Paper Shaders: image for uniform u_noiseTexture must be fully loaded'
+
+const PAPER_SHADER_IMAGE_UNIFORM_PROD_FRAMES = [
+  {
+    filename: 'app:///_next/static/immutable/chunks/2-qxa2k33wllw.js',
+    function: '?',
+  },
+]
+
+test('classifies the Paper Shaders u_noiseTexture prod event as noise', () => {
+  assert.equal(
+    isPaperShaderImageUniformNoise({
+      message: PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
+      frames: PAPER_SHADER_IMAGE_UNIFORM_PROD_FRAMES,
+    }),
+    true,
+  )
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      exception: {
+        values: [
+          {
+            value: PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
+            stacktrace: { frames: PAPER_SHADER_IMAGE_UNIFORM_PROD_FRAMES },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('classifies every capture-path wrapper of the u_noiseTexture message as noise', () => {
+  // window.onerror, onunhandledrejection and Sentry exception paths each wrap
+  // the value differently; all three must classify the same way.
+  for (const message of [
+    PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
+    `Error: ${PAPER_SHADER_IMAGE_UNIFORM_MESSAGE}`,
+    `Unhandled promise rejection: ${PAPER_SHADER_IMAGE_UNIFORM_MESSAGE}`,
+  ]) {
+    assert.equal(
+      isPaperShaderImageUniformNoise({ message, frames: [] }),
+      true,
+      `expected "${message}" to classify as noise`,
+    )
+  }
+})
+
+test('keeps reporting the u_noiseTexture message from a first-party frame', () => {
+  assert.equal(
+    isPaperShaderImageUniformNoise({
+      message: PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
+      frames: [{ filename: 'apps/web/src/components/ui/paper-wallpaper-shaders.tsx' }],
+    }),
+    false,
+  )
+})
+
+test('does NOT suppress near-worded messages without the exact Paper Shaders uniform anchor', () => {
+  for (const message of [
+    'image for uniform u_noiseTexture must be fully loaded',
+    'Paper Shaders: image for uniform u_colorTexture must be fully loaded',
+    'Paper Shaders: image must be fully loaded',
+    'Paper Shaders: WebGL is not supported in this browser',
+  ]) {
+    assert.equal(
+      isPaperShaderImageUniformNoise({
+        message,
+        frames: PAPER_SHADER_IMAGE_UNIFORM_PROD_FRAMES,
+      }),
+      false,
+      `expected "${message}" to keep reporting`,
+    )
+  }
+})
+
+test('cross-matcher isolation: the WebGL-unsupported matcher does NOT match the u_noiseTexture message', () => {
+  assert.equal(
+    isPaperShaderWebGLUnsupportedNoise({
+      message: PAPER_SHADER_IMAGE_UNIFORM_MESSAGE,
+      frames: PAPER_SHADER_IMAGE_UNIFORM_PROD_FRAMES,
+    }),
+    false,
+  )
+  assert.equal(
+    isPaperShaderImageUniformNoise({
+      message: 'Paper Shaders: WebGL is not supported in this browser',
+      frames: PAPER_SHADER_IMAGE_UNIFORM_PROD_FRAMES,
+    }),
+    false,
   )
 })

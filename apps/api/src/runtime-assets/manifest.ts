@@ -63,6 +63,12 @@ export function runtimeAgentBinaryPath(): string {
 }
 
 /** Sidecar written by apps/cli/scripts/build.sh naming the version it stamped. */
+export function runtimeEntrypointPath(): string {
+  return (
+    process.env.KORTIX_SANDBOX_ENTRYPOINT_PATH || resolve(REPO_ROOT, 'apps/sandbox/entrypoint.sh')
+  );
+}
+
 function runtimeCliVersionPath(): string {
   return `${runtimeCliBinaryPath()}.version`;
 }
@@ -170,6 +176,13 @@ export interface RuntimeComponents {
   agent?: RuntimeBinaryComponent;
   /** Absent when the API image carries no CLI binary. Mirrors the v1 `cli_*` keys. */
   cli?: RuntimeBinaryComponent;
+  /**
+   * The supervising sandbox entrypoint (apps/sandbox/entrypoint.sh). Served so a
+   * box whose daemon predates convergence can be given a supervisor from the
+   * control plane; a converged box never needs it. Absent when the API image
+   * carries no copy.
+   */
+  entrypoint?: RuntimeBinaryComponent;
   /** Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane. */
   opencode: { version: string; source: 'npm' };
   'managed-skills': { hash: string; count: number };
@@ -257,9 +270,10 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
   // Both binaries are hashed here, once per process, concurrently. Hashing
   // ~95 MB + ~104 MB per request is not acceptable; this is the whole reason
   // the memo below stores the promise rather than the value.
-  const [cli, agent] = await Promise.all([
+  const [cli, agent, entrypoint] = await Promise.all([
     measureBinary(runtimeCliBinaryPath()),
     measureBinary(runtimeAgentBinaryPath()),
+    measureBinary(runtimeEntrypointPath()),
   ]);
   let version: string | null = null;
   if (cli) {
@@ -283,6 +297,14 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
       sha256: agent.sha256,
       size: agent.size,
       path: '/v1/runtime-assets/agent',
+    };
+  }
+  if (entrypoint) {
+    components.entrypoint = {
+      version: null,
+      sha256: entrypoint.sha256,
+      size: entrypoint.size,
+      path: '/v1/runtime-assets/entrypoint',
     };
   }
   if (cli) {

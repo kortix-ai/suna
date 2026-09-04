@@ -1,10 +1,10 @@
 'use client';
 
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { useFeatureFlag } from '@kortix/sdk/react';
-import { GlobeIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { AppWindowIcon } from '@phosphor-icons/react';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -36,16 +36,18 @@ export function ProjectAppsNavItem() {
            (Files, Settings) uses a different one with no px-3 and no muted
            resting colour; Apps kept that after moving up here, which left its
            icon and label ~8px left of its neighbours and a shade darker. */
-        className="group/menu-button text-muted-foreground hover:text-sidebar-foreground flex items-center gap-2 px-3 text-sm! font-medium [&_svg]:size-4!"
+        className="group/menu-button text-sidebar-foreground relative"
       >
-        <Link href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
+        {/* Hover-gated prefetch: prefetching on mount cost every session open a
+            full dynamic render of /apps for a route most opens never visit. */}
+        <HoverPrefetchLink href={`/projects/${projectId}/apps`} prefetch onClick={handleClick}>
           {/* shrink-0 so the glyph keeps its box when the label is long or the
               sidebar is narrow — the sibling rows wrap their icons the same way. */}
           <span className="shrink-0">
-            <GlobeIcon />
+            <AppWindowIcon />
           </span>
           Apps
-        </Link>
+        </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

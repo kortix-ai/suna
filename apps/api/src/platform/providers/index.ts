@@ -129,7 +129,7 @@ export function assertWorkloadCredential(
   // A monitor box runs the SAME daemon a session runs, so it carries the SAME
   // sandbox credential — the ingest route is a sandbox-token route. Only the
   // App runtime speaks the appd control protocol and needs the appd token.
-  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_SANDBOX_TOKEN';
+  const required = workloadType === 'app' ? 'KORTIX_APPD_TOKEN' : 'KORTIX_TOKEN';
   if (!envVars[required]) {
     throw new Error(
       `[${provider}] create() called without ${required} for ${workloadType} workload`,
@@ -238,9 +238,27 @@ export function effectiveAppMachine(
   };
 }
 
+
+/** Result of a provider-level command run inside a sandbox VM/container. */
+export interface SandboxExecResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SandboxExecOptions {
+  /** Wall-clock budget for the command itself. The provider call gets a margin on top. */
+  timeoutMs: number;
+}
+
 export interface SandboxProvider {
   readonly name: ProviderName;
   readonly provisioning: ProvisioningTraits;
+  /**
+   * How long the shared proxy may cache one resolved ingress. Omit for the
+   * default cache. Use zero when the provider owns a shorter credential cache.
+   */
+  readonly ingressCacheTtlMs?: number;
   /** Absent means the provider enforces the whole App machine specification. */
   readonly appMachineSupport?: AppMachineSupport;
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
@@ -290,6 +308,15 @@ export interface SandboxProvider {
    * this capability is absent or returns unavailable.
    */
   recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
+  /**
+   * Run one command as root inside the sandbox through the PROVIDER's own
+   * channel (Platinum `/exec`, Daytona toolbox, E2B commands) — independent of
+   * the in-box kortix-agent daemon, which is exactly what a legacy-runtime
+   * bootstrap needs: the daemon being replaced cannot be the thing that
+   * replaces it. Optional: a provider without an exec channel cannot be
+   * converged from the control plane.
+   */
+  exec?(externalId: string, command: string[], opts: SandboxExecOptions): Promise<SandboxExecResult>;
   resolveEndpoint(externalId: string): Promise<ResolvedEndpoint>;
   routeIngress(request: SandboxIngressRequest): SandboxIngressRoute;
   /**

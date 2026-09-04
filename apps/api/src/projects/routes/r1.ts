@@ -5,7 +5,7 @@ import { setContextField } from '../../lib/request-context';
 import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { isPlatformAdmin } from '../../shared/platform-roles';
+import { isSelfHostOperator } from '../../shared/platform-roles';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, managedGithubOwner, managedGithubToken, parseBasicAuthHeader, type GitScope } from '../git-backends';
@@ -26,10 +26,14 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { createHash } from 'node:crypto';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
-import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, withProjectGitAuth } from '../lib/git';
+import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, resolveGitHubImport, resolveProjectGitAuth, resolveProjectGitConnection, resolveProjectUpstream, withProjectGitAuth } from '../lib/git';
 import { registerGitHubLinkedProject } from '../lib/project-registration';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeProject } from '../lib/serializers';
 import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, triggerFilterMatches, triggersPausedForProject, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
+import {
+  validateWebhookSecretConfiguration,
+  webhookSecretConfigurationError,
+} from '../lib/webhook-secret-policy';
 import {
   consumeProjectWebhookManifestRefreshBudget,
   createProjectWebhookRateLimitMiddleware,
@@ -80,16 +84,21 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   }
 
   const rawBody = await c.req.text();
-  const secret = spec.secretEnv
-    ? await getProjectSecretValueForConsumer({
-        projectId: project.projectId,
-        accountId: project.accountId,
-        name: spec.secretEnv,
-        consumer: 'connector',
-      })
-    : null;
+  if (!spec.secretEnv) {
+    return c.json(webhookSecretConfigurationError('missing'), 409);
+  }
+  const secret = await getProjectSecretValueForConsumer({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    name: spec.secretEnv,
+    consumer: 'connector',
+  });
   if (!secret) {
-    return c.json({ error: 'Webhook secret is not configured' }, 409);
+    const configurationError = await validateWebhookSecretConfiguration({
+      projectId: project.projectId,
+      secretEnv: spec.secretEnv,
+    });
+    return c.json(configurationError ?? webhookSecretConfigurationError('unavailable'), 409);
   }
 
   // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
@@ -593,6 +602,52 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/git/collaborators
+// GET /v1/projects/:projectId/git/connection
+// Is this project's git connection usable, and if not can the account fix it?
+//
+// Exists so the UI can show "Reconnect GitHub" BEFORE someone triggers a push
+// that fails. A stored GitHub App installation stops minting tokens when it is
+// uninstalled, or when the App identity itself changes — GitHub 404s the mint
+// either way — and until this endpoint there was no way to see that without
+// attempting a git operation and reading the error.
+//
+// `reconnect_required` is the only state that carries an install URL: the other
+// failures are ours (managed-git down, an unparseable repo URL), and sending
+// someone to reinstall would not help.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/git/connection',
+    tags: ['github'],
+    summary: 'GET /:projectId/git/connection',
+    ...auth,
+    request: { params: z.object({ projectId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          state: z.enum(['connected', 'reconnect_required', 'unavailable', 'not_connected']),
+          reason: z.string().optional(),
+          install_url: z.string().nullable().optional(),
+        }),
+        "The project's git connection state",
+      ),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const connection = await resolveProjectGitConnection(loaded.row, loaded.userId);
+    return c.json({
+      state: connection.state,
+      ...(connection.reason ? { reason: connection.reason } : {}),
+      ...(connection.installUrl !== undefined ? { install_url: connection.installUrl } : {}),
+    });
+  },
+);
+
 // Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
 // creator pull "their" Kortix-managed repo into their own GitHub account and
 // work on it on github.com directly. Managed repos only (the user already owns
@@ -676,8 +731,14 @@ projectsApp.openapi(
   // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
   // account isn't told "GitHub isn't connected" just because it never
   // installed an App (see serializeGitHubInstallations).
+  // `isSelfHostOperator`, NOT `isPlatformAdmin`. The synthetic entry exposes
+  // MANAGED_GIT_GITHUB_OWNER's whole repository list, and on cloud that owner
+  // is `managed-kortix` — every customer's project repo. `isPlatformAdmin` is
+  // also true for Kortix staff, so gating on it put every customer's private
+  // repo in the `/new` import picker (reported 2026-08-29). Only the self-host
+  // operator, for whom that org is their own, may see it.
   const patFallbackOwner =
-    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+    rows.length === 0 && managedGithubToken() && (await isSelfHostOperator(scope.userId))
       ? managedGithubOwner()
       : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));
@@ -712,8 +773,14 @@ projectsApp.openapi(
   // managed-git PAT ("Use a token" self-host setup) — fall back to it so this
   // account isn't told "GitHub isn't connected" just because it never
   // installed an App (see serializeGitHubInstallations).
+  // `isSelfHostOperator`, NOT `isPlatformAdmin`. The synthetic entry exposes
+  // MANAGED_GIT_GITHUB_OWNER's whole repository list, and on cloud that owner
+  // is `managed-kortix` — every customer's project repo. `isPlatformAdmin` is
+  // also true for Kortix staff, so gating on it put every customer's private
+  // repo in the `/new` import picker (reported 2026-08-29). Only the self-host
+  // operator, for whom that org is their own, may see it.
   const patFallbackOwner =
-    rows.length === 0 && managedGithubToken() && (await isPlatformAdmin(scope.userId))
+    rows.length === 0 && managedGithubToken() && (await isSelfHostOperator(scope.userId))
       ? managedGithubOwner()
       : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl, patFallbackOwner));

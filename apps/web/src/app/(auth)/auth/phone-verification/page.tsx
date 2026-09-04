@@ -1,6 +1,5 @@
 'use client';
 
-import { signOut } from '@/app/(auth)/auth/actions';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
@@ -15,12 +14,12 @@ import {
   useUnenrollFactor,
   useVerifyChallenge,
 } from '@/hooks/auth';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { SignOutIcon as LogOut } from '@phosphor-icons/react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 export default function PhoneVerificationPage() {
@@ -34,6 +33,7 @@ export default function PhoneVerificationPage() {
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
   const [hasExistingFactor, setHasExistingFactor] = useState(false);
   const router = useRouter();
+  const queryClient = useQueryClient();
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear the post-verify redirect timer if we unmount before it fires.
@@ -141,8 +141,11 @@ export default function PhoneVerificationPage() {
 
       // If enrollment fails because factor already exists, try to handle existing factor
       if (err instanceof Error && err.message.includes('already exists')) {
-        // Force refetch of factors
-        window.location.reload();
+        // The factor is already enrolled — refetch it. Only the factor list is
+        // stale, so invalidate that query; reloading the document threw away
+        // the whole React tree and re-ran the Supabase session bootstrap to
+        // achieve the same refetch.
+        void queryClient.invalidateQueries({ queryKey: ['phone-verification-factors'] });
       }
     } finally {
       setIsSubmittingPhone(false);
@@ -185,12 +188,18 @@ export default function PhoneVerificationPage() {
   };
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      // Clear local storage before sign out
-      clearUserLocalStorage();
-      await signOut().catch(() => void 0);
-      window.location.href = '/';
-    },
+    // `performSignOut`, not the `signOut` SERVER ACTION this used to call.
+    // The action swallowed its own failure (`.catch(() => void 0)`), cleared
+    // only `localStorage` — leaving the React Query cache, the persisted
+    // account selection and the IDB session cache behind — and landed on `/`
+    // instead of `/auth`.
+    //
+    // Losing the action also, deliberately, stops this control deleting
+    // `kortix_last_project`. That cookie is owner-bound, and the middleware
+    // reads its owner half to attribute a bounce once identity resolution has
+    // already returned `user: null` — which is exactly what happens after a
+    // logout. Deleting it here un-attributed every post-logout bounce.
+    mutationFn: performSignOut,
   });
 
   const handleSignOut = () => {

@@ -4,13 +4,11 @@
  * The Snapshots tab — what Kortix prepared for this project, and when.
  *
  * **The problem this layout solves.** The pane used to open on a bare "Build
- * log" of `kortix-tpl-…` strings, provider names and raw stderr, with a
- * second "Project accelerator" section below it carrying an `InfoBanner` that
- * mentioned "the shared session runtime" and `/workspace`. Nothing on screen
- * said what a snapshot was, whether the project was currently fine, or how the
- * two sections related — so a reader who is not a platform engineer had no way
- * in. Every fact below is still here; the difference is that the plain-language
- * answer is on the surface and the jargon is one click down.
+ * log" of `kortix-tpl-…` strings, provider names and raw stderr. Nothing on
+ * screen said what a snapshot was or whether the project was currently fine —
+ * so a reader who is not a platform engineer had no way in. Every fact below is
+ * still here; the difference is that the plain-language answer is on the
+ * surface and the jargon is one click down.
  *
  * The shape, top to bottom:
  *
@@ -259,14 +257,6 @@ function formatStartedAt(input: string | null | undefined): string {
   return startedAtFormat.format(t);
 }
 
-const EXACT_SCOPED_PROJECT_IMAGE =
-  /^kpp2-[0-9a-f]{12}-[0-9a-f]{12}-[0-9a-f]{16}-[0-9a-f]{16}$/;
-
-export function isProjectAcceleratorBuild(build: ProjectSnapshotBuild): boolean {
-  if (build.snapshot_name.startsWith('kortix-ppwarm-')) return true;
-  return EXACT_SCOPED_PROJECT_IMAGE.test(build.snapshot_name);
-}
-
 /**
  * A failed build that no longer describes anything bootable is history, and must
  * not keep shouting in red — that is exactly how an 11-day-old error passed for
@@ -298,28 +288,17 @@ export function describeBuildOutcome(
   build: ProjectSnapshotBuild,
   relevance?: FailedBuildRelevance | null,
 ): BuildOutcome {
-  const accelerator = isProjectAcceleratorBuild(build);
-  const title = accelerator ? 'Repository accelerator' : build.slug;
+  const title = build.slug;
   const stale = relevance && relevance !== 'blocking' ? relevance : null;
 
   if (build.status === 'ready') {
-    return {
-      title,
-      stale: null,
-      summary: accelerator ? 'Head start ready for the next session' : 'Ready for new sessions',
-    };
+    return { title, stale: null, summary: 'Ready for new sessions' };
   }
   if (build.status === 'building') {
     return { title, stale: null, summary: 'Being prepared now' };
   }
   if (stale) {
     return { title, stale, summary: STALE_FAILURE_SUMMARY[stale] };
-  }
-  // An accelerator is a head start, never a dependency: its failure costs a few
-  // seconds at session start and nothing else. Saying so on the row stops it
-  // reading like an outage.
-  if (accelerator) {
-    return { title, stale: null, summary: 'Didn’t finish — sessions still start normally' };
   }
   return {
     title,
@@ -626,7 +605,7 @@ function SandboxStatusBanner({
       <div className="flex items-start gap-3 px-4 py-3">
         <span
           className={cn(
-            'border-border inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border',
+            'inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm',
             blocked ? 'bg-kortix-red/10 text-kortix-red' : 'bg-kortix-orange/10 text-kortix-orange',
           )}
         >
@@ -793,7 +772,6 @@ export interface SnapshotsTabViewProps {
   onRetryBuild?: () => void;
   providerMode?: SandboxProviderMode;
   templateBuilds?: ProjectSnapshotBuild[];
-  acceleratorBuilds?: ProjectSnapshotBuild[];
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -814,7 +792,6 @@ export function SnapshotsTabView({
   onRetryBuild = () => {},
   providerMode = 'automatic',
   templateBuilds = [],
-  acceleratorBuilds = [],
 }: SnapshotsTabViewProps) {
   // Only these two states mean a user is actually affected right now.
   // Everything else — including a failed build whose image the provider has
@@ -888,24 +865,6 @@ export function SnapshotsTabView({
               )}
             </section>
 
-            {acceleratorBuilds.length > 0 ? (
-              <section className="space-y-4">
-                {/* The `InfoBanner` that used to sit here said the same thing in
-                    three sentences, two of which named the shared session
-                    runtime and `/workspace`. One line, in the header the
-                    section already has, says it to the reader who needs it. */}
-                <SettingsSubsectionHeader
-                  title="Project accelerator"
-                  description="An optional head start: Kortix clones this repository in advance so a later session opens faster. A missing or failed accelerator never stops a session."
-                />
-                <ul className="space-y-2">
-                  {acceleratorBuilds.slice(0, 5).map((b) => (
-                    <BuildRow key={b.build_id} build={b} providerMode={providerMode} />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
             <HowItWorks />
           </>
         )}
@@ -945,8 +904,7 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
   const builds = Array.isArray(data?.builds) ? data.builds : [];
   const providerMode: SandboxProviderMode =
     data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
-  const templateBuilds = builds.filter((build) => !isProjectAcceleratorBuild(build));
-  const acceleratorBuilds = builds.filter(isProjectAcceleratorBuild);
+  const templateBuilds = builds;
   const status = data?.status ?? null;
 
   return (
@@ -963,7 +921,6 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
       onRetryBuild={() => retry.mutate(status?.current_failure?.template_slug)}
       providerMode={providerMode}
       templateBuilds={templateBuilds}
-      acceleratorBuilds={acceleratorBuilds}
     />
   );
 }

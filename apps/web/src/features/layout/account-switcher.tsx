@@ -1,7 +1,8 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -19,14 +20,15 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { Plus } from '@/features/icon/icons/plus';
+import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { buildAccountSettingsHref } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import { type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
@@ -59,11 +61,9 @@ export function AccountSwitcher({ className }: { className?: string }) {
     if (!menuOpen) setQuery('');
   }, [menuOpen]);
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
+  // The exact key `accountsQuery` reads, for the create-account seed below.
+  const accountsQueryKey = useAccountsQueryKey();
 
   const activeAccount =
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
@@ -91,10 +91,32 @@ export function AccountSwitcher({ className }: { className?: string }) {
     requestAnimationFrame(() => fn());
   };
 
+  const onAccountsRoute = pathname?.startsWith('/accounts/') ?? false;
+
+  // Warm the rows the user can reach from here. A row is not an anchor — it
+  // also writes the selected account, and it must not navigate off any other
+  // route — so the push stays, and the prefetch keeps it out of a cold RSC
+  // fetch. Only while the menu is open, and only on /accounts/ where the push
+  // actually fires.
+  useEffect(() => {
+    if (!menuOpen || !onAccountsRoute) return;
+    for (const account of filteredAccounts) {
+      router.prefetch(`/accounts/${account.account_id}`);
+    }
+  }, [menuOpen, onAccountsRoute, filteredAccounts, router]);
+
+  // The create-account destination is a module constant, so warm it the moment
+  // the modal opens — the push below runs after the create POST resolves.
+  useEffect(() => {
+    if (!createOpen) return;
+    router.prefetch(PROJECT_LANDING_PATH);
+  }, [createOpen, router]);
+
   const switchAccount = (account: KortixAccount) => {
     setSelectedAccountId(account.account_id);
     close();
-    if (pathname?.startsWith('/accounts/')) {
+    if (onAccountsRoute) {
+      // nav-contract: prefetch-only — the row switches account first and only navigates while already under /accounts/.
       router.push(`/accounts/${account.account_id}`);
     }
   };
@@ -182,18 +204,15 @@ export function AccountSwitcher({ className }: { className?: string }) {
         <DropdownMenuSeparator />
 
         {activeAccount && (
-          <DropdownMenuItem
-            onSelect={() => {
-              close();
-              router.push(`/accounts/${activeAccount.account_id}`);
-            }}
-          >
-            <CogOneSolid weight="fill" className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium">
-              {tI18nHardcoded.raw(
-                'autoFeaturesLayoutAccountSwitcherJsxTextAccountSettings2afa9a37',
-              )}
-            </span>
+          <DropdownMenuItem asChild onSelect={close}>
+            <Link href={`/accounts/${activeAccount.account_id}`} prefetch>
+              <CogOneSolid weight="fill" className="size-3.5" />
+              <span className="flex-1 truncate text-sm font-medium">
+                {tI18nHardcoded.raw(
+                  'autoFeaturesLayoutAccountSwitcherJsxTextAccountSettings2afa9a37',
+                )}
+              </span>
+            </Link>
           </DropdownMenuItem>
         )}
 
@@ -218,15 +237,17 @@ export function AccountSwitcher({ className }: { className?: string }) {
           </DropdownMenuItem>
         )}
         {billingActive && canManageBilling && (
-          <DropdownMenuItem
-            onSelect={() =>
-              deferAfterClose(() =>
-                useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
-              )
-            }
-          >
-            <CreditCardSolid weight="fill" className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium">Billing</span>
+          <DropdownMenuItem asChild onSelect={close}>
+            <Link
+              href={buildAccountSettingsHref({
+                tab: 'billing',
+                accountId: activeAccount?.account_id ?? null,
+              })}
+              prefetch
+            >
+              <CreditCardSolid weight="fill" className="size-3.5" />
+              <span className="flex-1 truncate text-sm font-medium">Billing</span>
+            </Link>
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
@@ -241,13 +262,15 @@ export function AccountSwitcher({ className }: { className?: string }) {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(account: KortixAccount) => {
-          queryClient.setQueryData<KortixAccount[]>(['accounts'], (accounts) => {
+          // The reader's OWN key — see the identical seed in
+          // `app/(app)/accounts/page.tsx`.
+          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
             const current = accounts ?? [];
             return current.some((item) => item.account_id === account.account_id)
               ? current.map((item) => (item.account_id === account.account_id ? account : item))
               : [account, ...current];
           });
-          void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
           setSelectedAccountId(account.account_id);
           // qk.projects.scope(): reaches every account's list (and the
           // accountless slot), the same reach the old bare projects-literal
@@ -259,6 +282,7 @@ export function AccountSwitcher({ className }: { className?: string }) {
           // The landing door, NOT the remembered project: that cookie names a
           // project in the account being left. The door re-resolves the latest
           // project for the account just switched to.
+          // nav-contract: prefetch-only — fires after the create-account POST resolves; prefetched when the modal opens.
           router.push(PROJECT_LANDING_PATH);
         }}
       />

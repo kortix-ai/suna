@@ -39,6 +39,8 @@ import type { FlatModel } from '../model-flatten';
 import { type ModelDefaultControls } from '../model-selector';
 import { useModelConnectionGate } from '../use-model-connection-gate';
 import { NO_AGENT_ACCESS_HINT, NO_AGENT_ACCESS_LABEL } from './composer-agent-access';
+import type { DraftScope, StoredDraft } from './draft/composer-draft';
+import { useComposerDraft } from './draft/use-composer-draft';
 import { commandBlocker, sendBlocker, sendBlockerMessage } from './send-blockers';
 
 import { Button } from '@/components/ui/button';
@@ -52,7 +54,6 @@ import {
   readCommandChipLabel,
 } from './command-attachments';
 import {
-  appendTranscribedText,
   planDraftSubmission,
   planFailedSendRecovery,
   planPrefillMerge,
@@ -63,10 +64,12 @@ import {
 } from './composer-logic';
 import { ComposerToolbar } from './composer-toolbar';
 import { ComposerUnderbar } from './composer-underbar';
+import { type ContextUsage, getContextUsage } from './context-ring';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import { useComposerFocus } from './hooks/use-composer-focus';
 import { useMenuRevalidation } from './hooks/use-file-search';
 import { controlToOpenFor, SLASH_ACTIONS, type SlashAction } from './menus/slash-actions';
+import type { SlashFile } from './menus/slash-files';
 import { createSubmitLatch } from './submit-latch';
 import type { AttachedFile, TrackedMention } from './types';
 
@@ -118,7 +121,7 @@ export interface SessionChatInputProps {
    * beside send/stop — the moment of commitment — instead of a banner above
    * the card.
    */
-  rewind?: { pending?: boolean; onRestore: () => void };
+  rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void };
   agents?: Agent[];
   selectedAgent?: string | null;
   onAgentChange?: (agentName: string | null | undefined) => void;
@@ -137,6 +140,21 @@ export interface SessionChatInputProps {
   noAccessibleAgents?: boolean;
   commands?: Command[];
   /**
+   * The session's own files, as `/` palette rows — the Outputs card's
+   * deliverables and the Context card's reads, built by
+   * `menus/slash-files.ts`'s `sessionSlashFiles`.
+   *
+   * A prop, not a `useOptionalSessionPanel()` call inside this component,
+   * even though the panel provider does sit above every session composer.
+   * Importing that provider here would pull the entire detail-panel tree
+   * (files explorer, audit panel, previews) into this module's graph — and
+   * this composer also renders on project home and in the marketing demo,
+   * neither of which has any use for it. The host that already lives beside
+   * the panel (`session-chat.tsx`) reads the context and hands the derived
+   * list down; every other host omits it.
+   */
+  slashFiles?: SlashFile[];
+  /**
    * `split` is where the chip sat in `args` — display only. Without it every
    * consumer rebuilds the sent message as `/name` + args, so a command typed
    * mid-sentence (`explain /webapp to me`) came back reordered to the front.
@@ -152,6 +170,15 @@ export interface SessionChatInputProps {
   messages?: MessageWithParts[];
   sessionId?: string;
   projectId?: string;
+  /**
+   * Persist the unsent draft under this scope and restore it on the next
+   * mount — see `composer/draft/`. Project scope for the home hero composer
+   * (no session yet), session scope for every in-thread one.
+   *
+   * Omitted → the composer persists nothing, which is what the two
+   * marketing-demo composers rely on.
+   */
+  draftScope?: DraftScope | null;
   disabled?: boolean;
   /**
    * A line shown in a bar directly ABOVE the composer card. Used for "this
@@ -207,6 +234,14 @@ export interface SessionChatInputProps {
   };
 
   onContextClick?: () => void;
+  /**
+   * Open the host's Compact-session modal. Also gates the `/` palette's
+   * "Compact session" row — absent handler, absent row, so the palette never
+   * offers an action that would do nothing (see the `set-scope` note in
+   * `menus/slash-actions.ts`). Same contract for `onContextClick` and the
+   * "Show context" row.
+   */
+  onCompactClick?: () => void;
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
@@ -305,11 +340,26 @@ export interface SessionChatInputProps {
  */
 export const COMPOSER_SHELL_CLASS = 'relative z-10 mx-auto w-full max-w-210 shrink-0 px-4 md:pr-1';
 
+/**
+ * The inset strip above the card that hosts `inputSlot` — the approval notice,
+ * the permission notice, and `QuestionPrompt`.
+ *
+ * `items-center` is load-bearing and it BITES: a flex column sizes each child
+ * to its content unless the child says otherwise, so anything mounted here that
+ * omits `w-full` renders as a narrow box floating in the middle of the strip,
+ * with a width that tracks whatever text happens to be inside it. Exported so
+ * the invariant is pinned by a test (composer-input-slot.test.tsx) rather than
+ * rediscovered by the next notice that gets added.
+ */
+export const COMPOSER_INPUT_SLOT_CLASS =
+  'bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden';
+
 /** Stable empty defaults so a fresh `[]` per render never breaks memoization. */
 const EMPTY_AGENTS: Agent[] = [];
 const EMPTY_COMMANDS: Command[] = [];
 const EMPTY_MODELS: FlatModel[] = [];
 const EMPTY_VARIANTS: string[] = [];
+const EMPTY_SLASH_FILES: SlashFile[] = [];
 
 /** Stable identities for the command-chip subscription below. */
 const NO_SUBSCRIPTION = () => {};
@@ -354,6 +404,7 @@ function ComposerImpl({
   agentSelectorLocked = false,
   noAccessibleAgents = false,
   commands = EMPTY_COMMANDS,
+  slashFiles = EMPTY_SLASH_FILES,
   onCommand,
   models = EMPTY_MODELS,
   selectedModel = null,
@@ -365,6 +416,7 @@ function ComposerImpl({
   messages,
   sessionId,
   projectId,
+  draftScope = null,
   disabled = false,
   notice = null,
   onNoticeRetry,
@@ -379,6 +431,7 @@ function ComposerImpl({
   providers,
   threadContext,
   onContextClick,
+  onCompactClick,
   inputSlot,
   toolbarSlot,
   underbarPlacement = 'below',
@@ -407,8 +460,6 @@ function ComposerImpl({
     attachedFilesRef.current = attachedFiles;
   }, [attachedFiles]);
   const [isDragOver, setIsDragOver] = useState(false);
-  /** Bumped by the `/` palette's "Start voice input" row — see `VoiceRecorder`. */
-  const [voiceStartRequestId, setVoiceStartRequestId] = useState(0);
   const [isEmpty, setIsEmpty] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -425,6 +476,33 @@ function ComposerImpl({
     editorRef.current = handle;
     setEditorElement(handle?.getElement() ?? null);
   }, []);
+
+  /**
+   * Put a stored draft back into the live editor.
+   *
+   * `setDocumentWithoutStealingFocus`, not `setDocument`: this fires on mount,
+   * and `setDocument` force-focuses the document end — a session page would
+   * yank focus into the composer on every reload.
+   *
+   * Attachments are only seeded into an EMPTY tray. Anything already attached
+   * was added by the person in this mount and outranks a stored list. Local
+   * attachments were never storable, so nothing is restored for them.
+   */
+  const handleDraftRestore = useCallback((draft: StoredDraft) => {
+    setDocumentWithoutStealingFocus(editorRef.current, draft.doc);
+    if (draft.files.length > 0) {
+      setAttachedFiles((current) => (current.length > 0 ? current : [...draft.files]));
+    }
+  }, []);
+
+  const { handleDocChange, clearSavedDraft } = useComposerDraft({
+    scope: draftScope,
+    editorRef,
+    editorReady: editorElement != null,
+    attachedFiles,
+    hasPrefill: !!prefill,
+    onRestore: handleDraftRestore,
+  });
 
   const { data: allSessions } = useRuntimeSessions();
 
@@ -817,13 +895,6 @@ function ComposerImpl({
     }
   }, [lockForQuestion]);
 
-  const handleTranscription = useCallback((transcribedText: string) => {
-    const handle = editorRef.current;
-    if (!handle) return;
-    const next = appendTranscribedText(handle.getDocument(), handle.isEmpty(), transcribedText);
-    setDocumentWithoutStealingFocus(handle, next);
-  }, []);
-
   /**
    * The model popover's open state, hoisted out of `ModelSelector` so the `/`
    * palette can open it. `focusSection` is what separates the palette's two
@@ -855,15 +926,66 @@ function ComposerImpl({
    * its props, and a fresh array every render would defeat that on every
    * keystroke.
    */
-  const slashActions = useMemo(
-    () =>
-      selectedAgent
-        ? SLASH_ACTIONS.map((action) =>
-            action.id === 'switch-agent' ? { ...action, value: selectedAgent } : action,
-          )
-        : SLASH_ACTIONS,
-    [selectedAgent],
+  /**
+   * The live context-window snapshot behind the "Show context" row — the ring
+   * icon reads percent + tone, the palette's detail pane renders the full
+   * `ContextUsageCard` from the rest. Two memos on purpose: `messages`
+   * changes identity on every streamed token, so the derivation re-runs
+   * cheaply — but the OBJECT is pinned to its scalar fields, which change
+   * only when a turn completes and reports usage. Without the pin, every
+   * token would ripple through `slashActions` into the memoized editor.
+   */
+  const rawContextUsage = useMemo(
+    () => getContextUsage(messages, models, availableSelectedModel),
+    [messages, models, availableSelectedModel],
   );
+  const contextUsage = useMemo<ContextUsage>(
+    () => ({
+      percent: rawContextUsage.percent,
+      tone: rawContextUsage.tone,
+      ratio: rawContextUsage.ratio,
+      limit: rawContextUsage.limit,
+      modelName: rawContextUsage.modelName,
+      breakdown: rawContextUsage.breakdown,
+    }),
+    // Deliberately keyed on the leaf scalars, not the objects: `breakdown` is
+    // rebuilt every derivation, so its identity would defeat the pin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      rawContextUsage.percent,
+      rawContextUsage.tone,
+      rawContextUsage.ratio,
+      rawContextUsage.limit,
+      rawContextUsage.modelName,
+      rawContextUsage.breakdown.input,
+      rawContextUsage.breakdown.output,
+      rawContextUsage.breakdown.reasoning,
+      rawContextUsage.breakdown.cache,
+      rawContextUsage.breakdown.total,
+    ],
+  );
+
+  const slashActions = useMemo(() => {
+    // Rows whose handler this host did not provide are dropped, not shown
+    // dead — the `set-scope` lesson in `slash-actions.ts`: a row that
+    // highlights, offers "Use", and does nothing is worse than no row.
+    const available = SLASH_ACTIONS.filter((action) => {
+      if (action.id === 'compact-session') return Boolean(onCompactClick);
+      if (action.id === 'show-context') return Boolean(onContextClick);
+      return true;
+    });
+    return available.map((action) => {
+      if (action.id === 'switch-agent' && selectedAgent) {
+        return { ...action, value: selectedAgent };
+      }
+      // The ring icon (via `context`) plus the reading as the row's
+      // "current setting" text — same grammar as the agent row's value.
+      if (action.id === 'show-context') {
+        return { ...action, value: `${contextUsage.percent}%`, context: contextUsage };
+      }
+      return action;
+    });
+  }, [selectedAgent, onCompactClick, onContextClick, contextUsage]);
 
   const handleSelectAction = useCallback(
     (action: SlashAction) => {
@@ -886,16 +1008,15 @@ function ComposerImpl({
         case 'attach-file':
           fileInputRef.current?.click();
           return;
-        case 'start-voice':
-          // A counter, not a boolean: `VoiceRecorder` owns its own recording
-          // state, and this is the one signal that reaches into it. Two
-          // consecutive `/start-voice` selections must both arrive, which a
-          // boolean already `true` cannot express.
-          setVoiceStartRequestId((n) => n + 1);
+        case 'compact-session':
+          onCompactClick?.();
+          return;
+        case 'show-context':
+          onContextClick?.();
           return;
       }
     },
-    [cycleAgent],
+    [cycleAgent, onCompactClick, onContextClick],
   );
 
   const dispatchSubmission = useCallback(
@@ -994,6 +1115,11 @@ function ComposerImpl({
           return;
         }
         onCommand?.(plan.command, plan.args, draft?.commandSplit);
+        // The command is on its way; the draft that produced it is spent.
+        // Deliberately NOT on either refusal path above (`guard.kind ===
+        // 'refuse'`, `blocker`) — those keep the text in the editor on
+        // purpose, so its draft has to survive with it.
+        clearSavedDraft();
         if (clearOnSend && !stash) {
           editorRef.current?.clear();
           setAttachedFiles((prev) => {
@@ -1039,6 +1165,14 @@ function ComposerImpl({
       try {
         await onSend(trimmed, filesToSend, mentionsToSend);
         for (const url of reset.urlsToRevoke) URL.revokeObjectURL(url);
+        // AFTER the await, so a send that throws keeps its draft. Explicit,
+        // NOT derived from `reset.clear`: the project-home composer passes
+        // `clearOnSend={false}` because its send navigates it away
+        // (`composer-reset.ts`), so keying this off the editor clearing would
+        // strand a stale home draft forever. The catch below puts the text
+        // back in the editor, which re-saves the draft through the ordinary
+        // debounce — nothing to restore by hand.
+        clearSavedDraft();
       } catch {
         const currentDoc = editorRef.current?.getDocument() ?? null;
         const currentIsEmpty = editorRef.current?.isEmpty() ?? true;
@@ -1089,6 +1223,7 @@ function ComposerImpl({
       lockForApproval,
       onCustomAnswer,
       onQuestionAction,
+      clearSavedDraft,
     ],
   );
 
@@ -1216,7 +1351,7 @@ function ComposerImpl({
             shell around it kept painting as an empty sliver.
           */}
           {showQueueStrip && (
-            <div className="bg-sidebar border-border flex w-[96%] flex-col items-center gap-2 rounded-t-xl border border-b-0 p-1 empty:hidden">
+            <div className={COMPOSER_INPUT_SLOT_CLASS}>
               {threadContext && (
                 <button
                   onClick={threadContext.onBackToParent}
@@ -1273,7 +1408,7 @@ function ComposerImpl({
             // continuation, not a new edge.
             <div
               className={cn(
-                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1.5',
+                'bg-sidebar border-border flex w-full items-center gap-2 border border-b-0 px-3 py-1',
                 !notice && 'rounded-t-xl',
               )}
             >
@@ -1311,16 +1446,13 @@ function ComposerImpl({
           // `globals.css` and `shadow-xl` was dead — twMerge dropped it for the
           // arbitrary `shadow-[…oklch…]` that followed, which was the only
           // raw colour left in the composer.
-          'bg-sidebar border-border relative isolate z-10 w-full rounded-xl border',
+          'bg-background border-border relative isolate z-10 w-full rounded-xl border',
           'pt-3',
-          'transition-[border-color] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
+          // The drag border swaps colour AND gains a ring. Without this it
+          // snapped: a hard flash the moment a file crossed the card.
+          'transition-[border-color] duration-normal ease-default',
           'motion-reduce:transition-none',
           cardClassName,
-          // NO `opacity-30` here. It used to sit on the card AND on the column
-          // inside it, and the two multiplied — 0.3 × 0.3 = 0.09 — so the whole
-          // composer, border and drop target included, went all but invisible
-          // the moment a file crossed it. The card keeps full opacity and its
-          // highlighted border; only the CONTENT dims, under the label below.
           isDragOver && 'border-kortix-blue/80 ring-primary/40 border ring',
           (replyTo || notice) && 'rounded-t-none',
         )}
@@ -1385,9 +1517,9 @@ function ComposerImpl({
           >
             {/*
               This padding is part of the input, so it has to behave like it.
-              `px-2 pb-6` lives on THIS element, not on the contenteditable
-              inside it, so the 24px band under the last line and the 8px strip
-              down each side were dead: a press landed on the div, the editor
+              `px-1 pb-9` lives on THIS element, not on the contenteditable
+              inside it, so the band under the last line and the strip down
+              each side were dead: a press landed on the div, the editor
               never took focus, and nothing happened. That band is exactly
               where you click to resume typing, which made the composer read as
               broken. `cursor-text` matches the affordance to the behaviour.
@@ -1396,7 +1528,7 @@ function ComposerImpl({
               only a press that TERMINATES here may be forwarded.
             */}
             <div
-              className="relative min-w-0 cursor-text px-2 pb-6"
+              className="relative min-w-0 cursor-text px-1 pb-9"
               onMouseDown={(e) => {
                 if (
                   !shouldFocusEditorFromPadding({
@@ -1423,11 +1555,13 @@ function ComposerImpl({
                   disabled={editorDisabled}
                   onSubmit={handleSubmit}
                   onEmptyChange={setIsEmpty}
+                  onDocChange={handleDocChange}
                   agents={agents}
                   sessions={allSessions ?? []}
                   currentSessionId={sessionId}
                   commands={commands}
                   actions={slashActions}
+                  files={slashFiles}
                   onSelectAction={handleSelectAction}
                   slashDockSelector={`#${dockId}`}
                   onMenuOpenChange={setMenuOpen}
@@ -1484,9 +1618,6 @@ function ComposerImpl({
               // it — passing it here as well would show the gear twice.
               toolbarSlot={inlineUnderbar ? toolbarSlot : undefined}
               rewind={rewind}
-              onTranscription={handleTranscription}
-              voiceDisabled={submitDisabled || isBusy}
-              voiceStartRequestId={voiceStartRequestId}
               isSending={isSending}
               isBusy={isBusy}
               onStop={onStop}
@@ -1506,6 +1637,17 @@ function ComposerImpl({
           </div>
         </div>
       </div>
+
+      {/*
+        Directly under the card, and BEFORE the underbar — the bar is a tray
+        that hangs off the card's bottom edge (see `ModelConnectionBar` for the
+        overlap), so it has to be the card's next sibling. Below the underbar it
+        was a third detached box under a second detached box.
+
+        The card is `isolate z-10` and this is `z-0`, so the card paints over
+        the overlap and only the tray's exposed strip shows.
+      */}
+      <ModelConnectionBar show={noModelsConnected} />
 
       {/*
         Attach + agent + context ring, in a row UNDER the card — not in the
@@ -1528,8 +1670,6 @@ function ComposerImpl({
           toolbarSlot={toolbarSlot}
         />
       )}
-
-      <ModelConnectionBar show={noModelsConnected} />
 
       {/*
         The `'below'` dock. Absolute, not in flow: `top-full` hangs it off the

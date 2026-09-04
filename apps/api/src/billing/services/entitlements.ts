@@ -23,10 +23,10 @@ import { invalidateAccountBilling, resolveAccountBilling } from './billing-cache
 import { resolvePlanRecord } from './plan-catalog';
 import type { ResolvedBilling } from './resolve-billing';
 
-/** The four enterprise feature gates, projected out of a resolved plan. */
+/** The five enterprise feature gates, projected out of a resolved plan. */
 function enterpriseGates(resolved: ResolvedBilling): TierEntitlements {
-  const { sso, scim, rbac, auditAccess } = resolved.entitlements;
-  return { sso, scim, rbac, auditAccess };
+  const { sso, scim, rbac, auditAccess, branding } = resolved.entitlements;
+  return { sso, scim, rbac, auditAccess, branding };
 }
 
 /**
@@ -36,8 +36,8 @@ function enterpriseGates(resolved: ResolvedBilling): TierEntitlements {
  * The parity test pins the two to the same values.
  */
 function enterpriseLicenseGates(): TierEntitlements {
-  const { sso, scim, rbac, auditAccess } = resolvePlanRecord('enterprise').entitlements;
-  return { sso, scim, rbac, auditAccess };
+  const { sso, scim, rbac, auditAccess, branding } = resolvePlanRecord('enterprise').entitlements;
+  return { sso, scim, rbac, auditAccess, branding };
 }
 
 /**

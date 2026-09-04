@@ -29,6 +29,21 @@ mock.module('./hooks', () => ({
 mock.module('./models/catalog-models', () => ({
   gatewayModelCatalog: () => ({}),
 }));
+const servableCalls: unknown[] = [];
+mock.module('./models/servable-catalog', () => ({
+  servableProjectCatalog: async (input: unknown) => {
+    servableCalls.push(input);
+    return {
+      models: {
+        'amazon-bedrock/global.openai.gpt-5.6-sol': { name: 'GPT-5.6 Sol (Global)', enabled: true },
+        'grok-4.6': { name: 'Grok 4.6', enabled: false },
+      },
+      modelOverrides: {},
+      defaultModel: 'grok-4.6',
+      usingDefaults: true,
+    };
+  },
+}));
 mock.module('./routing', () => ({
   resolveGatewayRoute: async () => ({
     policyId: 'auto',
@@ -109,5 +124,34 @@ describe('POST /internal/gateway/resolve-upstream — GatewayResolutionError con
       authedRequest({ principal: { userId: 'u' }, model: 'auto' }),
     );
     expect(res.status).toBe(500);
+  });
+});
+
+describe('POST /models scope=picker', () => {
+  test("serves the project's servable set (same composition as /model-picker) for a project principal", async () => {
+    servableCalls.length = 0;
+    const res = await app().request(
+      '/models',
+      authedRequest({
+        principal: { userId: 'u1', accountId: 'a1', projectId: 'p1' },
+        scope: 'picker',
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { models: Record<string, { enabled?: boolean }> };
+    expect(Object.keys(body.models)).toEqual(['amazon-bedrock/global.openai.gpt-5.6-sol', 'grok-4.6']);
+    expect(body.models['grok-4.6']?.enabled).toBe(false);
+    expect(servableCalls).toEqual([{ projectId: 'p1', accountId: 'a1', principalUserId: 'u1' }]);
+  });
+
+  test('scope=picker without a project principal falls back to the plain catalog', async () => {
+    servableCalls.length = 0;
+    const res = await app().request(
+      '/models',
+      authedRequest({ principal: { userId: 'u1', accountId: 'a1' }, scope: 'picker' }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ models: {} });
+    expect(servableCalls).toEqual([]);
   });
 });

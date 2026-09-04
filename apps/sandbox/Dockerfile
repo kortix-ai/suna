@@ -196,8 +196,7 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
     && opencode --version \
-    && opencode_package="$(pnpm list -g --parseable --depth 0 opencode-ai | sed -n '\#/node_modules/opencode-ai$#p' | tail -n 1)" \
-    && opencode_native="$opencode_package/bin/opencode.exe" \
+    && opencode_native="$(sed -n 's/^# cmd-shim-target=//p' "$(command -v opencode)" | tail -n 1)" \
     && test -x "$opencode_native" \
     && test "$(wc -c < "$opencode_native")" -gt 50000000 \
     && test "$("$opencode_native" --version)" = "$OPENCODE_VERSION" \
@@ -241,7 +240,7 @@ USER root
 COPY --from=builder /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,
 # `kortix secrets`, `kortix sessions`, … Pre-authenticated at runtime via the
-# project-scoped token the platform injects (KORTIX_CLI_TOKEN).
+# project-scoped token the platform injects (KORTIX_TOKEN).
 COPY --from=cli-builder /cli/kortix /usr/local/bin/kortix
 # Always-latest managed Kortix skills (kortix-cli + the kortix-* family). The
 # agent server overlays these into every session's OpenCode skills dir at boot
@@ -251,10 +250,14 @@ COPY apps/sandbox/entrypoint.sh /usr/local/bin/kortix-entrypoint
 COPY apps/sandbox/MACHINE.md /MACHINE.md
 # Channel shims delegate Connector calls to the compiled `kortix` CLI.
 COPY apps/sandbox/slack-cli/ /opt/kortix/apps/sandbox/slack-cli/
+# The daemon converges the CLI in place at /usr/local/bin/kortix (runtime-assets.ts
+# DEFAULT_CLI_PATH) and runs as kortix: the file must belong to that user or every
+# box reports `cli: failed` (EACCES) on its first convergence pass.
 RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/kortix-entrypoint /opt/kortix/apps/sandbox/slack-cli/install-shims.sh \
     && bash /opt/kortix/apps/sandbox/slack-cli/install-shims.sh /opt/kortix/apps/sandbox/slack-cli \
     && kortix --version \
-    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral
+    && chown -R kortix:kortix /opt/kortix /workspace /ephemeral \
+    && chown kortix:kortix /usr/local/bin/kortix
 
 # Platform-owned secret delivery. The daemon writes live project secrets to
 # /dev/shm/kortix/agent-env.sh (tmpfs — never on the persisted disk); these

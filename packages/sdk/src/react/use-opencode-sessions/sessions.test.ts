@@ -112,7 +112,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     clientImpl = {
       global: {
         config: {
-          get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.2' } }),
+          get: async () => ({ data: { model: 'openrouter/z-ai/glm-5.3-flash' } }),
         },
       },
       session: {
@@ -129,7 +129,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
     expect(summarizeArgs).toEqual({
       sessionID: 'ses_1',
       providerID: 'openrouter',
-      modelID: 'z-ai/glm-5.2',
+      modelID: 'z-ai/glm-5.3-flash',
     });
   });
 

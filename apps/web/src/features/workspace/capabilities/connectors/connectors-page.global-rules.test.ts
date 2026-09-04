@@ -20,13 +20,9 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(here, 'connectors-page.tsx'), 'utf8');
-const tabs = readFileSync(
-  resolve(here, '../shared/capability-tabs.tsx'),
-  'utf8',
-);
+const tabs = readFileSync(resolve(here, '../shared/capability-tabs.tsx'), 'utf8');
 
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 const filtersSlice = (body: string) => {
   const start = body.indexOf('filters={');
@@ -81,13 +77,17 @@ describe('connectors page Global rules', () => {
   // The header action carries a word, not a bare glyph — "Add" is the visible
   // label, and the longer `aria-label` opens with it so the accessible name
   // still contains the visible one.
-  test('the header action reads "Add", at full button size', () => {
+  test('the header action is the shared New menu — create in chat, or add a custom connector', () => {
+    // One "New" control on every catalog tab (Marko, 2026-09-03), at the one
+    // size every tab uses — the menu's `sm` default — so Skills, Connectors,
+    // Triggers and Secrets line up.
     const body = code(source);
     const header = body.slice(body.indexOf('action={'), body.indexOf('filters={'));
-    expect(header).toContain('<PlusIcon className="size-4" />');
-    expect(header).toContain('Add');
-    expect(header).not.toContain('size="icon-md"');
-    expect(header).toContain('aria-label="Add a custom connector"');
+    expect(header).toContain('<NewEntityMenu');
+    expect(header).not.toContain('size="default"');
+    expect(header).toContain("newConfigPrompt('connector')");
+    expect(header).toContain("label: 'Add a custom connector'");
+    expect(header).toContain("setPanel('custom')");
   });
 
   test('it opens in a Sheet and renders PoliciesPanel, with the copy intact', () => {

@@ -22,6 +22,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { TimeoutError, withTimeout } from '../shared/with-timeout';
+import { ttlMemo } from '../shared/ttl-memo';
 
 // Kept in sync with apps/api/src/projects/routes/r2.ts. Re-declared here rather
 // than imported because the route module validates server env (FRONTEND_URL,
@@ -113,5 +114,98 @@ describe('sandbox-health budget', () => {
     await expect(withTimeout(never<string>(), 20, 'sandbox-health')).rejects.toBeInstanceOf(
       TimeoutError,
     );
+  });
+});
+
+/**
+ * Poll caching (perf, 2026-08-26).
+ *
+ * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
+ * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B /
+ * Platinum — once per template, plus a git read to hash the template
+ * directory. On the Essentia corpus that made this "cheap polling endpoint"
+ * the slowest non-proxy read on the box: 559 ms mean server-side over 169
+ * calls, 1 488 ms median as the browser saw it.
+ *
+ * The route now serves it through `ttlMemo` keyed by project. These tests pin
+ * the contract that makes that safe, using the SAME memo primitive the route
+ * uses (with `enableInTests` so the test actually exercises caching — `ttlMemo`
+ * is bypassed under `bun test` by design).
+ */
+describe('sandbox-health poll caching', () => {
+  const SANDBOX_HEALTH_TTL_MS = 10_000;
+
+  const memo = (ttlMs: number, loader: (projectId: string) => Promise<number>) =>
+    ttlMemo({
+      ttlMs,
+      keyFn: (projectId: string) => projectId,
+      loader,
+      enableInTests: true,
+    });
+
+  test('the TTL is short enough that a finished build shows up on the next poll', () => {
+    // The sidebar re-polls; an answer this old is indistinguishable to a user.
+    // Anything near the request budget would make the alert feel stuck.
+    expect(SANDBOX_HEALTH_TTL_MS).toBeLessThan(SANDBOX_HEALTH_BUDGET_MS);
+  });
+
+  test('repeat polls for one project share a single provider round trip', async () => {
+    let calls = 0;
+    const cached = memo(SANDBOX_HEALTH_TTL_MS, async () => ++calls);
+
+    expect(await cached('p1')).toBe(1);
+    expect(await cached('p1')).toBe(1);
+    expect(await cached('p1')).toBe(1);
+    expect(calls).toBe(1);
+  });
+
+  test('concurrent polls collapse to one round trip, not one each', async () => {
+    // Six list/health fetches per session open in the corpus. Without in-flight
+    // de-duplication the cache would not help the very burst it exists for.
+    let calls = 0;
+    const cached = memo(SANDBOX_HEALTH_TTL_MS, async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return calls;
+    });
+
+    const answers = await Promise.all([cached('p1'), cached('p1'), cached('p1')]);
+
+    expect(calls).toBe(1);
+    expect(answers).toEqual([1, 1, 1]);
+  });
+
+  test('two projects never share an answer', async () => {
+    // The template set, its content hash and the provider pin are all
+    // per-project — a shared entry would show one project another's alert.
+    let calls = 0;
+    const cached = memo(SANDBOX_HEALTH_TTL_MS, async () => ++calls);
+
+    expect(await cached('p1')).toBe(1);
+    expect(await cached('p2')).toBe(2);
+    expect(await cached('p1')).toBe(1);
+  });
+
+  test('invalidating a project re-reads it on the very next poll', async () => {
+    // What POST /snapshots/rebuild does, so a deliberate rebuild is not hidden
+    // behind the TTL.
+    let calls = 0;
+    const cached = memo(SANDBOX_HEALTH_TTL_MS, async () => ++calls);
+
+    expect(await cached('p1')).toBe(1);
+    cached.invalidate('p1');
+    expect(await cached('p1')).toBe(2);
+  });
+
+  test('a failed provider call is never cached — the next poll retries', async () => {
+    let calls = 0;
+    const cached = memo(SANDBOX_HEALTH_TTL_MS, async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('provider down');
+      return calls;
+    });
+
+    await expect(cached('p1')).rejects.toThrow('provider down');
+    expect(await cached('p1')).toBe(2);
   });
 });

@@ -108,6 +108,44 @@ describe('workspace vocabulary: each surface actually renders its Workspace copy
     expect(code).toContain('Switch Workspace');
   });
 
+  /**
+   * The command palette is NOT in the absence-checking `SURFACES` list above,
+   * and must not be: it is 2,800 lines that legitimately reference
+   * `KortixProject`, `qk.projects.list`, `listProjectsForAccount`,
+   * `/projects/<id>` hrefs and a `projects` React Query key, and a standalone
+   * `\bProjects?\b` scan over it would fire on strings the user never sees.
+   *
+   * What CAN be pinned is the copy it actually renders. Its workspace switcher
+   * shipped saying "Projects" / "Switch Project" / "Search projects..." long
+   * after the rest of the product had stopped — nothing guarded it, so it
+   * drifted alone. These four strings are the switcher's entire visible
+   * vocabulary; each is asserted present, and the retired wording asserted
+   * absent, so the drift cannot happen twice.
+   */
+  test('command-palette.tsx says Workspace throughout its switcher', () => {
+    const code = stripComments(readFileSync(join(import.meta.dir, 'command-palette.tsx'), 'utf8'));
+
+    expect(code).toContain("'Switch Workspace'");
+    expect(code).toContain("'Search workspaces...'");
+    expect(code).toContain('heading="Workspaces"');
+    expect(code).toContain("'No workspaces yet'");
+
+    expect(code).not.toContain("'Switch Project'");
+    expect(code).not.toContain("'Search projects...'");
+    expect(code).not.toContain('heading="Projects"');
+    expect(code).not.toContain("'No projects yet'");
+  });
+
+  test('menu-registry.ts names the palette row Switch workspace', () => {
+    // The row is the switcher's front door. It said "Projects" — a bare noun
+    // that neither names the current concept nor says the row does anything.
+    const code = stripComments(
+      readFileSync(join(import.meta.dir, '../../lib/menu-registry.ts'), 'utf8'),
+    );
+    expect(code).toContain("label: 'Switch workspace'");
+    expect(code).not.toContain("label: 'Projects'");
+  });
+
   test('new-workspace-page.tsx renders the page heading', () => {
     const code = stripComments(
       readFileSync(join(import.meta.dir, 'new/new-workspace-page.tsx'), 'utf8'),

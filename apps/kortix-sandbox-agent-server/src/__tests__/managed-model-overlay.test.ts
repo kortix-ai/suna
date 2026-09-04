@@ -31,7 +31,7 @@ import { reconcileManagedModels, resetManagedReconcileForTests } from '../main'
 const GATEWAY = {
   KORTIX_WORKSPACE: '/workspace',
   KORTIX_LLM_BASE_URL: 'https://gw.kortix.test/v1',
-  KORTIX_LLM_API_KEY: 'gw-key',
+  KORTIX_TOKEN: 'gw-key',
 }
 
 // A baked catalog that predates the managed-lineup change: it carries a BYOK
@@ -90,7 +90,7 @@ describe('managed listing fetch', () => {
 
     const models = await fetchManagedModels('https://gw.kortix.test/v1', 'k')
 
-    expect(urls).toEqual(['https://gw.kortix.test/v1/models?scope=managed'])
+    expect(urls).toEqual(['https://gw.kortix.test/v1/models?scope=picker'])
     expect(Object.keys(models ?? {}).sort()).toEqual([
       'deepseek-v4-flash',
       'grok-4.6',
@@ -124,11 +124,11 @@ describe('managed listing fetch', () => {
 describe('boot config composition', () => {
   test('a stale baked catalog is overlaid with the LIVE managed set once it is known', async () => {
     globalThis.fetch = (async (input: string) => {
-      expect(String(input)).toContain('scope=managed')
+      expect(String(input)).toContain('scope=picker')
       return new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
     }) as unknown as typeof fetch
 
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
     // Cached by the post-spawn reconcile; every later config build (the
     // reconcile's own restart, any restart after it) reads it synchronously.
     await settleManagedModelsPrefetch()
@@ -151,7 +151,7 @@ describe('boot config composition', () => {
     globalThis.fetch = (async () =>
       new Response('down', { status: 500 })) as unknown as typeof fetch
 
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
     const raw = await buildOpencodeConfigContent({
       ...GATEWAY,
       KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile(),
@@ -176,7 +176,7 @@ describe('boot config composition', () => {
     }) as unknown as typeof fetch
 
     const file = await bakedCatalogFile()
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
     const started = Date.now()
     const raw = await buildOpencodeConfigContent({
       ...GATEWAY,
@@ -220,7 +220,7 @@ describe('warm-fork adoption refresh', () => {
     const targetFile = join(dir, 'session.json')
     await writeFile(currentFile, JSON.stringify(current))
     globalThis.fetch = (async (input: string) =>
-      new Response(JSON.stringify(String(input).includes('scope=managed') ? managed : full), {
+      new Response(JSON.stringify(String(input).includes('scope=picker') ? managed : full), {
         status: 200,
       })) as unknown as typeof fetch
 
@@ -228,7 +228,7 @@ describe('warm-fork adoption refresh', () => {
       currentCatalogFile: currentFile,
       targetCatalogFile: targetFile,
       fetchBaseURL: GATEWAY.KORTIX_LLM_BASE_URL,
-      fetchApiKey: GATEWAY.KORTIX_LLM_API_KEY,
+      fetchApiKey: GATEWAY.KORTIX_TOKEN,
     })
     const written = JSON.parse(await readFile(targetFile, 'utf8')) as {
       models: Record<string, unknown>
@@ -265,7 +265,7 @@ describe('warm-fork adoption refresh', () => {
     const targetFile = join(dir, 'session.json')
     await writeFile(currentFile, JSON.stringify(STALE_BAKED))
     globalThis.fetch = (async (input: string) =>
-      String(input).includes('scope=managed')
+      String(input).includes('scope=picker')
         ? new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })
         : new Response('boom', { status: 500 })) as unknown as typeof fetch
 
@@ -273,7 +273,7 @@ describe('warm-fork adoption refresh', () => {
       currentCatalogFile: currentFile,
       targetCatalogFile: targetFile,
       fetchBaseURL: GATEWAY.KORTIX_LLM_BASE_URL,
-      fetchApiKey: GATEWAY.KORTIX_LLM_API_KEY,
+      fetchApiKey: GATEWAY.KORTIX_TOKEN,
     })
     const written = JSON.parse(await readFile(targetFile, 'utf8')) as {
       models: Record<string, unknown>
@@ -342,7 +342,7 @@ describe('post-spawn managed reconcile', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
     process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
     await buildOpencodeConfigContent({
       ...GATEWAY,
       KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,
@@ -378,7 +378,7 @@ describe('post-spawn managed reconcile', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify(LIVE_MANAGED), { status: 200 })) as unknown as typeof fetch
     process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
     await settleManagedModelsPrefetch()
     await buildOpencodeConfigContent({
       ...GATEWAY,
@@ -421,7 +421,7 @@ describe('post-spawn managed reconcile', () => {
     globalThis.fetch = (async () =>
       new Response('down', { status: 500 })) as unknown as typeof fetch
     process.env.KORTIX_LLM_CATALOG_FILE = await bakedCatalogFile()
-    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_LLM_API_KEY)
+    startManagedModelsPrefetch(GATEWAY.KORTIX_LLM_BASE_URL, GATEWAY.KORTIX_TOKEN)
     await buildOpencodeConfigContent({
       ...GATEWAY,
       KORTIX_LLM_CATALOG_FILE: process.env.KORTIX_LLM_CATALOG_FILE,

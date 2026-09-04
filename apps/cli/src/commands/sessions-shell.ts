@@ -2,14 +2,15 @@ import {
   createKortixPty,
   getKortixPtyWebSocketUrl,
   listKortixPty,
+  removeKortixPty,
   updateKortixPty,
   type KortixPty,
 } from '@kortix/sdk';
 
 import { openKortixPtyWebSocket } from '../api/pty-socket.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
-import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
-import { C, help, status } from '../style.ts';
+import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { C, help, pad, status } from '../style.ts';
 import { loadSessionForChat, resolveRunningSessionId, type ResolvedSession } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
@@ -47,14 +48,23 @@ Reattaches to the session's existing terminal if one is already running
 always start a fresh shell instead. Behaves like ssh — Ctrl+C/Ctrl+D go to
 the remote shell, not this CLI; type \`exit\` or close the terminal to leave.
 
+Subcommands:
+  ls               List the session's terminals (id, status, command). --json.
+                   Needs no TTY.
+  kill <pty-id>    Kill one terminal. The ambient shell respawns on the next
+                   attach; anything running inside it does not.
+
   --new            Start a brand-new shell instead of reattaching.
   --project <id>   Pin this project id (skips the cross-host scan).
   --host <name>    Pin this Kortix host (skips the cross-host scan).
+  --json           Machine-readable output (\`ls\`/\`kill\`).
   -h, --help       Show this help.
 
 Examples:
   kortix sessions shell <session-id>
-  kortix sessions shell <session-id> --new`;
+  kortix sessions shell <session-id> --new
+  kortix sessions shell <session-id> ls
+  kortix sessions shell <session-id> kill <pty-id>`;
 
 export async function runSessionsShell(argv: string[]): Promise<number> {
   const rest = [...argv];
@@ -73,8 +83,21 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
     return 2;
   }
   const wantNew = takeFlagBool(rest, ['--new']);
+  const json = takeFlagBool(rest, ['--json']);
 
   const positional = rest.filter((a) => !a.startsWith('-'));
+  // `ls`/`kill` may come with or without a session id — `sessions shell ls`
+  // picks the running session the same way a bare attach does.
+  const subAt = positional.findIndex((a) => a === 'ls' || a === 'kill');
+  if (subAt === 0 || subAt === 1) {
+    return runShellPty({
+      sub: positional[subAt] as 'ls' | 'kill',
+      sessionArg: subAt === 1 ? positional[0] : undefined,
+      ptyId: positional[subAt + 1],
+      opts: { projectArg, hostArg },
+      json,
+    });
+  }
   if (positional.length > 1) {
     process.stderr.write(`${status.err('Pass at most one session id.')}\n`);
     return 2;
@@ -117,6 +140,83 @@ export async function runSessionsShell(argv: string[]): Promise<number> {
   );
 
   return runPtySession(resolved, runtimeUrl, pty);
+}
+
+/**
+ * `sessions shell <id> ls|kill` — inspect and clean up the terminals a session
+ * is carrying, without attaching to one. The dashboard's terminal panel lists
+ * the same rows; the CLI only ever showed you the one it attached to, so a
+ * wedged extra PTY was invisible and unkillable from here.
+ */
+async function runShellPty(args: {
+  sub: 'ls' | 'kill';
+  sessionArg?: string;
+  ptyId?: string;
+  opts: CtxOpts;
+  json: boolean;
+}): Promise<number> {
+  if (args.sub === 'kill' && !args.ptyId) {
+    process.stderr.write(`${status.err('`shell kill` needs a pty id (see `shell ls`).')}\n`);
+    return 2;
+  }
+  const sessionId = await resolveRunningSessionId(
+    args.sessionArg,
+    args.opts,
+    'Pick a session to inspect terminals in',
+  );
+  if (!sessionId) return 1;
+  const resolved = await loadSessionForChat(sessionId, args.opts, 'sessions shell');
+  if (!resolved) return 1;
+
+  try {
+    return await withKortixScope(resolved.auth, async () => {
+      const runtimeUrl = (
+        await kortixFromAuth(resolved.auth)
+          .session(resolved.ctx.projectId, resolved.session.session_id)
+          .ensureReady()
+      ).runtimeUrl;
+
+      if (args.sub === 'kill') {
+        await removeKortixPty(runtimeUrl, args.ptyId!);
+        if (args.json) {
+          emitJson({ pty_id: args.ptyId, killed: true });
+          return 0;
+        }
+        process.stdout.write(`${status.ok(`Killed terminal ${C.bold}${args.ptyId}${C.reset}`)}\n`);
+        return 0;
+      }
+
+      const terminals = await listKortixPty(runtimeUrl);
+      if (args.json) {
+        emitJson(terminals);
+        return 0;
+      }
+      if (terminals.length === 0) {
+        process.stdout.write(
+          `  ${C.dim}No terminals — \`kortix sessions shell ${sessionId}\` starts one.${C.reset}\n`,
+        );
+        return 0;
+      }
+      const idW = Math.max(...terminals.map((t) => t.id.length), 6);
+      const titleW = Math.max(...terminals.map((t) => t.title.length), 5);
+      process.stdout.write('\n');
+      process.stdout.write(
+        `  ${C.dim}${pad('PTY', idW)}   ${pad('TITLE', titleW)}   STATUS    PID     COMMAND${C.reset}\n`,
+      );
+      for (const t of terminals) {
+        const color = t.status === 'running' ? C.green : C.faded;
+        process.stdout.write(
+          `  ${pad(t.id, idW)}   ${pad(t.title, titleW)}   ${color}${pad(t.status, 8)}${C.reset}  ${pad(String(t.pid), 6)}  ${C.faded}${[t.command, ...t.args].join(' ')}${C.reset}\n`,
+        );
+      }
+      process.stdout.write(
+        `\n  ${C.dim}${terminals.length} terminal${terminals.length === 1 ? '' : 's'}${C.reset}\n\n`,
+      );
+      return 0;
+    });
+  } catch (err) {
+    return surfaceApiError(err);
+  }
 }
 
 /** Reuse the session's existing terminal if one's already running (matches

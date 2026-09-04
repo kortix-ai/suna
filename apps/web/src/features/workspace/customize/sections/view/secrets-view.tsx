@@ -15,8 +15,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -66,13 +64,19 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
-import { Plus as PlusIcon } from '@/features/icon/icons/plus';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { ProjectProviderModal } from '@/features/workspace/customize/sections/llm-provider/llm-provider-modal';
+import {
+  newConfigPrompt,
+  useConfigureThread,
+} from '@/features/workspace/customize/use-configure-thread';
 import { useSettingsNav } from '@/features/workspace/shared/settings-nav-context';
 import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
   type ProjectSecret,
@@ -126,9 +130,9 @@ import {
   secretDeliveryBlockedReason,
   secretDeliveryLegend,
   secretDeliveryPresentation,
-  secretExposure,
   secretDeliverySyncWarning,
   secretDeliveryTarget,
+  secretExposure,
   secretExposureOptions,
   secretUsageIsAssigned,
   shouldWarnMissingAgentGrant,
@@ -152,7 +156,7 @@ type Requirement = 'required' | 'optional' | null;
  * project-wide create/configure/value only. `identifier` is the unique handle;
  * `key` (the env var name) is NOT unique — two identifiers may share one.
  */
-interface SecretRow {
+export interface SecretRow {
   identifier: string;
   key: string;
   requirement: Requirement;
@@ -217,15 +221,12 @@ export function SecretsView({ projectId }: { projectId: string }) {
   // The response's `can_manage` was the coarse project-manage flag, so a custom
   // role that holds `project.secret.write` without the manager role saw a
   // read-only page, and one denied the leaf saw editable controls that 403.
-  const canManage =
-    useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
+  const canManage = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SECRET_WRITE).allowed === true;
   const allRows = useMemo(() => buildRows(normalized), [normalized]);
 
   // A legacy/enforced row keeps its "Enforce at the network" badge even with the
   // flag off, so the legend must still explain that value when one exists.
-  const hasEnforcedRow = allRows.some(
-    (r) => secretExposure(r.strategy, r.consumer) === 'enforced',
-  );
+  const hasEnforcedRow = allRows.some((r) => secretExposure(r.strategy, r.consumer) === 'enforced');
   const showEnforced = egressEnabled || hasEnforcedRow;
 
   const missingRequired = allRows.filter((r) => r.requirement === 'required' && !r.configured);
@@ -254,6 +255,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
     );
   }, [allRows, query]);
 
+  const configure = useConfigureThread(projectId);
   const openCreate = () => {
     setDialogRow(null);
     setDialogOpen(true);
@@ -317,10 +319,15 @@ export function SecretsView({ projectId }: { projectId: string }) {
             </Link>
           </Button>
           {showContent && canManage ? (
-            <Button size="sm" variant="secondary" onClick={openCreate}>
-              <PlusIcon className="size-4 shrink-0" />
-              Add
-            </Button>
+            <NewEntityMenu
+              label="New"
+              pending={configure.pending}
+              onChat={() => configure.start(newConfigPrompt('secret'))}
+              manual={{
+                description: 'Name it, paste the value, choose delivery.',
+                onSelect: openCreate,
+              }}
+            />
           ) : null}
         </div>
       }
@@ -401,6 +408,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
                     <SecretTableRow
                       key={row.identifier}
                       row={row}
+                      llmGatewayEnabled={llmGatewayEnabled}
                       canManage={canManage}
                       busy={removeShared.isPending && removeShared.variables === row.identifier}
                       onEdit={() => openEdit(row)}
@@ -417,6 +425,7 @@ export function SecretsView({ projectId }: { projectId: string }) {
               onOpenChange={setDialogOpen}
               projectId={projectId}
               row={dialogRow}
+              llmGatewayEnabled={llmGatewayEnabled}
               connectors={connectorsQuery.data?.connectors ?? []}
               connectorsLoading={connectorsQuery.isLoading}
               egressEnabled={egressEnabled}
@@ -563,7 +572,9 @@ function normalizeResponse(
   };
 }
 
-function buildRows(raw: ProjectSecretsResponse | ProjectSecret[] | null | undefined): SecretRow[] {
+export function buildRows(
+  raw: ProjectSecretsResponse | ProjectSecret[] | null | undefined,
+): SecretRow[] {
   const data = normalizeResponse(raw);
   const requirementByKey = new Map<string, Requirement>();
   for (const key of data.required) requirementByKey.set(key, 'required');
@@ -681,12 +692,14 @@ function SecretMarks({ row }: { row: SecretRow }) {
 
 function SecretTableRow({
   row,
+  llmGatewayEnabled,
   canManage,
   busy,
   onEdit,
   onDelete,
 }: {
   row: SecretRow;
+  llmGatewayEnabled: boolean;
   canManage: boolean;
   busy: boolean;
   onEdit: () => void;
@@ -695,7 +708,7 @@ function SecretTableRow({
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const canManageShared = canManage && !row.system;
   const distinctKey = row.identifier !== row.key;
-  const delivery = secretDeliveryPresentation(row.strategy, row.consumer);
+  const delivery = secretDeliveryPresentation(row.strategy, row.consumer, { llmGatewayEnabled });
 
   return (
     <TableRow
@@ -771,11 +784,68 @@ function SecretTableRow({
   );
 }
 
+/**
+ * `SecretDialog` with its plumbing resolved from the project alone, for a
+ * surface that is not the Secrets page — the agent editor's Secrets page
+ * opens the SAME create/edit dialog from a secret card (Marko, 2026-09-03:
+ * "hardcore reuse same components … same modals"). Nothing here is new
+ * behavior; it is the exact reads `SecretsView` does before it mounts the
+ * dialog, so the two can never drift.
+ */
+export function ProjectSecretDialog({
+  projectId,
+  row,
+  open,
+  onOpenChange,
+  onSaved,
+}: {
+  projectId: string;
+  /** The secret to edit, or null to create one. */
+  row: SecretRow | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSaved?: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const projectDetailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+    enabled: open,
+  });
+  const connectorsQuery = useQuery({
+    queryKey: qk.project.connectors(projectId),
+    queryFn: () => listConnectors(projectId),
+    ...contract('config'),
+    enabled: open,
+  });
+  const egressEnabled = useFeatureFlag(projectId, 'secrets_egress').enabled;
+  return (
+    <SecretDialog
+      key={row?.identifier ?? 'new'}
+      open={open}
+      onOpenChange={onOpenChange}
+      projectId={projectId}
+      row={row}
+      llmGatewayEnabled={isLlmGatewayEnabled(projectDetailQuery.data?.project)}
+      connectors={connectorsQuery.data?.connectors ?? []}
+      connectorsLoading={connectorsQuery.isLoading}
+      egressEnabled={egressEnabled}
+      onSaved={() => {
+        queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+        refreshProjectProviderState(queryClient, projectId);
+        onSaved?.();
+      }}
+    />
+  );
+}
+
 function SecretDialog({
   open,
   onOpenChange,
   projectId,
   row,
+  llmGatewayEnabled,
   connectors,
   connectorsLoading,
   egressEnabled,
@@ -785,6 +855,7 @@ function SecretDialog({
   onOpenChange: (open: boolean) => void;
   projectId: string;
   row: SecretRow | null;
+  llmGatewayEnabled: boolean;
   connectors: Awaited<ReturnType<typeof listConnectors>>['connectors'];
   connectorsLoading: boolean;
   egressEnabled: boolean;
@@ -864,8 +935,7 @@ function SecretDialog({
   const prepareSavePlan = (): SecretSavePlan => {
     const finalKey = (row?.key ?? key).trim().toUpperCase();
     const finalIdentifier = (row?.identifier ?? identifier).trim() || finalKey;
-    const nextConnectorSlugs =
-      row?.consumer === 'connector' ? effectiveSelectedConnectorSlugs : [];
+    const nextConnectorSlugs = row?.consumer === 'connector' ? effectiveSelectedConnectorSlugs : [];
     const bindingChanges = connectorBindingChanges(connectors, finalIdentifier, nextConnectorSlugs);
     if (!SECRET_NAME_REGEX.test(finalKey)) {
       throw new Error('Key: use A-Z, 0-9, _ only. Must start with a letter or _. Max 64 chars.');
@@ -1067,7 +1137,9 @@ function SecretDialog({
     : row.configured
       ? `Edit ${row.identifier}`
       : `Set ${row.identifier}`;
-  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer);
+  const selectedDelivery = secretDeliveryPresentation(strategy, nextConsumer, {
+    llmGatewayEnabled,
+  });
   const bindingIdentifier = (row?.identifier ?? identifier).trim() || key.trim().toUpperCase();
   const connectorOptions = connectorBindingOptions(connectors, bindingIdentifier);
   // Offer "Enforce at the network" only when the experimental flag is on, or
@@ -1121,8 +1193,8 @@ function SecretDialog({
           <ModalHeader>
             <ModalTitle>{title}</ModalTitle>
             <ModalDescription>
-              The identifier selects this credential. Access decides whether agent code can read
-              the value, and who else may spend it.
+              The identifier selects this credential. Access decides whether agent code can read the
+              value, and who else may spend it.
             </ModalDescription>
           </ModalHeader>
           <form onSubmit={handleSubmit} autoComplete="off">
@@ -1260,7 +1332,9 @@ function SecretDialog({
                     </SelectContent>
                   </Select>
                 )}
-                {!usageAssigned && <FieldDescription>{selectedDelivery.description}</FieldDescription>}
+                {!usageAssigned && (
+                  <FieldDescription>{selectedDelivery.description}</FieldDescription>
+                )}
               </Field>
 
               {strategy === 'runtime' && (
@@ -1477,8 +1551,8 @@ function SecretDialog({
                       </div>
                     )}
                     <FieldDescription>
-                      Selected connectors resolve this secret on the server. The sandbox receives
-                      no value.
+                      Selected connectors resolve this secret on the server. The sandbox receives no
+                      value.
                     </FieldDescription>
                   </Field>
                 </div>

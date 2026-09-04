@@ -109,10 +109,12 @@ module "api" {
   ]
   private_subnet_ids = module.network.private_subnet_ids
 
-  image                   = var.api_image
-  container_port          = var.container_port
-  certificate_arn         = one(module.acm[*].certificate_arn)
-  environment             = var.api_environment
+  image           = var.api_image
+  container_port  = var.container_port
+  certificate_arn = one(module.acm[*].certificate_arn)
+  environment = merge(var.api_environment, {
+    LLM_GATEWAY_PROXY_TARGET = "https://gateway-dev-ecs-fargate.kortix.com"
+  })
   secrets                 = var.api_secrets
   secrets_blob_arn        = data.aws_secretsmanager_secret.env.arn
   ses_send_region         = "us-east-2"
@@ -175,13 +177,28 @@ module "gateway" {
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # gateway is light (LLM proxy) — smaller than the API
-  task_cpu         = 256
-  task_memory      = 512
-  desired_count    = 1
-  min_capacity     = 1
-  max_capacity     = 3
-  use_fargate_spot = true
-  tags             = local.tags
+  # Sizing: memory is the gateway's binding constraint, not CPU — it holds
+  # request bodies (multimodal turns reach tens of MB) while it forwards them.
+  # 2 GiB gives admission a 1 GiB budget (memory-budget.ts takes 50%), i.e.
+  # ~341 MiB of concurrent wire bytes at the measured 3x amplification. The old
+  # 512 MiB (dev) / 1 GiB (staging, prod) sat right on top of the size that
+  # OOM-killed the Essentia gateway on a single 28 MB request.
+  #
+  # Capacity comes from REPLICAS, not from one big task: the gateway is
+  # stateless and ALBRequestCountPerTarget already scales it. min_capacity is
+  # the floor that survives an AZ or Spot loss without a cold start.
+  # deregistration_delay + stop_timeout let a draining task finish its
+  # in-flight streams (main.ts drains for GATEWAY_DRAIN_MS first).
+  task_cpu                   = 512
+  task_memory                = 2048
+  desired_count              = 2
+  min_capacity               = 2
+  max_capacity               = 8
+  use_fargate_spot           = true
+  deregistration_delay       = 300
+  stop_timeout               = 120
+  requests_per_target_target = 120
+  tags                       = local.tags
 }
 
 # ── DNS: dev-api-ecs-fargate.kortix.com → the ALB (Cloudflare-proxied) ─────────

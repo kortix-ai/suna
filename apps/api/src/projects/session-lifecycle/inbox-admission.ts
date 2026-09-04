@@ -1,30 +1,40 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
-import type { SessionLifecycleCommandRow } from './store';
+import { inboxPrecedesRow } from './inbox-order';
+import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
 /**
  * The inbox's admission gate.
  *
- * A prompt sits in `session_lifecycle_commands` only until it is this session's
- * TURN TO BE SENT — not until the session is idle. A live turn does NOT hold a
- * prompt back: it is forwarded at once, OpenCode persists it (the bubble lands
- * in the transcript within seconds) and answers everything queued behind the
- * turn in flight as soon as that turn ends. That is what "the queue sends in
- * between" means to the user: whatever was typed while the agent worked is
- * already WITH the agent, and it picks all of it up together.
+ * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
+ * A prompt sits in `session_lifecycle_commands` until the session's turn is
+ * over AND every older prompt has left the delivery path.
  *
- * What is left is ORDER, and only order: one prompt of a session on the wire at
- * a time, oldest first, so the user's own messages reach OpenCode in the order
- * they were typed.
+ * The turn half is not belt-and-braces on the order half — it is the whole
+ * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
+ * running turn, and it "parents each step on the newest user message and
+ * answers everything before it in that step" (`forwarded-placement.ts`). So
+ * every prompt forwarded into a live turn is merged into whatever step reaches
+ * it: two queued messages share one answer, and the earlier one is simply
+ * never spoken. Measured 2026-09-04 — a 13-step research turn with "tell me
+ * HI" and "tell me bye" queued behind it produced exactly one reply, "bye".
+ *
+ * Forwarding mid-turn was tried (`4ee30a9c3b`) to remove the gap between
+ * queued messages. It bought that merge. The gap it was removing is gone by
+ * other means: `promoteNextInboxRow` is AWAITED on the daemon's own
+ * `session.idle` relay (`routes/r4.ts`, "THE TURN ENDED — the session's next
+ * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
+ * fallback rather than the 30s ceiling that produced the measured dead air.
+ * A queued message therefore goes out on the turn-end event, not on a clock.
  *
  * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
- * instant the blocking delivery lands (engine) or a turn ends (turn-stream),
- * `promoteNextInboxRow` makes the session's next row due and drains it. The
- * backoff below only covers the gap a lost kick would leave, so it stays cheap
- * and capped — 30s here compounded to 27s / 45s / 75s of dead air behind ~1s
- * deliveries (dev, 2026-08-18).
+ * instant the turn ends, `promoteNextInboxRow` makes the session's next row due
+ * and drains it. The reaper is a recovery wake. The backoff below only covers
+ * the gap a lost kick would leave, so it stays cheap and capped — 30s here
+ * compounded to 27s / 45s / 75s of dead air behind ~1s deliveries (dev,
+ * 2026-08-18).
  *
  * A refusal is NOT a failure: see `requeueForAdmission`, which gives the claim's
  * attempt increment back so waiting cannot burn the 5-attempt dead-letter budget.
@@ -32,11 +42,12 @@ import type { SessionLifecycleCommandRow } from './store';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: the moment its sibling lands, `promoteNextInboxRow` (engine)
- * makes the session's next queued row due NOW and kicks a targeted drain, so
- * this backoff only ever covers the gap a lost kick would leave. 30s here was
- * the entire "queue does not send between turns" experience: three quick
- * messages compounded to 27s / 45s / 75s of dead air behind ~1s deliveries.
+ * boot any more: accepted delivery calls `promoteNextInboxRow` and makes the
+ * session's next queued row due NOW, then kicks a targeted drain. The terminal
+ * relay and reaper repeat that wake for recovery. This backoff only covers the
+ * gap a lost kick would leave. 30s here was the entire "queue does not send
+ * between turns" experience: three quick messages compounded to 27s / 45s /
+ * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
 export const INBOX_BACKOFF_FREE_REFUSALS = 4;
@@ -58,8 +69,6 @@ function admissionRefusals(result: unknown): number {
 /** The one thing that still holds a prompt back. Kept as a union because it is
  *  written into `result.admission_reason` and served as `GET .../prompts`'
  *  `reason`, where a second value may well appear again. */
-export type InboxAdmissionReason = 'older_prompt_pending';
-
 export type InboxAdmission =
   | { admit: true }
   | { admit: false; reason: InboxAdmissionReason; retryAfterMs: number };
@@ -73,11 +82,9 @@ export type InboxAdmission =
  * its metadata still says. Pure over the two fields, so the truth table is
  * testable without a database.
  *
- * ADMISSION NO LONGER READS THIS — a live turn does not hold a prompt back. It
- * stays here, and stays exported, because `GET .../turn` and
- * `settleOrphanedSandboxTurns` share the status filter and would drift apart if
- * each re-expressed it, and because the DRAIN still asks the question for a
- * different purpose — see `sessionHoldsLiveTurn` below.
+ * Admission, `GET .../turn`, and `settleOrphanedSandboxTurns` share this exact
+ * predicate. A stopped box never holds authority even when stale metadata still
+ * contains an active turn.
  */
 export function sessionHoldsTurnAuthority(
   box: { status: string; metadata: Record<string, unknown> | null } | null,
@@ -90,11 +97,8 @@ export function sessionHoldsTurnAuthority(
 /**
  * The same question, against the database, for one session.
  *
- * ADMISSION still does not ask it — a live turn no longer holds a prompt back.
- * The DRAIN does, and for a different reason: a prompt delivered into a live
- * turn has to be re-minted first, because the turn has been writing higher wire
- * ids ever since it started and OpenCode reads a lower id as already answered.
- * See `executeQueuedContinue`.
+ * The drain also uses this read when it must decide whether a client-minted id
+ * is still correctly placed.
  */
 export async function sessionHoldsLiveTurn(sessionId: string): Promise<boolean> {
   // `session_sandboxes.session_id` is UNIQUE, so this is the session's one box.
@@ -115,8 +119,7 @@ export interface InboxAdmissionDeps {
   ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
   hasOlderPendingPrompt: (
     sessionId: string,
-    before: Date,
-    exceptCommandId: string,
+    row: SessionLifecycleCommandRow,
   ) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
@@ -132,7 +135,7 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return box ?? null;
   },
-  async hasOlderPendingPrompt(sessionId, before, exceptCommandId) {
+  async hasOlderPendingPrompt(sessionId, row) {
     const [older] = await db
       .select({ commandId: sessionLifecycleCommands.commandId })
       .from(sessionLifecycleCommands)
@@ -145,12 +148,11 @@ const liveDeps: InboxAdmissionDeps = {
           // Counting it would wedge every prompt they send afterwards behind a
           // row that is, by construction, never due.
           sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
-          lt(sessionLifecycleCommands.createdAt, before),
-          // Explicitly not itself. `created_at < created_at` already excludes
-          // this row, but the caller's `before` comes from an in-memory copy of
-          // it — one that a concurrent writer can have moved — and a row that
-          // blocks on itself waits for ever.
-          ne(sessionLifecycleCommands.commandId, exceptCommandId),
+          inboxPrecedesRow(row),
+          // Explicitly not itself. The tuple predicate already excludes this
+          // row, but a row that blocks on itself waits for ever if a concurrent
+          // writer changes one of its ordering fields.
+          ne(sessionLifecycleCommands.commandId, row.commandId),
         ),
       )
       .limit(1);
@@ -188,6 +190,16 @@ export async function admitInboxPrompt(
     refusals,
   );
 
+  // A LIVE TURN HOLDS EVERY QUEUED PROMPT BACK — see the header. This is the
+  // one rule that makes a queued message its own turn with its own answer,
+  // and it binds a PROMOTED row too: "send now" reorders the line, it does not
+  // put a second message in front of a turn that is already running. The
+  // daemon's `session.idle` relay releases the next row the instant this turn
+  // is over, so the wait is an event, not a poll.
+  if (sessionHoldsTurnAuthority(await deps.readSandbox(row.sessionId))) {
+    return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
+  }
+
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
   // `continueSession` waiting for a cold box, with no message written for any
@@ -205,7 +217,7 @@ export async function admitInboxPrompt(
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (
     !promoted &&
-    (await deps.hasOlderPendingPrompt(row.sessionId, row.createdAt, row.commandId))
+    (await deps.hasOlderPendingPrompt(row.sessionId, row))
   ) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }

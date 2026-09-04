@@ -77,7 +77,7 @@ flow('SHIP-7', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
   ctx.track('cli-sandbox', sb.cwd);
   try {
     await initProject(sb);
-    const login = await sb.login(pat, { noProject: true });
+    const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
     check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
     await ctx.step(
@@ -196,7 +196,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat, { noProject: true });
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -252,7 +252,7 @@ flow(
       // Pre-set a non-GitHub origin so ship takes the BYO POST /projects path.
       const byoUrl = 'https://git.example.test/ke2e/byo.git';
       Bun.spawnSync(['git', '-C', sb.cwd, 'remote', 'add', 'origin', byoUrl]);
-      const login = await sb.login(pat, { noProject: true });
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -308,7 +308,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat, { noProject: true });
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -380,7 +380,7 @@ flow(
         'origin',
         'https://git.example.test/ke2e/ignored.git',
       ]);
-      const login = await sb.login(pat, { noProject: true });
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       await ctx.step(
@@ -427,7 +427,7 @@ flow('SHIP-5', { domain: 'cli', routes: ['GET /v1/accounts/me'] }, async (ctx) =
   ctx.track('cli-sandbox', sb.cwd);
   try {
     await initProject(sb);
-    const login = await sb.login(pat, { noProject: true });
+    const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
     check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
     await ctx.step(
@@ -486,7 +486,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat, { noProject: true });
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       // First ship (managed) to establish the link.
@@ -554,7 +554,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      const login = await sb.login(pat, { noProject: true });
+      const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
       check('login exit 0', login.exitCode === 0, 0, login.exitCode);
 
       // Establish the link via a first managed ship (clean push of the scaffold).
@@ -697,9 +697,9 @@ flow(
     const sb = new CliSandbox('cr9');
     ctx.track('cli-sandbox', sb.cwd);
     // The CLI resolves project + auth from the env inside a sandbox:
-    //   KORTIX_CLI_TOKEN (project-scoped PAT) + KORTIX_PROJECT_ID.
+    //   KORTIX_TOKEN (project-scoped PAT) + KORTIX_PROJECT_ID.
     const crEnv = {
-      KORTIX_CLI_TOKEN: pat,
+      KORTIX_TOKEN: pat,
       KORTIX_PROJECT_ID: project.id,
       KORTIX_API_URL: ctx.env.apiUrl,
     };

@@ -2,6 +2,7 @@
 
 import {
   getConnectStatus,
+  listConnectToolkits,
   listDiscoverConnectors,
   listPipedreamApps,
   listPipedreamSections,
@@ -91,7 +92,12 @@ export interface CatalogState {
  * offered at all. `unknown` and `asking` both mean "carry on as before" — one
  * because the probe has not answered yet, the other because it never will.
  */
-export type PipedreamStatus = 'asking' | 'configured' | 'absent' | 'unknown';
+export type ConnectProviderState = 'asking' | 'configured' | 'absent' | 'unknown';
+
+export interface ConnectProviderStatus {
+  state: ConnectProviderState;
+  provider: 'composio' | 'pipedream' | null;
+}
 
 /**
  * Is Easy Connect (Pipedream) configured on this deployment?
@@ -114,18 +120,75 @@ export type PipedreamStatus = 'asking' | 'configured' | 'absent' | 'unknown';
  * backed-off retries would only hold the grid on skeletons for seconds before
  * reaching the same conclusion.
  */
-export function usePipedreamStatus(enabled: boolean): PipedreamStatus {
+export function useConnectProviderStatus(enabled: boolean): ConnectProviderStatus {
   const query = useQuery({
-    queryKey: ['connect-status'],
+    // Version the key so tabs opened before the Composio cutover cannot keep an
+    // Infinity-stale `provider: "pipedream"` answer in memory after deployment.
+    queryKey: ['connect-status', 'composio-first-v2'],
     queryFn: getConnectStatus,
-    staleTime: Infinity,
+    // A deployment can change underneath an open tab. Revalidate on mount so a
+    // rolling release cannot leave the catalogue pinned to the previous provider.
+    staleTime: 30_000,
+    refetchOnMount: 'always',
     retry: false,
     enabled,
   });
-  if (!enabled) return 'unknown';
-  if (query.isSuccess) return query.data.configured ? 'configured' : 'absent';
-  if (query.isError) return 'unknown';
-  return 'asking';
+  if (!enabled) return { state: 'unknown', provider: null };
+  if (query.isSuccess) {
+    if (!query.data.configured) return { state: 'absent', provider: null };
+    const providers = query.data.providers ?? (query.data.provider ? [query.data.provider] : []);
+    // Composio is the automatic managed-provider path. Pipedream remains
+    // available only on deployments that have no Composio configuration at all.
+    const provider = providers.includes('composio')
+      ? 'composio'
+      : providers.includes('pipedream')
+        ? 'pipedream'
+        : null;
+    return provider ? { state: 'configured', provider } : { state: 'absent', provider: null };
+  }
+  // A failed status probe must never silently fall back to Pipedream. Try the
+  // Composio endpoint and surface its real error if the provider is unavailable.
+  if (query.isError) return { state: 'unknown', provider: 'composio' };
+  return { state: 'asking', provider: null };
+}
+
+export async function listConnectCatalogPage(input: {
+  projectId: string;
+  provider: 'composio' | 'pipedream';
+  q?: string;
+  cursor?: string;
+  category?: string;
+  limit: number;
+}) {
+  const category = input.category;
+  const query = {
+    ...(input.q ? { q: input.q } : {}),
+    ...(input.cursor ? { cursor: input.cursor } : {}),
+    ...(category ? { category } : {}),
+    limit: input.limit,
+  };
+  if (input.provider === 'pipedream') {
+    return listPipedreamApps(input.projectId, query);
+  }
+  const page = await listConnectToolkits(input.projectId, query);
+  return {
+    apps: page.toolkits.map((toolkit) => ({
+      slug: toolkit.slug,
+      name: toolkit.name,
+      description: toolkit.description ?? null,
+      imgSrc: toolkit.logo,
+      authType: toolkit.isNoAuth ? 'none' : 'oauth',
+      categories: toolkit.categories ?? [],
+      hasActions: true,
+      hasTriggers: false,
+      featuredWeight: 0,
+      provider: 'composio' as const,
+    })),
+    categories: [],
+    total: page.total,
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+  };
 }
 
 /**
@@ -181,13 +244,14 @@ export function useCatalog(
   // `absent`, which turns `enabled` off with them — a probe gated on `enabled`
   // would then have nothing left to keep it answered, and the tabs would
   // oscillate. It is one cached request either way.
-  const pipedreamStatus = usePipedreamStatus(source === 'easy-connect');
+  const connectStatus = useConnectProviderStatus(source === 'easy-connect');
 
   // `unknown` proceeds: the probe failed, and refusing to load a catalogue that
   // may well exist is the worse of the two mistakes.
   const easyConnectRunnable =
     source === 'easy-connect' &&
-    (pipedreamStatus === 'configured' || pipedreamStatus === 'unknown');
+    (connectStatus.state === 'configured' || connectStatus.state === 'unknown');
+  const easyConnectProvider = connectStatus.provider ?? 'composio';
 
   const discoverQuery = useInfiniteQuery({
     queryKey: ['discover-connectors', projectId, activeQuery],
@@ -203,10 +267,12 @@ export function useCatalog(
   const easyConnectQuery = useInfiniteQuery({
     queryKey: ['easy-connect-apps', projectId, activeQuery, category],
     queryFn: ({ pageParam }) =>
-      listPipedreamApps(projectId, {
-        ...(activeQuery ? { q: activeQuery } : {}),
-        ...(category ? { category } : {}),
-        ...(pageParam ? { cursor: pageParam as string } : {}),
+      listConnectCatalogPage({
+        projectId,
+        provider: easyConnectProvider,
+        q: activeQuery || undefined,
+        cursor: pageParam as string | undefined,
+        category: category ?? undefined,
         limit: CATALOG_PAGE_SIZE,
       }),
     initialPageParam: undefined as string | undefined,
@@ -227,7 +293,12 @@ export function useCatalog(
         maxCategories: SECTION_COUNT,
       }),
     staleTime: 5 * 60_000,
-    enabled: opts.enabled && easyConnectRunnable && !searching && category === null,
+    enabled:
+      opts.enabled &&
+      easyConnectRunnable &&
+      easyConnectProvider === 'pipedream' &&
+      !searching &&
+      category === null,
   });
 
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
@@ -294,13 +365,29 @@ export function useCatalog(
         items: section.items.slice(0, SECTION_CARD_COUNT),
       }));
     }
-    return (sectionsQuery.data?.sections ?? []).map((section) => ({
-      key: section.key,
-      label: section.label,
-      total: section.total,
-      items: section.apps.map(catalogEntryFromEasyConnect),
+    if (easyConnectProvider === 'pipedream') {
+      return (sectionsQuery.data?.sections ?? []).map((section) => ({
+        key: section.key,
+        label: section.label,
+        total: section.total,
+        items: section.apps.map(catalogEntryFromEasyConnect),
+      }));
+    }
+    // Composio serves each section's "View all" from its own catalogue, filtered
+    // by this key. Curated keys are ours and it does not have them — asking for
+    // `sales-marketing` answers zero, which the grid renders as an empty
+    // catalogue. Keying by the provider's slug keeps the heading and the grid
+    // behind it describing the same set.
+    return catalogSections(entries, {
+      popularCap: SECTION_CARD_COUNT,
+      rawCategoryKeys: easyConnectProvider === 'composio',
+    }).map((section) => ({
+      key: section.category,
+      label: sectionTitle(section.category),
+      total: section.items.length,
+      items: section.items.slice(0, SECTION_CARD_COUNT),
     }));
-  }, [searching, category, source, entries, sectionsQuery.data]);
+  }, [searching, category, source, entries, sectionsQuery.data, easyConnectProvider]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
   const categories = source === 'easy-connect' ? (easyConnectPage?.categories ?? []) : [];
@@ -314,7 +401,11 @@ export function useCatalog(
 
   // The browse page is loading until its own request lands — the paged query
   // behind it says nothing about whether the sections are ready.
-  const showingSections = !searching && category === null && source === 'easy-connect';
+  const showingSections =
+    !searching &&
+    category === null &&
+    source === 'easy-connect' &&
+    easyConnectProvider === 'pipedream';
 
   return {
     entries,
@@ -334,7 +425,7 @@ export function useCatalog(
     // round trip before the real request had started.
     isLoading:
       opts.enabled &&
-      (pipedreamStatus === 'asking' ||
+      (connectStatus.state === 'asking' ||
         active.isLoading ||
         (showingSections && sectionsQuery.isLoading)),
     isRefreshing: opts.enabled && isPlaceholderData,

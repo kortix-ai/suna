@@ -15,7 +15,7 @@ import { Passage } from './passage';
  *
  * WHY IT MATTERS THAT IT IS EARLY. A reader who is told nothing assumes the
  * channel list is long. Naming the closed enum here — Slack live, Teams behind
- * an operator switch, email and voice experimental — is the honest version and
+ * an operator switch and email experimental — is the honest version and
  * it is better delivered before someone goes looking for WhatsApp.
  *
  * Copy and its accuracy gate live in `content.ts`. Read that before editing.

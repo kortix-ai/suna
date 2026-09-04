@@ -245,11 +245,21 @@ flow(
         .has("$.egress_policy", policy);
     });
 
-    await ctx.step("egress delivery is refused until the secrets_egress flag is on → 403", async () => {
-      // Network enforcement is experimental and off by default. Entering egress
-      // is gated: the write path returns 403 feature_disabled until the project
-      // enables the `secrets_egress` flag. (broker/runtime/denied above are not
-      // gated — only egress is.)
+    // `secrets_egress` is ON by default since 2026-09-03 (Marko) — the OPTION
+    // is available to every project, and a new secret still defaults to an
+    // environment variable, so enforcing at the network stays a per-secret
+    // choice. The gate did not go away; it only inverted, and that is what the
+    // next two steps prove. Egress delivery itself is exercised straight after.
+    await ctx.step("a project that turns secrets_egress OFF cannot enter egress → 403", async () => {
+      const off = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          "/v1/projects/:projectId/features",
+          { feature: "secrets_egress", enabled: false },
+          { params: { projectId: p.id } },
+        );
+      off.status(200).body().has("$.experimental.secrets_egress", false);
+
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .put(
@@ -263,7 +273,7 @@ flow(
       r.status(403).body().has("$.code", "feature_disabled").has("$.feature", "secrets_egress");
     });
 
-    await ctx.step("manager enables the experimental secrets_egress flag → 200", async () => {
+    await ctx.step("manager turns the secrets_egress flag back on → 200", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
@@ -518,7 +528,12 @@ flow(
           { names: ["SEC7_TEST_KEY"] },
           { params: { projectId: p.id } },
         );
-      r.status(200).body().has("$.kind", "secret").has("$.names[0]", "SEC7_TEST_KEY").exists("$.url");
+      r.status(200)
+        .body()
+        .has("$.kind", "secret")
+        .has("$.names[0]", "SEC7_TEST_KEY")
+        .has("$.scope", "connector")
+        .exists("$.url");
       const url = r.json<{ url: string }>().url;
       token = url.split("/").pop() ?? "";
       if (!token) throw new Error(`could not extract token from mint url: ${url}`);
@@ -539,6 +554,28 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post("/v1/projects/:projectId/secret-requests", {}, { params: { projectId: p.id } });
+      r.status(400);
+    });
+
+    await ctx.step("runtime delivery requires an explicit scope → 200 runtime", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secret-requests",
+          { names: ["SEC7_RUNTIME_KEY"], scope: "runtime" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.scope", "runtime");
+    });
+
+    await ctx.step("unknown delivery scope → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/secret-requests",
+          { names: ["SEC7_TEST_KEY"], scope: "surprise" },
+          { params: { projectId: p.id } },
+        );
       r.status(400);
     });
 

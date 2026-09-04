@@ -213,6 +213,67 @@ describe('abandonOptimisticSend', () => {
 });
 
 describe('recoverFromSendFailure', () => {
+  // Reported from a live self-host: the user stopped a turn, sent the next
+  // prompt, the SERVER queued it and ran it — and the tab showed nothing. No
+  // bubble, no queued row, the composer back on its send arrow. Everything
+  // appeared ~30s later when the runtime's echo arrived.
+  //
+  // The cause is which authority this function asks. A prompt that goes to the
+  // durable inbox is a CONTROL-PLANE row waiting for admission; it is not in
+  // OpenCode's transcript and will not be until the gate delivers it. Asking
+  // `session.messages()` about it therefore always answers "no such message",
+  // and the recovery deleted the user's bubble on the strength of that answer —
+  // while the row it could not see was already running.
+  //
+  // The row is addressable: the POST carries a `clientMessageId`, so the
+  // ambiguity a lost response creates is RESOLVABLE rather than guessable.
+  test('an inbox-backed send whose row exists is a SUCCESS, not a loss', async () => {
+    beginOptimisticSend('sess-1', 'msg-1', 'go');
+    useSessionWorkingStore.getState().noteSendReceipt('sess-1', { messageId: 'msg-1', atMs: 1 });
+    messagesImpl = async () => ({ data: undefined });
+
+    const classified = recoverFromSendFailure('sess-1', 'msg-1', new Error('network down'), {
+      inboxRowExists: async () => true,
+    });
+    await tick();
+    await tick();
+
+    // The bubble stays: the server has the prompt and is going to run it.
+    expect(useSyncStore.getState().messages['sess-1']?.some((m) => m.id === 'msg-1')).toBe(true);
+    // And the composer keeps saying so — the receipt is re-accepted, because a
+    // row the control plane holds is exactly what a receipt is waiting for.
+    expect(useSessionWorkingStore.getState().receipts['sess-1']?.messageId).toBe('msg-1');
+    expect(classified.kind).toBeDefined();
+  });
+
+  test('an inbox-backed send with NO row still drops the bubble', async () => {
+    beginOptimisticSend('sess-1', 'msg-2', 'never landed');
+    messagesImpl = async () => ({ data: undefined });
+
+    recoverFromSendFailure('sess-1', 'msg-2', new Error('network down'), {
+      inboxRowExists: async () => false,
+    });
+    await tick();
+    await tick();
+
+    expect(useSyncStore.getState().messages['sess-1']?.some((m) => m.id === 'msg-2')).toBe(false);
+  });
+
+  test('an inbox lookup that itself fails keeps the bubble — ambiguity is not proof of loss', async () => {
+    beginOptimisticSend('sess-1', 'msg-3', 'unknown fate');
+    messagesImpl = async () => ({ data: undefined });
+
+    recoverFromSendFailure('sess-1', 'msg-3', new Error('network down'), {
+      inboxRowExists: async () => {
+        throw new Error('inbox unreachable');
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(useSyncStore.getState().messages['sess-1']?.some((m) => m.id === 'msg-3')).toBe(true);
+  });
+
   test('a billing error keeps the optimistic message, clears busy, and rehydrates from the server', async () => {
     beginOptimisticSend('sess-1', 'msg-1', 'buy me a model');
     messagesImpl = async () => ({
@@ -415,6 +476,33 @@ describe('applyOptimisticAbort', () => {
     expect(() => applyOptimisticAbort('sess-empty')).not.toThrow();
     expect(useSyncStore.getState().sessionStatus['sess-empty']).toBeUndefined();
   });
+
+  // The abort belongs to the turn the user just stopped — the LAST one. The
+  // backward walk skipped any assistant message that already carried an error
+  // and kept going, so stopping a turn whose assistant message was already
+  // marked (an earlier interrupt, or a turn that failed) scarred a COMPLETED
+  // turn further up the transcript with "Interrupted" instead.
+  test('never reaches back past the newest assistant message', () => {
+    const store = useSyncStore.getState();
+    store.upsertMessage('sess-3', { id: 'm1', sessionID: 'sess-3', role: 'user' } as any);
+    // A finished, clean turn from earlier in the conversation.
+    store.upsertMessage('sess-3', { id: 'm2', sessionID: 'sess-3', role: 'assistant' } as any);
+    store.upsertMessage('sess-3', { id: 'm3', sessionID: 'sess-3', role: 'user' } as any);
+    // The turn being stopped, already carrying an error of its own.
+    store.upsertMessage('sess-3', {
+      id: 'm4',
+      sessionID: 'sess-3',
+      role: 'assistant',
+      error: { name: 'SomeOtherError', data: {} },
+    } as any);
+
+    applyOptimisticAbort('sess-3');
+
+    const find = (id: string) =>
+      useSyncStore.getState().messages['sess-3']?.find((m) => m.id === id) as any;
+    expect(find('m2').error).toBeUndefined(); // the completed turn is not scarred
+    expect(find('m4').error.name).toBe('SomeOtherError'); // and the newest is left as it was
+  });
 });
 
 // ============================================================================
@@ -457,7 +545,7 @@ describe('replayStartStash', () => {
     const handle = replayStartStash({
       sessionId: 'sess-1',
       timers,
-      checkReadiness: () => ({ model: 'kortix/glm-5.2' }),
+      checkReadiness: () => ({ model: 'kortix/glm-5.3-flash' }),
       prepare: (stash, ready) => ({
         messageId: 'msg-1',
         optimisticText: stash.prompt,

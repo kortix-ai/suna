@@ -35,3 +35,33 @@ export function isLlmGatewayAvailable(project: KortixProject | undefined): boole
     false
   );
 }
+
+/**
+ * Read a STORED model ref (`opencode_model` on a channel binding, schedule,
+ * or agent pin) back into the picker's `ModelKey`, honoring the project's
+ * gateway mode.
+ *
+ *  • Gateway ON — refs are gateway wire ids that live under the synthetic
+ *    `kortix` provider in the picker namespace (`wireToModelKey`).
+ *  • Gateway OFF — refs are OpenCode's native `provider/model` and split on
+ *    the FIRST slash (the model id may itself contain slashes, e.g.
+ *    `openrouter/z-ai/glm-4.7-flash`). Mapping them through `wireToModelKey`
+ *    made every native pin render as "unset": the lookup key claimed
+ *    providerID `kortix`, which no native catalog contains.
+ *
+ * A slash-less ref off-gateway has no native provider; it falls back to the
+ * gateway shape, which simply fails the catalog lookup (renders unset) —
+ * never a crash.
+ */
+export function storedModelRefToKey(
+  ref: string,
+  llmGatewayEnabled: boolean,
+): { providerID: string; modelID: string } {
+  if (!llmGatewayEnabled) {
+    const slash = ref.indexOf('/');
+    if (slash > 0 && slash < ref.length - 1) {
+      return { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) };
+    }
+  }
+  return { providerID: 'kortix', modelID: ref };
+}

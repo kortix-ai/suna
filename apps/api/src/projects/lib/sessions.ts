@@ -8,7 +8,7 @@ import {
 } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
-import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG } from '@kortix/shared';
+import { isMetaAgentName, META_AGENT_NAME, META_SANDBOX_SLUG, PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { checkBillingActive } from '../../billing/services/billing-gate';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import { type SandboxProviderName, config } from '../../config';
@@ -30,7 +30,6 @@ import {
   type ModelSource,
   toOpencodeModelRef,
 } from '../../llm-gateway/resolution/effective';
-import { nativeProviderEnvNames } from '../../llm-gateway/sandbox-credentials';
 import { auth, json } from '../../openapi';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { selectProvider } from '../../platform/services/provider-balancer';
@@ -50,9 +49,10 @@ import {
   sandboxFromLoadedAgents,
   workspaceFromLoadedAgents,
 } from '../agents';
-import { createRemoteSessionBranch } from '../git';
+import { createRemoteSessionBranch , resolveCommitSha } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 import { resolveSessionSecretGrant } from './secret-grant';
+import { validateNativeOpencodeModelRef } from './session-model-change';
 import {
   AmbiguousSecretGrantError,
   intersectSecretGrants,
@@ -64,12 +64,13 @@ import {
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import {
   resolveCompiledAgentConfigForSession,
+  resolveManifestRuntime,
   resolveSelectedAgentConfigForSession,
 } from './compile-agent-config';
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
-import { resolveSessionProvider } from './provider-precedence';
+import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
   ACTIVE_SESSION_STATUSES,
@@ -95,10 +96,7 @@ import {
   generateSessionTitleFromFirstPrompt,
   titleSourceForCreate,
 } from '../session-title-generate';
-import {
-  type PreparedInitialSandboxTurn,
-  prepareInitialSandboxTurn,
-} from '../sandbox-turn-lifecycle';
+import { prepareInitialSandboxTurn } from '../sandbox-turn-lifecycle';
 import { canOverride, resolveSessionOrigin } from './session-origin';
 import { sessionCreatedAuditAttribution } from './session-audit';
 import {
@@ -113,11 +111,12 @@ import {
   parseSessionRuntimeContext,
 } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
-import { buildSessionRuntimeEnv } from './session-runtime-env';
+import { buildPiWorkerSessionEnvVars, buildSessionRuntimeEnv } from './session-runtime-env';
 import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
+import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
 
 export type SessionCreateError = {
   status: number;
@@ -419,8 +418,6 @@ export async function buildSessionSandboxEnvVars(input: {
   repoUrl: string;
   baseRef: string;
   agentName: string;
-  initialPrompt?: string | null;
-  initialTurn?: PreparedInitialSandboxTurn | null;
   opencodeModel?: string | null;
   /** Resolved per-project `llm_gateway` feature flag. Gateway ON →
    *  opencode is locked to the gateway and native provider keys are withheld;
@@ -444,6 +441,10 @@ export async function buildSessionSandboxEnvVars(input: {
   gitDeltaParentSha?: string;
   /** Raw parent commit object used when the provider changed only commit metadata. */
   gitDeltaParentCommitBase64?: string;
+  /** The delta exceeds the env cap; the daemon downloads it with one GET. */
+  gitDeltaBundleRemote?: boolean;
+  /** OpenCode config dir at `baseSha`; lets the daemon spawn OpenCode pre-checkout. */
+  opencodeConfigDir?: string | null;
   /** Project git context, so the running agent's `secrets` grant in `agents:`
    *  can be resolved and applied by IDENTIFIER — secrets the agent isn't
    *  granted are dropped from the injected env (a prompt-injected agent then
@@ -625,9 +626,6 @@ export async function buildSessionSandboxEnvVars(input: {
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     [SECRET_CAPABILITIES_ENV_NAME]: runtimeSecrets.capabilitiesJson,
-    // Runtime-delivered provider keys may reach the sandbox for user code.
-    // OpenCode must not receive them because it would bypass the gateway.
-    KORTIX_OPENCODE_DENY_ENV: input.llmGatewayEnabled ? nativeProviderEnvNames().join(',') : '',
     // No partial-clone filter. Blobless (`blob:none`) defers file blobs to
     // on-demand fetches, which stall through the Kortix git proxy when its
     // partial-clone capability isn't advertised consistently — the clone then
@@ -646,17 +644,14 @@ export async function buildSessionSandboxEnvVars(input: {
     ...buildSessionRuntimeEnv({
       projectId: input.projectId,
       sessionId: input.sessionId,
-      // Universal proxy origin: when enabled, the sandbox clones via the Kortix
-      // git proxy with its own KORTIX_TOKEN — a real host credential never lands
-      // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
-      // the proxy host. OFF → direct clone of the real repo (legacy token flow).
-      repoUrl: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
+      // Every sandbox clones through the Kortix Git proxy with KORTIX_TOKEN.
+      // Direct upstream origins are never delivered to the guest because they
+      // require exposing a provider credential to the sandbox.
+      repoUrl: proxyGitUrl(input.projectId),
       baseRef: input.baseRef,
       agentName: input.agentName,
       apiUrl: deriveKortixApiBase(),
       frontendUrl: sandboxFrontendBaseUrl(),
-      initialPrompt: input.initialPrompt,
-      initialTurn: input.initialTurn,
       // Concrete session model after explicit → agent → project → account →
       // platform resolution. The sandbox uses it for the first OpenCode turn
       // and as the session's OpenCode config default.
@@ -664,12 +659,15 @@ export async function buildSessionSandboxEnvVars(input: {
       compiledAgentConfig,
       workspaceMode: input.workspaceMode,
       fastColdBootEnabled: config.KORTIX_FAST_COLD_BOOT_ENABLED,
+      compiledBootMode: config.KORTIX_COMPILED_BOOT_MODE,
       freshSession: input.freshSession,
       restoreSessionBranch: input.restoreSessionBranch,
       baseSha: input.baseSha,
       gitDeltaBundleBase64: input.gitDeltaBundleBase64,
       gitDeltaParentSha: input.gitDeltaParentSha,
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
+      gitDeltaBundleRemote: input.gitDeltaBundleRemote,
+      opencodeConfigDir: input.opencodeConfigDir,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -858,6 +856,7 @@ export async function createProjectSession(input: {
   row?: ProjectSessionRow;
   error?: SessionCreateError;
   headers?: Record<string, string>;
+  pendingPromptIdempotencyKey?: string | null;
 }> {
   const { project, userId, body } = input;
   const projectId = project.projectId;
@@ -1062,14 +1061,25 @@ export async function createProjectSession(input: {
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
   const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
 
-  // Model: normalize + fail-fast at create. An unservable / retired / typo'd
-  // model pin was previously stored verbatim and only failed at prompt time (a
-  // dead turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
-  // daemon's default because opencode addresses managed models as `kortix/<id>`.
-  // Validate against the same servability resolver the gateway uses, and store
-  // the OPENCODE ref form. Runs BEFORE the billing hold so a bad model never
-  // costs a credit reservation. Mirrors the channel-model gate
-  // (routes/channel-bindings.ts) and the plan's §4.7 fail-fast.
+  // Model: normalize + fail-fast at create. Two paths, forked on the project's
+  // `llm_gateway` flag:
+  //
+  //  • gateway ON — validate against the same servability resolver the gateway
+  //    uses and store the OPENCODE ref form (`kortix/<wire>`). An unservable /
+  //    retired / typo'd pin previously only failed at prompt time (a dead
+  //    turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
+  //    daemon's default because opencode addresses managed models as
+  //    `kortix/<id>`.
+  //  • gateway OFF (native OpenCode) — the gateway resolver has no say.
+  //    OpenCode owns the catalog and connects providers from the keys in the
+  //    box, so the pin is stored VERBATIM in OpenCode's native
+  //    `provider/model` form. Only the shape is checked here: the daemon's
+  //    resolveOpencodeModel drops a slash-less ref silently, and a `kortix/…`
+  //    ref names a provider that does not exist off-gateway — both would be a
+  //    dead pin, so both fail fast instead.
+  //
+  // Runs BEFORE the billing hold so a bad model never costs a credit
+  // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
   const requestedModel = normalizeString(body.opencode_model ?? body.opencodeModel);
   let opencodeModel: string | null = null;
   let opencodeModelSource: ModelSource | null = null;
@@ -1082,26 +1092,40 @@ export async function createProjectSession(input: {
         },
       };
     }
-    const servable = await isModelServableForAccount({
-      userId,
-      accountId,
-      projectId,
-      freeModelsOnly,
-      model: requestedModel,
-    });
-    if (!servable) {
-      return {
-        error: {
-          status: 400,
-          body: {
-            error: `Model "${requestedModel}" is not available for this account`,
-            code: 'INVALID_SESSION_MODEL',
+    if (!llmGatewayEnabled) {
+      const nativeShapeError = validateNativeOpencodeModelRef(requestedModel);
+      if (nativeShapeError) {
+        return {
+          error: {
+            status: 400,
+            body: { error: nativeShapeError.message, code: nativeShapeError.code },
           },
-        },
-      };
+        };
+      }
+      opencodeModel = requestedModel;
+      opencodeModelSource = 'explicit';
+    } else {
+      const servable = await isModelServableForAccount({
+        userId,
+        accountId,
+        projectId,
+        freeModelsOnly,
+        model: requestedModel,
+      });
+      if (!servable) {
+        return {
+          error: {
+            status: 400,
+            body: {
+              error: `Model "${requestedModel}" is not available for this account`,
+              code: 'INVALID_SESSION_MODEL',
+            },
+          },
+        };
+      }
+      opencodeModel = toOpencodeModelRef(requestedModel);
+      opencodeModelSource = 'explicit';
     }
-    opencodeModel = toOpencodeModelRef(requestedModel);
-    opencodeModelSource = 'explicit';
   } else if (llmGatewayEnabled) {
     try {
       const resolved = await resolveEffectiveModel({
@@ -1311,8 +1335,10 @@ export async function createProjectSession(input: {
       },
     };
   }
-  const providerName: SandboxProviderName =
-    'provider' in picked ? (picked.provider as SandboxProviderName) : await selectProvider();
+  const providerLocked = sessionProviderIsLocked(picked);
+  const providerName: SandboxProviderName = providerLocked
+    ? (picked as { provider: string }).provider as SandboxProviderName
+    : await selectProvider();
 
   const callbackUnreachable =
     sandboxCallbackUnreachableReason() ?? (await sandboxCallbackDeadTunnelReason());
@@ -1325,7 +1351,48 @@ export async function createProjectSession(input: {
   // Validate the requested sandbox template up front so the user gets a clean
   // 400 instead of an async session-failed if they typed a slug that doesn't
   // exist. The platform default is always valid.
-  if (!platformMetaAgent && sandboxSlug && sandboxSlug !== DEFAULT_SANDBOX_SLUG) {
+  // Harness/worker split: with the project's pi_worker flag on AND the manifest
+  // declaring `runtime: pi`, the session boots the shared pi worker image and
+  // its compiled runtime artifact instead of the OpenCode stack. Both gates or
+  // nothing — the flag alone only compiles artifacts, the manifest alone is
+  // inert, and any resolution failure falls back to the OpenCode path.
+  let piWorkerBoot = false;
+  let piWorkerSha: string | null = null;
+  if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
+    try {
+      const authedProject = await withProjectGitAuth(project);
+      const ref = (baseRef ?? '').trim() || project.defaultBranch;
+      // One round trip, not two: the runtime read and the tip resolution are
+      // independent, and both sit on the POST /sessions critical path. A
+      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
+      // a full sequential git hop.
+      const [runtime, sha] = await Promise.all([
+        resolveManifestRuntime(authedProject, baseRef),
+        resolveCommitSha(authedProject, ref).catch(() => null),
+      ]);
+      if (runtime === 'pi' && sha) {
+        piWorkerSha = sha;
+        piWorkerBoot = true;
+        sandboxSlug = PI_WORKER_SANDBOX_SLUG;
+      } else if (runtime === 'pi') {
+        console.warn(
+          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[sessions] pi worker resolution failed for ${projectId}; booting OpenCode path:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  if (
+    !platformMetaAgent &&
+    sandboxSlug &&
+    sandboxSlug !== DEFAULT_SANDBOX_SLUG &&
+    sandboxSlug !== PI_WORKER_SANDBOX_SLUG
+  ) {
     try {
       await resolveTemplate(
         {
@@ -1601,9 +1668,8 @@ export async function createProjectSession(input: {
 
   setContextField('sessionId', sessionId);
 
-  // A prompt supplied at create is baked into KORTIX_INITIAL_PROMPT and runs
-  // inside the box — it never crosses the API again, so this is the only moment
-  // it can be titled. No modelHint: the row already carries `opencode_model`.
+  // A prompt supplied at create is claimed by the session daemon. This is the
+  // earliest title source. No modelHint: the row already carries `opencode_model`.
   const titleSource = titleSourceForCreate(body);
   if (titleSource) {
     void generateSessionTitleFromFirstPrompt({
@@ -1634,7 +1700,16 @@ export async function createProjectSession(input: {
       // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
       // with gitAuth (folded into the env-build chain, not awaited inline).
       let fastBootHintTimeout: ReturnType<typeof setTimeout> | undefined;
-      const fastBootGitHintPromise = config.KORTIX_FAST_COLD_BOOT_ENABLED
+      // Default on (KORTIX_FAST_GIT_BOOT_ENABLED): the hint is what lets the
+      // daemon boot with ZERO proxied git requests (scaffold + delta) and spawn
+      // OpenCode before the checkout. Bounded by the 2 s race below; a miss
+      // just means the daemon's fetch fallback. Deliberately NOT tied to
+      // KORTIX_FAST_COLD_BOOT_ENABLED (the image/rootfs experiment), which
+      // deploy-dev pins to an explicit `false`.
+      // The worker path never clones: the scaffold/delta hint is pure waste
+      // there, and the hint alone holds the env build for up to 2 s.
+      const fastBootGitHintPromise =
+        !piWorkerBoot && config.KORTIX_FAST_GIT_BOOT_ENABLED
         ? Promise.race([
             projectWithGitAuthPromise
               .then((projectWithGitAuth) =>
@@ -1652,7 +1727,70 @@ export async function createProjectSession(input: {
             if (fastBootHintTimeout) clearTimeout(fastBootHintTimeout);
           })
         : Promise.resolve(undefined);
-      const envPromise = fastBootGitHintPromise
+      // OpenCode compiled-boot artifacts serve the daemon path only; a worker
+      // boot fetches its own per-commit pi artifact instead.
+      if (!piWorkerBoot && config.KORTIX_COMPILED_BOOT_MODE !== 'off') {
+        void Promise.all([projectWithGitAuthPromise, fastBootGitHintPromise])
+          .then(([projectWithGitAuth, hint]) =>
+            hint?.baseSha
+              ? prebuildCompiledBootArtifacts(
+                  projectWithGitAuth,
+                  baseRef,
+                  hint.baseSha,
+                  proxyGitUrl(projectId),
+                )
+              : null,
+          )
+          .then((artifacts) => {
+            if (!artifacts) return;
+            console.info('[compiled-boot] session artifacts ready', {
+              projectId,
+              sessionId,
+              ref: baseRef,
+              sourceSha: artifacts.runtime.sourceSha,
+              checkoutCache: artifacts.checkout.cacheHit ? 'hit' : 'miss',
+              runtimeCache: artifacts.runtime.cacheHit ? 'hit' : 'miss',
+            });
+          })
+          .catch((error) => {
+            console.warn('[compiled-boot] session artifact prebuild failed', {
+              projectId,
+              sessionId,
+              ref: baseRef,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
+      // Worker boots skip the OpenCode env build entirely: the compiled
+      // artifact already carries the agent map, v0 grants the worker no
+      // project secrets (the gateway resolves BYOK server-side per request),
+      // and nothing clones. Measured on dev 2026-08-27, the full chain
+      // (hint race + compiled config + secret grant + secrets snapshot) cost
+      // 1.1–2.4 s of every cold pi boot.
+      const envPromise = piWorkerBoot
+        ? Promise.resolve(
+            buildPiWorkerSessionEnvVars({
+              projectId,
+              sessionId,
+              agentName,
+              // Only an EXPLICIT session model may override the baked agent
+              // model — the platform/project fallback resolution exists for
+              // the OpenCode path and must not clobber the artifact's own
+              // model (KORTIX_MODEL wins over the bake inside the worker).
+              // Stripped to the native ref: the worker's env path takes the
+              // value verbatim, unlike the baked path which de-prefixes.
+              opencodeModel:
+                opencodeModelSource === 'explicit' && opencodeModel
+                  ? opencodeModel.replace(/^kortix\//, '')
+                  : null,
+              apiUrl: deriveKortixApiBase(),
+              frontendUrl: sandboxFrontendBaseUrl(),
+            }),
+          ).then((envVars) => {
+            tl.mark('env-vars');
+            return envVars;
+          })
+        : fastBootGitHintPromise
         .then((fastBootGitHint) =>
           buildSessionSandboxEnvVars({
             accountId,
@@ -1662,16 +1800,16 @@ export async function createProjectSession(input: {
             repoUrl: project.repoUrl,
             baseRef,
             agentName,
-            initialPrompt,
-            initialTurn,
             opencodeModel,
             llmGatewayEnabled,
             platformMetaAgent,
             freshSession: true,
             baseSha: fastBootGitHint?.baseSha,
             gitDeltaBundleBase64: fastBootGitHint?.gitDeltaBundleBase64,
+            gitDeltaBundleRemote: fastBootGitHint?.gitDeltaBundleRemote,
             gitDeltaParentSha: fastBootGitHint?.gitDeltaParentSha,
             gitDeltaParentCommitBase64: fastBootGitHint?.gitDeltaParentCommitBase64,
+            opencodeConfigDir: fastBootGitHint?.opencodeConfigDir,
             defaultBranch: project.defaultBranch,
             manifestPath: project.manifestPath,
             workspaceMode,
@@ -1736,11 +1874,32 @@ export async function createProjectSession(input: {
         projectId,
         userId,
         agentName,
-        allowProjectImage: projectImageAllowedForSession(agentName, workspaceMode),
-        provider: providerName,
-        metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
+        allowProjectImage: piWorkerBoot
+          ? false
+          : projectImageAllowedForSession(agentName, workspaceMode),
+        // v0 pins the worker to Daytona: the entrypoint override in
+        // ensurePiWorkerImage is only exercised there so far. Lift once the
+        // other adapters' entrypoint handling is verified.
+        provider: piWorkerBoot ? 'daytona' : providerName,
+        providerLocked: piWorkerBoot ? true : providerLocked,
+        metadata: {
+          session_id: sessionId,
+          project_id: projectId,
+          ...(piWorkerBoot ? { pi_worker_boot: true } : {}),
+          ...(input.metadata ?? {}),
+        },
         initialTurn,
-        extraEnvVars,
+        extraEnvVars:
+          piWorkerBoot && piWorkerSha
+            ? {
+                ...extraEnvVars,
+                // The worker's entrypoint composes the artifact URL from these
+                // plus KORTIX_API_URL/KORTIX_PROJECT_ID/KORTIX_TOKEN it
+                // already receives.
+                KORTIX_PI_RUNTIME_REF: (baseRef ?? '').trim() || project.defaultBranch,
+                KORTIX_PI_RUNTIME_SHA: piWorkerSha,
+              }
+            : extraEnvVars,
         projectMetadata: project.metadata,
         gitProject: {
           projectId,
@@ -1787,5 +1946,10 @@ export async function createProjectSession(input: {
     }
   })();
 
-  return { row: sessionRow, headers: responseHeaders };
+  return {
+    row: sessionRow,
+    headers: responseHeaders,
+    pendingPromptIdempotencyKey:
+      pendingPromptConversion?.rowValues?.idempotencyKey ?? null,
+  };
 }

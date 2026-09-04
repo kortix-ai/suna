@@ -42,17 +42,16 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts } from '@kortix/sdk';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClockIcon as Clock,
   WarningIcon as DangerTriangleSolid,
 } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { LanguageSwitcher } from './language-switcher';
@@ -61,13 +60,8 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const t = useTranslations('settings.general');
   const tCommon = useTranslations('common');
-  const router = useRouter();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
   const accountId = selectedAccountId ?? accountsQuery.data?.[0]?.account_id ?? null;
 
   useEffect(() => {
@@ -371,16 +365,12 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                 <ItemDescription>{t('accountSettings.description')}</ItemDescription>
               </ItemContent>
               <ItemActions>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    onClose();
-                    router.push(`/accounts/${accountId}`);
-                  }}
-                >
-                  {t('accountSettings.button')}
-                  <ArrowUpRight className="size-3.5" />
+                <Button asChild variant="outline" size="sm">
+                  {/* The anchor navigates; `onClose` only shuts the dialog. */}
+                  <Link href={`/accounts/${accountId}`} onClick={onClose}>
+                    {t('accountSettings.button')}
+                    <ArrowUpRight className="size-3.5" />
+                  </Link>
                 </Button>
               </ItemActions>
             </Item>

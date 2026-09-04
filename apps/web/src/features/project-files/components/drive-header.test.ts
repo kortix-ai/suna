@@ -54,45 +54,77 @@ const headerCode = headerSource
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^[ \t]*\/\/.*$/gm, '');
 
+const capabilityTabsSource = readFileSync(
+  join(repoRoot, 'apps/web/src/features/workspace/capabilities/shared/capability-tabs.tsx'),
+  'utf8',
+);
+
 describe('standalone Files header sidebar opener', () => {
-  // ProjectShell draws a web opener only on the desktop shell. On the web
-  // each view owns its own, gated by useShowPageSidebarOpener(). DriveHeader
-  // used to only pad for a toggle the shell never rendered.
-  test('visibility comes from the shared gate, not overlay padding', () => {
-    expect(headerSource).toContain('useShowPageSidebarOpener()');
-    expect(headerSource).toContain('sidebarOpenerLabel');
-    expect(headerSource).toContain('peekEnter');
-    expect(headerSource).toContain('peekLeave');
+  // ProjectShell draws a web opener only on the desktop shell. On the web every
+  // view renders the one `SidebarToggle`, which self-gates on
+  // useShowPageSidebarOpener() — pinned in
+  // project-layout/sidebar-toggle.test.ts. DriveHeader used to only pad for a
+  // toggle the shell never rendered, then grew its own copy of one.
+  test('renders the shared opener, not a local copy', () => {
+    expect(headerSource).toContain('<SidebarToggle />');
+    expect(headerCode).not.toContain('toggleSidebar');
+    expect(headerCode).not.toContain('sidebarOpenerLabel');
   });
 
-  test('the opener sits in flow with the title, not absolute over it', () => {
-    const toggleStart = headerCode.indexOf('function FilesSidebarToggle');
-    const toggleEnd = headerCode.indexOf('export function DriveHeader');
-    expect(toggleStart).toBeGreaterThan(-1);
-    const toggle = headerCode.slice(toggleStart, toggleEnd);
-    expect(toggle).not.toContain('absolute');
-    expect(toggle).not.toContain('pl-14');
-    expect(toggle).toContain('toggleSidebar');
+  test('the opener sits in flow with the path bar, not absolute over it', () => {
+    expect(headerCode).not.toContain('placement="floating"');
+    expect(headerCode).not.toContain('pl-14');
   });
 });
 
 describe('driveHeaderClass', () => {
   test('standalone header does not reserve overlay space for a missing toggle', () => {
-    const className = driveHeaderClass(true, true);
+    const className = driveHeaderClass(true);
     expect(className).not.toContain('md:pl-14');
     expect(className).not.toContain('pt-14');
   });
 
   test('opts the embedded session view out of the title-bar offsets entirely', () => {
-    const className = driveHeaderClass(false, true);
+    const className = driveHeaderClass(false);
     expect(className).not.toContain(FILES_HEADER_DESKTOP_CLASS);
     expect(className).not.toContain('md:pl-14');
-    expect(className).toContain('py-2');
   });
 
   test('tags every standalone header with the desktop title-bar hook', () => {
-    expect(driveHeaderClass(true, true)).toContain(FILES_HEADER_DESKTOP_CLASS);
-    expect(driveHeaderClass(true, false)).toContain(FILES_HEADER_DESKTOP_CLASS);
+    expect(driveHeaderClass(true)).toContain(FILES_HEADER_DESKTOP_CLASS);
+  });
+
+  /**
+   * The whole point of the redesign: Files is ONE row, the same row every
+   * other project surface draws. A wrapping multi-line header is what let a
+   * second full-width toolbar look normal underneath it.
+   */
+  test('is a single fixed-height row, not a wrapping block', () => {
+    const className = driveHeaderClass(true);
+    expect(className).toContain('h-11');
+    expect(className).not.toContain('flex-wrap');
+    expect(className).not.toContain('gap-y-');
+  });
+});
+
+describe('parity with the capability tab row', () => {
+  /**
+   * Files used to carry `.kx-files-header`, a near-duplicate of the capability
+   * row's hook with its own platform split — two rules for one behaviour, and
+   * they were free to drift. Same class now, so they cannot.
+   */
+  test('wears the SAME desktop title-bar hook as the capability header', () => {
+    expect(FILES_HEADER_DESKTOP_CLASS).toBe('kx-titlebar-row');
+    expect(capabilityTabsSource).toContain(FILES_HEADER_DESKTOP_CLASS);
+  });
+
+  test('the retired Files-only hook is gone from the stylesheet', () => {
+    expect(globalsCss).not.toContain('kx-files-header');
+  });
+
+  test('matches the capability row height so the two surfaces share a rhythm', () => {
+    // `h-11` == the capability row's `py-3` triggers around `text-sm` (44px).
+    expect(driveHeaderClass(true)).toContain('h-11');
   });
 });
 
@@ -101,9 +133,9 @@ describe('desktop title-bar clearance rules', () => {
     expect(globalsCss).toContain(`.${FILES_HEADER_DESKTOP_CLASS}`);
   });
 
-  test('macOS clears the traffic lights and the shell toggle while collapsed', () => {
+  test('the left indent clears the traffic lights and the shell toggle while collapsed', () => {
     const rule = new RegExp(
-      `html\\[data-desktop-platform='macos'\\] \\.${FILES_HEADER_DESKTOP_CLASS}\\[data-sidebar-collapsed\\] \\{\\s*padding-left: var\\((--[\\w-]+)\\);`,
+      `html\\[data-desktop='true'\\] \\.${FILES_HEADER_DESKTOP_CLASS}\\[data-sidebar-collapsed\\] \\{\\s*padding-left: var\\((--[\\w-]+)\\);`,
     ).exec(globalsCss);
 
     expect(rule).not.toBeNull();
@@ -113,9 +145,9 @@ describe('desktop title-bar clearance rules', () => {
     expect(bandVarPx(rule![1], 'macos')).toBe(band.contentLeft);
   });
 
-  test('Win/Linux clears the top-right window controls instead', () => {
+  test('the right indent clears the Win/Linux window controls', () => {
     const rule = new RegExp(
-      `html\\[data-desktop='true'\\]:not\\(\\[data-desktop-platform='macos'\\]\\) \\.${FILES_HEADER_DESKTOP_CLASS} \\{\\s*padding-right: var\\((--[\\w-]+)\\);`,
+      `html\\[data-desktop='true'\\] \\.${FILES_HEADER_DESKTOP_CLASS} \\{\\s*padding-right: calc\\([^)]*var\\((--[\\w-]+)\\)`,
     ).exec(globalsCss);
 
     expect(rule).not.toBeNull();
@@ -126,9 +158,7 @@ describe('desktop title-bar clearance rules', () => {
   // zero there — otherwise every row wearing it reserves a phantom right
   // gutter on the platform that does not need one.
   test('the right-edge reservation is platform-scoped, not global', () => {
-    const macBlock = globalsCss.match(
-      /html\[data-desktop-platform='macos'\]\s*\{([^}]*)\}/,
-    );
+    const macBlock = globalsCss.match(/html\[data-desktop-platform='macos'\]\s*\{([^}]*)\}/);
     expect(macBlock).not.toBeNull();
     expect(macBlock![1]).toMatch(/--kx-titlebar-controls-width:\s*0px/);
   });

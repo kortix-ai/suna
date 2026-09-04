@@ -1,13 +1,14 @@
 import {
   ArrowCircleUpIcon as ArrowUpCircle,
-  WaveformIcon as AudioLines,
   ShippingContainerIcon as Container,
   FlaskIcon as Flask,
+  GitBranchIcon as GitBranch,
   TrayIcon as Inbox,
   GearSixIcon as Settings,
   type Icon,
 } from '@phosphor-icons/react';
 
+import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 import type { CustomizeSection } from '@/lib/project-actions';
 
 /**
@@ -49,12 +50,7 @@ import type { CustomizeSection } from '@/lib/project-actions';
  * at the key below that replaced it.
  */
 export type ProjectSettingsSectionKey =
-  | 'general'
-  | 'sandbox'
-  | 'review'
-  | 'voice'
-  | 'feature-flags'
-  | 'upgrades';
+  'general' | 'git' | 'sandbox' | 'review' | 'feature-flags' | 'upgrades';
 
 /**
  * **One flat list, no headings.** The sub-nav used to carry the rail's three
@@ -88,6 +84,16 @@ const STATIC_SECTIONS: readonly ProjectSettingsSection[] = [
     key: 'general',
     label: 'General',
     icon: Settings,
+    gate: 'settings',
+  },
+  // Its own section since 2026-09-03 (Marko): the repository, its status,
+  // the base branch, the manifest file and who can reach the repo are one
+  // subject, and they were a long tail under General.
+  {
+    key: 'git',
+    label: 'Git repo',
+    icon: GitBranch,
+    description: 'The repository this workspace runs from, and who can reach it.',
     gate: 'settings',
   },
   {
@@ -127,7 +133,7 @@ const UPGRADES_SECTION: ProjectSettingsSection = {
   gate: 'upgrade',
 };
 
-const REVIEW_SECTION: ProjectSettingsSection = {
+export const REVIEW_SECTION: ProjectSettingsSection = {
   key: 'review',
   label: 'Review',
   icon: Inbox,
@@ -135,18 +141,8 @@ const REVIEW_SECTION: ProjectSettingsSection = {
   gate: 'review',
 };
 
-const VOICE_SECTION: ProjectSettingsSection = {
-  key: 'voice',
-  label: 'Voice',
-  description:
-    'Send the agent into a call. It listens, answers out loud, and keeps working while you talk.',
-  icon: AudioLines,
-  gate: 'voice',
-};
-
 export interface ProjectSettingsSectionFlags {
   reviewEnabled: boolean;
-  voiceEnabled: boolean;
 }
 
 /**
@@ -161,15 +157,19 @@ export function projectSettingsSections(
   flags: ProjectSettingsSectionFlags,
 ): readonly ProjectSettingsSection[] {
   const sections = [...STATIC_SECTIONS];
-  if (flags.reviewEnabled) sections.push(REVIEW_SECTION);
-  if (flags.voiceEnabled) sections.push(VOICE_SECTION);
+  // Review is NOT a section here any more: it is a capability tab of its own
+  // (`capability-tab-routes.ts`, 2026-09-02). Listing it twice — as a tab and
+  // as a Settings section — was the leftover of restoring this page. The flag
+  // still gates the tab; `REVIEW_SECTION` stays exported for the legacy
+  // `?section=review` redirect target and the pane switch.
+  void flags.reviewEnabled;
   sections.push(FEATURE_FLAGS_SECTION, UPGRADES_SECTION);
   return sections;
 }
 
 /** Every section, independent of any flag — for copy lookups and tests. */
 export const ALL_PROJECT_SETTINGS_SECTIONS: readonly ProjectSettingsSection[] =
-  projectSettingsSections({ reviewEnabled: true, voiceEnabled: true });
+  projectSettingsSections({ reviewEnabled: true });
 
 /**
  * The section a `?section=` value names. `general` is the default because it
@@ -192,8 +192,8 @@ export function projectSettingsSectionHref(
   key: ProjectSettingsSectionKey,
 ): string {
   return key === DEFAULT_PROJECT_SETTINGS_SECTION
-    ? `/projects/${projectId}/config`
-    : `/projects/${projectId}/config?section=${key}`;
+    ? capabilityTabHref(projectId, 'config')
+    : `${capabilityTabHref(projectId, 'config')}?section=${key}`;
 }
 
 /** The copy for one section, independent of any flag — used by pane headings. */

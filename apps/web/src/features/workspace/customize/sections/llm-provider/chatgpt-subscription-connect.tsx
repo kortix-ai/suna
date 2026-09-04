@@ -4,18 +4,24 @@ import { ChatGptDeviceChallenge } from '@/components/projects/chatgpt-device-cha
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
-import { successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { ProviderLogo } from '@/features/providers/provider-branding';
-import { pollProjectProviderOAuth, startProjectProviderOAuth } from '@kortix/sdk';
-import { qk, refreshProjectProviderState } from '@kortix/sdk/react';
+import {
+  deleteProjectProviderOAuth,
+  listProjectSecrets,
+  pollProjectProviderOAuth,
+  startProjectProviderOAuth,
+} from '@kortix/sdk';
+import { contract, qk, refreshProjectProviderState } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircle2,
   WarningIcon as TriangleAlert,
 } from '@phosphor-icons/react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { subscriptionIsConnected, subscriptionPrimaryAction } from './subscription-control';
 import type { ChatGptChallenge, ChatGptPhase } from './types';
 import { sleep } from './utils';
 
@@ -105,7 +111,39 @@ export function ChatGptSubscriptionConnect({
     }
   }, [projectId, queryClient, onConnected]);
 
+  // What the PROJECT holds, not what this component remembers doing. A
+  // credential connected in another tab, another surface, or before this page
+  // load is still connected — and until this read existed the card offered
+  // "Connect ChatGPT" over it and no way to remove it at all.
+  const secretsQuery = useQuery({
+    queryKey: qk.project.secrets(projectId),
+    queryFn: () => listProjectSecrets(projectId),
+    ...contract('config'),
+  });
+  const connected = useMemo(() => {
+    const data = secretsQuery.data;
+    const items = Array.isArray(data) ? data : (data?.items ?? []);
+    return subscriptionIsConnected(items.map((item) => item.name));
+  }, [secretsQuery.data]);
+
+  const disconnect = useMutation({
+    // The server route was always correct and always unreachable: it deletes
+    // the credential, audits it, and refreshes the model catalog. Nothing in
+    // the product called it.
+    mutationFn: () => deleteProjectProviderOAuth(projectId, 'openai'),
+    onSuccess: () => {
+      successToast('ChatGPT subscription disconnected');
+      setPhase('idle');
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
+      refreshProjectProviderState(queryClient, projectId);
+    },
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : 'Failed to disconnect the subscription'),
+  });
+
   const waiting = phase === 'waiting';
+  const action = subscriptionPrimaryAction({ connected, failed: !!error });
 
   return (
     <div className="bg-popover rounded-md border px-4 py-4">
@@ -152,7 +190,7 @@ export function ChatGptSubscriptionConnect({
         </div>
       )}
 
-      {phase === 'done' && (
+      {(phase === 'done' || (connected && !waiting)) && (
         <InfoBanner tone="success" icon={CheckCircle2} className="mt-3 text-xs">
           {tHardcodedUi.raw(
             'autoComponentsProjectsProjectProviderModalJsxTextChatGPTSubscriptionConnectedcf12bc87',
@@ -171,6 +209,17 @@ export function ChatGptSubscriptionConnect({
           <Button type="button" size="sm" variant="outline" className="px-4" onClick={reset}>
             Cancel
           </Button>
+        ) : action === 'disconnect' ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="px-4"
+            disabled={disconnect.isPending}
+            onClick={() => disconnect.mutate()}
+          >
+            {disconnect.isPending ? 'Disconnecting…' : 'Disconnect ChatGPT'}
+          </Button>
         ) : (
           <Button
             type="button"
@@ -179,7 +228,7 @@ export function ChatGptSubscriptionConnect({
             className="px-4"
             onClick={handleConnect}
           >
-            {error || phase === 'done' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
+            {action === 'reconnect' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
           </Button>
         )}
       </div>

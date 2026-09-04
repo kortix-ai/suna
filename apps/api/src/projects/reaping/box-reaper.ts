@@ -33,10 +33,12 @@
  * billed while stopped" an invariant rather than a best-effort.
  */
 
+import { scheduleLegacyRuntimeBootstrap } from '../lib/legacy-runtime-bootstrap-wiring';
 import { markComputeSessionAlive } from '../../billing/services/compute-metering';
 import { type SandboxProvider, type SandboxStatus, getProvider } from '../../platform/providers';
 import { invalidateProviderCache } from '../../sandbox-proxy';
 import { REAP_CONCURRENCY } from '../reaper-constants';
+import { sandboxBelongsToThisInstance } from '../instance-scope';
 import { preserveEstablishedRuntime } from '../runtime-identity';
 import { extendUnconfirmedTurnDeadline } from '../sandbox-deadline';
 import { turnDeliveryGraceMs, turnGrantMs } from '../sandbox-deadline-policy';
@@ -45,6 +47,7 @@ import {
   requeueAbandonedPrompt,
 } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   type SandboxTurnDeliveryReconciliation,
   type SandboxTurnObservation,
@@ -101,6 +104,7 @@ export const EMPTY_REAP_RESULT: ReapResult = {
 };
 
 export interface SandboxReaperDependencies {
+  scheduleLegacyRuntimeBootstrap: typeof scheduleLegacyRuntimeBootstrap;
   renewActiveSandboxTurn: typeof renewActiveSandboxTurn;
   observeSandboxTurn: typeof observeSandboxTurn;
   reconcileSandboxTurnDelivery: typeof reconcileSandboxTurnDelivery;
@@ -108,9 +112,12 @@ export interface SandboxReaperDependencies {
   finalizeHuskTurn: typeof finalizeHuskTurn;
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
+  promoteNextInboxRow: typeof promoteNextInboxRow;
+  drainSessionLifecycleQueue: (input: { idempotencyKey: string }) => Promise<unknown>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
+  scheduleLegacyRuntimeBootstrap,
   renewActiveSandboxTurn,
   observeSandboxTurn,
   reconcileSandboxTurnDelivery,
@@ -118,6 +125,11 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   finalizeHuskTurn,
   extendUnconfirmedTurnDeadline,
   requeueAbandonedPrompt,
+  promoteNextInboxRow,
+  drainSessionLifecycleQueue: async (input) => {
+    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/engine');
+    return drainSessionLifecycleQueue(input);
+  },
 };
 
 /**
@@ -133,6 +145,20 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
  * still well inside one reaper pass, so it costs a dropped prompt nothing.
  */
 const ORPHANED_PROMPT_MIN_AGE_MS = 30_000;
+
+/**
+ * Per-sandbox probe back-off after an `unknown` turn observation, in this
+ * process. 20 s → 40 s → … → 5 min, cleared by the first readable answer.
+ * Per replica on purpose: no shared state to fail on, and two replicas
+ * together still ask far less than the old fixed cadence.
+ */
+const PROBE_BACKOFF_MIN_MS = 20_000;
+const PROBE_BACKOFF_MAX_MS = 5 * 60_000;
+const probeBackoff = new Map<string, { backoffMs: number; until: number }>();
+/** Tests: forget every back-off. */
+export function __resetProbeBackoffForTests(): void {
+  probeBackoff.clear();
+}
 
 /**
  * Give an inbox prompt back when its delivery is PROVEN never to have run.
@@ -170,6 +196,45 @@ async function redeliverAbandonedPrompt(
     }
   } catch (error) {
     console.warn('[reaper] prompt redelivery failed', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Release one durable queue row after terminal evidence removed turn authority. */
+async function releaseQueuedPromptAfterTerminalTurn(
+  dependencies: SandboxReaperDependencies,
+  row: { sessionId: string | null; sandboxId: string },
+  turn: { token: string },
+): Promise<void> {
+  if (!row.sessionId) return;
+  try {
+    const promotedPromptId = await dependencies.promoteNextInboxRow(row.sessionId);
+    console.info('[reaper] terminal turn queue settlement', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      queuePromoted: promotedPromptId !== null,
+      promotedPromptId,
+    });
+    if (promotedPromptId) {
+      void dependencies
+        .drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId })
+        .catch((error) =>
+          console.warn('[reaper] targeted queue drain failed', {
+            sandboxId: row.sandboxId,
+            sessionId: row.sessionId,
+            turnToken: turn.token,
+            promotedPromptId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+    }
+  } catch (error) {
+    console.warn('[reaper] terminal turn queue promotion failed', {
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,
       turnToken: turn.token,
@@ -223,6 +288,11 @@ export async function reapAndReconcileSandboxes(
   const worker = async () => {
     while (cursor < rows.length) {
       const row = rows[cursor++];
+      // INSTANCE SCOPE (shared local DB — ../instance-scope.ts): instance A
+      // never probes or stops a box instance B provisioned. Sits beside the
+      // provider-level `kortix.env` filter in listManagedRunningSandboxes.
+      // No-op when KORTIX_INSTANCE_ID is unset.
+      if (!sandboxBelongsToThisInstance(row.metadata)) continue;
       try {
         const provider = getProvider(row.provider);
         const providerStatus: SandboxStatus = await provider.getStatus(row.externalId);
@@ -238,6 +308,19 @@ export async function reapAndReconcileSandboxes(
               err instanceof Error ? err.message : err,
             ),
           );
+          // A running box whose daemon predates runtime convergence can never
+          // update itself; give it a supervisor and a current daemon from here.
+          // Fire-and-forget behind its own gates (legacy-runtime-bootstrap.ts):
+          // one health probe per box per 6 h on a converged fleet, never under
+          // a busy OpenCode, bounded attempts per API build.
+          dependencies.scheduleLegacyRuntimeBootstrap({
+            sandboxId: row.sandboxId,
+            sessionId: row.sessionId ?? null,
+            accountId: row.accountId ?? null,
+            provider: row.provider,
+            externalId: row.externalId,
+            metadata: (row.metadata ?? null) as Record<string, unknown> | null,
+          });
           // A running box has answered the pending-stop question. Dropping the
           // marker here is what keeps the confirmation about THIS provider
           // transition: an aged marker left on a healthy box would let the next
@@ -258,6 +341,7 @@ export async function reapAndReconcileSandboxes(
           // answered unknown`, which is a statement about answers, not about
           // records. EVERY record is probed, so the count is complete.
           let unreadableTurns = 0;
+          let backedOffProbes = 0;
           // Probes the daemon ANSWERED, whatever it said. A separate fact from
           // the observation, and the drip below needs it: an answer proves the
           // runtime is up and only its description of the turn is missing (an
@@ -302,15 +386,26 @@ export async function reapAndReconcileSandboxes(
                   : turn.startedAtMs + turnDeliveryGraceMs();
               const withinDeliveryGrace =
                 turn.state === 'delivering' && deliveryGraceEndsAtMs > now.getTime();
-              const { observation, endReason, daemonAnswered, orphanedPrompt } =
-                await dependencies.observeSandboxTurn(
-                  provider,
-                  row.externalId,
-                  row.sandboxId,
-                  turn,
-                );
+              // Back-off on "could not tell": a box that answered `unknown`
+              // is not asked again until its back-off elapses. The extension
+              // below still happens (the record's own bound governs it), the
+              // PROBE does not. Essentia 2026-08-25: two replicas probed one
+              // box 345 times in an hour, each probe made OpenCode serialise
+              // its 140 MB transcript, and the kernel OOM-killed it.
+              const backoff = probeBackoff.get(row.sandboxId);
+              const backedOff = backoff !== undefined && backoff.until > now.getTime();
+              const { observation, endReason, daemonAnswered, orphanedPrompt } = backedOff
+                ? ({ observation: 'unknown', endReason: null, daemonAnswered: false, orphanedPrompt: false } as const)
+                : await dependencies.observeSandboxTurn(
+                    provider,
+                    row.externalId,
+                    row.sandboxId,
+                    turn,
+                  );
               if (observation === 'unknown') unreadableTurns += 1;
+              else probeBackoff.delete(row.sandboxId);
               if (daemonAnswered) answeredProbes += 1;
+              if (backedOff) backedOffProbes += 1;
               // Inside the delivery grace only a POSITIVE answer may be acted
               // on: `active` is proof the prompt reached OpenCode and promotes
               // the record early. `terminal` and `unknown` are the ambiguous
@@ -377,6 +472,7 @@ export async function reapAndReconcileSandboxes(
                   // falls back to `abandoned`, which is what "the delivery was
                   // never confirmed by anyone" means.
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
                 } else if (
                   reconciliation === 'deferred' &&
                   // The same delivery-scoped bound as the grace above, for the
@@ -439,7 +535,7 @@ export async function reapAndReconcileSandboxes(
                 // Its own `turn_end` is the authority; failing that, a husk
                 // this pass had to force-close is a turn that did NOT finish;
                 // failing both, the honest record is that nobody can say.
-                await dependencies.clearSandboxTurn(
+                const cleared = await dependencies.clearSandboxTurn(
                   row.sandboxId,
                   turn.token,
                   undefined,
@@ -475,6 +571,9 @@ export async function reapAndReconcileSandboxes(
                   turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS
                 ) {
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+                }
+                if (cleared) {
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
                 }
               } else if (row.deadlineAt.getTime() <= now.getTime()) {
                 // Unreadable daemon plus an expired deadline: the runtime is
@@ -539,16 +638,29 @@ export async function reapAndReconcileSandboxes(
           if (
             turns.length > 0 &&
             unreadableTurns === turns.length &&
-            answeredProbes > 0 &&
+            (answeredProbes > 0 || backedOffProbes > 0) &&
             row.deadlineAt.getTime() > now.getTime() &&
             hasFreshTurnRecord(turns, now)
           ) {
             const extended = await dependencies.extendUnconfirmedTurnDeadline(row.sandboxId);
+            // Escalate only on a pass that actually ASKED and got nothing readable;
+            // a pass that skipped the probe must not double the wait it did not test.
+            if (backedOffProbes === 0) {
+              const nextBackoffMs = Math.min(
+                PROBE_BACKOFF_MAX_MS,
+                Math.max(PROBE_BACKOFF_MIN_MS, (probeBackoff.get(row.sandboxId)?.backoffMs ?? 0) * 2),
+              );
+              probeBackoff.set(row.sandboxId, { backoffMs: nextBackoffMs, until: now.getTime() + nextBackoffMs });
+            }
             console.warn('[reaper] turn observation unknown; drip-extending', {
               sandboxId: row.sandboxId,
               externalId: row.externalId,
               provider: row.provider,
               turns: turns.length,
+              // Was the daemon ASKED this pass, or is this a backed-off drip?
+              // Without this the log cannot tell 20 s drips from 20 s probes.
+              probed: backedOffProbes === 0,
+              backoffMs: probeBackoff.get(row.sandboxId)?.backoffMs ?? null,
               deadlineAt: row.deadlineAt.toISOString(),
               extended,
             });

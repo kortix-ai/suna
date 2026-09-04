@@ -33,13 +33,12 @@ import {
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
+import Loading from '@/components/ui/loading';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { openExternalRoute } from '@/lib/desktop';
-import { createClient } from '@/lib/supabase/client';
-import { resetClientState } from '@/lib/utils/reset-client-state';
 import {
   ArticleIcon,
   BookOpenIcon,
-  HeadsetIcon,
   LifebuoyIcon,
   MonitorIcon,
   Moon,
@@ -51,7 +50,7 @@ import {
   Sun,
 } from '@phosphor-icons/react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import * as React from 'react';
 import { useState } from 'react';
 
@@ -76,12 +75,14 @@ export type MenuLink = {
  * the sidebar and the header, so this render path is not rare.
  */
 export const HELP_LINKS: MenuLink[] = [
-  { label: 'Help center', href: '/help', Icon: LifebuoyIcon },
+  // One support row, not two. This menu used to open with "Help center" (/help)
+  // and close with "Support" (/support) — two destinations for one intent, and
+  // the /help one was the weaker page. The help centre is now part of /support.
+  { label: 'Support', href: '/support', Icon: LifebuoyIcon },
   { label: 'Docs', href: '/docs', Icon: BookOpenIcon },
   { label: 'Blog', href: '/blog', Icon: ArticleIcon },
   { label: 'Marketplace', href: '/marketplace', Icon: StorefrontIcon, internal: true },
   { label: 'Contact', href: '/contact', Icon: PaperPlaneTiltIcon },
-  { label: 'Support', href: '/support', Icon: HeadsetIcon },
 ];
 
 /** Kept separate so a divider can hold the legal pages apart from the rest. */
@@ -124,13 +125,8 @@ export function ThemeSubmenu() {
           <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
             {THEME_OPTIONS.map(({ value, label, Icon }) => (
               <DropdownMenuRadioItem key={value} value={value}>
-                {/* RadioItem wraps its children in a single flex-1 span to push
-                    the check to the right edge, so the icon and label need their
-                    own flex row inside it to stay aligned. */}
-                <span className="flex items-center gap-2">
-                  <Icon />
-                  {label}
-                </span>
+                <Icon />
+                {label}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -155,20 +151,18 @@ export function ThemeSubmenu() {
  * hands the URL to the system browser — so the anchor's own navigation is
  * cancelled to avoid opening the page twice.
  */
-export function HelpSubmenu({
-  deferAfterClose,
-  onClose,
-}: {
-  deferAfterClose: (fn: () => void) => void;
-  onClose: () => void;
-}) {
-  const router = useRouter();
-
+export function HelpSubmenu({ onClose }: { onClose: () => void }) {
   const renderMenuLink = ({ label, href, Icon, internal }: MenuLink) =>
     internal ? (
-      <DropdownMenuItem key={href} onClick={() => deferAfterClose(() => router.push(href))}>
-        <Icon />
-        {label}
+      // An anchor, exactly like the external branch below. `router.push` from a
+      // menu row runs the RSC fetch cold at click time, and that fetch degrades
+      // into a full document load whenever it answers wrong — a build-id skew
+      // mid-deploy, a maintenance redirect, a network blip.
+      <DropdownMenuItem key={href} asChild onClick={onClose}>
+        <Link href={href} prefetch>
+          <Icon />
+          {label}
+        </Link>
       </DropdownMenuItem>
     ) : (
       <DropdownMenuItem key={href} asChild>
@@ -216,16 +210,28 @@ export function HelpSubmenu({
  * "Log out".
  */
 export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
-  const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pending, setPending] = useState(false);
 
   const openConfirm = () => deferAfterClose(() => setConfirmOpen(true));
 
-  const performLogout = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    await resetClientState();
-    router.push('/auth');
+  // `/auth` cannot be an anchor here: the navigation must run AFTER the session
+  // is actually gone, and an anchor would leave on the click instead. It is not
+  // a `router.push` either — `performSignOut` ends on a DOCUMENT load, which is
+  // the only thing that discards the App Router caches across an identity
+  // change. There is nothing to prefetch: a document load does not read the
+  // segment cache.
+  //
+  // `preventDefault` keeps the dialog UP. Radix closes it on click, which used
+  // to leave the user staring at the unchanged app for as long as the sign-out
+  // took — up to the full step budget on a broken network — with nothing on
+  // screen saying anything was happening. The predictable response is a second
+  // click. `performSignOut` refuses re-entry, but the dialog is the honest
+  // place to say so. The document load is what actually closes this.
+  const performLogout = (event: React.MouseEvent) => {
+    event.preventDefault();
+    setPending(true);
+    void performSignOut();
   };
 
   const dialog = (
@@ -238,9 +244,10 @@ export function useLogoutFlow(deferAfterClose: (fn: () => void) => void) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={performLogout}>
-            Log out
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={pending} onClick={performLogout}>
+            {pending ? <Loading className="size-4 shrink-0" /> : null}
+            {pending ? 'Signing out' : 'Log out'}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

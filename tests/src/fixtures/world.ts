@@ -376,11 +376,14 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         // sessions (project_sessions.project_id ON DELETE CASCADE).
         return { id, projectId: project.id } as CreatedSession;
       }
-      // `prompt` was never consumed by the session API; use the documented
-      // field now that the HTTP boundary rejects unknown create properties.
+      // Use only documented session-create fields. Tests that perform inference
+      // can pin a model explicitly instead of inheriting the deployment default.
       const res = await adminClient.post(
         '/v1/projects/:projectId/sessions',
-        { initial_prompt: opts?.prompt ?? 'noop' },
+        {
+          initial_prompt: opts?.prompt ?? 'noop',
+          ...(opts?.opencodeModel ? { opencode_model: opts.opencodeModel } : {}),
+        },
         {
           params: { projectId: project.id },
         },

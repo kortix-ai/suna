@@ -3,11 +3,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterEach, describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 
 import type { Config } from '../config'
 import {
-  __clearCloneTokenCacheForTests,
   configureGitCredentialHelper,
   configureRepoCredentialHelper,
   resolveGitCredentialOutput,
@@ -30,7 +29,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     autoClone: false,
     projectId: 'proj-1',
     apiUrl: undefined,
-    repoUrl: 'https://git.example.test/repo-abc',
+    repoUrl: 'https://api.kortix.test/v1/git/proj-1.git',
     branchName: 'session-xyz',
     sessionFresh: false,
     baseSha: undefined,
@@ -38,6 +37,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -46,87 +46,15 @@ function baseConfig(over: Partial<Config> = {}): Config {
   }
 }
 
-/** Mock control plane that mimics GET /v1/projects/:id/git/clone-credential. */
-function startCloneCredentialServer(opts: {
-  expectToken: string
-  pushToken: string | null
-  username?: string
-}) {
-  const calls: { auth: string | null; path: string }[] = []
-  const server = Bun.serve({
-    port: 0,
-    fetch(req) {
-      const url = new URL(req.url)
-      calls.push({ auth: req.headers.get('authorization'), path: url.pathname })
-      if (!url.pathname.endsWith('/git/clone-credential')) {
-        return new Response('not found', { status: 404 })
-      }
-      if (req.headers.get('authorization') !== `Bearer ${opts.expectToken}`) {
-        return Response.json({ error: 'bad token' }, { status: 401 })
-      }
-      return Response.json({
-        repo_url: 'https://git.example.test/repo-abc',
-        auth: opts.pushToken
-          ? { username: opts.username ?? 'x-access-token', token: opts.pushToken, type: 'basic' }
-          : null,
-        source: 'managed',
-      })
-    },
-  })
-  return {
-    url: `http://127.0.0.1:${server.port}/v1`,
-    calls,
-    stop: () => server.stop(true),
-  }
-}
-
-afterEach(() => {
-  __clearCloneTokenCacheForTests()
-})
-
 describe('git credential helper', () => {
-  it('resolves a push-capable credential from the control plane', async () => {
-    const srv = startCloneCredentialServer({
-      expectToken: 'kortix_sb_secret',
-      pushToken: 'push-token-123',
-    })
-    try {
-      const cfg = baseConfig({ apiUrl: srv.url })
-      const out = await resolveGitCredentialOutput(cfg)
-      expect(out).toBe('username=x-access-token\npassword=push-token-123\n')
-      // It authenticated with the sandbox KORTIX_TOKEN, not anything else.
-      expect(srv.calls.at(-1)?.auth).toBe('Bearer kortix_sb_secret')
-      expect(srv.calls.at(-1)?.path).toBe('/v1/projects/proj-1/git/clone-credential')
-    } finally {
-      srv.stop()
-    }
+  it('returns only KORTIX_TOKEN for the Kortix Git proxy', async () => {
+    const out = await resolveGitCredentialOutput(baseConfig({ apiUrl: 'https://api.kortix.test/v1' }))
+    expect(out).toBe('username=x-access-token\npassword=kortix_sb_secret\n')
   })
 
-  it('uses the provider-selected username for Code Storage credentials', async () => {
-    const srv = startCloneCredentialServer({
-      expectToken: 'kortix_sb_secret',
-      pushToken: 'code-storage-jwt',
-      username: 't',
-    })
-    try {
-      const out = await resolveGitCredentialOutput(baseConfig({ apiUrl: srv.url }))
-      expect(out).toBe('username=t\npassword=code-storage-jwt\n')
-    } finally {
-      srv.stop()
-    }
-  })
-
-  it('returns null (no credential) when the project has no managed git auth', async () => {
-    const srv = startCloneCredentialServer({
-      expectToken: 'kortix_sb_secret',
-      pushToken: null,
-    })
-    try {
-      const out = await resolveGitCredentialOutput(baseConfig({ apiUrl: srv.url }))
-      expect(out).toBeNull()
-    } finally {
-      srv.stop()
-    }
+  it('refuses a direct network Git origin instead of fetching its credential', async () => {
+    const out = await resolveGitCredentialOutput(baseConfig({ repoUrl: 'https://git.example.test/repo' }))
+    expect(out).toBeNull()
   })
 
   it('returns null when token/project/api are not all present', async () => {
@@ -142,14 +70,14 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: home }
       const { stdout: helper } = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://git.example.test.helper'],
+        ['config', '--global', '--get', 'credential.https://api.kortix.test.helper'],
         { env, encoding: 'utf8' },
       )
       expect(helper.trim()).toContain('git-credential')
       expect(helper.trim().startsWith('!')).toBe(true)
       const { stdout: user } = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://git.example.test.username'],
+        ['config', '--global', '--get', 'credential.https://api.kortix.test.username'],
         { env, encoding: 'utf8' },
       )
       expect(user.trim()).toBe('x-access-token')
@@ -167,7 +95,7 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: home }
       const { stdout } = await execFileAsync(
         'git',
-        ['config', '--global', '--get-all', 'credential.https://git.example.test.helper'],
+        ['config', '--global', '--get-all', 'credential.https://api.kortix.test.helper'],
         { env, encoding: 'utf8' },
       )
       expect(stdout.trim().split('\n').filter(Boolean)).toHaveLength(1)
@@ -186,13 +114,13 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: '/nonexistent-home-for-test' }
       const { stdout } = await execFileAsync(
         'git',
-        ['-C', dir, 'config', '--local', '--get', 'credential.https://git.example.test.helper'],
+        ['-C', dir, 'config', '--local', '--get', 'credential.https://api.kortix.test.helper'],
         { env, encoding: 'utf8' },
       )
       expect(stdout.trim()).toContain('git-credential')
       const { stdout: user } = await execFileAsync(
         'git',
-        ['-C', dir, 'config', '--local', '--get', 'credential.https://git.example.test.username'],
+        ['-C', dir, 'config', '--local', '--get', 'credential.https://api.kortix.test.username'],
         { env, encoding: 'utf8' },
       )
       expect(user.trim()).toBe('x-access-token')
@@ -206,7 +134,7 @@ describe('git credential helper', () => {
     try {
       // No `git init` — there's no .git here.
       await configureRepoCredentialHelper(baseConfig(), dir)
-      const res = await execFileAsync('git', ['-C', dir, 'config', '--local', '--get', 'credential.https://git.example.test.helper'], { encoding: 'utf8' })
+      const res = await execFileAsync('git', ['-C', dir, 'config', '--local', '--get', 'credential.https://api.kortix.test.helper'], { encoding: 'utf8' })
         .then(() => ({ ok: true }))
         .catch(() => ({ ok: false }))
       expect(res.ok).toBe(false)
@@ -222,7 +150,7 @@ describe('git credential helper', () => {
       const env = { ...process.env, HOME: home }
       const res = await execFileAsync(
         'git',
-        ['config', '--global', '--get', 'credential.https://git.example.test.helper'],
+        ['config', '--global', '--get', 'credential.https://api.kortix.test.helper'],
         { env, encoding: 'utf8' },
       ).catch((err: { code?: number }) => ({ code: err.code }))
       // `git config --get` exits 1 when the key is absent.

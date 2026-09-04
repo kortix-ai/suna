@@ -98,7 +98,10 @@ export interface Fixtures {
    */
   sharedSeededProject(): Promise<CreatedProject>;
   /** Create a session in a project (provisions a real sandbox). */
-  session(project: CreatedProject, opts?: { prompt?: string }): Promise<CreatedSession>;
+  session(
+    project: CreatedProject,
+    opts?: { prompt?: string; opencodeModel?: string },
+  ): Promise<CreatedSession>;
   /** Mint a fresh run-scoped account-scoped PAT. */
   pat(opts?: { name?: string }): Promise<string>;
   /** Create a team account with member/role helpers (auto-torn-down). */

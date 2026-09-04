@@ -9,7 +9,7 @@ description: "Canonical reference for Kortix projects, Apps, the CLI, sessions, 
 The `kortix` CLI is the live source of truth for how Kortix works. The Kortix
 **system skills** — `kortix-system`, `kortix-apps`, `kortix-connectors`,
 `kortix-memory`, `kortix-harness-refinement`, `kortix-slack`,
-`kortix-computer`, `kortix-voice`, `kortix-marketplace` — are
+`kortix-computer`, `kortix-marketplace` — are
 served fresh by the CLI,
 so their instructions always match the platform version you're running on (no
 re-install, no image re-bake):
@@ -145,6 +145,17 @@ Kortix cloud state — not just files in the repo. Examples:
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
+| "turn on / off a feature flag (Apps, Voice, Review Center, …)" | `kortix projects features` · `kortix projects features enable <flag>` |
+| "rename the project / change its icon or default branch" | `kortix projects set --name … --icon … --branch …` |
+| "which models can this project use? set the default model" | `kortix models ls` · `kortix models default <model>` · `models enable|disable <id>` |
+| "change the default agent / an agent's scope or config" | `kortix agents default <name>` · `kortix agents scope <agent> …` · `kortix agents config <agent>` |
+| "stop / wake a session, share it, or publish a preview link" | `kortix sessions stop|start <id>` · `sessions share <id> --mode …` · `sessions links <id> create --port 3000` |
+| "queue a prompt for later / see or reorder the queue" | `kortix sessions chat <id> -p "…" --queue` · `kortix sessions queue <id> ls|now|rm|hold|release` |
+| "approve / deny a pending connector call" | `kortix sessions approvals <id> ls|approve|deny` |
+| "edit files in another session's sandbox" | `kortix sessions files <id> ls|write|mv|rm|find` |
+| "what needs review? approve / reject / request changes" | `kortix review ls` · `kortix review act <id> approve` · `kortix cr request-changes <cr> --message` |
+| "edit a trigger live (schedule, conditions, agent, model)" | `kortix triggers set <slug> --cron … --filter k=v` · `triggers add … --apply` |
+| "who is in the account / invite someone / manage groups" | `kortix members ls|invite` · `kortix groups …` · `kortix access requests ls` |
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
 read/list command takes `--json` for machine-readable output (parse that,
@@ -430,8 +441,9 @@ When you, as an agent, have changes you believe should persist:
    If the push is rejected because the remote session branch moved
    (the platform can advance it to the latest base), run
    `git fetch origin` then `git push --force-with-lease origin HEAD`.
-   Force-pushing is acceptable ONLY for your own session branch —
-   never for `main` or anyone else's branch.
+   Force-pushing is accepted ONLY for your own session branch; the
+   proxy refuses it for `main` or anyone else's branch, so there is
+   nothing to be careful about — it simply will not go through.
 4. **Open a CR.** From inside the sandbox the CLI reads
    `$KORTIX_BRANCH_NAME`, `$KORTIX_SESSION_ID`, and `$KORTIX_SANDBOX_TOKEN`
    (deprecated alias: `$KORTIX_TOKEN`) automatically:
@@ -460,9 +472,15 @@ When you, as an agent, have changes you believe should persist:
 
 ### Don't bypass this
 
-- **Don't push to `main` directly.** The platform doesn't currently
-  block force-pushes to protected branches in every backend, but
-  doing so violates the user-review contract and surprises the user.
+- **You cannot push to `main` directly — the platform refuses it.**
+  A session's git credential may write exactly one ref: its own
+  session branch. A push to `main`, to another session's branch, to
+  any other branch, or to a tag comes back as
+  `! [remote rejected] <ref> (a session may only push its own
+  branch ...)`. That is not a bug to work around; it is the review
+  contract. Commit on your branch, push it, open a CR.
+- **You cannot merge your own CR.** The API refuses it with
+  `CR_SELF_MERGE_REFUSED`. A person merges it.
 - **Don't paper over with "I committed it on my branch."** That isn't
   persistence. The session branch dissolves; only `main` survives.
 - **Don't ask the user to copy-paste files out of the session.** The
@@ -622,7 +640,7 @@ to see the full enum.
   How to get a credential you don't have — an API key, or an app connected —
   by minting a short-lived **setup link** and surfacing the URL, instead of
   punting the human to the dashboard or asking them to paste a raw key. Covers
-  the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
+  the two link kinds (secret intake / Composio connect), how to mint each
   (the `request_secret` + `connect` MCP tools, or the `kortix secrets request` /
   `kortix connectors connect` CLI), what the human sees
   (web modal vs Slack link), how to verify it

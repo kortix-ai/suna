@@ -14,7 +14,7 @@ import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { isConnectorsEnabled } from '@/lib/config';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCans } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { listConnectors } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -34,15 +34,6 @@ import { PlanStep } from './onboarding/steps/plan-step';
 import { SlackStep } from './onboarding/steps/slack-step';
 import { ToolsStep } from './onboarding/steps/tools-step';
 import { useOnboardingAnswers } from './onboarding/use-onboarding-answers';
-
-/**
- * The two leaves this wizard gates on. Module-level so its identity is stable
- * — `useProjectCans` keys its query on the action list.
- */
-const ONBOARDING_GATE_ACTIONS: readonly string[] = [
-  PROJECT_ACTIONS.PROJECT_WRITE,
-  PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
-];
 
 const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
@@ -136,7 +127,7 @@ export function ProjectOnboardingWizard({
   const connectorsEnabled = isConnectorsEnabled();
   // Both leaves in one batched probe — this component mounts on every project
   // load, so two singular `/effective` GETs here are two on every load.
-  const caps = useProjectCans(projectId, ONBOARDING_GATE_ACTIONS);
+  const caps = useProjectPageCans(projectId);
   // `project.connector.read` is manager-tier (#6522). Without it the Tools and
   // Slack steps cannot load anything — see `buildSteps`. Hide them on a
   // RECEIVED denial only, so a slow probe never shortens the wizard for
@@ -379,6 +370,7 @@ export function ProjectOnboardingWizard({
                     {stepId === 'plan' && <PlanStep projectId={projectId} onContinue={next} />}
                     {stepId === 'done' && (
                       <DoneStep
+                        projectId={projectId}
                         domain={domain}
                         connectedCount={connectorSlugs.length}
                         showFounderCall={showFounderStep}

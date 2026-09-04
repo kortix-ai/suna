@@ -81,13 +81,35 @@ export interface Turn {
 // Tool rendering types (shared between web & mobile tool renderers)
 // ---------------------------------------------------------------------------
 
-export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk/turns';
+export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';
 
 /** Structured trigger data for the BasicTool wrapper. */
 export interface TriggerTitle {
   title: string;
   subtitle?: string;
   args?: string[];
+  /**
+   * Line-count summary rendered beside the subtitle as `+N −N` (DiffStat on
+   * web). Plain data, not a node — this folder is framework-free, and the
+   * numbers mean the same thing on every surface.
+   */
+  stat?: { additions: number; deletions: number };
+  /**
+   * The subtitle repeats text the OPEN body already shows, so the row drops it
+   * once it is expanded.
+   *
+   * A closed row is the only place that text appears, so it stays there. Open,
+   * it is the same string twice — and the trigger's copy is the worse one: it
+   * is truncated to one line, so a long value disagrees with the full one
+   * directly beneath it.
+   *
+   * Opt-in per call, not a blanket rule, because most subtitles are NOT
+   * repeated by the body: a `pty` row's terminal id, for instance, appears
+   * nowhere in the buffer it opens, and hiding it would lose the only thing
+   * saying WHICH terminal this is. Set it where the body genuinely echoes the
+   * subtitle, and leave it off everywhere else.
+   */
+  hideSubtitleWhenOpen?: boolean;
 }
 
 /** A file entry in an apply_patch tool part's metadata. */

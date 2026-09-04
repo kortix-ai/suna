@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { resolveOpencodeConfigDir, type Config } from './config'
 import { ensureInjectedManagedSkills } from './injected-skills'
+import { homedir } from 'node:os'
 import { logger } from './logger'
 import {
   captureProcessOutput,
@@ -26,6 +27,21 @@ import { OPENCODE_CONFIG_DEPS_DIR } from './opencode-config-deps'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 
 const execFileAsync = promisify(execFile)
+
+/**
+ * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready
+ * answers (X-Kortix-Boot-Phase). A pass that installs a new OpenCode pin can
+ * hold a box in "not ready" for a minute or more (Essentia 2026-08-25:
+ * 1.18.19 → 1.18.23 on resume, 53 s first init on top); the API's boot budget
+ * must be able to tell "still working" from "stuck", and this is the signal.
+ */
+let runtimeAssetsActivityLabel: string | null = null
+export function runtimeAssetsActivity(): string | null {
+  return runtimeAssetsActivityLabel
+}
+function setRuntimeAssetsActivity(label: string | null): void {
+  runtimeAssetsActivityLabel = label
+}
 
 /**
  * Converge this sandbox's runtime assets on the API it talks to.
@@ -168,6 +184,8 @@ export interface RuntimeAssetsOptions {
   /** Test seams. The production installer also publishes the stable native link. */
   installOpencode?: (version: string) => Promise<void>
   readOpencodeVersion?: (baseUrl: string) => Promise<string | null>
+  /** Test seam for old snapshots that predate the managed OpenCode link. */
+  opencodeBinaryExists?: () => Promise<boolean>
   turnProbe?: (baseUrl: string, workspace: string) => Promise<boolean | null>
   /** Baked dependency dir holding the `@opencode-ai/plugin` pin. */
   opencodeDepsDir?: string
@@ -618,6 +636,22 @@ async function readOpencodeVersion(baseUrl: string): Promise<string | null> {
  * installer here would produce a second, subtly different runtime that only
  * ever exists on updated boxes, which is the hardest kind of drift to debug.
  */
+/** The exact global install the image performs (dockerfile-layer.ts), or its pnpm < 10 form. */
+export function pnpmAddOpencodeArgs(version: string, opts: { allowBuild: boolean }): string[] {
+  return opts.allowBuild
+    ? ['add', '-g', '--allow-build=opencode-ai', `opencode-ai@${version}`]
+    : ['add', '-g', `opencode-ai@${version}`]
+}
+
+/** pnpm 8/9 answer `--allow-build` with "ERROR  Unknown option: 'allow-build'". */
+export function isUnknownAllowBuildOption(error: unknown): boolean {
+  const e = error as { message?: unknown; stderr?: unknown; stdout?: unknown } | null
+  const text = [e?.message, e?.stderr, e?.stdout]
+    .filter((v): v is string => typeof v === 'string')
+    .join('\n')
+  return /unknown option/i.test(text) && /allow-build/.test(text)
+}
+
 export interface InstallOpencodeVersionOptions {
   installPackage?: (version: string) => Promise<void>
   capture?: CaptureCommand
@@ -629,11 +663,28 @@ export async function installOpencodeVersion(
   options: InstallOpencodeVersionOptions = {},
 ): Promise<void> {
   const installPackage = options.installPackage ?? (async (targetVersion: string) => {
-    await execFileAsync(
-      'pnpm',
-      ['add', '-g', '--allow-build=opencode-ai', `opencode-ai@${targetVersion}`],
-      { timeout: OPENCODE_INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 },
-    )
+    // pnpm >= 10 refuses a global install without a global bin dir. Images set
+    // PNPM_HOME at build time; a box converged from an older image may not
+    // carry it, so default to the image's own layout under $HOME.
+    const pnpmHome = process.env.PNPM_HOME || join(homedir(), '.local', 'share', 'pnpm')
+    const pathParts = (process.env.PATH ?? '').split(':').filter(Boolean)
+    for (const dir of [`${pnpmHome}/bin`, pnpmHome]) {
+      if (!pathParts.includes(dir)) pathParts.unshift(dir)
+    }
+    const env = { ...process.env, PNPM_HOME: pnpmHome, PATH: pathParts.join(':') }
+    const run = (args: string[]) =>
+      execFileAsync('pnpm', args, { timeout: OPENCODE_INSTALL_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env })
+    try {
+      await run(pnpmAddOpencodeArgs(targetVersion, { allowBuild: true }))
+    } catch (error) {
+      // A 2026-07 image ships pnpm 8, which predates `--allow-build` (pnpm 10)
+      // and runs the package's build scripts by default anyway. Same package,
+      // same version, same global layout — only the flag is dropped, and only
+      // for this exact rejection, so a current box never takes this path.
+      if (!isUnknownAllowBuildOption(error)) throw error
+      logger.warn('[runtime-assets] pnpm rejects --allow-build (pnpm < 10); retrying without it')
+      await run(pnpmAddOpencodeArgs(targetVersion, { allowBuild: false }))
+    }
   })
   const capture = options.capture ?? captureProcessOutput
 
@@ -751,8 +802,6 @@ export async function reconcileRuntimeAssets(
     ((configDir: string, bakedDir: string) => ensureInjectedManagedSkills(configDir, { bakedDir }))
   const token = (
     options.token ??
-    process.env.KORTIX_CLI_TOKEN ??
-    process.env.KORTIX_SANDBOX_TOKEN ??
     process.env.KORTIX_TOKEN ??
     ''
   ).trim()
@@ -1038,20 +1087,36 @@ export async function reconcileRuntimeAssets(
         const readVersion = options.readOpencodeVersion ?? readOpencodeVersion
         const installed = await readVersion(seam.opencodeBaseUrl())
         const pin = await readPluginPin(depsDir)
+        const binaryExists =
+          installed !== null ||
+          (await (options.opencodeBinaryExists ?? (async () => {
+            try {
+              await stat(OPENCODE_CURRENT_LINK)
+              return true
+            } catch {
+              return false
+            }
+          }))())
+        const binaryMissing = installed === null && !binaryExists
         const binaryStale = installed !== null && installed !== expected
         // The pin can drift from the binary on its own — a pass that installed
         // the binary and then failed the pin refresh leaves exactly that — and
         // a pin that does not match makes opencode refetch the plugin on every
         // boot. It is worth one idle-only repair even when the binary is fine.
         const pinStale = pin !== null && pin !== expected
-        if (installed === null) {
+        if (installed === null && !binaryMissing) {
           reasons.opencode = 'opencode did not report its version'
-        } else if (!binaryStale && !pinStale) {
+        } else if (installed !== null && !binaryMissing && !binaryStale && !pinStale) {
           opencode = 'current'
           nextState.opencode_version = installed
         } else {
           const probe = options.turnProbe ?? opencodeTurnInFlight
-          const turnInFlight = await probe(seam.opencodeBaseUrl(), seam.workspace)
+          // A missing managed binary cannot own a turn. Probing its absent
+          // runtime returns "unreadable" forever and previously prevented old
+          // snapshots from ever repairing themselves.
+          const turnInFlight = binaryMissing
+            ? false
+            : await probe(seam.opencodeBaseUrl(), seam.workspace)
           if (turnInFlight !== false) {
             reasons.opencode =
               turnInFlight === null ? 'turn state unreadable' : 'a turn is in flight'
@@ -1062,7 +1127,14 @@ export async function reconcileRuntimeAssets(
             })
           } else {
             const install = options.installOpencode ?? installOpencodeVersion
-            if (binaryStale) await install(expected)
+            if (binaryStale || binaryMissing) {
+              setRuntimeAssetsActivity(`installing-opencode@${expected}`)
+              try {
+                await install(expected)
+              } finally {
+                setRuntimeAssetsActivity(null)
+              }
+            }
             // SAME STEP as the binary, always. A binary and a plugin that
             // disagree is the state this whole block exists to avoid.
             const pinResult = await refreshOpencodePluginPin(depsDir, expected)
@@ -1072,14 +1144,14 @@ export async function reconcileRuntimeAssets(
             // Only a NEW BINARY needs the process replaced: the plugin is read
             // when opencode boots, so a refreshed pin takes effect on its own at
             // the next start and buys nothing by cutting this one short.
-            if (binaryStale) await seam.restartOpencode()
+            if (binaryStale || binaryMissing) await seam.restartOpencode()
             opencode = 'updated'
             nextState.opencode_version = expected
             logger.info('[runtime-assets] opencode converged', {
               from: installed,
               to: expected,
               pin: pinResult,
-              restarted: binaryStale,
+              restarted: binaryStale || binaryMissing,
             })
           }
         }

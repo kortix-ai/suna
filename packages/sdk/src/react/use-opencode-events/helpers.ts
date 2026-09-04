@@ -1,7 +1,52 @@
 import { type QueryClient } from '@tanstack/react-query';
+import { STREAM_OBSERVATION_MAX_MS } from '../../core/session/working';
 import { opencodeKeys, type Session } from '../use-opencode-sessions';
 import { qk } from '../query-keys';
 import type { OpenCodeEvent } from './types';
+
+/**
+ * How long a WIRE status frame owns its slot against the reconnect status
+ * fill. Equal to the projection's own stream bound on purpose: past it,
+ * `projectWorking` no longer lets the frame answer for the present, so
+ * letting it keep blocking the one REST read that could correct it protected
+ * nothing but the staleness itself.
+ */
+export const WIRE_STATUS_FILL_FRESHNESS_MS = STREAM_OBSERVATION_MAX_MS;
+
+/**
+ * Whether `hydrateCore`'s `client.session.status()` snapshot must leave a
+ * session's status slot alone.
+ *
+ * Two failures pull in opposite directions, and this rule serves both:
+ *
+ *  - The fill is a reading stamped at ISSUE time. Written unconditionally, a
+ *    `busy` that was true on the way out overwrote an idle frame that landed
+ *    while it was in flight (the original bug: Stop came back on a finished
+ *    turn). So a slot a LIVE stream owns is off limits.
+ *  - The reconnect that runs this fill happens BECAUSE a stream died — and a
+ *    dead stream's last frame is exactly what the fill exists to correct. A
+ *    turn inside one long tool call moves no transcript, so the
+ *    hydrate-movement evidence is silent, and an unconditionally-protected
+ *    stale wire idle kept vetoing the open `/turn` row for the whole run
+ *    (prod, 2026-08-26). So a wire frame's ownership expires with its
+ *    freshness (`WIRE_STATUS_FILL_FRESHNESS_MS`, from the store's
+ *    `sessionStatusAt` stamp).
+ *
+ * A `local` slot never blocks (a fabrication must stay correctable), and a
+ * wire slot with no stamp is treated as fresh — conservative, and only
+ * reachable for a slot written before the stamp slice existed.
+ */
+export function shouldSkipStatusFill(input: {
+  hasSlot: boolean;
+  origin: 'wire' | 'local' | undefined;
+  stampedAtMs: number | undefined;
+  nowMs: number;
+}): boolean {
+  if (!input.hasSlot) return false;
+  if (input.origin === 'local') return false;
+  if (input.stampedAtMs === undefined) return true;
+  return input.nowMs - input.stampedAtMs <= WIRE_STATUS_FILL_FRESHNESS_MS;
+}
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
 const PROJECT_METADATA_REFETCH_COOLDOWN_MS = 5_000;
@@ -127,11 +172,18 @@ export function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
  * project's session queries are ever the ones this event is actually about,
  * and firing a broader refetch would refresh unrelated data (a different
  * project's secrets/gateway state) on every title/tree change for no reason.
- * `qk.project.sessionsScope(projectId)` — the current route's project — is
- * the correct reach: the list (every scope) and every session/messages entry
- * beneath it, and nothing outside the sessions family, and nothing for a
- * project this event was never about. Outside a project route (`projectId`
- * null) there is nothing to mirror, so this is a no-op.
+ * `[...qk.project.sessionsScope(projectId), 'list']` — the current route's
+ * project, LIST family only — is the correct reach: the list in every scope,
+ * nothing outside the sessions family, and nothing for a project this event was
+ * never about. Outside a project route (`projectId` null) there is nothing to
+ * mirror, so this is a no-op.
+ *
+ * NOT the whole `sessionsScope` prefix, which this used to be: that prefix also
+ * covers `sessionTurn`, `sessionPrompts` and `messages` (see `query-keys.ts`),
+ * so every `session.created` and every title-changing `session.updated`
+ * re-issued `GET .../turn` and `GET .../prompts` as a side effect of mirroring
+ * a TITLE. Those two have their own cadences and their own reasons to refetch;
+ * a title event is not one of them.
  */
 export function refetchKortixSessionMirrors(
   queryClient: QueryClient,
@@ -139,7 +191,7 @@ export function refetchKortixSessionMirrors(
 ): void {
   if (!projectId) return;
   void queryClient.refetchQueries({
-    queryKey: qk.project.sessionsScope(projectId),
+    queryKey: [...qk.project.sessionsScope(projectId), 'list'],
     type: 'active',
   });
 }

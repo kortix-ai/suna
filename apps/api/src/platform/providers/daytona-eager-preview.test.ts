@@ -56,7 +56,7 @@ const createOpts = {
   userId: 'user-1',
   name: 'session-eager',
   snapshot: 'kortix-default-test',
-  envVars: { KORTIX_SANDBOX_TOKEN: 'kortix_sb_test' },
+  envVars: { KORTIX_TOKEN: 'kortix_sb_test' },
 } as never;
 
 const settle = () => new Promise((r) => setTimeout(r, 50));

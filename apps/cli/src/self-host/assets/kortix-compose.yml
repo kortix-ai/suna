@@ -87,19 +87,12 @@ services:
       # exactly the bug this fixes (billing used to be hard-pinned "false"
       # here no matter what .env said).
       LLM_GATEWAY_ENABLED: "true"
-      # Deliberately NOT set: LLM_GATEWAY_BASE_URL is what gets handed straight
-      # to sandboxes as KORTIX_LLM_BASE_URL (see session-sandbox.ts /
-      # sandbox-env-sync.ts). It used to be pinned here to the compose-internal
-      # `llm-gateway` service (http://llm-gateway:8090/v1/llm) — a hostname a
-      # remote Daytona sandbox VM can never resolve, so every BYOK model call
-      # failed with opencode's "Cannot connect to API: Was there a typo in the
-      # url or port?" the moment a session tried to actually run a turn. Left
-      # unset, the fallback in session-sandbox.ts correctly resolves to
-      # `${KORTIX_URL}/v1/llm` — kortix-api's own in-process gateway mount,
-      # already reachable through the SAME public tunnel/domain origin every
-      # other sandbox call already uses. The standalone `llm-gateway` container
-      # below still runs (control-plane RPC at /internal/gateway), it's just
-      # never the sandbox-facing base URL in self-host.
+      LLM_GATEWAY_PROXY_TARGET: http://llm-gateway:8090
+      # KORTIX_LLM_BASE_URL must use the public Caddy route. The proxy target
+      # above is internal control-plane wiring. Without this explicit override,
+      # the API selects /v1/llm-gateway/v1. Caddy sends every /v1/llm* request
+      # directly to the standalone gateway, which does not expose that prefix.
+      LLM_GATEWAY_BASE_URL: ${KORTIX_URL}/v1/llm
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
     depends_on:
@@ -125,6 +118,12 @@ services:
       PORT: "8090"
       KORTIX_API_URL: http://kortix-api:8008
       GATEWAY_INTERNAL_TOKEN: ${GATEWAY_INTERNAL_TOKEN}
+      # Per-request body cap override (bytes). Unset = the gateway default,
+      # clamped to what its memory budget can hold. Image-heavy agent turns can
+      # exceed the default (Essentia 2026-08-25: >128 MiB, 118 inline
+      # screenshots); a box with KORTIX_GATEWAY_MEMORY_LIMIT raised can raise
+      # this too.
+      GATEWAY_MAX_REQUEST_BYTES: ${KORTIX_GATEWAY_MAX_REQUEST_BYTES:-}
     depends_on:
       kortix-api:
         condition: service_started

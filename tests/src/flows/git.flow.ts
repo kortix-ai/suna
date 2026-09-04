@@ -14,8 +14,7 @@
  *    install_url) / 400 / 502 / 200. create-repo & link-repository need a real
  *    install or PAT → 400/409/502/503.
  *  - git-token: 409 for BYO / 503 if managed git unconfigured / 200 push token.
- *  - clone-credential: only runtime tokens (sandbox / project PAT) → a user JWT
- *    is rejected 403.
+ *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from "../core/flow";
 
@@ -29,6 +28,9 @@ flow(
     domain: "git",
     routes: [
       "GET /v1/git/:project/info/refs",
+      "GET /v1/git/:project/compiled-checkout",
+      "GET /v1/git/:project/compiled-runtime",
+      "GET /v1/git/:project/compiled-pi-runtime",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
     ],
@@ -53,6 +55,36 @@ flow(
         .post("/v1/git/:project/git-upload-pack", {}, { params: { project: p.id } });
       r.status([401, 403, 502]);
     });
+    await ctx.step("compiled checkout without git auth → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/compiled-checkout", {
+          params: { project: p.id },
+          query: { ref: "main", sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+    });
+    await ctx.step("compiled runtime without git auth → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/compiled-runtime", {
+          params: { project: p.id },
+          query: { ref: "main", sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+    });
+    await ctx.step("compiled pi runtime without git auth → 401", async () => {
+      // Same auth boundary as compiled-runtime; the pi_worker feature-flag
+      // gate sits BEHIND auth, so an anonymous caller never learns whether
+      // the flag is on.
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get("/v1/git/:project/compiled-pi-runtime", {
+          params: { project: p.id },
+          query: { ref: "main", sha: "a".repeat(40) },
+        });
+      r.status([401, 403]);
+    });
     await ctx.step("git-receive-pack (push) without git auth → 401", async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
@@ -61,7 +93,6 @@ flow(
     });
   },
 );
-
 flow(
   "GH-10",
   { domain: "git", routes: ["GET /v1/git/:project/info/refs"] },
@@ -147,34 +178,6 @@ flow(
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post("/v1/projects/:projectId/git-token", {}, { params: { projectId: p.id } });
-      r.status([403, 404]);
-    });
-  },
-);
-
-flow(
-  "GH-11",
-  { domain: "git", routes: ["GET /v1/projects/:projectId/git/clone-credential"] },
-  async (ctx) => {
-    const p = await ctx.fixtures.sharedProject();
-    await ctx.step("ANON → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
-      r.status(401);
-    });
-    await ctx.step("user JWT is not a runtime token → 403", async () => {
-      // clone-credential is for sandbox / project-scoped PAT runtime tokens only;
-      // a plain user JWT is rejected.
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
-      r.status([403, 404]);
-    });
-    await ctx.step("account PAT (not project-scoped) → 403", async () => {
-      const r = await ctx.client
-        .as(ctx.P.PAT_ACCT)
-        .get("/v1/projects/:projectId/git/clone-credential", { params: { projectId: p.id } });
       r.status([403, 404]);
     });
   },

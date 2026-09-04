@@ -96,7 +96,12 @@ import type {
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
-import { qk, useGatewayRoutingPolicy, useProjectModels } from '@kortix/sdk/react';
+import {
+  qk,
+  useGatewayRoutingPolicy,
+  useProjectModelPickerCatalog,
+  useProjectModels,
+} from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { GenerationControlsPanel } from './generation-controls';
@@ -528,6 +533,7 @@ export function GatewayRouting({
   const routing = useGatewayRoutingPolicy(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const catalogModels = useProjectModels(projectId);
+  const pickerCatalog = useProjectModelPickerCatalog(projectId);
   const [draft, setDraft] = useState<GatewayProjectRoutingPolicy | null>(null);
   const [fallbackMode, setFallbackMode] = useState<FallbackMode>('inherit');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -692,7 +698,7 @@ export function GatewayRouting({
         (model) => model !== primaryModel,
       );
       const preferred =
-        models.find((model) => modelKeyToWire(model) === 'glm-5.2') ??
+        models.find((model) => modelKeyToWire(model) === 'glm-5.3-flash') ??
         models.find((model) => modelKeyToWire(model) !== primaryModel);
       return {
         ...current,
@@ -964,6 +970,7 @@ export function GatewayRouting({
                 <div className="pt-3">
                   <GenerationControlsPanel
                     model={primaryModel}
+                    catalogModel={pickerCatalog?.models?.[primaryModel]}
                     value={draft.modelGenerationConfig?.[primaryModel]}
                     disabled={controlsDisabled}
                     onChange={(next) =>

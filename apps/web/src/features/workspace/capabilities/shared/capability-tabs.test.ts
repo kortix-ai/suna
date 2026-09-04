@@ -7,25 +7,19 @@ const source = readFileSync(
   'utf8',
 );
 
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('CapabilityTabs sidebar toggle', () => {
-  test('connects collapsed-toggle hover to the sidebar peek controller', () => {
-    expect(source).toContain('onPointerEnter={sidebar.state ===');
-    expect(source).toContain('peekEnter');
-    expect(source).toContain('peekLeave');
-  });
-
   // The panel's own header carries collapse (ProjectSidebar) and the desktop
   // shell draws its own opener in the OS title-bar band, so this page-level
-  // toggle exists only to bring a hidden panel back on the web. The rule is
-  // pinned as a truth table in project-layout/sidebar-opener.test.ts — this
-  // bar defers to it. It previously inlined `!isMobile && state === 'expanded'`,
-  // which said nothing about the shell, so on macOS it drew a second opener
-  // under the traffic lights.
-  test('visibility comes from the shared gate, not a local rule', () => {
-    expect(source).toContain('useShowPageSidebarOpener()');
+  // toggle exists only to bring a hidden panel back on the web. Both the
+  // control and its visibility rule live in `SidebarToggle` now — pinned in
+  // project-layout/sidebar-toggle.test.ts and sidebar-opener.test.ts. This bar
+  // previously inlined `!isMobile && state === 'expanded'`, which said nothing
+  // about the shell, so on macOS it drew a second opener under the lights.
+  test('renders the shared opener, not a local copy', () => {
+    expect(source).toContain('<SidebarToggle />');
+    expect(code(source)).not.toContain('toggleSidebar');
     expect(code(source)).not.toContain('!sidebar.isMobile && sidebar.state ===');
   });
 
@@ -39,14 +33,12 @@ describe('CapabilityTabs sidebar toggle', () => {
   });
 
   // In-flow toggle: when it returns null the tabs just start earlier. Absolute
-  // overlay + pl-12 clearance is what caused hit-target collisions before.
+  // overlay + pl-12 clearance is what caused hit-target collisions before, so
+  // this bar must take the default `inline` placement, never `floating`.
   test('the sidebar toggle sits in flow, not absolute over the tabs', () => {
     const body = code(source);
-    const toggleStart = body.indexOf('function CapabilitySidebarToggle');
-    const toggleEnd = body.indexOf('export function CapabilityTabs');
-    const toggle = body.slice(toggleStart, toggleEnd);
-    expect(toggle).not.toContain('absolute');
-    expect(toggle).not.toContain('pl-12');
+    expect(body).not.toContain('placement="floating"');
+    expect(body).not.toContain('pl-12');
   });
 });
 
@@ -87,12 +79,15 @@ describe('CapabilityTabs carries no capability-specific control', () => {
  */
 describe('CapabilityTabs right-aligns Settings', () => {
   test('the trailing group is exactly Settings', () => {
+    // `/projects/<id>/config` was retired on 2026-09-02 and came back on
+    // 2026-09-03 (Marko): it trails the row, after Members, in the one list.
     const body = code(source);
     const trailingStart = body.indexOf('TRAILING_TABS');
     expect(trailingStart).toBeGreaterThan(-1);
     const trailingDecl = body.slice(trailingStart, body.indexOf(';', trailingStart));
     expect(trailingDecl).toContain("'config'");
     expect(trailingDecl).not.toContain("'members'");
+    expect(body).toContain('{trailing.map(renderTab)}');
   });
 
   test('ml-auto lands on MembersLaunchLink, the first trailing element, inside the one shared TabsList', () => {

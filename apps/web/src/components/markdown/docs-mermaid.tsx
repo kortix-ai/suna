@@ -12,7 +12,7 @@ const MermaidRenderer = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="border-border/40 bg-muted/30 text-muted-foreground my-5 rounded-md border p-6 text-center font-mono text-xs">
+      <div className="border-border/40 bg-muted/30 text-muted-foreground my-5 rounded-md border p-6 text-center font-mono text-xs tracking-tight">
         Rendering diagram…
       </div>
     ),

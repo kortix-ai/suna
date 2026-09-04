@@ -206,10 +206,14 @@ through the `kortix-connectors` **MCP**, this **CLI**, and the
 | `kortix connectors discover "<intent>"` | Search actions by natural language (`--limit`). |
 | `kortix connectors show <connector>.<action>` | Show one action's input schema and risk. |
 | `kortix connectors call <connector> <action> '<json>'` | Invoke an action. The gateway resolves the connection, enforces policy, and audits. |
-| `kortix connectors add <slug> --provider pipedream --app <app> --apply` | Add a connector now, commit it to `kortix.yaml` on main, and sync it. |
+| `kortix connectors add <slug> --provider composio --app <toolkit> --apply` | Add a managed SaaS connector now, commit it to `kortix.yaml` on main, and sync it. |
 | `kortix connectors rm <slug> --apply` | Remove a connector from `kortix.yaml` on main and sync it. |
-| `kortix connectors connect <slug>` | Mint a Pipedream connection URL for the human. |
+| `kortix connectors connect <slug>` | Mint the configured provider's connection URL for the human. |
 | `kortix connectors mcp` | Run the `kortix-connectors` stdio MCP server. |
+
+> Use Composio for every new managed SaaS connector. Pipedream is retained only
+> for rollback compatibility with existing declarations. Do not select it unless
+> the human explicitly approves the `--allow-legacy-pipedream` fallback.
 
 > Inside a session, the `kortix-connectors` MCP tools can expose the same
 > list/discover/show/call loop. Use the CLI when those tools are absent.

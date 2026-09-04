@@ -14,7 +14,7 @@ import {
   projects,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
 import {
   agentMailProvisioningClientIds,
@@ -58,7 +58,6 @@ import {
   relayTurnQuestion,
   relayTurnStep,
 } from '../../channels/turn-relay';
-import { setProjectBotName } from '../../channels/voice-identity';
 import { config } from '../../config';
 import {
   resolveConnectionCredentialValue,
@@ -67,6 +66,7 @@ import {
 } from '../../connectors/credentials';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
 import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import { composioConfigured } from '../../connectors/composio';
 import {
   finalizePipedreamConnectionAuthorization,
   pipedreamConfigured,
@@ -80,10 +80,10 @@ import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
 import { setContextField } from '../../lib/request-context';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
-import { resolveEnablement } from '../../llm-gateway/model-enablement';
 import { gatewayModelCatalog } from '../../llm-gateway/models/catalog-models';
-import { projectPickerCatalog } from '../../llm-gateway/models/picker-catalog';
+import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { runtimeModelCatalog } from '../../llm-gateway/models/runtime-catalog';
 import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
 import {
@@ -98,15 +98,13 @@ import {
   getAccountModelDefaults,
   upsertAccountModelPreference,
 } from '../../repositories/model-preferences';
-import {
-  getProjectRoutingPolicy,
-  setProjectModelOverrides,
-} from '../../repositories/project-routing-policies';
+import { setProjectModelOverrides } from '../../repositories/project-routing-policies';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
 import { continueSession, drainSessionLifecycleQueue } from '../session-lifecycle';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
+import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
 import {
   getOpenQuestion,
   recordPendingQuestion,
@@ -150,9 +148,9 @@ import {
   triggersPausedForProject,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
-import { listProjectSecretNamesForConsumer } from '../secrets';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
@@ -160,13 +158,18 @@ import {
   setTriggerSessionAccess,
   validateTriggerSessionAccessPrincipals,
 } from '../trigger-session-access';
-import { type ParsedManifest, extractTriggers, loadProjectTriggers } from '../triggers';
+import {
+  type ParsedManifest,
+  extractTriggers,
+  findProjectTriggerBySlug,
+} from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
   adoptRuntimeSandboxTurn,
   completeSandboxTurn,
+  turnCompletionAllowsQueuePromotion,
 } from '../sandbox-turn-lifecycle';
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
@@ -426,10 +429,7 @@ projectsApp.openapi(
         connectorConfig: connectors.config,
       })
       .from(connectorConnections)
-      .innerJoin(
-        connectors,
-        eq(connectors.connectorId, connectorConnections.connectorId),
-      )
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows
@@ -500,10 +500,7 @@ projectsApp.openapi(
         status: connectorConnections.status,
       })
       .from(connectorConnections)
-      .innerJoin(
-        connectors,
-        eq(connectors.connectorId, connectorConnections.connectorId),
-      )
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
       .where(eq(connectorConnections.projectId, projectId));
     return c.json({
       connections: rows.map((row) => ({
@@ -551,10 +548,7 @@ projectsApp.openapi(
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     if (c.get('authType') === 'service_account') {
-      return c.json(
-        { error: 'Only human members can reconcile user connections' },
-        403,
-      );
+      return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
     const body = await readBody(c);
     const connectorAlias = canonicalConnectorAlias(
@@ -654,10 +648,7 @@ projectsApp.openapi(
     const connectorAlias = canonicalConnectorAlias(requestedAlias);
     const ownerType = typeof body.owner_type === 'string' ? body.owner_type : 'external';
     if (ownerType === 'member' && c.get('authType') === 'service_account') {
-      return c.json(
-        { error: 'Only human members can reconcile user connections' },
-        403,
-      );
+      return c.json({ error: 'Only human members can reconcile user connections' }, 403);
     }
     // Backwards-compatible manager path: a submitted member owner is always
     // rewritten to the caller. Managers may create their own member connection,
@@ -1017,11 +1008,104 @@ for (const operation of ['connect', 'connect/finalize'] as const) {
           409,
         );
       }
+      // Provider-neutral, like the connector-scoped route and the connect-link
+      // intake. This was Pipedream-only, so a Composio connector's labelled
+      // (non-default) connection answered "not a pipedream connector" — the
+      // multi-account path silently had no Composio support at all.
+      if (!composioConfigured() && !pipedreamConfigured()) {
+        return c.json({ error: 'no hosted connector authorization provider is configured' }, 501);
+      }
+      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
+      if (typeof app !== 'string' || !app) {
+        return c.json({ error: 'connector names no provider app' }, 404);
+      }
+      if (connection.providerType === 'composio') {
+        if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
+        const { composioConnectUrl, finalizeComposioConnection, composioUserId } = await import(
+          '../../connectors/composio'
+        );
+        const { composioConnectionMetadata } = await import('../../connectors/db-deps');
+        const stableUserId = composioUserId(connectionId);
+        const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
+        if (operation === 'connect') {
+          const body = await readBody(c);
+          const redirects =
+            body.success_redirect_uri || body.error_redirect_uri
+              ? {
+                  success:
+                    typeof body.success_redirect_uri === 'string'
+                      ? body.success_redirect_uri
+                      : undefined,
+                  error:
+                    typeof body.error_redirect_uri === 'string'
+                      ? body.error_redirect_uri
+                      : undefined,
+                }
+              : undefined;
+          const result = await composioConnectUrl({
+            projectId,
+            slug: connection.connectorAlias,
+            app,
+            connectionId,
+            stableUserId,
+            redirects,
+          });
+          await db
+            .update(connectorConnections)
+            .set({
+              status: 'active',
+              metadata: composioConnectionMetadata({
+                toolkit: app,
+                stableUserId,
+                sessionId: result.sessionId,
+                authRequestId: result.authRequestId,
+                connectedAccountId: result.connectedAccountId,
+                isNoAuth: result.isNoAuth,
+              }),
+              updatedAt: sql`now()`,
+            })
+            .where(eq(connectorConnections.connectionId, connectionId));
+          return c.json({
+            app,
+            connectUrl: result.connectUrl,
+            connected: result.connected,
+            isNoAuth: result.isNoAuth,
+          });
+        }
+        const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
+        if (!sessionId) return c.json({ connected: false });
+        const result = await finalizeComposioConnection({
+          projectId,
+          slug: connection.connectorAlias,
+          app,
+          connectionId,
+          stableUserId,
+          sessionId,
+          ...(typeof metadata.auth_request_id === 'string'
+            ? { authRequestId: metadata.auth_request_id }
+            : {}),
+        });
+        await db
+          .update(connectorConnections)
+          .set({
+            status: 'active',
+            metadata: composioConnectionMetadata({
+              toolkit: app,
+              stableUserId,
+              sessionId: result.sessionId,
+              authRequestId: result.authRequestId,
+              connectedAccountId: result.connectedAccountId,
+              isNoAuth: result.isNoAuth,
+            }),
+            updatedAt: sql`now()`,
+          })
+          .where(eq(connectorConnections.connectionId, connectionId));
+        return c.json({ connected: result.connected, accountId: result.connectedAccountId });
+      }
       if (!pipedreamConfigured()) {
         return c.json({ error: 'pipedream not configured' }, 501);
       }
-      const app = (connection.connectorConfig as Record<string, unknown> | null)?.app;
-      if (connection.providerType !== 'pipedream' || typeof app !== 'string' || !app) {
+      if (connection.providerType !== 'pipedream') {
         return c.json({ error: 'not a pipedream connector' }, 404);
       }
       if (operation === 'connect') {
@@ -1131,6 +1215,13 @@ projectsApp.openapi(
 
     const draft = parseTriggerDraft(body, { existingSlug: null });
     if ('error' in draft) return c.json({ error: draft.error }, 400);
+    if (draft.type === 'webhook' && draft.secretEnv) {
+      const configurationError = await validateWebhookSecretConfiguration({
+        projectId,
+        secretEnv: draft.secretEnv,
+      });
+      if (configurationError) return c.json(configurationError, 409);
+    }
     const parsedAccess =
       body.session_access === undefined
         ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
@@ -1331,6 +1422,15 @@ projectsApp.openapi(
         if (patchesKey && !patchesMode) delete base.session_mode;
         const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
         if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+        if (draft.type === 'webhook' && draft.secretEnv) {
+          const configurationError = await validateWebhookSecretConfiguration({
+            projectId,
+            secretEnv: draft.secretEnv,
+          });
+          if (configurationError) {
+            return { ok: false, status: 409, ...configurationError };
+          }
+        }
         effectivePinnedSessionId = draft.pinnedSessionId;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
@@ -1361,7 +1461,14 @@ projectsApp.openapi(
       },
     );
     if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+      return c.json(
+        {
+          error: result.error,
+          ...(result.code ? { code: result.code } : {}),
+          ...(result.remediation ? { remediation: result.remediation } : {}),
+        },
+        result.status as 400 | 404 | 409 | 502,
+      );
     }
     if (touchesManifest) {
       if (!committedManifest) throw new Error('trigger update completed without a manifest');
@@ -2357,10 +2464,8 @@ projectsApp.openapi(
     // Two valid callers: a project/session-scoped PAT (dashboard, operator, or
     // in-sandbox agent CLI) and the session sandbox's own service credential.
     // Each is scoped back to this projectId before a turn event is accepted.
-    const authType = (c as any).get('authType') as string | undefined;
-    const apiKeyType = (c as any).get('apiKeyType') as string | undefined;
     let authenticatedSandboxId: string | null = null;
-    if (authType === 'apiKey' && apiKeyType === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -2416,9 +2521,13 @@ projectsApp.openapi(
       }
     }
 
+    let authenticatedSandboxMetadata: unknown = null;
     if (authenticatedSandboxId) {
       const [ownedSession] = await db
-        .select({ sessionId: sessionSandboxes.sessionId })
+        .select({
+          sessionId: sessionSandboxes.sessionId,
+          metadata: sessionSandboxes.metadata,
+        })
         .from(sessionSandboxes)
         .where(
           and(
@@ -2430,6 +2539,7 @@ projectsApp.openapi(
         .limit(1);
       if (!ownedSession)
         return c.json({ error: 'sandbox token is not scoped to this session' }, 403);
+      authenticatedSandboxMetadata = ownedSession.metadata;
     }
 
     // session_id is caller-supplied — scope it back to :projectId so a caller
@@ -2454,6 +2564,43 @@ projectsApp.openapi(
     // Coordinator-spawned worker: its idle tail is minutes, not the default
     // grace — the box wakes on demand when the coordinator returns to it.
     const childSession = typeof turnStreamMetadata.spawned_by_session === 'string';
+
+    // The daemon claims its first prompt through the session-bound credential.
+    // No prompt or turn-ledger identifier belongs in the VM environment.
+    if (body.kind === 'initial_turn_claim') {
+      if (!authenticatedSandboxId) {
+        return c.json({ error: 'initial_turn_claim requires a sandbox token' }, 403);
+      }
+      const sandboxMetadata = (authenticatedSandboxMetadata ?? {}) as Record<string, unknown>;
+      const activeTurns =
+        sandboxMetadata.activeTurns &&
+        typeof sandboxMetadata.activeTurns === 'object' &&
+        !Array.isArray(sandboxMetadata.activeTurns)
+          ? (sandboxMetadata.activeTurns as Record<string, unknown>)
+          : {};
+      const delivering = Object.entries(activeTurns).find(([, value]) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        return (value as Record<string, unknown>).state === 'delivering';
+      });
+      const prompt =
+        typeof turnStreamMetadata.initial_prompt === 'string'
+          ? turnStreamMetadata.initial_prompt.trim()
+          : '';
+      if (!prompt || !delivering) return c.json({ ok: true, initial_turn: null });
+      const [turnToken, rawTurn] = delivering;
+      const messageId = (rawTurn as Record<string, unknown>).messageId;
+      if (typeof messageId !== 'string' || !messageId.trim()) {
+        return c.json({ ok: true, initial_turn: null });
+      }
+      return c.json({
+        ok: true,
+        initial_turn: {
+          prompt,
+          turn_token: turnToken,
+          message_id: messageId,
+        },
+      });
+    }
 
     // A daemon restart can discover that the pre-created initial message was
     // never delivered because it reused a root with older messages. Remove only
@@ -2554,7 +2701,7 @@ projectsApp.openapi(
       // event. Returning before this write finished made a transient DB failure
       // look successful, so the daemon deduped the event and the active record
       // survived until reaper reconciliation.
-      await completeSandboxTurn(
+      const turnCompletion = await completeSandboxTurn(
         sessionId,
         status,
         {
@@ -2583,24 +2730,61 @@ projectsApp.openapi(
           ),
         );
       }
+      // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL — mirror it.
+      //
+      // This is the one instant the deleted client-side mirror could not
+      // observe (its freshness test read the transcript's SHAPE, and a STOP
+      // moves none of that), which is why the SERVER writes the copy here
+      // rather than the browser writing it on a timer. The box is definitionally
+      // reachable — it just relayed — and both halves of the turn are settled.
+      // Fire-and-forget beside the reconcile above: a mirror write must never be
+      // able to fail a turn-end report, and `captureSessionTranscriptMirror`
+      // never throws.
+      if (!childSession) {
+        void captureSessionTranscriptMirror(sessionId);
+      }
       // THE TURN ENDED — the session's next queued prompt is admissible NOW.
-      // Fire-and-forget: the drain re-runs admission itself, and a lost kick
-      // falls back to the scheduler tick (bounded by the admission backoff).
+      // Await the durable promotion before acknowledging the terminal relay.
+      // The targeted drain remains asynchronous and re-runs admission itself;
+      // a lost kick falls back to the scheduler tick.
       // This is what makes the queue "send between every turn" without a
       // clock: the daemon's idle relay is the trigger.
+      let promotedPromptId: string | null = null;
       if (!childSession) {
-        void promoteNextInboxRow(sessionId)
-          .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
-          .catch(() => undefined);
+        if (turnCompletionAllowsQueuePromotion(turnCompletion)) {
+          promotedPromptId = await promoteNextInboxRow(sessionId);
+          if (promotedPromptId) {
+            void drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId }).catch((error) =>
+              console.warn('[turn-stream] targeted queue drain failed', {
+                sessionId,
+                promptId: promotedPromptId,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            );
+          }
+        }
+        console.info('[turn-stream] terminal turn settlement', {
+          sessionId,
+          opencodeSessionId:
+            typeof body.opencode_session_id === 'string' ? body.opencode_session_id : null,
+          turnMessageId: typeof body.turn_message_id === 'string' ? body.turn_message_id : null,
+          outcome: turnCompletion.outcome,
+          activeTurnCount: turnCompletion.activeTurnCount,
+          closedTurnCount: turnCompletion.closedTurnCount,
+          queuePromoted: promotedPromptId !== null,
+          promotedPromptId,
+        });
       }
       // Second-chance auto-title: create-time generation is a single in-memory
       // best-effort call, and a session whose only prompt was baked in-guest
-      // (`KORTIX_INITIAL_PROMPT`) never crosses a titling hook again. Turn end
+      // (the server-claimed initial prompt) never crosses a titling hook again. Turn end
       // is the natural retry point — the generator is idempotent (needsTitle +
       // CAS) so an already-titled session is a cheap no-op. The stored
       // `title_source` outranks the supplied text inside the generator.
-      const titleRetrySource = [turnStreamMetadata.title_source, turnStreamMetadata.initial_prompt]
-        .find((v): v is string => typeof v === 'string' && v.trim().length > 0);
+      const titleRetrySource = [
+        turnStreamMetadata.title_source,
+        turnStreamMetadata.initial_prompt,
+      ].find((v): v is string => typeof v === 'string' && v.trim().length > 0);
       if (titleRetrySource && turnStreamSession.createdBy) {
         void generateSessionTitleFromFirstPrompt({
           projectId,
@@ -2616,7 +2800,16 @@ projectsApp.openapi(
         );
       }
       const ok = await relayTurnEnd(sessionId, status, errorInfo);
-      return c.json({ ok });
+      return c.json({
+        ok,
+        turn_completion: {
+          outcome: turnCompletion.outcome,
+          active_turn_count: turnCompletion.activeTurnCount,
+          closed_turn_count: turnCompletion.closedTurnCount,
+        },
+        queue_promoted: promotedPromptId !== null,
+        promoted_prompt_id: promotedPromptId,
+      });
     }
 
     // `opencode_session` carries the canonical opencode ROOT id the sandbox just
@@ -2781,8 +2974,7 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     // Same dual auth as turn-stream: the in-sandbox agent's sandbox token (scoped
     // back to this project) or a project/session-scoped user PAT.
-    const authType = (c as any).get('authType') as string | undefined;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -2864,43 +3056,6 @@ projectsApp.openapi(
   },
 );
 
-// PUT /v1/projects/:projectId/channels/meet/name — set the bot's display name.
-projectsApp.openapi(
-  createRoute({
-    method: 'put',
-    path: '/{projectId}/channels/meet/name',
-    tags: ['channels'],
-    summary: 'PUT /:projectId/channels/meet/name',
-    ...auth,
-    request: {
-      params: z.object({ projectId: z.string() }),
-      body: { content: { 'application/json': { schema: AnyObject } } },
-    },
-    responses: {
-      200: json(z.object({ ok: z.boolean(), bot_name: z.string() }).passthrough(), 'Saved'),
-      ...errors(400, 404),
-    },
-  }),
-  async (c: any) => {
-    const projectId = c.req.param('projectId');
-    // Floor 'read'; project.customize.write is the real gate (setting the bot
-    // name is project customization). The built-in manager role holds the leaf.
-    const loaded = await loadProjectForUser(c, projectId, 'read');
-    if (!loaded) return c.json({ error: 'Not found' }, 404);
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-    );
-    const body = await readBody(c);
-    const name = String(body.name ?? body.bot_name ?? '');
-    const saved = await setProjectBotName(projectId, name);
-    return c.json({ ok: true, bot_name: saved });
-  },
-);
-
 // GET /v1/projects/:projectId/llm-catalog
 // Server-side source of truth for the gateway model catalog. The seed daemon
 // fetches it at PARK with a sandbox token so the no-restart warm-fork bakes the
@@ -2927,13 +3082,11 @@ projectsApp.openapi(
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
-    const authType = c.get('authType') as string | undefined;
-    const apiKeyType = c.get('apiKeyType') as string | undefined;
     const accountId = c.get('accountId') as string | undefined;
     const sandboxId = c.get('sandboxId') as string | undefined;
     let projectMetadata: unknown;
     let ownerAccountId: string | undefined;
-    if (authType === 'apiKey' && apiKeyType === 'sandbox' && accountId && sandboxId) {
+    if (isSessionSandboxCredential(c) && accountId && sandboxId) {
       const [sandbox] = await db
         .select({ sandboxId: sessionSandboxes.sandboxId })
         .from(sessionSandboxes)
@@ -3009,61 +3162,14 @@ projectsApp.openapi(
     }
 
     const accountId = loaded.row.accountId as string;
-    const freeManagedOnly = !(await accountMayUseManagedModels(accountId));
-    const [secrets, defaults, routing] = await Promise.all([
-      listProjectSecretNamesForConsumer({
-        projectId,
-        principalUserId: loaded.userId,
-        consumer: 'llm_gateway',
-      }).catch(() => [] as string[]),
-      getAccountModelDefaults(accountId, projectId),
-      getProjectRoutingPolicy(projectId),
-    ]);
-    // What `auto` resolves to for this project. Served below so the client can
-    // LOCK its switch instead of offering a toggle that always 409s.
-    const effectiveDefault = toWireModel(
-      defaults.projects[projectId] ?? defaults.account ?? platformDefaultModelId() ?? '',
-    );
-    const requiredModels = [
-      defaults.projects[projectId],
-      defaults.account,
-      platformDefaultModelId(),
-      routing?.visionModel,
-      ...(routing?.defaultFallback?.models ?? []),
-      ...(routing?.rules.flatMap((rule) => [rule.model, ...rule.fallbackModels]) ?? []),
-    ].filter((model): model is string => !!model);
-    const models = projectPickerCatalog(
-      gatewayModelCatalog(projectId, { freeManagedOnly }),
-      new Set(secrets),
-      requiredModels,
-    );
-    // Server-owned per-project enablement, resolved HERE and stamped onto each
-    // model so every client renders the same answer. The session picker shows
-    // the enabled ones; "Manage models" shows them all and switches on this
-    // flag. Neither re-derives it. Display-only: the gateway never refuses a
-    // request over enablement (that 400'd in-use models — the #5932 revert).
-    const enabled = resolveEnablement(models, routing?.modelOverrides ?? {}, requiredModels);
-    return c.json({
-      models: Object.fromEntries(
-        Object.entries(models).map(([id, model]) => [
-          id,
-          { ...model, enabled: enabled.get(id) ?? true },
-        ]),
-      ),
-      // The stored EXCEPTIONS, so a client toggling one model can PUT the
-      // merged map back without having to reconstruct it by diffing the
-      // resolved flags against a default it would have to recompute.
-      modelOverrides: routing?.modelOverrides ?? {},
-      // The model `auto` resolves to. It cannot be turned off (that would break
-      // every default request — the PUT refuses it with 409), so the client
-      // renders its switch as locked rather than letting the user click into an
-      // error.
-      defaultModel: effectiveDefault || undefined,
-      // True while the project has made no exceptions at all — the only thing
-      // "reset to defaults" has left to act on, and not derivable from the
-      // `enabled` flags alone (they look identical either way).
-      usingDefaults: Object.keys(routing?.modelOverrides ?? {}).length === 0,
+    // One composition, shared with the sandbox's boot fetch
+    // (`/v1/llm/models?scope=picker`) — see servableProjectCatalog.
+    const catalog = await servableProjectCatalog({
+      projectId,
+      accountId,
+      principalUserId: loaded.userId,
     });
+    return c.json(catalog);
   },
 );
 
@@ -3205,6 +3311,12 @@ projectsApp.openapi(
     const projectId = c.req.param('projectId');
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
     const ownerAccountId = loaded.row.accountId as string;
     const userId = c.get('userId') as string;
     const defaults = await getAccountModelDefaults(ownerAccountId, projectId);
@@ -3262,6 +3374,12 @@ projectsApp.openapi(
     // Floor 'read'; project.customize.write is the real gate.
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
     await assertProjectCapability(
       c,
       loaded.userId,
@@ -3357,6 +3475,12 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
+    if (!projectLlmGatewayEnabled(loaded.row.metadata)) {
+      return c.json(
+        { error: 'LLM gateway is disabled for this project', code: 'llm_gateway_disabled' },
+        404,
+      );
+    }
     const ownerAccountId = loaded.row.accountId as string;
     const scope = c.req.query('scope');
     const agentName = c.req.query('agentName');
@@ -3415,8 +3539,7 @@ projectsApp.openapi(
     // Null for a human caller.
     let callerSandboxSessionId: string | null = null;
 
-    const authType = (c as any).get('authType') as string | undefined;
-    if (authType === 'apiKey' && (c as any).get('apiKeyType') === 'sandbox') {
+    if (isSessionSandboxCredential(c)) {
       const accountId = (c as any).get('accountId') as string | undefined;
       const sandboxId = (c as any).get('sandboxId') as string | undefined;
       if (!accountId || !sandboxId) {
@@ -3611,7 +3734,12 @@ projectsApp.openapi(
       projectId,
       PROJECT_ACTIONS.PROJECT_SESSION_READ,
     );
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      c.get('sessionId') ?? null,
+      callerKortixSessionId(c),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
     return c.json({ question: await getOpenQuestion(sessionId) });
   },
@@ -3650,7 +3778,12 @@ projectsApp.openapi(
     // of the session — the same bar the question relay itself uses.
     const loaded = await loadProjectForUser(c, projectId, 'session');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
+    const visible = await loadVisibleSession(
+      loaded,
+      sessionId,
+      c.get('sessionId') ?? null,
+      callerKortixSessionId(c),
+    );
     if (!visible) return c.json({ error: 'Not found' }, 404);
 
     const body = await readBody(c);
@@ -3722,8 +3855,7 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
     );
 
-    const { specs } = await loadProjectTriggers(await withProjectGitAuth(loaded.row));
-    const spec = specs.find((s) => s.slug === slug);
+    const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
     if (!spec) return c.json({ error: 'Not found' }, 404);
 
     const now = new Date();

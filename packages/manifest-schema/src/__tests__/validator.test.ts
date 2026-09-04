@@ -3,12 +3,8 @@ import { validateManifest, formatIssues } from '../index.ts';
 
 function summarize(input: string | Record<string, unknown>) {
   const result = validateManifest(input);
-  const errorPaths = result.issues
-    .filter((i) => i.severity === 'error')
-    .map((i) => i.path);
-  const warningPaths = result.issues
-    .filter((i) => i.severity === 'warning')
-    .map((i) => i.path);
+  const errorPaths = result.issues.filter((i) => i.severity === 'error').map((i) => i.path);
+  const warningPaths = result.issues.filter((i) => i.severity === 'warning').map((i) => i.path);
   return { ...result, errorPaths, warningPaths };
 }
 
@@ -60,31 +56,27 @@ describe('validateManifest — kortix_version', () => {
 
 describe('validateManifest — [env]', () => {
   test('rejects non-array env.required', () => {
-    const { errorPaths, valid } = summarize(`kortix_version = 1\n[env]\nrequired = "ANTHROPIC_API_KEY"`);
+    const { errorPaths, valid } = summarize(
+      `kortix_version = 1\n[env]\nrequired = "ANTHROPIC_API_KEY"`,
+    );
     expect(valid).toBe(false);
     expect(errorPaths).toContain('env.required');
   });
 
   test('accepts lowercase env names (upper-cased by the runtime)', () => {
-    const { valid } = summarize(
-      `kortix_version = 1\n[env]\nrequired = ["api_key"]`,
-    );
+    const { valid } = summarize(`kortix_version = 1\n[env]\nrequired = ["api_key"]`);
     // The runtime canonicalizes to uppercase; we don't fail the build for casing.
     expect(valid).toBe(true);
   });
 
   test('rejects names that start with a digit', () => {
-    const { errorPaths, valid } = summarize(
-      `kortix_version = 1\n[env]\nrequired = ["1API_KEY"]`,
-    );
+    const { errorPaths, valid } = summarize(`kortix_version = 1\n[env]\nrequired = ["1API_KEY"]`);
     expect(valid).toBe(false);
     expect(errorPaths.some((p) => p.startsWith('env.required'))).toBe(true);
   });
 
   test('rejects names with hyphens or punctuation', () => {
-    const { errorPaths, valid } = summarize(
-      `kortix_version = 1\n[env]\nrequired = ["MY-KEY"]`,
-    );
+    const { errorPaths, valid } = summarize(`kortix_version = 1\n[env]\nrequired = ["MY-KEY"]`);
     expect(valid).toBe(false);
     expect(errorPaths.some((p) => p.startsWith('env.required'))).toBe(true);
   });
@@ -429,7 +421,14 @@ prompt = "go"
     const { errorPaths } = summarize({
       kortix_version: 1,
       triggers: [
-        { slug: 'poller', type: 'monitor', run: './m.ts', mode: 'poll', interval: 60, prompt: 'go' },
+        {
+          slug: 'poller',
+          type: 'monitor',
+          run: './m.ts',
+          mode: 'poll',
+          interval: 60,
+          prompt: 'go',
+        },
       ],
     });
     expect(errorPaths).toContain('triggers[0].interval');
@@ -687,33 +686,6 @@ provider = "computer"
     expect(result.errorPaths).toContain('connectors[0].provider');
     expect(result.issues.some((i) => i.message.includes('managed automatically'))).toBe(true);
   });
-
-  // The platform now also writes a `meet` channel connector — mirrors
-  // connectors.ts's CHANNEL_PLATFORMS (which already included it) and
-  // RESERVED_SLUG_PROVIDERS (`kortix_voice`). Was previously rejected by the
-  // schema gate even though the runtime accepted it.
-  test('a platform-written "voice" channel connector is valid', () => {
-    const { valid, errorPaths } = summarize(`
-kortix_version = 1
-[[connectors]]
-slug = "kortix_voice"
-provider = "channel"
-platform = "voice"
-`);
-    expect(errorPaths).toEqual([]);
-    expect(valid).toBe(true);
-  });
-
-  test('reserved slug "kortix_voice" rejects a mismatched provider', () => {
-    const { errorPaths } = summarize(`
-kortix_version = 1
-[[connectors]]
-slug = "kortix_voice"
-provider = "http"
-base_url = "https://example.com"
-`);
-    expect(errorPaths).toContain('connectors[0].provider');
-  });
 });
 
 describe('validateManifest — Kortix Apps', () => {
@@ -769,7 +741,9 @@ apps:
       DATABASE_URL: ""`,
       'yaml',
     );
-    const paths = result.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.path);
+    const paths = result.issues
+      .filter((issue) => issue.severity === 'error')
+      .map((issue) => issue.path);
     expect(paths).toContain('apps.bad.command');
     expect(paths).toContain('apps.bad.port');
     expect(paths).toContain('apps.bad.resources.cpu');
@@ -789,42 +763,51 @@ describe('validateManifest — input tolerance (mirrors runtime parser)', () => 
 
   test('trigger accepts the prompt_template alias', () => {
     expect(
-      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt_template = "go"`),
+      connectorErrors(
+        `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt_template = "go"`,
+      ),
     ).not.toContain('triggers[0].prompt');
   });
 
   test('cron trigger accepts the schedule alias', () => {
     expect(
-      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\nschedule = "0 9 * * *"\nprompt = "go"`),
+      connectorErrors(
+        `[[triggers]]\nslug = "t"\ntype = "cron"\nschedule = "0 9 * * *"\nprompt = "go"`,
+      ),
     ).not.toContain('triggers[0].cron');
   });
 
   test('trigger enabled accepts coercible values', () => {
     expect(
-      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = 1`),
+      connectorErrors(
+        `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nenabled = 1`,
+      ),
     ).not.toContain('triggers[0].enabled');
   });
 
   test('trigger session_mode is case-insensitive', () => {
     expect(
-      connectorErrors(`[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "Reuse"`),
+      connectorErrors(
+        `[[triggers]]\nslug = "t"\ntype = "cron"\ncron = "0 9 * * *"\nprompt = "go"\nsession_mode = "Reuse"`,
+      ),
     ).not.toContain('triggers[0].session_mode');
   });
 
   test('connector provider is case-insensitive', () => {
-    expect(connectorErrors(`[[connectors]]\nslug = "m"\nprovider = "MCP"\nurl = "https://e.com"`)).toEqual([]);
-  });
-
-  test('http connector accepts the baseUrl alias', () => {
-    expect(connectorErrors(`[[connectors]]\nslug = "h"\nprovider = "http"\nbaseUrl = "https://e.com"`)).toEqual([]);
-  });
-
-  test('an empty-string grant is accepted as deny', () => {
     expect(
-      connectorErrors(`[[agents]]\nname = "a"\nkortix_cli = ""\nconnectors = ""`),
+      connectorErrors(`[[connectors]]\nslug = "m"\nprovider = "MCP"\nurl = "https://e.com"`),
     ).toEqual([]);
   });
 
+  test('http connector accepts the baseUrl alias', () => {
+    expect(
+      connectorErrors(`[[connectors]]\nslug = "h"\nprovider = "http"\nbaseUrl = "https://e.com"`),
+    ).toEqual([]);
+  });
+
+  test('an empty-string grant is accepted as deny', () => {
+    expect(connectorErrors(`[[agents]]\nname = "a"\nkortix_cli = ""\nconnectors = ""`)).toEqual([]);
+  });
 });
 
 describe('formatIssues', () => {

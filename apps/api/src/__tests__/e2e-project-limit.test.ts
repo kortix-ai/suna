@@ -151,7 +151,7 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module('../snapshots/builder', () => ({
-  routedPerProjectWarmImageName: () => 'kpp2-test',
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   ensureFastSandboxImage: async () => ({ snapshotName: 'kortix-fast-test', slug: 'default', contentHash: 'f'.repeat(64), built: false, isDefault: true, runtimeProfile: 'fast' }),
   ensureMetaSandboxImage: async () => ({ snapshotName: 'kortix-meta-test', slug: 'meta', contentHash: 'b'.repeat(64), built: false, isDefault: false }),
@@ -168,12 +168,6 @@ mock.module('../snapshots/builder', () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => 'a'.repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: 'kortix-ppwarm-test',
-    tip: 'a'.repeat(40),
-    built: false,
-    provider: 'daytona',
-  }),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
@@ -215,6 +209,20 @@ function projectRowFrom(values: any) {
   };
 }
 
+/**
+ * A drizzle-shaped query result: awaitable, and still chainable through
+ * `.returning()`. See the `update` seam below.
+ */
+function thenable(rows: any[]) {
+  const settled = Promise.resolve(rows);
+  return {
+    returning: async () => rows,
+    then: settled.then.bind(settled),
+    catch: settled.catch.bind(settled),
+    finally: settled.finally.bind(settled),
+  };
+}
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
@@ -245,7 +253,12 @@ mock.module('../shared/db', () => ({
         returning: async () => (table === projects ? [projectRowFrom(values)] : []),
       }),
     }),
-    update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
+    // Drizzle's `.where()` is BOTH awaitable and chainable: callers either
+    // `await` it or add `.returning()`. Returning a plain object breaks every
+    // `db.update(t).set(...).where(...).catch(...)` in the provision path —
+    // which is how a bare provision (now seeded by default) turned into a 502
+    // here instead of exercising the quota rule this file is about.
+    update: () => ({ set: () => ({ where: () => thenable([]) }) }),
     delete: () => ({ where: async () => {} }),
   },
 }));
@@ -285,7 +298,9 @@ describe('project limit — POST /v1/projects/provision', () => {
     projectCount = 2;
     const res = await provision();
     expect(res.status).toBe(201);
-    expect(backendCalls).toEqual(['createRepo']);
+    // Under the quota, provisioning runs to completion: create the repo AND seed
+    // the starter (seeding is the default, not an opt-in).
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
   });
 
   test('free account at its limit (count 3 ≥ limit 3) → 403, no repo created', async () => {
@@ -307,7 +322,9 @@ describe('project limit — POST /v1/projects/provision', () => {
     projectCount = 5;
     const res = await provision();
     expect(res.status).toBe(201);
-    expect(backendCalls).toEqual(['createRepo']);
+    // Under the quota, provisioning runs to completion: create the repo AND seed
+    // the starter (seeding is the default, not an opt-in).
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
   });
 
   test('paid plan at its (large) cap (count 200 ≥ limit 200) → 403', async () => {
@@ -326,6 +343,8 @@ describe('project limit — POST /v1/projects/provision', () => {
     projectCount = 9999;
     const res = await provision();
     expect(res.status).toBe(201);
-    expect(backendCalls).toEqual(['createRepo']);
+    // Under the quota, provisioning runs to completion: create the repo AND seed
+    // the starter (seeding is the default, not an opt-in).
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
   });
 });

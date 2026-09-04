@@ -107,19 +107,6 @@ Run repository scripts with `bun run path/to/script.ts`. Keep provider
 credentials out of code and repository files.
 </sdk-workflows>
 
-<complete-api-access>
-Use named actions when they fit. Pipedream connectors also expose `request` for
-an endpoint that is absent from the named catalog.
-
-```sh
-kortix connectors call github request '{
-  "method": "POST",
-  "url": "https://api.github.com/repos/kortix-ai/suna/issues/1234/comments",
-  "body": { "body": "Review note" }
-}'
-```
-</complete-api-access>
-
 <adding-connectors>
 Connector definitions live in `kortix.yaml`. Connections remain server-side.
 
@@ -133,13 +120,19 @@ connectors:
       type: bearer
 ```
 
-Supported providers are `pipedream`, `mcp`, `openapi`, `postman`, `graphql`, and
-`http`. Add and connect a Pipedream connector with:
+Use `composio` for managed SaaS apps. Other supported direct providers are
+`mcp`, `openapi`, `postman`, `graphql`, and `http`. Add and connect a Composio
+toolkit with:
 
 ```sh
-kortix connectors add github --provider pipedream --app github --apply
+kortix connectors add github --provider composio --app github --apply
 kortix connectors connect github
 ```
+
+Pipedream exists only for rollback compatibility with already-declared
+connectors. Never add a new Pipedream connector automatically. If Composio
+cannot satisfy the request, stop, explain the gap, and ask the human before any
+explicit `--allow-legacy-pipedream` retry.
 
 Surface the returned connection URL. Never ask the user to paste a credential
 into chat. For an API key, use `kortix secrets request NAME --scope connector`.
@@ -154,6 +147,8 @@ kortix channels connect
 <rules>
 - Use `kortix connectors` for one-off agent actions.
 - Use `@kortix/sdk` for durable or testable workflows.
+- Use Composio for every new managed SaaS connector. Never select Pipedream
+  unless the human explicitly approves the legacy rollback path.
 - Do not use raw provider tokens from the sandbox.
 - Treat `denied`, `not_shared`, `needs_auth`, and `ok: false` as real outcomes.
 - Confirm irreversible work before a destructive connector call.

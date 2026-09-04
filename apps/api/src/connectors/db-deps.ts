@@ -33,13 +33,7 @@ import {
   loadTeamsInstall,
   loadTeamsTenantForProject,
 } from '../channels/install-store';
-import { resolveProjectBotName } from '../channels/voice-identity';
-import { joinPageUrl } from '../channels/voice/livekit';
-import { mintJoinLink } from '../channels/voice/join-links';
 import { approvalPageUrl } from '../setup-links/token';
-import { endCall, isCallLive, promptVoiceAgent, startCall } from '../channels/voice/runtime';
-import { readTranscriptForAgent } from '../channels/voice/transcript-read';
-import { kortixSay } from '../channels/voice/utterance';
 import { config } from '../config';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { authorize, PROJECT_ACTIONS } from '../iam';
@@ -64,12 +58,14 @@ import { computerProfileSpec } from './computer-materialize';
 import { COMPUTER_SLUG, computerLabel } from './computers';
 import { hideSupersededSlack } from './channel-rules';
 import { buildAdminConnectorViews } from './connector-list';
+import { notifyConnectorSession } from './notify-session';
 import { validateConnectorSecretBinding } from './connector-secret-binding';
 import {
   connectorIdsWithSharedCredentials,
   credentialExists,
   deleteCredential,
   connectionCredentialExists,
+  ensureDefaultConnection,
   resolveCredentialValue,
   resolveConnectionCredentialValue,
 } from './credentials';
@@ -317,8 +313,79 @@ function authOf(row: ConnectorRow): { auth: ConnectorAuth; hasAuth: boolean } {
         prefix: cfg.auth.prefix ?? null,
       }
     : DEFAULT_AUTH;
-  const hasAuth = row.providerType === 'pipedream' || auth.type !== 'none';
+  const hasAuth = row.providerType === 'pipedream' || row.providerType === 'composio' || auth.type !== 'none';
   return { auth, hasAuth };
+}
+
+function metadataString(metadata: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = metadata?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+export function composioConnectionIsNoAuth(metadata: Record<string, unknown> | null | undefined): boolean {
+  return metadata?.provider === 'composio' && metadata.is_no_auth === true;
+}
+
+export function composioConnectedAccountId(metadata: Record<string, unknown> | null | undefined): string | null {
+  return metadata?.provider === 'composio' ? metadataString(metadata, 'connected_account_id') : null;
+}
+
+export function composioConnectionMetadata(input: {
+  toolkit: string;
+  stableUserId: string;
+  sessionId: string;
+  authRequestId?: string;
+  connectedAccountId?: string;
+  isNoAuth: boolean;
+  /** Kortix session whose agent asked for this connector. Deliberately NOT
+   *  `session_id` — that key is Composio's Tool Router session (`trs_…`). */
+  requestingSessionId?: string | null;
+}): Record<string, unknown> {
+  return {
+    provider: 'composio',
+    toolkit: input.toolkit,
+    stable_user_id: input.stableUserId,
+    session_id: input.sessionId,
+    auth_request_id: input.authRequestId ?? null,
+    connected_account_id: input.connectedAccountId ?? null,
+    is_no_auth: input.isNoAuth,
+    requesting_session_id: input.requestingSessionId ?? null,
+  };
+}
+
+/**
+ * The Kortix session whose agent asked for this connector, as stored on the
+ * connection row. Provider-neutral on purpose: Composio writes it inside
+ * `composioConnectionMetadata`, Pipedream through `mergeRequestingSession`,
+ * and finalize reads both through this one accessor.
+ */
+export function readRequestingSessionId(metadata: unknown): string | null {
+  const value = (metadata as Record<string, unknown> | null)?.requesting_session_id;
+  return typeof value === 'string' && value ? value : null;
+}
+
+/** Stamp the requesting session onto a connection row without disturbing the
+ *  rest of its metadata (Pipedream keeps provider state there). */
+async function mergeRequestingSession(
+  connectionId: string,
+  requestingSessionId: string | null | undefined,
+): Promise<void> {
+  if (!requestingSessionId) return;
+  const [row] = await db
+    .select({ metadata: connectorConnections.metadata })
+    .from(connectorConnections)
+    .where(eq(connectorConnections.connectionId, connectionId))
+    .limit(1);
+  await db
+    .update(connectorConnections)
+    .set({
+      metadata: {
+        ...((row?.metadata ?? {}) as Record<string, unknown>),
+        requesting_session_id: requestingSessionId,
+      },
+      updatedAt: sql`now()`,
+    })
+    .where(eq(connectorConnections.connectionId, connectionId));
 }
 
 /**
@@ -422,6 +489,9 @@ async function connectorConnected(
     }
     return true;
   }
+  if (row.providerType === 'composio') {
+    return composioConnectionIsNoAuth(connection?.metadata) || composioConnectedAccountId(connection?.metadata) !== null;
+  }
   return connection
     ? (await connectionCredentialExists({
         connectorId: row.connectorId,
@@ -439,8 +509,11 @@ function toGatewayConnector(
     metadata: Record<string, unknown>;
   } | null,
 ): GatewayConnector {
-  const { auth, hasAuth } = authOf(row);
+  const { auth, hasAuth: configuredHasAuth } = authOf(row);
   const config = (row.config ?? {}) as Record<string, unknown>;
+  const hasAuth = row.providerType === 'composio'
+    ? !composioConnectionIsNoAuth(connection?.metadata)
+    : configuredHasAuth;
   return {
     connectorId: row.connectorId,
     authSecret: row.authSecret,
@@ -558,6 +631,9 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
           ? channelToken(row.projectId, channelPlatform(row.config), connectionSlug)
           : null;
       }
+      if (connector.provider === 'composio') {
+        return composioConnectedAccountId(connector.connectionMetadata);
+      }
       if (connector.connectionId) {
         const credential = await resolveConnectionCredentialValue({
           connectorId: connector.connectorId,
@@ -651,126 +727,6 @@ export function makeDbGatewayDeps(principal: ConnectorPrincipal): GatewayDeps {
         method,
         args,
       }),
-    // Voice channel: `spawn_room` creates the LiveKit room + human join token
-    // (the same logic voice/routes.ts used to inline before it went through
-    // the gateway); `join_gmeet`/`join_zoom` are declared but not implemented
-    // yet, so they fail loud with what to do instead rather than pretending.
-    executeVoiceCall: async ({ projectId, sessionId, op, args }) => {
-      if (op === 'join_gmeet' || op === 'join_zoom') {
-        const platform = op === 'join_gmeet' ? 'Google Meet' : 'Zoom';
-        return {
-          ok: false,
-          kind: 'not_implemented',
-          message: `joining an existing ${platform} is not supported yet — use spawn_room and share the join link instead`,
-        };
-      }
-      // The call id IS the session id, so every action below addresses "this
-      // session's call" without the agent having to carry a call id around.
-      if (op === 'read_transcript') {
-        if (!sessionId) {
-          return {
-            ok: false,
-            kind: 'error',
-            message: 'read_transcript requires a session',
-          };
-        }
-        // Mode resolution, the per-call read position, the page shape and the
-        // unread count all live in channels/voice/transcript-read.ts — read its
-        // header for why a bare call is the cheap one, and for what happens to
-        // "unread" turns when a turn dies mid-read. Everything except liveness,
-        // which is a LiveKit question, not a transcript one.
-        const read = await readTranscriptForAgent({
-          callId: sessionId,
-          projectId,
-          args,
-        });
-        return {
-          ok: true,
-          data: { ...read, live: await isCallLive(sessionId) },
-        };
-      }
-
-      if (op === 'send_prompt') {
-        if (!sessionId) {
-          return {
-            ok: false,
-            kind: 'error',
-            message: 'send_prompt requires a session',
-          };
-        }
-        const text = typeof args.text === 'string' ? args.text.trim() : '';
-        if (!text) {
-          return {
-            ok: false,
-            kind: 'error',
-            message: 'send_prompt requires `text`',
-          };
-        }
-        // `kortixSay` carries both halves of this utterance: the framing the
-        // voice model needs (it is handed the text as INSTRUCTIONS, so raw text
-        // reads as an unattributed order — that is what made the call answer
-        // statements as questions) AND the plain line that gets written to
-        // voice_call_turns, so what this agent says into the call is actually in
-        // the call's record. `projectId` is passed because we have it here; the
-        // in-call paths (turn.ts, answer-watch.ts) look it up instead.
-        const result = await promptVoiceAgent(sessionId, kortixSay(text), {
-          projectId,
-        });
-        if (!result.delivered) {
-          // Deliberately an error, not a silent success: an agent that believes
-          // it spoke and did not will carry on as though the room heard it.
-          return {
-            ok: false,
-            kind: 'error',
-            message: result.reason ?? 'could not reach the call',
-          };
-        }
-        return { ok: true, data: { spoken: true } };
-      }
-
-      if (op === 'end_call') {
-        if (!sessionId) {
-          return {
-            ok: false,
-            kind: 'error',
-            message: 'end_call requires a session',
-          };
-        }
-        await endCall(sessionId);
-        return { ok: true, data: { ended: true } };
-      }
-
-      if (op !== 'spawn_room') {
-        return {
-          ok: false,
-          kind: 'error',
-          message: `unknown voice action "${op}"`,
-        };
-      }
-      if (!sessionId) {
-        return {
-          ok: false,
-          kind: 'error',
-          message: 'spawn_room requires a session',
-        };
-      }
-      const voice = typeof args.voice === 'string' ? args.voice : null;
-      const botName = await resolveProjectBotName(projectId);
-      // The call id IS the session id — one live call per session.
-      const callId = sessionId;
-      // Start the room BEFORE minting the human's join link. If a person opens
-      // the page first it would try to join a room that does not exist yet,
-      // and that join is rejected with nothing to retry against.
-      await startCall({ callId, projectId, sessionId, botName, voice });
-      // Hand out a short, ungessable link that resolves to a freshly-minted
-      // LiveKit access token server-side (public-join-routes.ts), rather than
-      // embedding the ~300-char signed JWT itself in the URL — see
-      // join-links.ts's header for why (a single corrupted character in
-      // transit used to break the signature with no way to retry).
-      const { token: joinToken } = await mintJoinLink({ callId, projectId });
-      const joinUrl = joinPageUrl(config.FRONTEND_URL, joinToken);
-      return { ok: true, data: { call_id: callId, join_url: joinUrl } };
-    },
     fetchImpl: nodeFetch,
     enforcePolicies: true,
   };
@@ -834,18 +790,89 @@ export async function loadPipedreamConnector(projectId: string, slug: string) {
   };
 }
 
+/** Load a Composio connector's toolkit slug + id (verifies provider). */
+export async function loadComposioConnector(projectId: string, slug: string) {
+  const [row] = await db
+    .select({
+      connectorId: connectors.connectorId,
+      accountId: connectors.accountId,
+      providerType: connectors.providerType,
+      config: connectors.config,
+      authorizationStrategy: connectors.authorizationStrategy,
+    })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
+    .limit(1);
+  if (!row || row.providerType !== 'composio') return null;
+  const app = (row.config as any)?.app;
+  if (typeof app !== 'string' || !app) return null;
+  return {
+    connectorId: row.connectorId,
+    accountId: row.accountId,
+    app,
+    authorizationStrategy: row.authorizationStrategy,
+  };
+}
+
+type ComposioAdapter = {
+  composioConfigured(): boolean;
+  composioCatalogPage?(input: {
+    projectId: string;
+    q?: string;
+    category?: string;
+    cursor?: string;
+    limit?: number;
+  }): Promise<unknown>;
+  composioConnectUrl(input: {
+    projectId: string;
+    slug: string;
+    app: string;
+    connectionId: string;
+    stableUserId: string;
+    redirects?: { success?: string; error?: string };
+  }): Promise<{ connectUrl?: string; sessionId: string; authRequestId?: string; connectedAccountId?: string; isNoAuth: boolean; connected: boolean }>;
+  finalizeComposioConnection(input: {
+    projectId: string;
+    slug: string;
+    app: string;
+    connectionId: string;
+    stableUserId: string;
+    sessionId: string;
+    authRequestId?: string;
+    expectedConnectedAccountId?: string;
+  }): Promise<{ connected: boolean; connectedAccountId?: string; sessionId: string; authRequestId?: string; isNoAuth: boolean }>;
+};
+
+async function loadComposioAdapter(): Promise<ComposioAdapter | null> {
+  if (!config.COMPOSIO_API_KEY) return null;
+  try {
+    await import('@composio/core');
+    const modulePath = './composio';
+    return (await import(modulePath)) as ComposioAdapter;
+  } catch (err) {
+    console.warn('[composio] adapter unavailable', { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
+function composioStableUserId(connectionId: string): string {
+  return `kortix-connection:${connectionId}`;
+}
+
 export type ConnectLinkEligibility =
   | {
       ok: true;
       connectorId: string;
       app: string;
       authorizationStrategy: string;
+      /** Which provider mints the hosted page behind the link. */
+      providerType: 'pipedream' | 'composio';
     }
   /** No connector with this slug on the project. The manifest really is missing it. */
   | { ok: false; reason: 'no_such_connector' }
-  /** It exists, but a setup link is a Pipedream Quick Connect and this is not one. */
-  | { ok: false; reason: 'not_pipedream'; providerType: string }
-  /** Pipedream-backed but its config names no app — a broken connector, not a missing one. */
+  /** It exists, but no hosted-authorization provider backs it (channel, computer, custom). */
+  | { ok: false; reason: 'unsupported_provider'; providerType: string }
+  /** Provider-backed but its config names no app — a broken connector, not a missing one. */
   | { ok: false; reason: 'no_app' };
 
 /**
@@ -873,10 +900,16 @@ export async function connectLinkEligibility(
     .where(and(eq(connectors.projectId, projectId), eq(connectors.slug, slug)))
     .limit(1);
   if (!row) return { ok: false, reason: 'no_such_connector' };
-  if (row.providerType !== 'pipedream') {
+  // Composio counts. A setup link is "a hosted page that authorizes this
+  // connector", and both providers offer one — the Pipedream-only check here is
+  // what forced a Composio connector down the fallback path where the agent
+  // pastes a raw provider URL into the transcript. The web renderer only turns
+  // OUR `/connect/<token>` link into a button, so that fallback lost the button,
+  // the modal, and the resume, and left three renderings of one action on screen.
+  if (row.providerType !== 'pipedream' && row.providerType !== 'composio') {
     return {
       ok: false,
-      reason: 'not_pipedream',
+      reason: 'unsupported_provider',
       providerType: row.providerType,
     };
   }
@@ -887,6 +920,7 @@ export async function connectLinkEligibility(
     connectorId: row.connectorId,
     app,
     authorizationStrategy: row.authorizationStrategy,
+    providerType: row.providerType,
   };
 }
 
@@ -1169,6 +1203,14 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
     const { hasAuth } = authOf(row);
     return hasAuth && row.providerType === 'channel';
   });
+  // Composio rows need the same liveness question channel rows already ask.
+  // `authOf` forces `hasAuth = true` for composio and the shared-credential
+  // lookup below checks a table Composio never writes to, so a composio
+  // connector serialized as `active` no matter whether its OAuth handshake ever
+  // completed. `connectorConnected` already answers correctly for composio (it
+  // reads `connected_account_id` / `is_no_auth` out of the connection metadata,
+  // the same facts the gateway denies calls on) — it was simply never asked.
+  const composioRows = conns.filter((row) => row.providerType === 'composio');
   const boundSecretIdentifiers = [
     ...new Set(
       credentialRows
@@ -1176,7 +1218,13 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
         .filter((identifier): identifier is string => Boolean(identifier)),
     ),
   ];
-  const [actions, credentialConnectorIds, connectedChannelSlugs, validBoundSecrets] =
+  const [
+    actions,
+    credentialConnectorIds,
+    connectedChannelSlugs,
+    authorizedComposioSlugs,
+    validBoundSecrets,
+  ] =
     await Promise.all([
       db
         .select()
@@ -1190,6 +1238,11 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       connectorIdsWithSharedCredentials(credentialRows.map((row) => row.connectorId)),
       Promise.all(
         channelRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
+      ).then(
+        (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
+      ),
+      Promise.all(
+        composioRows.map(async (row) => [row.slug, await connectorConnected(row, null)] as const),
       ).then(
         (entries) => new Set(entries.filter(([, connected]) => connected).map(([slug]) => slug)),
       ),
@@ -1242,7 +1295,22 @@ async function listConnectors(projectId: string): Promise<AdminConnectorView[]> 
       provider: row.providerType,
       platform: channelPlatform(row.config),
       iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
-      status: row.status,
+      // A composio connector whose authorization never completed reports
+      // `needs_auth` rather than the stored `active`. The gateway already
+      // refuses every call on such a connector, so reporting `active` made the
+      // product contradict itself: a checkmark in the UI and `needs_auth` on
+      // every tool call, with nothing explaining the gap. Prod 2026-08-28: all 6
+      // GitHub connections carried a null `connected_account_id` and no GitHub
+      // tool call had ever executed, while the connector read `active`.
+      //
+      // Read-side only. `disabled` and `error` are deliberate operator/sync
+      // states and outrank this; the DB column is left alone.
+      status:
+        row.providerType === 'composio' &&
+        row.status === 'active' &&
+        !authorizedComposioSlugs.has(row.slug)
+          ? ('needs_auth' as const)
+          : row.status,
       authorizationStrategy: row.authorizationStrategy,
       sensitive: config?.sensitive === true,
       actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
@@ -1838,12 +1906,263 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         return { ok: true, connected: shared.connected };
       }
     : undefined,
-  listPipedreamApps: pipedreamConfigured()
-    ? (input) => pipedreamCatalogPage(input)
-    : undefined,
+  listPipedreamApps: pipedreamConfigured() ? (input) => pipedreamCatalogPage(input) : undefined,
   listPipedreamSections: pipedreamConfigured()
     ? (input) => pipedreamCatalogSections(input)
     : undefined,
+  connectStatus: async () => {
+    const composio = await loadComposioAdapter();
+    const providers = [
+      ...(composio?.composioConfigured?.() ? ['composio'] : []),
+      ...(pipedreamConfigured() ? ['pipedream'] : []),
+    ];
+    return { configured: providers.length > 0, provider: providers[0] ?? null, providers };
+  },
+  listConnectToolkits: async (projectId, input) => {
+    const composio = await loadComposioAdapter();
+    if (composio?.composioConfigured?.() && composio.composioCatalogPage) {
+      return composio.composioCatalogPage({ projectId, ...input });
+    }
+    // `/connect/toolkits` is the Composio surface. Never turn an unavailable
+    // Composio deployment into an implicit Pipedream request. The legacy
+    // Pipedream catalogue has explicit `/pipedream/apps` routes for deliberate
+    // rollback use.
+    return null;
+  },
+  listSessionConnectRequests: async (projectId, sessionId) => {
+    const rows = await db
+      .select({
+        connector: connectors,
+        connectionId: connectorConnections.connectionId,
+        isDefault: connectorConnections.isDefault,
+        metadata: connectorConnections.metadata,
+      })
+      .from(connectorConnections)
+      .innerJoin(connectors, eq(connectors.connectorId, connectorConnections.connectorId))
+      .where(
+        and(
+          eq(connectorConnections.projectId, projectId),
+          sql`${connectorConnections.metadata}->>'requesting_session_id' = ${sessionId}`,
+        ),
+      );
+    const out: Array<{ slug: string; app: string; provider: string; connected: boolean }> = [];
+    for (const row of rows) {
+      const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+      const connected = await connectorConnected(row.connector, null, {
+        connectionId: row.connectionId,
+        isDefault: row.isDefault,
+        metadata,
+      });
+      out.push({
+        slug: row.connector.slug,
+        app:
+          typeof metadata.toolkit === 'string'
+            ? metadata.toolkit
+            : ((row.connector.config as Record<string, unknown> | null)?.app as string) ??
+              row.connector.slug,
+        provider: row.connector.providerType,
+        connected,
+      });
+    }
+    return out;
+  },
+  connectorConnect: async (projectId, slug, _userId, redirects, requestingSessionId) => {
+    const conn = await loadComposioConnector(projectId, slug);
+    if (conn) {
+      if (conn.authorizationStrategy !== 'project') return null;
+      const composio = await loadComposioAdapter();
+      if (!composio?.composioConfigured?.()) return null;
+      // Sync creates the canonical project-default connection for every
+      // materialized connector. Reuse it rather than inserting a second row,
+      // which violates idx_connector_connections_default_project.
+      const connectionId = await ensureDefaultConnection({
+        projectId,
+        connectorId: conn.connectorId,
+      });
+      await db
+        .update(connectorConnections)
+        .set({
+          status: 'active',
+          isDefault: true,
+          // Clear any previous account binding before authorization starts.
+          // Pending rows stay active because the DB enum has no needs_auth
+          // value. The gateway still fails closed on missing auth metadata.
+          metadata: {
+            provider: 'composio',
+            toolkit: conn.app,
+            requesting_session_id: requestingSessionId ?? null,
+          },
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(connectorConnections.accountId, conn.accountId),
+            eq(connectorConnections.projectId, projectId),
+            eq(connectorConnections.connectorId, conn.connectorId),
+            eq(connectorConnections.connectionId, connectionId),
+          ),
+        );
+      const stableUserId = composioStableUserId(connectionId);
+      const result = await composio.composioConnectUrl({
+        projectId,
+        slug,
+        app: conn.app,
+        connectionId,
+        stableUserId,
+        redirects,
+      });
+      await db
+        .update(connectorConnections)
+        .set({
+          status: 'active',
+          metadata: composioConnectionMetadata({
+            toolkit: conn.app,
+            stableUserId,
+            sessionId: result.sessionId,
+            authRequestId: result.authRequestId,
+            connectedAccountId: result.connectedAccountId,
+            isNoAuth: result.isNoAuth,
+            requestingSessionId,
+          }),
+          updatedAt: sql`now()`,
+        })
+        .where(and(
+          eq(connectorConnections.accountId, conn.accountId),
+          eq(connectorConnections.projectId, projectId),
+          eq(connectorConnections.connectorId, conn.connectorId),
+          eq(connectorConnections.connectionId, connectionId),
+        ));
+      return {
+        provider: 'composio',
+        app: conn.app,
+        connectUrl: result.connectUrl,
+        requestId: result.authRequestId,
+        sessionId: result.sessionId,
+        connectionId,
+        connected: result.connected,
+        isNoAuth: result.isNoAuth,
+      };
+    }
+    if (!pipedreamConfigured()) return null;
+    const pipedream = await loadPipedreamConnector(projectId, slug);
+    if (!pipedream || pipedream.authorizationStrategy !== 'project') return null;
+    const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, pipedream.app, null, redirects);
+    await mergeRequestingSession(
+      await ensureDefaultConnection({ projectId, connectorId: pipedream.connectorId }),
+      requestingSessionId,
+    );
+    return { provider: 'pipedream', token, app: pipedream.app, connectUrl };
+  },
+  connectorFinalize: async (projectId, slug, _userId, selector) => {
+    const conn = await loadComposioConnector(projectId, slug);
+    if (conn) {
+      if (conn.authorizationStrategy !== 'project') return null;
+      const composio = await loadComposioAdapter();
+      if (!composio?.composioConfigured?.()) return null;
+      const [connection] = await db
+        .select({ connectionId: connectorConnections.connectionId, metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.accountId, conn.accountId),
+            eq(connectorConnections.projectId, projectId),
+            eq(connectorConnections.connectorId, conn.connectorId),
+            eq(connectorConnections.ownerType, 'project'),
+            isNull(connectorConnections.ownerId),
+            selector?.connectionId
+              ? eq(connectorConnections.connectionId, selector.connectionId)
+              : eq(connectorConnections.isDefault, true),
+          ),
+        )
+        .limit(1);
+      if (selector?.connectionId && !connection) throw new HTTPException(404, { message: 'connector connection not found' });
+      if (!connection) return { provider: 'composio', connected: false };
+      const metadata = (connection.metadata ?? {}) as Record<string, unknown>;
+      const sessionId = typeof metadata.session_id === 'string' ? metadata.session_id : '';
+      const authRequestId = typeof metadata.auth_request_id === 'string' ? metadata.auth_request_id : undefined;
+      const expectedConnectedAccountId = typeof metadata.connected_account_id === 'string' ? metadata.connected_account_id : undefined;
+      const requestingSessionId = readRequestingSessionId(metadata);
+      if (selector?.requestId && selector.requestId !== authRequestId) {
+        throw new HTTPException(409, { message: 'authorization request does not match connection' });
+      }
+      if (!sessionId) return { provider: 'composio', connected: false, connectionId: connection.connectionId };
+      const stableUserId = composioStableUserId(connection.connectionId);
+      const result = await composio.finalizeComposioConnection({
+        projectId,
+        slug,
+        app: conn.app,
+        connectionId: connection.connectionId,
+        stableUserId,
+        sessionId,
+        authRequestId,
+        expectedConnectedAccountId,
+      });
+      await db
+        .update(connectorConnections)
+        .set({
+          // An incomplete authorization is a retryable needs-auth state. The
+          // gateway derives it from metadata and rejects execution until an
+          // account id exists or the toolkit is explicitly no-auth.
+          status: 'active',
+          metadata: composioConnectionMetadata({
+            toolkit: conn.app,
+            stableUserId,
+            sessionId: result.sessionId,
+            authRequestId: result.authRequestId ?? authRequestId,
+            connectedAccountId: result.connectedAccountId ?? expectedConnectedAccountId,
+            isNoAuth: result.isNoAuth,
+            requestingSessionId,
+          }),
+          updatedAt: sql`now()`,
+        })
+        .where(and(
+          eq(connectorConnections.accountId, conn.accountId),
+          eq(connectorConnections.projectId, projectId),
+          eq(connectorConnections.connectorId, conn.connectorId),
+          eq(connectorConnections.connectionId, connection.connectionId),
+        ));
+      // The agent that minted the link is blocked waiting on this. Tell it the
+      // account landed so it resumes instead of posting a second link next run.
+      // Fire-and-forget: the credential is already saved, and a notification
+      // failure must never turn a successful connect into an error.
+      if (result.connected && requestingSessionId) {
+        void notifyConnectorSession(requestingSessionId, projectId, _userId ?? null, slug, conn.app);
+      }
+      return {
+        provider: 'composio',
+        connected: result.connected,
+        accountId: result.connectedAccountId,
+        connectionId: connection.connectionId,
+        isNoAuth: result.isNoAuth,
+      };
+    }
+    if (!pipedreamConfigured()) return null;
+    const pipedream = await loadPipedreamConnector(projectId, slug);
+    if (!pipedream || pipedream.authorizationStrategy !== 'project') return null;
+    const r = await finalizePipedreamConnection({
+      projectId,
+      slug,
+      app: pipedream.app,
+      connectorId: pipedream.connectorId,
+      userId: null,
+    });
+    if (r.connected) {
+      const [row] = await db
+        .select({ metadata: connectorConnections.metadata })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.connectorId, pipedream.connectorId),
+            eq(connectorConnections.isDefault, true),
+            eq(connectorConnections.ownerType, 'project'),
+          ),
+        )
+        .limit(1);
+      const waiting = readRequestingSessionId(row?.metadata);
+      if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, pipedream.app);
+    }
+    return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
+  },
   discoverConnectorAuth: discoverDraftConnectorAuth,
   listDiscoverConnectors: (input) => listConnectorCatalog(input),
   getDiscoverConnector: (id) => getConnectorCatalogDetail(id),

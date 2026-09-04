@@ -26,7 +26,7 @@
  *   - Egress is not controlled at the network. Nothing implements it.
  *   - microVM is the Platinum provider only; the default is containers. The
  *     sanctioned phrasing is "its own isolated machine".
- *   - Channels are a closed enum: slack | teams | email | voice. Telegram,
+ *   - Channels are a closed enum: slack | teams | email. Telegram,
  *     WhatsApp, SMS and Discord are not channels. And `channels:` is REJECTED
  *     by the v2 manifest validator (`rejectChannelsV2`), so `kortix.yaml` never
  *     "declares channels" — channel routing is live project state, not repo

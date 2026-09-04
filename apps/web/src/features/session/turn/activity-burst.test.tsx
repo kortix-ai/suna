@@ -288,9 +288,9 @@ describe('sameActivityGroupStepProps', () => {
       false,
     );
     expect(sameActivityGroupStepProps({ ...props(a), running: true }, props(b))).toBe(false);
-    expect(
-      sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b)),
-    ).toBe(false);
+    expect(sameActivityGroupStepProps({ ...props(a), disableNavigation: false }, props(b))).toBe(
+      false,
+    );
   });
 });
 
@@ -477,11 +477,7 @@ describe('ActivityBurst', () => {
 
   const renderBurst = (
     parts: Part[],
-    {
-      working = false,
-      isTrailing = false,
-      density = 'normal' as 'normal' | 'minimal',
-    } = {},
+    { working = false, isTrailing = false, density = 'normal' as 'normal' | 'minimal' } = {},
   ) =>
     renderToStaticMarkup(
       <QueryClientProvider client={new QueryClient()}>
@@ -662,6 +658,62 @@ describe('ActivityBurst', () => {
     ]);
     expect(markup).toContain('Thinking');
     expect(markup).not.toContain('Weighing two schemas');
+  });
+
+  test('a settled thought reports how long it took', () => {
+    // `Thinking` alone answered "the model did something" and nothing else —
+    // not whether that was two seconds or ninety, which is the one question a
+    // reader waiting on a thought has.
+    const markup = renderBurst([
+      {
+        id: 'r',
+        type: 'reasoning',
+        text: 'Weighing two schemas',
+        time: { start: 1_700_000_000_000, end: 1_700_000_012_000 },
+      } as unknown as Part,
+    ]);
+    expect(markup).toContain('Thought for 12s');
+  });
+
+  test('a thought under a second stays plain "Thinking"', () => {
+    // `formatDuration` returns '' below 1000ms on purpose. A row saying "0s" is
+    // worse than one saying nothing, and the same fallback covers a provider
+    // that sends no timing at all.
+    const timed = renderBurst([
+      {
+        id: 'r',
+        type: 'reasoning',
+        text: 'Weighing two schemas',
+        time: { start: 1_700_000_000_000, end: 1_700_000_000_400 },
+      } as unknown as Part,
+    ]);
+    expect(timed).toContain('>Thinking<');
+    expect(timed).not.toContain('Thought for');
+
+    const untimed = renderBurst([
+      { id: 'r', type: 'reasoning', text: 'Weighing two schemas' } as unknown as Part,
+    ]);
+    expect(untimed).toContain('Thinking');
+    expect(untimed).not.toContain('Thought for');
+  });
+
+  test('a LIVE thought never claims a total — it counts up instead', () => {
+    // Past tense on a thought that has not finished would report a number the
+    // run has not reached. The live row counts from the client (see
+    // `useLiveElapsedMs`), so a static render is always at zero seconds.
+    const markup = renderBurst(
+      [
+        {
+          id: 'r',
+          type: 'reasoning',
+          text: 'Weighing two schemas',
+          time: { start: 1_700_000_000_000 },
+        } as unknown as Part,
+      ],
+      { working: true, isTrailing: true },
+    );
+    expect(markup).not.toContain('Thought for');
+    expect(markup).toContain('Thinking');
   });
 
   test('a thought opens itself while the model is still thinking', () => {

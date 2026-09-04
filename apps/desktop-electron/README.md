@@ -46,7 +46,31 @@ KORTIX_DESKTOP_URL=https://kortix.com/projects pnpm --filter @kortix/desktop-ele
 
 At runtime you can also switch via the native **Kortix → Frontend URL** menu
 (Production / Dev / Local / Custom… / Reset). The choice is remembered across
-launches (stored in `userData/frontend_url`).
+launches (stored in `userData/frontend_url`). `KORTIX_DESKTOP_USER_DATA=<dir>`
+runs against an isolated profile instead of the real one.
+
+### The dev/staging environment password (HTTP Basic)
+
+`dev.kortix.com` and `staging.kortix.com` sit behind one shared HTTP Basic
+credential (`apps/web/src/middleware.ts` answers `401 Authentication required.`).
+Chrome pops its own username/password dialog for that; Electron does not, so the
+shell handles the challenge itself (`src/main.js` → `answerBasicChallenge`, policy
+in `src/basic-auth.js`):
+
+1. `KORTIX_DESKTOP_BASIC_PASSWORD` (+ optional `KORTIX_DESKTOP_BASIC_USER`,
+   default `kortix`) answers silently — for CI and scripted launches.
+2. Otherwise a credential the user entered earlier for that host answers
+   silently. "Remember on this device" stores it in `userData/basic_auth.json`,
+   encrypted with Electron `safeStorage` (macOS Keychain / DPAPI / libsecret).
+3. Otherwise a native-style sign-in dialog (`assets/basic-auth.html`) opens over
+   the app window. A rejected password (the server re-challenges within 60 s)
+   drops the remembered copy and reopens the dialog with an error. Cancel leaves
+   the bare 401 page, like Chrome; reload asks again.
+
+The credential is only ever sent to the configured app origin. Any other host
+(sandbox previews, iframes) that returns a Basic challenge is refused.
+**Kortix → Frontend URL → Forget Saved Environment Password** clears the
+remembered credential for the current host.
 
 ### Testing login (the `kortix://` deep link)
 

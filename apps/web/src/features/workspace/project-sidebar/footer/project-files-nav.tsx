@@ -1,14 +1,14 @@
 'use client';
 
-import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
-import Link from 'next/link';
+import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from '@/components/ui/sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
+import { useProjectPageCans } from '@/lib/use-project-can';
+import { FoldersIcon } from '@phosphor-icons/react';
 
 /**
  * Top-level Files entry. Hidden when the caller lacks `project.file.read`: that
@@ -24,6 +24,11 @@ import { useProjectCan } from '@/lib/use-project-can';
  * route is therefore dynamic. Note this is production-only behaviour: Next
  * disables Link prefetching under `next dev`.
  *
+ * `HoverPrefetchLink`, not a bare `<Link>`: prefetching on mount made every
+ * session open pay a full dynamic render of /files (2 requests, ~26KB) that
+ * nobody asked for. The prefetch now starts on hover/focus/touch, which still
+ * lands well before the click.
+ *
  * Connectors / Skills / Commands used to sit beside this entry, one row each,
  * plus a Customize row below them. They are tabs of one `(capabilities)`
  * layout, so four rows bought nothing over one: ProjectCustomizeNavItem
@@ -35,7 +40,7 @@ export function ProjectFilesNavItem() {
   const projectId = params?.id;
   const isMobile = useIsMobile();
   const { setOpenMobile } = useSidebar();
-  const canReadFiles = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_FILE_READ);
+  const canReadFiles = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_FILE_READ];
   const isActive = !!pathname && /^\/projects\/[^/]+\/files(\/|$)/.test(pathname);
 
   const handleClick = useCallback(() => {
@@ -53,12 +58,12 @@ export function ProjectFilesNavItem() {
         asChild
         isActive={isActive}
         tooltip="Files"
-        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+        className="group/menu-button text-sidebar-foreground relative"
       >
-        <Link href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
-          <FolderOpen />
+        <HoverPrefetchLink href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
+          <FoldersIcon />
           Files
-        </Link>
+        </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

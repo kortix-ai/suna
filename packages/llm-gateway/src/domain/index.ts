@@ -12,7 +12,6 @@ export type {
   ModelCostTier,
   ModelModalities,
 } from './catalog';
-export type { GatewayConfig } from './config';
 export { DEFAULT_MAX_REQUEST_BYTES } from './config';
 export type {
   ModelFallbackCondition,

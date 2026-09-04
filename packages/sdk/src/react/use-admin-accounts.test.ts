@@ -136,7 +136,7 @@ describe('admin entitlement-override mutation contract', () => {
     expect(typeof useAdminSetOverrides).toBe('function');
   });
 
-  // The ten keys the server's `validateOverridePatch` accepts — an unknown key
+  // The eleven keys the server's `validateOverridePatch` accepts — an unknown key
   // is a 400, so the console must not be able to invent one.
   test('ADMIN_OVERRIDE_KEYS is exactly the server-side override catalog', () => {
     expect([...ADMIN_OVERRIDE_KEYS]).toEqual([
@@ -149,6 +149,7 @@ describe('admin entitlement-override mutation contract', () => {
       'scim',
       'rbac',
       'auditAccess',
+      'branding',
       'managedModels',
     ]);
   });

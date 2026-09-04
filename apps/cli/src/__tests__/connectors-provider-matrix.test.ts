@@ -41,6 +41,7 @@ async function runProviderCase(input: {
       KORTIX_NO_UPDATE_CHECK: '1',
       KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       KORTIX_CONFIG_FILE: join(directory, 'config.json'),
+      KORTIX_TOKEN: undefined,
       NO_COLOR: '1',
       FORCE_COLOR: '0',
     },
@@ -66,8 +67,13 @@ async function runProviderCase(input: {
 describe('kortix connectors add provider matrix', () => {
   const cases = [
     {
+      provider: 'composio',
+      flags: ['--app', 'gmail'],
+      expectedLines: ['app: gmail'],
+    },
+    {
       provider: 'pipedream',
-      flags: ['--app', 'github'],
+      flags: ['--app', 'github', '--allow-legacy-pipedream'],
       expectedLines: ['app: github'],
     },
     {
@@ -102,4 +108,46 @@ describe('kortix connectors add provider matrix', () => {
       await runProviderCase(input);
     });
   }
+
+  test('pipedream is rejected unless a human explicitly opts into legacy rollback', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kortix-connector-pipedream-rejected-'));
+    tempDirectories.push(directory);
+    const manifestPath = join(directory, 'kortix.yaml');
+    await writeFile(manifestPath, 'kortix_version: 2\nname: Provider guard\n', 'utf8');
+
+    const child = Bun.spawn({
+      cmd: [
+        process.execPath,
+        CLI_ENTRY,
+        'connectors',
+        'add',
+        'gmail',
+        '--provider',
+        'pipedream',
+        '--app',
+        'gmail',
+      ],
+      cwd: directory,
+      env: {
+        ...process.env,
+        KORTIX_NO_UPDATE_CHECK: '1',
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        KORTIX_CONFIG_FILE: join(directory, 'config.json'),
+        KORTIX_TOKEN: undefined,
+        NO_COLOR: '1',
+        FORCE_COLOR: '0',
+      },
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [code, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stderr).text(),
+    ]);
+
+    expect(code).toBe(1);
+    expect(stderr).toContain('Pipedream is legacy rollback only');
+    expect(stderr).toContain('--provider composio');
+    expect(await readFile(manifestPath, 'utf8')).not.toContain('provider: pipedream');
+  });
 });

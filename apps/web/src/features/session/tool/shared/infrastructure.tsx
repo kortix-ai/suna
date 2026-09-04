@@ -49,7 +49,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { Disclosure, DisclosureTrigger } from '@/components/ui/disclosure';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Loading from '@/components/ui/loading';
 import type { BasicToolProps, ParsedJsonFailure } from '@/features/session/tool/shared/types';
 import { ToolError } from '@/features/session/tool/tool-error';
@@ -812,6 +812,27 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
 export const ToolRunningContext = createContext(false);
 
 /**
+ * Whether the row a trigger belongs to is currently expanded.
+ *
+ * A trigger is a node the tool builds and {@link BasicTool} renders, so the
+ * tool itself cannot see the disclosure state it lives above — the `open` state
+ * is `BasicTool`'s. This context is that one fact, published where the trigger
+ * is RENDERED (inside the provider below) rather than where its element is
+ * created, so `useToolOpen()` inside a trigger component reads the real value
+ * while the same call in the tool's own body would not.
+ *
+ * It exists so a trigger can stop repeating what the open card already shows —
+ * `bash` drops the command line from its row once the card beneath is spelling
+ * the whole command out. Rows with no body never open, so the default is
+ * `false` and a non-disclosure surface needs no provider.
+ */
+export const ToolOpenContext = createContext(false);
+
+export function useToolOpen(): boolean {
+  return useContext(ToolOpenContext);
+}
+
+/**
  * This step's verdict, supplied once by `ToolPartRenderer` and read by
  * {@link BasicTool} — the same ambient-per-part seam `ToolRunningContext` and
  * `ToolDurationContext` already use.
@@ -825,6 +846,35 @@ export const ToolRunningContext = createContext(false);
 export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 
 export const StalePendingContext = createContext(false);
+
+/**
+ * Whether the turn that owns this part is STILL RUNNING.
+ *
+ * `ToolRunningContext` cannot answer this, and that is the bug this exists to
+ * close. A tool call is created `pending` with an empty `input`, and its
+ * arguments arrive afterwards as streamed JSON in `state.raw`. For the frames
+ * between those two events, a live call is byte-for-byte identical to a
+ * leftover `pending` part from a run that died — same status, same empty input,
+ * same absent `raw` — so `tool-part-renderer`'s stale test matched both and
+ * `ToolRunningContext` reported `false` for a call that had only just started.
+ *
+ * The visible cost was a row contradicting the line directly beneath it: the
+ * transcript rendered "No content received" over a `write` while the SDK's own
+ * status line, reading THAT SAME PART, rendered "Making changes..."
+ * (`packages/sdk/src/core/turns/state.ts`). One part, two views, opposite
+ * verdicts — which is what made a working session look frozen.
+ *
+ * The part alone cannot settle it, so the answer comes from one level up. The
+ * turn already knows whether it is working (`session-chat.tsx`'s `working`), and
+ * that single boolean is the whole discriminator: while the turn is live, an
+ * input-less pending part is a call that has not spoken YET; once the turn is
+ * over, the same part is a call that never will.
+ *
+ * Defaults to `false` so a surface that renders parts outside a live turn — the
+ * Advanced panel, `/debug/tools`, a restored transcript — keeps the settled
+ * reading without opting in.
+ */
+export const TurnLiveContext = createContext(false);
 
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
@@ -931,15 +981,20 @@ function InlineTriggerTitle({
   onSubtitleClick?: () => void;
 }) {
   const args = trigger.args ?? [];
+  // Read HERE rather than in the tool: this component renders inside
+  // `BasicTool`'s `ToolOpenContext` provider, and the tool's own body does not.
+  // See `TriggerTitle.hideSubtitleWhenOpen` for when a caller sets the flag.
+  const open = useToolOpen();
+  const subtitle = open && trigger.hideSubtitleWhenOpen ? undefined : trigger.subtitle;
 
   return (
     <>
       <span className="text-foreground shrink-0 text-sm whitespace-nowrap">{trigger.title}</span>
-      {(trigger.subtitle || args.length > 0) && (
+      {(subtitle || args.length > 0 || trigger.stat) && (
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          {trigger.subtitle &&
+          {subtitle &&
             (running ? (
-              <TextShimmer className="min-w-0 truncate text-sm">{trigger.subtitle}</TextShimmer>
+              <TextShimmer className="min-w-0 truncate text-sm">{subtitle}</TextShimmer>
             ) : (
               // Painted as a link, so it must behave like one for the keyboard
               // too. Kept as a <span role="button"> rather than a real <button>
@@ -955,7 +1010,7 @@ function InlineTriggerTitle({
                 tabIndex={onSubtitleClick ? 0 : undefined}
                 // Last, so the rendered markup keeps `title="…">…</span>` — the
                 // shape the memory-tool trigger tests pin.
-                title={trigger.subtitle}
+                title={subtitle}
                 onKeyDown={
                   onSubtitleClick
                     ? (e) => {
@@ -975,12 +1030,22 @@ function InlineTriggerTitle({
                     : undefined
                 }
               >
-                {trigger.subtitle}
+                {subtitle}
               </span>
             ))}
+          {/* `shrink-0`: the count is the row's verdict-sized fact, so a long
+              filename truncates before the stat gives up a digit. DiffStat
+              nulls itself when both counts are zero. */}
+          {trigger.stat && (
+            <DiffStat
+              additions={trigger.stat.additions}
+              deletions={trigger.stat.deletions}
+              className="shrink-0 text-xs"
+            />
+          )}
           {args.length > 0 && (
             <>
-              {trigger.subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
+              {subtitle && <span className="text-muted-foreground/40 shrink-0">·</span>}
               <span
                 className="text-muted-foreground/40 min-w-0 truncate text-sm"
                 title={args.join(' · ')}
@@ -1079,6 +1144,9 @@ function PanelRowTitle({
   onSubtitleClick?: () => void;
 }) {
   const args = trigger.args ?? [];
+  // Same read, same reason as the inline row — one behaviour, two surfaces.
+  const open = useToolOpen();
+  const subtitle = open && trigger.hideSubtitleWhenOpen ? undefined : trigger.subtitle;
 
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
@@ -1091,14 +1159,14 @@ function PanelRowTitle({
           {trigger.title}
         </span>
       )}
-      {trigger.subtitle && (
+      {subtitle && (
         <span
           className={cn(
             'text-muted-foreground min-w-0 truncate font-mono text-xs',
             onSubtitleClick &&
               'hover:text-foreground cursor-pointer underline-offset-2 hover:underline',
           )}
-          title={trigger.subtitle}
+          title={subtitle}
           // `stopPropagation` is load-bearing now and was not before: the
           // subtitle sits INSIDE the disclosure trigger, so without it every
           // "open this file" click would also toggle the row it lives on.
@@ -1111,8 +1179,16 @@ function PanelRowTitle({
               : undefined
           }
         >
-          {trigger.subtitle}
+          {subtitle}
         </span>
+      )}
+      {/* Same slot as the inline row's: after the name, never truncated. */}
+      {trigger.stat && (
+        <DiffStat
+          additions={trigger.stat.additions}
+          deletions={trigger.stat.deletions}
+          className="shrink-0 text-xs"
+        />
       )}
       {args.length > 0 && (
         <span
@@ -1240,8 +1316,16 @@ function PanelToolRow({
       className="bg-popover border-border overflow-hidden rounded-md border"
     >
       {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
-      {hasBody && open && (
-        <div className={cn('border-border border-t px-3 py-3 text-sm', className)}>{children}</div>
+      {/* Animated for the same reason the inline row is — see
+          `CollapsibleToolRow`. The border and inset ride the inner div rather
+          than the animated element: they are the body's own chrome, and a
+          border on a `height: 0` box draws a hairline across a closed row. */}
+      {hasBody && (
+        <DisclosureContent>
+          <div className={cn('border-border border-t px-3 py-3 text-sm', className)}>
+            {children}
+          </div>
+        </DisclosureContent>
       )}
     </Disclosure>
   );
@@ -1358,7 +1442,23 @@ function CollapsibleToolRow({
     <Disclosure open={open} onOpenChange={onOpenChange}>
       {hasBody ? <DisclosureTrigger>{row}</DisclosureTrigger> : row}
 
-      {hasBody && open && <div className="mt-1 mb-1 overflow-hidden text-xs">{children}</div>}
+      {/* `DisclosureContent`, not a bare `{open && <div>}`. The raw conditional
+          is why an expanding tool row POPPED while a thinking row in the same
+          chain unfurled: `DisclosureContent` animates `height: 0 → auto` with
+          opacity through `AnimatePresence` (see `ui/disclosure.tsx`), and
+          `ThoughtChainStep` has always used it. Two presentations of one
+          gesture, and this was the half that had drifted.
+
+          The 4px seam is PADDING on a child of the animated element, never a
+          margin on it. A margin sits outside the animated height, so a
+          collapsed row would keep 8px of dead space; and a margin on the inner
+          child would collapse straight back out through the `height: auto`
+          element and escape the clip. Padding does neither. */}
+      {hasBody && (
+        <DisclosureContent className="text-xs">
+          <div className="py-1">{children}</div>
+        </DisclosureContent>
+      )}
     </Disclosure>
   );
 }
@@ -1415,21 +1515,23 @@ export function BasicTool({
   // they render as the plain, non-interactive rows they already were here.
   if (surface === 'panel') {
     return (
-      <PanelToolRow
-        icon={icon}
-        trigger={trigger}
-        running={running}
-        badge={badge}
-        outcome={outcome}
-        onSubtitleClick={onSubtitleClick}
-        locked={locked}
-        open={open}
-        onOpenChange={handleOpenChange}
-        className={className}
-        action={triggerAction}
-      >
-        {children}
-      </PanelToolRow>
+      <ToolOpenContext.Provider value={open}>
+        <PanelToolRow
+          icon={icon}
+          trigger={trigger}
+          running={running}
+          badge={badge}
+          outcome={outcome}
+          onSubtitleClick={onSubtitleClick}
+          locked={locked}
+          open={open}
+          onOpenChange={handleOpenChange}
+          className={className}
+          action={triggerAction}
+        >
+          {children}
+        </PanelToolRow>
+      </ToolOpenContext.Provider>
     );
   }
 
@@ -1460,9 +1562,16 @@ export function BasicTool({
 
   // Default: expand/collapse children inline.
   return (
-    <CollapsibleToolRow header={header} locked={locked} open={open} onOpenChange={handleOpenChange}>
-      {children}
-    </CollapsibleToolRow>
+    <ToolOpenContext.Provider value={open}>
+      <CollapsibleToolRow
+        header={header}
+        locked={locked}
+        open={open}
+        onOpenChange={handleOpenChange}
+      >
+        {children}
+      </CollapsibleToolRow>
+    </ToolOpenContext.Provider>
   );
 }
 

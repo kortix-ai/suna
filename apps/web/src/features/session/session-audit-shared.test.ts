@@ -1,5 +1,6 @@
-import { describe, expect, mock, test } from 'bun:test';
 import { MutationObserver, QueryClient } from '@tanstack/react-query';
+import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 /**
  * Regression coverage for the "Failed to perform action: not found" toast
@@ -43,7 +44,62 @@ mock.module('@kortix/sdk', () => ({
   resolveApproval: resolveApprovalMock,
 }));
 
-const { resolveApprovalMutationOptions } = await import('./session-audit-shared');
+const { resolveApprovalMutationOptions, sessionAuditPollMs } =
+  await import('./session-audit-shared');
+
+describe('session audit polling', () => {
+  test('uses one slow idle cadence and one fast pending cadence', () => {
+    expect(sessionAuditPollMs(undefined)).toBe(15_000);
+    expect(sessionAuditPollMs({ actions: [] })).toBe(15_000);
+    expect(
+      sessionAuditPollMs({
+        actions: [
+          {
+            execution_id: 'exec-1',
+            action: 'connector.call',
+            connector_id: null,
+            status: 'pending_approval',
+            risk: null,
+            acted_by: null,
+            acted_by_email: null,
+            resolved_by: null,
+            resolved_by_email: null,
+            result_summary: null,
+            at: '2026-08-24T00:00:00.000Z',
+            resolved_at: null,
+          },
+        ],
+      }),
+    ).toBe(5_000);
+  });
+
+  test('assigns polling to one mounted session surface', () => {
+    const files = [
+      '../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx',
+      'session-layout.tsx',
+      'session-chat.tsx',
+      'session-audit-panel.tsx',
+      'session-approval-prompt.tsx',
+      'header/session-pending-approvals-indicator.tsx',
+    ];
+    const owners = files.filter((file) =>
+      readFileSync(new URL(file, import.meta.url), 'utf8').includes('poll: true'),
+    );
+
+    expect(owners).toEqual(['../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx']);
+  });
+
+  test('late cache readers do not refetch on mount', () => {
+    const source = readFileSync(new URL('./session-audit-shared.tsx', import.meta.url), 'utf8');
+    // Matched on the BEHAVIOUR, not on one spelling of the condition. The
+    // source hoisted `options?.poll` into a local `poll` const, which turned
+    // this assertion red on main while the behaviour was unchanged. main fixed
+    // it by pinning the NEW spelling; a regex that accepts either survives the
+    // next rename too — a source-scan test should track the guarantee, not the
+    // variable name.
+    expect(source).toMatch(/refetchOnMount:\s*(options\?\.)?poll\s*\?\s*true\s*:\s*false/);
+  });
+});
 
 /** Mirrors `apps/web/src/app/react-query-provider.tsx`'s global default
  *  mutation `onError` shape closely enough to prove (or disprove) that it

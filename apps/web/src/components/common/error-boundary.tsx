@@ -61,8 +61,13 @@ function CopyErrorButton({ report, label }: { report: string; label: string }) {
  * the recovery actions. The technical payload (message, error name, digest,
  * stack frames) is folded into a collapsed `Disclosure` so the calm state stays
  * calm — a stack trace is never the first thing a user reads.
+ *
+ * Exported because a caller sometimes needs a SIDE EFFECT alongside the card —
+ * the session route has to tell its boot overlay to stop covering the layer
+ * that just crashed. Wrapping this is how that stays one card, not two that
+ * drift apart.
  */
-function DefaultAppFallback({ error, reset }: { error: Error; reset: () => void }) {
+export function AppErrorCard({ error, reset }: { error: Error; reset: () => void }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const [open, setOpen] = useState(false);
 
@@ -231,8 +236,6 @@ export function ClientErrorBoundary({
 }) {
   const render: ErrorBoundaryFallback =
     fallback ??
-    (silent
-      ? () => null
-      : (props) => <DefaultAppFallback error={props.error} reset={props.reset} />);
+    (silent ? () => null : (props) => <AppErrorCard error={props.error} reset={props.reset} />);
   return <ErrorBoundaryInner render={render}>{children}</ErrorBoundaryInner>;
 }

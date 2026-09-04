@@ -14,13 +14,25 @@ import { bindChatThread } from '../../channels/slack/binding';
 import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
+import {
+  parseRuntimeAgentNames,
+  resolveDeliverableAgent,
+  runtimeAgentRoster,
+} from './agent-availability';
 import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { serviceKeyForExternalId } from '../../platform/service-key';
 import type { ProviderName } from '../../platform/providers';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import {
+  currentInstanceId,
+  sandboxBelongsToThisInstance,
+  sandboxInstanceId,
+} from '../instance-scope';
+import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
 import {
@@ -37,26 +49,33 @@ import { awaitTerminalStage } from './await-stage';
 import { sessionBackpressureState } from './backpressure';
 import { type DeliveryTarget, deliverWithRetry } from './deliver';
 import {
+  MAX_RUNTIME_UNREACHABLE_RETRIES,
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
   enqueueContinueSessionCommand,
   markCommandFailed,
+  parkPromptForUnreachableRuntime,
   markCommandForwarded,
-  promoteNextInboxRow,
   markCommandQueued,
   markCommandSucceeded,
   requeueForAdmission,
   resultFromExistingCommand,
   withNextDeliveryAttempt,
+  withRemintedWireId,
 } from './store';
 import type {
   PromptOverridesWire,
   PromptPartWire,
   QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt, sessionHoldsLiveTurn } from './inbox-admission';
+import {
+  INBOX_ORDER_BACKOFF_MS,
+  admitInboxPrompt,
+  sessionHoldsLiveTurn,
+} from './inbox-admission';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
+import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
 import {
   type PlacementTipMessage,
   boxClockSkewMs,
@@ -394,7 +413,11 @@ export async function continueSession(
     .limit(1);
 
   if (!session) return 'no-session';
-  if (session.status === 'failed') return 'failed';
+  // A parked session is a parked RUNTIME (`runtime_boot_failed` /
+  // `runtime_wake_failed` stamp it), not a bad prompt. It is deliberately not
+  // auto-restarted — see the 2026-08-24 learning — but the prompt waits for the
+  // restart instead of being destroyed by it.
+  if (session.status === 'failed') return 'unreachable';
   // deleteSession() stamps metadata.deletedAt and leaves the row 'stopped' —
   // the same status a normal hibernate uses. Without this check a queued
   // follow-up (Slack reply, scheduled trigger, etc.) would revive a session
@@ -497,7 +520,8 @@ export async function continueSession(
       tl?.mark('open-ready');
       break;
     }
-    if (opened.stage === 'failed' || opened.stage === 'stopped') return 'failed';
+    // Runtime down, prompt fine. See `deliverWithRetry`'s identical branch.
+    if (opened.stage === 'failed' || opened.stage === 'stopped') return 'unreachable';
     if (Date.now() >= deadline) {
       console.warn('[session-lifecycle] runtime not ready before delivery deadline', {
         sessionId,
@@ -508,7 +532,16 @@ export async function continueSession(
     await sleep(POLL_INTERVAL_MS);
   }
 
-  if (command.opencodeEnv) {
+  // Converge the box BEFORE the prompt goes on the wire — every time, not only
+  // when this prompt carries an `opencodeEnv` override. The proxied
+  // `prompt_async` route has always done this (sandbox-proxy/pre-prompt-env-sync);
+  // this wake path did it only behind `if (command.opencodeEnv)`, so an ordinary
+  // `session.send()` prompt onto a box that had to be WOKEN reached OpenCode
+  // with whatever the box had at boot: a stale gateway base URL after a
+  // KORTIX_URL rotation, stale secrets, a stale model catalog. The sync is
+  // cheap and self-deduping (revision + model signature); an unchanged box
+  // costs one skipped push.
+  {
     const sandbox = opened.sandbox as {
       external_id?: string | null;
       provider?: string | null;
@@ -576,6 +609,9 @@ export async function continueSession(
   });
 }
 
+/** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
+const INSTANCE_RELEASE_DELAY_MS = 2_000;
+
 export async function drainSessionLifecycleQueue(
   input: {
     workerId?: string;
@@ -585,7 +621,7 @@ export async function drainSessionLifecycleQueue(
     /** Only drain commands due before this instant — see claimDueLifecycleCommands. */
     availableBefore?: Date;
   } = {},
-): Promise<{ claimed: number; succeeded: number; failed: number; queued: number }> {
+): Promise<{ claimed: number; succeeded: number; failed: number; queued: number; released: number }> {
   const workerId = input.workerId ?? `session-lifecycle:${process.pid}:${Date.now()}`;
   // COALESCE a burst before claiming. A targeted kick fires per POST, and the
   // composer sends a burst's POSTs concurrently — their arrival order is the
@@ -614,7 +650,44 @@ export async function drainSessionLifecycleQueue(
       rows.push(...siblings.filter((sib) => !rows.some((r) => r.commandId === sib.commandId)));
     }
   }
-  const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0 };
+  const out = { claimed: rows.length, succeeded: 0, failed: 0, queued: 0, released: 0 };
+
+  // INSTANCE SCOPE (local dev on a shared DB — projects/instance-scope.ts).
+  // A command whose session's sandbox was provisioned by ANOTHER API instance
+  // goes back on the queue for that instance: executing it here would push
+  // this instance's `KORTIX_URL` (its tunnel) into a box that is not ours.
+  // Gated on `KORTIX_INSTANCE_ID`, so deployed environments never run the
+  // lookup. Done here, after the claim and the sibling sweep, so every
+  // command type and every claim path is covered.
+  const mine = currentInstanceId();
+  if (mine && rows.length > 0) {
+    const sessionIds = [...new Set(rows.map((r) => r.sessionId).filter((v): v is string => !!v))];
+    const metadataBySession =
+      sessionIds.length > 0 ? await loadSandboxMetadataForSessions(sessionIds) : new Map();
+    const availableAt = new Date(Date.now() + INSTANCE_RELEASE_DELAY_MS);
+    for (let i = rows.length - 1; i >= 0; i -= 1) {
+      const row = rows[i];
+      if (!row.sessionId) continue;
+      const metadata = metadataBySession.get(row.sessionId);
+      if (metadata === undefined || sandboxBelongsToThisInstance(metadata)) continue;
+      const owner = sandboxInstanceId(metadata);
+      await releaseCommandToOwningInstance(row.commandId, { availableAt, owner }).catch((err) => {
+        logger.warn('[session-lifecycle] instance-scope release failed; lock expiry will reclaim', {
+          commandId: row.commandId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      logger.info('[session-lifecycle] command belongs to another instance — released', {
+        commandId: row.commandId,
+        sessionId: row.sessionId,
+        commandType: row.commandType,
+        owner,
+        instance: mine,
+      });
+      rows.splice(i, 1);
+      out.released += 1;
+    }
+  }
 
   // ONE LANE PER SESSION, and the lanes run concurrently.
   //
@@ -633,16 +706,13 @@ export async function drainSessionLifecycleQueue(
     else lanes.set(lane, [row]);
   }
 
-  const runRow = async (
-    row: SessionLifecycleCommandRow,
-    opts: ExecuteQueuedContinueOptions = {},
-  ): Promise<void> => {
+  const runRow = async (row: SessionLifecycleCommandRow): Promise<void> => {
     if (row.commandType === 'continue_session') {
       // Contained per row. Every row in this batch is CLAIMED (`running`), and
       // one throw escaping the loop would leave the rest of them there — a
       // state nothing reclaims until the lock expires, and one that blocks
       // every later prompt of the same session behind it.
-      const outcome = await executeQueuedContinue(row, opts).catch(async (err) => {
+      const outcome = await executeQueuedContinue(row).catch(async (err) => {
         await markCommandFailed(
           row.commandId,
           `drain failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -704,12 +774,12 @@ export async function drainSessionLifecycleQueue(
 
   await Promise.all(
     [...lanes.values()].map(async (lane) => {
-      // Same-session INBOX rows go as ONE batch: the head lands first (it may
-      // open the turn), then the rest mint in queue order and POST together
-      // — so everything queued reaches OpenCode within one proxy round-trip
-      // of the head instead of ~1.5 s apiece, and the step after the current
-      // one answers all of them at once. Measured before: 4 prompts queued
-      // during boot ran as 3 + 1 across two steps.
+      // One inbox row per session reaches OpenCode in one drain. The legacy
+      // `/prompt_async` route interleaves same-session posts, so batching the
+      // siblings reproduced the exact failure this queue exists to prevent:
+      // both rows reported delivered while the first answer rendered under
+      // the second prompt. Remaining claimed siblings are returned to the
+      // queue. Accepted delivery makes the next one due immediately.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
@@ -720,44 +790,20 @@ export async function drainSessionLifecycleQueue(
         }
         let j = i + 1;
         while (j < lane.length && isInboxRow(lane[j])) j += 1;
-        const sendOrder = (row: SessionLifecycleCommandRow): number => {
-          const at = (row.payload as { clientSentAtMs?: unknown } | null)?.clientSentAtMs;
-          // The sender tab's Enter instant when it was supplied: the POSTs of
-          // two surfaces race across the boot-shell crossfade, and row
-          // creation order is the race's outcome, not the user's.
-          return typeof at === 'number' ? at : row.createdAt.getTime();
-        };
-        const batch = lane.slice(i, j).sort((a, b) => sendOrder(a) - sendOrder(b));
+        const batch = lane.slice(i, j).sort(compareInboxSendOrder);
         i = j;
-        const headDone = runRow(batch[0]);
-        if (batch.length === 1) {
-          await headDone;
-          continue;
+        // Claims mark every sibling `running`. Release the tail before the
+        // head reaches admission, or `hasInFlightPrompt` sees that tail and
+        // rejects the head as if another delivery were already on the wire.
+        for (const sibling of batch.slice(1)) {
+          await requeueForAdmission(
+            sibling.commandId,
+            'older_prompt_pending',
+            new Date(Date.now() + INBOX_ORDER_BACKOFF_MS),
+          );
+          out.queued += 1;
         }
-        const rest = batch.slice(1);
-        // One gate per member: the FIRST waits for the HEAD (its id is not
-        // final until its delivery placed it — minting before that inverted
-        // head and member on the wire), each next waits for the previous
-        // member's mint; the POSTs then run concurrently.
-        const gates: BatchPlacementGate[] = [];
-        let previous: Promise<bigint | null> = headDone.then(
-          () => null,
-          () => null,
-        );
-        for (let k = 0; k < rest.length; k += 1) {
-          let release!: (mintedTime?: bigint | null) => void;
-          const mine = new Promise<bigint | null>((resolve) => {
-            release = (mintedTime) => resolve(mintedTime ?? null);
-          });
-          gates.push({ waitTurn: previous, release });
-          previous = mine;
-        }
-        await Promise.all([
-          headDone,
-          ...rest.map((member, k) =>
-            runRow(member, { batch: gates[k] }).finally(() => gates[k].release()),
-          ),
-        ]);
+        await runRow(batch[0]);
       }
     }),
   );
@@ -1097,10 +1143,6 @@ async function remintWireMessageId(
   row: SessionLifecycleCommandRow,
   payload: QueuedContinueSessionPayload,
   transcript: InboxTranscriptState,
-  /** A batch member's hard floor: the PREVIOUS member's minted clock, so the
-   *  batch's ids are strictly ascending in send order — a skew sample landing
-   *  mid-batch made two members mint on different rules and swap. */
-  batchFloor: bigint | null = null,
 ): Promise<string> {
   const submitted = wireIdTime(payload.wireMessageId ?? '');
   const floor = transcript.read
@@ -1117,8 +1159,7 @@ async function remintWireMessageId(
   // and OpenCode reads it as already answered and never runs it. The inbox
   // already knows every id it put on the wire; that is the missing floor.
   const delivered = await readDeliveredWireIdFloor(row);
-  let known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
-  if (batchFloor !== null && (known === null || batchFloor > known)) known = batchFloor;
+  const known = delivered !== null && (floor === null || delivered > floor) ? delivered : floor;
   const newest = known !== null && (submitted === null || known > submitted) ? known : submitted;
 
   // Placed at the BOX's clock "now" when it is known (see forwarded-placement
@@ -1158,7 +1199,7 @@ async function remintWireMessageId(
     await db
       .update(sessionLifecycleCommands)
       .set({
-        payload: sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
+        payload: withRemintedWireId(minted.id),
         updatedAt: new Date(),
       })
       .where(eq(sessionLifecycleCommands.commandId, row.commandId));
@@ -1219,7 +1260,7 @@ async function hasLaterForwardedSibling(row: SessionLifecycleCommandRow): Promis
           eq(sessionLifecycleCommands.sessionId, row.sessionId),
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
           sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
-          sql`${sessionLifecycleCommands.createdAt} > ${row.createdAt.toISOString()}::timestamptz`,
+          inboxFollowsRow(row),
           or(
             inArray(sessionLifecycleCommands.status, ['queued', 'running']),
             sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
@@ -1290,9 +1331,7 @@ async function remintForRepair(
     await db
       .update(sessionLifecycleCommands)
       .set({
-        payload: withNextDeliveryAttempt(
-          sql`${sessionLifecycleCommands.payload} || ${JSON.stringify({ redeliveredMessageId: minted.id })}::jsonb`,
-        ),
+        payload: withNextDeliveryAttempt(withRemintedWireId(minted.id)),
         updatedAt: new Date(),
       })
       .where(eq(sessionLifecycleCommands.commandId, row.commandId));
@@ -1339,30 +1378,8 @@ function externalIdFromSandboxUrlField(url: string | null): string | null {
   return match?.[1] ?? null;
 }
 
-/**
- * How one row of a same-session BATCH (see the drain's lane runner)
- * coordinates with the rows before it: it waits its turn to MINT (so ids come
- * out in queue order), releases the next row the moment its id is final, and
- * then POSTs concurrently with everyone else.
- */
-export interface BatchPlacementGate {
-  /** Resolves with the previous member's minted id clock (null for the first
-   *  member after the head) — this member's mint floor, so batch ids are
-   *  strictly ascending in send order whatever the skew cache says. */
-  waitTurn: Promise<bigint | null>;
-  release: (mintedTime?: bigint | null) => void;
-}
-
-export interface ExecuteQueuedContinueOptions {
-  /** A member of a same-session batch after the head: admission is the
-   *  batch's own ordering, and the id is placed as into a LIVE turn (the head
-   *  opened one) and proven afterwards. */
-  batch?: BatchPlacementGate;
-}
-
 export async function executeQueuedContinue(
   row: SessionLifecycleCommandRow,
-  opts: ExecuteQueuedContinueOptions = {},
 ): Promise<'succeeded' | 'queued' | 'failed'> {
   const payload = row.payload as unknown as QueuedContinueSessionPayload;
   const text = typeof payload.text === 'string' ? payload.text : '';
@@ -1382,8 +1399,9 @@ export async function executeQueuedContinue(
   // ADMISSION FIRST, before any side effect. A prompt that arrives behind an
   // older prompt of its own session — or beside a sibling already on the wire —
   // waits, so the user's messages keep the order they were typed in. A live
-  // turn is NOT one of those reasons any more. The refusal gives the claim's
-  // attempt increment back, so waiting can never dead-letter a prompt.
+  // turn also holds admission because legacy `/prompt_async` can interleave
+  // concurrent inputs. The refusal gives the claim's attempt increment back,
+  // so waiting can never dead-letter a prompt.
   //
   // Wrapped: this row is CLAIMED (`running`), and a read that throws out of
   // here would strand it there — where nothing reclaims it until its lock
@@ -1395,11 +1413,7 @@ export async function executeQueuedContinue(
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
-    // A batch member's ordering IS the batch: the lane minted the rows before
-    // it first (see the gate below), so the admission read — "is an older
-    // prompt of this session in flight?" — would only ever refuse it for the
-    // siblings it is being delivered with.
-    admission = opts.batch ? { admit: true } : await admitInboxPrompt(row);
+    admission = await admitInboxPrompt(row);
     tl.mark('admission');
   } catch (err) {
     await markCommandFailed(
@@ -1460,7 +1474,7 @@ export async function executeQueuedContinue(
     typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
   // `result.promoted` is written by `retryInboxPrompt` alone — the user pointed
   // at ONE row and pressed "send now". `requeueForAdmission` merges into
-  // `result`, so it survives the row waiting again behind a live turn.
+  // `result`, so it survives the row waiting again behind an in-flight sibling.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
 
   // WHICH ROW MAY COMMIT A STAGED REVERT.
@@ -1533,9 +1547,8 @@ export async function executeQueuedContinue(
   //    and the client's id is its browser's clock with no lift against anything
   //    (`ascendingId`), so a browser running behind the sandbox delivers an id
   //    that sorts BELOW them — which OpenCode accepts and silently never runs.
-  //    This is the flagship "type while it works" path. It used to re-mint by
-  //    being REFUSED admission (`turn_active` stamped `remintOnDelivery`); with
-  //    the refusal gone it has to ask the question directly;
+  //    This is the flagship "type while it works" path. Admission deliberately
+  //    ignores turn authority, so placement asks this question directly;
   //  - the prompt WAITED (`result.admission_reason` is stamped by every
   //    admission refusal), so something else held the wire while ids moved on;
   //  - the prompt is a REDELIVERY. The abandoned attempt may already have
@@ -1558,15 +1571,7 @@ export async function executeQueuedContinue(
   // none, and every id-less producer would pay for this read for nothing.
   const remintKnown = deliveryAttempt > 0 || redeliveries > 0 || waited;
   let turnLive = false;
-  // The head of the batch landed and opened a turn (or joined the live one);
-  // every row after it is placed as into a live turn, by definition.
-  let batchFloor: bigint | null = null;
-  if (opts.batch) {
-    batchFloor = await opts.batch.waitTurn;
-    tl.mark('batch-turn');
-    turnLive = true;
-  }
-  if (payload.wireMessageId && !remintKnown && !opts.batch) {
+  if (payload.wireMessageId && !remintKnown) {
     try {
       turnLive = await sessionHoldsLiveTurn(row.sessionId);
     } catch (err) {
@@ -1583,9 +1588,14 @@ export async function executeQueuedContinue(
    *  it, and the post-insert strand proof must not "repair" it to the top. */
   let underPlaced = false;
   if (payload.wireMessageId && (remintKnown || turnLive)) {
-    const deliveredIds = [payload.wireMessageId, payload.redeliveredMessageId].filter(
-      (id): id is string => typeof id === 'string' && id.length > 0,
-    );
+    const deliveredIds = [
+      payload.wireMessageId,
+      payload.redeliveredMessageId,
+      // EVERY id a re-mint placed this row under, not just the latest: a reply
+      // parented on an EARLIER re-minted id proves the prompt was answered just
+      // as well, and after two re-mints the scalar no longer holds that id.
+      ...(payload.redeliveredMessageIds ?? []),
+    ].filter((id): id is string => typeof id === 'string' && id.length > 0);
     const transcriptPromise = readInboxTranscriptState(row, deliveredIds, {
       full: deliveryAttempt > 0 || redeliveries > 0,
     });
@@ -1594,7 +1604,6 @@ export async function executeQueuedContinue(
     if (stagedRevertEarly) {
       const settled = await settleStagedRevert();
       if (settled) {
-        opts.batch?.release();
         return settled;
       }
     }
@@ -1619,7 +1628,6 @@ export async function executeQueuedContinue(
         { status: 'skipped', reason: 'already_answered' },
         row.sessionId,
       );
-      opts.batch?.release();
       return 'succeeded';
     }
     // A LATE delivery does not always go to the top. When the transcript
@@ -1631,7 +1639,6 @@ export async function executeQueuedContinue(
     // first. Only a first delivery may do this: a re-POST's original id may
     // already be persisted.
     if (
-      !opts.batch &&
       deliveryAttempt === 0 &&
       redeliveries === 0 &&
       payload.wireMessageId &&
@@ -1643,13 +1650,10 @@ export async function executeQueuedContinue(
       underPlaced = true;
       tl.mark('under-placed');
     } else {
-      wireMessageId = await remintWireMessageId(row, payload, transcript, batchFloor);
+      wireMessageId = await remintWireMessageId(row, payload, transcript);
       tl.mark('remint');
     }
   }
-  // The id is final: the next batch member may mint above it.
-  opts.batch?.release(wireMessageId ? wireIdTime(wireMessageId) : null);
-
   {
     const stagedRevertLate = await stagedRevertPromise;
     tl.mark('staged-revert');
@@ -1712,6 +1716,18 @@ export async function executeQueuedContinue(
         await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       }
       tl.mark('marked');
+      // The prompt is now on the wire for its target session. If it came from a
+      // trigger, flip that trigger's runtime row from the transient "queued" to
+      // "fired" so monitoring can tell a delivered reuse fire from a wedged one
+      // (see markTriggerRuntimeDelivered). Failure to write back must never break
+      // delivery, hence the swallow.
+      if (typeof payload.triggerSlug === 'string') {
+        await markTriggerRuntimeDelivered({
+          projectId: row.projectId,
+          slug: payload.triggerSlug,
+          when: new Date(),
+        }).catch(() => {});
+      }
       if (!placedIntoLiveTurn || !wireMessageId) break;
       // PROOF. One tip read after the insert answers exactly whether the box
       // created a newer assistant BEFORE this prompt landed (the strand
@@ -1783,18 +1799,45 @@ export async function executeQueuedContinue(
       wireMessageId = replaced;
     }
     if (delivery === 'delivered') {
-      // CHAIN. This row is on the wire, so the session's next queued row is
-      // admissible NOW — do not leave it to the scheduler tick or to whatever
-      // `requeueForAdmission` backoff it accrued while waiting on this one.
-      // Fire-and-forget: the drain re-runs admission itself, so a kick that
-      // loses a race is a no-op, and a lost kick falls back to the tick.
-      void promoteNextInboxRow(row.sessionId)
-        .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
-        .catch(() => undefined);
+      // A successful POST starts a TURN, and the TERMINAL RELAY owns promotion
+      // of the next row — `routes/r4.ts`, "THE TURN ENDED — the session's next
+      // queued prompt is admissible NOW", which awaits `promoteNextInboxRow`
+      // before it acknowledges the daemon.
+      //
+      // Promoting here instead is what let a burst of queued messages share
+      // one answer: the next row was made due while this turn was still
+      // running, admission had no turn gate to stop it, and OpenCode merged
+      // every prompt it found into the step that reached them. Reported
+      // 2026-09-04 — "tell me HI" and "tell me bye" queued behind a 13-step
+      // turn produced exactly one reply, "bye".
+      //
+      // Promoting here is also a LOST WAKE even with the gate back: the row
+      // would be claimed mid-turn, refused by admission, and requeued — after
+      // the terminal relay has already checked the queue — so the next prompt
+      // waits out the admission backoff instead of going out on the turn-end
+      // event.
       tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }
     tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
+    // 'unreachable' = the RUNTIME was down. The prompt is fine; it waits for the
+    // box on its own (long) ladder and is re-armed the moment a wake confirms
+    // the runtime is back. Bounded — a spent budget falls through to the
+    // dead-letter below, which is what puts the retry button in front of the user.
+    if (delivery === 'unreachable') {
+      const parked = await parkPromptForUnreachableRuntime(
+        row.commandId,
+        `delivery outcome: ${delivery}`,
+        { sessionId: row.sessionId },
+      );
+      if (parked.parked) return 'queued';
+      await markCommandFailed(
+        row.commandId,
+        `runtime unreachable after ${MAX_RUNTIME_UNREACHABLE_RETRIES} attempts`,
+        { retryable: false, attempts: row.attempts, sessionId: row.sessionId },
+      );
+      return 'failed';
+    }
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
@@ -1926,6 +1969,16 @@ async function executeCreateSession(
       headers: result.headers,
       retryable: isRetryableCreateError(result.error.status),
     };
+  }
+  if (result.pendingPromptIdempotencyKey) {
+    void drainSessionLifecycleQueue({
+      idempotencyKey: result.pendingPromptIdempotencyKey,
+    }).catch((error) => {
+      logger.error('[session-lifecycle] first prompt targeted drain failed', {
+        sessionId: result.row!.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
   return {
     status: 'created',
@@ -2064,6 +2117,50 @@ function isProviderName(value: string | null): value is ProviderName {
  * every time — see `continueSession`), and is DISTINCT across different
  * commands even when their text matches exactly.
  */
+/**
+ * The roster cache key. The directory is part of it because `/agent` answers a
+ * DIFFERENT set per directory: a project-scoped agent exists only under the
+ * directory that defines it. Keying on `externalId` alone made one box's
+ * `/workspace` roster answer for every other directory on that box.
+ */
+export function runtimeAgentRosterCacheKey(externalId: string, directory: string): string {
+  return `${externalId}::${directory}`;
+}
+
+/**
+ * The agent names THIS session's runtime reports, cached per sandbox AND
+ * directory.
+ *
+ * Read through the same signed proxy endpoint every drain-side transcript read
+ * uses, so it inherits the session's own authentication and needs no second
+ * credential path. Only called when a prompt actually names an agent — a send
+ * with no pick costs nothing.
+ */
+async function sessionRuntimeAgentRoster(
+  externalId: string,
+  callerSessionId: string,
+  actorUserId: string,
+  /** The directory the prompt will be forwarded with. `/agent` answers a
+   *  different set per directory, so reading the roster for `/workspace` while
+   *  forwarding under another directory dropped valid project-scoped agents. */
+  directory: string,
+): Promise<{ names: readonly string[] | null }> {
+  return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
+    const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
+    if (!resolved) return null;
+    const res = await fetch(
+      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(directory)}`,
+      {
+        method: 'GET',
+        headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
+        signal: AbortSignal.timeout(5_000),
+      },
+    );
+    if (!res.ok) return null;
+    return parseRuntimeAgentNames(await res.json().catch(() => null));
+  });
+}
+
 async function postPrompt(
   externalId: string,
   opencodeSessionId: string,
@@ -2085,11 +2182,37 @@ async function postPrompt(
   const parts: PromptPartWire[] =
     prompt?.parts && prompt.parts.length > 0 ? prompt.parts : [{ type: 'text', text }];
   const overrides = prompt?.overrides;
+  // THE AGENT THE RUNTIME CAN ACTUALLY RUN — see `agent-availability.ts`.
+  //
+  // `prompt_async` answers 204 for an agent it does not have and then never
+  // runs the turn, so forwarding an unknown name is the delivery loop reading
+  // "delivered", retiring the inbox row, and the user's message ceasing to
+  // exist. Dropping the name instead runs the prompt under the runtime's own
+  // default, exactly as a send with no pick always has.
+  const deliverableAgent = resolveDeliverableAgent(
+    overrides?.agent ?? null,
+    overrides?.agent
+      ? await sessionRuntimeAgentRoster(
+          externalId,
+          callerSessionId,
+          userId,
+          // Same directory expression the forward uses at the bottom of this
+          // function, so the roster read and the prompt forward always agree.
+          overrides?.directory || WORKSPACE,
+        )
+      : { names: null },
+  );
+  if (deliverableAgent.dropped) {
+    logger.warn('[session-lifecycle] dropped an agent the runtime does not have', {
+      session_id: callerSessionId,
+      requested_agent: overrides?.agent,
+    });
+  }
   const body = new TextEncoder().encode(
     JSON.stringify({
       ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
       parts,
-      ...(overrides?.agent ? { agent: overrides.agent } : {}),
+      ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
       ...(overrides?.model ? { model: overrides.model } : {}),
       ...(overrides?.variant ? { variant: overrides.variant } : {}),
     }),

@@ -1,5 +1,6 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
 import { getClient } from '../../core/runtime/client';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/opencode-errors';
 import {
   SessionSyncController,
   type SessionSyncPage,
@@ -12,16 +13,27 @@ import { useSyncStore } from '../stores/sync-store';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
+  /**
+   * The generated OpenCode client RESOLVES with `{ error }` on a non-2xx
+   * response — it never throws unless the caller opted into `throwOnError`, and
+   * we do not. So the ONLY place a 503 or a runtime failure is visible is here.
+   * Reading `data ?? []` and ignoring this is exactly how a cold-boot 503
+   * became a success-looking empty page.
+   */
+  error?: unknown;
   response?: Response;
 }
 
 interface SessionMessageClient {
   session: {
-    messages: (request: {
-      sessionID: string;
-      limit: number;
-      before?: string;
-    }) => Promise<MessagesResponse>;
+    messages: (
+      request: {
+        sessionID: string;
+        limit: number;
+        before?: string;
+      },
+      options?: { signal?: AbortSignal },
+    ) => Promise<MessagesResponse>;
     status?: () => Promise<{ data?: Record<string, SessionStatus> }>;
   };
 }
@@ -71,18 +83,116 @@ function findExistingSessionEntry(
   return match;
 }
 
+/** Lexicographic compare, as upstream's `cmp` (`server-session.ts:28`). */
+function cmp(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * A transcript's canonical order, taken from OpenCode's `compareMessages`
+ * (`packages/app/src/utils/session-message.ts:15-21`): the key is
+ * `time.created + id`, so creation time leads and the id breaks ties.
+ *
+ * Sorting on the id alone is not equivalent — two messages created a
+ * millisecond apart can carry ids that sort the other way — and taking the
+ * wire order on trust is not equivalent either, which is what we did.
+ */
+function messageKey(info: { id: string; time?: { created?: number } }): string {
+  return `${info.time?.created ?? 0}${info.id}`;
+}
+
+/**
+ * One page of a session's messages, normalized the way OpenCode's own client
+ * normalizes it.
+ *
+ * Their v1 branch (`packages/app/src/context/server-session.ts:566-583`) makes
+ * the same call we do — `client.session.messages({sessionID, limit, before})`,
+ * cursor from the `x-next-cursor` header — and then does three things we did
+ * not:
+ *
+ *   1. `.filter((item) => !!item?.info?.id)` — a row without a message id is
+ *      dropped, not rendered. We passed `result.data ?? []` straight through,
+ *      so one malformed row reached the renderer. That is the shape behind
+ *      "TypeError: t is not iterable".
+ *   2. `.sort(compareMessages)` — deterministic transcript order rather than
+ *      whatever the wire happened to say.
+ *   3. `item.parts.filter((part) => !!part?.id).sort(byId)` — same treatment
+ *      for parts.
+ *
+ * Cheap, and it means nothing downstream has to be defensive about shape again.
+ */
+/**
+ * The most specific message a failed `client.session.messages` response
+ * carries. `error` is genuinely `unknown` (its shape varies per endpoint), so
+ * this duck-types the same way `unwrap` (react/use-opencode-sessions/shared.ts)
+ * does, and falls back to the status code.
+ */
+function messagePageErrorText(result: MessagesResponse, status: number | undefined): string {
+  const err = result.error;
+  if (typeof err === 'string' && err) return err;
+  if (err && typeof err === 'object') {
+    const rec = err as Record<string, unknown>;
+    const data = rec.data && typeof rec.data === 'object' ? (rec.data as Record<string, unknown>) : undefined;
+    const message = data?.message ?? rec.message ?? rec.error;
+    if (typeof message === 'string' && message) return message;
+    try {
+      return JSON.stringify(err);
+    } catch {
+      // fall through to the status
+    }
+  }
+  return status ? `Session message read failed: ${status}` : 'Session message read failed';
+}
+
 export async function readSessionMessagePage(
   client: SessionMessageClient,
   sessionId: string,
   request: { limit: number; before?: string },
+  signal?: AbortSignal,
 ): Promise<SessionSyncPage> {
-  const result = await client.session.messages({
-    sessionID: sessionId,
-    limit: request.limit,
-    ...(request.before ? { before: request.before } : {}),
-  });
+  const result = await client.session.messages(
+    {
+      sessionID: sessionId,
+      limit: request.limit,
+      ...(request.before ? { before: request.before } : {}),
+    },
+    signal ? { signal } : undefined,
+  );
+  // CLASSIFY, never swallow. The generated client resolves with `{ error }` on
+  // a non-2xx response, so a 503 arrives here as `{ data: undefined, error,
+  // response.status: 503 }`. `data ?? []` read that as a loaded, empty session
+  // — the transcript rendered blank and complete, no retry. Now:
+  //   - a sandbox-not-ready read (503, or a body matching the readiness
+  //     patterns) throws `SandboxNotReadyError` — retryable, "waking";
+  //   - any other failure throws a real error the controller marks `error`;
+  //   - only a genuine 2xx payload is normalized and returned.
+  const status = result.response?.status;
+  const failed =
+    result.error !== undefined || (typeof status === 'number' && status >= 400);
+  if (failed) {
+    const message = messagePageErrorText(result, status);
+    if (
+      status === 503 ||
+      isSandboxNotReadyError(result.error) ||
+      isSandboxNotReadyError(message)
+    ) {
+      throw new SandboxNotReadyError(message);
+    }
+    throw new Error(message);
+  }
+  const items = (Array.isArray(result.data) ? result.data : []).filter(
+    (item): item is { info: Message; parts: Part[] } =>
+      !!item && typeof item === 'object' && !!(item as { info?: { id?: unknown } }).info?.id,
+  );
   return {
-    messages: result.data ?? [],
+    messages: items
+      .map((item) => ({
+        info: item.info,
+        parts: (Array.isArray(item.parts) ? item.parts : [])
+          .filter((part) => !!part?.id)
+          .sort((a, b) => cmp(a.id, b.id)),
+      }))
+      .sort((a, b) => cmp(messageKey(a.info), messageKey(b.info))),
     nextCursor: result.response?.headers.get('x-next-cursor') || undefined,
   };
 }
@@ -98,7 +208,8 @@ function resolveClient(key: string): SessionMessageClient {
 function createController(sessionId: string, key: string): SessionSyncController {
   return new SessionSyncController({
     sessionId,
-    loadPage: (request) => readSessionMessagePage(resolveClient(key), sessionId, request),
+    loadPage: (request, signal) =>
+      readSessionMessagePage(resolveClient(key), sessionId, request, signal),
     // No `loadStatus` / `setStatus`. The liveness poll reconciles the
     // transcript tail and claims nothing about whether the session is working:
     // `GET .../turn` answers that, and `setBusy` is already driven from that
@@ -262,6 +373,18 @@ export function loadSessionTranscriptMessages(
   );
 }
 
+/**
+ * The frame types that carry transcript content. Everything else the runtime
+ * emits — status, idle, permission, question, diagnostics — says something
+ * about the session but nothing about whether this tab has its messages.
+ */
+const TRANSCRIPT_EVENT_TYPES = new Set([
+  'message.updated',
+  'message.part.updated',
+  'message.removed',
+  'message.part.removed',
+]);
+
 export function noteSessionSyncEvent(event: {
   type?: string;
   properties?: unknown;
@@ -275,11 +398,18 @@ export function noteSessionSyncEvent(event: {
     info?.sessionID ||
     part?.sessionID;
   if (!sessionId) return;
-  // Every frame for this session is proof its transcript moved, and that is
-  // all this hook does now: it renews freshness. The frames themselves are
-  // applied by the event handler, and "is this session working?" is answered
-  // by `projectWorking` over the server's turn authority — not by inferring a
-  // phase from which frame arrived when.
+  // Only a frame that MOVES the transcript renews freshness — and freshness is
+  // what postpones the liveness poll, the one repair for a stream that is
+  // dropping content.
+  //
+  // It used to be every frame carrying this session's id. That inverted the
+  // repair: a runtime emitting status while its message frames were lost kept
+  // renewing the very timer built to catch the loss, so the browser's
+  // transcript could sit arbitrarily stale and the poll would never run. The
+  // frames themselves are applied by the event handler, and "is this session
+  // working?" is answered by `projectWorking` over the server's turn authority
+  // — not by inferring a phase from which frame arrived when.
+  if (!TRANSCRIPT_EVENT_TYPES.has(event.type ?? '')) return;
   findExistingSessionEntry(sessionId)?.controller.noteActivity();
 }
 

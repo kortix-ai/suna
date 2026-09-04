@@ -292,15 +292,35 @@ describe('UserMessage timestamp', () => {
     // Exactly one reveal — the row's. Nothing nested fades on its own.
     expect(markup.split('group-hover/turn:opacity-100').length - 1).toBe(1);
   });
+
+  test('the reveal is desktop-only: under 768px the row is always visible', () => {
+    // A touch screen has no hover, so without this the timestamp, Copy and
+    // Edit-from-here sit at zero opacity for the whole session — present,
+    // sized, and unreachable. Touch browsers also leave an emulated `:hover`
+    // stuck on the last-tapped element, so the failure mode was not "never
+    // shows" but "one arbitrary turn stays lit".
+    //
+    // `max-md` is Tailwind's `width < 48rem` = 768px, the same breakpoint
+    // `useIsMobile` uses, so the CSS and the JS agree on what mobile is.
+    const markup = render(false, stamped);
+    expect(markup).toContain('max-md:opacity-100');
+
+    // On the SAME element as the fade it overrides, not a nested wrapper.
+    const row = markup.match(/class="[^"]*group-hover\/turn:opacity-100[^"]*"/)?.[0] ?? '';
+    expect(row).toContain('opacity-0');
+    expect(row).toContain('max-md:opacity-100');
+  });
 });
 
 describe('UserMessage renders the plan it owns', () => {
   /**
-   * The plan card is the ONLY surface left for session todos: `session-chat`
-   * drops every `todowrite` part before segmentation ("the plan card beneath
-   * the user message is now the single canonical todo surface"). So if this
-   * component stops mounting `PlanCard`, the agent's plan renders NOWHERE and
-   * reads to the user as "the agent never made a plan".
+   * The plan card is the only surface left for session todos ON MOBILE:
+   * `session-chat` drops every `todowrite` part before segmentation, and above
+   * 768px it also nulls the anchor so the Easy panel's card draws instead
+   * (`chatPlanAnchorId`, plan-anchor.test.ts). These tests pass `ownsPlan`
+   * directly, so they pin the mobile path: if this component stops mounting
+   * `PlanCard` when it owns the plan, a phone user's plan renders NOWHERE and
+   * reads as "the agent never made a plan".
    *
    * Seeded through the query cache on the exact key the `todo.updated` SSE
    * handler writes (`['opencode','session-todo',<sessionID>]`), so the test
@@ -373,5 +393,48 @@ describe('UserMessage renders the plan it owns', () => {
     expect(markup).not.toContain('>Plan<');
     // …and the column keeps its cap, so a one-word message never stretches.
     expect(markup).toContain('self-end max-w-[80%]');
+  });
+});
+
+describe('UserMessage inline edit-from-here editor', () => {
+  const editProps = {
+    editingText: 'do it differently',
+    onEditCancel: () => {},
+    onEditSend: () => {},
+  };
+
+  test('editing replaces the bubble with a textarea prefilled with the prompt text', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).toContain('<textarea');
+    expect(markup).toContain('aria-label="Edit message"');
+    // The editor carries the CAPTURED prompt text, and the read-only bubble —
+    // including the message's own text — is gone.
+    expect(markup).toContain('do it differently');
+    expect(markup).not.toContain('ship the thing');
+  });
+
+  test('the editor is the full column, not the 80% bubble rail', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).not.toContain('max-w-[80%]');
+  });
+
+  test('the editor carries Cancel and Send, both live while idle', () => {
+    const markup = renderText('ship the thing', editProps);
+    expect(markup).toContain('Cancel');
+    expect(markup).toContain('Send');
+    // `disabled=""` is the rendered ATTRIBUTE — the Button base classes carry
+    // `disabled:` variants either way, so the bare word proves nothing.
+    expect(markup).not.toContain('disabled=""');
+  });
+
+  test('pending holds both buttons', () => {
+    const markup = renderText('ship the thing', { ...editProps, editPending: true });
+    expect((markup.match(/disabled=""/g) ?? []).length).toBe(2);
+  });
+
+  test('editingText without handlers changes nothing — the bubble stays', () => {
+    const markup = renderText('ship the thing', { editingText: 'do it differently' });
+    expect(markup).not.toContain('<textarea');
+    expect(markup).toContain('ship the thing');
   });
 });

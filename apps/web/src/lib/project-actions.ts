@@ -44,7 +44,6 @@ export type CustomizeSection =
   | 'schedules'
   | 'webhooks'
   | 'channels'
-  | 'voice'
   | 'sandbox'
   | 'settings'
   | 'feature-flags'
@@ -57,8 +56,6 @@ export const PROJECT_ACTIONS = {
    *  a custom role can grant editing without granting deletion. */
   PROJECT_DELETE: 'project.delete',
 
-  PROJECT_CR_OPEN: 'project.cr.open',
-  PROJECT_CR_MERGE: 'project.cr.merge',
 
   PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
   PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
@@ -86,6 +83,8 @@ export const PROJECT_ACTIONS = {
   PROJECT_GITOPS_READ: 'project.gitops.read',
   PROJECT_GITOPS_PUSH: 'project.gitops.push',
   PROJECT_GITOPS_MERGE: 'project.gitops.merge',
+  PROJECT_GITOPS_REF_ANY: 'project.gitops.ref.any',
+  PROJECT_GITOPS_REF_DELETE: 'project.gitops.ref.delete',
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',
@@ -194,13 +193,6 @@ export const CUSTOMIZE_SECTION_ACCESS: Record<
   // repo and opens a CR — the session itself asserts the real leaves; visibility
   // follows settings (editor+ via customize.write in isCustomizeSectionVisible).
   upgrade: { read: PROJECT_ACTIONS.PROJECT_READ, write: PROJECT_ACTIONS.PROJECT_WRITE },
-  // Voice — a project-level setting (the bot's display name), not a connector;
-  // follows the same gate as the sibling channel name route (r4.ts's
-  // channels/meet/name uses PROJECT_CUSTOMIZE_WRITE, not a connector leaf).
-  voice: {
-    read: PROJECT_ACTIONS.PROJECT_READ,
-    write: PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
-  },
 };
 
 /** The distinct read leaves used to gate section visibility — handy for a single

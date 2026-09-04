@@ -2,11 +2,23 @@ import { commitManifest, loadManifestForEdit } from '../projects/lib/triggers';
 
 export type ManifestMutationResult =
   | { ok: true; commitMessage: string | null }
-  | { ok: false; error: string; status: number };
+  | {
+      ok: false;
+      error: string;
+      status: number;
+      code?: string;
+      remediation?: string;
+    };
 
 export type ManifestCommitResult =
   | { ok: true }
-  | { ok: false; error: string; status: number };
+  | {
+      ok: false;
+      error: string;
+      status: number;
+      code?: string;
+      remediation?: string;
+    };
 
 type EditableManifest = Awaited<ReturnType<typeof loadManifestForEdit>>;
 type ManifestProject = Parameters<typeof loadManifestForEdit>[0];

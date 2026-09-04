@@ -34,7 +34,6 @@ import {
   Info as InfoIcon,
   X as XIcon,
   Plus as PlusIcon,
-  Mic as MicIcon,
   Paperclip as PaperclipIcon,
   Settings as SettingsIcon,
   ChevronRight as ChevronRightIcon,
@@ -55,7 +54,6 @@ import { getAuthToken } from '@/api/config';
 import type { Agent, FlatModel, Command } from '@/lib/opencode/hooks/use-opencode-data';
 import type { Session } from '@/lib/platform/types';
 import { MentionSuggestions } from './MentionSuggestions';
-import { AudioWaveform } from '@/components/attachments/AudioWaveform';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
 import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
@@ -221,18 +219,6 @@ interface SessionChatInputProps {
   initialText?: string;
   /** Called whenever the input text changes — used to track current text externally */
   onTextChange?: (text: string) => void;
-  /** Audio recording */
-  onAudioRecord?: () => void;
-  onCancelRecording?: () => void;
-  onSendAudio?: () => void;
-  isRecording?: boolean;
-  recordingDuration?: number;
-  audioLevels?: number[];
-  isTranscribing?: boolean;
-  /** Transcribed text to inject into the input (set by parent after voice transcription) */
-  pendingTranscription?: string | null;
-  /** Called after the transcription text has been consumed */
-  onTranscriptionConsumed?: () => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -265,15 +251,6 @@ export function SessionChatInput({
   onboardingMode = false,
   initialText = '',
   onTextChange,
-  onAudioRecord,
-  onCancelRecording,
-  onSendAudio,
-  isRecording = false,
-  recordingDuration = 0,
-  audioLevels = [],
-  isTranscribing = false,
-  pendingTranscription,
-  onTranscriptionConsumed,
 }: SessionChatInputProps) {
   const [text, setText] = useState(initialText);
   const inputRef = useRef<TextInput>(null);
@@ -309,15 +286,6 @@ export function SessionChatInput({
   const [autocontinueMode, setAutocontinueMode] = useState<AutoContinueMode | null>(null);
   const [showAutoSheet, setShowAutoSheet] = useState(false);
   const [showActionsSheet, setShowActionsSheet] = useState(false);
-
-  // ── Consume pending transcription from parent ────────────────────────────
-  useEffect(() => {
-    if (pendingTranscription) {
-      setText((prev) => prev ? `${prev} ${pendingTranscription}` : pendingTranscription);
-      onTranscriptionConsumed?.();
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [pendingTranscription, onTranscriptionConsumed]);
 
   // ── File attachments ─────────────────────────────────────────────────────
 
@@ -575,13 +543,6 @@ export function SessionChatInput({
   const canSend = (text.trim().length > 0 || attachedFiles.length > 0) && !disabled && !isUploading;
   const hasDraftText = text.trim().length > 0;
   const hasContent = text.trim().length > 0 || attachedFiles.length > 0;
-
-  // Format duration as M:SS
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   useEffect(() => {
     onDraftChange?.(hasDraftText);
@@ -853,49 +814,7 @@ export function SessionChatInput({
               </View>
             )}
 
-            {/* Recording mode — replaces text input while recording */}
-            {isRecording ? (
-              <View style={{ paddingVertical: 8 }}>
-                <View style={{ alignItems: 'center', justifyContent: 'center', height: 40 }}>
-                  <AudioWaveform isRecording={true} audioLevels={audioLevels} />
-                </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6 }}>
-                  <TouchableOpacity
-                    onPress={onCancelRecording}
-                    activeOpacity={0.7}
-                    hitSlop={8}
-                    style={{
-                      width: 26,
-                      height: 26,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: 13,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                    }}
-                  >
-                    <XIcon size={13} color={isDark ? '#d4d4d8' : '#52525b'} strokeWidth={2} />
-                  </TouchableOpacity>
-                  <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)' }}>
-                    {isTranscribing ? 'Transcribing...' : formatDuration(recordingDuration)}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={onSendAudio}
-                    activeOpacity={0.7}
-                    style={{
-                      width: 26,
-                      height: 26,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: 13,
-                      backgroundColor: themeColors.primary,
-                    }}
-                  >
-                    <Ionicons name="arrow-up" size={14} color={themeColors.primaryForeground} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ) : (
-              <>
+            <>
                 {/* TextInput + animated placeholder wrapper */}
                 <View style={{ position: 'relative' }}>
                   {showAnimatedPlaceholder && (
@@ -936,7 +855,7 @@ export function SessionChatInput({
                     onSubmitEditing={handleSubmit}
                     blurOnSubmit={false}
                     returnKeyType="default"
-                    editable={!disabled && !isTranscribing}
+                    editable={!disabled}
                   />
                 </View>
 
@@ -1032,7 +951,7 @@ export function SessionChatInput({
                     )}
                   </View>
 
-                  {/* Right: queue + mic/send/stop */}
+                  {/* Right: queue + send/stop */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {isBusy && canSend && onEnqueue && (
                       <TouchableOpacity
@@ -1088,21 +1007,6 @@ export function SessionChatInput({
                           color={canSend ? themeColors.primaryForeground : (isDark ? '#999999' : '#6e6e6e')}
                         />
                       </TouchableOpacity>
-                    ) : onAudioRecord ? (
-                      <TouchableOpacity
-                        onPress={onAudioRecord}
-                        activeOpacity={0.7}
-                        style={{
-                          width: 26,
-                          height: 26,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 13,
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-                        }}
-                      >
-                        <MicIcon size={14} color={isDark ? '#a1a1aa' : '#71717a'} strokeWidth={2} />
-                      </TouchableOpacity>
                     ) : (
                       <TouchableOpacity
                         onPress={handleSubmit}
@@ -1123,7 +1027,6 @@ export function SessionChatInput({
                   </View>
                 </View>
               </>
-            )}
           </View>
         </View>
 

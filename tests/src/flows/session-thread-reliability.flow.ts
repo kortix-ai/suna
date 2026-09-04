@@ -95,14 +95,17 @@ async function waitForSessionReady(
 
 async function bootSandbox(
   ctx: FlowContext,
-  opts?: { prompt?: string; readinessTimeoutMs?: number },
+  opts?: { prompt?: string; readinessTimeoutMs?: number; opencodeModel?: string },
 ): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
   // Inside a step so a boot failure records its `POST /start` polls — request
   // capture is AsyncLocalStorage-scoped to `ctx.step`. See the twin helper in
   // run-session-backlog.flow.ts for the run that proved this matters.
   return ctx.step('a fresh session boots to a ready runtime', async () => {
     const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
+    const session = await ctx.fixtures.session(project, {
+      prompt: opts?.prompt ?? 'say hello',
+      opencodeModel: opts?.opencodeModel,
+    });
     const started = await waitForSessionReady(
       ctx,
       project.id,
@@ -465,17 +468,19 @@ flow(
   {
     domain: 'sessions',
     requires: ['funded', 'daytona'],
-    // Failed 5 consecutive release-gate runs with three DISTINCT root causes,
-    // each fixed in turn (budget sum > timeout; edge maintenance body
-    // unparseable by @ai-sdk/gateway, #6639; laundered-503 client behavior,
-    // #6628) — and run 32340323809 still failed on a TRUE origin 502 during
-    // stop→wake. That matches the documented pre-existing defect: turn husks
-    // survive stop→wake unfinalized (2/2 staging transcripts, see #6638's
-    // investigation), independent of this release candidate. Quarantined
-    // until the wake-path finalizer lands; un-quarantine in the PR that fixes
-    // it. Follow-ups tracked in the release-gate memory/report.
+    // Un-quarantined in 09aa887a55 (2026-08-24) on the expectation that the
+    // stop-time abort + boot-time orphan finalizer had closed the wake path.
+    // Its first release-gate run since (v0.13.6, run 32992496089, api shard 2)
+    // failed again at 168.7s: `status in [200] — expected [200], got 503` on
+    // the first OpenCode read through the preview proxy right after `/start`
+    // reported ready — the box was still waking (the "503 = waking state"
+    // class), i.e. the same pre-existing stop→wake defect the earlier
+    // quarantine documented (#6638 investigation). Re-quarantined until the
+    // wake path is proven on a staging dry run
+    // (`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`);
+    // un-quarantine ONLY in the PR that carries that green run.
     quarantine:
-      'stop→wake returns a true origin 502 mid-turn; turn husks survive wake unfinalized — pre-existing wake-path defect, tracked follow-up',
+      'stop→wake: first post-wake OpenCode read through the preview proxy answers 503 while the box is still waking after /start reports ready — pre-existing wake-path defect, re-quarantined 2026-08-26 (gate run 32992496089)',
     // 420_000 was smaller than the sum of the bounds this flow itself contains:
     // boot readiness 300_000 + OpenCode readiness 120_000 + stop-settle 60_000
     // + wake readiness (below) + assistant marker 240_000. The two readiness
@@ -490,7 +495,9 @@ flow(
     ],
   },
   async (ctx) => {
-    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx);
+    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx, {
+      opencodeModel: 'gpt-5.6-luna',
+    });
     const ocSessionId = await createOcConversation(ctx, sandboxId);
 
     const originalMarker = `SESS23_ORIGINAL_${Date.now()}`;
@@ -498,6 +505,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
+          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
           parts: [
             {
               type: 'text',
@@ -603,6 +611,7 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(ocPath(sandboxId, `/session/${ocSessionId}/prompt_async`), {
+          model: { providerID: 'kortix', modelID: 'gpt-5.6-luna' },
           parts: [
             {
               type: 'text',
@@ -659,8 +668,8 @@ flow(
 // read (the exact snapshot the web's "persisted-pin paint" instant-switch
 // fix reads) keeps serving that session's own mirrored data after its
 // runtime is stopped — proving the cached-paint read path works without a
-// live runtime. See the file header for why this is the session-detail read
-// and not `/transcript` (which deliberately degrades once stopped).
+// live runtime. The transcript route then serves the durable mirror rather
+// than attempting a live read from the stopped sandbox.
 flow(
   'SESS-24',
   {
@@ -861,12 +870,20 @@ flow(
     );
 
     await ctx.step(
-      "the live transcript read degrades gracefully (200, available:false) once stopped — it does not error, but it also does not keep serving live content",
+      "the stopped session's transcript read serves its durable mirror, not the stopped sandbox",
       async () => {
         const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
           params: { projectId: project.id, sessionId: sessionA.id },
         });
-        r.status(200).body().has('$.available', false);
+        r.status(200).body().has('$.available', true).has('$.source', 'mirror');
+        const body = r.json<any>();
+        const text = (body.messages ?? []).map((m: any) => m.text).join('\n');
+        if (!text.includes(markerA)) {
+          throw new Error(`session A's durable mirror lost its own marker: ${text}`);
+        }
+        if (text.includes(markerB)) {
+          throw new Error(`session A's durable mirror contains session B's marker: ${text}`);
+        }
       },
     );
 

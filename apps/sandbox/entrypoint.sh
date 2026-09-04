@@ -154,6 +154,12 @@ MAX_EARLY_EXITS=2
 
 early_exits=0
 
+# A SIGKILL death (128+9) is the guest kernel's OOM-killer, never the daemon
+# choosing to stop. It is bounded so a daemon that is genuinely unable to start
+# cannot hot-loop; a run that lasted HEALTHY_AFTER_S earns a fresh budget.
+MAX_SIGKILL_RELAUNCH=5
+sigkill_exits=0
+
 # Move a verified staged binary into place. Any failure leaves the live binary
 # untouched — the caller simply relaunches what is already there.
 promote_staged_agent() {
@@ -228,6 +234,42 @@ rollback_agent() {
 
 mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 
+# Tell the daemon (and any `kortixd` invocation that inherits this env) that a
+# supervisor owns the binary swap. `kortixd update` then STAGES ${AGENT_NEXT}
+# and exits ${SWAP_CODE} for this loop to install, instead of self-swapping its
+# own running binary — which is unsafe and which warm-fork/resume/restart would
+# not re-run anyway. Export the resolved state dir so it stages into the exact
+# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/cli.ts.
+export KORTIX_SUPERVISED=1
+export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
+
+COMPILED_RUNTIME_PATH=""
+COMPILED_RUNTIME_ACTIVE=0
+case "${KORTIX_COMPILED_BOOT_MODE:-off}" in
+  off) ;;
+  shadow|prefer|required)
+    bootstrap_agent="$(select_agent)"
+    if COMPILED_RUNTIME_PATH="$("${bootstrap_agent}" install-compiled-runtime)" \
+      && [ -f "${COMPILED_RUNTIME_PATH}" ]; then
+      echo "[entrypoint] verified compiled server.mjs at ${COMPILED_RUNTIME_PATH}" >&2
+      case "${KORTIX_COMPILED_BOOT_MODE}" in
+        prefer|required) COMPILED_RUNTIME_ACTIVE=1 ;;
+      esac
+    else
+      COMPILED_RUNTIME_PATH=""
+      if [ "${KORTIX_COMPILED_BOOT_MODE}" = "required" ]; then
+        echo "[entrypoint] compiled runtime is required but unavailable" >&2
+        exit 1
+      fi
+      echo "[entrypoint] compiled runtime unavailable; using baked agent" >&2
+    fi
+    ;;
+  *)
+    echo "[entrypoint] invalid KORTIX_COMPILED_BOOT_MODE=${KORTIX_COMPILED_BOOT_MODE}" >&2
+    exit 1
+    ;;
+esac
+
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2
 while :; do
   # A staged binary from the previous run is installed before launch, never
@@ -237,10 +279,23 @@ while :; do
   agent_bin="$(select_agent)"
   started=$(date +%s)
   set +e
-  "${agent_bin}" "$@"
+  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ]; then
+    KORTIX_AGENT_BIN="${agent_bin}" node "${COMPILED_RUNTIME_PATH}" "$@"
+  else
+    "${agent_bin}" "$@"
+  fi
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))
+
+  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ] \
+     && { [ "${status}" -eq 78 ] || [ "${status}" -eq 127 ]; } \
+     && [ "${KORTIX_COMPILED_BOOT_MODE}" = "prefer" ]; then
+    echo "[entrypoint] compiled runtime rejected launch; falling back to baked agent" >&2
+    COMPILED_RUNTIME_ACTIVE=0
+    early_exits=0
+    continue
+  fi
 
   if [ "${status}" -eq "${SWAP_CODE}" ]; then
     echo "[entrypoint] daemon requested update swap (ran ${ran}s)" >&2
@@ -272,6 +327,33 @@ while :; do
       continue
     fi
     [ "${early_exits}" -lt "${MAX_EARLY_EXITS}" ] && continue
+  fi
+
+  # A SIGKILL is not the daemon exiting on its own terms — it is the guest
+  # kernel's OOM-killer. Exit 137 after HOURS of healthy service used to fall
+  # through to `exit` below, and the comment above assumed that was safe
+  # because "this is PID 1 and the provider decides what a stopped sandbox
+  # means". That assumption is FALSE on Platinum, where PID 1 is
+  # `/bin/sh /sbin/pt-init`: this script exiting does not stop the VM. It left
+  # a corpse — DB `status='active'`, provider `state='running'`, port 8000
+  # closed forever — and nothing reconciled it, so the control plane kept
+  # routing users to a box that could never answer.
+  #
+  # Observed on 2 of 21 active prod sandboxes (2026-08-28):
+  #   `148 Killed "${agent_bin}" "$@"` then
+  #   `[entrypoint] agent exited 137 after 4472s; exiting`
+  # Correlation was exact across the fleet: oom_kill ⟺ exit 137 ⟺ port 8000 shut.
+  #
+  # Only SIGKILL relaunches. SIGTERM (143) and SIGINT (130) are deliberate stops
+  # and must still exit, or a provider-initiated shutdown would fight this loop.
+  if [ "${status}" -eq 137 ]; then
+    [ "${ran}" -ge "${HEALTHY_AFTER_S}" ] && sigkill_exits=0
+    sigkill_exits=$(( sigkill_exits + 1 ))
+    if [ "${sigkill_exits}" -le "${MAX_SIGKILL_RELAUNCH}" ]; then
+      echo "[entrypoint] agent SIGKILLed after ${ran}s (likely OOM); relaunching ${sigkill_exits}/${MAX_SIGKILL_RELAUNCH}" >&2
+      continue
+    fi
+    echo "[entrypoint] agent SIGKILLed ${sigkill_exits} times without a healthy run; giving up" >&2
   fi
 
   echo "[entrypoint] agent exited ${status} after ${ran}s; exiting" >&2

@@ -1,7 +1,80 @@
 import { describe, expect, test } from 'bun:test';
 
-import { refetchKortixSessionMirrors, resolveClientEvictionUrl } from './helpers';
+import {
+  refetchKortixSessionMirrors,
+  resolveClientEvictionUrl,
+  shouldSkipStatusFill,
+  WIRE_STATUS_FILL_FRESHNESS_MS,
+} from './helpers';
 import { qk } from '../query-keys';
+
+/**
+ * WHICH slots the reconnect status snapshot may repair.
+ *
+ * The old guard was binary: any wire-origin slot blocked the fill forever, on
+ * the theory that "the stream owns this value". True for a LIVE stream — and
+ * exactly backwards for a dead one: the reconnect that runs this fill happens
+ * BECAUSE the stream died, and the wire idle frame it left behind is what the
+ * fill needs to correct. Prod, 2026-08-26 (essentia): a turn sitting inside
+ * one long tool call moves no transcript, so the hydrate-movement evidence is
+ * silent, and the frozen wire-idle slot kept vetoing the open `/turn` row for
+ * the whole run.
+ *
+ * The rule: a wire frame owns its slot only while a live stream could
+ * plausibly have delivered it — `WIRE_STATUS_FILL_FRESHNESS_MS`, equal to the
+ * projection's own stream bound. Past that, the frame is a dead stream's last
+ * word and the REST snapshot may overwrite it.
+ */
+describe('shouldSkipStatusFill', () => {
+  const nowMs = 1_000_000;
+
+  test('an empty slot always fills', () => {
+    expect(shouldSkipStatusFill({ hasSlot: false, origin: undefined, stampedAtMs: undefined, nowMs })).toBe(false);
+  });
+
+  test('a local (fabricated) slot always fills — fabrications must be correctable', () => {
+    expect(
+      shouldSkipStatusFill({ hasSlot: true, origin: 'local', stampedAtMs: nowMs - 1, nowMs }),
+    ).toBe(false);
+  });
+
+  test('a FRESH wire frame owns its slot — the live stream is the authority', () => {
+    expect(
+      shouldSkipStatusFill({ hasSlot: true, origin: 'wire', stampedAtMs: nowMs - 1_000, nowMs }),
+    ).toBe(true);
+    expect(
+      shouldSkipStatusFill({
+        hasSlot: true,
+        origin: 'wire',
+        stampedAtMs: nowMs - WIRE_STATUS_FILL_FRESHNESS_MS,
+        nowMs,
+      }),
+    ).toBe(true);
+  });
+
+  test('a STALE wire frame no longer blocks the fill — a dead stream owns nothing', () => {
+    expect(
+      shouldSkipStatusFill({
+        hasSlot: true,
+        origin: 'wire',
+        stampedAtMs: nowMs - WIRE_STATUS_FILL_FRESHNESS_MS - 1,
+        nowMs,
+      }),
+    ).toBe(false);
+  });
+
+  test('a wire slot with no stamp is treated as fresh (conservative)', () => {
+    expect(
+      shouldSkipStatusFill({ hasSlot: true, origin: 'wire', stampedAtMs: undefined, nowMs }),
+    ).toBe(true);
+  });
+
+  test('absent origin means wire — matching the store default', () => {
+    expect(
+      shouldSkipStatusFill({ hasSlot: true, origin: undefined, stampedAtMs: nowMs - 1_000, nowMs }),
+    ).toBe(true);
+  });
+});
 
 function fakeQueryClient() {
   const calls: unknown[] = [];
@@ -24,12 +97,20 @@ describe('refetchKortixSessionMirrors', () => {
   // project-scoped family for every project. Scoping to the route's project
   // (what the SSE connection is actually about) is the correct reach — see
   // the function's doc comment in `helpers.ts`.
-  test('refetches the sessions-family prefix for the given project only', () => {
+  test('refetches the LIST family for the given project only', () => {
     const { client, calls } = fakeQueryClient();
     refetchKortixSessionMirrors(client, 'proj_1');
+    // The title/tree MIRROR is what this event is about, so the reach is the
+    // list family — not the whole `sessionsScope` prefix, which also covers
+    // `sessionTurn` and `sessionPrompts` (see `query-keys.ts`). Every
+    // `session.created` and every title-changing `session.updated` used to
+    // re-issue `/turn` and `/prompts` with it.
     expect(calls).toEqual([
-      { queryKey: qk.project.sessionsScope('proj_1'), type: 'active' },
+      { queryKey: [...qk.project.sessionsScope('proj_1'), 'list'], type: 'active' },
     ]);
+    const touched = JSON.stringify(calls);
+    expect(touched).not.toContain('"turn"');
+    expect(touched).not.toContain('"prompts"');
   });
 
   test('does nothing outside a project route (projectId null)', () => {

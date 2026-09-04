@@ -177,7 +177,17 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
     expect(frame?.code).toBe(529);
   });
 
-  it('maps reasoning deltas to delta.reasoning (counts as content)', async () => {
+  it('classifies a fetch headers TimeoutError with a stable gateway code', async () => {
+    const timeout = new DOMException('Provider response headers timed out', 'TimeoutError');
+    const sse = await readAll(openAiSseFromFullStream(parts({ type: 'error', error: timeout }), CTX));
+
+    expect(sseErrorFrame(sse)).toMatchObject({
+      message: 'Provider response headers timed out',
+      code: 'upstream_timeout',
+    });
+  });
+
+  it('maps reasoning text to both OpenCode-compatible reasoning fields', async () => {
     const sse = await readAll(
       openAiSseFromFullStream(
         parts(
@@ -193,6 +203,11 @@ describe('ai-sdk SSE adapter — /v1/llm contract fidelity', () => {
       .map((c: any) => c.choices?.[0]?.delta?.reasoning ?? '')
       .join('');
     expect(reasoning).toBe('thinking...');
+    const reasoningContent = frames(sse)
+      .map((c: any) => c.choices?.[0]?.delta?.reasoning_content ?? '')
+      .join('');
+    expect(reasoningContent).toBe('thinking...');
+    expect(frames(sse).some((c: any) => c.choices?.[0]?.delta?.reasoning_details)).toBe(false);
   });
 });
 
@@ -372,7 +387,7 @@ describe('ai-sdk request conversion', () => {
     );
   });
 
-  it('translates image_url user parts, decoding data: URLs to bytes', () => {
+  it('translates a data: image_url into a file part that carries the base64 untouched', () => {
     const { messages } = toModelMessages([
       {
         role: 'user',
@@ -382,14 +397,44 @@ describe('ai-sdk request conversion', () => {
         ],
       },
     ]);
-    const imagePart = (messages[0]?.content as Array<{ type: string; image: unknown }>).find(
-      (p) => p.type === 'image',
-    );
-    expect(imagePart).toBeDefined();
-    // data: URL decoded to Uint8Array so Bedrock treats it as inline data
-    // (not a URL reference, which Bedrock rejects).
-    expect(imagePart!.image).toBeInstanceOf(Uint8Array);
-    expect(Array.from(imagePart!.image as Uint8Array)).toEqual([0, 0, 0]); // bytes of "AAAA"
+    const filePart = (
+      messages[0]?.content as Array<{ type: string; data: unknown; mediaType?: string }>
+    ).find((p) => p.type === 'file');
+    expect(filePart).toBeDefined();
+    // Tagged inline data: the AI SDK returns it as-is and both the anthropic
+    // and bedrock providers serialize a base64 STRING through the identity
+    // `convertToBase64`, so no decode and no re-encode happens anywhere.
+    expect(filePart!.data).toEqual({ type: 'data', data: 'AAAA' });
+    expect(filePart!.mediaType).toBe('image/png');
+  });
+
+  it('keeps an http(s) image_url as a URL reference and defaults the media type', () => {
+    const { messages } = toModelMessages([
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'https://img.example/a.png' } }],
+      },
+    ]);
+    const filePart = (
+      messages[0]?.content as Array<{ type: string; data: { type: string; url?: URL }; mediaType?: string }>
+    ).find((p) => p.type === 'file');
+    expect(filePart!.data.type).toBe('url');
+    expect(filePart!.data.url?.toString()).toBe('https://img.example/a.png');
+    expect(filePart!.mediaType).toBe('image');
+  });
+
+  it('data: URL without a media type falls back to the top-level image type', () => {
+    const { messages } = toModelMessages([
+      {
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'data:;base64,AAAA' } }],
+      },
+    ]);
+    const filePart = (
+      messages[0]?.content as Array<{ type: string; data: unknown; mediaType?: string }>
+    ).find((p) => p.type === 'file');
+    expect(filePart!.data).toEqual({ type: 'data', data: 'AAAA' });
+    expect(filePart!.mediaType).toBe('image');
   });
 
   it('defaults maxOutputTokens for anthropic/bedrock (non-thinking), maps reasoning_effort + tool_choice', () => {
@@ -545,7 +590,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
   it('anthropic: reasoning_effort maps to adaptive thinking + effort (never enabled/budgetTokens) and bumps maxOutputTokens', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'adaptive' }, effort: 'high' },
+      anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'high' },
     });
     // The legacy enabled/budgetTokens shape must NEVER be sent — current-gen
     // Claude (Opus 4.5+/4.8) 400s on `thinking.type:"enabled"`.
@@ -570,7 +615,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     for (const [effort, expected] of Object.entries(table)) {
       const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'anthropic');
       expect((args.providerOptions as any)?.anthropic).toMatchObject({
-        thinking: { type: 'adaptive' },
+        thinking: { type: 'adaptive', display: 'summarized' },
         effort: expected,
       });
     }
@@ -583,7 +628,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     );
     expect(args.maxOutputTokens).toBe(2000);
     expect((args.providerOptions as any)?.anthropic).toMatchObject({
-      thinking: { type: 'adaptive' },
+      thinking: { type: 'adaptive', display: 'summarized' },
       effort: 'max',
     });
     // No budgetTokens to clamp — adaptive lets the model manage its own budget.
@@ -598,7 +643,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     // 5000 tokens → the 'medium' tier (<= 8192), emitted as adaptive + effort —
     // never the raw enabled/budgetTokens shape current-gen Claude rejects.
     expect(args.providerOptions).toMatchObject({
-      anthropic: { thinking: { type: 'adaptive' }, effort: 'medium' },
+      anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'medium' },
     });
     expect((args.providerOptions as any)?.anthropic?.thinking?.type).not.toBe('enabled');
     expect(args.maxOutputTokens).toBe(32000);
@@ -619,7 +664,13 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       resolvedModel: BEDROCK_CLAUDE,
     });
     expect(args.providerOptions).toMatchObject({
-      bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'medium' } },
+      bedrock: {
+        reasoningConfig: {
+          type: 'adaptive',
+          maxReasoningEffort: 'medium',
+          display: 'summarized',
+        },
+      },
     });
     // Current-gen Bedrock Claude (Sonnet 5, Opus 4.5+) 400s on the legacy
     // enabled/budgetTokens shape — it must NEVER be sent (verified against real
@@ -642,6 +693,7 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
     expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
       type: 'adaptive',
       maxReasoningEffort: 'max',
+      display: 'summarized',
     });
   });
 
@@ -661,7 +713,104 @@ describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () =
       expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
         type: 'adaptive',
         maxReasoningEffort: tier,
+        display: 'summarized',
       });
+    }
+  });
+
+  const BEDROCK_OPENAI = 'global.openai.gpt-5.6-sol';
+
+  it('bedrock: OpenAI-on-Bedrock forwards every published effort tier as additionalModelRequestFields.reasoning.effort (the shape real Bedrock accepts; flat reasoning_effort is 400 unknown_parameter) — never the Claude reasoningConfig/cachePoint', () => {
+    for (const effort of ['none', 'low', 'medium', 'high', 'xhigh', 'max']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: effort }, 'bedrock', {
+        resolvedModel: BEDROCK_OPENAI,
+      });
+      expect((args.providerOptions as any)?.bedrock).toEqual({
+        additionalModelRequestFields: { reasoning: { effort, summary: 'auto' } },
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields?.reasoning_effort).toBeUndefined();
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+      expect(args.providerOptions).not.toHaveProperty('anthropic');
+    }
+  });
+
+  it('bedrock: a model that once answered unknown_parameter for the reasoning field never receives it again', async () => {
+    const {
+      noteBedrockOpenAiRejectsReasoningEffort,
+      resetBedrockOpenAiReasoningEffortRejectionsForTests,
+    } = await import('./request');
+    try {
+      noteBedrockOpenAiRejectsReasoningEffort(BEDROCK_OPENAI);
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'max' }, 'bedrock', {
+        resolvedModel: BEDROCK_OPENAI,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+      const other = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: 'openai.gpt-oss-120b',
+      });
+      expect((other.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+        reasoning: { effort: 'high', summary: 'auto' },
+      });
+    } finally {
+      resetBedrockOpenAiReasoningEffortRejectionsForTests();
+    }
+  });
+
+  it('bedrock: OpenAI-on-Bedrock accepts the Responses-style nested reasoning.effort too', () => {
+    const args = buildAiSdkArgs({ messages: [], reasoning: { effort: 'xhigh' } }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+    });
+    expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+      reasoning: { effort: 'xhigh', summary: 'auto' },
+    });
+  });
+
+  it('bedrock: OpenAI-on-Bedrock effort is gated by the resolved model — a tier the model does not publish is dropped, not forwarded', () => {
+    const model = {
+      id: BEDROCK_OPENAI,
+      name: 'GPT-5.6 Sol (Global)',
+      reasoning: true,
+      reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] }],
+    };
+    const ok = buildAiSdkArgs({ messages: [], reasoning_effort: 'xhigh' }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+      model,
+    });
+    expect((ok.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+      reasoning: { effort: 'xhigh', summary: 'auto' },
+    });
+    const dropped = buildAiSdkArgs({ messages: [], reasoning_effort: 'minimal' }, 'bedrock', {
+      resolvedModel: BEDROCK_OPENAI,
+      model,
+    });
+    expect((dropped.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+  });
+
+  it('bedrock: OpenAI-on-Bedrock without any effort sends no bedrock provider options at all', () => {
+    const args = buildAiSdkArgs({ messages: [] }, 'bedrock', { resolvedModel: BEDROCK_OPENAI });
+    expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+    expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
+  });
+
+  it('bedrock: the in-region OpenAI ids (openai.gpt-5.6-terra, openai.gpt-oss-120b-1:0) take the same path; Nova and Grok still get nothing', () => {
+    for (const id of ['openai.gpt-5.6-terra', 'openai.gpt-oss-120b-1:0', 'us.openai.gpt-5.5']) {
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: id,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toEqual({
+        reasoning: { effort: 'high', summary: 'auto' },
+      });
+    }
+    for (const id of ['us.amazon.nova-micro-v1:0', 'xai.grok-4.6']) {
+      // No verified mapping for these families yet: the effort is DROPPED and
+      // the plain Converse request goes out. opencode sends a default effort
+      // for every reasoning-capable model, so refusing it (as #6887 briefly
+      // did) refused the model — including the managed Grok default.
+      const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'bedrock', {
+        resolvedModel: id,
+      });
+      expect((args.providerOptions as any)?.bedrock?.additionalModelRequestFields).toBeUndefined();
+      expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toBeUndefined();
     }
   });
 
@@ -950,6 +1099,7 @@ describe('bedrock Converse primitives are gated on the resolved Claude model id 
     expect((args.providerOptions as any)?.bedrock?.reasoningConfig).toEqual({
       type: 'adaptive',
       maxReasoningEffort: 'high',
+      display: 'summarized',
     });
     expect(args.system).toEqual({
       role: 'system',

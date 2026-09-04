@@ -95,10 +95,12 @@ const stubBackend = {
 };
 
 mock.module('../projects/git-backends', () => ({
+  defaultManagedProviderId: () => 'github',
   hasBackend: (provider: string) => provider === 'github',
   getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
+  isRetiredManagedProvider: () => false,
   managedGithubInstallId: () => INSTALL_ID,
   managedGithubOwner: () => REPO_OWNER,
   managedGithubOwnerType: () => undefined,
@@ -190,7 +192,7 @@ mock.module('../projects/git', () => ({
 }));
 
 mock.module("../snapshots/builder", () => ({
-  routedPerProjectWarmImageName: () => "kpp2-test",
+  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   ensureFastSandboxImage: async () => ({ snapshotName: "kortix-fast-test", slug: "default", contentHash: "f".repeat(64), built: false, isDefault: true, runtimeProfile: "fast" }),
   ensureMetaSandboxImage: async () => ({ snapshotName: "kortix-meta-test", slug: "meta", contentHash: "b".repeat(64), built: false, isDefault: false }),
@@ -207,12 +209,6 @@ mock.module("../snapshots/builder", () => ({
   reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => "a".repeat(40),
-  ensurePerProjectWarmImage: async () => ({
-    snapshotName: "kortix-ppwarm-test",
-    tip: "a".repeat(40),
-    built: false,
-    provider: "daytona",
-  }),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
@@ -458,15 +454,41 @@ describe('POST /v1/projects/provision (managed git)', () => {
       projectRole: 'manager',
     });
 
-    // Provisioned the repo through the backend seam (no seeding without flag).
-    expect(backendCalls).toEqual(['createRepo']);
+    // A caller who says nothing about `seed_starter` gets the starter. Seeding
+    // is the DEFAULT, so a bare provision goes through BOTH backend seams.
+    expect(backendCalls).toEqual(['createRepo', 'seedFiles']);
 
-    // An unseeded managed repo is a legitimate `kortix ship` state, but it must
-    // be RECORDED, not silently indistinguishable from a seeded one.
+    // The row records the INTENT at insert time — the seed push has not been
+    // verified yet at that point, so `pending`, never `caller_opted_out`.
     expect(insertedProject.metadata.git.seed).toMatchObject({
       seeded: false,
-      expected: false,
-      reason: 'caller_opted_out',
+      expected: true,
+      reason: 'pending',
+    });
+    expect(body.seeded).toBe(true);
+  });
+
+  // The one opt-out, and what it does NOT mean. `kortix ship` pushes its own
+  // `kortix init` history with a plain non-force push, so the provision-time
+  // seed must be suppressed or that push is rejected as non-fast-forward. It is
+  // still recorded `expected: true` — a client that never pushes gets repaired
+  // by `shouldSelfHealManagedRepoSeed`, not left permanently without a manifest.
+  test('an explicit seed_starter:false suppresses the push but still expects a manifest', async () => {
+    const app = createApp();
+    const res = await app.request('/v1/projects/provision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'Shipped Agent', seed_starter: false }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+
+    expect(backendCalls).toEqual(['createRepo']);
+    expect(insertedProject.metadata.git.seed).toMatchObject({
+      seeded: false,
+      expected: true,
+      reason: 'client_owns_first_commit',
     });
     expect(body.seeded).toBe(false);
   });

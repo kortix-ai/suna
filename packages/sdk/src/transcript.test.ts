@@ -26,7 +26,7 @@ function assistantMessage() {
       id: 'msg_2',
       role: 'assistant' as const,
       agent: 'build',
-      modelID: 'glm-5.2',
+      modelID: 'glm-5.3-flash',
       time: { created: 1_700_000_000_000, completed: 1_700_000_005_000 },
     },
     parts: [
@@ -89,7 +89,7 @@ describe('formatTranscript', () => {
 
   test('renders an assistant section with agent/model/duration metadata', () => {
     const md = formatTranscript(session, [assistantMessage()]);
-    expect(md).toContain('## Build (glm-5.2 · 5.0s)');
+    expect(md).toContain('## Build (glm-5.3-flash · 5.0s)');
     expect(md).toContain('Sure, looking now.');
   });
 
@@ -99,7 +99,7 @@ describe('formatTranscript', () => {
       assistantMetadata: false,
     });
     expect(md).toContain('## Assistant');
-    expect(md).not.toContain('glm-5.2');
+    expect(md).not.toContain('glm-5.3-flash');
   });
 
   test('includes tool input/output details when toolDetails is true', () => {

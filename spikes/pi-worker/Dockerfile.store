@@ -1,0 +1,7 @@
+FROM node:22-alpine
+WORKDIR /opt/kortix
+COPY dist/store.mjs /opt/kortix/store.mjs
+RUN mkdir -p /store
+ENV PORT=8200 STORE_ROOT=/store
+EXPOSE 8200
+ENTRYPOINT ["node","/opt/kortix/store.mjs"]

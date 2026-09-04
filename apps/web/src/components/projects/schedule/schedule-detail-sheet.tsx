@@ -46,6 +46,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import {
   type ProjectTrigger,
@@ -58,9 +59,9 @@ import {
   contract,
   modelKeyToWire,
   qk,
+  useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
-  wireToModelKey,
 } from '@kortix/sdk/react';
 import {
   CaretDownIcon,
@@ -74,6 +75,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { TRIGGER_SESSION_ACCESS_COPY } from './trigger-session-access-copy';
 
 import {
   CUSTOM_TIMING_LABEL,
@@ -743,7 +745,13 @@ function AgentPanel({
   const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
-  const selectedModel = trigger.model ? wireToModelKey(trigger.model) : null;
+  // Mode-aware read-back: a native (gateway-off) trigger pin is
+  // `provider/model` and must not be forced under the synthetic `kortix`
+  // provider, or the selector shows "unset" beside a pinned trigger.
+  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
+  const selectedModel = trigger.model
+    ? storedModelRefToKey(trigger.model, llmGatewayFlag.enabled === true)
+    : null;
 
   const saveAgent = useMutation({
     mutationFn: (agent: string) => updateProjectTrigger(projectId, trigger.slug, { agent }),
@@ -988,21 +996,7 @@ function AccessPanel({
         value={selection}
         onChange={setSelection}
         showHeading={false}
-        copy={{
-          heading: 'Who can access sessions created by this trigger',
-          private: {
-            label: 'Trigger agent and project Managers',
-            desc: 'Project Managers can always open trigger-created sessions.',
-          },
-          members: {
-            label: 'Selected teammates',
-            desc: 'Choose additional members and groups. Project Managers always have access.',
-          },
-          project: {
-            label: 'Whole project',
-            desc: 'Every project member can open these sessions.',
-          },
-        }}
+        copy={TRIGGER_SESSION_ACCESS_COPY}
       />
       {trigger.session_mode === 'pinned' ? (
         <InfoBanner tone="info" className="text-xs">

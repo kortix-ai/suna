@@ -1,7 +1,7 @@
 /**
  * Agent-minted SETUP LINKS — the authenticated half.
  *
- * The in-sandbox agent (its `KORTIX_CLI_TOKEN` is a
+ * The in-sandbox agent (its `KORTIX_TOKEN` is a
  * session-scoped PAT, accepted by supabaseAuth) calls these to mint a
  * short-lived link it can hand to a human to (a) enter a project secret value,
  * or (b) 1-click connect a Pipedream app.
@@ -16,6 +16,7 @@ import { config } from '../../config';
 import { createRoute, z } from '@hono/zod-openapi';
 import { connectLinkEligibility } from '../../connectors/db-deps';
 import { pipedreamConfigured } from '../../connectors/pipedream';
+import { composioConfigured } from '../../connectors/composio';
 import { mintSetupLink, type SecretFieldSpec } from '../../setup-links/token';
 import { isValidSecretName } from '../secrets';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
@@ -92,7 +93,14 @@ projectsApp.openapi(
       });
     }
 
-    const scope = normalizeString(body.scope) === 'connector' ? 'connector' : 'runtime';
+    const requestedScope = normalizeString(body.scope);
+    if (requestedScope && requestedScope !== 'runtime' && requestedScope !== 'connector') {
+      return c.json({ error: 'scope must be "runtime" or "connector"' }, 400);
+    }
+    // Setup links are commonly minted by connector tooling. Omission must not
+    // turn a server-side credential into plaintext sandbox environment state.
+    // Runtime delivery remains available only through an explicit opt-in.
+    const scope = requestedScope === 'runtime' ? 'runtime' : 'connector';
     const { token, expiresAt } = mintSetupLink(
       projectId,
       { kind: 'secret', fields, scope, uid: loaded.userId, sid: (c.get('sessionId') as string | undefined) ?? null },
@@ -139,7 +147,16 @@ projectsApp.openapi(
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE);
 
-    if (!pipedreamConfigured()) return c.json({ error: 'Pipedream is not configured on this deployment' }, 501);
+    // Provider-neutral: a setup link is a hosted authorization page, and both
+    // Composio and Pipedream have one. Gating on Pipedream alone is what sent a
+    // Composio connector down the fallback path where the agent pastes a raw
+    // provider URL into chat — losing the button, the modal and the resume.
+    if (!composioConfigured() && !pipedreamConfigured()) {
+      return c.json(
+        { error: 'No hosted connector authorization provider is configured on this deployment' },
+        501,
+      );
+    }
 
     const slug = normalizeString(body.slug);
     if (!slug) return c.json({ error: 'slug is required' }, 400);
@@ -148,14 +165,15 @@ projectsApp.openapi(
     if (!eligibility.ok) {
       // Each reason has a different person and a different fix behind it, and
       // the old single message named the wrong one for two of the three.
-      if (eligibility.reason === 'not_pipedream') {
+      if (eligibility.reason === 'unsupported_provider') {
         return c.json(
           {
             error:
-              `"${slug}" is a ${eligibility.providerType} connector, and setup links are Pipedream ` +
-              'Quick Connect links. It is already on this project — connect it the way that ' +
-              'provider is connected rather than adding it to kortix.yaml again.',
-            code: 'CONNECTOR_NOT_PIPEDREAM',
+              `"${slug}" is a ${eligibility.providerType} connector, and setup links are hosted ` +
+              'authorization pages, which only Composio and Pipedream connectors have. It is ' +
+              'already on this project — connect it the way that provider is connected rather ' +
+              'than adding it to kortix.yaml again.',
+            code: 'CONNECTOR_PROVIDER_UNSUPPORTED',
           },
           409,
         );
@@ -163,7 +181,7 @@ projectsApp.openapi(
       if (eligibility.reason === 'no_app') {
         return c.json(
           {
-            error: `"${slug}" is a Pipedream connector on this project but names no Pipedream app, so no connect link can be built for it.`,
+            error: `"${slug}" is a connector on this project but names no provider app, so no connect link can be built for it.`,
             code: 'CONNECTOR_PIPEDREAM_APP_MISSING',
           },
           409,

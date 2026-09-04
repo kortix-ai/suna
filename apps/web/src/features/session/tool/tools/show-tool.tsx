@@ -309,7 +309,7 @@ export function ShowTool({ part, sessionId }: ToolProps) {
   return (
     <div
       data-component="tool-trigger"
-      className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg"
+      className="bg-secondary flex w-full border-[0.5px] flex-col overflow-hidden rounded-lg"
     >
       <div className="flex items-center justify-between gap-2 px-2 py-1.5">
         <div className="text-foreground flex min-w-0 items-center gap-2 px-1 text-xs [&>svg]:size-4">

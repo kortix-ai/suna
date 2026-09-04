@@ -33,7 +33,10 @@ import {
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
 import { withProjectGitAuth } from '../projects/index';
 import { extractProjectPolicies } from '../projects/policies';
-import { getProjectSecretValueForConsumer } from '../projects/secrets';
+import {
+  confineSharedProjectSecretToConnector,
+  getProjectSecretValueForConsumer,
+} from '../projects/secrets';
 import { extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
 import { db } from '../shared/db';
@@ -48,6 +51,7 @@ import { listMcpTools, type FetchImpl } from './call';
 import type { ProjectPolicySpec } from '../projects/policies';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import {
+  normalizeComposio,
   normalizeGraphql,
   normalizeHttp,
   normalizeMcp,
@@ -55,6 +59,7 @@ import {
   normalizePipedream,
   normalizePostmanCollection,
 } from './normalize';
+import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
@@ -207,7 +212,12 @@ async function discoverConnectorAuthFromSource(
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
   const provider = typeof draft.provider === 'string' ? draft.provider.toLowerCase() : '';
-  if (provider === 'pipedream' || provider === 'channel' || provider === 'computer') {
+  if (
+    provider === 'pipedream' ||
+    provider === 'composio' ||
+    provider === 'channel' ||
+    provider === 'computer'
+  ) {
     return EMPTY_AUTH_DISCOVERY;
   }
   const spec = typeof draft.spec === 'string' ? draft.spec.trim() : '';
@@ -469,6 +479,15 @@ export async function syncProjectConnectors(
   const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
 
+  // A connector binding is server-side by definition. Convert legacy runtime
+  // rows before catalog discovery or a concurrent sandbox start can read them.
+  await Promise.all(
+    specs
+      .map((spec) => spec.auth.secret)
+      .filter((identifier): identifier is string => Boolean(identifier))
+      .map((identifier) => confineSharedProjectSecretToConnector(projectId, identifier)),
+  );
+
   // No readable manifest AND nothing installed → bail WITHOUT deleting (a
   // transient git error must never wipe a project's connectors).
   if (!manifest && channelSpecs.length === 0 && computerSpecs.length === 0) {
@@ -545,10 +564,9 @@ export async function syncProjectConnectors(
       // only the spec (provider/platform/auth/...), which a code-side action
       // change does not touch. Skipping therefore froze every existing channel
       // connector's action list at whatever shipped the day it materialized:
-      // adding `read_transcript`/`send_prompt` to voice reached only brand-new
-      // projects, and the same was true of any Slack/Teams/email action ever
-      // added. Re-resolving locally on every sync is free and keeps deployed
-      // projects honest.
+      // the same was true of any Slack/Teams/email action ever added.
+      // Re-resolving locally on every sync is free and keeps deployed projects
+      // honest.
       const catalogUnchanged = shouldReuseConnectorCatalog({
         force: opts.force === true,
         hasExisting: !!ex,
@@ -869,7 +887,11 @@ export async function materializeComputerConnectorProfile(input: {
 export async function resolveCatalog(
   project: GitBackedProject,
   spec: ConnectorSpec,
-  options: { credential?: string | null; mcpFetchImpl?: FetchImpl } = {},
+  options: {
+    credential?: string | null;
+    mcpFetchImpl?: FetchImpl;
+    composioCatalogTools?: typeof composioCatalogTools;
+  } = {},
 ): Promise<ResolvedCatalog> {
   try {
     switch (spec.provider) {
@@ -948,6 +970,15 @@ export async function resolveCatalog(
           server: null,
           iconUrl,
         };
+      }
+      case 'composio': {
+        if (!composioConfigured() || !spec.app) return { actions: [], server: null };
+        const tools = await (options.composioCatalogTools ?? composioCatalogTools)({
+          projectId: project.projectId,
+          connectorSlug: spec.slug,
+          toolkit: spec.app,
+        });
+        return { actions: normalizeComposio(tools, spec.app), server: null };
       }
       case 'channel': {
         // Fixed, local catalog — no network fetch. Server = the platform API base.

@@ -206,7 +206,7 @@ export function resetForServerSwitch() {
 		// (use-opencode-events) AND message sync (use-session-sync) both gate on this
 		// same `healthy` flag, so seeding null left the FE UNSUBSCRIBED until the
 		// ~350ms client health poll flipped it green — by which point the server-side
-		// first turn (KORTIX_INITIAL_PROMPT, delivered during boot) had accumulated
+		// first turn (claimed from the API and delivered during boot) had accumulated
 		// and bulk-rendered AT ONCE instead of streaming. healthy=true subscribes at
 		// the switch, so part.updated events render token-by-token, and also reclaims
 		// the redundant health RTT. The 350ms poller still runs and self-corrects to
@@ -272,7 +272,24 @@ export function markRuntimeReadyVerified() {
 	}
 }
 
-export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeError?: string | null) {
+export function setOpenCodeHealth(
+	healthy: boolean,
+	version?: string,
+	runtimeError?: string | null,
+	options?: {
+		/**
+		 * The box is PARKED, not booting — the platform answered the health probe
+		 * from the session row (`hop === 'control_plane'`, e.g. `503 sandbox not
+		 * ready (status: stopped)`) without ever dialling the box. Nothing is
+		 * starting, so the stall clock must NOT run: arming it escalates an idle
+		 * session to "Still waking… taking longer than usual" forever, since the
+		 * same 503 repeats on every 150ms tick and never becomes healthy on its
+		 * own (the box resumes only on the next SEND). See `bootingSinceAt` and
+		 * `use-runtime-reconnect`'s parked branch.
+		 */
+		parked?: boolean;
+	},
+) {
 	const state = useSandboxConnectionStore.getState();
 	const updates: Partial<SandboxConnectionStore> = {};
 	if (state.healthy !== healthy) updates.healthy = healthy;
@@ -288,7 +305,10 @@ export function setOpenCodeHealth(healthy: boolean, version?: string, runtimeErr
 	// (see `use-runtime-reconnect`'s `classifyProbeResult`), so it can repeat
 	// forever without ever crossing the unreachable threshold — this clock is
 	// the only thing that still bounds that case. See `bootingSinceAt`.
-	if (healthy) {
+	//
+	// A PARKED box is the exception: it is not booting, so the clock must stay
+	// off (and clear if a prior mount armed it) even though `healthy` is false.
+	if (healthy || options?.parked) {
 		if (state.bootingSinceAt !== null) updates.bootingSinceAt = null;
 	} else if (state.bootingSinceAt === null) {
 		updates.bootingSinceAt = Date.now();

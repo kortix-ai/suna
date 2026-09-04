@@ -170,3 +170,37 @@ describe('AccessList', () => {
     expect((html.match(/<li/g) ?? []).length).toBe(2);
   });
 });
+
+describe('AccessRow linked variant', () => {
+  // The `href` branch is what keeps a row from being a button that calls
+  // router.push — the shape that runs the RSC fetch cold and lets a click
+  // degrade into a full page reload. It shipped with no coverage; these pin it.
+  test('a row with href renders a real anchor, not a role=button', () => {
+    const html = render(<AccessRow title="alice@corp.com" href="/accounts/acc_1" />);
+    expect(html).toContain('href="/accounts/acc_1"');
+    // role=button + tabIndex is the NON-linked interactive shape. Both present
+    // would give the row two competing activation paths and two tab stops.
+    expect(html).not.toContain('role="button"');
+  });
+
+  test('the anchor is a stretched overlay so the whole row is one click target', () => {
+    const html = render(<AccessRow title="alice@corp.com" href="/accounts/acc_1" />);
+    expect(html).toContain('absolute inset-0');
+    // The overlay only positions against a relative row.
+    expect(html).toContain('relative');
+  });
+
+  test('a non-string title still yields an accessibly-named link', () => {
+    // `title` accepts a node. `aria-label` cannot take one, so it must be
+    // omitted rather than stringified into "[object Object]".
+    const html = render(<AccessRow title={<span>alice@corp.com</span>} href="/accounts/acc_1" />);
+    expect(html).toContain('href="/accounts/acc_1"');
+    expect(html).not.toContain('[object Object]');
+  });
+
+  test('a row with neither href nor onClick stays inert', () => {
+    const html = render(<AccessRow title="alice@corp.com" />);
+    expect(html).not.toContain('role="button"');
+    expect(html).not.toContain('<a ');
+  });
+})

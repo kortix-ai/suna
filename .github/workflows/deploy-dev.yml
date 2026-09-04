@@ -52,6 +52,11 @@ on:
         type: boolean
         required: true
         default: false
+      allow_deletes:
+        description: Permit reviewed Terraform deletes during a manual rollback
+        type: boolean
+        required: true
+        default: false
 
 # Cancel a superseded deploy so dev always converges to the newest commit.
 #
@@ -80,7 +85,7 @@ jobs:
   # ── Detect what changed (so unrelated surfaces are skipped) ─────────────────
   detect-changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     outputs:
       api: ${{ steps.outputs.outputs.api }}
       gateway: ${{ steps.outputs.outputs.gateway }}
@@ -287,6 +292,7 @@ jobs:
       github_environment: dev
       trusted_branch: main
       cloudflare: true
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   terraform-dev:
@@ -309,6 +315,7 @@ jobs:
       github_environment: dev
       trusted_branch: main
       cloudflare: true
+      allow_deletes: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_deletes || false }}
     secrets: inherit
 
   # ── Compute the dev version (single source of truth) ────────────────────────
@@ -320,7 +327,7 @@ jobs:
     name: Compute dev version
     needs: detect-changes
     if: ${{ needs.detect-changes.outputs.api == 'true' || needs.detect-changes.outputs.gateway == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.cli == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
@@ -348,13 +355,22 @@ jobs:
     name: Build API image (amd64)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
       - run: git submodule sync --recursive && git submodule update --init --recursive --remote
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder. The registry cache-from/cache-to below stays:
+        # measured 2026-08-25, five consecutive sticky-disk builds of this key
+        # reused 0 layers while the registry cache reused 34-45 (see
+        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/api/Dockerfile:linux/amd64
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -365,12 +381,13 @@ jobs:
         # image ~22 min, ~2/3 of the whole run, for an image dev never boots. This
         # restores the deliberate `1ca937570d` state ("dev single-arch, multi-arch
         # on prod only") that the `cb9d12a1b3` pipeline rewrite silently undid.
-        # deploy-prod.yml keeps amd64+arm64. Registry layer cache makes warm builds
-        # reuse layers instead of every build being cold.
+        # deploy-prod.yml keeps amd64+arm64. Layer cache lives on the Blacksmith
+        # sticky disk (setup-docker-builder above), so warm builds reuse layers
+        # instead of every build being cold.
         # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
         # /v1/health reports it. The immutable :dev-<sha8> tag (tag-api job below)
         # is the artifact's real identity.
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/api/Dockerfile
@@ -391,7 +408,7 @@ jobs:
     name: Tag API dev-<sha8>
     needs: [detect-changes, build-api]
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:
@@ -416,7 +433,7 @@ jobs:
     name: Scan + SBOM + sign API image
     needs: [detect-changes, tag-api]
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     permissions:
       id-token: write
@@ -441,11 +458,19 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
       - name: Resolve image digest
         id: digest
         run: |
           set -euo pipefail
-          DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')"
+          # `--format` with the `.Manifest.Digest` template is not portable: buildx v0.23/v0.25
+          # print the default listing instead of the digest (Blacksmith
+          # ubuntu-2404 image, runs 32905182332 + 32907212034), which turned
+          # this into a multi-line $GITHUB_OUTPUT write and skipped SBOM +
+          # signing. `{{json .Manifest}}` is honoured everywhere and is what
+          # deploy-prod.yml already uses.
+          DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+          case "$DIGEST" in sha256:*) ;; *) echo "::error::could not resolve digest for $IMAGE (got: ${DIGEST:-<empty>})"; exit 1 ;; esac
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "ref=kortix/kortix-api@${DIGEST}" >> "$GITHUB_OUTPUT"
       - name: Generate SBOM
@@ -473,7 +498,7 @@ jobs:
     name: Apply DB migrations to dev
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -513,7 +538,7 @@ jobs:
         && needs.migrate-db.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       id-token: write # OIDC → ECS deploy role
       contents: read
@@ -529,7 +554,7 @@ jobs:
       # first kpp2 rollout. Automatic pushes remain false. A deliberate manual
       # surface=all dispatch can enable it after the rollout gates pass.
       KORTIX_ECS_ENV_OVERRIDES: >-
-        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com"}
+        {"KORTIX_FAST_COLD_BOOT_ENABLED":"${{ github.event_name == 'workflow_dispatch' && inputs.enable_fast_cold_boot && 'true' || 'false' }}","KORTIX_PREVIEW_BASE_DOMAIN":"p.kortix.com","KORTIX_PI_WORKER_POOL_TARGET":"2"}
     steps:
       - uses: actions/checkout@v7
       - name: Configure AWS credentials (OIDC)
@@ -547,7 +572,7 @@ jobs:
     name: Deploy Kortix Apps router
     needs: [detect-changes, deploy-api-ecs]
     if: ${{ always() && needs.detect-changes.outputs.apps_router == 'true' && (needs.deploy-api-ecs.result == 'success' || needs.deploy-api-ecs.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       DEV_EDGE_SECRET: ${{ secrets.KORTIX_APPS_DEV_EDGE_SECRET }}
@@ -587,8 +612,11 @@ jobs:
   promote-dev-channel-api:
     name: Move :dev → this build (API)
     needs: [detect-changes, tag-api, deploy-api-ecs]
-    if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
+    if: ${{ always()
+      && needs.detect-changes.outputs.api == 'true'
+      && needs.tag-api.result == 'success'
+      && needs.deploy-api-ecs.result == 'success' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
@@ -609,19 +637,28 @@ jobs:
     name: Build gateway image (amd64)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     steps:
       - uses: actions/checkout@v7
         with: { submodules: false }
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder. The registry cache-from/cache-to below stays:
+        # measured 2026-08-25, five consecutive sticky-disk builds of this key
+        # reused 0 layers while the registry cache reused 34-45 (see
+        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -639,7 +676,7 @@ jobs:
     name: Tag gateway dev-<sha8>
     needs: [detect-changes, build-gateway]
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -659,7 +696,7 @@ jobs:
     name: Deploy gateway to dev (ECS Fargate)
     needs: [detect-changes, dev-version, tag-gateway]
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       id-token: write
       contents: read
@@ -685,7 +722,7 @@ jobs:
     name: Verify gateway dev commit parity
     needs: [detect-changes, dev-version, deploy-gateway-ecs]
     if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
@@ -723,8 +760,11 @@ jobs:
   promote-dev-channel-gateway:
     name: Move :dev → this build (gateway)
     needs: [detect-changes, tag-gateway, verify-gateway-dev-parity]
-    if: needs.detect-changes.outputs.gateway == 'true'
-    runs-on: ubuntu-latest
+    if: ${{ always()
+      && needs.detect-changes.outputs.gateway == 'true'
+      && needs.tag-gateway.result == 'success'
+      && needs.verify-gateway-dev-parity.result == 'success' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
@@ -746,7 +786,7 @@ jobs:
     name: Build frontend image (amd64)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:
@@ -772,15 +812,24 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ github.sha }}
           NEXT_OUTPUT: standalone
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
+        # shared by every workflow in this repo that builds the same image.
+        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
+        # local buildx builder. The registry cache-from/cache-to below stays:
+        # measured 2026-08-25, five consecutive sticky-disk builds of this key
+        # reused 0 layers while the registry cache reused 34-45 (see
+        # docs/runbooks/ci-runners.md, "Docker layer cache").
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/web/Dockerfile:linux/amd64
       - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push (amd64)
         # Single-arch amd64 for dev (see the API build for the full rationale).
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: apps/web/Dockerfile
@@ -813,7 +862,7 @@ jobs:
         && needs.build-frontend.result == 'success'
         && (needs.terraform-dev-api.result == 'success' || needs.terraform-dev-api.result == 'skipped')
         && (needs.terraform-dev.result == 'success' || needs.terraform-dev.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     permissions:
       id-token: write
       contents: read
@@ -850,8 +899,12 @@ jobs:
   publish-web-ecs-dns:
     name: Publish canonical Dev ECS DNS
     needs: [detect-changes, deploy-web-ecs]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    # `always()` prevents a skipped unrelated ancestor from suppressing this
+    # job after deploy-web-ecs has already succeeded.
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.deploy-web-ecs.result == 'success' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     permissions:
       id-token: write
       contents: read
@@ -878,8 +931,10 @@ jobs:
   verify-web-dev:
     name: Verify canonical Dev frontend on ECS
     needs: [detect-changes, dev-version, publish-web-ecs-dns]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.publish-web-ecs-dns.result == 'success' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     env:
       EXPECTED_COMMIT: ${{ github.sha }}
       EXPECTED_VERSION: ${{ needs.dev-version.outputs.version }}
@@ -934,8 +989,11 @@ jobs:
   promote-dev-channel-frontend:
     name: Move :dev → this build (frontend)
     needs: [detect-changes, build-frontend, verify-web-dev]
-    if: needs.detect-changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
+    if: ${{ always()
+      && needs.detect-changes.outputs.frontend == 'true'
+      && needs.build-frontend.result == 'success'
+      && needs.verify-web-dev.result == 'success' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v3
@@ -966,7 +1024,7 @@ jobs:
     name: Build dev CLI (all targets)
     needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.cli == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -1031,7 +1089,7 @@ jobs:
     name: Publish dev-latest prerelease
     needs: [detect-changes, build-cli]
     if: needs.detect-changes.outputs.cli == 'true' && needs.build-cli.result == 'success'
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     permissions:
       contents: write
     steps:

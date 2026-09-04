@@ -26,6 +26,29 @@
  *
  * Best-effort end to end: a box that cannot be read leaves the rows exactly
  * as the instant hold marked them, which is the pre-existing behaviour.
+ *
+ * THE CONTRACT A STOP HAS WITH A QUEUED PROMPT
+ *
+ * Stop pauses the queue; it never throws a prompt away and never runs one
+ * behind the user's back. Every prompt the Stop caught ends up in exactly one
+ * of three states, and each of them delivers AT MOST ONCE more:
+ *
+ *  - HELD (`queued`, `result.held`) — the ordinary outcome. The prompt is on
+ *    screen as "Held — stopped" with Send now / Remove.
+ *  - DELIVERED — the aborted step had already read it, so it belongs to the
+ *    interrupted turn and no release may send it again.
+ *  - REMOVED — the user deleted the row.
+ *
+ * A hold is lifted by an ACTION, never by a timer: sending anything new
+ * (`POST .../prompts` → `releaseInboxHold`), "send now" on one row
+ * (`retryInboxPrompt`), or Resume (`POST .../prompts/hold {held:false}`).
+ * `INBOX_HOLD_MS` (24 h) is a horizon, not a scheduler — it exists so a browser
+ * that never comes back cannot hold a prompt for ever.
+ *
+ * "Delivers at most once more" is what step 3 below buys. Without it a held
+ * forwarded row is released straight back onto the queue while OpenCode still
+ * holds the copy it was POSTed as, and the re-mint puts a SECOND user message
+ * with the same text into the transcript.
  */
 
 import { sessionLifecycleCommands } from '@kortix/db';
@@ -52,6 +75,40 @@ const TIP_LIMIT = 16;
  *  the turn the user stopped. */
 const CLAIMED_SETTLE_MS = 3_000;
 const CLAIMED_POLL_MS = 100;
+/**
+ * The rows this settle is about: one prompt of THIS session that has been
+ * POSTed to OpenCode and is not finished.
+ *
+ * ON THE WIRE is two `result.status` values, not one. `forwarded` is what
+ * `markCommandForwarded` writes when the POST lands; `delivered` is what the
+ * daemon's acceptance relay writes when OpenCode PERSISTS the message, which
+ * happens long before any step reads it — so a `delivered` row is just as
+ * likely to be unreached by a Stop. Only recent ones: an old delivered row is
+ * history.
+ *
+ * IT DOES NOT EXCLUDE `result.held`, and that is the whole point. The hold
+ * route runs `holdInboxPrompts(sessionId, true)` — which stamps every
+ * forwarded row `{stop_paused: true, held: true}` — and THEN starts this
+ * settle. Excluding held rows therefore excluded exactly the rows the Stop had
+ * just paused: the ones this module exists to take back out of OpenCode. Their
+ * copy stayed in the transcript, the release re-POSTed the prompt under a
+ * re-minted wire id, and the user saw the same prompt twice — once unanswered,
+ * once answered (the "KNOWN COST" documented in `holdInboxPrompts`). The
+ * exclusion was invisible to the unit tests because every one of them stubs
+ * `listStopPaused`; see the compiled-SQL test that now pins it.
+ *
+ * A row that is `queued` and held (this settle's own `holdAsQueued` outcome,
+ * or a prompt that never went out) is still excluded — by `status`
+ * (`succeeded`) and by `result.status`, not by the held marker.
+ */
+export function stopPausedOnWireScope(sessionId: string) {
+  return and(
+    inboxScope(sessionId),
+    eq(sessionLifecycleCommands.status, 'succeeded'),
+    sql`${sessionLifecycleCommands.result}->>'status' IN ('forwarded', 'delivered')`,
+    sql`(${sessionLifecycleCommands.result}->>'forwarded_at')::timestamptz > now() - interval '10 minutes'`,
+  );
+}
 
 export interface StopPausedRow {
   commandId: string;
@@ -92,20 +149,7 @@ const liveDeps: HoldSettleDeps = {
         forwarded: sql<string | null>`${sessionLifecycleCommands.result}->>'forwarded_message_id'`,
       })
       .from(sessionLifecycleCommands)
-      .where(
-        and(
-          inboxScope(sessionId),
-          eq(sessionLifecycleCommands.status, 'succeeded'),
-          // ON THE WIRE: forwarded, or already confirmed `delivered` by the
-          // daemon's acceptance relay — that relay fires when OpenCode
-          // PERSISTS the message, long before any step reads it, so a
-          // `delivered` row is just as likely to be unreached by a Stop. Only
-          // the recent ones: an old delivered row is history.
-          sql`${sessionLifecycleCommands.result}->>'status' IN ('forwarded', 'delivered')`,
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
-          sql`(${sessionLifecycleCommands.result}->>'forwarded_at')::timestamptz > now() - interval '10 minutes'`,
-        ),
-      );
+      .where(stopPausedOnWireScope(sessionId));
     return rows.map((row) => ({
       commandId: row.commandId,
       wireIds: [row.wire, row.redelivered, row.forwarded].filter(

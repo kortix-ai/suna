@@ -6,8 +6,9 @@ import { sessionTemplateBuilds } from '../../snapshots/build-state';
 import { pickPrimaryTemplate, resolveSandboxRuntimeStatus } from '../../snapshots/sandbox-status';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { withTimeout } from '../../shared/with-timeout';
-import { isPlatformAdmin } from '../../shared/platform-roles';
-import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { ttlMemo } from '../../shared/ttl-memo';
+import { isSelfHostOperator } from '../../shared/platform-roles';
+import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, getFileSha } from '../github';
@@ -120,12 +121,16 @@ projectsApp.openapi(
   if (!repoUrl) return c.json({ error: 'repo_url or repo_full_name is required' }, 400);
 
   const installationIdInput = normalizeString(body.installation_id ?? body.installationId);
+  // Narrowed from `isPlatformAdmin` to `isSelfHostOperator`: this path imports
+  // ANY repo in MANAGED_GIT_GITHUB_OWNER, which on cloud is the shared
+  // `managed-kortix` org. Staff admins are platform admins too, so the old gate
+  // let one import another customer's project repository.
   if (
     installationIdInput === PAT_MANAGED_GIT_INSTALLATION_ID &&
-    !(await isPlatformAdmin(scope.userId))
+    !(await isSelfHostOperator(scope.userId))
   ) {
     return c.json(
-      { error: 'Managed GitHub repository import requires platform admin access' },
+      { error: 'Managed GitHub repository import is only available to a self-host operator' },
       403,
     );
   }
@@ -669,8 +674,46 @@ async function buildSandboxHealth(
   };
 }
 
+/**
+ * How long one project's sandbox-health answer is reused.
+ *
+ * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
+ * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B / Platinum
+ * — once per template, plus a git read to hash the template directory. On the
+ * Essentia corpus (2026-08-26) that made this "cheap polling endpoint" the
+ * slowest non-proxy read on the box: 559 ms mean server-side over 169 calls,
+ * 1 488 ms median as the browser saw it, and the whole cost is the provider
+ * hop, not the query.
+ *
+ * The endpoint exists to drive a sidebar alert that the client re-polls anyway,
+ * so an answer up to this old is indistinguishable to a user — a snapshot that
+ * finishes building shows up on the next poll instead of this one. In-flight
+ * calls share one promise, so N concurrent polls (six per session open in the
+ * corpus) collapse to one provider round trip rather than N.
+ *
+ * Keyed by project because the template set, its content hash and the provider
+ * pin are all per-project.
+ */
+const SANDBOX_HEALTH_TTL_MS = 10_000;
+
+const sandboxHealthMemo = ttlMemo({
+  ttlMs: SANDBOX_HEALTH_TTL_MS,
+  keyFn: (_loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>, projectId: string) =>
+    projectId,
+  loader: (loaded, projectId) => buildSandboxHealth(loaded, projectId),
+});
+
+/**
+ * Drop a project's cached health answer. Called by the writes that change it
+ * (rebuild / provider pin) so the UI reflects them on the very next poll
+ * instead of waiting out the TTL.
+ */
+export function invalidateSandboxHealth(projectId: string): void {
+  sandboxHealthMemo.invalidate(projectId);
+}
+
 // Exported for unit coverage of the wall-clock degradation contract.
-export { SANDBOX_HEALTH_BUDGET_MS, SANDBOX_HEALTH_DEGRADED, buildSandboxHealth };
+export { SANDBOX_HEALTH_BUDGET_MS, SANDBOX_HEALTH_DEGRADED, SANDBOX_HEALTH_TTL_MS, buildSandboxHealth };
 
 projectsApp.openapi(
   createRoute({
@@ -695,7 +738,7 @@ projectsApp.openapi(
   let payload: SandboxHealthPayload = SANDBOX_HEALTH_DEGRADED;
   try {
     payload = await withTimeout(
-      buildSandboxHealth(loaded, projectId),
+      sandboxHealthMemo(loaded, projectId),
       SANDBOX_HEALTH_BUDGET_MS,
       'sandbox-health',
     );
@@ -755,6 +798,9 @@ projectsApp.openapi(
   if (providers.length === 0) {
     return c.json({ error: 'No sandbox template provider is enabled' }, 503);
   }
+  // The poll answer is cached for SANDBOX_HEALTH_TTL_MS; a deliberate rebuild
+  // must show up on the very next poll, not up to a TTL later.
+  invalidateSandboxHealth(projectId);
   try {
     const attempts = await runProviderActions(
       providers,

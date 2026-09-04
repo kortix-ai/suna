@@ -6,7 +6,7 @@
  * `projects.detail().config.agents` — script 05 lists them.
  *
  * Run (from packages/sdk):
- *   KORTIX_MODEL=glm-5.2 bun run playground/agents/07-use-agent.ts [agentName]
+ *   KORTIX_MODEL=glm-5.3-flash bun run playground/agents/07-use-agent.ts [agentName]
  */
 import {
   makeKortix,

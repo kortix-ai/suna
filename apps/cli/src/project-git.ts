@@ -37,9 +37,7 @@ export interface ProjectGitRef {
   metadata?: Record<string, unknown> | null;
 }
 
-/** A Kortix git-proxy origin (`https://<host>/v1/git/<projectId>.git`). The
- *  server only advertises one when KORTIX_GIT_PROXY is on; otherwise
- *  `git_origin_url` mirrors the raw upstream and this is false. */
+/** A Kortix git-proxy origin (`https://<host>/v1/git/<projectId>.git`). */
 export function isGitProxyUrl(url: string | undefined | null): boolean {
   return Boolean(url && /\/v1\/git\//.test(url));
 }

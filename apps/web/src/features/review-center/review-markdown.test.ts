@@ -1,8 +1,8 @@
-import { describe, expect, test } from 'bun:test';
 import type { ApiReviewItem } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 
-import { mapApiReviewItem } from './map';
 import { looksLikeMarkdown } from '@/lib/markdown-detect';
+import { mapApiReviewItem } from './map';
 import type { ChangeDetail } from './types';
 
 describe('looksLikeMarkdown', () => {
@@ -30,7 +30,7 @@ describe('looksLikeMarkdown', () => {
   });
 });
 
-describe('mapApiReviewItem — markdown change descriptions', () => {
+describe('mapApiReviewItem — change descriptions are plain lines', () => {
   const changeRow = (description: string): ApiReviewItem =>
     ({
       review_item_id: 'rv-1',
@@ -44,26 +44,26 @@ describe('mapApiReviewItem — markdown change descriptions', () => {
       detail: { cr_id: 'cr-12', base_ref: 'main', head_ref: 'session/x', description },
     }) as unknown as ApiReviewItem;
 
-  test('a markdown description is carried whole, not line-split into checkmark rows', () => {
+  test('a markdown-looking description is still line-split — no markdown branch', () => {
     const md = '## What this changes\nMigrates `kortix.toml` to **kortix.yaml**.';
-    const item = mapApiReviewItem(changeRow(md), 'proj');
-    const d = item.detail as ChangeDetail;
-    expect(d.descriptionMarkdown).toBe(md);
-    expect(d.whatChanged).toEqual([]);
+    const d = mapApiReviewItem(changeRow(md), 'proj').detail as ChangeDetail;
+    expect(d.whatChanged).toEqual([
+      '## What this changes',
+      'Migrates `kortix.toml` to **kortix.yaml**.',
+    ]);
+    expect('descriptionMarkdown' in d).toBe(false);
   });
 
   test('a plain description keeps the per-line treatment', () => {
-    const item = mapApiReviewItem(changeRow('Updated the schema.\nFixed the tests.'), 'proj');
-    const d = item.detail as ChangeDetail;
-    expect(d.descriptionMarkdown).toBeUndefined();
+    const d = mapApiReviewItem(changeRow('Updated the schema.\nFixed the tests.'), 'proj')
+      .detail as ChangeDetail;
     expect(d.whatChanged).toEqual(['Updated the schema.', 'Fixed the tests.']);
   });
 
-  test('a native structured whatChanged array always wins over markdown detection', () => {
+  test('a native structured whatChanged array always wins over the description', () => {
     const row = changeRow('## ignored');
     (row.detail as Record<string, unknown>).whatChanged = ['Did the thing'];
     const d = mapApiReviewItem(row, 'proj').detail as ChangeDetail;
-    expect(d.descriptionMarkdown).toBeUndefined();
     expect(d.whatChanged).toEqual(['Did the thing']);
   });
 });

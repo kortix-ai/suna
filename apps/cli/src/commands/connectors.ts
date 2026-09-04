@@ -3,6 +3,7 @@ import {
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
+  takeFlagValues,
   takeFlagBool,
 } from '../command-helpers.ts';
 import { promptSecret } from '../prompts.ts';
@@ -19,7 +20,7 @@ import { runConnector } from './connector-gateway.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
-type Provider = 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
+type Provider = 'composio' | 'pipedream' | 'mcp' | 'openapi' | 'postman' | 'graphql' | 'http';
 
 interface ConnectorAction {
   path: string;
@@ -57,12 +58,70 @@ interface Connection {
   metadata?: Record<string, unknown>;
 }
 
-const PROVIDERS: readonly Provider[] = ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
+/** One condition on a policy rule: a dot path into the call's arguments, the
+ *  value it must match (glob or /regex/), and whether the test is inverted. */
+interface PolicyCondition {
+  arg: string;
+  match: string;
+  negate?: boolean;
+}
+
+interface PolicyRule {
+  match: string;
+  action: string;
+  conditions?: PolicyCondition[];
+}
+
+/** GET /connectors/projects/:id/policies */
+interface ProjectPoliciesView {
+  policies: PolicyRule[];
+  defaultMode: 'risk' | 'allow_all';
+}
+
+/** One record in the direct-connector catalogue (integrations.sh). */
+interface DiscoverConnector {
+  id: string;
+  kind: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  url: string | null;
+  categories: string[];
+}
+
+/** One connectable surface on a catalogue record. */
+interface DiscoverVariant {
+  id: string;
+  kind: string;
+  name: string;
+  url: string | null;
+  requiresAuth: boolean;
+}
+
+/** POST .../oauth2/device — RFC 8628 device authorization start. */
+interface DeviceAuthorizationStart {
+  session_id: string;
+  user_code: string;
+  verification_uri: string;
+  verification_uri_complete?: string;
+  expires_at: string;
+  interval_seconds: number;
+}
+
+const PROVIDERS: readonly Provider[] = [
+  'composio',
+  'pipedream',
+  'mcp',
+  'openapi',
+  'postman',
+  'graphql',
+  'http',
+];
 
 const HELP = help`Usage: kortix connectors <subcommand> [options]
 
 Manage the project's connectors — the external systems agents call as tools
-(Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
+(Composio/Pipedream apps, MCP servers, OpenAPI/Postman/GraphQL/HTTP endpoints). Mirrors the
 dashboard's Customize → Connectors. Connectors are project-wide visible; the
 only access gate is which AGENTS may call one (\`kortix agents scope\` /
 \`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
@@ -91,10 +150,29 @@ Subcommands:
   secret <slug> <identifier>        Use a project secret as this connector's
                                     server-side credential. Add --clear to
                                     remove the binding.
-  connect <slug> [--expires <min>]  Start a Pipedream 1-click connection.
-  apps [<query>] [--json]           Browse the Pipedream app catalog.
-  policy ls [--json]                Show project-wide execution policies.
-  policy set --default <risk|allow_all>   Set the default execution mode.
+  connect <slug>                    Start the connector provider authorization.
+  connect-finalize <slug>           Confirm authorization completed. Accepts
+       [--connection-id <uuid>]     the IDs returned by \`connect\`.
+       [--request-id <id>]
+  apps [<query>] [--category <c>]   Browse the legacy Pipedream app catalog.
+       [--cursor <c>] [--json]
+  catalog [<query>] [--cursor <c>]  Browse the direct-connector catalogue.
+          [--json]                  Needs the \`connectors_api_discover\` flag.
+  catalog show <id> [--json]        Show one catalogue record's surfaces.
+  sensitive <slug> on|off           Gate this connector's READS too — every
+                                    call needs approval (applies now).
+  owner <slug> project|user         Who authorizes: one project connection, or
+                                    each member's own (applies now).
+  machines <slug> [--show]          Which paired computers a \`computer\`
+           [--add <id>] [--rm <id>] connector may target (applies now).
+  policy ls|show [--json]           Show project-wide execution policies.
+  policy set --default <risk|allow_all>   Set the default execution mode in
+                                    kortix.yaml. Add --apply to set it live.
+  policy add <match> <action>       Add a PROJECT-wide rule (applies now).
+             [--condition <k=v>]    Narrow it to a matching argument. Repeat
+                                    for more; \`k!=v\` negates. <k> is a dot
+                                    path into the call's arguments.
+  policy rm <match>                 Remove a project-wide rule (applies now).
   policy <slug> ls [--json]         Show one connector's tool-call rules.
   policy <slug> set <match> <act>   Allow|ask|block a tool/glob/regex (applies now).
                                     <match> = tool name, glob (send_*) or /regex/.
@@ -105,12 +183,20 @@ Subcommands:
                                     register Kortix as a client (RFC 7591) when
                                     the server supports it, and print the URL to
                                     approve. --status reports the result.
+  authorize <slug> --device         Same, on a server that supports the OAuth
+                                    2.0 device flow: prints a code + URL and
+                                    polls until it is approved.
   mcp                               Run the stdio MCP server.
+
+\`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
+named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
 
 Add options (provider-specific):
   --name <label>           Human label (default: slug).
   --provider <p>           ${PROVIDERS.join('|')}.
-  --app <slug>             Pipedream app slug (provider=pipedream).
+  --allow-legacy-pipedream Explicit human-approved rollback only. Never set this
+                           automatically; managed SaaS apps use Composio.
+  --app <slug>             Composio toolkit or Pipedream app slug.
   --url <url>              MCP server URL (provider=mcp).
   --transport <http|sse>   MCP transport (provider=mcp).
   --endpoint <url>         GraphQL endpoint (provider=graphql).
@@ -122,6 +208,10 @@ Add options (provider-specific):
 
 Authorize options:
   --status                 Report the connection's OAuth status instead.
+  --device                 Use the OAuth 2.0 device flow (RFC 8628) — a code
+                           and a URL instead of a browser redirect. Requires a
+                           server that publishes a device authorization
+                           endpoint. Polls until approved, denied, or expired.
   --scope "<a b>"          Request these scopes instead of everything offered.
   --client-id <id>         Use an existing OAuth app (servers without RFC 7591).
   --client-secret <s>      Secret for that app. Omit for a public client.
@@ -155,7 +245,7 @@ Add options:
   --mine               Derive a member owner from the current human token.
   --metadata <json>    Connection metadata as a JSON object.
 
-Pipedream options:
+Managed connector options:
   --success-redirect <url>   Redirect after a successful connection.
   --error-redirect <url>     Redirect after a failed connection.
 
@@ -174,12 +264,16 @@ export async function runConnectors(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  if (
-    sub === 'connections' &&
-    (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help')
-  ) {
+  if (sub === 'connections' && (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help')) {
     process.stdout.write(CONNECTIONS_HELP);
     return rest.length === 0 ? 2 : 0;
+  }
+  // The root help promises `kortix connectors <subcommand> --help`. Only
+  // `connections` (handled above) owns dedicated help text; every other
+  // subcommand would otherwise treat `--help` as an ordinary positional arg.
+  if (rest.includes('-h') || rest.includes('--help')) {
+    process.stdout.write(HELP);
+    return 0;
   }
   if (sub === 'discover' || sub === 'call' || sub === 'mcp') {
     return runConnector([sub, ...rest]);
@@ -198,12 +292,19 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let statusOnly = false;
   let json = false;
   let applyRemote = false;
+  let allowLegacyPipedream = false;
   let clearSecretBinding = false;
   let allConnections = false;
   let mine = false;
+  let deviceFlow = false;
+  let showOnly = false;
+  let conditions: string[] = [];
+  let addIds: string[] = [];
+  let rmIds: string[] = [];
   try {
     json = takeFlagBool(rest, ['--json']);
     applyRemote = takeFlagBool(rest, ['--apply']);
+    allowLegacyPipedream = takeFlagBool(rest, ['--allow-legacy-pipedream']);
     clearSecretBinding = takeFlagBool(rest, ['--clear']);
     allConnections = takeFlagBool(rest, ['--all']);
     mine = takeFlagBool(rest, ['--mine']);
@@ -224,14 +325,22 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.expires = takeFlagValue(rest, ['--expires']);
     f.owner = takeFlagValue(rest, ['--owner']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
+    f.connectionId = takeFlagValue(rest, ['--connection-id']);
+    f.requestId = takeFlagValue(rest, ['--request-id']);
     f.metadata = takeFlagValue(rest, ['--metadata']);
     f.clientId = takeFlagValue(rest, ['--client-id']);
     f.clientSecret = takeFlagValue(rest, ['--client-secret']);
     f.scope = takeFlagValue(rest, ['--scope']);
     f.successRedirect = takeFlagValue(rest, ['--success-redirect']);
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
+    f.category = takeFlagValue(rest, ['--category']);
+    conditions = takeFlagValues(rest, ['--condition', '--cond']);
+    addIds = takeFlagValues(rest, ['--add']);
+    rmIds = takeFlagValues(rest, ['--rm']);
     asStdin = takeFlagBool(rest, ['--stdin']);
     statusOnly = takeFlagBool(rest, ['--status']);
+    deviceFlow = takeFlagBool(rest, ['--device']);
+    showOnly = takeFlagBool(rest, ['--show']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -244,11 +353,20 @@ export async function runConnectors(argv: string[]): Promise<number> {
   //    `--apply` skips the local-edit + ship/CR flow and applies the change
   //    instantly on the cloud project (commit to kortix.yaml on main + sync,
   //    exactly like the dashboard) — handled in the switch below.
-  if ((sub === 'add' || sub === 'create') && !applyRemote) return connectorAddLocal(positional[0], f);
-  if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
-  if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set') return policySetLocal(f.default);
+  if ((sub === 'add' || sub === 'create') && !applyRemote)
+    return connectorAddLocal(positional[0], f, allowLegacyPipedream);
+  if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote)
+    return connectorRmLocal(positional[0]);
+  // `policy set --default` stays a LOCAL kortix.yaml edit unless --apply asks
+  // for the live write — byte-compatible with every existing script.
+  if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set' && !applyRemote) {
+    return policySetLocal(f.default);
+  }
 
-  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  const ctx = await resolveProjectContext({
+    projectArg: f.project,
+    hostArg: f.host,
+  });
   if (!ctx) return 1;
   const ex = `/connectors/projects/${ctx.projectId}`;
 
@@ -277,7 +395,14 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (!(PROVIDERS as readonly string[]).includes(f.provider)) {
           return missing(`--provider ${PROVIDERS.join('|')}`);
         }
+        if (f.provider === 'pipedream' && !allowLegacyPipedream) {
+          process.stderr.write(
+            `${status.err('Pipedream is legacy rollback only. Use --provider composio for managed SaaS apps. Ask the human before retrying with --allow-legacy-pipedream.')}\n`,
+          );
+          return 1;
+        }
         const draft: Record<string, unknown> = { slug, provider: f.provider };
+        if (allowLegacyPipedream) draft.allow_legacy_pipedream = true;
         if (f.name) draft.name = f.name;
         if (f.app) draft.app = f.app;
         if (f.url) draft.url = f.url;
@@ -290,15 +415,21 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const resp = await ctx.client.post<{
           ok: boolean;
           sync?: unknown;
-          authDiscovery?: { status: string; recommended?: { type?: string } | null };
+          authDiscovery?: {
+            status: string;
+            recommended?: { type?: string } | null;
+          };
         }>(`${ex}/connectors`, draft);
-        if (json) { emitJson(resp); return 0; }
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         process.stdout.write(
           `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.yaml on main + synced)${C.reset}\n` +
             (resp.authDiscovery?.recommended?.type
               ? `  ${C.dim}Authentication: ${C.reset}${resp.authDiscovery.recommended.type}${C.dim} (auto-detected; set the credential next)${C.reset}\n`
               : '') +
-            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
+            `  ${C.dim}Next: ${C.reset}${C.cyan}${f.provider === 'composio' || f.provider === 'pipedream' ? `kortix connectors connect ${slug}` : `kortix connectors credential ${slug}`}${C.reset}\n`,
         );
         return 0;
       }
@@ -308,12 +439,16 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
         await ctx.client.delete(`${ex}/connectors/${encodeURIComponent(slug)}`);
-        process.stdout.write(`${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`);
+        process.stdout.write(
+          `${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`,
+        );
         return 0;
       }
       case 'ls':
       case 'list': {
-        const { connectors } = await ctx.client.get<{ connectors: AdminConnector[] }>(`${ex}/connectors`);
+        const { connectors } = await ctx.client.get<{
+          connectors: AdminConnector[];
+        }>(`${ex}/connectors`);
         if (json) {
           emitJson({ connectors });
           return 0;
@@ -334,13 +469,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
             `  ${pad(c.slug, slugW)}   ${statusCell(c.status)}  ${pad(c.provider, 11)}  ${pad(c.credentialMode, 9)}  ${pad(String(c.actions.length), 5)}\n`,
           );
         }
-        process.stdout.write(`\n  ${C.dim}${connectors.length} connector${connectors.length === 1 ? '' : 's'}${C.reset}\n\n`);
+        process.stdout.write(
+          `\n  ${C.dim}${connectors.length} connector${connectors.length === 1 ? '' : 's'}${C.reset}\n\n`,
+        );
         return 0;
       }
       case 'show': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        const { connectors } = await ctx.client.get<{ connectors: AdminConnector[] }>(`${ex}/connectors`);
+        const { connectors } = await ctx.client.get<{
+          connectors: AdminConnector[];
+        }>(`${ex}/connectors`);
         const c = connectors.find((x) => x.slug === slug);
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);
@@ -351,7 +490,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
-        process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n\n`);
+        process.stdout.write(
+          `  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n\n`,
+        );
         if (c.actions.length === 0) {
           const message =
             c.provider === 'http' && !c.actions.length
@@ -362,14 +503,19 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         for (const a of c.actions) {
           process.stdout.write(`  ${C.cyan}${a.path}${C.reset} ${C.faded}[${a.risk}]${C.reset}\n`);
-          if (a.description) process.stdout.write(`    ${C.dim}${trim(a.description, 80)}${C.reset}\n`);
+          if (a.description)
+            process.stdout.write(`    ${C.dim}${trim(a.description, 80)}${C.reset}\n`);
         }
-        process.stdout.write(`\n  ${C.dim}${c.actions.length} tool${c.actions.length === 1 ? '' : 's'}${C.reset}\n\n`);
+        process.stdout.write(
+          `\n  ${C.dim}${c.actions.length} tool${c.actions.length === 1 ? '' : 's'}${C.reset}\n\n`,
+        );
         return 0;
       }
       case 'sync': {
         const resp = await ctx.client.post<SyncResult>(`${ex}/connectors/sync`);
-        process.stdout.write(`${status.ok(`Synced ${resp.synced} connector${resp.synced === 1 ? '' : 's'}`)}\n`);
+        process.stdout.write(
+          `${status.ok(`Synced ${resp.synced} connector${resp.synced === 1 ? '' : 's'}`)}\n`,
+        );
         reportSync(resp);
         return 0;
       }
@@ -420,7 +566,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'auth': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        const { connection_id: connectionId } = await ctx.client.post<{ connection_id: string }>(
+        const { connection_id: connectionId } = await ctx.client.post<{
+          connection_id: string;
+        }>(
           `/projects/${ctx.projectId}/connectors/${encodeURIComponent(slug)}/oauth2/connection`,
           {},
         );
@@ -431,17 +579,21 @@ export async function runConnectors(argv: string[]): Promise<number> {
           else process.stdout.write(`  ${C.bold}${String(state.status)}${C.reset}\n`);
           return state.status === 'error' ? 1 : 0;
         }
-        const { discovery } = await ctx.client.post<{ discovery: OAuth2ResourceDiscoveryLike }>(
-          `${oauth2}/discover-resource`,
-          {},
-        );
+        const { discovery } = await ctx.client.post<{
+          discovery: OAuth2ResourceDiscoveryLike;
+        }>(`${oauth2}/discover-resource`, {});
         const steps = oauth2AuthorizeSteps(discovery, {
           ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
           ...(f.clientId ? { clientId: f.clientId } : {}),
           ...(f.clientSecret ? { clientSecret: f.clientSecret } : {}),
         });
         if ('error' in steps) {
-          if (json) emitJson({ connection_id: connectionId, error: steps.error, discovery });
+          if (json)
+            emitJson({
+              connection_id: connectionId,
+              error: steps.error,
+              discovery,
+            });
           else process.stderr.write(`${status.err(steps.error)}\n`);
           return 1;
         }
@@ -450,14 +602,33 @@ export async function runConnectors(argv: string[]): Promise<number> {
         } else {
           await ctx.client.put(`${oauth2}/application`, steps.application);
         }
-        const started = await ctx.client.post<{ authorization_url: string; expires_at: string }>(
-          `${oauth2}/authorize`,
-          {
+        // ── RFC 8628 device flow: a code and a URL, no redirect back. The
+        //    only path that works on a machine with no browser, which is every
+        //    sandbox — so the CLI polls to completion instead of handing the
+        //    caller a second command to run.
+        if (deviceFlow) {
+          const device = await ctx.client.post<DeviceAuthorizationStart>(`${oauth2}/device`, {
             ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
-            ...(f.successRedirect ? { success_redirect_uri: f.successRedirect } : {}),
-            ...(f.errorRedirect ? { error_redirect_uri: f.errorRedirect } : {}),
-          },
-        );
+          });
+          if (json) {
+            emitJson({ connection_id: connectionId, ...device });
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}Authorize ${discovery.resource_name ?? slug}${C.reset}\n` +
+              `  ${C.dim}Open ${C.reset}${C.cyan}${device.verification_uri_complete ?? device.verification_uri}${C.reset}\n` +
+              `  ${C.dim}Enter code ${C.reset}${C.bold}${device.user_code}${C.reset}\n\n`,
+          );
+          return await pollDeviceAuthorization(ctx.client, oauth2, device);
+        }
+        const started = await ctx.client.post<{
+          authorization_url: string;
+          expires_at: string;
+        }>(`${oauth2}/authorize`, {
+          ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
+          ...(f.successRedirect ? { success_redirect_uri: f.successRedirect } : {}),
+          ...(f.errorRedirect ? { error_redirect_uri: f.errorRedirect } : {}),
+        });
         if (json) {
           emitJson({
             connection_id: connectionId,
@@ -483,24 +654,69 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return missing('--expires <positive minutes>');
         }
         const resp = await ctx.client.post<{
-          url: string;
-          slug: string;
-          app: string | null;
-          expires_at: string;
-        }>(`/projects/${ctx.projectId}/connect-requests`, {
+          provider: string;
+          app?: string | null;
+          connectUrl?: string | null;
+          connected?: boolean;
+          isNoAuth?: boolean;
+          sessionId?: string;
+          connectionId?: string;
+          requestId?: string;
+        }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect`, {});
+        const output = {
+          provider: resp.provider,
           slug,
-          ...(expires === undefined ? {} : { expires_in_minutes: expires }),
-        });
+          app: resp.app ?? null,
+          url: resp.connectUrl ?? null,
+          connected: resp.connected === true,
+          is_no_auth: resp.isNoAuth === true,
+          session_id: resp.sessionId ?? null,
+          connection_id: resp.connectionId ?? null,
+          request_id: resp.requestId ?? null,
+        };
         if (json) {
-          emitJson(resp);
+          emitJson(output);
           return 0;
         }
         process.stdout.write(
           `\n  ${C.bold}Connect ${slug}${C.reset}\n` +
-            `  ${C.cyan}${resp.url}${C.reset}\n\n` +
-            `  ${C.dim}Expires ${resp.expires_at}. The connection finalizes automatically.${C.reset}\n\n`,
+            (output.url
+              ? `  ${C.cyan}${output.url}${C.reset}\n\n  ${C.dim}Open the URL and approve the ${output.provider} connection.${C.reset}\n\n`
+              : `  ${C.green}${output.connected ? 'Connected' : 'No authorization URL returned'}${C.reset}\n\n`),
         );
         return 0;
+      }
+      case 'connect-finalize': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const resp = await ctx.client.post<{
+          provider: string;
+          connected?: boolean;
+          accountId?: string;
+          connectionId?: string;
+          isNoAuth?: boolean;
+        }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`, {
+          ...(f.connectionId ? { connection_id: f.connectionId } : {}),
+          ...(f.requestId ? { request_id: f.requestId } : {}),
+        });
+        const output = {
+          provider: resp.provider,
+          slug,
+          connected: resp.connected === true,
+          account_id: resp.accountId ?? null,
+          connection_id: resp.connectionId ?? f.connectionId ?? null,
+          is_no_auth: resp.isNoAuth === true,
+        };
+        if (json) {
+          emitJson(output);
+          return output.connected ? 0 : 1;
+        }
+        process.stdout.write(
+          output.connected
+            ? `${status.ok(`${C.bold}${slug}${C.reset} connected through ${output.provider}`)}\n`
+            : `${status.err(`${C.bold}${slug}${C.reset} authorization is not complete`)}\n`,
+        );
+        return output.connected ? 0 : 1;
       }
       case 'rename':
       case 'name': {
@@ -520,21 +736,36 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (!slug) return missing('a connector slug');
         const mode = positional[1] ?? f.credential;
         if (mode === 'per_user') {
-          process.stderr.write(`${status.err('per_user credential mode was removed — connectors are always shared now')}\n`);
+          process.stderr.write(
+            `${status.err('per_user credential mode was removed — connectors are always shared now')}\n`,
+          );
           return 1;
         }
         if (mode !== 'shared') return missing('<shared>');
-        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
-        process.stdout.write(`${status.ok(`Connection mode for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, {
+          mode,
+        });
+        process.stdout.write(
+          `${status.ok(`Connection mode for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`,
+        );
         return 0;
       }
       case 'apps': {
         const q = positional[0];
-        const qs = [q ? `q=${encodeURIComponent(q)}` : '', f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '']
+        const qs = [
+          q ? `q=${encodeURIComponent(q)}` : '',
+          f.category ? `category=${encodeURIComponent(f.category)}` : '',
+          f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
+        ]
           .filter(Boolean)
           .join('&');
         const resp = await ctx.client.get<{
-          apps: { slug: string; name: string; description: string | null; categories: string[] }[];
+          apps: {
+            slug: string;
+            name: string;
+            description: string | null;
+            categories: string[];
+          }[];
           nextCursor?: string;
           hasMore: boolean;
         }>(`${ex}/pipedream/apps${qs ? `?${qs}` : ''}`);
@@ -549,33 +780,278 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slugW = Math.max(...resp.apps.map((a) => a.slug.length), 4);
         process.stdout.write('\n');
         for (const a of resp.apps) {
-          process.stdout.write(`  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}\n`);
+          process.stdout.write(
+            `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}\n`,
+          );
         }
         process.stdout.write(
           `\n  ${C.dim}${resp.apps.length} app${resp.apps.length === 1 ? '' : 's'}${resp.hasMore ? ` · more: --cursor ${resp.nextCursor}` : ''}${C.reset}\n\n`,
         );
         return 0;
       }
+      // ── Toggle a connector's `sensitive` flag ───────────────────────────
+      // Sensitive means its READS gate too: every call needs approval, not
+      // just the writes risk-classification would have caught.
+      case 'sensitive': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const value = parseOnOff(positional[1]);
+        if (value === null) return missing('on or off');
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/sensitive`, {
+          sensitive: value,
+        });
+        process.stdout.write(
+          value
+            ? `${status.ok(`${C.bold}${slug}${C.reset} is sensitive — every call needs approval`)}\n`
+            : `${status.ok(`${C.bold}${slug}${C.reset} is no longer sensitive`)} ${C.dim}— reads follow the ordinary rules again.${C.reset}\n`,
+        );
+        return 0;
+      }
+
+      // ── Who authorizes a connector ──────────────────────────────────────
+      case 'owner':
+      case 'authorization-strategy': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const strategy = positional[1];
+        if (strategy !== 'project' && strategy !== 'user') return missing('project or user');
+        // The route's field is `authorization_strategy`, not `strategy`.
+        await ctx.client.put(
+          `${ex}/connectors/${encodeURIComponent(slug)}/authorization-strategy`,
+          { authorization_strategy: strategy },
+        );
+        process.stdout.write(
+          strategy === 'project'
+            ? `${status.ok(`${C.bold}${slug}${C.reset}: one project connection everyone shares`)}\n`
+            : `${status.ok(`${C.bold}${slug}${C.reset}: each member authorizes their own connection`)}\n`,
+        );
+        return 0;
+      }
+
+      // ── Browse the direct-connector catalogue ───────────────────────────
+      // Gated on `connectors_api_discover`; the 403 names the flag and
+      // surfaceApiError prints it verbatim.
+      case 'catalog':
+      case 'discover-catalog': {
+        if (positional[0] === 'show' || positional[0] === 'info') {
+          const id = positional[1];
+          if (!id) return missing('a catalogue record id');
+          const detail = await ctx.client.get<{
+            item: DiscoverConnector;
+            variants: DiscoverVariant[];
+          }>(`${ex}/discover/connectors/detail?id=${encodeURIComponent(id)}`);
+          if (json) {
+            emitJson(detail);
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}${detail.item.name}${C.reset} ${C.faded}(${detail.item.id})${C.reset}\n`,
+          );
+          if (detail.item.description) {
+            process.stdout.write(`  ${C.dim}${trim(detail.item.description, 78)}${C.reset}\n`);
+          }
+          process.stdout.write('\n');
+          if (detail.variants.length === 0) {
+            process.stdout.write(`  ${C.dim}No connectable surfaces.${C.reset}\n\n`);
+            return 0;
+          }
+          for (const v of detail.variants) {
+            process.stdout.write(
+              `  ${C.cyan}${v.id}${C.reset}  ${pad(v.kind, 8)}  ${trim(v.name, 30)}${v.requiresAuth ? ` ${C.faded}(auth)${C.reset}` : ''}${v.url ? `  ${C.dim}${v.url}${C.reset}` : ''}\n`,
+            );
+          }
+          process.stdout.write(
+            `\n  ${C.dim}${detail.variants.length} surface${detail.variants.length === 1 ? '' : 's'}${C.reset}\n\n`,
+          );
+          return 0;
+        }
+        const q = positional[0];
+        const qs = [
+          q ? `q=${encodeURIComponent(q)}` : '',
+          f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '',
+        ]
+          .filter(Boolean)
+          .join('&');
+        const page = await ctx.client.get<{
+          items: DiscoverConnector[];
+          nextCursor?: string | null;
+          hasMore?: boolean;
+        }>(`${ex}/discover/connectors${qs ? `?${qs}` : ''}`);
+        if (json) {
+          emitJson(page);
+          return 0;
+        }
+        const items = page.items ?? [];
+        if (items.length === 0) {
+          process.stdout.write(
+            `  ${C.dim}No catalogue records${q ? ` matching "${q}"` : ''}.${C.reset}\n`,
+          );
+          return 0;
+        }
+        const idW = Math.max(...items.map((i) => i.id.length), 2);
+        process.stdout.write('\n');
+        for (const item of items) {
+          process.stdout.write(
+            `  ${C.cyan}${pad(item.id, idW)}${C.reset}  ${trim(item.name, 30)}  ${C.dim}${trim(item.description ?? '', 40)}${C.reset}\n`,
+          );
+        }
+        process.stdout.write(
+          `\n  ${C.dim}${items.length} record${items.length === 1 ? '' : 's'}${page.hasMore && page.nextCursor ? ` · more: --cursor ${page.nextCursor}` : ''}${C.reset}\n\n`,
+        );
+        return 0;
+      }
+
+      // ── Which paired computers a `computer` connector may target ────────
+      // Read the current assignment, apply --add/--rm, write the whole list
+      // back through the create route (the only writer of `tunnel_ids`).
+      case 'machines':
+      case 'computers': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const config = await ctx.client.get<{
+          slug: string;
+          name: string;
+          provider: string;
+          tunnelIds?: string[];
+        }>(`${ex}/connectors/${encodeURIComponent(slug)}/config`);
+        if (config.provider !== 'computer') {
+          process.stderr.write(
+            `${status.err(`${slug} is a ${config.provider} connector — machines apply to a \`computer\` connector.`)}\n`,
+          );
+          return 1;
+        }
+        const current = config.tunnelIds ?? [];
+        if (showOnly || (addIds.length === 0 && rmIds.length === 0)) {
+          if (json) {
+            emitJson({ slug: config.slug, machines: current });
+            return 0;
+          }
+          if (current.length === 0) {
+            process.stdout.write(`  ${C.dim}No machines assigned to ${slug}.${C.reset}\n`);
+            return 0;
+          }
+          process.stdout.write('\n');
+          for (const id of current) process.stdout.write(`  ${id}\n`);
+          process.stdout.write(
+            `\n  ${C.dim}${current.length} machine${current.length === 1 ? '' : 's'}${C.reset}\n\n`,
+          );
+          return 0;
+        }
+        const removed = new Set(rmIds);
+        const next = [...new Set([...current.filter((id) => !removed.has(id)), ...addIds])].sort();
+        // The route refuses an empty list ("select at least one computer") —
+        // say so here rather than relaying a 400 the caller has to decode.
+        if (next.length === 0) {
+          process.stderr.write(
+            `${status.err('A Computers profile needs at least one machine.')} ${C.dim}Remove the connector instead: ${C.reset}${C.cyan}kortix connectors rm ${slug} --apply${C.reset}\n`,
+          );
+          return 2;
+        }
+        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, {
+          slug: config.slug,
+          name: config.name,
+          provider: 'computer',
+          tunnel_ids: next,
+        });
+        if (json) {
+          emitJson({ ...resp, machines: next });
+          return 0;
+        }
+        process.stdout.write(
+          `${status.ok(`${C.bold}${slug}${C.reset} → ${next.length} machine${next.length === 1 ? '' : 's'}`)}\n`,
+        );
+        for (const id of next) process.stdout.write(`  ${C.faded}${id}${C.reset}\n`);
+        return 0;
+      }
+
       case 'policy':
       case 'policies': {
         const a0 = positional[0] ?? 'ls';
-        // Project-wide: `policy ls`. (`policy set --default` is handled earlier.)
-        if (a0 === 'ls' || a0 === 'list') {
-          const resp = await ctx.client.get<{
-            policies: { match: string; action: string }[];
-            defaultMode: string;
-          }>(`${ex}/policies`);
+        const projectPolicies = `${ex}/policies`;
+        const loadProject = () => ctx.client.get<ProjectPoliciesView>(projectPolicies);
+
+        // Project-wide: `policy ls|show`.
+        if (a0 === 'ls' || a0 === 'list' || a0 === 'show') {
+          const resp = await loadProject();
           if (json) {
             emitJson(resp);
             return 0;
           }
-          process.stdout.write(`\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`);
+          process.stdout.write(
+            `\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`,
+          );
           if (resp.policies.length === 0) {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
-          for (const p of resp.policies) process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
+          for (const p of resp.policies) {
+            process.stdout.write(
+              `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
+            );
+          }
           process.stdout.write('\n');
+          return 0;
+        }
+
+        // Project-wide: `policy set --default <mode> --apply` (without --apply
+        // this never reaches here — it edits kortix.yaml, unchanged).
+        if (a0 === 'set') {
+          const mode = f.default;
+          if (mode !== 'risk' && mode !== 'allow_all') return missing('--default risk|allow_all');
+          const currentProject = await loadProject();
+          await ctx.client.put(projectPolicies, {
+            policies: currentProject.policies,
+            defaultMode: mode,
+          });
+          process.stdout.write(
+            `${status.ok(`Project default mode → ${C.bold}${mode}${C.reset}`)} ${C.dim}(kortix.yaml on main + catalog)${C.reset}\n`,
+          );
+          return 0;
+        }
+
+        // Project-wide: `policy add <match> <action> [--condition k=v]…`
+        if (a0 === 'add') {
+          const match = positional[1];
+          const action = normalizePolicyAction(positional[2]);
+          if (!match) return missing('a <match> (tool name, glob, or /regex/)');
+          if (!action) return missing('an action: allow | ask | block');
+          const parsedConditions = parsePolicyConditions(conditions);
+          if ('error' in parsedConditions) return invalid(parsedConditions.error);
+          const currentProject = await loadProject();
+          const next = [
+            ...currentProject.policies.filter((p) => p.match !== match),
+            {
+              match,
+              action,
+              ...(parsedConditions.conditions.length
+                ? { conditions: parsedConditions.conditions }
+                : {}),
+            },
+          ];
+          await ctx.client.put(projectPolicies, {
+            policies: next,
+            defaultMode: currentProject.defaultMode,
+          });
+          process.stdout.write(
+            `${status.ok(`project: ${match} → ${action}${conditionsLabel(parsedConditions.conditions)}`)}\n`,
+          );
+          return 0;
+        }
+
+        // Project-wide: `policy rm <match>`
+        if (a0 === 'rm' || a0 === 'remove') {
+          const match = positional[1];
+          if (!match) return missing('the <match> to remove');
+          const currentProject = await loadProject();
+          if (!currentProject.policies.some((p) => p.match === match)) {
+            process.stderr.write(`${status.err(`No project rule matching "${match}".`)}\n`);
+            return 1;
+          }
+          await ctx.client.put(projectPolicies, {
+            policies: currentProject.policies.filter((p) => p.match !== match),
+            defaultMode: currentProject.defaultMode,
+          });
+          process.stdout.write(`${status.ok(`project: removed ${match}`)}\n`);
           return 0;
         }
 
@@ -593,11 +1069,14 @@ export async function runConnectors(argv: string[]): Promise<number> {
           }
           const { policies } = resp;
           if (policies.length === 0) {
-            process.stdout.write(`  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`);
+            process.stdout.write(
+              `  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`,
+            );
             return 0;
           }
           process.stdout.write('\n');
-          for (const p of policies) process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
+          for (const p of policies)
+            process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
           process.stdout.write('\n');
           return 0;
         }
@@ -609,14 +1088,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
           const { policies } = await load();
           const next = [...policies.filter((p) => p.match !== match), { match, action }];
           await ctx.client.put(path, { policies: next });
-          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: ${match} → ${action}`)}\n`);
+          process.stdout.write(
+            `${status.ok(`${C.bold}${slug}${C.reset}: ${match} → ${action}`)}\n`,
+          );
           return 0;
         }
         if (cAction === 'rm' || cAction === 'remove') {
           const match = positional[2];
           if (!match) return missing('the <match> to remove');
           const { policies } = await load();
-          await ctx.client.put(path, { policies: policies.filter((p) => p.match !== match) });
+          await ctx.client.put(path, {
+            policies: policies.filter((p) => p.match !== match),
+          });
           process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: removed ${match}`)}\n`);
           return 0;
         }
@@ -753,7 +1236,10 @@ async function runConnections(input: {
         { value },
       );
       if (json) emitJson(response);
-      else process.stdout.write(`${status.ok(`Credential set for connection ${C.bold}${connectionId}${C.reset}`)}\n`);
+      else
+        process.stdout.write(
+          `${status.ok(`Credential set for connection ${C.bold}${connectionId}${C.reset}`)}\n`,
+        );
       return 0;
     }
     case 'revoke':
@@ -766,7 +1252,10 @@ async function runConnections(input: {
         {},
       );
       if (json) emitJson(response);
-      else process.stdout.write(`${status.ok(`${connectionActionPastTense(action)} connection ${C.bold}${connectionId}${C.reset}`)}\n`);
+      else
+        process.stdout.write(
+          `${status.ok(`${connectionActionPastTense(action)} connection ${C.bold}${connectionId}${C.reset}`)}\n`,
+        );
       return 0;
     }
     case 'connect': {
@@ -792,10 +1281,10 @@ async function runConnections(input: {
     case 'finalize': {
       const connectionId = positional[0];
       if (!connectionId) return missing('a connection id');
-      const response = await ctx.client.post<{ connected: boolean; accountId?: string }>(
-        `${base}/${encodeURIComponent(connectionId)}/connect/finalize`,
-        {},
-      );
+      const response = await ctx.client.post<{
+        connected: boolean;
+        accountId?: string;
+      }>(`${base}/${encodeURIComponent(connectionId)}/connect/finalize`, {});
       if (json) emitJson(response);
       else {
         process.stdout.write(
@@ -835,16 +1324,28 @@ function connectionActionPastTense(action: 'revoke' | 'activate' | 'default'): s
 
 // ── Local kortix.yaml config edits (source of truth; no cloud round-trip) ────
 
-function connectorAddLocal(slug: string | undefined, f: Record<string, string | undefined>): number {
+function connectorAddLocal(
+  slug: string | undefined,
+  f: Record<string, string | undefined>,
+  allowLegacyPipedream: boolean,
+): number {
   if (!slug) return missing('a connector slug');
   if (!f.provider) return missing('--provider');
   if (!(PROVIDERS as readonly string[]).includes(f.provider)) {
     process.stderr.write(`${status.err(`--provider must be one of ${PROVIDERS.join(', ')}`)}\n`);
     return 2;
   }
+  if (f.provider === 'pipedream' && !allowLegacyPipedream) {
+    process.stderr.write(
+      `${status.err('Pipedream is legacy rollback only. Use --provider composio for managed SaaS apps. Ask the human before retrying with --allow-legacy-pipedream.')}\n`,
+    );
+    return 1;
+  }
   try {
     if (arrayEntryExists('connectors', 'slug', slug)) {
-      process.stderr.write(`${status.err(`A connector "${slug}" already exists in kortix.yaml.`)}\n`);
+      process.stderr.write(
+        `${status.err(`A connector "${slug}" already exists in kortix.yaml.`)}\n`,
+      );
       return 1;
     }
     // Insertion order = field order in the block.
@@ -863,7 +1364,7 @@ function connectorAddLocal(slug: string | undefined, f: Record<string, string | 
     process.stdout.write(
       `${status.ok(`Added [[connectors]] ${C.bold}${slug}${C.reset} to kortix.yaml`)}\n` +
         `  ${C.dim}Apply it with ${C.reset}${C.cyan}kortix ship${C.reset}${C.dim}; authentication will be detected from the source unless --auth-type overrides it.${C.reset}\n` +
-        `  ${C.dim}Then set the credential with ${C.reset}${C.cyan}kortix connectors credential ${slug}${C.reset}\n`,
+        `  ${C.dim}Then ${f.provider === 'composio' || f.provider === 'pipedream' ? 'connect it with' : 'set the credential with'} ${C.reset}${C.cyan}kortix connectors ${f.provider === 'composio' || f.provider === 'pipedream' ? `connect ${slug}` : `credential ${slug}`}${C.reset}\n`,
     );
     return 0;
   } catch (err) {
@@ -941,7 +1442,9 @@ export function oauth2AuthorizeSteps(
   | { application: Record<string, unknown>; scopes: string[] }
   | { error: string } {
   if (!discovery.requires_authorization) {
-    return { error: 'This server accepted an unauthenticated request — no OAuth setup needed.' };
+    return {
+      error: 'This server accepted an unauthenticated request — no OAuth setup needed.',
+    };
   }
   const metadata = discovery.metadata ?? {};
   if (!metadata.token_url && !metadata.authorization_url) {
@@ -1031,8 +1534,113 @@ function reportSync(sync?: SyncResult): void {
   for (const e of sync.errors) process.stderr.write(`  ${status.warn(`${e.slug}: ${e.error}`)}\n`);
 }
 
+/**
+ * Poll an RFC 8628 device authorization to its end.
+ *
+ * The server owns the back-off: it holds a `next_poll_at` and answers
+ * `pending` without hitting the authorization server until that instant, so a
+ * client that polls faster only wastes its own requests. Poll on the interval
+ * the start response named, and stop at `expires_at` — a session the server
+ * never sees again stays pending forever otherwise.
+ */
+async function pollDeviceAuthorization(
+  client: import('../api/client.ts').ApiClient,
+  oauth2Base: string,
+  device: DeviceAuthorizationStart,
+): Promise<number> {
+  const deadline = Date.parse(device.expires_at);
+  const intervalMs = Math.max(1, device.interval_seconds || 5) * 1000;
+  for (;;) {
+    if (Number.isFinite(deadline) && Date.now() >= deadline) {
+      process.stderr.write(`${status.err('The device code expired before it was approved.')}\n`);
+      return 1;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    let state: {
+      status: string;
+      error_code?: string | null;
+      scopes?: string[];
+    };
+    try {
+      state = await client.post<{
+        status: string;
+        error_code?: string | null;
+        scopes?: string[];
+      }>(`${oauth2Base}/device/${encodeURIComponent(device.session_id)}`, {});
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+    if (state.status === 'pending') continue;
+    if (state.status === 'active') {
+      process.stdout.write(
+        `${status.ok('Authorized')}${state.scopes?.length ? ` ${C.dim}(${state.scopes.join(' ')})${C.reset}` : ''}\n`,
+      );
+      return 0;
+    }
+    process.stderr.write(
+      `${status.err(`Authorization ${state.status}${state.error_code ? `: ${state.error_code}` : ''}`)}\n`,
+    );
+    return 1;
+  }
+}
+
+/** `on`/`off` (and the obvious synonyms) → boolean, else null. */
+export function parseOnOff(value: string | undefined): boolean | null {
+  switch ((value ?? '').toLowerCase()) {
+    case 'on':
+    case 'true':
+    case 'yes':
+      return true;
+    case 'off':
+    case 'false':
+    case 'no':
+      return false;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Parse repeated `--condition` flags into the wire shape the policies route
+ * validates: `{ arg, match, negate? }`. `k=v` asserts the argument at dot path
+ * `k` matches `v`; `k!=v` asserts it does not.
+ *
+ * The route rejects `__proto__`/`constructor`/`prototype` as a path segment and
+ * an unparseable matcher, so a bad rule fails at write time rather than
+ * compiling to a never-match that looks saved.
+ */
+export function parsePolicyConditions(
+  raw: readonly string[],
+): { conditions: PolicyCondition[] } | { error: string } {
+  const conditions: PolicyCondition[] = [];
+  for (const entry of raw) {
+    const negated = entry.includes('!=');
+    const separator = negated ? '!=' : '=';
+    const index = entry.indexOf(separator);
+    if (index <= 0) {
+      return {
+        error: `--condition must look like arg=value or arg!=value (got "${entry}")`,
+      };
+    }
+    const arg = entry.slice(0, index).trim();
+    const match = entry.slice(index + separator.length).trim();
+    if (!arg) return { error: `--condition needs an argument path (got "${entry}")` };
+    if (!match) return { error: `--condition needs a value to match (got "${entry}")` };
+    conditions.push({ arg, match, ...(negated ? { negate: true } : {}) });
+  }
+  return { conditions };
+}
+
+/** " when to=*@corp.com, subject!=/urgent/" — or "" when unconditioned. */
+export function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
+  if (!conditions || conditions.length === 0) return '';
+  return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
+}
+
 /** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */
-function normalizePolicyAction(v: string | undefined): 'always_run' | 'require_approval' | 'block' | null {
+function normalizePolicyAction(
+  v: string | undefined,
+): 'always_run' | 'require_approval' | 'block' | null {
   switch ((v ?? '').toLowerCase()) {
     case 'allow':
     case 'always_run':

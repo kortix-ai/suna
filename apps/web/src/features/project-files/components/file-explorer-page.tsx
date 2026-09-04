@@ -19,7 +19,7 @@ import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { FolderOpenIcon as FolderOpen } from '@phosphor-icons/react';
 import { useTranslations } from 'next-intl';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { downloadFile } from '../api/runtime-files';
 import { useProjectContext } from '../context';
@@ -38,7 +38,6 @@ import { CheckpointsPanel } from './checkpoints-panel';
 import { DriveGridView } from './drive-grid-view';
 import { DriveHeader } from './drive-header';
 import { DriveListView } from './drive-list-view';
-import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { FilePreviewModal } from './file-preview-modal';
 import { type FilesRightPanel, requestedFilesRightPanel } from './file-route-state';
@@ -346,7 +345,6 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const openCrCount = openCrCountQuery.data?.change_requests.length ?? 0;
 
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
   useEffect(() => {
     const cr = searchParams.get('cr');
@@ -358,8 +356,14 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     params.delete('cr');
     params.delete('panel');
     const query = params.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-  }, [searchParams, pathname, router]);
+    // `history.replaceState`, not `router.replace`: the two lines above already
+    // moved the params into React state, so the strip needs no server data.
+    // Dropping a param changes the router cache key, so `router.replace` would
+    // buy a cold RSC fetch for nothing. Next patches `replaceState` and updates
+    // its own canonical URL, so `useSearchParams` still reports the stripped
+    // URL. Same mechanism as `openTabAndNavigate` in `stores/tab-store.ts`.
+    window.history.replaceState(null, '', query ? `${pathname}?${query}` : pathname);
+  }, [searchParams, pathname]);
 
   const isEmpty =
     !isLoading &&
@@ -382,10 +386,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           onToggle: () => toggleRightPanel('proposed-changes'),
           openCount: openCrCount,
         }}
-      />
-
-      <DriveToolbar
-        showVersionSelector
+        onRefresh={() => refetchFiles()}
         onDownloadDir={() => {
           const dirName = isRootPath
             ? 'workspace'
@@ -394,7 +395,6 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           downloadDir(dirPath, dirName);
         }}
         isDownloading={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
-        onRefresh={() => refetchFiles()}
       />
 
       <div className="relative min-h-0 flex-1">

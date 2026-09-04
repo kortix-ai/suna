@@ -1,36 +1,50 @@
-import { describe, expect, test } from 'bun:test';
 import { qk } from '@kortix/sdk/react';
+import { describe, expect, test } from 'bun:test';
 
 import {
-  connectionOwnerTypeForStrategy,
   buildEasyConnectConnectorDraft,
   buildEmailConnectorConnectionSlug,
-  connectorConnectionQueryKeys,
+  connectionOwnerTypeForStrategy,
   connectorAuthorizationStrategyForProvider,
   connectorAuthorizationStrategyIsEditable,
   connectorAuthorizationUpdateIsPending,
+  connectorConnectionQueryKeys,
   connectorConnectionSlugAfterNameChange,
   connectorSetupStatus,
   connectorSyncErrorForSlug,
   createOnlyConnectorDraft,
   isConnectorConnectionSlugAvailable,
   normalizeConnectorConnectionSlug,
+  proposeConnectorConnectionName,
   proposeConnectorConnectionSlug,
 } from './connector-connection-form';
 
 describe('connector slug proposal', () => {
-  test('generates the slug from the display name', () => {
-    expect(proposeConnectorConnectionSlug('Gmail Read Only', ['slack'])).toBe('gmail-read-only');
+  test('generates the slug from the display name with a random suffix, always', () => {
+    // Marko, 2026-09-03: "unique slug, always sentry-<random>". A bare app slug
+    // collided with a previous attempt's leftovers at Composio and a `-1`
+    // suffix collided with the next person's; random does neither.
+    expect(proposeConnectorConnectionSlug('Gmail Read Only', ['slack'], () => 'k3x9q2')).toBe(
+      'gmail-read-only-k3x9q2',
+    );
+    expect(proposeConnectorConnectionSlug('Sentry', [])).toMatch(/^sentry-[0-9a-z]{6}$/);
   });
 
-  test('uses the first available numeric suffix after a collision', () => {
+  test('draws again when the random suffix is already taken', () => {
+    const draws = ['aaaaaa', 'bbbbbb'];
     expect(
-      proposeConnectorConnectionSlug('Gmail Read Only', [
-        'gmail-read-only',
-        'gmail-read-only-1',
-        'gmail-read-only-3',
-      ]),
-    ).toBe('gmail-read-only-2');
+      proposeConnectorConnectionSlug('Sentry', ['sentry-aaaaaa'], () => draws.shift() ?? 'zzzzzz'),
+    ).toBe('sentry-bbbbbb');
+  });
+
+  test('proposes "<name> N" for the Nth connection to the same app', () => {
+    expect(proposeConnectorConnectionName('Sentry', [])).toBe('Sentry');
+    expect(proposeConnectorConnectionName('Sentry', ['sentry-k3x9q2'])).toBe('Sentry 2');
+    expect(proposeConnectorConnectionName('Sentry', ['sentry-k3x9q2', 'sentry-p0p0p0'])).toBe(
+      'Sentry 3',
+    );
+    // `sentryfoo` is a different app, not another Sentry.
+    expect(proposeConnectorConnectionName('Sentry', ['sentryfoo-abc'])).toBe('Sentry');
   });
 
   test('keeps an edited slug when the display name changes', () => {
@@ -52,7 +66,7 @@ describe('connector slug proposal', () => {
         existingSlugs: ['gmail-read-only'],
         slugEdited: false,
       }),
-    ).toBe('gmail-read-only-1');
+    ).toMatch(/^gmail-read-only-[0-9a-z]{6}$/);
   });
 
   test('normalizes an edited slug to the manifest format', () => {
@@ -163,6 +177,23 @@ describe('connector setup status', () => {
         secretSet: true,
       }),
     ).toBe('user_managed');
+  });
+
+  // Prod 2026-08-28: 6 of 6 GitHub connections had a null `connected_account_id`
+  // — authorization was never completed — and no GitHub tool call had ever run,
+  // yet the connector grid showed a checkmark. `needs_auth` used to fall
+  // through to the secretSet branch and read as `connected`.
+  test('an authorization that never completed is setup that never finished', () => {
+    expect(connectorSetupStatus({ ...connector, status: 'needs_auth' })).toBe('needs_setup');
+    // Even with a credential present it is NOT connected — the credential is
+    // not the thing that is missing.
+    expect(connectorSetupStatus({ ...connector, status: 'needs_auth', secretSet: true })).toBe(
+      'needs_setup',
+    );
+  });
+
+  test('error still outranks needs_auth', () => {
+    expect(connectorSetupStatus({ ...connector, status: 'error' })).toBe('error');
   });
 
   test('keeps error and no-auth states independent of credential ownership', () => {

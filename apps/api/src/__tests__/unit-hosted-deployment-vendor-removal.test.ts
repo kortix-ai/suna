@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const repoRoot = resolve(import.meta.dir, '../../../..');
@@ -28,9 +28,15 @@ const immutableSchemaHistoryPrefixes = [
   'packages/db/drizzle/',
   'packages/db/migrations/',
 ];
+// Files whose job is to name the retired vendor so it cannot come back. They are
+// exempt from the scan below; everything else in the repository is not.
 const trackingFiles = new Set([
-  'packages/sdk/PROGRESS.md',
   'apps/api/src/__tests__/unit-hosted-deployment-vendor-removal.test.ts',
+  // Lists the keys that scripts/secrets-sm-parity.py must never copy out of AWS
+  // Secrets Manager into a tracked apps/api/.env* file. A dotenvx file stores key
+  // names in clear text, so mirroring one of them would reintroduce the reference
+  // this test forbids.
+  'scripts/secrets-sm-excluded.allowlist',
 ]);
 
 function trackedTextFiles(): string[] {
@@ -41,6 +47,7 @@ function trackedTextFiles(): string[] {
     .split('\0')
     .filter(Boolean)
     .filter((file) => existsSync(resolve(repoRoot, file)))
+    .filter((file) => statSync(resolve(repoRoot, file)).isFile())
     .filter((file) => !trackingFiles.has(file))
     .filter(
       (file) => !immutableSchemaHistoryPrefixes.some((prefix) => file.startsWith(prefix)),

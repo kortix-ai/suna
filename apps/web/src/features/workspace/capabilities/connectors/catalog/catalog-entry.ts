@@ -37,7 +37,10 @@ interface CatalogEntryFields {
  */
 export type CatalogEntry =
   | (CatalogEntryFields & { source: 'discover'; connector: DiscoverConnector })
-  | (CatalogEntryFields & { source: 'easy-connect'; app: PipedreamApp })
+  | (CatalogEntryFields & {
+      source: 'easy-connect';
+      app: PipedreamApp & { provider?: 'composio' | 'pipedream' };
+    })
   | (CatalogEntryFields & { source: 'computer' });
 
 /** Native platform provider. The tunnel fleet is its account directory. */
@@ -69,7 +72,9 @@ export function catalogEntryFromDiscover(connector: DiscoverConnector): CatalogE
   };
 }
 
-export function catalogEntryFromEasyConnect(app: PipedreamApp): CatalogEntry {
+export function catalogEntryFromEasyConnect(
+  app: PipedreamApp & { provider?: 'composio' | 'pipedream' },
+): CatalogEntry {
   return {
     source: 'easy-connect',
     app,
@@ -119,6 +124,19 @@ export function foldKey(value: string): string {
 export function connectedCatalogKeys(connectors: readonly AdminConnector[]): ReadonlySet<string> {
   const keys = new Set<string>();
   for (const connector of connectors) {
+    // A connector ROW is not a working connection. `needs_auth` means the
+    // OAuth handshake never completed — no `connected_account_id`, so every
+    // tool call is refused by the gateway. Showing it as connected is the
+    // worst possible lie: the user sees a checkmark, the agent gets `needs_auth`
+    // on every call, and nothing in the product explains the contradiction.
+    // Prod 2026-08-28: all 6 GitHub connections had a null connected account
+    // and zero GitHub tool calls had ever executed, while the catalogue showed
+    // GitHub as connected.
+    //
+    // `error` stays connected-looking on purpose: the credential exists and the
+    // card's own error affordance is what surfaces the problem. Only the
+    // never-authorized case is a false checkmark.
+    if (connector.status === 'needs_auth') continue;
     keys.add(`provider:${connector.provider}`);
     keys.add(foldKey(connector.slug));
     if (connector.name?.trim()) keys.add(foldKey(connector.name));
@@ -166,7 +184,13 @@ export { POPULAR_SECTION };
  */
 export function catalogSections(
   entries: readonly CatalogEntry[],
-  opts: { popularCap: number },
+  opts: {
+    popularCap: number;
+    /** Key sections by the catalogue's own category slug rather than the curated
+     *  bucket. Set for any source whose sections are opened by asking the server
+     *  for that key — see `sectionKeysForEntry`. */
+    rawCategoryKeys?: boolean;
+  },
 ): Array<{ category: string; items: CatalogEntry[] }> {
   const ranked = entries
     .filter((entry) => entry.popularity !== null)
@@ -180,7 +204,9 @@ export function catalogSections(
   //
   // Popular is deliberately left alone. It is already ordered, by `popularity`,
   // and re-sorting it by picks would replace a real ranking with a guess.
-  const sections = groupIntoSections(entries, (entry) => entry.categories).map((section) => ({
+  const sections = groupIntoSections(entries, (entry) => entry.categories, {
+    raw: opts.rawCategoryKeys,
+  }).map((section) => ({
     category: section.category,
     items: sortByPicks(section.category, section.items),
   }));

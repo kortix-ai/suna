@@ -512,9 +512,6 @@
     "galleryTitle": "Photo Library Permission Required",
     "galleryMessage": "Please enable photo library access in your settings to choose images."
   },
-  "audio": {
-    "transcriptionFailed": "Failed to transcribe audio. Please try again."
-  },
   "models": {
     "selectModel": "Select Model",
     "chooseModelFor": "Choose a model for worker {{agent}}",

@@ -125,7 +125,7 @@ beforeEach(() => {
     SLACK_CHANNEL_ID: process.env.SLACK_CHANNEL_ID,
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
-    KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
+    KORTIX_TOKEN: process.env.KORTIX_TOKEN,
     KORTIX_API_URL: process.env.KORTIX_API_URL,
   }
 })
@@ -139,7 +139,7 @@ function slackEnv(apiUrl: string) {
   process.env.SLACK_CHANNEL_ID = 'C1'
   process.env.KORTIX_PROJECT_ID = 'p1'
   process.env.KORTIX_SESSION_ID = 's1'
-  process.env.KORTIX_SANDBOX_TOKEN = 't1'
+  process.env.KORTIX_TOKEN = 't1'
   process.env.KORTIX_API_URL = apiUrl
 }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

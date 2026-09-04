@@ -4,7 +4,8 @@ description: Install the CLI, run a session, and merge your first change request
 ---
 
 import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Card, Cards } from '@/components/markdown/docs-card';
+import { PathIcon, TerminalIcon } from '@/lib/icons/ssr';
 
 This page takes you from a fresh terminal to a merged change request (CR).
 Every command below is copy-pasteable.
@@ -102,13 +103,13 @@ project's default branch until you merge.
 ## Next steps
 
 <Cards>
-  <Card title="How the pieces fit" href="/docs/work">
+  <Card icon={<PathIcon />} title="How the pieces fit" href="/docs/work">
     Projects, sessions, and change requests, explained.
   </Card>
-  <Card title="CLI command reference" href="/docs/cli">
+  <Card icon={<TerminalIcon />} title="CLI command reference" href="/docs/cli">
     Every command, flag, and subcommand.
   </Card>
-  <Card title="The CLI dev loop" href="/docs/cli">
+  <Card icon={<TerminalIcon />} title="The CLI dev loop" href="/docs/cli">
     Link a repo, ship code, and manage sessions from your terminal.
   </Card>
 </Cards>

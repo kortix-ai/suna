@@ -303,6 +303,18 @@ describe('classifySendError', () => {
     expect(result.gateway).toBeUndefined();
   });
 
+  // The thrown error's message is often an HTTP body, not a sentence — the
+  // same `{"message":…,"code":401}` string OpenCode persists into
+  // `UnknownError.data.message`. The runtime-error message must be the
+  // sentence inside it, never the serialized body.
+  test('a runtime-error whose message is a JSON body reports the sentence inside it', () => {
+    const result = classifySendError(
+      new Error('{"message":"Provided authentication token is expired.","code":401}'),
+    );
+    expect(result.kind).toBe('runtime-error');
+    expect(result.message).toBe('Provided authentication token is expired.');
+  });
+
   // ERROR-TAXONOMY fix: a runtime-error carrying the gateway's structured
   // envelope (provider/code/suggestion/request_id) surfaces those fields on
   // `.gateway` instead of discarding everything but the bare message.
@@ -919,7 +931,8 @@ describe('nextInconclusiveSince', () => {
     ).toBe(armedAt);
   });
 
-  test('a fetch in flight with nothing armed yet stays null — not yet inconclusive', () => {
+  test('the first fetch arms the deadline so a never-settling request cannot spin forever', () => {
+    const nowMs = Date.now();
     expect(
       nextInconclusiveSince({
         current: null,
@@ -927,9 +940,9 @@ describe('nextInconclusiveSince', () => {
         hasData: false,
         hasError: false,
         isFetching: true,
-        nowMs: Date.now(),
+        nowMs,
       }),
-    ).toBeNull();
+    ).toBe(nowMs);
   });
 
   test('sitting disabled past the budget, then enabling, does not pre-consume the grace window', () => {

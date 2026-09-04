@@ -14,7 +14,14 @@
  * response shape is a contract (the CLI and `@kortix/sdk` depend on it) and
  * must not change. The streaming route (next) is the only real consumer.
  */
-import { getBackend, hasBackend, parseBasicAuthHeader, type GitConnectionRef } from './git-backends';
+import {
+  defaultManagedProviderId,
+  getBackend,
+  hasBackend,
+  isRetiredManagedProvider,
+  parseBasicAuthHeader,
+  type GitConnectionRef,
+} from './git-backends';
 import {
   ManagedRepoSeedError,
   buildManagedRepoSeedState,
@@ -157,11 +164,22 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   // Managed-git provider, provider-agnostic via the backend registry. GitHub is
   // the default + only active managed backend. Forgejo / Artifacts slot in here
   // as drop-ins.
-  const provider =
-    normalizeString(body.provider) ??
-    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+  //
+  // `defaultManagedProviderId()` — never `process.env.MANAGED_GIT_PROVIDER`
+  // directly: a retired backend must not be selectable by a deployed env bundle
+  // (see registry.ts). A caller naming one explicitly is refused for the same
+  // reason; EXISTING repos on it keep working through their connection row.
+  const provider = normalizeString(body.provider) ?? defaultManagedProviderId();
   if (!hasBackend(provider)) {
     return { status: 400, body: { error: `Unsupported managed git provider "${provider}"` } };
+  }
+  if (isRetiredManagedProvider(provider)) {
+    return {
+      status: 400,
+      body: {
+        error: `Managed git provider "${provider}" is retired — new repositories are provisioned on github`,
+      },
+    };
   }
   const backend = getBackend(provider);
   if (!(await backend.isConfigured())) {
@@ -314,20 +332,34 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
   const authMethod = provider === 'github' ? 'github_app' : 'managed';
   const now = new Date();
 
-  // Seed the starter into the empty repo when the caller has no local working
-  // tree to push (web "Create project"). `kortix ship` leaves this false and
-  // pushes its own files instead (apps/cli/src/commands/ship.ts) — a plain,
-  // non-force push, so seeding that repo would reject it. Resolved BEFORE the
-  // insert so the row records the INTENT: a crash between the insert and a
-  // verified seed then leaves `{ expected: true, seeded: false }`, which
-  // `shouldSelfHealManagedRepoSeed` repairs on next access instead of leaving a
-  // permanently dead project that reports itself active.
-  const seedStarter = body.seed_starter === true || body.seedStarter === true || !!sourceItemId;
+  // A PROJECT ALWAYS HAS A MANIFEST. Seeding is the DEFAULT, not an opt-in.
+  //
+  // `seed_starter` chooses WHO supplies the scaffold — the server here, or a
+  // client that is about to push its own `kortix init` output — never WHETHER
+  // the project gets one. It used to default to false, so a caller who said
+  // nothing (a bare `POST /v1/projects/provision`, an agent, any integration)
+  // got a repo with no kortix.yaml, no agents and no skills, recorded as
+  // `caller_opted_out` so the self-heal skipped it permanently. See
+  // ./managed-repo-seed.ts for the full rule.
+  //
+  // The one opt-out is an EXPLICIT `seed_starter: false` (`kortix ship`, which
+  // pushes its own history with a plain non-force push that a seeded repo would
+  // reject). Even that records `expected: true` with `client_owns_first_commit`,
+  // so a client that never pushes is repaired on next access by
+  // `shouldSelfHealManagedRepoSeed` instead of being left permanently blank —
+  // and the repair re-checks `remoteBranchExists`, so it is a no-op once the
+  // client HAS pushed.
+  //
+  // Resolved BEFORE the insert so the row records the INTENT: a crash between
+  // the insert and a verified seed leaves `{ expected: true, seeded: false }`,
+  // which the same repair path fixes.
+  const clientOwnsFirstCommit = body.seed_starter === false || body.seedStarter === false;
+  const seedStarter = !clientOwnsFirstCommit || !!sourceItemId;
   const marketplaceItems = normalizeMarketplaceItems(body.marketplace_items ?? body.marketplaceItems);
   const initialSeedState = buildManagedRepoSeedState(
     seedStarter
       ? { seeded: false, expected: true, reason: 'pending', at: now.toISOString(), template: sourceItemId ?? starterTemplate }
-      : { seeded: false, expected: false, reason: 'caller_opted_out', at: now.toISOString() },
+      : { seeded: false, expected: true, reason: 'client_owns_first_commit', at: now.toISOString(), template: starterTemplate },
   );
 
   const insertProjectRow = () => db
@@ -623,7 +655,9 @@ export async function runProvision(ctx: ProvisionContext, emit: ProvisionEmit): 
         .where(eq(projects.projectId, row.projectId))
         .catch(() => {}); // best-effort — a mirror-write hiccup must not fail project creation
 
-      if (config.KORTIX_FAST_COLD_BOOT_ENABLED && writeUpstream) {
+      // Same switch as the create-time hint (#6973): a seeded project's FIRST
+      // session must already find its base tip + scaffold delta cached.
+      if (config.KORTIX_FAST_GIT_BOOT_ENABLED && writeUpstream) {
         const hintTask = resolveFastBootGitHintWithCache(
           {
             projectId: row.projectId,

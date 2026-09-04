@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SettingsTabId } from '@/lib/menu-registry';
+import { softNavigate } from '@/lib/navigation/router-bridge';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 
 /**
@@ -32,17 +33,38 @@ interface AccountSettingsModalState {
   closeAccountSettings: () => void;
 }
 
+/**
+ * The `/accounts/[id]` URL for a settings tab.
+ *
+ * Exported so a control that already knows its destination at render time
+ * renders a `<Link>` instead of a button — an anchor is prefetched, a button is
+ * not. Pass `accountId` when the caller holds a reactive one; otherwise the
+ * current selection is read from the store.
+ *
+ * Falls back to the accounts picker when no account is selected. That branch is
+ * live: `selectedAccountId` starts null in a fresh browser or a
+ * storage-blocked context.
+ */
+export function buildAccountSettingsHref(opts?: {
+  tab?: AccountSettingsTabId;
+  highlight?: AccountSettingsHighlight;
+  accountId?: string | null;
+}): string {
+  const accountId =
+    opts?.accountId !== undefined
+      ? opts.accountId
+      : useCurrentAccountStore.getState().selectedAccountId;
+  if (!accountId) return '/accounts';
+  const params = new URLSearchParams({ tab: opts?.tab ?? 'billing' });
+  if (opts?.highlight) params.set('highlight', opts.highlight);
+  return `/accounts/${accountId}?${params.toString()}`;
+}
+
 function navigateToAccountTab(tab: AccountSettingsTabId, highlight: AccountSettingsHighlight) {
   if (typeof window === 'undefined') return;
-  const accountId = useCurrentAccountStore.getState().selectedAccountId;
-  if (!accountId) {
-    // No account selected — drop the user at the accounts picker.
-    window.location.href = '/accounts';
-    return;
-  }
-  const params = new URLSearchParams({ tab });
-  if (highlight) params.set('highlight', highlight);
-  window.location.href = `/accounts/${accountId}?${params.toString()}`;
+  // A store is not a component, so it cannot hold a router. The bridge carries
+  // the live one — `window.location.href` here rebooted the whole SPA.
+  softNavigate(buildAccountSettingsHref({ tab, highlight }));
 }
 
 export const useAccountSettingsModalStore = create<AccountSettingsModalState>((set) => ({

@@ -358,11 +358,11 @@ describe('timeouts bound the HEADERS, never the stream', () => {
       setTimeout(() => {
         res.write('data: 2\n\n');
         res.end();
-      }, 300);
+      }, 1_000);
     };
     const upstream = await openUpstream(head('/long', 'GET'), null, {
       seam: seam(),
-      headersTimeoutMs: 150,
+      headersTimeoutMs: 500,
     });
     expect((await drain(upstream.body)).toString()).toBe('data: 1\n\ndata: 2\n\n');
   });
@@ -416,20 +416,23 @@ describe('the HEADERS deadline measures SILENCE, not the upload', () => {
         res.end(String(Buffer.concat(chunks).byteLength));
       });
     };
-    // 8 writes × 40 ms = ~320 ms of upload against a 120 ms headers budget.
+    // 12 writes × 50 ms = ~600 ms of upload against a 250 ms headers budget.
+    // The gap between writes (50 ms) sits 5× under the budget so a loaded CI
+    // worker stretching one timer cannot masquerade as upstream silence —
+    // the old 40 ms-vs-120 ms pairing flaked exactly that way (2026-08-25).
     const source = new Readable({ read() {} });
     void (async () => {
-      for (let i = 0; i < 8; i += 1) {
+      for (let i = 0; i < 12; i += 1) {
         source.push(Buffer.from('0123456789'));
-        await new Promise((r) => setTimeout(r, 40));
+        await new Promise((r) => setTimeout(r, 50));
       }
       source.push(null);
     })();
     const upstream = await openUpstream(head('/slow-upload'), source, {
       seam: seam(),
-      headersTimeoutMs: 120,
+      headersTimeoutMs: 250,
     });
-    expect((await drain(upstream.body)).toString()).toBe('80');
+    expect((await drain(upstream.body)).toString()).toBe('120');
   });
 
   test('the deadline still fires when the upstream goes silent AFTER the body', async () => {

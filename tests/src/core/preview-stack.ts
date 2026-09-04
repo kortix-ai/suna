@@ -7,6 +7,7 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'KORTIX_GITHUB_APP_SLUG',
   'MANAGED_GIT_GITHUB_INSTALL_ID',
   'MANAGED_GIT_GITHUB_OWNER',
+  'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
 ] as const;
 
@@ -68,22 +69,54 @@ export function validatePreviewRuntimeSecrets(
   }
 }
 
-export function buildPreviewCaddyfile(): string {
-  return `:8080 {
+export function buildPreviewCaddyfile(publicHost: string): string {
+  // Ride out a redeploy instead of 502ing through it.
+  //
+  // A branch environment is REUSED in place: \`compose up -d\` recreates
+  // \`frontend\` and \`kortix-api\` while \`preview-edge\` keeps running. For the
+  // ~10-30s that takes, Caddy's dial to the upstream is refused and every
+  // request — the browser's own document included — answers 502. Observed on
+  // the pi-worker branch environment repeatedly: the edge started 19:08:58, the app containers
+  // were recreated at 22:12:45, and the 502 screenshot is stamped 22:12:52.
+  //
+  // \`lb_try_duration\` makes Caddy hold the request and re-dial until the new
+  // container listens, so a deploy costs latency rather than an error page. It
+  // retries CONNECTION failures only — a 502 the app itself returns is passed
+  // straight through, so this cannot mask a real upstream fault.
+  //
+  // A snippet is a TOP-LEVEL form: declaring it inside the site block fails the
+  // adapter with \`File to import not found: swap_tolerant\`.
+  return `(swap_tolerant) {
+  lb_try_duration 30s
+  lb_try_interval 250ms
+}
+
+:8080 {
   encode zstd gzip
 
-  @api path /v1*
+  # A deployed environment gives the API a host of its own, so EVERY path it
+  # serves reaches it. A preview shares ONE origin with the frontend and splits
+  # by prefix, so each API route mounted outside \`/v1\` has to be listed here or
+  # it falls through to the frontend, which answers 307 -> /auth. Keep in sync
+  # with the non-\`/v1\` mounts in \`apps/api/src/index.ts\`.
+  @api path /v1* /health /health/* /metrics /scim/v2/* /internal/* /.well-known/oauth-authorization-server
   handle @api {
-    reverse_proxy kortix-api:8008
+    reverse_proxy kortix-api:8008 {
+      import swap_tolerant
+    }
   }
 
   @supabase path /auth/v1* /rest/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
   handle @supabase {
-    reverse_proxy supabase-kong:8000
+    reverse_proxy supabase-kong:8000 {
+      import swap_tolerant
+    }
   }
 
   handle_path /_gateway/* {
-    reverse_proxy llm-gateway:8090
+    reverse_proxy llm-gateway:8090 {
+      import swap_tolerant
+    }
   }
 
   handle_path /_tests/* {
@@ -92,11 +125,33 @@ export function buildPreviewCaddyfile(): string {
   }
 
   handle_path /_mailpit/* {
-    reverse_proxy mailpit:8025
+    reverse_proxy mailpit:8025 {
+      import swap_tolerant
+    }
+  }
+
+  # Only reached when the retry budget above is exhausted — i.e. the upstream is
+  # really gone, not merely restarting. A plain page beats the provider's raw
+  # 502, and \`Retry-After\` tells a client this is transient.
+  handle_errors {
+    header Retry-After 15
+    header Cache-Control "no-store"
+    respond "Deploying. This environment is restarting - retry in a few seconds." {http.error.status_code}
   }
 
   handle {
-    reverse_proxy frontend:3000
+    reverse_proxy frontend:3000 {
+      # Next.js Server Actions reject a request whose \`x-forwarded-host\` does
+      # not match its \`origin\` (CSRF guard). The sandbox ingress sets
+      # \`x-forwarded-host\` to the INTERNAL host (\`*.aec.local\`) while the
+      # browser's origin is the PUBLIC one, so every Server Action — the whole
+      # auth flow included — died with \`Invalid Server Actions request\` (500,
+      # surfaced in the browser as minified React error #441). Pin the public
+      # host so the guard compares like with like.
+      header_up X-Forwarded-Host ${publicHost}
+      header_up X-Forwarded-Proto https
+      import swap_tolerant
+    }
   }
 }
 `;
@@ -143,6 +198,28 @@ export function buildPreviewComposeOverlay(
   supabase-db:
     ports:
       - "127.0.0.1:15432:5432"
+  # The git mirror must outlive the container.
+  #
+  # \`cacheRoot()\` (apps/api/src/projects/git/mirror.ts) is
+  # \`/tmp/kortix/git-cache\`, and kortix-api runs with NO volumes — so every
+  # redeploy recreates the container and deletes every project's mirror. On a
+  # deployment whose managed repos exist on GitHub that is only a slow re-clone.
+  # On a PREVIEW it is data loss: the preview's GitHub App cannot create repos
+  # (403 \`Resource not accessible by integration\`), so a seeded project's
+  # history lives ONLY in that cache. Losing it leaves the project unopenable —
+  # \`POST /sessions\` answers 500 \`could not read Username for
+  # 'https://github.com'\` because the re-clone has no upstream to clone from.
+  #
+  # Measured on the pi-worker branch environment 2026-09-01: container restarted 10:14:06, and
+  # every session create for the branch's own test project failed from 10:12
+  # onward with that exact error; \`ls /tmp/kortix/git-cache\` -> no such
+  # directory, and the managed org held none of the preview's repos.
+  kortix-api:
+    volumes:
+      - "kortix-git-cache:/tmp/kortix"
+
+volumes:
+  kortix-git-cache:
 `;
 }
 
@@ -162,16 +239,31 @@ export function applyPreviewEnvironment(
   if (!postgresPassword || !anonKey || !serviceRoleKey || !internalServiceKey) {
     throw new Error('self-host environment is missing generated preview credentials');
   }
-  const managedGitValues = [
+  // Managed git has two supported shapes, and the API prefers the PAT when both
+  // are present (see managedGithubToken in projects/git-backends/github.ts):
+  //
+  //   1. a GitHub App — short-lived, repo-scoped, auto-rotating installation
+  //      tokens, but it only works if the App is installed on the owner org AND
+  //      carries `administration: write`, or it cannot create a repo at all;
+  //   2. a single org PAT — no install/permission dance, at the cost of a
+  //      long-lived org-wide token.
+  //
+  // Accept either. Requiring the App shape made a preview whose App lacks the
+  // permission unfixable without a code change, which is what blocked every
+  // preview from creating ANY project.
+  const owner = rawSecrets.MANAGED_GIT_GITHUB_OWNER?.trim();
+  const managedGitApp = [
     rawSecrets.KORTIX_GITHUB_APP_ID,
     rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY,
     rawSecrets.KORTIX_GITHUB_APP_SLUG,
     rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID,
-    rawSecrets.MANAGED_GIT_GITHUB_OWNER,
-  ];
-  const managedGitEnabled = managedGitValues.every((value) => Boolean(value?.trim()));
+  ].every((value) => Boolean(value?.trim()));
+  const managedGitPat = Boolean(rawSecrets.MANAGED_GIT_GITHUB_TOKEN?.trim());
+  const managedGitEnabled = Boolean(owner) && (managedGitApp || managedGitPat);
   if (!managedGitEnabled) {
-    throw new Error('preview target-full requires the complete managed GitHub App configuration');
+    throw new Error(
+      'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
+    );
   }
 
   Object.assign(runtime, {
@@ -196,6 +288,12 @@ export function applyPreviewEnvironment(
     KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'true',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
+    // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same
+    // posture as dev, so the subscribe -> entitlement -> managed-models path is
+    // exercised here rather than bypassed. An account that has not subscribed
+    // is free-tier and therefore NOT entitled to managed models, which is what
+    // makes an agent fall back to the faux provider: subscribe with a Stripe
+    // test card (or connect a BYOK key) to get real model answers.
     KORTIX_BILLING_INTERNAL_ENABLED: 'true',
     KORTIX_PUBLIC_BILLING_ENABLED: 'true',
     KORTIX_WORKERS_ENABLED: 'false',
@@ -214,6 +312,7 @@ export function applyPreviewEnvironment(
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
+    MANAGED_GIT_GITHUB_TOKEN: rawSecrets.MANAGED_GIT_GITHUB_TOKEN ?? '',
     KORTIX_GITHUB_APP_ID: rawSecrets.KORTIX_GITHUB_APP_ID ?? '',
     KORTIX_GITHUB_APP_PRIVATE_KEY:
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',

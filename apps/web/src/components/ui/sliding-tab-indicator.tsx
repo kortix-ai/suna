@@ -52,11 +52,41 @@ export function SlidingTabIndicator({
     const containerRect = container.getBoundingClientRect();
     const tabRect = tab.getBoundingClientRect();
 
+    /**
+     * `getBoundingClientRect` reports TRANSFORMED geometry; the indicator is
+     * positioned in the container's own untransformed coordinate space. Divide
+     * the transform back out, or a scaled ancestor bakes its scale into the
+     * saved rect.
+     *
+     * This is not hypothetical. `Modal`/`Dialog` open with
+     * `data-[state=open]:zoom-in-95`, and the measuring layout effect runs
+     * while that animation is on its first frames — so the pill was saved at
+     * 95% and stayed there. `ResizeObserver` cannot rescue it: it reports
+     * border-box LAYOUT size, which a transform never changes, so it never
+     * fires when the animation lands on `scale(1)`. Measured in a dialog at
+     * 1280px: the pill sat 4.5px left and 3.7px narrow of its tab,
+     * indefinitely — until an unrelated re-measure (clicking another tab)
+     * happened to run unscaled.
+     *
+     * `offsetWidth`/`offsetHeight` are layout values and immune to the
+     * transform, which makes them the honest denominator.
+     */
+    const scaleX = container.offsetWidth > 0 ? containerRect.width / container.offsetWidth : 0;
+    const scaleY = container.offsetHeight > 0 ? containerRect.height / container.offsetHeight : 0;
+
+    // No layout box yet (an unmounted or `display:none` ancestor). Showing a
+    // pill from a zero rect draws it at 0×0 in the corner; wait for the
+    // ResizeObserver below, which DOES fire for a real size change.
+    if (!scaleX || !scaleY) {
+      setVisible(false);
+      return;
+    }
+
     setRect({
-      x: tabRect.left - containerRect.left + container.scrollLeft,
-      y: tabRect.top - containerRect.top + container.scrollTop,
-      width: tabRect.width,
-      height: tabRect.height,
+      x: (tabRect.left - containerRect.left) / scaleX + container.scrollLeft,
+      y: (tabRect.top - containerRect.top) / scaleY + container.scrollTop,
+      width: tabRect.width / scaleX,
+      height: tabRect.height / scaleY,
     });
     setVisible(true);
   }, [activeId]);

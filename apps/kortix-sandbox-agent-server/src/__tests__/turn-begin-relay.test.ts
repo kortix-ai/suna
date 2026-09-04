@@ -55,12 +55,9 @@ beforeEach(() => {
   saved = {
     KORTIX_PROJECT_ID: process.env.KORTIX_PROJECT_ID,
     KORTIX_SESSION_ID: process.env.KORTIX_SESSION_ID,
-    KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
-    KORTIX_CLI_TOKEN: process.env.KORTIX_CLI_TOKEN,
     KORTIX_TOKEN: process.env.KORTIX_TOKEN,
     KORTIX_API_URL: process.env.KORTIX_API_URL,
   }
-  delete process.env.KORTIX_CLI_TOKEN
   delete process.env.KORTIX_TOKEN
 })
 afterEach(() => {
@@ -73,7 +70,7 @@ afterEach(() => {
 function sessionEnv(apiUrl: string) {
   process.env.KORTIX_PROJECT_ID = 'proj_1'
   process.env.KORTIX_SESSION_ID = 'sess_1'
-  process.env.KORTIX_SANDBOX_TOKEN = 'tok'
+  process.env.KORTIX_TOKEN = 'tok'
   process.env.KORTIX_API_URL = apiUrl
 }
 
@@ -160,16 +157,9 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
     }
   })
 
-  // THE DEV-CAUGHT REGRESSION (2026-08-20). `sandboxRelayContext()` prefers
-  // KORTIX_CLI_TOKEN — a user/agent PAT. The route refuses a PAT for
-  // `turn_begin` (adoption is a sandbox-identity operation), so the default
-  // token chain 403'd every relay silently: events fired, the binary was
-  // correct, and not one ledger row was ever written on dev. Adoption must
-  // authenticate with the SANDBOX credential, whatever else is in the env.
-  test('authenticates with the SANDBOX credential even when a CLI token is present', async () => {
+  test('authenticates with the single session credential', async () => {
     const m = startMocks(syntheticTurn)
     sessionEnv(m.baseUrl)
-    process.env.KORTIX_CLI_TOKEN = 'pat-should-never-be-used'
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {
@@ -181,27 +171,10 @@ describe('relayTurnBeginToApi — box-initiated turn adoption', () => {
     }
   })
 
-  test('falls back to the legacy KORTIX_TOKEN sandbox credential', async () => {
+  test('does not relay without the session credential', async () => {
     const m = startMocks(syntheticTurn)
     sessionEnv(m.baseUrl)
-    delete process.env.KORTIX_SANDBOX_TOKEN
-    process.env.KORTIX_TOKEN = 'legacy-sandbox-tok'
-    const opencode = { getInternalUrl: () => m.baseUrl }
-    const cfg = { workspace: WORKSPACE } as unknown as Config
-    try {
-      await relayTurnBeginToApi(ROOT, opencode, cfg)
-      expect(m.auth()[0]).toBe('Bearer legacy-sandbox-tok')
-    } finally {
-      m.stop()
-    }
-  })
-
-  test('never relays a PAT when no sandbox credential exists', async () => {
-    // Relaying the PAT would only reproduce the 403 loop this test pins.
-    const m = startMocks(syntheticTurn)
-    sessionEnv(m.baseUrl)
-    delete process.env.KORTIX_SANDBOX_TOKEN
-    process.env.KORTIX_CLI_TOKEN = 'pat-only'
+    delete process.env.KORTIX_TOKEN
     const opencode = { getInternalUrl: () => m.baseUrl }
     const cfg = { workspace: WORKSPACE } as unknown as Config
     try {

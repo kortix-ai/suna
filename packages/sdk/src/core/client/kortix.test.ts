@@ -301,7 +301,7 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   await kortix.project('PID123').gateway.routing.set({
     defaultModel: 'codex/gpt-5.6-sol',
     visionModel: null,
-    defaultFallback: { models: ['glm-5.2'], fallbackOn: 'any-error' },
+    defaultFallback: { models: ['glm-5.3-flash'], fallbackOn: 'any-error' },
     rules: [],
   });
   expect(last().method).toBe('PUT');
@@ -317,16 +317,12 @@ test('project(id).gateway.routing binds policy CRUD and preview to the project',
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).channels covers slack, email and voice', async () => {
+test('project(id).channels covers slack and email', async () => {
   await kortix.project('PID123').channels.slack.installation();
   expect(last().url).toContain('/projects/PID123/channels/slack/installation');
 
   await kortix.project('PID123').channels.email.mode();
   expect(last().url).toContain('/projects/PID123/channels/email/mode');
-
-  await kortix.project('PID123').channels.voice.setBotName('Kortix');
-  expect(last().url).toContain('/projects/PID123/channels/meet/name');
-  expect(last().method).toBe('PUT');
 });
 
 test('project(id) exposes provider-neutral Apps without a generic deployments alias', () => {
@@ -560,13 +556,6 @@ test('project(id) covers experimental-feature toggle, sandbox provider pin, and 
 test('kortix.projects.createRepo hits the create-repo endpoint (not bound to an existing project id)', async () => {
   await kortix.projects.createRepo({ name: 'new-repo' });
   expect(last().url).toContain('/projects/create-repo');
-  expect(last().method).toBe('POST');
-});
-
-test('kortix.transcribe hits the top-level /transcription endpoint (not project-scoped)', async () => {
-  const file = new File(['audio'], 'clip.webm', { type: 'audio/webm' });
-  await kortix.transcribe(file);
-  expect(last().url).toContain('/transcription');
   expect(last().method).toBe('POST');
 });
 
@@ -912,7 +901,7 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
       return jsonResponse({
         session_id: 'SESS-INHERITED',
         agent_name: 'kortix',
-        metadata: { opencode_model: 'kortix/glm-5.2' },
+        metadata: { opencode_model: 'kortix/glm-5.3-flash' },
       });
     }
     return jsonResponse({ ok: true });
@@ -931,13 +920,13 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
   );
   expect(promptCall?.body).toMatchObject({
     agent: 'kortix',
-    model: { providerID: 'kortix', modelID: 'glm-5.2' },
+    model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
     parts: [{ type: 'text', text: 'hello from inherited state' }],
   });
 });
 
 test('changeModel invalidates the persisted default before the next send', async () => {
-  let persistedModel = 'kortix/glm-5.2';
+  let persistedModel = 'kortix/glm-5.3-flash';
   globalThis.fetch = mock(async (input: unknown, init?: RequestInit) => {
     const url = requestUrl(input);
     const request = input instanceof Request ? input : null;
@@ -984,7 +973,7 @@ test('changeModel invalidates the persisted default before the next send', async
   );
   expect(prompts.map((call) => call.body)).toEqual([
     expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'glm-5.2' },
+      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
     }),
     expect.objectContaining({
       model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
@@ -1600,7 +1589,11 @@ test('kortix.iam.roles and kortix.iam.groups reach their collections', async () 
 });
 
 test('kortix.iam.can probes one leaf for one principal', async () => {
-  await kortix.iam.can('ACC1', 'U1', { action: 'project.write', resourceType: 'project', resourceId: 'PID1' });
+  await kortix.iam.can('ACC1', 'U1', {
+    action: 'project.write',
+    resourceType: 'project',
+    resourceId: 'PID1',
+  });
   expect(last().url).toContain('/accounts/ACC1/iam/members/U1/effective?');
   expect(last().url).toContain('action=project.write');
 });

@@ -85,7 +85,7 @@ describe('agent/model picker clicks', () => {
       ...basePayload,
       actions: [{ action_id: 'set_model_anthropic/claude-opus-4-8', value: JSON.stringify({ c: 'C1', m: 'anthropic/claude-opus-4-8' }) }],
     });
-    expect(setModelCalls).toEqual(['anthropic/claude-opus-4-8']);
+    expect(setModelCalls).toEqual(['kortix/anthropic/claude-opus-4-8']);
     expect(posts[0]?.body.text).toContain('Model for this channel set to');
     expect(posts[0]?.body.replace_original).toBe(true);
   });

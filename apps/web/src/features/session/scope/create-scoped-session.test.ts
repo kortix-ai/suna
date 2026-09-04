@@ -126,7 +126,11 @@ describe('createScopedSession', () => {
   });
 
   test('does not replace untouched inherited connector defaults', async () => {
+    // Since the fresh-default skip, this draft — inherit secrets, inherited
+    // connector preview, nothing required — makes NO scope requests at all:
+    // its replacement only restates what a just-created session already is.
     let replacement: SessionScopeInput | undefined;
+    let read = false;
 
     await createScopedSession({
       create: async () => 'session-inherited',
@@ -139,17 +143,18 @@ describe('createScopedSession', () => {
         require_connectors: [],
       },
       availability: { secrets: true, connector_bindings: true },
-      readScope: async () => scope,
+      readScope: async () => {
+        read = true;
+        return scope;
+      },
       replaceScope: async (_id, input) => {
         replacement = input;
       },
       onReady: () => {},
     });
 
-    expect(replacement).toEqual({
-      secrets: null,
-      require_connectors: [],
-    });
+    expect(read).toBe(false);
+    expect(replacement).toBeUndefined();
   });
 
   test('an explicit zero-secrets draft still PUTs [] (deliberate deselect is preserved)', async () => {
@@ -176,5 +181,139 @@ describe('createScopedSession', () => {
       require_connectors: [],
     });
     expect(replacement?.secrets).toEqual([]);
+  });
+});
+
+describe('createScopedSession — the untouched draft skips the round-trip', () => {
+  test('the auto-initialized new-session draft makes no scope requests at all', async () => {
+    const calls: string[] = [];
+    await createScopedSession({
+      create: async () => {
+        calls.push('create');
+        return 'session-3';
+      },
+      // Exactly what createNewSessionScopeDraft produces for an untouched send:
+      // inherit secrets, inherited connector preview, nothing required.
+      draft: {
+        secrets: null,
+        connector_bindings: { mail: { connection_id: 'connection-mail-default' } },
+        connector_bindings_inherited: true,
+        require_connectors: [],
+      },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async (id) => {
+        calls.push(`read:${id}`);
+        return scope;
+      },
+      replaceScope: async (id) => {
+        calls.push(`replace:${id}`);
+      },
+      onReady: (id) => {
+        calls.push(`ready:${id}`);
+      },
+    });
+    expect(calls).toEqual(['create', 'ready:session-3']);
+  });
+
+  test('a real secrets selection still reads and replaces', async () => {
+    const calls: string[] = [];
+    await createScopedSession({
+      create: async () => {
+        calls.push('create');
+        return 'session-4';
+      },
+      draft: { secrets: ['ONLY_THIS'] },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async (id) => {
+        calls.push(`read:${id}`);
+        return scope;
+      },
+      replaceScope: async (id) => {
+        calls.push(`replace:${id}`);
+      },
+      onReady: (id) => {
+        calls.push(`ready:${id}`);
+      },
+    });
+    expect(calls).toEqual(['create', 'read:session-4', 'replace:session-4', 'ready:session-4']);
+  });
+
+  test('an explicit zero-secrets selection ([]) is NOT the default and still replaces', async () => {
+    const calls: string[] = [];
+    await createScopedSession({
+      create: async () => {
+        calls.push('create');
+        return 'session-5';
+      },
+      draft: { secrets: [] },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async (id) => {
+        calls.push(`read:${id}`);
+        return scope;
+      },
+      replaceScope: async (id) => {
+        calls.push(`replace:${id}`);
+      },
+      onReady: (id) => {
+        calls.push(`ready:${id}`);
+      },
+    });
+    expect(calls).toEqual(['create', 'read:session-5', 'replace:session-5', 'ready:session-5']);
+  });
+
+  test('a required connector still replaces', async () => {
+    const calls: string[] = [];
+    await createScopedSession({
+      create: async () => {
+        calls.push('create');
+        return 'session-6';
+      },
+      draft: {
+        secrets: null,
+        connector_bindings: {},
+        connector_bindings_inherited: true,
+        require_connectors: ['mail'],
+      },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async (id) => {
+        calls.push(`read:${id}`);
+        return scope;
+      },
+      replaceScope: async (id) => {
+        calls.push(`replace:${id}`);
+      },
+      onReady: (id) => {
+        calls.push(`ready:${id}`);
+      },
+    });
+    expect(calls).toEqual(['create', 'read:session-6', 'replace:session-6', 'ready:session-6']);
+  });
+
+  test('a user-chosen connector binding (not inherited) still replaces', async () => {
+    const calls: string[] = [];
+    await createScopedSession({
+      create: async () => {
+        calls.push('create');
+        return 'session-7';
+      },
+      draft: {
+        secrets: null,
+        connector_bindings: { mail: { connection_id: 'connection-mail-two' } },
+        connector_bindings_inherited: false,
+        require_connectors: [],
+      },
+      availability: { secrets: true, connector_bindings: true },
+      readScope: async (id) => {
+        calls.push(`read:${id}`);
+        return scope;
+      },
+      replaceScope: async (id) => {
+        calls.push(`replace:${id}`);
+      },
+      onReady: (id) => {
+        calls.push(`ready:${id}`);
+      },
+    });
+    expect(calls).toEqual(['create', 'read:session-7', 'replace:session-7', 'ready:session-7']);
   });
 });

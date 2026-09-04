@@ -156,61 +156,80 @@ technical precision with zero filler. Apply these rules:
 This standard governs how you talk. It does not override the technical rules
 below; it is how you report on them.
 
-## First, at session start: where do you work?
+## First, at session start: which canonical branch are you in?
 
-Before starting any non-trivial change, **ask the user which environment to work
-in** — don't assume. Three choices:
+Every change belongs to **one canonical branch** — the branch for whatever is
+being worked on. One canonical branch, one worktree. Establish which one you are
+in before any non-trivial change. **Do not create a branch by reflex.**
 
-1. **A new isolated worktree** (`pnpm worktree`) — the default for any feature,
-   bugfix, refactor, or experiment beyond a one-line edit. Own branch, own port
-   block, own `node_modules`, own tunnel; runs in parallel without touching the
-   primary web/API stack. By default it reuses the primary checkout's standard
-   local Supabase DB for fast setup and consistent auth. Provision non-blocking with
-   `pnpm worktree create --name <feat> --yes --no-start`, then do all edits/runs
-   under the sibling checkout `../suna-<feat>`. If the change needs database
-   migrations, destructive data work, schema drift, or independent auth/storage
-   state, opt into the full isolated data plane with
-   `pnpm worktree create --name <feat> --db --yes --no-start`. See the
-   **worktree** skill.
-2. **Straight in this primary checkout** via `pnpm dev` (web `3000` / api `8008`)
-   — on `main` or whatever branch is already checked out here. Simplest; fine
-   for small or quick iterative work where isolation isn't needed.
-3. **An existing worktree** — list them with `git worktree list` and work in the
-   one the user names.
+1. **Join the canonical branch that already exists** for this work. List them
+   with `git worktree list` and `git branch -r`. If the work continues, extends,
+   fixes, or cleans up something already in flight, it belongs on that branch.
+   Ask the user which branch when it is not obvious.
+2. **Start a new canonical branch** only when the work is genuinely a new thing.
+   Give it its own worktree: `pnpm worktree create --name <slug> --yes
+   --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
+   only when the work needs migrations, destructive data work, schema drift, or
+   independent auth/storage state. See the **worktree** skill.
+3. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
+   and investigating. Do not park feature work there.
 
-Carve-outs where you don't need to ask — just proceed: read-only
-investigation/questions, and trivial single-file typo/comment fixes on the
-current branch.
+**Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
+stale-reference sweep, and the change that caused them all belong on the same
+branch and land together. Splitting one objective across several branches is how
+a half-finished cutover reaches `main` in pieces — each piece green alone, the
+whole thing broken.
 
-## Default delivery: PR, merge to main, then prove it on dev
+Sub-branches are allowed. Agents may cut working branches off the canonical
+branch and merge back into it. **A sub-branch never opens a PR against `main`.**
+Only the canonical branch does.
 
-Unless the user explicitly asks for a different delivery path, complete every
-non-trivial change through this full lifecycle:
+Carve-outs where you just proceed: read-only investigation and questions, and
+trivial single-file typo/comment fixes on the current branch.
 
-1. Work on a dedicated branch in an isolated worktree and keep the commit scoped
-   to that change.
-2. Run the relevant local unit, type, integration, and end-to-end checks with
-   real inputs and outputs.
-3. Push the branch, open a PR against `main`, wait for required checks, and merge
-   it. Do not leave finished work only on a branch or stop after opening the PR.
-4. Dev **auto-deploys on merge to `main`** — every push builds the surfaces that
-   changed vs dev's live SHA and cancels any superseded in-flight deploy. Follow
-   the resulting **Deploy Dev** run through completion. Confirm the deployed
-   artifact contains the merged SHA; a successful `/health` response alone is not
-   deployment proof. A newer push cancels an older run by design — if yours was
-   cancelled before it deployed, the next push re-picks-up your still-stale
-   surface, or force it with `gh workflow run deploy-dev.yml -f surface=all`.
-   Full procedure, surfaces, and verification: `docs/runbooks/deploy-dev.md`.
-5. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
+## Default delivery: share by preview, merge to `main` only when told
+
+`main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
+It is not a save point, and it is not how you show someone your work.
+
+1. Work on the canonical branch in its worktree. Commit as often as you want.
+2. Open a **draft PR against `main` on the first commit** and apply the
+   `preview` label. That builds a complete self-host preview for the branch — its
+   own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
+   work is shared and reviewed internally. **Sharing never requires merging.**
+3. Run the relevant local unit, type, integration, and end-to-end checks with
+   real inputs and outputs. Keep the PR green as you go, not at the end.
+4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
+   detonates on merge exactly like a 1,500-line PR does.
+5. **Never merge to `main` without the user's explicit approval of that merge.**
+   Not "the task is done", not "the checks are green" — the user says merge.
+   The only machine-enforced rule is that every change reaches `main` and
+   `staging` through a pull request — no required approvals, no required status
+   checks, no bypass actors. Anyone may merge their own PR. The discipline is
+   yours, not the ruleset's, so the bar is what you verified, not what CI let
+   through.
+6. **A change to a client-facing runtime contract** — the `@kortix/sdk` public
+   surface, session/thread transport, the streaming protocol — merges only after
+   the whole objective ran on its own preview origin through a real session.
+   Green tests are not the bar. Someone used it.
+7. After the merge, follow the **Deploy Dev** run to completion. Confirm the
+   deployed artifact contains the merged SHA; a successful `/health` response
+   alone is not deployment proof. A newer push cancels an older run by design —
+   if yours was cancelled before it deployed, the next push re-picks-up your
+   still-stale surface, or force it with
+   `gh workflow run deploy-dev.yml -f surface=all`. Full procedure, surfaces,
+   and verification: `docs/runbooks/deploy-dev.md`.
+8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
    API contracts. For web behavior, drive the deployed UI and assert its network
    request plus visible result.
 
-Local verification and dev verification are both required. A local pass does
-not replace the deployed check, and a dev smoke test does not replace focused
-local tests. Record the PR, merge SHA, deploy run, deployed SHA evidence, and
-exact dev command or interaction in the final response.
+Preview verification, local verification, and dev verification are all required.
+A local pass does not replace the preview origin, and a dev smoke test does not
+replace focused local tests. Record the branch, PR, preview origin, merge SHA,
+deploy run, deployed SHA evidence, and the exact dev command or interaction in
+the final response.
 
 ## Architecture: `@kortix/sdk` is the source of truth
 
@@ -221,16 +240,15 @@ and auth-token plumbing. The apps
 (`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
 
-> **Editing `packages/sdk` itself? Read `packages/sdk/PROGRESS.md` (current state,
-> claim your task) and `packages/sdk/AGENTS.md` (the rules) first.** It is a
+> **Editing `packages/sdk` itself? Load the **sdk** skill (the rules) first.** It is a
 > **published npm package** with its own hard rules that have no analogue
-> elsewhere in this repo: **TDD is mandatory** (failing test first — invoke the
-> `tdd` skill — and every turn ends with the gates run, the real output pasted,
-> and an explicit shippable YES/NO/NOT YET); exported names (including *types*)
-> are a public API contract and renaming one is a breaking change; the `version`
-> field is inert and must never be bumped by hand; adding an export requires
-> three synchronized edits; and the framework-free core is enforced by a static
-> import-graph tripwire.
+> elsewhere in this repo: **TDD is mandatory** (failing test first, run it, watch
+> it fail, then implement — and every turn ends with the gates run, the real
+> output pasted, and an explicit shippable YES/NO/NOT YET); exported names
+> (including *types*) are a public API contract and renaming one is a breaking
+> change; the `version` field is inert and must never be bumped by hand; adding
+> an export requires three synchronized edits; and the framework-free core is
+> enforced by a static import-graph tripwire.
 
 - **Logic lives in the SDK, never in a host.** No raw `fetch` to the Kortix API,
   no `@opencode-ai/sdk` imports, no transport / runtime / data-state code written
@@ -252,8 +270,9 @@ these as standing rules whenever you touch the data/runtime layer:
   The sandbox provider is a server-side concern. Every session uses the
   OpenCode REST runtime. Host code must not implement a second transport.
 - **`apps/web` data modules are shims.** Files such as
-  `apps/web/src/stores/server-store`, `lib/projects-client`, and
-  `hooks/opencode/use-*` are thin re-exports (`export * from '@kortix/sdk/...'`).
+  `apps/web/src/ui/index.ts`, `apps/web/src/lib/iam-client.ts`, and
+  `apps/web/src/hooks/admin/use-*.ts` are thin re-exports
+  (`export * from '@kortix/sdk/...'`).
   Keep them as shims; put the real logic in the SDK. When a merge conflict lands
   on one of these, **keep the shim (`--ours`) and port any new host-side logic
   into the SDK** — do not revert to a host-local implementation.
@@ -343,7 +362,7 @@ Mint a real JWT against local Supabase, then call the API with it:
    `localhost:8008/v1` (e.g. `/accounts`, `/projects/provision`,
    `/projects/:id/sessions`, `/p/<ext>/8000/...`).
 
-See `tests/e2e/helpers/auth.ts` for the exact calls.
+See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### One local testing system
 
@@ -368,17 +387,17 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- GitHub Actions runs core, browser, and package modes in three disposable warm
-  sandboxes through `.github/workflows/tests.yml`. The slowest lane defines the
-  gate duration. Set `provider` to `platinum`, `daytona`, or `auto`. Auto tries
-  Platinum first. It uses Daytona only when Platinum infrastructure throws. A
-  non-zero test exit does not trigger fallback.
-- Platinum warm restore readiness is capped at 2 minutes. A missing marker or
-  unreachable guest after that cap triggers Daytona in `auto` mode. Cold
-  template creation retains its separate 45-minute budget.
-- Both providers fetch and verify the exact SHA, upload `tests/test-results`,
-  and delete the sandbox. The sandbox worker is infrastructure only. Do not add
-  CI-only test logic.
+- Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
+  || '<label>' }}`. Tiers, the kill switch back to GitHub-hosted runners, and
+  the Docker layer cache: `docs/runbooks/ci-runners.md`.
+- GitHub Actions runs four lanes — `core`, `browser-1`, `browser-2`, `packages` —
+  natively, one Blacksmith runner each (`CI_RUNNER_L`), through
+  `.github/workflows/tests.yml`. The two browser lanes are halves of one sharded
+  run (`--browser-shard=1/2` and `2/2`). The slowest lane defines the gate
+  duration. Each lane is the unchanged root command at the exact PR head SHA;
+  browser lanes install Chromium and prestart Supabase first. Do not add
+  CI-only test logic. (The Platinum/Daytona sandbox-worker path was removed on
+  2026-08-26; only `deploy-preview.yml` still uses a cloud sandbox.)
 - Release tests run `pnpm test -- --target-full` against deployed staging. They block
   production when API or gateway health reports a SHA other than
   `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
@@ -473,13 +492,19 @@ See `tests/e2e/helpers/auth.ts` for the exact calls.
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.claude/skills/kortix-design-system/SKILL.md` first and compose existing
+- Read `.claude/skills/kortix-brand-guidelines/SKILL.md` before writing the first
+  `className`. It is the value law: the complete allowlist of every color,
+  spacing step, type rung, radius, elevation, and duration you may use. Note
+  `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
+  padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
+  before opening the PR; it must be clean on files you touched.
+- Read `.claude/skills/kortix-design-system/SKILL.md` next and compose existing
   primitives from `@/components/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
   and no decorative color, glow, or one-off rounded boxes.
 - Use recent product surfaces as references before editing: `/design-system`,
-  `apps/web/src/features/co-worker/project-layout/project-home.tsx`,
+  `apps/web/src/features/workspace/project-layout/project-home.tsx`,
   `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
   screens called out by the design-system skill.
 - Verify visual work in the browser and include the exact lint/typecheck commands

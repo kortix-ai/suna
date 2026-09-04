@@ -97,6 +97,46 @@ test('createProjectRepo sends icon_glyph on the wire, same as provision and link
   expect(sentBody).toMatchObject({ icon_glyph: { name: 'Rocket', color: 'blue' } });
 });
 
+test('CreateProjectRepoInput carries project_name, the workspace name distinct from the repo name', () => {
+  // `POST /projects/create-repo` reads TWO names (apps/api/src/projects/routes/
+  // r2.ts): `name` is the GitHub repository name, charset-validated against
+  // /^[a-zA-Z0-9._-]+$/, and `project_name` is the Kortix workspace name, which
+  // falls back to `deriveProjectName(repo.full_name)` when absent. Without this
+  // field a caller whose user typed "Ana's agents" must slugify for `name` and
+  // then has no way to keep the typed name — the workspace lands as
+  // "Ana-s-agents". Optional, so every existing caller keeps compiling.
+  const input: CreateProjectRepoInput = {
+    account_id: 'acc-1',
+    name: 'ana-s-agents',
+    project_name: "Ana's agents",
+  };
+  expect(input.project_name).toBe("Ana's agents");
+});
+
+test('createProjectRepo sends project_name on the wire', async () => {
+  // Paired wire assertion, same reasoning as the icon_glyph pair above: the
+  // type-level test proves the field is ACCEPTED, this one proves it is not
+  // dropped before the POST.
+  configureKortix({ backendUrl: 'http://backend.test/v1', getToken: async () => 'tok' });
+
+  let sentBody: unknown;
+  globalThis.fetch = mock(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    sentBody = JSON.parse(String(init?.body ?? '{}'));
+    return new Response(JSON.stringify({ project_id: 'proj-1' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as unknown as typeof fetch;
+
+  await createProjectRepo({
+    account_id: 'acc-1',
+    name: 'ana-s-agents',
+    project_name: "Ana's agents",
+  });
+
+  expect(sentBody).toMatchObject({ name: 'ana-s-agents', project_name: "Ana's agents" });
+});
+
 test('returns ok:true with the parsed project on a real 200 body', async () => {
   nextResponse = () =>
     new Response(JSON.stringify({ project_id: 'proj-1', name: 'My First Project' }), {
@@ -692,11 +732,9 @@ describe('provisionProjectStream', () => {
     const frame = 'data: {"type":"done","project":{"project_id":"p1","name":"suna-web"}}\n\n';
     const splitPoint = frame.indexOf('"project_id"') + 5; // land inside the JSON body
 
-    const project = await provisionProjectStream(
-      { name: 'x' },
-      () => {},
-      { fetch: stubStreamingFetch([frame.slice(0, splitPoint), frame.slice(splitPoint)]) },
-    );
+    const project = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([frame.slice(0, splitPoint), frame.slice(splitPoint)]),
+    });
 
     expect(project.project_id).toBe('p1');
     expect(project.name).toBe('suna-web');
@@ -713,11 +751,9 @@ describe('provisionProjectStream', () => {
     const emojiByteOffset = new TextEncoder().encode(frame.slice(0, frame.indexOf('🚀'))).length;
     const splitPoint = emojiByteOffset + 2; // split the 4-byte emoji sequence in half
 
-    const project = await provisionProjectStream(
-      { name: 'x' },
-      () => {},
-      { fetch: stubStreamingFetch([bytes.slice(0, splitPoint), bytes.slice(splitPoint)]) },
-    );
+    const project = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch([bytes.slice(0, splitPoint), bytes.slice(splitPoint)]),
+    });
 
     expect(project.name).toBe(name);
   });
@@ -751,11 +787,9 @@ describe('provisionProjectStream', () => {
     const third = Math.ceil(frame.length / 3);
     const chunks = [frame.slice(0, third), frame.slice(third, third * 2), frame.slice(third * 2)];
 
-    const project = await provisionProjectStream(
-      { name: 'x' },
-      () => {},
-      { fetch: stubStreamingFetch(chunks) },
-    );
+    const project = await provisionProjectStream({ name: 'x' }, () => {}, {
+      fetch: stubStreamingFetch(chunks),
+    });
 
     expect(project.project_id).toBe('p1');
     expect(project.name).toBe('suna-web');
@@ -782,9 +816,9 @@ describe('provisionProjectStream', () => {
         { status: 200, headers: { 'content-type': 'text/event-stream' } },
       );
 
-    await expect(
-      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
-    ).rejects.toThrow('provisionProjectStream: received an unparseable SSE frame');
+    await expect(provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub })).rejects.toThrow(
+      'provisionProjectStream: received an unparseable SSE frame',
+    );
 
     expect(cancelled).toBe(true);
   });
@@ -801,9 +835,9 @@ describe('provisionProjectStream', () => {
         headers: { 'content-type': 'application/json' },
       });
 
-    await expect(
-      provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub }),
-    ).rejects.toThrow('Owner or admin role required');
+    await expect(provisionProjectStream({ name: 'x' }, () => {}, { fetch: stub })).rejects.toThrow(
+      'Owner or admin role required',
+    );
   });
 
   // ── Final-review FIX 1 ───────────────────────────────────────────────────
@@ -937,8 +971,8 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'monitors',
     'review_center',
     'secrets_egress',
+    'pi_worker',
     'teams',
-    'voice',
     'warm_sessions',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
@@ -1002,7 +1036,7 @@ test('updateFeatureFlag PATCHes the canonical /features route', async () => {
 });
 
 test('updateFeatureFlag puts an explicit null enabled on the wire, not an absent key', async () => {
-  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'voice', null));
+  const sent = await captureFeatureCall(() => updateFeatureFlag('proj-1', 'review_center', null));
 
   // Both halves matter: `parsed.enabled === null` alone passes when the key was
   // dropped; `'enabled' in parsed` alone passes when the value was rewritten.

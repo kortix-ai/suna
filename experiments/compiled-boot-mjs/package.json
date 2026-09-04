@@ -1,0 +1,11 @@
+{
+  "name": "compiled-boot-mjs-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "old": "bun clone-and-compile.mjs",
+    "new": "bun run-precompiled.mjs",
+    "update": "bun runtime-update-demo.mjs",
+    "test": "bun test"
+  }
+}

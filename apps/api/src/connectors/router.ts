@@ -1,7 +1,7 @@
 /**
  * Connector HTTP surface — one Hono router with two faces:
  *
- *   Gateway (sandbox-facing, KORTIX_CLI_TOKEN):
+ *   Gateway (sandbox-facing, KORTIX_TOKEN):
  *     GET  /v1/connectors/catalog             — catalog the session can use
  *     POST /v1/connectors/call                — { connector, action, args } → run
  *
@@ -382,6 +382,41 @@ export interface ConnectorRouterDeps {
     slug: string,
     userId: string,
   ): Promise<{ connected: boolean; accountId?: string } | null>;
+  /** Provider-neutral connect routes. Prefer Composio when wired; keep Pipedream path intact. */
+  connectorConnect?(
+    projectId: string,
+    slug: string,
+    userId: string,
+    redirects?: { success?: string; error?: string },
+    /** The session whose agent asked for this connector, when a session token made
+     *  the call. Persisted on the connection so finalize can tell that agent the
+     *  account landed instead of it re-minting a link on its next run. */
+    requestingSessionId?: string | null,
+  ): Promise<{
+    provider: string;
+    token?: string;
+    app?: string;
+    connectUrl?: string;
+    requestId?: string;
+    sessionId?: string;
+    connectionId?: string;
+    connected?: boolean;
+    isNoAuth?: boolean;
+  } | null>;
+  connectorFinalize?(
+    projectId: string,
+    slug: string,
+    userId: string,
+    selector?: { connectionId?: string; requestId?: string },
+  ): Promise<{ provider: string; connected: boolean; accountId?: string; connectionId?: string; isNoAuth?: boolean } | null>;
+  /** Connectors this session's agent asked a human to authorize, and whether
+   *  each is connected yet. Drives the in-session Connect button. */
+  listSessionConnectRequests?(
+    projectId: string,
+    sessionId: string,
+  ): Promise<Array<{ slug: string; app: string; provider: string; connected: boolean }>>;
+  connectStatus?(): Promise<{ configured: boolean; provider: string | null; providers?: string[] }>;
+  listConnectToolkits?(projectId: string, input: { q?: string; category?: string; cursor?: string; limit?: number }): Promise<unknown | null>;
   /**
    * Pipedream webhook: verify sig + finalize. `ok:false` = the signature (or the
    * connector/authorization binding the id names) did not check out → 401.
@@ -1129,6 +1164,16 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       if (body?.create_only !== undefined && typeof body.create_only !== 'boolean') {
         return c.json({ error: 'create_only must be a boolean' }, 400);
       }
+      if (body?.provider === 'pipedream' && body?.allow_legacy_pipedream !== true) {
+        return c.json(
+          {
+            error:
+              'Pipedream is legacy rollback only. Use provider "composio" for managed SaaS apps. Explicit human approval is required for a legacy Pipedream addition.',
+          },
+          400,
+        );
+      }
+      delete body.allow_legacy_pipedream;
       let authDiscovery: ConnectorAuthDiscovery | undefined;
       if (body.auth === undefined && deps.discoverConnectorAuth) {
         // `discoverConnectorAuth` → `discoverConnectorAuthFromSource` calls
@@ -1326,7 +1371,42 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
     },
   );
 
-  // ── Admin: browse the Pipedream app catalogue ────────────────────────────
+  // ── Admin: browse the configured easy-connect toolkit catalogue ─────────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connect/toolkits',
+      tags: ['connector'],
+      summary: 'Browse the configured easy-connect toolkit catalogue',
+      ...auth,
+      request: {
+        params: ProjectParam,
+        query: z.object({
+          q: z.string().optional(),
+          category: z.string().optional(),
+          cursor: z.string().optional(),
+          limit: z.coerce.number().int().positive().max(100).optional(),
+        }),
+      },
+      responses: { 200: json(OpaqueSchema, 'Easy-connect toolkit page'), ...errors(403, 501) },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listConnectToolkits) return featureNotSupportedResponse(c, 'connect_toolkits');
+      const limit = Number(c.req.query('limit'));
+      const result = await deps.listConnectToolkits(projectId, {
+        q: c.req.query('q') || undefined,
+        category: c.req.query('category') || undefined,
+        cursor: c.req.query('cursor') || undefined,
+        ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
+      });
+      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+    },
+  );
+
+  // ── Admin: legacy Pipedream app catalogue (rollback only) ────────────────
   app.openapi(
     createRoute({
       method: 'get',
@@ -1414,19 +1494,21 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       method: 'get',
       path: '/connect-status',
       tags: ['connector'],
-      summary: 'Whether the easy-connect (Pipedream) provider is configured on this deployment',
+      summary: 'Whether an easy-connect provider is configured on this deployment',
       ...auth,
       responses: {
         200: json(
-          z.object({ configured: z.boolean(), provider: z.string().nullable() }),
+          z.object({ configured: z.boolean(), provider: z.string().nullable(), providers: z.array(z.string()).optional() }),
           'Connect provider status',
         ),
         ...errors(401),
       },
     }),
     async (c: any) => {
-      const configured = !!deps.listPipedreamApps;
-      return c.json({ configured, provider: configured ? 'pipedream' : null });
+      const result = deps.connectStatus
+        ? await deps.connectStatus()
+        : { configured: !!deps.listPipedreamApps, provider: deps.listPipedreamApps ? 'pipedream' : null };
+      return c.json(result);
     },
   );
 
@@ -1727,9 +1809,9 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       method: 'post',
       path: '/projects/{projectId}/connectors/{slug}/connect',
       tags: ['connector'],
-      summary: 'Pipedream 1-click: mint a connect token',
+      summary: 'Start an easy-connect authorization',
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: { params: ProjectSlugParam, body: { required: false, content: { 'application/json': { schema: OpaqueSchema } } } },
       responses: {
         200: json(OpaqueSchema, 'Connect token / overlay info'),
         ...errors(403, 404, 501),
@@ -1740,7 +1822,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.pipedreamConnect) return featureNotSupportedResponse(c, 'pipedream_connect');
+      const connect = deps.connectorConnect ?? (deps.pipedreamConnect
+        ? async (pid: string, s: string, uid: string, r?: { success?: string; error?: string }) => {
+            const result = await deps.pipedreamConnect!(pid, s, uid, r);
+            return result ? { provider: 'pipedream', ...result } : null;
+          }
+        : undefined);
+      if (!connect) return featureNotSupportedResponse(c, 'connector_connect');
       // Native clients pass app deep-link redirect URIs so the in-app browser
       // auto-dismisses back to the app instead of landing on a web page.
       let redirects: { success?: string; error?: string } | undefined;
@@ -1752,8 +1840,13 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       } catch {
         /* no body */
       }
-      const result = await deps.pipedreamConnect(projectId, slug, admin.userId, redirects);
-      if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
+      // Set by the auth middleware from a scoped session token, so this is
+      // populated exactly when the agent in a sandbox made the call — and null
+      // when a human clicked Connect in project settings, which has no session
+      // waiting on the answer.
+      const requestingSessionId = (c.get('sessionId') as string | undefined) ?? null;
+      const result = await connect(projectId, slug, admin.userId, redirects, requestingSessionId);
+      if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
     },
   );
@@ -1763,9 +1856,12 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       method: 'post',
       path: '/projects/{projectId}/connectors/{slug}/connect/finalize',
       tags: ['connector'],
-      summary: 'Pipedream 1-click: persist the account binding',
+      summary: 'Finalize an easy-connect authorization',
       ...auth,
-      request: { params: ProjectSlugParam },
+      request: {
+        params: ProjectSlugParam,
+        body: { required: false, content: { 'application/json': { schema: z.object({ connection_id: z.string().uuid().optional(), request_id: z.string().min(1).optional() }) } } },
+      },
       responses: {
         200: json(OpaqueSchema, 'Connection finalized'),
         ...errors(403, 404, 501),
@@ -1776,10 +1872,54 @@ export function createConnectorRouter(deps: ConnectorRouterDeps): OpenAPIHono {
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
-      if (!deps.pipedreamFinalize) return featureNotSupportedResponse(c, 'pipedream_finalize');
-      const result = await deps.pipedreamFinalize(projectId, slug, admin.userId);
-      if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
+      const finalize = deps.connectorFinalize ?? (deps.pipedreamFinalize
+        ? async (pid: string, s: string, uid: string) => {
+            const result = await deps.pipedreamFinalize!(pid, s, uid);
+            return result ? { provider: 'pipedream', ...result } : null;
+          }
+        : undefined);
+      if (!finalize) return featureNotSupportedResponse(c, 'connector_finalize');
+      let selector: { connectionId?: string; requestId?: string } | undefined;
+      try {
+        const body = await c.req.json();
+        if (body?.connection_id || body?.request_id) selector = { connectionId: body.connection_id, requestId: body.request_id };
+      } catch { /* no body */ }
+      const result = await finalize(projectId, slug, admin.userId, selector);
+      if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
       return c.json(result);
+    },
+  );
+
+  // ── Connect requests this session is waiting on ──────────────────────────
+  //
+  // The agent mints a connect link mid-turn and stops. The web session reads
+  // this to swap that raw URL for a real Connect button, which runs the same
+  // popup + finalize flow project settings already uses. Provider-neutral: the
+  // rows are keyed on the requesting session, not on who issued the link.
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/sessions/{sessionId}/connect-requests',
+      tags: ['connector'],
+      summary: 'Connectors this session asked a human to authorize',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string().min(1) }),
+      },
+      responses: {
+        200: json(OpaqueSchema, 'Pending connect requests'),
+        ...errors(403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const sessionId = c.req.param('sessionId');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.listSessionConnectRequests) {
+        return featureNotSupportedResponse(c, 'session_connect_requests');
+      }
+      return c.json({ connectors: await deps.listSessionConnectRequests(projectId, sessionId) });
     },
   );
 

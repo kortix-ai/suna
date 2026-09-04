@@ -68,6 +68,42 @@ export interface AuditQueueStats {
   flushes: number;
 }
 
+/**
+ * Split one flush snapshot into the statements that will actually run.
+ *
+ * ONE STATEMENT NEVER SPANS TWO SESSIONS (Essentia convoy, 2026-08-26).
+ * `kortix.audit_prepare_event` takes a per-session row lock on
+ * `kortix.audit_session_sequences` for every row, and PostgreSQL holds a row
+ * lock until COMMIT. A 100-row statement built in arrival order therefore held
+ * up to 100 different sessions' locks for its whole commit, and any concurrent
+ * writer for ANY of those sessions — the sandbox `POST …/audit/events` ingest
+ * on the other replica — queued behind it. Reproduced against a 5.09M-row
+ * `audit_events`: a 100-row cross-session statement blocked a same-session
+ * ingest to a hard 57014 at 10,004 ms.
+ *
+ * Grouping by `sessionId` means one statement holds at most ONE session lock,
+ * so two sessions can never block each other. Rows with no session take no lock
+ * at all and get their own group. Order WITHIN a session is preserved, which is
+ * the only order `session_sequence` is defined over.
+ */
+export function statementBatches(rows: AuditRow[], max: number): AuditRow[][] {
+  const groups = new Map<string, AuditRow[]>();
+  for (const row of rows) {
+    // `null` and `undefined` both mean "no session"; keep them in one group.
+    const key = row.sessionId ?? '';
+    const group = groups.get(key);
+    if (group) group.push(row);
+    else groups.set(key, [row]);
+  }
+  const batches: AuditRow[][] = [];
+  for (const group of groups.values()) {
+    for (let offset = 0; offset < group.length; offset += max) {
+      batches.push(group.slice(offset, offset + max));
+    }
+  }
+  return batches;
+}
+
 export class AuditQueue {
   private readonly rows: AuditRow[] = [];
   private readonly flushMs: number;
@@ -163,27 +199,34 @@ export class AuditQueue {
   }
 
   /**
-   * Drain the queue into batched INSERTs. Safe to call concurrently: overlapping
-   * callers await the in-flight drain instead of racing it. Never rejects.
+   * Write a snapshot of the queue. Rows added after this call remain buffered
+   * for the next flush, so a read barrier cannot be extended by live traffic.
+   * Concurrent snapshots run in order and never race their INSERTs.
    */
   flush(): Promise<void> {
-    if (this.inFlight) return this.inFlight;
-    const run = this.drain().finally(() => {
-      this.inFlight = null;
-      // A row enqueued while the drain was running still needs a timer.
-      this.scheduleFlush();
-    });
-    this.inFlight = run;
-    return run;
-  }
-
-  private async drain(): Promise<void> {
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    while (this.rows.length > 0) {
-      const batch = this.rows.splice(0, this.flushMax);
+    const snapshot = this.rows.splice(0);
+    if (snapshot.length === 0) return this.inFlight ?? Promise.resolve();
+
+    const previous = this.inFlight;
+    let run: Promise<void>;
+    run = (previous ?? Promise.resolve())
+      .then(() => this.write(snapshot))
+      .finally(() => {
+        if (this.inFlight === run) {
+          this.inFlight = null;
+          this.scheduleFlush();
+        }
+      });
+    this.inFlight = run;
+    return run;
+  }
+
+  private async write(snapshot: AuditRow[]): Promise<void> {
+    for (const batch of statementBatches(snapshot, this.flushMax)) {
       this.flushes += 1;
       try {
         await this.client.insert(auditEvents).values(batch).onConflictDoNothing();
@@ -199,7 +242,9 @@ export class AuditQueue {
 
   /** Flush everything and stop the timer. Used by the shutdown path. */
   async shutdown(): Promise<void> {
-    await this.flush();
+    while (this.rows.length > 0 || this.inFlight) {
+      await this.flush();
+    }
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;

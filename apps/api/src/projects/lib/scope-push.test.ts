@@ -41,7 +41,14 @@ let SESSION_ROW: {
   manifestPath: string;
   accountId: string;
 };
-let activeSandbox: { externalId: string; provider: string; config: Record<string, unknown> } | null;
+let activeSandbox: {
+  externalId: string;
+  provider: string;
+  config: Record<string, unknown>;
+  // The push path selects `status` so a non-active row can be NAMED rather than
+  // silently swallowed; the double has to be able to carry it.
+  status?: string;
+} | null;
 let gatewayEnabled = false;
 
 function freshSessionRow(): typeof SESSION_ROW {
@@ -202,19 +209,14 @@ describe('pushSessionScopeToSandbox', () => {
     expect(posted).toEqual([]);
   });
 
-  test('stamps the LLM-gateway strip alongside the snapshot when gateway is on', async () => {
-    // The 42/47-vs-47/47 split between opencode and shells comes from
-    // KORTIX_OPENCODE_DENY_ENV. The scope push must re-stamp it so a respin
-    // does not silently drop the gateway routing back to native provider keys.
+  test('stamps LLM gateway mode without a provider-key deny list', async () => {
     gatewayEnabled = true;
     const result = await pushSessionScopeToSandbox(INPUT);
 
     expect(result).toEqual({ applied: true });
     expect(posted).toHaveLength(1);
     expect(posted[0].llmGatewayEnabled).toBe(true);
-    // nativeProviderEnvNames() reads the live model catalog; we only assert
-    // the field was forwarded, not its exact contents (catalog-dependent).
-    expect(typeof posted[0].llmGatewayDenyEnv).toBe('string');
+    expect(posted[0].llmGatewayDenyEnv).toBeUndefined();
   });
 
   test('a fetch failure is reported, not thrown at the caller', async () => {
@@ -228,5 +230,27 @@ describe('pushSessionScopeToSandbox', () => {
     expect(result.applied).toBe(false);
     expect(result.reason).toContain('daemon unreachable');
     // beforeEach restores the recording fetch for any subsequent test.
+  });
+});
+
+// Prod 2026-08-27, session b3848cf5: `session_sandboxes.status` was 'stopped'
+// while the Platinum VM was genuinely running and serving prompts. Every push
+// filtered the lookup on `status = 'active'` and returned a bare
+// 'no active sandbox' that no caller logged, so the session silently received
+// no secret, model or scope push for HOURS. The only visible symptom was an
+// agent that could not read a secret the UI said it had.
+describe('a live box behind a non-active row is named, not swallowed', () => {
+  test('the skip reason carries the actual status', async () => {
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'stopped' };
+    const result = await pushSessionScopeToSandbox(INPUT);
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe("sandbox row is 'stopped', not active");
+    expect(posted).toEqual([]);
+  });
+
+  test('an active row still pushes', async () => {
+    activeSandbox = { externalId: 'ext-1', provider: 'platinum', config: { serviceKey: 'k' }, status: 'active' };
+    const result = await pushSessionScopeToSandbox(INPUT);
+    expect(result.applied).toBe(true);
   });
 });

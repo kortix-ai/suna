@@ -6,12 +6,12 @@
  *
  * Two project surfaces live here:
  *   1. `@kortix/sdk`'s project Connector data plane — runs connector tool calls.
- *      It acts as the launching user via KORTIX_CLI_TOKEN. The gateway resolves
+ *      It acts as the launching user via KORTIX_TOKEN. The gateway resolves
  *      third-party credentials server-side. No secret touches the sandbox.
  *   2. The project-scoped API adapter — used for connector management
  *      (add/remove) and setup-link minting (connect / request_secret). Resolved
  *      through the same sandbox env-token host the rest of the CLI uses
- *      (`KORTIX_CLI_TOKEN` + `KORTIX_PROJECT_ID`).
+ *      (`KORTIX_TOKEN` + `KORTIX_PROJECT_ID`).
  */
 import type { ConnectorCallResult, Kortix } from '@kortix/sdk';
 import { loadAuth } from '../api/auth.ts';
@@ -25,7 +25,7 @@ import { CliError } from './io.ts';
  *
  * Resolves auth from ONE place (`activeHost()` via loadAuth), so it works
  * identically:
- *   - in-sandbox: `KORTIX_CLI_TOKEN` + `KORTIX_API_URL` are
+ *   - in-sandbox: `KORTIX_TOKEN` + `KORTIX_API_URL` are
  *     injected and win;
  *   - on a laptop: falls back to the host you `kortix login`'d.
  * The project comes from KORTIX_PROJECT_ID / `.kortix/link.json` / `--project`.
@@ -40,7 +40,7 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
   const auth = loadAuth();
   if (!auth?.token) {
     throw new CliError(
-      'not authenticated — run `kortix login` (or set KORTIX_CLI_TOKEN in a sandbox).',
+      'not authenticated — run `kortix login` (or set KORTIX_TOKEN in a sandbox).',
       'MISSING_ENV',
     );
   }
@@ -55,13 +55,13 @@ export function connectorClient(projectOverride?: string): ConnectorClient {
  * management + setup-link minting. Resolves the sandbox env-token host
  * (`activeHost()` in api/config.ts) + KORTIX_PROJECT_ID.
  */
-export function connectorProjectContext(projectOverride?: string): { client: ApiClient; projectId: string } {
+export function connectorProjectContext(projectOverride?: string): {
+  client: ApiClient;
+  projectId: string;
+} {
   const auth = loadAuth();
   if (!auth?.token) {
-    throw new CliError(
-      'not authenticated — KORTIX_CLI_TOKEN is missing.',
-      'MISSING_ENV',
-    );
+    throw new CliError('not authenticated — KORTIX_TOKEN is missing.', 'MISSING_ENV');
   }
   const projectId = resolveProjectId(projectOverride);
   if (!projectId) throw new CliError('KORTIX_PROJECT_ID not set.', 'MISSING_ENV');
@@ -83,10 +83,24 @@ export async function callWithApprovalHandoff<T = unknown>(
 }
 
 export interface ConnectLinkResult {
-  url: string;
+  provider: string;
+  url: string | null;
   slug: string;
   app: string | null;
-  expires_at: string;
+  connected: boolean;
+  is_no_auth: boolean;
+  session_id: string | null;
+  connection_id: string | null;
+  request_id: string | null;
+  expires_at?: string;
+}
+
+export interface FinalizeConnectionResult {
+  provider: string;
+  connected: boolean;
+  account_id: string | null;
+  connection_id: string | null;
+  is_no_auth: boolean;
 }
 
 export interface SecretLinkResult {
@@ -96,7 +110,23 @@ export interface SecretLinkResult {
   expires_at: string;
 }
 
-/** Mint a Pipedream Quick Connect link for a declared connector. */
+/**
+ * Mint the KORTIX connect link a human should open for a declared connector.
+ *
+ * It must be OUR `${FRONTEND_URL}/connect/<token>` url, not the provider's own
+ * page. The web transcript turns exactly that shape into the one-click Connect
+ * button (`parseSetupLinkHref` -> `SetupLinkButton`), and anything else renders
+ * as a bare underlined link — which is what a `connect.composio.dev/link/...`
+ * url did, next to a generic link preview, with no button and no popup.
+ *
+ * Despite its name this used to POST the provider-authorization route and hand
+ * back that raw url, quietly dropping `expiresInMinutes` because that route has
+ * no such parameter. The setup-link route is the one that takes it.
+ *
+ * Falls back to the provider url only when no setup link can be minted (a
+ * connector whose provider has no hosted page). A bare url is worse than a
+ * button, but far better than telling the human nothing.
+ */
 export async function mintConnectLink(opts: {
   slug: string;
   expiresInMinutes?: number;
@@ -104,10 +134,82 @@ export async function mintConnectLink(opts: {
 }): Promise<ConnectLinkResult> {
   if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
   const { client, projectId } = connectorProjectContext(opts.projectOverride);
-  return client.post<ConnectLinkResult>(`/projects/${projectId}/connect-requests`, {
+  try {
+    const link = await client.post<{ url?: string; app?: string | null; expires_at?: string }>(
+      `/projects/${projectId}/connect-requests`,
+      {
+        slug: opts.slug,
+        ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
+      },
+    );
+    if (link?.url) {
+      return {
+        provider: 'kortix',
+        url: link.url,
+        slug: opts.slug,
+        app: link.app ?? null,
+        connected: false,
+        is_no_auth: false,
+        session_id: null,
+        connection_id: null,
+        request_id: null,
+      };
+    }
+  } catch {
+    // Fall through to the provider url below.
+  }
+  const result = await client.post<{
+    provider?: string;
+    app?: string | null;
+    connectUrl?: string | null;
+    connected?: boolean;
+    isNoAuth?: boolean;
+    sessionId?: string;
+    connectionId?: string;
+    requestId?: string;
+  }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect`, {});
+  return {
+    provider: result.provider ?? 'unknown',
+    url: result.connectUrl ?? null,
     slug: opts.slug,
-    ...(opts.expiresInMinutes ? { expires_in_minutes: opts.expiresInMinutes } : {}),
-  });
+    app: result.app ?? null,
+    connected: result.connected === true,
+    is_no_auth: result.isNoAuth === true,
+    session_id: result.sessionId ?? null,
+    connection_id: result.connectionId ?? null,
+    request_id: result.requestId ?? null,
+  };
+}
+
+/** Confirm that a previously started provider authorization completed. */
+export async function finalizeConnectorConnection(opts: {
+  slug: string;
+  connectionId?: string;
+  requestId?: string;
+  projectOverride?: string;
+}): Promise<FinalizeConnectionResult> {
+  if (!opts.slug) throw new CliError('connector slug is required', 'USAGE');
+  const { client, projectId } = connectorProjectContext(opts.projectOverride);
+  const result = await client.post<{
+    provider?: string;
+    connected?: boolean;
+    accountId?: string;
+    connectionId?: string;
+    isNoAuth?: boolean;
+  }>(
+    `/connectors/projects/${projectId}/connectors/${encodeURIComponent(opts.slug)}/connect/finalize`,
+    {
+      ...(opts.connectionId ? { connection_id: opts.connectionId } : {}),
+      ...(opts.requestId ? { request_id: opts.requestId } : {}),
+    },
+  );
+  return {
+    provider: result.provider ?? 'unknown',
+    connected: result.connected === true,
+    account_id: result.accountId ?? null,
+    connection_id: result.connectionId ?? opts.connectionId ?? null,
+    is_no_auth: result.isNoAuth === true,
+  };
 }
 
 /** Mint a short-lived link a human opens to enter project secret value(s). */

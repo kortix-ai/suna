@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
 
 const SOURCE = readFileSync(resolve(import.meta.dir, 'project-settings-nav.tsx'), 'utf8');
+const SIDEBAR_SOURCE = readFileSync(resolve(import.meta.dir, 'project-sidebar.tsx'), 'utf8');
+const SWITCHER_SOURCE = readFileSync(resolve(import.meta.dir, 'workspace-switcher.tsx'), 'utf8');
 
 /**
  * One exported function body, isolated from its neighbours. Cuts at the next
@@ -34,13 +36,19 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // cold. `prefetch={false}` also contains "prefetch", hence the two asserts.
     const navItem = fnSource('ProjectCustomizeNavItem');
 
-    expect(navItem).toContain('<Link');
+    // `HoverPrefetchLink` is a `next/link` whose prefetch starts on
+    // hover/focus/touch instead of on mount — see
+    // sidebar-prefetch-contract.test.ts. Still a prefetched link, still not
+    // router.push, which is what this test exists to pin.
+    expect(navItem).toContain('<HoverPrefetchLink');
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
-    // The href is the Customize INDEX now, not `capabilityTabHref(projectId,
-    // tab)` — the row lands on a card grid over every tab, not straight into
-    // whichever one the caller happens to be able to read first.
-    expect(navItem).toContain('`/projects/${projectId}/customize`');
+    // The href is the first tab the caller may open — Agents, for anyone who
+    // can read them (Marko, 2026-09-01: Customize is agent-centric). It was
+    // the `/customize` index chooser between 2026-08 and this change; that
+    // route now redirects here.
+    expect(navItem).toContain('href={capabilityTabHref(projectId, tab)}');
+    expect(navItem).not.toContain('href={`/projects/${projectId}/customize`}');
     expect(navItem).toContain('asChild');
     expect(navItem).not.toContain('router.push');
   });
@@ -77,32 +85,33 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(fnSource('ProjectCustomizeNavItem')).toContain('useCapabilityTab(projectId)');
   });
 
-  test('probes every tab in TAB_PREFERENCE', () => {
-    // useProjectCan is a hook, so it cannot be called from a loop that
-    // short-circuits — the probes are written out one per tab. A tab added to
-    // TAB_PREFERENCE without its own probe line reads as permanently denied,
-    // and the row silently stops offering it.
+  test('reads every tab from the shared project-page batch', () => {
+    // The probes used to be written out one `useProjectCan` per tab — seven
+    // hooks, and on the wire seven `GET …/effective?action=…` plus seven CORS
+    // preflights on every project page open, for one sidebar row (measured,
+    // essentia 2026-08-24). They now go through `useCans`, which sends the
+    // list to `effective:batch` and answers all of them from one response.
+    // The list is derived from TAB_PREFERENCE itself, so a tab added there is
+    // probed by construction — the old "forgot the probe line" failure mode
+    // is gone with the lines.
     // (Not fnSource(): useCapabilityTab is module-private, not exported.)
     const hookStart = SOURCE.indexOf('function useCapabilityTab');
     expect(hookStart).toBeGreaterThan(-1);
 
-    // The literal runs from the declaration to the hook that consumes it. Do
-    // NOT cut on the first `];` — the type annotation itself ends
-    // `CapabilityTab['key'];`, which lands inside the annotation and matched
-    // zero entries.
     const preference = SOURCE.slice(SOURCE.indexOf('const TAB_PREFERENCE'), hookStart);
     const tabCount = (preference.match(/key: '/g) ?? []).length;
+    expect(tabCount).toBe(CAPABILITY_TABS.length);
 
     const hook = SOURCE.slice(hookStart, SOURCE.indexOf('\n}', hookStart));
-    const probeCount = (hook.match(/useProjectCan\(/g) ?? []).length;
-
-    expect(tabCount).toBe(CAPABILITY_TABS.length);
-    expect(probeCount).toBe(tabCount);
+    expect((hook.match(/useProjectPageCans\(/g) ?? []).length).toBe(1);
+    expect(hook).toContain('useProjectPageCans(projectId)');
+    // And no single probes crept back in.
+    expect((hook.match(/useProjectCan\(/g) ?? []).length).toBe(0);
   });
 
   test('stays visible while a probe is loading', () => {
     // Optimistic until an explicit deny — same rule as ProjectFilesNavItem.
-    expect(SOURCE).toContain('p.allowed || p.isLoading');
+    expect(SOURCE).toContain('probe.allowed || probe.isLoading');
   });
 
   test('is gated on project.customize.read, on top of the per-tab read leaves', () => {
@@ -119,7 +128,8 @@ describe('project Customize sidebar entry (the routed one)', () => {
     // `false`, never while loading.
     const navItem = fnSource('ProjectCustomizeNavItem');
 
-    expect(navItem).toContain('useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ)');
+    expect(navItem).toContain('useProjectPageCans(projectId)');
+    expect(navItem).toContain('caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]');
     expect(navItem).toContain('if (canCustomize.allowed === false) return null;');
   });
 
@@ -152,12 +162,48 @@ describe('the old Settings overlay sidebar entry is gone', () => {
 });
 
 describe('the Mod+, shortcut', () => {
-  test('still opens the overlay, with no row left to print the keycap on', () => {
-    const hook = fnSource('useSettingsKeyboardShortcut');
+  // It used to be defined in this file, mounted by `ProjectSidebar`, because a
+  // sidebar row printed its keycap. That row went on 2026-08-17; the handler
+  // followed the surface it opens on 2026-09-02. Pinned from here because this
+  // is where someone looking for it will look first.
+  const SHORTCUT = readFileSync(
+    resolve(import.meta.dir, '../settings/settings-shortcut.ts'),
+    'utf8',
+  );
+  const HOOK = readFileSync(
+    resolve(import.meta.dir, '../settings/use-settings-shortcut.ts'),
+    'utf8',
+  );
+  const PANEL = readFileSync(resolve(import.meta.dir, '../settings/settings-panel.tsx'), 'utf8');
 
-    expect(hook).toContain("event.key === ','");
-    expect(hook).toContain('openSettings()');
-    expect(hook).not.toContain('capabilityTabHref');
-    expect(hook).not.toContain('router.push');
+  test('is no longer defined or bound in the sidebar', () => {
+    // Two bindings would preventDefault twice and re-open the panel twice.
+    expect(SOURCE).not.toContain('useSettingsKeyboardShortcut');
+    expect(SIDEBAR_SOURCE).not.toContain('useSettingsKeyboardShortcut');
+  });
+
+  test('is bound by the panel it opens, so it works on every mount of it', () => {
+    // `ProjectShell` and `StandaloneSettingsRoute` both mount `SettingsPanel`;
+    // binding here is what makes the keystroke work on both without a sidebar.
+    expect(PANEL).toContain("from './use-settings-shortcut'");
+    expect(PANEL).toContain('useSettingsKeyboardShortcut();');
+    expect(HOOK).toContain('openSettings()');
+    expect(HOOK).toContain("window.addEventListener('keydown'");
+  });
+
+  test('survives a route with no SidebarProvider', () => {
+    // `useSidebar()` throws outside a provider and would take `/settings` down.
+    expect(HOOK).toContain('useOptionalSidebar');
+    expect(HOOK).not.toContain('useSidebar(');
+  });
+
+  test('advertises the key it handles', () => {
+    // Behaviour is covered by settings-shortcut.test.ts; this only pins that
+    // the printed keycap and the matcher read one constant.
+    expect(SHORTCUT).toContain("export const SETTINGS_SHORTCUT_KEY = ','");
+    expect(SHORTCUT).toContain('${SETTINGS_SHORTCUT_KEY}');
+    // The row that prints the label is the row that opens the overlay.
+    expect(SWITCHER_SOURCE).toContain('settingsShortcutLabel()');
+    expect(SWITCHER_SOURCE).toContain('openUserSettings');
   });
 });

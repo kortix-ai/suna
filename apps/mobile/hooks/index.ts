@@ -13,9 +13,6 @@ export { useAdvancedFeatures } from '@/contexts';
 // UI hooks
 export * from './ui';
 
-// Media hooks
-export * from './media';
-
 // Animation hooks
 export { useBackgroundScale } from './useBackgroundScale';
 

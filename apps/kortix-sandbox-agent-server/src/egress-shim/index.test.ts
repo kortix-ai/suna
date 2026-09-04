@@ -22,20 +22,36 @@ import {
   syncEgressShim,
 } from './index'
 
-/** Well clear of the daemon's own 4319/4320/4321 block. */
-const PORT = 45321
-
 interface TestRule {
   identifier: string
   hosts: string[]
 }
 
-function sessionEnv(rules: TestRule[]): NodeJS.ProcessEnv {
+/**
+ * A fresh kernel-assigned port per test, never a fixed number. The CI packages
+ * lane can run this suite concurrently with — or right on the heels of —
+ * another run on the same runner, and two processes sharing one fixed port
+ * turn every "nothing listens here" assertion and the stop-then-rebind cycle
+ * into flakes. The ephemeral range is also inherently clear of the daemon's
+ * own 4319/4320/4321 block.
+ */
+function ephemeralPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as net.AddressInfo
+      probe.close(() => resolve(port))
+    })
+  })
+}
+
+function sessionEnv(port: number, rules: TestRule[]): NodeJS.ProcessEnv {
   return {
-    KORTIX_EGRESS_SHIM_PORT: String(PORT),
+    KORTIX_EGRESS_SHIM_PORT: String(port),
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_PROJECT_ID: 'proj-sync',
-    KORTIX_CLI_TOKEN: 'kortix_pat_sync',
+    KORTIX_TOKEN: 'kortix_pat_sync',
     KORTIX_SECRET_CAPABILITIES: JSON.stringify({
       version: 1,
       capabilities: rules.map((rule) => ({ ...rule, delivery: 'network' })),
@@ -71,37 +87,40 @@ afterEach(async () => {
 
 describe('syncEgressShim', () => {
   test('a session that never had boundary rules and still has none arms nothing', async () => {
-    const result = await syncEgressShim(sessionEnv([]))
+    const port = await ephemeralPort()
+    const result = await syncEgressShim(sessionEnv(port, []))
 
     expect(result.outcome).toBe('unchanged')
     expect(egressShimEnv()).toEqual({})
-    expect(await isListening(PORT)).toBe(false)
+    expect(await isListening(port)).toBe(false)
   })
 
   test("the session's first boundary secret starts a listener mid-flight", async () => {
+    const port = await ephemeralPort()
     const result = await syncEgressShim(
-      sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]),
+      sessionEnv(port, [{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]),
     )
 
     expect(result.outcome).toBe('started')
     expect(result.hosts).toEqual(['api.weather.test'])
-    expect(egressShimEnv().HTTPS_PROXY).toBe(`http://127.0.0.1:${PORT}`)
-    expect(await isListening(PORT)).toBe(true)
+    expect(egressShimEnv().HTTPS_PROXY).toBe(`http://127.0.0.1:${port}`)
+    expect(await isListening(port)).toBe(true)
   })
 
   test('re-pushing the same rules leaves the running listener untouched', async () => {
+    const port = await ephemeralPort()
     const rules = [
       { identifier: 'WEATHER_API', hosts: ['api.weather.test', 'cdn.weather.test'] },
       { identifier: 'PAY_KEY', hosts: ['api.pay.test'] },
     ]
-    expect((await syncEgressShim(sessionEnv(rules))).outcome).toBe('started')
+    expect((await syncEgressShim(sessionEnv(port, rules))).outcome).toBe('started')
     const armed = egressShimEnv()
 
     // Same rule set, re-ordered — the fan-out that carries the catalog fires on
     // every secret-CRUD push, not only the ones that move a boundary rule. A
     // restart here would drop the agent's in-flight tunnels for nothing.
     const result = await syncEgressShim(
-      sessionEnv([
+      sessionEnv(port, [
         { identifier: 'PAY_KEY', hosts: ['api.pay.test'] },
         { identifier: 'WEATHER_API', hosts: ['cdn.weather.test', 'api.weather.test'] },
       ]),
@@ -111,45 +130,58 @@ describe('syncEgressShim', () => {
     // Identity, not equality: a restart mints a new env object even when the
     // port and the paths come out the same.
     expect(egressShimEnv()).toBe(armed)
-    expect(await isListening(PORT)).toBe(true)
+    expect(await isListening(port)).toBe(true)
   })
 
   test('widening a rule restarts the listener', async () => {
+    const port = await ephemeralPort()
     expect(
-      (await syncEgressShim(sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }])))
-        .outcome,
+      (
+        await syncEgressShim(
+          sessionEnv(port, [{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]),
+        )
+      ).outcome,
     ).toBe('started')
 
     const result = await syncEgressShim(
-      sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test', 'cdn.weather.test'] }]),
+      sessionEnv(port, [
+        { identifier: 'WEATHER_API', hosts: ['api.weather.test', 'cdn.weather.test'] },
+      ]),
     )
 
     expect(result.outcome).toBe('restarted')
     expect([...result.hosts].sort()).toEqual(['api.weather.test', 'cdn.weather.test'])
-    expect(await isListening(PORT)).toBe(true)
+    expect(await isListening(port)).toBe(true)
   })
 
   test('withdrawing the last boundary secret stops the listener and clears the proxy env', async () => {
+    const port = await ephemeralPort()
     expect(
-      (await syncEgressShim(sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }])))
-        .outcome,
+      (
+        await syncEgressShim(
+          sessionEnv(port, [{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]),
+        )
+      ).outcome,
     ).toBe('started')
 
-    const result = await syncEgressShim(sessionEnv([]))
+    const result = await syncEgressShim(sessionEnv(port, []))
 
     expect(result.outcome).toBe('stopped')
     // Leaving HTTPS_PROXY exported at a dead listener is worse than never
     // arming one: every HTTPS call the agent makes would fail to connect.
     expect(egressShimEnv()).toEqual({})
-    expect(await isListening(PORT)).toBe(false)
+    expect(await isListening(port)).toBe(false)
   })
 
   test('a listener that cannot bind reports failure instead of throwing', async () => {
+    // The squatter binds first and OWNS the port the shim is pointed at, so
+    // the collision is deterministic instead of racing another process for it.
     squatter = net.createServer()
-    await new Promise<void>((resolve) => squatter!.listen(PORT, '127.0.0.1', () => resolve()))
+    await new Promise<void>((resolve) => squatter!.listen(0, '127.0.0.1', () => resolve()))
+    const port = (squatter.address() as net.AddressInfo).port
 
     const result = await syncEgressShim(
-      sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]),
+      sessionEnv(port, [{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }]),
     )
 
     expect(result.outcome).toBe('failed')
@@ -161,13 +193,14 @@ describe('syncEgressShim', () => {
     // Fails closed, same as boot: no CLI token means nothing can spend the
     // secret, so a listener would accept the connection and then have nothing
     // to relay with.
-    const env = sessionEnv([{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }])
-    delete env.KORTIX_CLI_TOKEN
+    const port = await ephemeralPort()
+    const env = sessionEnv(port, [{ identifier: 'WEATHER_API', hosts: ['api.weather.test'] }])
+    delete env.KORTIX_TOKEN
 
     const result = await syncEgressShim(env)
 
     expect(result.outcome).toBe('unchanged')
     expect(egressShimEnv()).toEqual({})
-    expect(await isListening(PORT)).toBe(false)
+    expect(await isListening(port)).toBe(false)
   })
 })

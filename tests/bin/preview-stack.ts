@@ -39,7 +39,7 @@ await chmod(envPath, 0o600);
 const testEnvPath = join(instanceDir, '.env.test');
 await writeFile(testEnvPath, configured.testEnv, { mode: 0o600 });
 await chmod(testEnvPath, 0o600);
-await writeFile(join(stateDir, 'Caddyfile.preview'), buildPreviewCaddyfile(), { mode: 0o644 });
+await writeFile(join(stateDir, 'Caddyfile.preview'), buildPreviewCaddyfile(new URL(origin).host), { mode: 0o644 });
 await writeFile(
   join(stateDir, 'docker-compose.preview.yml'),
   buildPreviewComposeOverlay(

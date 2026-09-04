@@ -45,6 +45,7 @@ import {
   DropdownMenuItem,
   DropdownMenuPortal,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -59,6 +60,7 @@ import {
 } from '@/components/ui/sidebar';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
 import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { cn } from '@/lib/utils';
@@ -74,12 +76,11 @@ import {
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import * as React from 'react';
 import { useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
-  const router = useRouter();
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -92,10 +93,13 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   // than being silently dropped: without it, every account-scoped settings tab
   // opened on a project whose detail query has not resolved yet has no account
   // id to probe with, and renders as though the permission were denied. Same
-  // `['accounts']` key and `staleTime` as every other caller, so React Query
-  // serves them all from one fetch.
+  // `useAccountsList()` hook as every other caller, so React Query serves them
+  // all from one user-scoped fetch.
   useEnsureSelectedAccount();
 
+  // For the rows that OPEN something in place — the settings panel, the log-out
+  // confirmation. Navigating rows do not use it: they are anchors now, and an
+  // anchor needs no deferral because the App Router owns the transition.
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
     requestAnimationFrame(() => fn());
@@ -136,8 +140,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               <SidebarMenuButton
                 aria-label="Switch workspace"
                 className={cn(
-                  'group/workspace relative flex h-8 cursor-pointer items-center gap-2 rounded-md px-2',
-                  'transition-colors duration-150',
+                  'group/workspace hover:bg-card relative flex cursor-pointer items-center gap-2 rounded-md px-1',
                   'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
                 )}
               >
@@ -146,15 +149,28 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                     shape that swaps content the moment the query lands. The
                     control keeps its size either way — the row is a fixed
                     `h-8` — so the empty state is a quiet gap, not a jump. */}
+                {/* `glyph` BEFORE `emoji` below, matching EntityAvatar's own
+                    precedence. Both are required: a project's icon is a union —
+                    an emoji XOR a named glyph — so passing only `emoji` renders
+                    a glyph project's chalk INITIAL here, while the projects grid
+                    (`projects/project-card.tsx`) and ⌘K
+                    (`workspace/command-palette.tsx`) both draw its glyph. The
+                    sidebar is where a person looks at their workspace all day,
+                    so that gap read as "I picked an icon and nothing changed". */}
                 {project ? (
-                  <EntityAvatar label={project.name} emoji={project.icon} size="sm" />
+                  <EntityAvatar
+                    label={project.name}
+                    glyph={project.icon_glyph}
+                    emoji={project.icon}
+                    size="sm"
+                  />
                 ) : null}
 
                 <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-medium tracking-tight group-data-[collapsible=icon]:hidden">
                   {project?.name ?? null}
                 </span>
 
-                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 transition-colors duration-150 group-data-[collapsible=icon]:hidden" />
+                <CaretUpDownIcon className="text-muted-foreground/50 group-hover/workspace:text-muted-foreground size-3.5 shrink-0 group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
 
@@ -175,12 +191,18 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
                     <DropdownMenuSeparator />
 
-                    <DropdownMenuItem
-                      onSelect={() => deferAfterClose(() => router.push('/new'))}
-                      size="sm"
-                    >
-                      <PlusIcon />
-                      Create a workspace…
+                    {/* An anchor, not a handler. `router.push` from a menu row
+                        runs the RSC fetch cold at click time, and that fetch
+                        degrades into a full document load whenever it answers
+                        wrong — an auth bounce, a build-id skew mid-deploy, a
+                        network blip. `onSelect` keeps the explicit close and
+                        must not call `preventDefault`: that cancels the
+                        anchor. */}
+                    <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                      <Link href="/new" prefetch>
+                        <PlusIcon />
+                        Create a workspace…
+                      </Link>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuPortal>
@@ -200,20 +222,36 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                   header `UserMenu` has no such renderer and must navigate. */}
               <DropdownMenuItem onSelect={() => openUserSettings('profile')} size="sm">
                 <CogOne />
-                User Settings
+                Preferences
+                {/* The keycap sits on this row because this row is what the
+                    keystroke does — `useSettingsKeyboardShortcut` calls the
+                    same `openSettings()`. It is the only row in the app that
+                    opens the overlay, so it is the only honest place to
+                    advertise Mod+, (the old sidebar Settings row that carried
+                    it was removed on 2026-08-17, and the shortcut has been
+                    undiscoverable since). The symbol follows the platform;
+                    the handler accepts Cmd and Ctrl on all of them.
+
+                    `DropdownMenuShortcut` (plain muted text, `MENU_SHORTCUT`)
+                    rather than `<Kbd>` chips: this is a menu row, and that is
+                    the recipe every menu row in the design system uses for a
+                    trailing keystroke. */}
+                <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              <DropdownMenuItem
-                onSelect={() => deferAfterClose(() => router.push('/download'))}
-                size="sm"
-              >
-                <DownloadSimple />
-                Download App
+              {/* `prefetch` explicitly: `(public)/download/page.tsx` awaits
+                  `headers()` and has no `loading.tsx`, so the default `auto`
+                  intent would cache nothing for a dynamic route. */}
+              <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                <Link href="/download" prefetch>
+                  <DownloadSimple />
+                  Download App
+                </Link>
               </DropdownMenuItem>
 
               <ThemeSubmenu />
 
-              <HelpSubmenu deferAfterClose={deferAfterClose} onClose={() => setMenuOpen(false)} />
+              <HelpSubmenu onClose={() => setMenuOpen(false)} />
 
               {/* Log out is the only row that ends something, so it gets its own
                   group. Nothing sits below it — the last item in a menu is the

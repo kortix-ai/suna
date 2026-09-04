@@ -29,6 +29,21 @@ describe('send receipts', () => {
     });
   });
 
+  test('preserves the turn associated with the send receipt', () => {
+    useSessionWorkingStore.getState().noteSendReceipt('sess_1', {
+      messageId: 'msg_queued',
+      turnId: 'msg_active',
+      atMs: 10,
+    });
+
+    expect(useSessionWorkingStore.getState().receipts.sess_1).toEqual({
+      messageId: 'msg_queued',
+      turnId: 'msg_active',
+      atMs: 10,
+      acceptedAtMs: null,
+    });
+  });
+
   test('acceptance stamps the instant the server took the send', () => {
     const store = useSessionWorkingStore.getState();
     store.noteSendReceipt('sess_1', { messageId: 'msg_1', atMs: 10 });
@@ -151,6 +166,30 @@ describe('inbox readings', () => {
     store.noteInboxPending('sess_1', 0, 200);
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 200 });
   });
+
+  test('two server-stamped readings rank on the SERVER clock, not the browser one', () => {
+    // A bundle (stamped by the API before its reads) and a direct read settle
+    // out of order. The browser stamps say the empty read is newer; the server
+    // stamps say it was taken BEFORE the queue row existed. The server clock is
+    // the only pair drawn from one clock, so it decides.
+    const store = useSessionWorkingStore.getState();
+    store.reset();
+    store.noteInboxPending('sess_1', 1, 100, 5_000);
+    store.noteInboxPending('sess_1', 0, 900, 4_000);
+
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 1,
+      atMs: 100,
+      serverAtMs: 5_000,
+    });
+
+    store.noteInboxPending('sess_1', 0, 950, 6_000);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 0,
+      atMs: 950,
+      serverAtMs: 6_000,
+    });
+  });
 });
 
 describe('an accepted prompt', () => {
@@ -182,6 +221,39 @@ describe('an accepted prompt', () => {
     expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({ pending: 0, atMs: 500 });
   });
 
+  test('carries the POST response server stamp so an older read cannot erase the row', () => {
+    // `POST .../prompts` settled: the row is durable, and the response's
+    // `observed_at` says WHEN on the server clock. A queue read that STARTED
+    // before the POST settles afterwards with an older server stamp — it
+    // provably cannot see the row, so it may not erase it.
+    const store = useSessionWorkingStore.getState();
+    store.reset();
+    store.notePromptAccepted('sess_1', 200, 5_000);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 1,
+      atMs: 200,
+      serverAtMs: 5_000,
+    });
+
+    store.noteInboxPending('sess_1', 0, 300, 4_000);
+    expect(useSessionWorkingStore.getState().inbox.sess_1).toEqual({
+      pending: 1,
+      atMs: 200,
+      serverAtMs: 5_000,
+    });
+  });
+
+  test('acceptance keeps the newest server stamp it has seen', () => {
+    // A read taken AFTER the POST already carries a newer server stamp; a late
+    // acceptance callback must not walk the ordering key backwards.
+    const store = useSessionWorkingStore.getState();
+    store.reset();
+    store.noteInboxPending('sess_1', 2, 100, 9_000);
+    store.notePromptAccepted('sess_1', 300, 5_000);
+
+    expect(useSessionWorkingStore.getState().inbox.sess_1?.serverAtMs).toBe(9_000);
+    expect(useSessionWorkingStore.getState().inbox.sess_1?.pending).toBe(2);
+  });
 });
 
 describe('clearSession', () => {

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # E2E check for the local-dev secret environments (dotenvx profiles).
-# Proves each profile DECRYPTS cleanly and points at the right stack — i.e. the
-# local / dev / prod separation is intact. Safe to run anytime: it only reads
+# Proves each profile DECRYPTS cleanly, points at the right stack, and that no
+# secret in a non-prod profile equals its prod value (tracked exceptions:
+# scripts/secrets-shared-with-prod.allowlist). Safe to run anytime: it only reads
 # (decrypts) the env files, it does NOT boot the API or touch any database.
 #
 #   pnpm test:envs
@@ -56,6 +57,16 @@ webrow "local" "apps/web/.env"
 webrow "dev"   "apps/web/.env.dev"
 webrow "stage" "apps/web/.env.staging"
 webrow "prod"  "apps/web/.env.prod"
+echo
+python3 "$ROOT/scripts/secrets-envs-separation.py" "$DX" || fail=1
+# --sm (or SECRETS_SM_CHECK=1): also assert each apps/api/.env.<env> equals its AWS
+# Secrets Manager blob. Needs an MFA session (AWS_PROFILE, default kortix-mfa).
+if [ "${1:-}" = "--sm" ] || [ "${SECRETS_SM_CHECK:-}" = "1" ]; then
+  echo
+  echo "AWS SECRETS MANAGER — file must equal kortix-<env>-env:"
+  echo
+  DOTENVX="$DX" python3 "$ROOT/scripts/secrets-sm-parity.py" check || fail=1
+fi
 echo
 if [ "$fail" = 0 ]; then
   echo "✓ all environments (api + web) decrypt cleanly and are distinctly configured"

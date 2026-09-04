@@ -71,7 +71,9 @@ describe('connection creation controls', () => {
   });
 
   test('does not load manager-only connector configuration for read-only users', () => {
-    expect(source).toContain('const showConnectionTab = canWrite && !isPipedream && !isManaged;');
+    expect(source).toContain(
+      'const showConnectionTab = canWrite && !isManagedProvider && !isManaged;',
+    );
     expect(source).toContain('const showPermissions = canWrite;');
     expect(source).toContain('enabled: canWrite');
   });

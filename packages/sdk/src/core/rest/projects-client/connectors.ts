@@ -219,6 +219,7 @@ export interface AdminConnector {
   slug: string;
   name: string;
   provider:
+    | 'composio'
     | 'pipedream'
     | 'mcp'
     | 'openapi'
@@ -745,17 +746,64 @@ export async function setDefaultConnection(projectId: string, connectionId: stri
   );
 }
 
+/** Managed connector providers that can issue a hosted Connect Link. */
+export type ConnectorConnectProvider = 'composio' | 'pipedream';
+
+/**
+ * Hosted authorization result returned by connector and connection connect routes.
+ *
+ * `connectUrl` is the normalized Kortix field. `redirectUrl` remains optional so
+ * clients can consume an upstream Connect Link response during a rolling deploy.
+ */
+export interface ConnectorConnectResult {
+  provider?: ConnectorConnectProvider;
+  app?: string;
+  connectUrl?: string;
+  redirectUrl?: string;
+  token?: string;
+  expiresAt?: string;
+  requestId?: string;
+  sessionId?: string;
+  connectionId?: string;
+  /**
+   * The account is already usable, so there is no hosted page to show.
+   *
+   * True for a no-auth toolkit, and for a connector whose account is still
+   * active from an earlier authorization. Callers branch on this before opening
+   * a popup — see `runConnectLinkFlow` in the web host.
+   */
+  connected?: boolean;
+  /** The toolkit needs no authorization at all, so `connected` is true on the
+   *  first call and no link is ever minted. */
+  isNoAuth?: boolean;
+}
+
+/** Poll result for a hosted connector authorization request. */
+export interface ConnectorFinalizeResult {
+  provider?: ConnectorConnectProvider;
+  connected: boolean;
+  accountId?: string;
+  connectionId?: string;
+}
+
+/** Deployment-wide availability for hosted connector authorization providers. */
+export interface ConnectorConnectStatus {
+  configured: boolean;
+  provider: ConnectorConnectProvider | null;
+  /** Ordered by server preference. Absent on older API deployments. */
+  providers?: ConnectorConnectProvider[];
+}
+
 export async function pipedreamConnectConnection(
   projectId: string,
   connectionId: string,
   input: ConnectionConnectInput = {},
 ) {
   return unwrap(
-    await backendApi.post<{
-      token?: string;
-      app?: string;
-      connectUrl?: string;
-    }>(`/projects/${projectId}/connections/${connectionId}/connect`, input),
+    await backendApi.post<ConnectorConnectResult>(
+      `/projects/${projectId}/connections/${connectionId}/connect`,
+      input,
+    ),
   );
 }
 
@@ -764,7 +812,7 @@ export async function pipedreamFinalizeConnection(
   connectionId: string,
 ) {
   return unwrap(
-    await backendApi.post<{ connected: boolean; accountId?: string }>(
+    await backendApi.post<ConnectorFinalizeResult>(
       `/projects/${projectId}/connections/${connectionId}/connect/finalize`,
       {},
     ),
@@ -947,14 +995,51 @@ export async function setConnectorName(projectId: string, slug: string, name: st
   );
 }
 
-export async function pipedreamConnect(projectId: string, slug: string) {
+/**
+ * Start a hosted authorization for a project connector.
+ *
+ * Provider-neutral: the API picks Composio or Pipedream. `pipedreamConnect` is
+ * the original name for this exact route and stays exported — renaming it would
+ * be a breaking change for published consumers.
+ */
+export async function connectorConnect(projectId: string, slug: string) {
   return unwrap(
-    await backendApi.post<{
-      token?: string;
-      app?: string;
-      connectUrl?: string;
-    }>(`/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`, {}),
+    await backendApi.post<ConnectorConnectResult>(
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
+      {},
+    ),
   );
+}
+
+/** @deprecated Prefer {@link connectorConnect} — the route was never Pipedream-only. */
+export const pipedreamConnect = connectorConnect;
+
+/** A connector this session's agent asked a human to authorize. */
+export interface SessionConnectRequest {
+  slug: string;
+  /** Provider app/toolkit behind the connector, e.g. `gmail`. */
+  app: string;
+  provider: string;
+  connected: boolean;
+}
+
+/**
+ * The connectors a session is blocked on.
+ *
+ * The agent mints a connect link mid-turn and stops. A host reads this to render
+ * a real Connect button for that session instead of leaving the raw URL in the
+ * transcript for someone to paste into a tab.
+ */
+export async function listSessionConnectRequests(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionConnectRequest[]> {
+  const result = unwrap(
+    await backendApi.get<{ connectors?: SessionConnectRequest[] }>(
+      `/connectors/projects/${projectId}/sessions/${encodeURIComponent(sessionId)}/connect-requests`,
+    ),
+  );
+  return result.connectors ?? [];
 }
 
 export interface ConnectorDraftInput {
@@ -1148,6 +1233,67 @@ export async function listPipedreamSections(
   );
 }
 
+/** A Composio toolkit available through the hosted connector catalog. */
+export interface ConnectToolkit {
+  slug: string;
+  name: string;
+  logo: string | null;
+  description?: string | null;
+  categories?: string[];
+  isNoAuth: boolean;
+  connected: boolean;
+}
+
+export interface ConnectToolkitsPage {
+  provider: 'composio';
+  toolkits: ConnectToolkit[];
+  total?: number;
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export interface ConnectToolkitsQuery {
+  q?: string;
+  category?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+interface ConnectToolkitsWirePage {
+  items: ConnectToolkit[];
+  cursor?: string | null;
+  totalPages?: number;
+}
+
+/** List hosted Composio toolkits. Legacy Pipedream catalog methods stay separate. */
+export async function listConnectToolkits(
+  projectId: string,
+  query: ConnectToolkitsQuery = {},
+) {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.category) params.set('category', query.category);
+  if (query.cursor) params.set('cursor', query.cursor);
+  if (query.limit) params.set('limit', String(query.limit));
+  const qs = params.toString();
+  const page = unwrap(
+    await backendApi.get<ConnectToolkitsWirePage | ConnectToolkitsPage>(
+      `/connectors/projects/${projectId}/connect/toolkits${qs ? `?${qs}` : ''}`,
+    ),
+  );
+  // The provider returns its native `items` / `cursor` page. Keep accepting the
+  // earlier normalized shape during rolling deploys, but expose one stable SDK
+  // contract to web and other consumers.
+  if ('toolkits' in page) return page;
+  const nextCursor = page.cursor?.trim() || undefined;
+  return {
+    provider: 'composio' as const,
+    toolkits: page.items,
+    nextCursor,
+    hasMore: Boolean(nextCursor),
+  };
+}
+
 export type DiscoverConnectorKind = 'openapi' | 'mcp' | 'graphql' | 'cli';
 
 export interface DiscoverConnector {
@@ -1249,9 +1395,7 @@ export const getDiscoverIntegration = getDiscoverConnector;
  */
 export async function getConnectStatus() {
   return unwrap(
-    await backendApi.get<{ configured: boolean; provider: string | null }>(
-      '/connectors/connect-status',
-    ),
+    await backendApi.get<ConnectorConnectStatus>('/connectors/connect-status'),
   );
 }
 
@@ -1282,11 +1426,20 @@ export async function setConnectorSecretBinding(
   );
 }
 
-export async function pipedreamFinalize(projectId: string, slug: string) {
+/**
+ * Poll a hosted authorization until the provider reports an active account.
+ *
+ * On success the API tells the session that requested the connector, so the
+ * agent resumes without anyone typing "done".
+ */
+export async function connectorFinalize(projectId: string, slug: string) {
   return unwrap(
-    await backendApi.post<{ connected: boolean; accountId?: string }>(
+    await backendApi.post<ConnectorFinalizeResult>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect/finalize`,
       {},
     ),
   );
 }
+
+/** @deprecated Prefer {@link connectorFinalize} — the route was never Pipedream-only. */
+export const pipedreamFinalize = connectorFinalize;

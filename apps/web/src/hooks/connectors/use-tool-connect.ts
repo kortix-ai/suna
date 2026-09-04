@@ -3,6 +3,7 @@
 import { useMutation } from '@tanstack/react-query';
 
 import {
+  type ConnectorConnectResult,
   type ConnectorAuthorizationStrategy,
   createConnector,
   pipedreamConnect,
@@ -17,12 +18,12 @@ import {
   buildEasyConnectConnectorDraft,
   connectorSyncErrorForSlug,
 } from '@/features/workspace/customize/sections/connector-connection-form';
-
-const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
+import { runConnectLinkFlow } from '@/hooks/connectors/use-connect-link';
 
 export interface ToolConnectInput {
   appSlug: string;
   appName: string;
+  provider?: 'composio' | 'pipedream';
   connectorName: string;
   connectorSlug: string;
   authorizationStrategy: ConnectorAuthorizationStrategy;
@@ -30,7 +31,7 @@ export interface ToolConnectInput {
 
 export function buildToolConnectorDraft(input: ToolConnectInput) {
   return buildEasyConnectConnectorDraft(
-    { slug: input.appSlug, name: input.appName },
+    { slug: input.appSlug, name: input.appName, provider: input.provider },
     {
       name: input.connectorName,
       slug: input.connectorSlug,
@@ -47,7 +48,7 @@ export async function requestToolAuthorization(
     reconcileMember: typeof reconcileMemberConnection;
     connectMember: typeof pipedreamConnectConnection;
   },
-): Promise<{ token?: string; app?: string; connectionId: string | null }> {
+): Promise<Omit<ConnectorConnectResult, 'connectionId'> & { connectionId: string | null }> {
   if (input.authorizationStrategy === 'user') {
     const connection = await deps.reconcileMember(projectId, {
       connector_alias: input.connectorSlug,
@@ -58,34 +59,6 @@ export async function requestToolAuthorization(
   }
   const connect = await deps.connectProject(projectId, input.connectorSlug);
   return { ...connect, connectionId: null };
-}
-
-function withPipedreamOverlayEscape(): () => void {
-  if (typeof document === 'undefined') return () => {};
-  const releasePointerEvents = () => {
-    document.querySelectorAll<HTMLIFrameElement>(PIPEDREAM_IFRAME_SELECTOR).forEach((el) => {
-      el.style.pointerEvents = 'auto';
-    });
-  };
-  const observer = new MutationObserver(releasePointerEvents);
-  observer.observe(document.body, { childList: true });
-  releasePointerEvents();
-
-  const isPipedreamFrame = (node: EventTarget | null): boolean =>
-    node instanceof Element && node.matches(PIPEDREAM_IFRAME_SELECTOR);
-  const guardFocus = (event: FocusEvent) => {
-    if (isPipedreamFrame(event.target) || isPipedreamFrame(event.relatedTarget)) {
-      event.stopImmediatePropagation();
-    }
-  };
-  document.addEventListener('focusin', guardFocus, true);
-  document.addEventListener('focusout', guardFocus, true);
-
-  return () => {
-    observer.disconnect();
-    document.removeEventListener('focusin', guardFocus, true);
-    document.removeEventListener('focusout', guardFocus, true);
-  };
 }
 
 export function useToolConnect(projectId: string, onConnected: () => void) {
@@ -104,52 +77,31 @@ export function useToolConnect(projectId: string, onConnected: () => void) {
       }
 
       try {
-        const { token, app, connectionId } = await requestToolAuthorization(projectId, input, {
-          connectProject: pipedreamConnect,
-          reconcileMember: reconcileMemberConnection,
-          connectMember: pipedreamConnectConnection,
-        });
-        if (!token || !app) throw new Error('This app is not available to connect right now');
-
-        const { createFrontendClient } = await import('@pipedream/sdk/browser');
-        const pd = createFrontendClient({
-          externalUserId: `${projectId}:${draft.slug}${connectionId ? `:${connectionId}` : ''}`,
-          tokenCallback: async () => ({
-            token,
-            connectLinkUrl: '',
-            expiresAt: new Date(Date.now() + 10 * 60_000),
-          }),
-        });
-
-        const release = withPipedreamOverlayEscape();
-        let connected = false;
-        try {
-          connected = await new Promise<boolean>((resolve, reject) => {
-            pd.connectAccount({
-              app,
-              token,
-              onSuccess: () => resolve(true),
-              onClose: (status: { successful: boolean }) => resolve(status.successful),
-              onError: (err: unknown) =>
-                reject(new Error((err as Error)?.message || 'Connection cancelled')),
+        let connectionId: string | null = null;
+        const connected = await runConnectLinkFlow(
+          async () => {
+            const authorization = await requestToolAuthorization(projectId, input, {
+              connectProject: pipedreamConnect,
+              reconcileMember: reconcileMemberConnection,
+              connectMember: pipedreamConnectConnection,
             });
-          });
-        } finally {
-          release();
-        }
+            connectionId = authorization.connectionId;
+            const { connectionId: _connectionId, ...connect } = authorization;
+            return connect;
+          },
+          () =>
+            connectionId
+              ? pipedreamFinalizeConnection(projectId, connectionId)
+              : pipedreamFinalize(projectId, draft.slug),
+        );
 
-        if (!connected) {
+        if (!connected.connected) {
           return {
             slug: draft.slug,
             connected: false,
             syncError: null,
             connectError: null,
           };
-        }
-        if (connectionId) {
-          await pipedreamFinalizeConnection(projectId, connectionId);
-        } else {
-          await pipedreamFinalize(projectId, draft.slug);
         }
         return {
           slug: draft.slug,

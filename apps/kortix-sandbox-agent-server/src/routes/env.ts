@@ -4,17 +4,19 @@ import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { syncEgressShim } from '../egress-shim'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { invalidateRuntimeState } from '../runtime-state-projection'
+import { scheduleRuntimeProjectionPush } from '../runtime-projection-relay'
+import { llmProxyBaseUrl, setLlmProxyToken } from '../llm-proxy'
 import { logger } from '../logger'
 import { requiresRespawn, type Opencode } from '../opencode'
 import { reconcileProjectEnv, type ProjectEnvStore } from '../project-env'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
-  'KORTIX_LLM_API_KEY',
   'KORTIX_LLM_BASE_URL',
-  // Gateway-only: the provider-key names opencode must never see. Flipped with the
-  // mode so a live toggle to DIRECT clears it (native BYOK keys reach opencode) and
-  // a toggle to GATEWAY restores the strip on the next opencode restart.
-  'KORTIX_OPENCODE_DENY_ENV',
+  // The daemon-local LLM proxy URL (warm-fork boxes). Cleared on a live
+  // gateway→native toggle — hasKortixLlmGateway() treats a set proxy URL as
+  // "gateway on", so leaving it behind would pin the box in gateway mode.
+  'KORTIX_LLM_PROXY_URL',
   // The session's model. opencode reads this when it builds its config at spawn
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
   // model change take effect on a box that is already up.
@@ -90,29 +92,38 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
   return { changed: changedNames.length > 0, names: changedNames.sort() }
 }
 
-function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown, denyEnv: unknown): { changed: boolean; names: string[] } {
+function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
   if (!enabled) {
     return setOpencodeRuntimeEnv({
-      KORTIX_LLM_API_KEY: null,
       KORTIX_LLM_BASE_URL: null,
-      // DIRECT/BYOK: stop withholding native provider keys from opencode.
-      KORTIX_OPENCODE_DENY_ENV: null,
+      // Warm-fork boxes run a localhost LLM proxy and mark it here; it also
+      // reads as "gateway on" (hasKortixLlmGateway), so a live disable must
+      // clear both or the respawned opencode keeps the kortix provider.
+      KORTIX_LLM_PROXY_URL: null,
     })
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   }
-  const token = process.env.KORTIX_CLI_TOKEN
+  const token = process.env.KORTIX_TOKEN
   if (!token) {
-    throw new Error('KORTIX_CLI_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+    throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')
+  }
+  // A running localhost LLM proxy (every gateway session since the in-sandbox
+  // image window) learns the new upstream + token and stays the provider
+  // base URL; a box that never started one keeps the direct config.
+  const proxyUrl = llmProxyBaseUrl()
+  if (proxyUrl && process.env.KORTIX_LLM_PROXY_DISABLE !== '1') {
+    setLlmProxyToken(token, baseUrl)
+    return setOpencodeRuntimeEnv({
+      KORTIX_LLM_BASE_URL: baseUrl,
+      KORTIX_LLM_PROXY_URL: proxyUrl,
+    })
   }
   return setOpencodeRuntimeEnv({
-    KORTIX_LLM_API_KEY: token,
     KORTIX_LLM_BASE_URL: baseUrl,
-    // GATEWAY: restore the strip (names supplied by the API) on the next restart.
-    KORTIX_OPENCODE_DENY_ENV: typeof denyEnv === 'string' ? denyEnv : '',
   })
 }
 
@@ -174,7 +185,7 @@ export function createEnvRouter(
         // revoked boot secret before it sources agent-env.sh.
         reconcileProjectEnv(process.env, projectEnv)
         const opencodeEnv = applyOpencodeRuntimeEnv(body.opencodeEnv)
-        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl, body.llmGatewayDenyEnv)
+        const llmGatewayEnv = applyLlmGatewayMode(body.llmGatewayEnabled, body.llmGatewayBaseUrl)
         // null when no reload was needed at all; otherwise how it was applied.
         let reloadOutcome: 'disposed' | 'restarted' | 'kept-old' | null = null
         // Whether applying the config interrupted work someone was waiting on.
@@ -262,6 +273,15 @@ export function createEnvRouter(
             mustRespawn,
           })
         }
+
+        // The daemon OWNS this write, so the projection is told rather than
+        // left to infer it. `/kortix/opencode/state` serves the agent roster,
+        // command list and config essentials this env change can move; a
+        // client that read it a second ago must not keep the pre-change answer
+        // until an SSE frame happens to hint at it.
+        invalidateRuntimeState('all', 'kortix-env-applied')
+        // ...and the server-side copy is refreshed too (debounced, etag-gated).
+        scheduleRuntimeProjectionPush('kortix-env-applied')
 
         const applied = projectEnv.snapshot()
         const exported = Object.keys(applied.env).length

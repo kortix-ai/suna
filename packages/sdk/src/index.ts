@@ -2,10 +2,16 @@
  * @kortix/sdk — the Kortix frontend data layer, in one package.
  *
  * THIS ROOT ENTRY IS CANONICAL: the whole framework-free surface (client,
- * session, turns, files, event stream, errors, REST clients) is exported
- * here. Configure once at startup, then use one import. Every host — web,
- * mobile, demo — shares this single implementation; nothing talks to the raw
- * API or OpenCode directly.
+ * session, turns, files, message queue, event stream, errors, REST clients)
+ * is exported here. Configure once at startup, then use one import. Every
+ * host — web, mobile, demo — shares this single implementation; nothing talks
+ * to the raw API or OpenCode directly.
+ *
+ * "Canonical" is asserted, not asserted-in-prose: `root-canonical.test.ts`
+ * fails if any name exported by an isomorphic subpath is missing here. The
+ * only names allowed to be absent are the browser-only zustand stores, which
+ * cannot live at the root because `zustand` is a forbidden import in the
+ * isomorphic-core tier (see `index.isomorphic.test.ts`).
  *
  * Only three subpaths exist beyond the root, each for a reason that fits in
  * one sentence:
@@ -67,12 +73,36 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
+
+/**
+ * The framework-free outbound message queue — a host's "type while the agent is
+ * still working" buffer, as pure reducers over a `SessionQueue` value (no
+ * store, no React, no timers). Previously reachable ONLY from
+ * `@kortix/sdk/message-queue`, which made the queue a fourth entry point you
+ * had to know existed. Re-exported here so the root really is canonical; the
+ * subpath keeps working as an alias.
+ */
+export {
+  claimNext,
+  completeInFlight,
+  createSessionQueue,
+  editQueued,
+  enqueue,
+  failInFlight,
+  removeQueued,
+  reorderQueued,
+  retryFailed,
+  type QueuedMessage,
+  type QueuedMessageInput,
+  type SessionQueue,
+} from './core/session/message-queue';
 
 /**
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
@@ -233,6 +263,9 @@ export type {
   // Accounts / IAM
   KortixAccount,
   AccountDetail,
+  AccountBranding,
+  AccountBrandingAssetKind,
+  AccountBrandingState,
   AccountMember,
   AccountRole,
   ProjectRole,
@@ -260,6 +293,9 @@ export type {
   SessionAudit,
   SessionTranscript,
   SessionTranscriptMessage,
+  SessionTranscriptSource,
+  SessionTranscriptSyncEnvelope,
+  SessionTranscriptSyncMessage,
   // Change requests / git
   ChangeRequest,
   ChangeRequestDiffResponse,
@@ -328,7 +364,50 @@ export type {
   // Auth validate helper
   AccountIdentity,
   ValidateTokenResult,
+  // Sign in with Kortix — OAuth client registry (`kortix.iam.oauthClients`)
+  OAuthClient,
+  CreatedOAuthClient,
+  CreateOAuthClientInput,
+  UpdateOAuthClientInput,
+  OAuthClientType,
+  OAuthScope,
 } from './core/rest/projects-client';
+
+/**
+ * Headless regular auth — `kortix.auth.*` (sign-up, password / magic-link /
+ * social sign-in, refresh, password reset, sign-out through the Kortix API)
+ * and `createKortixSession`, the self-refreshing token store for `getToken`.
+ */
+export {
+  // The functions behind `kortix.auth.*` — exported so `Kortix`'s inferred type
+  // stays nameable from the root entry (TS2742 in a consumer's declaration
+  // emit otherwise, e.g. apps/whitelabel-demo `next build`).
+  signUp,
+  signInWithPassword,
+  sendMagicLink,
+  verifyOtp,
+  signInWithProvider,
+  exchangeCode,
+  refreshSession,
+  resetPassword,
+  updatePassword,
+  authUser,
+  signOut,
+  HeadlessAuthError,
+  type HeadlessAuthApi,
+  type AuthSession,
+  type AuthUser,
+  type AuthSessionResult,
+  type AuthOtpType,
+  type AuthProvider,
+  type AuthRequestOptions,
+} from './core/rest/platform-client/auth';
+export {
+  createKortixSession,
+  type KortixSession,
+  type KortixSessionOptions,
+  type KortixSessionStorage,
+} from './core/auth/session';
 
 /**
  * Linear-time trailing-slash strip shared with hosts — see
@@ -391,6 +470,7 @@ export * from './core/http/opencode-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/runtime/client';
+export * from './core/runtime/attachment-part';
 export * from './core/session';
 export {
   createHttpSessionSyncController,
@@ -412,3 +492,17 @@ export type {
 export type {
   OpencodeAgentConfig as RuntimeAgentConfig,
 } from './core/rest/projects-client/agent-config';
+
+/**
+ * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
+ * by someone Kortix already authenticated, so `getToken: kortixAppViewerToken()`
+ * is the whole of its auth. See `core/auth/app-viewer.ts`. (Kept across the
+ * runtime-client revert — app-viewer has no runtime-client dependency.)
+ */
+export {
+  fetchKortixAppViewer,
+  kortixAppViewerToken,
+  clearKortixAppViewerCache,
+  type KortixAppViewerSession,
+  type KortixAppViewerOptions,
+} from './core/auth/app-viewer';

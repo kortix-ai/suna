@@ -1,4 +1,6 @@
 import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/opencode-errors';
+import { isAbortError } from '../http/abort-error';
 
 /**
  * Messages per bounded read — the newest-first window a session opens with,
@@ -10,7 +12,59 @@ import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
  * fully loaded and never pull at all, while a long one still opens bounded
  * instead of dragging its entire history over the sandbox proxy.
  */
-export const SESSION_SYNC_PAGE_SIZE = 50;
+/** First retry delay after a failed tail read. */
+const TAIL_RETRY_BASE_MS = 1_000;
+/** Ceiling for the retry backoff — a box that comes back is picked up within it. */
+const TAIL_RETRY_MAX_MS = 15_000;
+
+export const SESSION_SYNC_PAGE_SIZE = 100;
+
+/**
+ * The FIRST page — the one the user waits on.
+ *
+ * Time to first paint is bytes, not messages. Measured on a heavy session
+ * (essentia, 2026-08-24, a run with hundreds of image reads whose parts carried
+ * base64 — BEFORE the attachment bytes were stripped from the list):
+ *
+ *   message?limit=50   ->   8,228 kB   30.39 s
+ *   message?limit=50   ->  24,460 kB   48.76 s
+ *   message?limit=50   ->  20,284 kB   35.74 s
+ *   message?limit=50   ->  25,125 kB   29.23 s
+ *
+ * That was 165-500 kB PER MESSAGE, and it drove the first page down to 20.
+ * With the bytes gone (`stripInlineAttachmentBytes`, same session, same day)
+ * a message is ~2-7 kB: `limit=20` measured 132 kB, an older page of 50
+ * measured 345-420 kB. At that weight a small first page is a false economy —
+ * on a normal viewport 20 messages do not fill the screen, so the top sentinel
+ * pulled two more pages before the reader touched anything, and three round
+ * trips (each paying a CORS preflight, one measured at 3.34 s) replaced one.
+ *
+ * Fifty fills the view. Older pages go to a hundred: by then the reader is
+ * scrolling deliberately, a spinner is honest, and fewer round trips wins.
+ *
+ * NOTE this is not what fixed the blank transcript. That was structural:
+ * `hydrate` ran only after a multi-page backward walk, so NOTHING rendered at
+ * any page size — a smaller limit would have meant MORE sequential round trips
+ * before that single paint, and a longer blank. The walk is gone (see
+ * `loadTail`); this only makes the first paint lighter.
+ */
+export const SESSION_SYNC_TAIL_PAGE_SIZE = 50;
+
+/**
+ * How far back the tail read will walk to complete a turn before it stops and
+ * leaves the rest to "load older".
+ *
+ * The walk exists so an assistant message is not rendered above its own prompt.
+ * It had no ceiling, and a session whose last turn is thousands of messages —
+ * an agent run with hundreds of tool calls — therefore paged the WHOLE session
+ * 50 at a time, serially, through the sandbox proxy, before painting anything.
+ * The read returns 200 the entire time, which is why this looked like a bug in
+ * rendering rather than in loading.
+ *
+ * 10 pages = 500 messages, far past any honest turn, and the cursor survives so
+ * nothing becomes unreachable.
+ */
+export const MAX_TURN_BACKFILL_PAGES = 10;
 
 export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
 
@@ -51,7 +105,22 @@ export interface SessionSyncScheduler {
 }
 
 export type SessionSyncReason =
-  'initial' | 'poll' | 'sse-gap' | 'compaction' | 'session-error' | 'send-recovery' | 'manual';
+  | 'initial'
+  | 'poll'
+  | 'sse-gap'
+  | 'compaction'
+  | 'session-error'
+  | 'send-recovery'
+  /** The turn ended. The last read of a busy session, and the one that catches
+   *  a final answer whose closing frames the stream never delivered. */
+  | 'turn-end'
+  /** The tab became visible again. A backgrounded tab is throttled, not
+   *  notified, so return is a moment to re-read rather than to assume. */
+  | 'visible'
+  /** The transcript was evicted while detached and the live stream refilled it
+   *  from the middle — see `transcriptIsFragment`. */
+  | 'eviction'
+  | 'manual';
 
 export interface SessionSyncTelemetryEvent {
   operation: 'tail' | 'older';
@@ -63,7 +132,17 @@ export interface SessionSyncTelemetryEvent {
 
 export interface SessionSyncControllerOptions {
   sessionId: string;
-  loadPage: (request: { limit: number; before?: string }) => Promise<SessionSyncPage>;
+  /**
+   * Read one bounded page. `signal` is the controller's own — aborted on
+   * `destroy()` (a scope reset destroys the controller), so a page loader that
+   * forwards it into `fetch` cancels a read the tab has navigated away from,
+   * and a superseded read can never hydrate the store. Passing it is optional;
+   * a loader that ignores it still works, it just cannot be cancelled.
+   */
+  loadPage: (
+    request: { limit: number; before?: string },
+    signal?: AbortSignal,
+  ) => Promise<SessionSyncPage>;
   /**
    * @deprecated Never called. The liveness poll no longer reads status: `GET
    * .../turn` is the status authority, and this controller's own `setBusy` is
@@ -85,6 +164,21 @@ export interface SessionSyncControllerOptions {
   onTelemetry?: (event: SessionSyncTelemetryEvent) => void;
   scheduler?: SessionSyncScheduler;
   livenessIntervalMs?: number;
+  /**
+   * Max age of the last tail read while the session is busy, whatever the
+   * stream delivers. Default 30s.
+   *
+   * The quiet-based poll trusts `noteActivity`: any transcript frame renews it.
+   * A DEGRADED stream — events lost at the source or the edge, connection
+   * alive, a trickle still arriving — therefore postponed the tail read
+   * indefinitely while the transcript diverged arbitrarily far from the
+   * runtime (prod, 2026-08-26: content minutes behind mid-run, repaired only
+   * by reload). Frames arriving proves the wire is up; it proves nothing about
+   * the frames that never arrived. This is the bound on how long that
+   * difference can go unchecked: one tail page per interval, and against a
+   * healthy stream the hydrate is a no-op.
+   */
+  verifyIntervalMs?: number;
 }
 
 export interface HttpSessionSyncControllerOptions extends Pick<
@@ -96,6 +190,7 @@ export interface HttpSessionSyncControllerOptions extends Pick<
   | 'onTelemetry'
   | 'scheduler'
   | 'livenessIntervalMs'
+  | 'verifyIntervalMs'
 > {
   baseUrl: string;
   getToken?: () => string | null | Promise<string | null>;
@@ -114,15 +209,24 @@ export function createHttpSessionSyncPageLoader(
 ): SessionSyncControllerOptions['loadPage'] {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
   const baseUrl = options.baseUrl.replace(/\/$/, '');
-  return async ({ limit, before }) => {
+  return async ({ limit, before }, signal) => {
     const query = new URLSearchParams({ limit: String(limit) });
     if (before) query.set('before', before);
     const token = await options.getToken?.();
     const response = await fetchImpl(
       `${baseUrl}/session/${encodeURIComponent(options.sessionId)}/message?${query}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        ...(signal ? { signal } : {}),
+      },
     );
     if (!response.ok) {
+      // A 503 from the sandbox proxy is the box waking, not a failure — throw
+      // the retryable, "loading" error so the controller keeps polling instead
+      // of painting an error state over a session that is about to load.
+      if (response.status === 503) {
+        throw new SandboxNotReadyError(`session ${response.status}`);
+      }
       throw new Error(`Session synchronization failed: ${response.status}`);
     }
     return {
@@ -215,6 +319,12 @@ export class SessionSyncController {
   private readonly options: SessionSyncControllerOptions;
   private readonly scheduler: SessionSyncScheduler;
   private readonly livenessIntervalMs: number;
+  private readonly verifyIntervalMs: number;
+  /** When the last tail read was ISSUED — see `verifyIntervalMs`. */
+  private lastTailReadAt: number;
+  /** Consecutive failed tail reads, for the retry backoff. Reset by success. */
+  private retryAttempt = 0;
+  private tailRetryTimer: unknown;
   private snapshot: SessionSyncSnapshot = {
     freshness: 'idle',
     hasOlder: false,
@@ -229,12 +339,21 @@ export class SessionSyncController {
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
+  /**
+   * One controller-lifetime signal, threaded into every read. A scope reset
+   * (registry `resetSessionSyncControllersForSession`) or unmount destroys this
+   * controller, `destroy()` aborts this, and the in-flight read cancels — so a
+   * navigated-away or superseded read frees its socket and can never hydrate.
+   */
+  private readonly abortController = new AbortController();
 
   constructor(options: SessionSyncControllerOptions) {
     this.options = options;
     this.scheduler = options.scheduler ?? defaultScheduler;
     this.livenessIntervalMs = options.livenessIntervalMs ?? 10_000;
+    this.verifyIntervalMs = options.verifyIntervalMs ?? 30_000;
     this.lastActivityAt = this.scheduler.now();
+    this.lastTailReadAt = this.scheduler.now();
   }
 
   getSnapshot = (): SessionSyncSnapshot => this.snapshot;
@@ -252,8 +371,14 @@ export class SessionSyncController {
   reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
     if (this.destroyed) return Promise.resolve();
     if (this.tailRequest) return this.tailRequest;
+    // `loading` covers the first read AND a not-ready retry, so a waking box
+    // does not flip to `stale` between attempts; a session that already has a
+    // fresh transcript revalidates as `stale`.
     this.update({
-      freshness: this.snapshot.freshness === 'idle' ? 'loading' : 'stale',
+      freshness:
+        this.snapshot.freshness === 'idle' || this.snapshot.freshness === 'loading'
+          ? 'loading'
+          : 'stale',
     });
     this.tailRequest = this.loadTail(reason).finally(() => {
       this.tailRequest = undefined;
@@ -298,7 +423,20 @@ export class SessionSyncController {
    */
   setBusy(isBusy: boolean): void {
     if (!isBusy) {
+      // The turn is over — and that is exactly when the transcript is most
+      // likely to be short. A stream that dropped its last frames leaves the
+      // browser holding a truncated answer while the runtime holds the whole
+      // one, and stopping the poll here used to make that state PERMANENT:
+      // nothing read the tail again until the session was reopened. Reported
+      // from a live self-host (2026-08-24): an 8m13s turn finished in the
+      // runtime's own terminal while the tab still showed a spinner under a
+      // half-written answer.
+      //
+      // One bounded read, only for a session that was actually busy, so an
+      // idle session churns nothing.
+      const wasBusy = this.livenessTimer !== undefined;
       this.stopLivenessTimer();
+      if (wasBusy && !this.destroyed) void this.reconcile('turn-end');
       return;
     }
     if (this.livenessTimer !== undefined) return;
@@ -310,15 +448,51 @@ export class SessionSyncController {
   }
 
   destroy(): void {
+    // `destroyed` FIRST: `stopLivenessTimer` is also reached through
+    // `setBusy(false)`, which now fires a turn-end read, and a controller being
+    // torn down must not start a request it can never hydrate.
     this.destroyed = true;
     this.stopLivenessTimer();
+    if (this.tailRetryTimer !== undefined) {
+      this.cancelTimer(this.tailRetryTimer);
+      this.tailRetryTimer = undefined;
+    }
+    // Cancel any in-flight read so it frees its socket and cannot hydrate a
+    // controller that is being torn down.
+    this.abortController.abort();
     this.listeners.clear();
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
+    // Stamped at ISSUE: any tail read — initial, poll, gap, visible — is a
+    // verification, so the busy-verification cadence counts from the last
+    // attempt rather than piling on top of reads other reasons already ran.
+    this.lastTailReadAt = this.scheduler.now();
     try {
-      const firstPage = await this.loadPage('tail', reason);
-      const page = await this.loadCompleteTurn(firstPage, 'tail', reason);
+      // ONE PAGE. Render it. This is what OpenCode's own client does, and the
+      // reason we now do it too is measured:
+      //
+      //   message?limit=50            200   8,228 kB   30.39 s
+      //   message?limit=50            200  24,460 kB   48.76 s
+      //   message?limit=50&before=..  200  20,284 kB   35.74 s
+      //   message?limit=50&before=..  200  25,125 kB   29.23 s
+      //   -> 78,097 kB transferred, finish 3.8 min, NOTHING on screen
+      //
+      // (essentia, 2026-08-24, a run with hundreds of image reads: fifty
+      // messages weigh 8-25 MB because the parts carry the image bytes.)
+      //
+      // There used to be a backward WALK here that kept fetching pages until
+      // every assistant message had its parent user message in hand, so an
+      // assistant reply could never render above its own prompt — and `hydrate`
+      // ran only after the walk finished. On a long turn that walk is the whole
+      // session, serially, through the sandbox proxy, with an empty thread the
+      // entire time. A cosmetic guarantee at the top edge of the window is not
+      // worth minutes of blank screen.
+      //
+      // The window may therefore start on an assistant message whose prompt is
+      // one page up. That is exactly what OpenCode shows, and `loadOlder` —
+      // which the user drives — still completes the turn when they scroll.
+      const page = await this.loadPage('tail', reason);
       if (this.destroyed) return;
       this.rememberUserMessages(page.messages);
       this.options.hydrate(page.messages);
@@ -326,13 +500,57 @@ export class SessionSyncController {
         this.setCursor(page.nextCursor);
       }
       this.update({ freshness: 'fresh' });
-    } catch {
-      if (!this.destroyed) {
-        this.update({ freshness: 'error' });
-      }
-    } finally {
-      if (!this.destroyed) this.options.markLoaded();
+      // SUCCESS ONLY. `markLoaded` used to sit in a `finally`, so a read that
+      // FAILED still told the store this session was loaded — and the store's
+      // implementation of that plants an empty message list. A first read that
+      // lost to a waking box, a 503 from the proxy, or a flapping probe was
+      // therefore RECORDED as "this session has no messages", and the UI
+      // painted an empty conversation over a session that had plenty. Nothing
+      // came back for it either: the mount had already run, and the liveness
+      // poll only turns on while a session is working.
+      //
+      // A successful read of zero messages still marks loaded — that is a fact
+      // about the session. A failed read is not a fact about anything.
+      this.options.markLoaded();
+      this.retryAttempt = 0;
+    } catch (error) {
+      if (this.destroyed) return;
+      // A superseded/cancelled read is not a failure and never hydrates — it
+      // must not paint an error over a live transcript, and it must not retry.
+      if (isAbortError(error) || this.abortController.signal.aborted) return;
+      // A sandbox that is still waking is a RETRYABLE, "loading" state, not a
+      // fault: the box may come up any second, so keep polling and keep the UI
+      // on its loader. Only a genuine failure earns `error`. NEVER an
+      // empty-`fresh` — `markLoaded` above ran only on success, so a failed
+      // read never records the session as an empty transcript.
+      this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
+      this.scheduleTailRetry(reason);
     }
+  }
+
+  /**
+   * Come back for a read that lost.
+   *
+   * Without this a session got exactly ONE chance to load, and whether it took
+   * it depended on a race with the sandbox's boot. Losing that race left the
+   * page on "Waking the agent" with no exit but the health probe — the least
+   * reliable signal in the system — or a manual reload.
+   *
+   * Backoff so a genuinely dead box costs little, capped so a box that comes
+   * back is picked up promptly.
+   */
+  private scheduleTailRetry(reason: SessionSyncReason): void {
+    if (this.destroyed || this.tailRetryTimer !== undefined) return;
+    const delay = Math.min(
+      TAIL_RETRY_BASE_MS * 2 ** this.retryAttempt,
+      TAIL_RETRY_MAX_MS,
+    );
+    this.retryAttempt += 1;
+    this.tailRetryTimer = this.startTimer(() => {
+      this.tailRetryTimer = undefined;
+      if (this.destroyed) return;
+      void this.reconcile(reason);
+    }, delay);
   }
 
   private async loadPage(
@@ -342,10 +560,15 @@ export class SessionSyncController {
   ): Promise<SessionSyncPage> {
     const startedAt = this.scheduler.now();
     try {
-      const page = await this.options.loadPage({
-        limit: SESSION_SYNC_PAGE_SIZE,
-        ...(before ? { before } : {}),
-      });
+      const page = await this.options.loadPage(
+        {
+          // The tail is what someone is waiting for; an older page is what they
+          // asked for. Different budgets — see SESSION_SYNC_TAIL_PAGE_SIZE.
+          limit: operation === 'tail' ? SESSION_SYNC_TAIL_PAGE_SIZE : SESSION_SYNC_PAGE_SIZE,
+          ...(before ? { before } : {}),
+        },
+        this.abortController.signal,
+      );
       this.options.onTelemetry?.({
         operation,
         reason,
@@ -368,7 +591,30 @@ export class SessionSyncController {
 
   private async loadCompleteOlderTurn(before: string): Promise<SessionSyncPage> {
     const firstPage = await this.loadPage('older', 'manual', before);
-    return this.loadCompleteTurn(firstPage, 'older', 'manual', before);
+    // Commit each page as it lands, including the page that fails. The walk
+    // is up to 11 sequential reads (MAX_TURN_BACKFILL_PAGES + 1) and used to
+    // commit all of them in one `.then`, so a rejection on ANY page —
+    // including the loop's very first, right after `firstPage` — discarded
+    // every successful read and left `nextCursor` unmoved: nothing to resume
+    // from, so the retry replayed the identical walk. `onPage` existed for
+    // exactly this and was never passed.
+    return this.loadCompleteTurn(firstPage, 'older', 'manual', before, (partialPage) => {
+      // `rememberUserMessages` mutates the instance-level `knownUserMessageIds`
+      // Set (below), and `onPage` fires on a rejection too (the catch in
+      // `loadCompleteTurn`, right before it rethrows). So a walk that fails
+      // partway permanently records the user-message ids from every page read
+      // so far. On the retry, `loadCompleteTurn` seeds its local
+      // `knownUserMessageIds` from this now-larger instance Set, which can
+      // already satisfy the termination condition ("some assistant has a
+      // `parentID` not in `knownUserMessageIds`") from `firstPage` alone — the
+      // retry's `while` loop never runs, and `nextCursor` advances by one page
+      // instead of walking the rest of the turn. Accepted: the pages already
+      // landed in the store on the failed attempt via this same callback,
+      // which is the fix this method exists for.
+      this.rememberUserMessages(partialPage.messages);
+      this.options.hydrate(partialPage.messages);
+      this.setCursor(partialPage.nextCursor);
+    });
   }
 
   private async loadCompleteTurn(
@@ -376,11 +622,13 @@ export class SessionSyncController {
     operation: 'tail' | 'older',
     reason: SessionSyncReason,
     initialCursor?: string,
+    onPage?: (pageSoFar: SessionSyncPage) => void,
   ): Promise<SessionSyncPage> {
     const messages = [...firstPage.messages];
     const knownUserMessageIds = new Set(this.knownUserMessageIds);
     const seenCursors = new Set(initialCursor ? [initialCursor] : []);
     let cursor = firstPage.nextCursor;
+    let pagesRead = 0;
 
     for (const message of firstPage.messages) {
       if (message.info.role === 'user') {
@@ -390,6 +638,9 @@ export class SessionSyncController {
 
     while (
       cursor &&
+      // BOUNDED. Without a ceiling a turn of a few thousand messages paged the
+      // whole session before anything rendered — see MAX_TURN_BACKFILL_PAGES.
+      pagesRead < MAX_TURN_BACKFILL_PAGES &&
       messages.some(
         (message) =>
           message.info.role === 'assistant' &&
@@ -401,7 +652,19 @@ export class SessionSyncController {
         throw new Error(`Session history cursor repeated: ${cursor}`);
       }
       seenCursors.add(cursor);
-      const page = await this.loadPage(operation, reason, cursor);
+      let page: SessionSyncPage;
+      try {
+        page = await this.loadPage(operation, reason, cursor);
+      } catch (error) {
+        // `messages` already holds every page read so far — firstPage
+        // (seeded before the loop) plus every completed iteration. Commit it
+        // before rethrowing so a rejection on THIS read (including the
+        // loop's very first) cannot drop what was already read.
+        onPage?.({ messages: [...messages], nextCursor: cursor });
+        throw error;
+      }
+      if (this.destroyed) return { messages, nextCursor: cursor };
+      pagesRead += 1;
       messages.unshift(...page.messages);
       for (const message of page.messages) {
         if (message.info.role === 'user') {
@@ -410,6 +673,9 @@ export class SessionSyncController {
       }
 
       cursor = page.nextCursor;
+      // Repaint as each page lands, so a long turn fills in front of the user
+      // instead of withholding everything until the walk ends.
+      onPage?.({ messages: [...messages], nextCursor: cursor });
     }
 
     return { messages, nextCursor: cursor };
@@ -424,9 +690,15 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.scheduler.now() - this.lastActivityAt <= this.livenessIntervalMs) {
-      return;
-    }
+    if (this.destroyed) return;
+    const nowMs = this.scheduler.now();
+    const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
+    // `noteActivity` proves frames are ARRIVING, not that none were lost. A
+    // degraded stream that still delivers a trickle renewed the quiet timer
+    // forever while the transcript diverged — so a busy session re-reads the
+    // tail at `verifyIntervalMs` no matter how live the stream looks.
+    const verifyDue = nowMs - this.lastTailReadAt >= this.verifyIntervalMs;
+    if (!quiet && !verifyDue) return;
     // Reconcile the TAIL, and nothing else. This is the repair for a dropped
     // SSE stream: the transcript catches up on messages the stream never
     // delivered.

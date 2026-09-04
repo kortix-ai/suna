@@ -1,0 +1,137 @@
+---
+title: Sign in with Kortix
+description: Gate your own app behind Kortix identity with one route, and act as the signed-in user through the SDK.
+---
+
+"Sign in with Kortix" makes Kortix the identity provider for an app you run:
+a dashboard, an internal tool, a vertical product built on Kortix. Your users
+sign in with their Kortix account, your server knows who they are, and every
+Kortix call your app makes runs as that user with that user's role
+assignments. The whole flow lives in `@kortix/sdk`. Your app never stores a
+Kortix token in the browser and never talks to Supabase.
+
+It is standard OAuth 2.1 (authorization code + PKCE) served by the Kortix API,
+so it works the same against `api.kortix.com` and against a self-hosted
+instance.
+
+<Callout>
+  Building an App **hosted by Kortix** (`*.apps.kortix.com`)? You need none of
+  this. The Apps gate already authenticated the viewer — read them with
+  `kortixAppViewerToken()` / `readAppViewer()`. See
+  [Apps → Your App already knows who is looking](/docs/sdk/apps).
+</Callout>
+
+## 1. Register your app
+
+Go to **Account → Tokens → OAuth apps → Register app**, or call the SDK:
+
+```ts
+const app = await kortix.iam.oauthClients.create(accountId, {
+  name: 'Dashboards',
+  client_type: 'confidential',            // 'public' for a browser/native app (PKCE only, no secret)
+  redirect_uris: ['https://dashboards.example.com/api/kortix/auth/callback'],
+  scopes: ['profile', 'email', 'kortix'],
+});
+// app.client_id, app.client_secret (shown once)
+```
+
+Registration needs `token.create` on the account. Redirect URIs are compared
+byte for byte; `https` is required except on `localhost`.
+
+| Scope | Grants the app |
+|---|---|
+| `profile` | The user's id, email and account memberships (`GET /v1/accounts/me`). |
+| `email` | The email address (an alias for OIDC-shaped clients). |
+| `kortix` | Acting as the user on the whole Kortix API — projects, sessions, files, IAM probes. Without it the token is identity-only. |
+
+## 2. Mount the handler
+
+```ts
+// lib/kortix-auth.ts
+import { createKortixAuth } from '@kortix/sdk/server';
+
+export const auth = createKortixAuth({
+  backendUrl: 'https://api.kortix.com/v1',
+  clientId: process.env.KORTIX_OAUTH_CLIENT_ID!,
+  clientSecret: process.env.KORTIX_OAUTH_CLIENT_SECRET,   // omit for a public client
+  redirectUri: 'https://dashboards.example.com/api/kortix/auth/callback',
+  cookieSecret: process.env.KORTIX_AUTH_COOKIE_SECRET!,   // ≥ 32 chars; encrypts the session cookie
+});
+```
+
+```ts
+// app/api/kortix/auth/[...kortix]/route.ts  (Next.js App Router)
+import { auth } from '@/lib/kortix-auth';
+const handle = (request: Request) => auth.handler(request);
+export { handle as GET, handle as POST };
+```
+
+The handler serves every route under `basePath` (derived from the redirect
+URI — `/api/kortix/auth` above):
+
+| Path | Does |
+|---|---|
+| `/signin?return_to=/path` | Starts sign-in (PKCE S256 + state in a 10-minute cookie) and redirects to Kortix. |
+| `/callback` | Exchanges the code, sets the encrypted `HttpOnly` session cookie, redirects to `return_to`. |
+| `/refresh?return_to=` | Rotates the token pair and redirects. Used by `requireViewer`. |
+| `/signout?return_to=` | Revokes the refresh token at Kortix and clears the cookie. |
+| `/me` | The viewer as JSON, or `401`. Refreshes inline when the access token expired. |
+| `/proxy/*` | Forwards to the Kortix API as the viewer. The browser SDK's `backendUrl`. |
+
+`return_to` is always confined to a same-origin path.
+
+## 3. Gate pages and act as the user
+
+```ts
+// middleware.ts — every page needs a viewer
+import { auth } from '@/lib/kortix-auth';
+
+export async function middleware(request: Request) {
+  const gate = await auth.requireViewer(request);
+  if (gate.response) return gate.response;   // 302 → /refresh or /signin
+}
+export const config = { matcher: ['/((?!api/kortix/auth|_next).*)'] };
+```
+
+```ts
+// a server component / route handler
+const viewer = await auth.viewer(request);       // { userId, email, accounts, scopes, token, expiresAt } | null
+const kortix = await auth.kortix(request);       // request-scoped client acting as the viewer
+const projects = await kortix.projects.list();
+const allowed = await kortix.iam.can(accountId, viewer!.userId, { action: 'project.write', resourceType: 'project', resourceId });
+```
+
+`viewer()` is read-only and never consumes the single-use refresh token; use
+`requireViewer()` in middleware so a page never renders signed-out for a user
+whose refresh token is still good.
+
+## 4. The browser
+
+```tsx
+import { createKortix } from '@kortix/sdk';
+import { SignInWithKortix, useKortixViewer } from '@kortix/sdk/react';
+
+const kortix = createKortix(auth.clientConfig());   // backendUrl = '/api/kortix/auth/proxy'
+
+function Header() {
+  const { status, viewer } = useKortixViewer();
+  if (status === 'signed-in') return <span>{viewer.email}</span>;
+  return <SignInWithKortix className="button" />;
+}
+```
+
+The browser client sends a sentinel bearer; `/proxy` swaps it for the viewer's
+real token on the server. `useSession`, `kortix.project(id).sessions.*` and
+every other SDK call work unchanged through it.
+
+## What the user sees
+
+The first time, Kortix shows a consent screen naming your app and the scopes.
+Kortix remembers the decision per user and app, so later sign-ins redirect
+straight back. Revoking an app deletes every token it minted.
+
+## Discovery
+
+`GET https://api.kortix.com/.well-known/oauth-authorization-server` (also
+under `/v1/oauth/.well-known/…`) publishes the endpoints for a generic OAuth
+client. The SDK does not need it — it derives every endpoint from `backendUrl`.

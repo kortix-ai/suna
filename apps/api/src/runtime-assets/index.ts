@@ -19,7 +19,7 @@
  * AUTH — `combinedAuth`, mounted in index.ts, exactly like /v1/skills and for
  * exactly the same reason: the callers that matter are a CLI holding a
  * `kortix_pat_` and an in-sandbox daemon holding the platform-injected
- * `KORTIX_CLI_TOKEN` session PAT. Content is identical for every caller — this
+ * `KORTIX_TOKEN` session PAT. Content is identical for every caller — this
  * is authentication, not authorization. The CLI binary is not a secret (it is
  * published on every release), but it is not an anonymous 100 MB download
  * either.
@@ -52,6 +52,7 @@ import {
   runtimeAgentBinaryPath,
   runtimeAssetsManifest,
   runtimeCliBinaryPath,
+  runtimeEntrypointPath,
 } from './manifest';
 
 // Re-exported so server startup can warm the digest memo off the request path
@@ -82,6 +83,7 @@ const ManifestSchema = z
     components: z.object({
       agent: BinaryComponentSchema.optional(),
       cli: BinaryComponentSchema.optional(),
+      entrypoint: BinaryComponentSchema.optional(),
       opencode: z.object({ version: z.string(), source: z.literal('npm') }),
       'managed-skills': z.object({ hash: z.string(), count: z.number().int() }),
     }),
@@ -145,7 +147,7 @@ type BinaryContext = {
  */
 async function serveBinary(
   c: BinaryContext,
-  component: 'agent' | 'cli',
+  component: 'agent' | 'cli' | 'entrypoint',
   absentMessage: string,
   headerPrefix: string,
   binaryPath: () => string,
@@ -188,7 +190,17 @@ const serveAgent = (c: BinaryContext) =>
   );
 
 runtimeAssetsApp.on('HEAD', '/cli', (c) => serveCli(c as never));
+const serveEntrypoint = (c: BinaryContext) =>
+  serveBinary(
+    c,
+    'entrypoint',
+    'This deploy carries no sandbox entrypoint script',
+    'X-Kortix-Entrypoint',
+    runtimeEntrypointPath,
+  );
+
 runtimeAssetsApp.on('HEAD', '/agent', (c) => serveAgent(c as never));
+runtimeAssetsApp.on('HEAD', '/entrypoint', (c) => serveEntrypoint(c as never));
 
 runtimeAssetsApp.openapi(
   createRoute({
@@ -236,6 +248,30 @@ runtimeAssetsApp.openapi(
     },
   }),
   (c) => serveAgent(c as never) as never,
+);
+
+runtimeAssetsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/entrypoint',
+    tags: ['runtime-assets'],
+    summary: 'GET /runtime-assets/entrypoint — the supervising sandbox entrypoint script',
+    description:
+      'Streams apps/sandbox/entrypoint.sh from the API image. `ETag` is its sha256 (the manifest\'s ' +
+      '`components.entrypoint.sha256`). A converged box never needs this: its image already carries ' +
+      'the supervisor. The control plane installs it on a box whose daemon predates convergence ' +
+      '(no `runtime` block on /kortix/health) so that box can converge like every other one.',
+    ...auth,
+    responses: {
+      200: {
+        description: 'The sandbox entrypoint shell script',
+        content: { 'application/octet-stream': { schema: z.string() } },
+      },
+      304: { description: 'Not modified' },
+      ...errors(401, 404),
+    },
+  }),
+  (c) => serveEntrypoint(c as never) as never,
 );
 
 runtimeAssetsApp.openapi(

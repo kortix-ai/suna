@@ -218,6 +218,7 @@ interface SelfHostEnv {
   MANAGED_GIT_GITHUB_INSTALL_ID: string;
   CONNECTOR_AUTH_PROVIDER: string;
   KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: string;
+  COMPOSIO_API_KEY: string;
   PIPEDREAM_CLIENT_ID: string;
   PIPEDREAM_CLIENT_SECRET: string;
   PIPEDREAM_PROJECT_ID: string;
@@ -387,7 +388,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   // configureConnections()'s own doc comment): 1) reachability — the first
   // real decision, since it decides whether agent sessions can call back to
   // this API at all; 2) admin email; 3) deployment shape (Enterprise
-  // license); 4) sandbox provider + its key; 5) Pipedream (optional); 6) a
+  // license); 4) sandbox provider + its key; 5) Composio (optional); 6) a
   // compact update-policy block. Only walk through it on a genuinely
   // first-time init (no prior .env) — a refresh of an already-configured
   // instance shouldn't re-ask any of this every time `init` happens to run
@@ -649,6 +650,36 @@ function selfHostDoctor(flags: GlobalFlags): number {
           : targets.length
             ? `${targets.map((target) => target.kind).join(' → ')} (${redactUrl(raw.split(',')[0]!.trim())})`
             : 'no usable provider',
+      });
+    }
+  }
+  if (existsSync(envPath(flags.instance))) {
+    // Sandbox previews on a PUBLIC domain must have their own origins. Without
+    // KORTIX_PREVIEW_BASE_DOMAIN the API hands browsers the `/v1/p/{sandbox}/
+    // {port}/` path form, which is a correct transport for programmatic callers
+    // and a broken one for a browser: the app escapes the prefix the moment it
+    // emits anything root-absolute (`<a href="/learn">`, an XHR to `/api`,
+    // pushState, a service worker, `new WebSocket('/hmr')`). Nothing in the
+    // running stack fails when this is unset — previews just silently degrade,
+    // which is exactly how one instance served path previews for weeks before
+    // anyone noticed. So `doctor` is where it becomes loud and non-zero.
+    //
+    // Scoped to domain mode on purpose. A tunnel or laptop instance has no
+    // wildcard DNS and no certificate to put previews behind, and its client
+    // builds `p{port}-{sandbox}.localhost:{apiPort}` itself — the path form is
+    // the right answer there, not a misconfiguration.
+    const env = loadEnv(flags.instance);
+    if (env && reachabilityMode(env) === 'domain') {
+      const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+      const suggested = `p.${(env.KORTIX_DOMAIN ?? '').trim()}`;
+      checks.push({
+        name: 'preview-origins',
+        ok: Boolean(previewDomain),
+        detail: previewDomain
+          ? previewDomain
+          : `domain mode but KORTIX_PREVIEW_BASE_DOMAIN is empty — browsers get /v1/p/ path previews, which break root-absolute links. `
+            + `Point a *.${suggested} DNS record at this instance, then: `
+            + `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=${suggested} KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`,
       });
     }
   }
@@ -1216,6 +1247,19 @@ function selfHostStatus(flags: GlobalFlags): number {
   } else if (report.drift) {
     process.stdout.write(`\n  ${status.ok('no drift')}${C.dim} — running images match the rendered config${C.reset}\n`);
   }
+
+  // Preview origins, on the same screen as drift and the update outcome. An
+  // unset preview domain never makes anything fail — the path proxy answers 200
+  // — so the only way an operator learns about it is if a status screen they
+  // already read says so. `doctor` is the non-zero gate; this is the glance.
+  if (reachabilityMode(env) === 'domain') {
+    const previewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN?.trim() ?? '';
+    process.stdout.write(
+      previewDomain
+        ? `  ${status.ok('preview origins')}${C.dim} — *.${previewDomain}${C.reset}\n`
+        : `  ${status.err('preview origins NOT configured')}${C.dim} — browsers get /v1/p/ path previews, which break root-absolute links. Run \`kortix self-host doctor\`${C.reset}\n`,
+    );
+  }
   process.stdout.write('\n');
   return 0;
 }
@@ -1755,9 +1799,10 @@ type SandboxProviderChoice = (typeof SANDBOX_PROVIDER_CHOICES)[number];
  * The CLI's guided-connections step: the two things that genuinely cannot
  * be set any other way — the agent sandbox runtime (an env-only credential
  * the API reads at boot, no in-app settings surface exists for it) and
- * Pipedream's OPERATOR-level OAuth app credentials (also env-only — the
+ * Composio's operator-level API key (also env-only — the
  * database only ever holds each user's own per-connector bindings, never the
- * platform's Pipedream app itself). Everything else that used to live here —
+ * platform's Composio credential). Pipedream remains available through `env set`
+ * only as a rollback path. Everything else that used to live here —
  * GitHub/managed-git, the LLM key — is configured in the web dashboard after
  * `start` instead (GitHub at Settings → Git, the LLM key as BYOK via the
  * model picker). "The full flow needs to be perfect, all the other bullshit
@@ -1828,49 +1873,60 @@ async function configureConnections(env: SelfHostEnv, flags: GlobalFlags): Promi
     }
   }
 
-  // Sandbox preview origins (optional, default skip): serves every sandbox port
-  // a browser can open on its OWN hostname,
-  // <env>-p<port>-<sandbox>.<preview base domain>. Without it previews use the
-  // path proxy (/v1/p/<sandbox>/<port>/), which works for tools but not for a
-  // browser: an app that emits <a href="/learn">, an XHR to /api, pushState, a
-  // service worker or a WebSocket resolves those against the API origin and
-  // escapes the prefix. Same mechanics as Apps above — a *.<domain> DNS record
-  // plus per-hostname on-demand certificates, no wildcard certificate needed.
+  // Sandbox preview origins: serves every sandbox port a browser can open on
+  // its OWN hostname, <env>-p<port>-<sandbox>.<preview base domain>. Without it
+  // previews use the path proxy (/v1/p/<sandbox>/<port>/), which works for
+  // tools but not for a browser: an app that emits <a href="/learn">, an XHR to
+  // /api, pushState, a service worker or a WebSocket resolves those against the
+  // API origin and escapes the prefix. Same mechanics as Apps above — a
+  // *.<domain> DNS record plus per-hostname on-demand certificates, no wildcard
+  // certificate needed.
+  //
+  // On a PUBLIC domain this defaults to "configure", not "skip": the path form
+  // is a silent downgrade — everything keeps answering 200, so nobody discovers
+  // it until a user reports a preview that lost its stylesheet. `doctor` fails
+  // on the same condition (see selfHostDoctor). The default VALUE is only
+  // suggested, never assumed: an operator who has not pointed *.p.<domain> at
+  // this box must be able to say so, because advertising an origin with no DNS
+  // is worse than the path form, which always works. On a tunnel/laptop
+  // instance the prompt keeps defaulting to skip — there is no wildcard DNS to
+  // put previews behind and the client builds *.localhost origins itself.
   if (shouldPrompt(flags)) {
+    const domainMode = reachabilityMode(env) === 'domain';
+    const suggestedPreviewDomain = env.KORTIX_PREVIEW_BASE_DOMAIN
+      || (domainMode ? `p.${(env.KORTIX_DOMAIN ?? '').trim()}` : '');
     const previewMode = await selectFrom(
-      'Sandbox preview origins (optional, makes browser previews of sandbox ports work like a real site): configure/skip',
-      ['skip', 'configure'] as const,
-      env.KORTIX_PREVIEW_BASE_DOMAIN ? 'configure' : 'skip',
+      domainMode
+        ? 'Sandbox preview origins (STRONGLY recommended — without them browser previews break root-absolute links): configure/skip'
+        : 'Sandbox preview origins (makes browser previews of sandbox ports work like a real site): configure/skip',
+      ['configure', 'skip'] as const,
+      env.KORTIX_PREVIEW_BASE_DOMAIN || domainMode ? 'configure' : 'skip',
     );
     if (previewMode === 'configure') {
       env.KORTIX_PREVIEW_BASE_DOMAIN = await prompt(
         'Preview base domain (needs a *.<domain> DNS record pointing at this instance; Caddy issues per-preview certificates on demand)',
-        env.KORTIX_PREVIEW_BASE_DOMAIN,
+        suggestedPreviewDomain,
       );
       env.KORTIX_PREVIEW_ALLOW_DIRECT_EDGE = 'true';
     }
   }
 
-  // Pipedream (optional, default skip): the ONE other env-only credential
-  // that belongs here — the platform-level OAuth app Pipedream issues per
-  // operator, not a per-user connection (those live in the DB and are
-  // configured per-project in the app). Never gates init/start either way;
+  // Composio (optional, default skip): the env-only connector credential.
+  // Per-user connections live in the DB and are configured per-project.
+  // Never gates init/start either way;
   // KORTIX_PUBLIC_CONNECTORS_ENABLED is re-derived from whatever ends up set
-  // here on every write (see normalizeFullSupabaseEnv), so skipping just
+  // here on every write (see normalizeFullSupabaseEnv), so skipping
   // leaves connectors hidden in the frontend rather than half-configured.
+  // Legacy Pipedream keys remain available through `env set` for rollback.
   if (shouldPrompt(flags)) {
-    const pdMode = await selectFrom(
-      'Pipedream connectors (optional, powers the 3,000+ app catalog): configure/skip',
+    const composioMode = await selectFrom(
+      'Composio connectors (optional, powers the app catalog): configure/skip',
       ['skip', 'configure'] as const,
-      pipedreamConfigured(env) ? 'configure' : 'skip',
+      connectorAuthConfigured(env) ? 'configure' : 'skip',
     );
-    if (pdMode === 'configure') {
-      env.CONNECTOR_AUTH_PROVIDER = 'pipedream';
-      env.PIPEDREAM_CLIENT_ID = await prompt('Pipedream client ID', env.PIPEDREAM_CLIENT_ID);
-      env.PIPEDREAM_CLIENT_SECRET = await promptSecret('Pipedream client secret', env.PIPEDREAM_CLIENT_SECRET);
-      env.PIPEDREAM_PROJECT_ID = await prompt('Pipedream project ID', env.PIPEDREAM_PROJECT_ID);
-      env.PIPEDREAM_ENVIRONMENT = await selectFrom('Pipedream environment', ['development', 'production'] as const, env.PIPEDREAM_ENVIRONMENT === 'development' ? 'development' : 'production');
-      env.PIPEDREAM_WEBHOOK_SECRET = await promptSecret('Pipedream webhook secret (optional)', env.PIPEDREAM_WEBHOOK_SECRET);
+    if (composioMode === 'configure') {
+      env.CONNECTOR_AUTH_PROVIDER = 'composio';
+      env.COMPOSIO_API_KEY = await promptSecret('Composio API key', env.COMPOSIO_API_KEY);
     }
   }
 
@@ -1893,7 +1949,11 @@ async function promptSecret(label: string, current: string): Promise<string> {
 }
 
 function pipedreamConfigured(env: SelfHostEnv): boolean {
-  return !!(env.PIPEDREAM_CLIENT_ID || env.PIPEDREAM_CLIENT_SECRET || env.PIPEDREAM_PROJECT_ID);
+  return !!(env.PIPEDREAM_CLIENT_ID && env.PIPEDREAM_CLIENT_SECRET && env.PIPEDREAM_PROJECT_ID);
+}
+
+function connectorAuthConfigured(env: SelfHostEnv): boolean {
+  return !!env.COMPOSIO_API_KEY || pipedreamConfigured(env);
 }
 
 /**
@@ -2393,8 +2453,9 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
     // for a missing edge signature.
     KORTIX_PREVIEW_BASE_DOMAIN: '',
     KORTIX_PREVIEW_ALLOW_DIRECT_EDGE: '',
-    CONNECTOR_AUTH_PROVIDER: 'pipedream',
+    CONNECTOR_AUTH_PROVIDER: 'composio',
     KORTIX_SELF_HOST_CONNECTIONS_REVIEWED: 'false',
+    COMPOSIO_API_KEY: '',
     PIPEDREAM_CLIENT_ID: '',
     PIPEDREAM_CLIENT_SECRET: '',
     PIPEDREAM_PROJECT_ID: '',
@@ -2465,13 +2526,10 @@ function normalizeFullSupabaseEnv(instance: string, env: SelfHostEnv): void {
   env.POSTGRES_DB = 'postgres';
   env.SUPABASE_POSTGRES_INTERNAL_PORT = '5432';
 
-  // Frontend "Connect your tools" / connector-catalogue UI mirrors whether
-  // Pipedream is FULLY configured — same three fields
-  // apps/api/src/connectors/pipedream.ts's own pipedreamConfigured() requires.
-  // Recomputed on every write (not just when the now-removed guided-init
-  // Pipedream question used to run) so setting/clearing PIPEDREAM_CLIENT_ID
-  // et al. via `env set` directly keeps this in sync too.
-  env.KORTIX_PUBLIC_CONNECTORS_ENABLED = pipedreamConfigured(env) ? 'true' : 'false';
+  // Frontend connector UI mirrors configured Composio auth. Complete legacy
+  // Pipedream credentials remain accepted for rollback. Recompute on every
+  // write so `env set` changes stay synchronized.
+  env.KORTIX_PUBLIC_CONNECTORS_ENABLED = connectorAuthConfigured(env) ? 'true' : 'false';
 
   // Public domain + TLS (opt-in): when KORTIX_DOMAIN is set, the bundled Caddy
   // service fronts the stack on 80/443 and every public URL becomes the real

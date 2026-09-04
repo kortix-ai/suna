@@ -65,7 +65,7 @@ OpenCode's `HOME` is `/opt/kortix/home`, not `/workspace`. Its object store neve
 
 ## Injected environment
 
-Kortix injects these variables at boot, alongside your project's [secrets](/docs/project/secrets). A secret arrives as an environment variable holding the real value (environment exposure, the default) or, when the experimental `secrets_egress` flag is on, a handle (egress-enforced exposure).
+Kortix injects these variables at boot. Only a project secret explicitly configured for `runtime` delivery enters the sandbox. Connector and model-provider credentials stay on the Kortix server.
 
 | Variable | What |
 | --- | --- |
@@ -79,47 +79,48 @@ Kortix injects these variables at boot, alongside your project's [secrets](/docs
 | `KORTIX_API_URL` | The platform API base (`.../v1`). |
 | `KORTIX_AGENT_NAME` | The agent the session was created with. |
 | `KORTIX_OPENCODE_MODEL` | The model to run, when set. |
-| `KORTIX_INITIAL_PROMPT` | The first prompt, when a trigger spawned the session. |
 | `KORTIX_PROJECT_AUTO_CLONE` | `1` — tells the daemon to clone the repo on boot. |
 | `KORTIX_PROJECT_SECRET_NAMES` | Comma-separated names of the project's secrets. |
 | `KORTIX_PROJECT_SECRETS_REVISION` | Revision marker for the secret set. |
 | `KORTIX_BOOTSTRAP_OPENCODE_SESSION` | `1` — always set. Tells the daemon to create the OpenCode root on cold boot. |
-| `KORTIX_LLM_API_KEY`, `KORTIX_LLM_BASE_URL` | Managed LLM-gateway key and base URL. Injected only on plans that use Kortix's managed model access. |
-| `KORTIX_SANDBOX_TOKEN`, `KORTIX_TOKEN`, `KORTIX_CLI_TOKEN` | The token family. See below. |
+| `KORTIX_LLM_BASE_URL` | Kortix LLM-gateway base URL. The gateway resolves provider credentials server-side. |
+| `KORTIX_TOKEN` | The session-bound Kortix credential. See below. |
 
 Kortix does not inject `KORTIX_WORKSPACE`. The image bakes in `/workspace` and no per-session step sets it. Kortix does not inject a git token either — the daemon fetches a short-lived clone credential when it needs one; see [Pushing from a session](#pushing-from-a-session) below. Kortix rejects a user secret named with the `KORTIX_*` prefix, because it reserves that prefix for platform variables.
 
-## Token families
+## Session credential
 
-Kortix has two token vocabularies: external tokens you create yourself, and env vars Kortix injects inside a sandbox. This is the canonical reference for both.
+Kortix has external tokens you create yourself and one credential inside each sandbox.
 
 ### External tokens
 
 A personal access token (PAT, prefixed `kortix_pat_`) or a service account (prefixed `kortix_sa_`) authenticates calls to the Kortix API, the SDK, and the CLI from outside a sandbox. See [Authentication](/docs/sdk/auth) for PAT scope, service-account setup, and how to choose between them.
 
-### In-sandbox tokens
+### In-sandbox token
 
-Four tokens can appear in a sandbox. They carry two different identities.
+`KORTIX_TOKEN` is minted when Kortix starts the session environment. It is bound to the launching user, project, session, and agent grant. The daemon, CLI, Git credential helper, LLM gateway, and connector gateway use this same credential. Each API route still applies its own capability check.
 
-| Variable | Identity | Used for |
-| --- | --- | --- |
-| `KORTIX_SANDBOX_TOKEN` | The sandbox's own service key. | Signs the daemon's control-surface requests (the `X-Kortix-User-Context` header) and authenticates sandbox-identity routes: clone-credential, turn-stream, execution leases, turn-question. |
-| `KORTIX_TOKEN` | Back-compat alias for `KORTIX_SANDBOX_TOKEN`. | Same value, same use, kept for daemons built before the rename. Do not depend on it — a future release drops this alias and repurposes `KORTIX_TOKEN` to mean the session token instead. |
-| `KORTIX_CLI_TOKEN` | A project-scoped [personal access token](/docs/sdk/auth) (PAT). | Lets the in-sandbox `kortix` CLI act as the launching user, scoped to the project. |
-
-`KORTIX_SANDBOX_TOKEN` is not a project API token. The `kortix` CLI does not read it, and project-scoped API routes reject it. Use `KORTIX_CLI_TOKEN` for any call that should act as the launching user.
+The initial prompt and turn-ledger identifiers are not environment variables. The daemon claims them from the API with `KORTIX_TOKEN` after boot.
 
 ## Pushing from a session
 
-The daemon fetches a short-lived clone credential from `GET /v1/projects/:id/git/clone-credential`, authenticated with `KORTIX_SANDBOX_TOKEN`. No static git token sits in the environment. With that credential, `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/work/change-requests).
+The daemon sends `KORTIX_TOKEN` only to the Kortix Git proxy. The proxy resolves the upstream Git credential on the server. No upstream Git token enters the sandbox. `git push origin HEAD` sends commits to the session branch. Landing on the default branch requires a merged [change request](/docs/work/change-requests).
 
 ## The agent runtime
 
 The daemon launches OpenCode as `opencode serve --port 4096 --hostname 127.0.0.1`, with `OPENCODE_CONFIG_DIR` set to the project's config directory (default `.kortix/opencode`) inside the cloned repo. See [Agents](/docs/project/agents) for how a session picks an agent and its config.
 
+## Transcript attachments and memory
+
+OpenCode stores tool screenshots as base64 `data:` URLs inside its SQLite transcript. The daemon keeps that store small and the box alive:
+
+- **Attachment offload.** While no turn runs (every 5 minutes, at boot, and after a memory-guard event), attachment bytes older than the newest 12 per session — and every tool result OpenCode's compaction already cleared — move to `~/.local/share/kortix/attachments/<id>`. The row keeps a 1×1 PNG placeholder plus a `kortix.offloaded` marker; `/kortix/part` serves the real bytes to the UI. Models never receive those old images anyway (the LLM proxy keeps the newest 12 per request). Set `KORTIX_ATTACHMENT_OFFLOAD=0` to disable.
+- **Resource telemetry.** `[resources]` in the daemon log every 60 s and on every OpenCode state change: box memory, cgroup limit, load, disk, daemon and OpenCode RSS.
+- **Memory guard.** Above 80 % memory the daemon samples every 10 s; at 92 % (`KORTIX_MEMORY_GUARD_PCT`) with a turn in flight it aborts the turn cleanly and reports `SandboxMemoryGuard` with the numbers as the turn's error, instead of letting the kernel kill OpenCode mid-turn.
+
 ## The daemon control surface
 
-The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_SANDBOX_TOKEN`.
+The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_SERVICE_PORT` (`8000`). Every route outside `/kortix/*` requires the HMAC-signed `X-Kortix-User-Context` header, validated against `KORTIX_TOKEN`.
 
 | Path | Purpose |
 | --- | --- |
@@ -128,6 +129,9 @@ The `kortix-agent` binary runs as PID 1's child and fronts OpenCode on `KORTIX_S
 | `POST /kortix/abort` | Abort the current run. |
 | `POST /kortix/env` | Update the runtime environment. |
 | `/kortix/pty` | Backs the in-dashboard terminal. |
+| `GET /kortix/logs` | Tails the daemon's own log file (`/opt/kortix/logs/daemon.log`, rotated at 32 MiB) or OpenCode's. `?source=daemon\|opencode\|all`, `?tail=N` (default 500, max 5000). Plain text. Same auth as `/kortix/refresh`. |
+| `GET /kortix/part/:sessionID/:messageID/:partID` | Attachment bytes on demand — a top-level file part or a tool result's `state.attachments[]` entry. Bytes the daemon offloaded to a sidecar file are served from there. |
+| `GET /kortix/diag` | One JSON error report: OpenCode state/pid/port/port pair, boot timeline, a fresh resource snapshot (memory, cgroup limit, load, disk, RSS, duplicate opencode processes), the runtime-assets report, and the tail of both logs (`?tail=N`, default 200). Same auth as `/kortix/logs`. |
 | `/proxy/{port}/*` | Reverse-proxy to another port inside the sandbox. The daemon's own port is blocked. |
 | `*` | Catch-all reverse-proxy to OpenCode on `127.0.0.1:4096`. Returns `503` while OpenCode boots. |
 

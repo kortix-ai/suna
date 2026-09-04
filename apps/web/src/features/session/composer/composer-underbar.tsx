@@ -26,7 +26,7 @@ const EMPTY_AGENTS: Agent[] = [];
  * What you BRING to the message — files, agent — sits left; what it COSTS —
  * the context ring — sits hard right. Both moved out of `ComposerToolbar`
  * (which stays inside the card) on purpose: the card holds the message and
- * the controls that shape the reply (model, effort, voice, send), and these
+ * the controls that shape the reply (model, effort, send), and these
  * three are neither. They are also the two ends of one sentence, which is why
  * this is a single `justify-between` row and not two clusters.
  *
@@ -138,7 +138,7 @@ export function ComposerUnderbar({
             size="icon-base"
             onClick={onAttachClick}
             aria-label="Attach files"
-            // `hit-area-1` — the same extension the toolbar's send/voice
+            // `hit-area-1` — the same extension the toolbar's send
             // buttons carry. The visible chip stays 32px; the pressable box
             // grows to 40, on a mouse as well as on a finger.
             className="text-muted-foreground hit-area-1 rounded-lg"

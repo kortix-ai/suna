@@ -1,11 +1,27 @@
 'use client';
 
 /**
- * The plan, pinned beneath the user message that owns it (see plan-anchor.ts).
+ * The plan — its parts, and the chat's presentation of them.
  *
- * This is the ONLY surface session todos have: `session-chat.tsx` drops every
- * plan-write part before segmentation, so whatever this component declines to
- * draw is not drawn anywhere.
+ * `session-chat.tsx` drops every plan-write part before segmentation, so
+ * session todos are drawn ONLY by the two surfaces built here and in
+ * `action-panel/easy/plan-card.tsx`. Exactly one of them is live at a time:
+ *
+ *  - **The Easy panel, on every desktop width.** The plan is session state,
+ *    not a turn artifact: one live singleton on one query key. The panel is
+ *    where the session's other live singletons already are (Outputs, Context,
+ *    Preview), and it does not scroll away mid-run. Collapsing the column or
+ *    covering it with a detail panel hides the plan rather than moving it —
+ *    deliberately, so it is never in two places across a session.
+ *  - **The chat, here, on mobile only.** Under 768px there is no panel COLUMN
+ *    at all — the cards are a drawer, shut by default — so the transcript is
+ *    the only surface always on screen. `usePlanInChat` (`plan-surface.ts`)
+ *    makes the call once; `session-chat.tsx` nulls the anchor on desktop, so
+ *    `ownsPlan` is false for every turn and this card never mounts there.
+ *
+ * The two never render together, and they share their ring (`PlanRing`) and
+ * their step list (`PlanSteps`) rather than reimplementing either — so the
+ * plan looks the same wherever it is drawn.
  *
  * Data is live — the `todo.updated` SSE event writes into the same query cache
  * `useRuntimeSessionTodo` reads, so the card tracks the agent in real time.
@@ -201,7 +217,7 @@ const RING_TONE = {
  * the glyph answers "roughly how far?" at a glance and "exactly how far?" on a
  * second look — at 18px, where a single encoding would have to pick one.
  */
-function PlanRing({
+export function PlanRing({
   done,
   total,
   running,
@@ -400,7 +416,7 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
     <Disclosure
       open={open}
       onOpenChange={setOpen}
-      className="group/plan select-none w-full"
+      className="group/plan w-full select-none"
       variant="outline"
       // bounce 0 — a plan opening is a disclosure, not a toy.
       transition={{ type: 'spring', duration: 0.3, bounce: 0 }}
@@ -461,15 +477,10 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
                   cancels text-overflow:ellipsis. shrink-0 on the count so the
                   title is the only flex child that may narrow. Complete labels
                   mute so they read as status, not as a fake live step. */}
-              <span
-                className={cn(
-                  'min-w-0 flex-1 truncate',
-                  complete && 'text-muted-foreground',
-                )}
-              >
+              <span className={cn('min-w-0 flex-1 truncate', complete && 'text-muted-foreground')}>
                 {label}
               </span>
-              <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+              <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                 {done} of {total}
               </span>
             </span>
@@ -478,29 +489,53 @@ export function PlanCard({ sessionId }: { sessionId: string }) {
       </DisclosureTrigger>
 
       <DisclosureContent>
-        {/* No stepper rail. Each todo carries its own status glyph, so a
-            connecting separator drew a second, weaker reading of the sequence
-            the list already implies. */}
-        <ul className="flex w-full flex-col gap-2 px-3 pt-1 pb-3">
-          {keyedTodos.map(({ todo, key }) => (
-            <li key={key} className={cn(RAIL_ROW, 'items-start')}>
-              <TodoStatusIcon status={todo.status} className={cn(RAIL_SLOT, GLYPH_ON_FIRST_LINE)} />
-              <p
-                className={cn(
-                  'min-w-0 flex-1 text-pretty',
-                  ROW_TEXT,
-                  todo.status === 'completed' && 'text-muted-foreground/60 line-through',
-                  todo.status === 'cancelled' && 'text-muted-foreground/40 line-through',
-                  todo.status === 'in_progress' && 'text-foreground font-medium',
-                  todo.status === 'pending' && 'text-foreground/85',
-                )}
-              >
-                {todo.content}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <PlanSteps rows={keyedTodos} className="px-3 py-2" />
       </DisclosureContent>
     </Disclosure>
+  );
+}
+
+/**
+ * The steps themselves — the one list both surfaces draw.
+ *
+ * Extracted rather than copied into the panel card: the row rail (`RAIL_ROW`,
+ * `RAIL_SLOT`) and the four status treatments below are the plan's whole
+ * visual grammar, and two copies of it drift the moment either one is tuned.
+ * Callers own only the padding, because a disclosure body and a panel body sit
+ * in differently-inset containers.
+ *
+ * Takes rows already keyed and filtered (`planListTodos(keyTodos(todos))`) —
+ * the caller decides what the list is; this decides what it looks like.
+ */
+export function PlanSteps({
+  rows,
+  className,
+}: {
+  rows: ReadonlyArray<{ todo: TodoItem; key: string }>;
+  className?: string;
+}) {
+  return (
+    // No stepper rail. Each todo carries its own status glyph, so a connecting
+    // separator drew a second, weaker reading of the sequence the list already
+    // implies.
+    <ul className={cn('flex w-full flex-col gap-2', className)}>
+      {rows.map(({ todo, key }) => (
+        <li key={key} className={cn(RAIL_ROW, 'items-start')}>
+          <TodoStatusIcon status={todo.status} className={cn(RAIL_SLOT, GLYPH_ON_FIRST_LINE)} />
+          <p
+            className={cn(
+              'min-w-0 flex-1 text-pretty',
+              ROW_TEXT,
+              todo.status === 'completed' && 'text-muted-foreground/60 line-through',
+              todo.status === 'cancelled' && 'text-muted-foreground/40 line-through',
+              todo.status === 'in_progress' && 'text-foreground font-medium',
+              todo.status === 'pending' && 'text-foreground/85',
+            )}
+          >
+            {todo.content}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }

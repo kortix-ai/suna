@@ -25,10 +25,12 @@ import {
   CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
+  type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_CLI_ALIASES,
   reservedEnvNameReason,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
@@ -93,11 +95,13 @@ export {
   CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
+  type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
+  DEPRECATED_KORTIX_CLI_ALIASES,
   isReservedEnvName,
   NEVER_DELIVERED_ENV_NAMES,
   PERMISSION_ACTION_ONLY_KEYS_V2,
@@ -388,7 +392,20 @@ export function validateGrantList(
     }
     const s = item.trim();
     if (checkAction && s !== '*' && !GRANTABLE_KORTIX_CLI_ACTIONS.includes(s)) {
-      if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
+      const renamedTo = DEPRECATED_KORTIX_CLI_ALIASES[s];
+      if (renamedTo) {
+        // A RENAMED action, not a dead one: it still resolves to a real
+        // capability (`canonicalizeGrantActions` rewrites it), so this is a
+        // warning in BOTH versions. Hard-rejecting it the way the no-op legacy
+        // set is rejected in v2 would fail the manifest, and a manifest that
+        // fails to parse gives its agent an EMPTY grant — silently stripping
+        // every capability it holds rather than the one line that is outdated.
+        issues.push({
+          path: `${where}[${k}]`,
+          message: `"${s}" was renamed to "${renamedTo}" — the grant still applies, but update the manifest.`,
+          severity: 'warning',
+        });
+      } else if (LEGACY_TOLERATED_KORTIX_CLI_ACTIONS.includes(s)) {
         issues.push({
           path: `${where}[${k}]`,
           message:
@@ -1271,10 +1288,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         severity: 'error',
       });
     }
-    if (provider === 'pipedream' && typeof entry.app !== 'string') {
+    if ((provider === 'pipedream' || provider === 'composio') && typeof entry.app !== 'string') {
       issues.push({
         path: `${where}.app`,
-        message: 'pipedream connectors require `app`.',
+        message: `${provider} connectors require \`app\`.`,
         severity: 'error',
       });
     }
@@ -1403,11 +1420,11 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         severity: version === 2 ? 'error' : 'warning',
       });
     }
-    if (provider === 'pipedream' && entry.auth !== undefined) {
+    if ((provider === 'pipedream' || provider === 'composio') && entry.auth !== undefined) {
       issues.push({
         path: `${where}.auth`,
         message:
-          'pipedream connectors authenticate via the connected account — [connectors.auth] is ignored at runtime.',
+          `${provider} connectors authenticate via the connected account — [connectors.auth] is ignored at runtime.`,
         severity: 'warning',
       });
     }
@@ -1458,7 +1475,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       const parsedHeaders = parseConnectorHeaders(entry.headers);
       if (!parsedHeaders.ok) {
         issues.push({ path: `${where}.headers`, message: `${parsedHeaders.error}.`, severity: 'error' });
-      } else if (provider === 'pipedream' || provider === 'channel') {
+      } else if (provider === 'pipedream' || provider === 'composio' || provider === 'channel') {
         issues.push({
           path: `${where}.headers`,
           message:

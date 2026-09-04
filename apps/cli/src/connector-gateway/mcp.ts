@@ -16,7 +16,7 @@ import { basename, extname, isAbsolute, relative, resolve, sep } from 'node:path
  *
  * Thin client: it never holds a third-party credential. Every call goes to the
  * Kortix Connector Gateway, which checks sharing, resolves the secret SERVER-SIDE,
- * runs the call, and audits it. The sandbox only carries KORTIX_CLI_TOKEN +
+ * runs the call, and audits it. The sandbox only carries KORTIX_TOKEN +
  * KORTIX_API_URL (injected at sandbox spawn).
  *
  * STDOUT IS THE JSON-RPC CHANNEL — nothing else may be written there. index.ts
@@ -27,6 +27,7 @@ import {
   brokerSecretRequest,
   callWithApprovalHandoff,
   connectorClient,
+  finalizeConnectorConnection,
   mintConnectLink,
   mintSecretLink,
   removeConnector,
@@ -44,15 +45,7 @@ interface JsonRpcRequest {
 // The MCP server identity is `kortix-connectors`, matching the CLI command tree.
 const SERVER_INFO = { name: 'kortix-connectors', version: '0.3.0' };
 
-const BROKER_METHODS: BrokerMethod[] = [
-  'GET',
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-  'HEAD',
-  'OPTIONS',
-];
+const BROKER_METHODS: BrokerMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 
 const MAX_ATTACHMENT_FILES = 20;
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -227,7 +220,11 @@ const META_TOOLS = [
     name: 'connectors',
     description:
       'List the connectors this session can use (Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), each with its provider, status, and number of tools. Start here to see what is available.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
     readOnly: true,
   },
   {
@@ -242,7 +239,10 @@ const META_TOOLS = [
           description:
             'Natural-language intent to search for. Empty returns the first available tools.',
         },
-        limit: { type: 'number', description: 'Maximum matches to return (default 20).' },
+        limit: {
+          type: 'number',
+          description: 'Maximum matches to return (default 20).',
+        },
       },
       additionalProperties: false,
     },
@@ -272,7 +272,10 @@ const META_TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        connector: { type: 'string', description: 'Connector slug, e.g. "stripe".' },
+        connector: {
+          type: 'string',
+          description: 'Connector slug, e.g. "stripe".',
+        },
         action: {
           type: 'string',
           description: 'Action path within the connector, e.g. "charges.create".',
@@ -288,15 +291,27 @@ const META_TOOLS = [
           items: {
             type: 'object',
             properties: {
-              path: { type: 'string', description: 'Absolute local file path.' },
-              filename: { type: 'string', description: 'Optional recipient-visible filename.' },
-              content_type: { type: 'string', description: 'Optional MIME type.' },
+              path: {
+                type: 'string',
+                description: 'Absolute local file path.',
+              },
+              filename: {
+                type: 'string',
+                description: 'Optional recipient-visible filename.',
+              },
+              content_type: {
+                type: 'string',
+                description: 'Optional MIME type.',
+              },
               content_disposition: {
                 type: 'string',
                 enum: ['attachment', 'inline'],
                 description: 'Defaults to attachment.',
               },
-              content_id: { type: 'string', description: 'Optional inline content ID.' },
+              content_id: {
+                type: 'string',
+                description: 'Optional inline content ID.',
+              },
             },
             required: ['path'],
             additionalProperties: false,
@@ -312,11 +327,14 @@ const META_TOOLS = [
   {
     name: 'connect',
     description:
-      'Get a 1-click Pipedream Quick Connect link for a connector that is declared but not yet authenticated, and SURFACE the returned url to the human in your reply. Use this the moment you add/need a Pipedream connector — never tell the human to open the dashboard. In the web UI the link opens a connect popup; in Slack it is a tappable link. No credential ever touches the sandbox. The connector must already exist in kortix.yaml (add it + land the change request first).',
+      'Start the configured provider authorization for a connector that is declared but not yet authenticated, and SURFACE any returned url to the human in your reply. This works for Composio and explicit legacy Pipedream connectors. In the web UI the link opens a connect popup; in Slack it is tappable. No credential ever touches the sandbox. The connector must already exist in kortix.yaml.',
     inputSchema: {
       type: 'object',
       properties: {
-        slug: { type: 'string', description: 'Connector slug to connect, e.g. "smartlead".' },
+        slug: {
+          type: 'string',
+          description: 'Connector slug to connect, e.g. "smartlead".',
+        },
         expires_in_minutes: {
           type: 'number',
           description: 'Link lifetime in minutes (default 30, max 1440).',
@@ -328,9 +346,34 @@ const META_TOOLS = [
     readOnly: false,
   },
   {
+    name: 'finalize_connection',
+    description:
+      'After the human finishes the authorization URL returned by `connect`, confirm the provider connection and persist its account binding. Pass through the connection_id and request_id returned by `connect`. If connected=false, ask the human to finish authorization and retry. Works for Composio and explicit legacy Pipedream connectors.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: {
+          type: 'string',
+          description: 'Connector slug that was authorized.',
+        },
+        connection_id: {
+          type: 'string',
+          description: 'Connection ID returned by `connect`, when present.',
+        },
+        request_id: {
+          type: 'string',
+          description: 'Authorization request ID returned by `connect`, when present.',
+        },
+      },
+      required: ['slug'],
+      additionalProperties: false,
+    },
+    readOnly: false,
+  },
+  {
     name: 'request_secret',
     description:
-      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. The value is never pasted into chat; once they submit it, the secret becomes available to your session (check KORTIX_PROJECT_SECRET_NAMES). In the web UI the link opens a fill-in modal; in Slack it is a tappable link. scope "runtime" (default) injects the value into your sandbox env; "connector" keeps it server-side only.',
+      'Get a link the human opens to enter one or more project SECRET values (e.g. an API key), and SURFACE the returned url in your reply. Use this whenever you need a credential you do not have — never ask the human to paste a raw key into chat or to hunt through the dashboard. The value is never pasted into chat. In the web UI the link opens a fill-in modal; in Slack it is a tappable link. The default connector scope keeps the value server-side. Use runtime scope only when a sandbox process must receive the value.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -343,7 +386,7 @@ const META_TOOLS = [
         scope: {
           type: 'string',
           enum: ['runtime', 'connector'],
-          description: 'runtime (default) or connector.',
+          description: 'connector (default, server-side only) or runtime (sandbox environment).',
         },
         labels: {
           type: 'object',
@@ -402,19 +445,29 @@ const META_TOOLS = [
   {
     name: 'add_connector',
     description:
-      'Add or update a connector on this project now. The command commits kortix.yaml to main and syncs it server-side. Use `connect` for Pipedream or `request_secret` for its credential. For Pipedream pass provider="pipedream" and app (for example, "smartlead").',
+      'Add or update a connector on this project now. The command commits kortix.yaml to main and syncs it server-side. For managed SaaS apps such as Gmail, GitHub, Slack, Notion, or Calendar, use provider="composio" and the Composio toolkit slug. Composio is the default managed provider. Pipedream is legacy rollback only and must never be selected unless the human explicitly asks for Pipedream. Use `connect` for managed OAuth or `request_secret` for direct API credentials.',
     inputSchema: {
       type: 'object',
       properties: {
-        slug: { type: 'string', description: 'Connector slug, e.g. "smartlead".' },
+        slug: {
+          type: 'string',
+          description: 'Connector slug, e.g. "smartlead".',
+        },
         provider: {
           type: 'string',
-          enum: ['pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'],
-          description: 'Connector provider.',
+          enum: ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'],
+          description:
+            'Connector provider. Use composio for managed SaaS apps. Pipedream is legacy rollback only and requires allow_legacy_pipedream=true.',
         },
         app: {
           type: 'string',
-          description: 'Pipedream app slug (provider=pipedream), e.g. "smartlead".',
+          description:
+            'Managed app/toolkit slug. For Composio use the discovered toolkit slug, e.g. "gmail" or "composio_search".',
+        },
+        allow_legacy_pipedream: {
+          type: 'boolean',
+          description:
+            'Required only for an explicit human-requested Pipedream rollback. Never set this merely because an app needs OAuth.',
         },
         name: { type: 'string', description: 'Optional display name.' },
         url: { type: 'string', description: 'MCP server URL (provider=mcp).' },
@@ -423,9 +476,18 @@ const META_TOOLS = [
           enum: ['http', 'sse'],
           description: 'MCP transport (provider=mcp).',
         },
-        endpoint: { type: 'string', description: 'GraphQL endpoint (provider=graphql).' },
-        base_url: { type: 'string', description: 'HTTP base URL (provider=http).' },
-        spec: { type: 'string', description: 'OpenAPI/Postman/GraphQL/HTTP spec or source ref.' },
+        endpoint: {
+          type: 'string',
+          description: 'GraphQL endpoint (provider=graphql).',
+        },
+        base_url: {
+          type: 'string',
+          description: 'HTTP base URL (provider=http).',
+        },
+        spec: {
+          type: 'string',
+          description: 'OpenAPI/Postman/GraphQL/HTTP spec or source ref.',
+        },
         credential: {
           type: 'string',
           enum: ['shared'],
@@ -443,7 +505,9 @@ const META_TOOLS = [
       'Remove a connector from this project (committed to kortix.yaml on main + catalog). No change request needed.',
     inputSchema: {
       type: 'object',
-      properties: { slug: { type: 'string', description: 'Connector slug to remove.' } },
+      properties: {
+        slug: { type: 'string', description: 'Connector slug to remove.' },
+      },
       required: ['slug'],
       additionalProperties: false,
     },
@@ -463,7 +527,12 @@ function stringField(row: Record<string, unknown>, key: string): string {
 }
 
 function content(data: unknown) {
-  return [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }];
+  return [
+    {
+      type: 'text',
+      text: typeof data === 'string' ? data : JSON.stringify(data, null, 2),
+    },
+  ];
 }
 
 async function runMetaTool(client: ConnectorClient, name: string, args: Record<string, unknown>) {
@@ -490,7 +559,11 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       const matches = await client.search(query, limit !== undefined ? { limit } : {});
       return {
         content: content({
-          matches: matches.map((m) => ({ tool: m.tool, risk: m.risk, description: m.description })),
+          matches: matches.map((m) => ({
+            tool: m.tool,
+            risk: m.risk,
+            description: m.description,
+          })),
         }),
         isError: false,
       };
@@ -500,7 +573,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       const ref = typeof args.tool === 'string' ? args.tool : '';
       if (!ref.includes('.')) {
         return {
-          content: content({ ok: false, error: 'tool must be a "<connector>.<action>" path' }),
+          content: content({
+            ok: false,
+            error: 'tool must be a "<connector>.<action>" path',
+          }),
           isError: true,
         };
       }
@@ -530,7 +606,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       const action = typeof args.action === 'string' ? args.action : '';
       if (!connector || !action) {
         return {
-          content: content({ ok: false, error: 'connector and action are required' }),
+          content: content({
+            ok: false,
+            error: 'connector and action are required',
+          }),
           isError: true,
         };
       }
@@ -581,7 +660,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
     case 'connect': {
       const slug = typeof args.slug === 'string' ? args.slug : '';
       if (!slug)
-        return { content: content({ ok: false, error: 'slug is required' }), isError: true };
+        return {
+          content: content({ ok: false, error: 'slug is required' }),
+          isError: true,
+        };
       const expires =
         typeof args.expires_in_minutes === 'number' ? args.expires_in_minutes : undefined;
       try {
@@ -590,17 +672,64 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
           content: content({
             ok: true,
             slug: link.slug,
+            provider: link.provider,
             app: link.app,
             url: link.url,
             expires_at: link.expires_at,
-            instructions:
-              'Surface this url to the human now. Web: opens a connect popup. Slack: tappable link.',
+            connected: link.connected,
+            is_no_auth: link.is_no_auth,
+            session_id: link.session_id,
+            connection_id: link.connection_id,
+            request_id: link.request_id,
+            instructions: link.url
+              ? 'Surface this url to the human now. After they approve it, call finalize_connection with this slug, connection_id, and request_id.'
+              : link.connected
+                ? 'The connector is connected and ready to call.'
+                : 'No authorization URL was returned. Do not call connector actions until connected=true.',
           }),
           isError: false,
         };
       } catch (err) {
         return {
-          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          content: content({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+          isError: true,
+        };
+      }
+    }
+
+    case 'finalize_connection': {
+      const slug = typeof args.slug === 'string' ? args.slug : '';
+      if (!slug)
+        return {
+          content: content({ ok: false, error: 'slug is required' }),
+          isError: true,
+        };
+      try {
+        const result = await finalizeConnectorConnection({
+          slug,
+          ...(typeof args.connection_id === 'string' ? { connectionId: args.connection_id } : {}),
+          ...(typeof args.request_id === 'string' ? { requestId: args.request_id } : {}),
+        });
+        return {
+          content: content({
+            ok: result.connected,
+            slug,
+            ...result,
+            instructions: result.connected
+              ? 'Connection confirmed. Discover or call the connector actions now.'
+              : 'Authorization is not complete yet. Ask the human to finish the provider flow, then retry finalize_connection.',
+          }),
+          isError: false,
+        };
+      } catch (err) {
+        return {
+          content: content({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
           isError: true,
         };
       }
@@ -611,7 +740,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
         ? args.names.filter((n): n is string => typeof n === 'string')
         : [];
       if (names.length === 0)
-        return { content: content({ ok: false, error: 'names is required' }), isError: true };
+        return {
+          content: content({ ok: false, error: 'names is required' }),
+          isError: true,
+        };
       const scope =
         args.scope === 'connector' ? 'connector' : args.scope === 'runtime' ? 'runtime' : undefined;
       const expires =
@@ -632,13 +764,18 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
             url: link.url,
             expires_at: link.expires_at,
             instructions:
-              'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The value is never pasted into chat; once submitted it appears in KORTIX_PROJECT_SECRET_NAMES.',
+              link.scope === 'runtime'
+                ? 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The runtime value appears in KORTIX_PROJECT_SECRET_NAMES after submission.'
+                : 'Surface this url to the human now. Web: opens a fill-in modal. Slack: tappable link. The connector value remains server-side and never appears in KORTIX_PROJECT_SECRET_NAMES.',
           }),
           isError: false,
         };
       } catch (err) {
         return {
-          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          content: content({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
           isError: true,
         };
       }
@@ -649,7 +786,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       const url = typeof args.url === 'string' ? args.url : '';
       if (!identifier || !url) {
         return {
-          content: content({ ok: false, error: 'identifier and url are required' }),
+          content: content({
+            ok: false,
+            error: 'identifier and url are required',
+          }),
           isError: true,
         };
       }
@@ -685,7 +825,9 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
             status: result.status,
             headers: result.headers,
             ...(isText
-              ? { body: Buffer.from(result.body_base64, 'base64').toString('utf8') }
+              ? {
+                  body: Buffer.from(result.body_base64, 'base64').toString('utf8'),
+                }
               : { body_base64: result.body_base64 }),
           }),
           // A 4xx/5xx is a real answer from upstream, not a tool failure — the
@@ -694,7 +836,10 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
         };
       } catch (err) {
         return {
-          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          content: content({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
           isError: true,
         };
       }
@@ -705,10 +850,24 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
       const provider = typeof args.provider === 'string' ? args.provider : '';
       if (!slug || !provider)
         return {
-          content: content({ ok: false, error: 'slug and provider are required' }),
+          content: content({
+            ok: false,
+            error: 'slug and provider are required',
+          }),
           isError: true,
         };
+      if (provider === 'pipedream' && args.allow_legacy_pipedream !== true) {
+        return {
+          content: content({
+            ok: false,
+            error:
+              'Pipedream is legacy rollback only. Use provider="composio" for managed SaaS apps. If Composio cannot satisfy the request, stop and ask the human before setting allow_legacy_pipedream=true.',
+          }),
+          isError: true,
+        };
+      }
       const draft: Record<string, unknown> = { slug, provider };
+      if (provider === 'pipedream') draft.allow_legacy_pipedream = true;
       for (const k of [
         'app',
         'name',
@@ -730,13 +889,16 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
             provider,
             applied: true,
             sync: res.sync,
-            instructions: `Live now (committed to kortix.yaml on main + synced) — no change request needed. Next: call connect("${slug}") for a Pipedream app, or request_secret for an API key.`,
+            instructions: `Live now (committed to kortix.yaml on main + synced) — no change request needed. Next: call connect("${slug}") for managed provider authorization, or request_secret for a direct API key.`,
           }),
           isError: false,
         };
       } catch (err) {
         return {
-          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          content: content({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
           isError: true,
         };
       }
@@ -745,20 +907,32 @@ async function runMetaTool(client: ConnectorClient, name: string, args: Record<s
     case 'remove_connector': {
       const slug = typeof args.slug === 'string' ? args.slug : '';
       if (!slug)
-        return { content: content({ ok: false, error: 'slug is required' }), isError: true };
+        return {
+          content: content({ ok: false, error: 'slug is required' }),
+          isError: true,
+        };
       try {
         await removeConnector(slug);
-        return { content: content({ ok: true, slug, removed: true }), isError: false };
+        return {
+          content: content({ ok: true, slug, removed: true }),
+          isError: false,
+        };
       } catch (err) {
         return {
-          content: content({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+          content: content({
+            ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
           isError: true,
         };
       }
     }
 
     default:
-      return { content: content({ ok: false, error: `unknown tool ${name}` }), isError: true };
+      return {
+        content: content({ ok: false, error: `unknown tool ${name}` }),
+        isError: true,
+      };
   }
 }
 

@@ -68,6 +68,19 @@ describe('staging secret synchronization', () => {
     expect(workflow).toContain('if [ "$staging_secret_exists" = true ]; then');
   });
 
+  it('sets the staging Composio key without inheriting the dev key on first creation', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),
+      'utf8',
+    );
+
+    expect(workflow).toContain('STAGING_COMPOSIO_API_KEY: ${{ secrets.STAGING_COMPOSIO_API_KEY }}');
+    expect(workflow).toContain('--arg composio "$STAGING_COMPOSIO_API_KEY"');
+    expect(workflow).toContain('--argjson stagingSecretExists "$staging_secret_exists"');
+    expect(workflow).toContain('if $stagingSecretExists then . else del(.COMPOSIO_API_KEY) end');
+    expect(workflow).toContain('.COMPOSIO_API_KEY = $composio');
+  });
+
   it('caps the staging ECS API database pool below the 60-connection database limit', () => {
     const workflow = readFileSync(
       resolve(import.meta.dirname, '../../.github/workflows/deploy-staging.yml'),

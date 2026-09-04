@@ -39,24 +39,17 @@ describe('runtime managed model registry', () => {
     })]);
   });
 
-  test('accepts AsterLab transport and provider branding', () => {
-    const configured = parseManagedModels(JSON.stringify([{
-      id: 'glm-5.2',
-      name: 'GLM 5.2',
-      upstreamModelId: 'glm-5.2',
+  test('rejects the retired AsterLab transport', () => {
+    expect(() => parseManagedModels(JSON.stringify([{
+      id: 'retired-model',
+      name: 'Retired Model',
+      upstreamModelId: 'retired-model',
       transport: 'aster',
-      pricingRef: 'z-ai/glm-5.2',
+      pricingRef: 'vendor/retired-model',
       tier: 'balanced',
       vision: false,
-      limit: { context: 1_000_000, output: 131_072 },
-      providerBrand: 'zhipuai',
-    }]));
-
-    expect(configured[0]).toMatchObject({
-      transport: 'aster',
-      upstreamModelId: 'glm-5.2',
-      providerBrand: 'zhipuai',
-    });
+      limit: { context: 1_000, output: 1_000 },
+    }]))).toThrow();
   });
 
   test('rejects malformed and duplicate managed-model definitions', () => {
@@ -93,19 +86,19 @@ const managed = (
 describe('servedManagedModels — never offer a managed model with no upstream credential', () => {
   const lineup = [
     managed('claude-opus-4.8', 'bedrock', 'flagship'),
-    managed('glm-5.2', 'aster'),
+    managed('glm-5.3-flash', 'openrouter'),
     managed('deepseek-v4-flash', 'openrouter', 'fast'),
   ];
 
   test('drops every model whose transport has no configured credential', () => {
-    const served = servedManagedModels(lineup, (m) => m.transport !== 'aster');
+    const served = servedManagedModels(lineup, (m) => m.id !== 'glm-5.3-flash');
     expect(served.map((m) => m.id)).toEqual(['claude-opus-4.8', 'deepseek-v4-flash']);
   });
 
   test('keeps the whole lineup when every transport is credentialed', () => {
     expect(servedManagedModels(lineup, () => true).map((m) => m.id)).toEqual([
       'claude-opus-4.8',
-      'glm-5.2',
+      'glm-5.3-flash',
       'deepseek-v4-flash',
     ]);
   });
@@ -122,7 +115,7 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
   ];
 
   test('keeps the configured default when it is actually served', () => {
-    const served = [managed('glm-5.2', 'aster'), ...lineup];
+    const served = [managed('glm-5.2', 'openrouter'), ...lineup];
     expect(resolvePlatformDefaultModelId('glm-5.2', served)).toBe('glm-5.2');
   });
 
@@ -132,7 +125,7 @@ describe('resolvePlatformDefaultModelId — the platform default must always be 
 
   test('accepts and preserves the opencode `kortix/<id>` ref form', () => {
     expect(resolvePlatformDefaultModelId('kortix/glm-5.2', lineup)).toBe('claude-opus-4.8');
-    const served = [managed('glm-5.2', 'aster'), ...lineup];
+    const served = [managed('glm-5.2', 'openrouter'), ...lineup];
     expect(resolvePlatformDefaultModelId('kortix/glm-5.2', served)).toBe('kortix/glm-5.2');
   });
 

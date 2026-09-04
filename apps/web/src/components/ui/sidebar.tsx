@@ -32,7 +32,7 @@ import { cn } from '@/lib/utils';
 
 const SIDEBAR_COOKIE_NAME = 'sidebar_state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = '16rem';
+const SIDEBAR_WIDTH = '20rem';
 const SIDEBAR_WIDTH_MOBILE = '18rem';
 const SIDEBAR_WIDTH_ICON = '1.6rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
@@ -139,10 +139,14 @@ function SidebarProvider({
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === 'function' ? value(open) : value;
       if (setOpenProp) {
+        // Controlled: whoever owns the state owns its persistence. The
+        // settings shell (`features/accounts/hub/account-settings-shell.tsx`)
+        // controls its sidebar precisely so a collapse there does not land in
+        // this cookie and hide the project sidebar on the next app load.
         setOpenProp(openState);
-      } else {
-        _setOpen(openState);
+        return;
       }
+      _setOpen(openState);
 
       // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
@@ -223,7 +227,7 @@ function SidebarProvider({
     const clamped = clampSidebarWidth(next, window.innerWidth);
     // Write the committed value to the node BEFORE the state update, and never
     // clear the override. A drag leaves an inline `--sidebar-width` on the
-    // wrapper; removing it here would paint one frame at the default 16rem if
+    // wrapper; removing it here would paint one frame at the default 20rem if
     // React defers the re-render past the next paint. Writing the same value
     // React is about to render makes the hand-off unobservable.
     wrapperRef.current?.style.setProperty('--sidebar-width', `${clamped}px`);
@@ -323,7 +327,7 @@ function SidebarProvider({
             } as React.CSSProperties
           }
           className={cn(
-            'group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex min-h-svh w-full',
+            'group/sidebar-wrapper has-data-[variant=inset]:bg-background flex min-h-svh w-full',
             className,
           )}
           {...props}
@@ -388,7 +392,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          'bg-sidebar text-sidebar-foreground flex h-full w-(--sidebar-width) flex-col',
+          'bg-background text-sidebar-foreground flex h-full w-(--sidebar-width) flex-col',
           className,
         )}
         {...props}
@@ -405,7 +409,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+          className="bg-background text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
           style={
             {
               '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
@@ -470,12 +474,12 @@ function Sidebar({
           // THE RULE, and it governs every branch below:
           //   layout resolves in one frame; only `transform` is ever animated.
           //
-          // The content pane reclaims (or gives up) its 16rem in a single
+          // The content pane reclaims (or gives up) its 20rem in a single
           // reflow at t=0. That reflow is free to be visible only because it
           // happens UNDER this panel: at t=0 the panel still covers the exact
           // strip the pane just grew into, so the collapse reads as the panel
           // sliding off and uncovering content that was already there. On the
-          // way back the strip it uncovers is `bg-sidebar` on a `bg-sidebar`
+          // way back the strip it uncovers is `bg-background` on a `bg-background`
           // wrapper, so the band ahead of the incoming panel is seamless and
           // only the panel's CONTENT appears to slide in.
           //
@@ -492,7 +496,7 @@ function Sidebar({
           // the destination style, so the docked branch simply declares none
           // and the panel, its contents, and the reflowed content pane all
           // land on the same frame. Sliding the panel in looked considered and
-          // was not: the wrapper behind it is already `bg-sidebar`, so the
+          // was not: the wrapper behind it is already `bg-background`, so the
           // background arrived instantly while the panel's CONTENT trailed
           // 300ms behind it, and the whole open read as laggy.
           //
@@ -508,7 +512,7 @@ function Sidebar({
                 // itself is `sidebar-inner`; this outer box only positions and
                 // transforms it — but `className` from the consumer lands
                 // HERE, and a consumer that paints a background on it (the
-                // project sidebar passed `bg-sidebar`) fills a square behind a
+                // project sidebar passed `bg-background`) fills a square behind a
                 // round card, which shows as four corner tabs sticking out
                 // past the arc. Matching the radius clips that paint to the
                 // same shape. No `overflow-hidden` — that would eat the card's
@@ -547,7 +551,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
           className={cn(
-            'bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm',
+            'bg-background group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm',
             // Gated on `flyout`, not on `peekable`: parked ↔ peeking swaps no
             // styles at all (the card slides in and out rigid), and the
             // undocking panel keeps the flush docked chrome so its exit is a
@@ -738,7 +742,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'div'>) {
         // Opacity only — a width/position transition here would animate layout
         // on hover, on an element that sits over the content pane.
         'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:-translate-x-1/2 after:opacity-0',
-        'after:bg-sidebar-border after:transition-opacity after:duration-150 after:ease-out',
+        'after:bg-kortix-base after:transition-opacity after:duration-100 after:ease-out',
         'hover:after:opacity-100 focus-visible:after:opacity-100 data-[resizing]:after:opacity-100',
         // Tapered top and bottom so the line reads as a seam, not a border.
         'after:[clip-path:polygon(calc(50%-0.0625rem)_0%,calc(50%+0.0625rem)_0%,calc(50%+0.125rem)_50%,calc(50%+0.0625rem)_100%,calc(50%-0.0625rem)_100%,calc(50%-0.125rem)_50%)]',
@@ -756,7 +760,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<'main'>) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        'bg-sidebar relative flex w-full flex-1 flex-col overflow-hidden',
+        'bg-background relative flex w-full flex-1 flex-col overflow-hidden',
         'md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ml-2',
         className,
       )}
@@ -803,7 +807,7 @@ function SidebarSeparator({ className, ...props }: React.ComponentProps<typeof S
     <Separator
       data-slot="sidebar-separator"
       data-sidebar="separator"
-      className={cn('bg-sidebar-border mx-2 w-auto', className)}
+      className={cn('bg-background-border mx-2 w-auto', className)}
       {...props}
     />
   );
@@ -867,7 +871,7 @@ function SidebarGroupAction({
       data-slot="sidebar-group-action"
       data-sidebar="group-action"
       className={cn(
-        'text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground absolute top-3.5 right-3 flex aspect-square w-5 items-center justify-center rounded-md p-0 outline-hidden transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
+        'text-sidebar-foreground ring-sidebar-ring hover:bg-hover hover:text-sidebar-accent-foreground absolute top-3.5 right-3 flex aspect-square w-5 items-center justify-center rounded-md p-0 outline-hidden transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
         // Increases the hit area of the button on mobile.
         'after:absolute after:-inset-2 md:after:hidden',
         'group-data-[collapsible=icon]:hidden',
@@ -894,7 +898,7 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<'ul'>) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      className={cn('flex w-full min-w-0 flex-col gap-1', className)}
+      className={cn('flex w-full min-w-0 flex-col gap-px', className)}
       {...props}
     />
   );
@@ -912,21 +916,23 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<'li'>) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none transition-all cursor-pointer shadow-none group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px] active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0",
+  // No hover transition. Sidebar rows are hit tens–hundreds of times a day;
+  // animating bg/color makes the highlight lag the pointer (Raycast rule).
+  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none cursor-pointer shadow-none group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-hover hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px] active:bg-active active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive data-[active=true]:bg-active data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-hover data-[state=open]:hover:text-sidebar-accent-foreground [&>span:last-child]:truncate [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 px-3 font-medium [&_svg]:size-4!",
   {
     variants: {
       variant: {
-        default:
-          'text-muted-foreground dark:hover:bg-sidebar-accent/50 hover:bg-sidebar-foreground/7 hover:text-sidebar-foreground',
+        default: 'text-muted-foreground hover:bg-card hover:text-sidebar-foreground',
         outline:
-          'bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
+          'bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-hover hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
         success:
           'bg-kortix-green/10 text-kortix-green hover:bg-kortix-green/20 hover:text-kortix-green active:bg-kortix-green/25 active:text-kortix-green data-[active=true]:bg-kortix-green/15 data-[active=true]:text-kortix-green data-[state=open]:hover:bg-kortix-green/20 data-[state=open]:hover:text-kortix-green dark:bg-kortix-green/15 dark:text-kortix-green dark:hover:bg-kortix-green/25 dark:hover:text-kortix-green dark:active:bg-kortix-green/30 dark:active:text-kortix-green dark:data-[active=true]:bg-kortix-green/20 dark:data-[active=true]:text-kortix-green dark:data-[state=open]:hover:bg-kortix-green/25 dark:data-[state=open]:hover:text-kortix-green',
+        primary:
+          'bg-foreground text-background font-medium justify-center border-none hover:bg-foreground/90 hover:text-background',
       },
       size: {
         default: 'h-8 text-sm',
         sm: 'h-7 text-xs',
-        md: 'h-9 text-sm',
         lg: 'h-12 text-sm group-data-[collapsible=icon]:p-0!',
       },
     },
@@ -1003,7 +1009,7 @@ function SidebarMenuAction({
       data-slot="sidebar-menu-action"
       data-sidebar="menu-action"
       className={cn(
-        'text-sidebar-foreground ring-sidebar-ring peer-hover/menu-button:text-sidebar-accent-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 outline-hidden transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
+        'text-sidebar-foreground ring-sidebar-ring peer-hover/menu-button:text-sidebar-accent-foreground hover:bg-hover hover:text-sidebar-accent-foreground absolute top-1.5 right-1 flex aspect-square w-5 items-center justify-center rounded-md p-0 outline-hidden transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0',
         // Increases the hit area of the button on mobile.
         'after:absolute after:-inset-2 md:after:hidden',
         'peer-data-[size=sm]/menu-button:top-1',
@@ -1117,8 +1123,8 @@ function SidebarMenuSubButton({
       data-size={size}
       data-active={isActive}
       className={cn(
-        'text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
-        'data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-accent-foreground',
+        'text-sidebar-foreground ring-sidebar-ring hover:bg-hover hover:text-sidebar-accent-foreground active:bg-active active:text-sidebar-accent-foreground [&>svg]:text-sidebar-accent-foreground flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0',
+        'data-[active=true]:bg-active data-[active=true]:text-sidebar-accent-foreground',
         size === 'sm' && 'text-xs',
         size === 'md' && 'text-sm',
         'group-data-[collapsible=icon]:hidden',

@@ -50,7 +50,15 @@ import type { BrowserContext, Cookie } from '@playwright/test';
 export const DEPLOYMENT_BYPASS_STATE_PATH = join(
   dirname(dirname(fileURLToPath(import.meta.url))),
   '..',
-  'test-results',
+  // NOT under `test-results/`: that directory is uploaded verbatim as a CI
+  // artifact (`tests/test-results/**`) on a PUBLIC repo, and this file holds
+  // the live `_vercel_jwt` deployment-protection cookie (7-day lifetime).
+  // Every release-gate run from 2026-08-20 to 2026-08-26 published it; the
+  // artifact-secret guard only started running for real on 2026-08-25 (grep
+  // instead of a missing rg) and caught it in the v0.13.6 gate. `.state/` is
+  // gitignored and never listed in any upload path. The workflows also
+  // exclude `deployment-bypass-state.json` by name as a second guard.
+  '.state',
   'deployment-bypass-state.json',
 );
 

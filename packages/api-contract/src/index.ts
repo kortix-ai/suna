@@ -55,7 +55,6 @@ export const FeatureFlagMapSchema = z.object({
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
   teams: z.boolean(),
-  voice: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
   meta_agent: z.boolean(),
@@ -63,6 +62,7 @@ export const FeatureFlagMapSchema = z.object({
   monitors: z.boolean(),
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
+  pi_worker: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -253,9 +253,7 @@ export const SessionConnectorBindingInputSchema = z
     connection_id: z.string().uuid(),
   })
   .strict();
-export type SessionConnectorBindingInput = z.input<
-  typeof SessionConnectorBindingInputSchema
->;
+export type SessionConnectorBindingInput = z.input<typeof SessionConnectorBindingInputSchema>;
 
 export const SessionConnectorBindingSchema = z
   .object({
@@ -413,9 +411,7 @@ export const RequiredConnectorConnectionSchema = z
     authorization_strategy: ConnectorAuthorizationStrategySchema,
   })
   .strict();
-export type RequiredConnectorConnection = z.infer<
-  typeof RequiredConnectorConnectionSchema
->;
+export type RequiredConnectorConnection = z.infer<typeof RequiredConnectorConnectionSchema>;
 
 export const ConnectorConnectionRequiredErrorSchema = z
   .object({
@@ -428,12 +424,7 @@ export type ConnectorConnectionRequiredError = z.infer<
   typeof ConnectorConnectionRequiredErrorSchema
 >;
 
-export const ConnectionOwnerTypeSchema = z.enum([
-  'agent',
-  'member',
-  'subject',
-  'external',
-]);
+export const ConnectionOwnerTypeSchema = z.enum(['agent', 'member', 'subject', 'external']);
 export const ConnectionStatusSchema = z.enum(['active', 'revoked', 'error']);
 export const ConnectionMetadataSchema = z
   .record(
@@ -798,9 +789,7 @@ export const UpdateConnectionCredentialInputSchema = z.union([
     .strict(),
   z.object({ oauth2: OAuth2ClientCredentialsSchema }).strict(),
 ]);
-export type UpdateConnectionCredentialInput = z.infer<
-  typeof UpdateConnectionCredentialInputSchema
->;
+export type UpdateConnectionCredentialInput = z.infer<typeof UpdateConnectionCredentialInputSchema>;
 export const PendingSessionPromptSchema = z
   .object({
     text: z.string().max(1_000_000),
@@ -1026,6 +1015,32 @@ export const SESSION_START_STAGES = [
 export const SessionStartStageSchema = z.enum(SESSION_START_STAGES);
 export type SessionStartStage = z.infer<typeof SessionStartStageSchema>;
 
+/**
+ * WHY a negative was claimed — which check produced it, when, what the provider
+ * or daemon actually said, and when the server will try again.
+ *
+ * A negative is a claim, and only a source that could have known may make it.
+ * Before this, `/start` could answer `stage:"failed"` from a stamp written
+ * hours earlier without touching a provider on the call (Essentia 2026-08-26,
+ * session 9c8749ac: a 03:37Z `runtime_boot_failed` replayed for 10+ hours with
+ * `lastInitError:null`). Every failure now carries its evidence.
+ */
+export const SessionStartFailureEvidenceSchema = z
+  .object({
+    /** The check that failed: a wake error, a park reason, a boot budget. */
+    check: z.string(),
+    /** When that check produced this verdict. Null only for legacy rows. */
+    observed_at: z.string().nullable(),
+    /** Provider/daemon text, when the failing path recorded any. */
+    error: z.string().nullable(),
+    /** Consecutive failed start attempts this verdict is counting. */
+    attempts: z.number().int().nonnegative(),
+    /** When the server itself re-attempts. Null = only a restart will. */
+    next_retry_at: z.string().nullable(),
+  })
+  .strict();
+export type SessionStartFailureEvidence = z.infer<typeof SessionStartFailureEvidenceSchema>;
+
 export const SessionStartFailureSchema = z
   .object({
     category: z.enum([
@@ -1042,9 +1057,88 @@ export const SessionStartFailureSchema = z
     ]),
     message: z.string(),
     retryable: z.boolean(),
+    /** Optional only for backward compatibility; every NEW failure carries it. */
+    evidence: SessionStartFailureEvidenceSchema.optional(),
   })
   .strict();
 export type SessionStartFailure = z.infer<typeof SessionStartFailureSchema>;
+
+/**
+ * What the server DID on this call — not what some earlier call left behind.
+ *
+ * `replayed_stamp` is deliberately absent from this list: an answer no live
+ * check supports is the defect, not a state worth naming.
+ */
+export const SESSION_START_ACTIONS = [
+  /** Read the durable rows only; nothing needed doing. */
+  'inspected',
+  /** Asked the provider for this box's real state on this call. */
+  'checked_provider',
+  /** Claimed the wake fence and started the provider box. */
+  'resumed',
+  /** Allocated a new runtime for this session. */
+  'provisioned',
+  /** Asked the provider to restore the box in place. */
+  'restored',
+  /** Wrote our rows back to the provider's truth (park / preserve). */
+  'reconciled',
+  /** Observed a wake another caller already owns. */
+  'awaited_wake',
+  /** A previous start failed; its cooldown has not lapsed yet. */
+  'cooling_down',
+] as const;
+export const SessionStartActionSchema = z.enum(SESSION_START_ACTIONS);
+export type SessionStartAction = z.infer<typeof SessionStartActionSchema>;
+
+export const SESSION_START_BOOT_PHASES = [
+  'provisioning',
+  'resuming',
+  'booting',
+  'ready',
+  'parked',
+  'failed',
+] as const;
+export const SessionStartBootPhaseSchema = z.enum(SESSION_START_BOOT_PHASES);
+export type SessionStartBootPhase = z.infer<typeof SessionStartBootPhaseSchema>;
+
+/**
+ * What the server OBSERVED on this call, each half explicitly tri-state.
+ *
+ * `known:false` means "not checked on this call" — never "checked and found
+ * nothing". The row metadata's `healthStatus:"unknown"` conflates those two and
+ * is why a stopped box could advertise a health verdict it had never earned.
+ */
+export const SessionStartObservationSchema = z
+  .object({
+    provider: z
+      .object({
+        known: z.boolean(),
+        status: z.string().nullable(),
+        checked_at: z.string().nullable(),
+      })
+      .strict(),
+    runtime: z
+      .object({
+        known: z.boolean(),
+        state: z.enum(['ready', 'booting', 'unreachable']).nullable(),
+        boot_phase: z.string().nullable(),
+        checked_at: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+export type SessionStartObservation = z.infer<typeof SessionStartObservationSchema>;
+
+export const SessionStartBootSchema = z
+  .object({
+    phase: SessionStartBootPhaseSchema,
+    /** When this phase began, from the row's own clocks. */
+    since: z.string().nullable(),
+    /** Is a provider operation running for this session right now? */
+    actively_starting: z.boolean(),
+  })
+  .strict();
+export type SessionStartBoot = z.infer<typeof SessionStartBootSchema>;
 
 /**
  * The readiness payload of POST /v1/projects/:id/sessions/:id/start — the one
@@ -1072,6 +1166,16 @@ export const SessionStartResultSchema = z.object({
    */
   runtime_url: z.string().nullable().optional(),
   reason: z.string().optional(),
+
+  // ── The session-open envelope. Additive; every field describes THIS call. ──
+  /** ONE clock for the whole answer. */
+  observed_at: z.string().optional(),
+  /** What the server did on this call. */
+  action: SessionStartActionSchema.optional(),
+  /** Where this session is in its boot, and whether anything is driving it. */
+  boot: SessionStartBootSchema.optional(),
+  /** What the server checked on this call, and what it got back. */
+  observation: SessionStartObservationSchema.optional(),
 });
 export type SessionStartResult = z.infer<typeof SessionStartResultSchema>;
 

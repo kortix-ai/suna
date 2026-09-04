@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useFileContent } from '@/features/files/hooks/use-file-content';
-import { isSandboxNotReadyError } from '@kortix/sdk';
+import { fetchAttachmentPart, isAttachmentPartRef, isSandboxNotReadyError } from '@kortix/sdk';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
 import { useEffect, useMemo, useState } from 'react';
@@ -28,11 +28,46 @@ function isLocalSandboxFilePath(value: string): boolean {
  * SandboxImage's markup, which hardcodes an 80px minimum on its loading and
  * error states and so cannot be used at thumbnail size.
  */
+function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: boolean } {
+  const isRef = isAttachmentPartRef(src);
+  const [state, setState] = useState<{ src: string; url: string | null; loading: boolean }>({
+    src: '',
+    url: null,
+    loading: false,
+  });
+
+  useEffect(() => {
+    if (!isRef) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    void (async () => {
+      try {
+        const blob = await fetchAttachmentPart(src);
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setState({ src, url: objectUrl, loading: false });
+      } catch {
+        if (!cancelled) setState({ src, url: null, loading: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [isRef, src]);
+
+  if (!isRef) return { url: null, loading: false };
+  return state.src === src ? { url: state.url, loading: state.loading } : { url: null, loading: true };
+}
+
 export function useSandboxImageSrc(src: string): {
   resolvedSrc: string | null;
   isLoading: boolean;
 } {
-  const isLocalPath = isLocalSandboxFilePath(src);
+  const partRef = useAttachmentPartBlobUrl(src);
+  // A part reference is a daemon path, so it must be answered before the
+  // workspace-path branch below claims it.
+  const isLocalPath = !isAttachmentPartRef(src) && isLocalSandboxFilePath(src);
 
   // Strip /workspace/ prefix since the SDK expects paths relative to project root
   const fileContentPath = useMemo(() => {
@@ -66,6 +101,10 @@ export function useSandboxImageSrc(src: string): {
       URL.revokeObjectURL(url);
     };
   }, [fileContentData]);
+
+  if (isAttachmentPartRef(src)) {
+    return { resolvedSrc: partRef.url, isLoading: partRef.loading };
+  }
 
   return {
     resolvedSrc: isLocalPath ? blobUrl : src,

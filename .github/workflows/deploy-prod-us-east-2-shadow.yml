@@ -141,7 +141,7 @@ permissions:
 jobs:
   infrastructure:
     name: Apply US East 2 shadow Terraform
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     # A healthy apply finishes in under a minute (v0.12.7: 40s, job
     # 93576314738). Anything past 20 minutes is a stuck Terraform lock.
     timeout-minutes: 20
@@ -261,7 +261,7 @@ jobs:
 
   deploy:
     name: Deploy API and gateway to US shadow
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     needs: infrastructure
     # Hard ceiling so a wedged shadow can never sit `in_progress` and block
     # "re-run failed jobs" on the calling release run — the v0.12.7 failure
@@ -337,7 +337,6 @@ jobs:
             and .KORTIX_LEGACY_MIGRATION_WORKER_ENABLED == "false"
             and .KORTIX_SUNA_MIGRATION_WORKER_ENABLED == "false"
             and .KORTIX_WARM_POOL_ENABLED == "false"
-            and .KORTIX_WARM_SNAPSHOT_ENABLED == "false"
             and .TUNNEL_ENABLED == "false"
             and .POOL_ENABLED == "false"
           ' <<<"$secret_json" >/dev/null

@@ -22,6 +22,7 @@ mock.module('../shared/audit', () => ({
 const {
   decryptProjectSecret,
   encryptProjectSecret,
+  getProjectSecretConsumerConfigurationStatus,
   getProjectSecretValueForConsumer,
   listProjectSecretNamesForConsumer,
   resolveProjectSecretsForConsumer,
@@ -84,6 +85,26 @@ describe('getProjectSecretValueForConsumer', () => {
       },
     });
     expect(JSON.stringify(audits)).not.toContain('plaintext-test-value');
+  });
+
+  test('distinguishes missing, inactive, mismatched, and configured connector secrets', async () => {
+    const status = () =>
+      getProjectSecretConsumerConfigurationStatus({
+        projectId: PROJECT_ID,
+        name: 'provider_key',
+        consumer: 'connector',
+      });
+
+    expect(await status()).toBe('missing');
+
+    rows = [secret({ strategy: 'broker', consumer: 'connector', active: false })];
+    expect(await status()).toBe('inactive');
+
+    rows = [secret({ strategy: 'runtime', consumer: 'sandbox' })];
+    expect(await status()).toBe('delivery_mismatch');
+
+    rows = [secret({ strategy: 'broker', consumer: 'connector' })];
+    expect(await status()).toBe('configured');
   });
 
   test('does not decrypt or audit fallback identifiers when the first value resolves', async () => {
@@ -412,5 +433,58 @@ describe('listProjectSecretNamesForConsumer', () => {
         consumer: 'llm_gateway',
       }),
     ).toEqual(['CODEX_AUTH_JSON']);
+  });
+});
+
+// Webhook trigger signing secrets (dashboard wizard regression guard):
+// the wizard must create its auto-generated HMAC key as broker/connector.
+// A policy-less upsert persists runtime/sandbox, which the connector
+// boundary rejects as delivery_mismatch — that mismatch is what broke
+// webhook trigger creation ("Webhook secret is not available to the
+// connector consumer").
+
+import { projectSecretIsConfiguredForConsumer } from './secrets';
+
+describe('webhook signing secret delivery (wizard flow)', () => {
+  test('policy-less runtime/sandbox row is delivery_mismatch for connector', async () => {
+    rows = [
+      secret({
+        identifier: 'WEBHOOK_TEST_SECRET',
+        name: 'WEBHOOK_TEST_SECRET',
+        scope: 'runtime',
+        strategy: 'runtime',
+        consumer: 'sandbox',
+        active: true,
+      }),
+    ];
+
+    expect(
+      await getProjectSecretConsumerConfigurationStatus({
+        projectId: PROJECT_ID,
+        name: 'WEBHOOK_TEST_SECRET',
+        consumer: 'connector',
+      }),
+    ).toBe('delivery_mismatch');
+  });
+
+  test('broker/connector signing key passes webhook validation', async () => {
+    rows = [
+      secret({
+        identifier: 'WEBHOOK_TEST_SECRET',
+        name: 'WEBHOOK_TEST_SECRET',
+        scope: 'runtime',
+        strategy: 'broker',
+        consumer: 'connector',
+        active: true,
+      }),
+    ];
+
+    expect(
+      await projectSecretIsConfiguredForConsumer({
+        projectId: PROJECT_ID,
+        name: 'WEBHOOK_TEST_SECRET',
+        consumer: 'connector',
+      }),
+    ).toBe(true);
   });
 });

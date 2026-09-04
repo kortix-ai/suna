@@ -122,7 +122,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
         <FadedScrollArea
           fadeColor="from-popover"
           rootClassName="h-auto max-h-44"
-          className="max-h-44 overscroll-contain px-2 py-1.5"
+          className="max-h-44 overscroll-contain p-2 py-3"
         >
           <ul>
             {changedFiles.map((file) => {

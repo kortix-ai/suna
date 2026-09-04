@@ -46,12 +46,8 @@ export type ActionBinding =
   // RPC core instead of executeCall. See
   // docs/specs/computer-connector.md.
   | { kind: 'tunnel'; method: string }
-  // Voice channel action (`spawn_room`, `join_gmeet`, `join_zoom`, …): server-
-  // side logic (LiveKit today), never an outbound HTTP call — the gateway
-  // routes these through GatewayDeps.executeVoiceCall instead of executeCall.
-  // `op` is the action's connector-relative path. See connector/gateway.ts.
-  | { kind: 'voice'; op: string }
   | { kind: 'pipedream'; app: string; actionKey: string }
+  | { kind: 'composio'; toolkit: string; toolSlug: string }
   // Generic Connect-Proxy request: hit ANY endpoint of a Pipedream-connected
   // app's API. Pipedream injects the user's credential server-side, so this
   // makes a pipedream connector behave like an openapi/http one — the agent
@@ -69,6 +65,21 @@ export interface PipedreamActionLike {
     required?: boolean;
     description?: string;
   }>;
+}
+
+/**
+ * A tool returned by `@composio/core` 0.17 `session.tools()` with its default
+ * OpenAI provider. This is the runtime shape. It is not the legacy raw
+ * `{ slug, inputParameters }` Composio tool shape.
+ */
+export interface ComposioToolLike {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+    strict?: boolean;
+  };
 }
 
 /** A declared HTTP route (provider=http, from `.kortix/connectors/*.http.toml`). */

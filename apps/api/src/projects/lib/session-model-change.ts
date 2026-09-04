@@ -42,6 +42,32 @@ export function validateModelChangeShape(requested: string): ModelChangeRejectio
 }
 
 /**
+ * Native-mode (project `llm_gateway` flag OFF) shape rule for a model ref.
+ *
+ * Off-gateway, OpenCode owns the catalog: a pin must be its native
+ * `provider/model` form. Two shapes are dead pins and fail fast instead of
+ * being stored:
+ *  • `kortix/…` — names the synthetic gateway provider, which does not exist
+ *    in a native box;
+ *  • a slash-less bare id — the daemon's resolveOpencodeModel drops it
+ *    silently and the session runs on the default model while the row claims
+ *    a pin.
+ * Servability is deliberately NOT checked: the gateway resolver has no say in
+ * native mode, and OpenCode reports an unknown model itself at prompt time.
+ */
+export function validateNativeOpencodeModelRef(requested: string): ModelChangeRejection | null {
+  const trimmed = requested.trim();
+  const slash = trimmed.indexOf('/');
+  if (trimmed.startsWith('kortix/') || slash <= 0 || slash === trimmed.length - 1) {
+    return {
+      code: 'INVALID_SESSION_MODEL',
+      message: `Model "${trimmed}" is not a native OpenCode ref — the LLM gateway is off for this project, so use "provider/model" (e.g. "anthropic/claude-sonnet-4-6")`,
+    };
+  }
+  return null;
+}
+
+/**
  * May this session's model change right now?
  *
  * A queued/provisioning session is allowed: the row is what a cold boot reads,

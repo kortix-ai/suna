@@ -7,7 +7,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { approvalPageUrl } from '../../setup-links/token';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
-import { auditDb } from '../../shared/audit-db';
+import { auditDb, isAuditContentionError } from '../../shared/audit-db';
 import { createRoute, z } from '@hono/zod-openapi';
 import { auditEvents, connectors, connectorCalls, projectSessions, sessionSandboxes, serviceAccounts } from '@kortix/db';
 import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
@@ -32,6 +32,21 @@ import { applyOpenCodeAuditRateLimit } from '../../shared/opencode-audit-rate-gu
 import { flagSessionAuditRateLimited } from '../lib/session-audit-rate-flag';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { sandboxTokenMayActOnSession } from '../lib/sandbox-token-session';
+import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
+
+/**
+ * Rows per audit-ingest INSERT statement. Each statement holds this session's
+ * `audit_session_sequences` row lock until it commits, so this is the knob that
+ * bounds how long one ingest can block another. Overridable for an operator who
+ * needs to trade lock hold time against round trips.
+ */
+const AUDIT_INGEST_CHUNK = (() => {
+  const raw = Number.parseInt(process.env.KORTIX_AUDIT_INGEST_CHUNK ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : 25;
+})();
+
+/** Advertised backoff when the session's sequence lock is contended. */
+const AUDIT_INGEST_RETRY_AFTER_SECONDS = 5;
 
 // GET /v1/projects/:projectId/audit
 // Canonical project slice. It returns the same event contract and cursor as
@@ -153,12 +168,18 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string().uuid(), sessionId: z.string().uuid() }),
       body: { content: { 'application/json': { schema: AnyObject } } },
     },
-    responses: { 200: json(AnyObject, 'Batch ingestion result'), ...errors(400, 403, 404) },
+    responses: {
+      200: json(AnyObject, 'Batch ingestion result'),
+      // Lock contention on kortix.audit_session_sequences. Retryable: the relay
+      // still holds the batch in its own durable spool.
+      503: json(AnyObject, 'Audit ingestion is contended'),
+      ...errors(400, 403, 404),
+    },
   }),
   async (c) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (c.get('authType') !== 'apiKey' || c.get('apiKeyType') !== 'sandbox') {
+    if (!isSessionSandboxCredential(c)) {
       return c.json({ error: 'audit ingestion requires a sandbox token' }, 403);
     }
     const accountId = c.get('accountId');
@@ -286,19 +307,61 @@ projectsApp.openapi(
       return c.json({ accepted: parsed.accepted, inserted: 0, duplicates: 0, suppressed });
     }
 
-    const inserted = await auditDb()
-      .insert(auditEvents)
-      .values(toInsert)
-      .onConflictDoNothing()
-      .returning({ eventId: auditEvents.eventId });
-    return c.json({
+    // Write in bounded chunks, never one 200-row statement.
+    //
+    // Every row's BEFORE INSERT trigger locks this session's
+    // `audit_session_sequences` row, and PostgreSQL holds that lock until the
+    // statement's transaction COMMITs. One 200-row statement therefore pinned
+    // the session for its entire duration (measured 137 ms on a warm 5.09M-row
+    // audit_events; the Essentia box runs an order of magnitude slower), and a
+    // rollback discarded all 200 rows' work, which the relay then re-sent in
+    // full. Chunking bounds both: the lock is held per chunk, and chunks that
+    // already committed stay committed.
+    let attempted = 0;
+    let insertedCount = 0;
+    let contended = false;
+    for (let offset = 0; offset < toInsert.length; offset += AUDIT_INGEST_CHUNK) {
+      const chunk = toInsert.slice(offset, offset + AUDIT_INGEST_CHUNK);
+      try {
+        const inserted = await auditDb()
+          .insert(auditEvents)
+          .values(chunk)
+          .onConflictDoNothing()
+          .returning({ eventId: auditEvents.eventId });
+        attempted += chunk.length;
+        insertedCount += inserted.length;
+      } catch (error) {
+        if (!isAuditContentionError(error)) throw error;
+        // The session lock is queued. Pushing the remaining chunks into it
+        // would only lengthen the queue that just rejected this one. Stop and
+        // tell the relay to come back — the batch is still in its spool.
+        contended = true;
+        break;
+      }
+    }
+    const result = {
       accepted: parsed.accepted,
-      inserted: inserted.length,
+      inserted: insertedCount,
       // Rows the unique index rejected. Identical to the previous
       // `accepted - inserted` whenever nothing was suppressed.
-      duplicates: Math.max(0, toInsert.length - inserted.length),
+      duplicates: Math.max(0, attempted - insertedCount),
       suppressed,
-    });
+    };
+    if (contended) {
+      // 503, never 500. A 500 told the relay "your batch is broken" for what is
+      // in fact backpressure, and its flat 1s retry then rebuilt the convoy
+      // that caused it (Essentia 2026-08-26: 445 x 500 [57014] in 3h).
+      c.header('Retry-After', String(AUDIT_INGEST_RETRY_AFTER_SECONDS));
+      return c.json(
+        {
+          ...result,
+          error: 'audit ingestion is contended; retry after the backoff',
+          retry_after_seconds: AUDIT_INGEST_RETRY_AFTER_SECONDS,
+        },
+        503,
+      );
+    }
+    return c.json(result);
   },
 );
 
@@ -396,9 +459,18 @@ projectsApp.openapi(
       if (cursorCondition) eventConditions.push(cursorCondition);
     }
     // Audit writes are buffered off the request path (shared/audit-queue.ts).
-    // A reader must observe every event already emitted, so drain the queue
-    // before querying.
-    await flushAuditEvents();
+    // A reader of EVENTS must observe every event already emitted, so drain
+    // the queue before querying them.
+    //
+    // Only then. `include_events=false` is the badge poll — every open session
+    // tab asks every 15 s for the pending-approval COUNT and never reads an
+    // event row — and draining the queue on its behalf meant every one of
+    // those polls waited on a bulk INSERT into `audit_events`. On a self-host
+    // with 3.9 M rows that insert hit the statement timeout (57014), the
+    // request hit the 25 s server deadline, and the badge answered 503 twice
+    // per session open, forever (essentia, 2026-08-24). A count of pending
+    // connector calls does not depend on the audit queue at all.
+    if (audited && includeEvents) await flushAuditEvents();
     const fetchedEvents = audited && includeEvents
       ? await db
           .select()

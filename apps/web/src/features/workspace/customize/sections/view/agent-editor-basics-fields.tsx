@@ -16,9 +16,9 @@
  * reason no reader could see.
  */
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -31,17 +31,17 @@ import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/features/session/model-selector';
+import { ReasoningEffortSelector } from '@/features/session/reasoning-effort-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
-import { cn } from '@/lib/utils';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import type { AgentConfigBlock, RuntimeAgentConfig } from '@kortix/sdk';
-import { modelKeyToWire, useRuntimeProviders, wireToModelKey } from '@kortix/sdk/react';
 import {
-  AGENT_MODE_HELP,
-  AGENT_MODE_LABEL,
-  AGENT_MODES,
-  THEME_COLOR_SWATCH,
-  THEME_COLORS,
-} from './agent-editor-catalog';
+  modelKeyToWire,
+  useFeatureFlag,
+  useKortixRouteProjectId,
+  useRuntimeProviders,
+} from '@kortix/sdk/react';
+import { AGENT_MODE_HELP, AGENT_MODE_LABEL, AGENT_MODES } from './agent-editor-catalog';
 import { EditorSection, InlineAction, SettingBlock, SettingRow } from './agent-editor-primitives';
 
 /** Matches the access section's inherit sentinel — Radix forbids `""`. */
@@ -58,11 +58,15 @@ export function BasicsSection({
   set,
   oc,
   setOc,
+  showDescription = true,
 }: {
   draft: AgentConfigBlock;
   set: SetKortix;
   oc: RuntimeAgentConfig;
   setOc: SetRuntime;
+  /** The agent page edits the description in its own header, beside the
+   *  instructions — pass `false` there so the field is not offered twice. */
+  showDescription?: boolean;
 }) {
   return (
     <EditorSection title="Basics" description="What this agent is, and whether it can run.">
@@ -76,23 +80,25 @@ export function BasicsSection({
         </div>
       </SettingRow>
 
-      <SettingBlock
-        label="Description"
-        help={
-          oc.mode === 'subagent'
-            ? 'Required. This is how other agents decide to call it.'
-            : 'One line on what this agent is for. Other agents read it when picking a subagent.'
-        }
-      >
-        <Textarea
-          aria-label="Description"
-          value={oc.description ?? ''}
-          placeholder="What this agent is for"
-          minHeight={44}
-          className="text-sm"
-          onChange={(e) => setOc('description', e.target.value)}
-        />
-      </SettingBlock>
+      {showDescription ? (
+        <SettingBlock
+          label="Description"
+          help={
+            oc.mode === 'subagent'
+              ? 'Required. This is how other agents decide to call it.'
+              : 'One line on what this agent is for. Other agents read it when picking a subagent.'
+          }
+        >
+          <Textarea
+            aria-label="Description"
+            value={oc.description ?? ''}
+            placeholder="What this agent is for"
+            minHeight={44}
+            className="text-sm"
+            onChange={(e) => setOc('description', e.target.value)}
+          />
+        </SettingBlock>
+      ) : null}
 
       <SettingRow
         label="Availability"
@@ -133,223 +139,219 @@ export function BasicsSection({
           />
         </div>
       </SettingRow>
+    </EditorSection>
+  );
+}
 
-      <SettingRow
-        label="Badge color"
-        help={
-          oc.color ? (
-            <>
-              <span className="font-mono">{oc.color}</span> ·{' '}
-              <InlineAction onClick={() => setOc('color', undefined)}>Clear</InlineAction>
-            </>
-          ) : (
-            "Tints this agent's badge in session lists."
-          )
+export function ModelSection({
+  oc,
+  setOc,
+  showPrompt = true,
+}: {
+  oc: RuntimeAgentConfig;
+  setOc: SetRuntime;
+  /** The agent page gives the system prompt the whole left column — pass
+   *  `false` there so the collapsed copy of it does not sit in this section. */
+  showPrompt?: boolean;
+}) {
+  const { data: providers } = useRuntimeProviders();
+  const models = flattenModels(providers);
+  // Mode-aware read-back: a native (gateway-off) agent model is
+  // `provider/model` — see storedModelRefToKey. This editor renders under
+  // /projects/[id], so the route supplies the project.
+  const projectId = useKortixRouteProjectId();
+  const llmGatewayFlag = useFeatureFlag(projectId, 'llm_gateway');
+  const selectedModelKey = oc.model
+    ? storedModelRefToKey(oc.model, llmGatewayFlag.enabled === true)
+    : null;
+  // The pinned model's published variants — the same list the composer's
+  // thinking-effort pill offers. With a list, the knob is that pill (Marko,
+  // 2026-09-03: "look in chat input how we do it"); without one (no pin, or a
+  // model that publishes none) the raw variant id stays typeable.
+  const selectedModel = selectedModelKey
+    ? models.find(
+        (m) =>
+          m.providerID === selectedModelKey.providerID && m.modelID === selectedModelKey.modelID,
+      )
+    : undefined;
+  const variantChoices = selectedModel?.variants ? Object.keys(selectedModel.variants) : [];
+
+  // The sampling knobs and the step cap are set on a handful of agents and
+  // read by fewer. They open only when one of them carries a value, so an
+  // agent that tunes nothing shows one row — the model — and nothing else.
+  const advancedSet =
+    !isSliderAtDefault(oc.temperature, 0) ||
+    !isSliderAtDefault(oc.top_p, 1) ||
+    oc.steps !== undefined;
+
+  return (
+    <>
+      <EditorSection title="Model" description="How this agent thinks.">
+        {/* "Provider model", not "Model": the section is already titled Model,
+          and a row that repeats its section's name reads as a typo. */}
+        <SettingRow
+          label="Provider model"
+          help={
+            oc.model ? (
+              <InlineAction onClick={() => setOc('model', undefined)}>
+                Reset to project default
+              </InlineAction>
+            ) : (
+              'Follows the project default.'
+            )
+          }
+        >
+          <div className="flex sm:justify-end">
+            <ModelSelector
+              models={models}
+              providers={providers}
+              selectedModel={selectedModelKey}
+              unsetLabel="Project default"
+              onSelect={(m) => setOc('model', m ? modelKeyToWire(m) : undefined)}
+            />
+          </div>
+        </SettingRow>
+
+        {variantChoices.length > 0 ? (
+          <SettingRow
+            label="Thinking effort"
+            help={oc.variant ? 'Pinned for this agent.' : 'Auto — the model decides per turn.'}
+          >
+            <div className="flex sm:justify-end">
+              <ReasoningEffortSelector
+                variants={variantChoices}
+                selectedVariant={oc.variant ?? null}
+                onVariantChange={(v) => setOc('variant', v ?? undefined)}
+              />
+            </div>
+          </SettingRow>
+        ) : (
+          <SettingRow
+            label="Variant"
+            help={
+              selectedModelKey
+                ? 'This model publishes no variants. A raw variant id still applies.'
+                : 'Pin a model above to pick from its variants, or type a variant id.'
+            }
+          >
+            <Input
+              aria-label="Variant"
+              value={oc.variant ?? ''}
+              placeholder="Provider default"
+              variant="popover"
+              className="h-9 w-full text-sm"
+              onChange={(e) => setOc('variant', e.target.value)}
+            />
+          </SettingRow>
+        )}
+
+        {/* A wall of text most agents never set — collapsed, like the tool
+          permissions at the foot of the editor. */}
+        {showPrompt ? (
+          <SettingBlock
+            label="System prompt"
+            help="Replaces the default instructions for this agent."
+          >
+            <Disclosure variant="outline" className="overflow-hidden rounded-md">
+              <DisclosureTrigger variant="outline">
+                <Button
+                  variant="popover"
+                  className="flex w-full items-center justify-between gap-3 rounded-none text-sm font-normal"
+                >
+                  <span className="min-w-0 truncate">
+                    {oc.prompt ? firstLine(oc.prompt) : 'Not set — using the default instructions'}
+                  </span>
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {oc.prompt ? 'Edit' : 'Write one'}
+                  </span>
+                </Button>
+              </DisclosureTrigger>
+              <DisclosureContent variant="outline" contentClassName="border-border border-t">
+                <Textarea
+                  aria-label="System prompt"
+                  value={oc.prompt ?? ''}
+                  placeholder="You are…"
+                  minHeight={160}
+                  className="rounded-none border-0 font-mono text-xs focus-visible:border-0 focus-visible:ring-0"
+                  onChange={(e) => setOc('prompt', e.target.value)}
+                />
+              </DisclosureContent>
+            </Disclosure>
+          </SettingBlock>
+        ) : null}
+      </EditorSection>
+
+      {/* Its own card, rows open: the page gives each topic a full column, so
+          nothing needs hiding behind a disclosure. `advancedSet` still feeds
+          the header chip so an untouched agent reads "Defaults" at a glance. */}
+      <EditorSection
+        title="Sampling and limits"
+        description="How the model samples, and how many tool calls one run may make."
+        trailing={
+          <Badge variant={advancedSet ? 'outline' : 'muted'} size="sm">
+            {advancedSet ? 'Customized' : 'Defaults'}
+          </Badge>
         }
       >
-        <ColorSwatches value={oc.color} onChange={(v) => setOc('color', v)} />
-      </SettingRow>
-    </EditorSection>
+        <SliderRow
+          label="Temperature"
+          help="0 gives the same answer every time. 2 is the most random."
+          value={oc.temperature}
+          fallback={0}
+          min={0}
+          max={2}
+          step={0.05}
+          onChange={(v) => setOc('temperature', v)}
+        />
+
+        <SliderRow
+          label="Top-p"
+          help="Nucleus sampling. Leave it alone unless you are tuning the model."
+          value={oc.top_p}
+          fallback={1}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(v) => setOc('top_p', v)}
+        />
+
+        <SettingRow label="Step limit" help="Most tool calls this agent may make in one run.">
+          <Input
+            aria-label="Step limit"
+            type="number"
+            min={1}
+            value={oc.steps ?? ''}
+            placeholder="No limit"
+            variant="popover"
+            className="h-9 w-full text-sm tabular-nums"
+            onChange={(e) =>
+              setOc('steps', e.target.value ? Math.max(1, Number(e.target.value)) : undefined)
+            }
+          />
+        </SettingRow>
+      </EditorSection>
+    </>
   );
 }
 
 /**
- * Seven named theme colours as swatches, plus a custom hex well.
+ * Whether a slider row is showing its default.
  *
- * This replaced seven text pills reading "primary secondary accent success
- * warning error info", a colour input, and a mono badge echoing the value —
- * nine controls for a badge tint. A colour picker should show colour.
+ * True for an absent key (inherit) AND for an explicit value that equals the
+ * value the row parks at. Both put the handle where an untouched row puts it,
+ * so neither is worth offering a Reset for: dragging away and back left
+ * "Reset" sitting under a slider that looked untouched, which reads as a
+ * control with nothing to undo.
+ *
+ * The two states stay distinguishable in the readout — `—` is inherit, a
+ * number is explicit — so no information is lost. To go from an explicit
+ * parked value back to inherit, move the handle; Reset returns with it.
+ *
+ * Compared with a tolerance because `step` is fractional (0.05 / 0.01) and
+ * slider arithmetic does not land on exact binary fractions.
  */
-function ColorSwatches({
-  value,
-  onChange,
-}: {
-  value: string | undefined;
-  onChange: (v: string | undefined) => void;
-}) {
-  const isHex = /^#[0-9a-fA-F]{6}$/.test(value ?? '');
-  // Eight size-7 targets at gap-0.5 is 238px — two under the row's 240px
-  // control slot. `flex-wrap` is the safety net for a zoom or font change that
-  // pushes it over, rather than letting one swatch clip.
-  return (
-    <div className="flex flex-wrap items-center gap-0.5 sm:flex-nowrap sm:justify-end">
-      {THEME_COLORS.map((c) => {
-        const active = value === c;
-        return (
-          <Hint key={c} label={c} side="bottom">
-            <button
-              type="button"
-              aria-label={c}
-              aria-pressed={active}
-              onClick={() => onChange(active ? undefined : c)}
-              className={cn(
-                // size-7 keeps the tap target honest while the dot stays size-4.
-                'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-sm transition-transform active:scale-[0.96]',
-                'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
-              )}
-            >
-              <span
-                className={cn(
-                  'size-5 rounded-sm transition-shadow',
-                  THEME_COLOR_SWATCH[c],
-                  active
-                    ? 'ring-foreground ring-offset-popover ring-1 ring-offset-1'
-                    : 'ring-border ring-[1px] ring-inset',
-                )}
-              />
-            </button>
-          </Hint>
-        );
-      })}
-      <Hint label="Custom color" side="bottom">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-sm">
-          {/* Native color inputs only paint a solid hex. When nothing custom is
-              selected, cover the well with a rainbow wheel so the control reads
-              as "pick any colour" rather than a fixed purple seed. */}
-          <span
-            className={cn(
-              'relative size-5 overflow-hidden rounded-sm transition-shadow',
-              isHex
-                ? 'ring-foreground ring-offset-popover ring-1 ring-offset-1'
-                : 'ring-border ring-[1px] ring-inset',
-            )}
-          >
-            {!isHex && (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0"
-                style={{
-                  background:
-                    'conic-gradient(from 0deg, #ff0040, #ff9a00, #ffe600, #00e676, #00d4ff, #2979ff, #d500f9, #ff0040)',
-                }}
-              />
-            )}
-            <input
-              type="color"
-              aria-label="Custom color"
-              value={isHex ? value : '#7c5cff'}
-              onChange={(e) => onChange(e.target.value)}
-              className={cn(
-                'absolute inset-0 size-full cursor-pointer appearance-none bg-transparent p-0',
-                '[&::-webkit-color-swatch]:rounded-sm [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0',
-                !isHex && 'opacity-0',
-              )}
-            />
-          </span>
-        </span>
-      </Hint>
-    </div>
-  );
-}
-
-export function ModelSection({ oc, setOc }: { oc: RuntimeAgentConfig; setOc: SetRuntime }) {
-  const { data: providers } = useRuntimeProviders();
-  const models = flattenModels(providers);
-  const selectedModelKey = oc.model ? wireToModelKey(oc.model) : null;
-
-  return (
-    <EditorSection title="Model" description="How this agent thinks.">
-      <SettingRow
-        label="Model"
-        help={
-          oc.model ? (
-            <InlineAction onClick={() => setOc('model', undefined)}>
-              Reset to project default
-            </InlineAction>
-          ) : (
-            'Follows the project default.'
-          )
-        }
-      >
-        <div className="flex sm:justify-end">
-          <ModelSelector
-            models={models}
-            providers={providers}
-            selectedModel={selectedModelKey}
-            onSelect={(m) => setOc('model', m ? modelKeyToWire(m) : undefined)}
-          />
-        </div>
-      </SettingRow>
-
-      <SettingRow label="Variant" help="Provider variant to request, such as thinking.">
-        <Input
-          aria-label="Variant"
-          value={oc.variant ?? ''}
-          placeholder="Provider default"
-          variant="popover"
-          className="h-9 w-full text-sm"
-          onChange={(e) => setOc('variant', e.target.value)}
-        />
-      </SettingRow>
-
-      <SliderRow
-        label="Temperature"
-        help="0 gives the same answer every time. 2 is the most random."
-        value={oc.temperature}
-        fallback={0}
-        min={0}
-        max={2}
-        step={0.05}
-        onChange={(v) => setOc('temperature', v)}
-      />
-
-      <SliderRow
-        label="Top-p"
-        help="Nucleus sampling. Leave it alone unless you are tuning the model."
-        value={oc.top_p}
-        fallback={1}
-        min={0}
-        max={1}
-        step={0.01}
-        onChange={(v) => setOc('top_p', v)}
-      />
-
-      <SettingRow label="Step limit" help="Most tool calls this agent may make in one run.">
-        <Input
-          aria-label="Step limit"
-          type="number"
-          min={1}
-          value={oc.steps ?? ''}
-          placeholder="No limit"
-          variant="popover"
-          className="h-9 w-full text-sm tabular-nums"
-          onChange={(e) =>
-            setOc('steps', e.target.value ? Math.max(1, Number(e.target.value)) : undefined)
-          }
-        />
-      </SettingRow>
-
-      {/* A wall of text most agents never set — collapsed, like the tool
-          permissions at the foot of the editor. */}
-      <SettingBlock label="System prompt" help="Replaces the default instructions for this agent.">
-        <Disclosure variant="outline" className="overflow-hidden rounded-md">
-          <DisclosureTrigger variant="outline">
-            <Button
-              variant="popover"
-              className="flex w-full items-center justify-between gap-3 rounded-none text-sm font-normal"
-            >
-              <span className="min-w-0 truncate">
-                {oc.prompt ? firstLine(oc.prompt) : 'Not set — using the default instructions'}
-              </span>
-              <span className="text-muted-foreground shrink-0 text-xs">
-                {oc.prompt ? 'Edit' : 'Write one'}
-              </span>
-            </Button>
-          </DisclosureTrigger>
-          <DisclosureContent variant="outline" contentClassName="border-border border-t">
-            <Textarea
-              aria-label="System prompt"
-              value={oc.prompt ?? ''}
-              placeholder="You are…"
-              minHeight={160}
-              className="rounded-none border-0 font-mono text-xs focus-visible:border-0 focus-visible:ring-0"
-              onChange={(e) => setOc('prompt', e.target.value)}
-            />
-          </DisclosureContent>
-        </Disclosure>
-      </SettingBlock>
-    </EditorSection>
-  );
+export function isSliderAtDefault(value: number | undefined, fallback: number): boolean {
+  return value === undefined || Math.abs(value - fallback) < 1e-9;
 }
 
 /**
@@ -382,7 +384,7 @@ function SliderRow({
     <SettingRow
       label={label}
       help={
-        value === undefined ? (
+        isSliderAtDefault(value, fallback) ? (
           help
         ) : (
           <>

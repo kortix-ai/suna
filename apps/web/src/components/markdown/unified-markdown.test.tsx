@@ -97,3 +97,68 @@ describe('UnifiedMarkdown table cells', () => {
     expect(html).not.toContain('node=');
   });
 });
+
+// ─── A fenced block inside a list item ──────────────────────────────────────
+// `li` runs its children through `wrapChildrenWithPaths`. That walk used to
+// descend into the fence and swap the snippet for a React element, so
+// `MarkdownCode` stringified an object and Shiki highlighted the literal
+// `[object Object]` in place of the commands. Only fences whose body holds a
+// detected path (`./Setup.sh`) tripped it, which is why it read as random.
+// ────────────────────────────────────────────────────────────────────────────
+
+const FENCE_IN_LIST_MD = [
+  '1. Link your GitHub account',
+  '',
+  '2. **Clone + build**:',
+  '',
+  '   ```bash',
+  '   git clone --depth 1 https://github.com/EpicGames/UnrealEngine ~/UnrealEngine',
+  '   cd ~/UnrealEngine',
+  '   ./Setup.sh',
+  '   make',
+  '   ```',
+  '',
+].join('\n');
+
+const PATH_IN_LIST_MD = ['- open docs/readme.md now', ''].join('\n');
+
+/**
+ * The text a reader sees, with the markup removed.
+ *
+ * Asserting on raw markup is only stable while the fence is UNHIGHLIGHTED:
+ * where Shiki's grammar loads synchronously it emits one span per token, so
+ * `cd ~/UnrealEngine` lands in two elements and a substring match on the HTML
+ * misses. Splitting on the tag delimiters — rather than a `replace()` that
+ * reads as an HTML sanitizer it is not — keeps this a test-only text
+ * extractor.
+ */
+function visibleText(html: string): string {
+  return html
+    .split('<')
+    .map((chunk, index) => (index === 0 ? chunk : chunk.slice(chunk.indexOf('>') + 1)))
+    .join('');
+}
+
+describe('UnifiedMarkdown code fence inside a list', () => {
+  test('renders the snippet, not a stringified React element', () => {
+    const text = visibleText(
+      renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />)),
+    );
+
+    expect(text).not.toContain('[object Object]');
+    expect(text).toContain('./Setup.sh');
+    expect(text).toContain('cd ~/UnrealEngine');
+  });
+
+  test('does not inject clickable-path chrome into the fence body', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={FENCE_IN_LIST_MD} />));
+
+    expect(html).not.toContain('Click to preview');
+  });
+
+  test('still makes a path in list prose clickable', () => {
+    const html = renderToStaticMarkup(withIntl(<UnifiedMarkdown content={PATH_IN_LIST_MD} />));
+
+    expect(html).toContain('docs/readme.md — Click to preview');
+  });
+});

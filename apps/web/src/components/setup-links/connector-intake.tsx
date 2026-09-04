@@ -4,6 +4,12 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
+  finalizeConnectorSetupLink,
+  getConnectorSetupLink,
+  startConnectorSetupLink,
+  type ConnectorSetupLinkInfo,
+} from '@kortix/sdk';
+import {
   CheckIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
   PlugIcon as Plug,
@@ -12,22 +18,22 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { nextConnectorPollDelay } from './connector-poll';
 import { setupLinkApiBase } from './util';
-import {
-  finalizeConnectorSetupLink,
-  getConnectorSetupLink,
-  startConnectorSetupLink,
-  type ConnectorSetupLinkInfo,
-} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
 
 /**
- * Renders a 1-click Pipedream Quick Connect for an agent-minted connect link.
- * On connect we POST /start to mint a FRESH Pipedream connect URL (the durable
- * link never hands out a stale Pipedream token) and open it in a popup.
+ * Renders 1-click authorization for an agent-minted connect link.
  *
- * The popup is on Pipedream's origin and cannot call back into us, so once it
- * is open we poll POST /finalize — the one call that persists the credential
+ * Provider-agnostic on purpose. The server decides who brokers the connector —
+ * Composio or Pipedream — and hands back whichever hosted page applies; this
+ * component only knows "open the url /start returned, then poll". Naming a
+ * provider here is what left a Composio connector reading "via Pipedream".
+ *
+ * On connect we POST /start for a FRESH url, because the durable link must
+ * never hand out a stale provider token, and open it in a popup.
+ *
+ * The popup is on the provider's origin and cannot call back into us, so once
+ * it is open we poll POST /finalize — the one call that persists the credential
  * and notifies the session that asked for the connector. The Pipedream connect
  * webhook does the same thing server-side, but only as redundancy; this poll is
  * what tells THIS window it worked. Shared by the public /connect/[token] page
@@ -36,10 +42,20 @@ type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected'
 export function ConnectorIntake({
   token,
   onOpened,
+  onConnected,
   compact,
 }: {
   token: string;
   onOpened?: () => void;
+  /**
+   * Fired once the poll confirms the connection landed.
+   *
+   * The parent cannot observe this on its own: the connect happens in
+   * Pipedream's hosted popup, and the only proof is the finalize poll below.
+   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
+   * "Connected" without reopening the modal.
+   */
+  onConnected?: () => void;
   compact?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -102,7 +118,7 @@ export function ConnectorIntake({
           return;
         }
       } catch {
-        // Transient (offline, rate limit, a 502 from Pipedream) — keep asking.
+        // Transient (offline, rate limit, a 502 from the provider) — keep asking.
       }
       if (cancelled) return;
       schedule();
@@ -130,12 +146,18 @@ export function ConnectorIntake({
       setPhase('opened');
       onOpened?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.');
+      setError(
+        cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.',
+      );
       setPhase('ready');
     }
   }
 
   const appLabel = info?.app || info?.slug || 'the app';
+
+  useEffect(() => {
+    if (phase === 'connected') onConnected?.();
+  }, [phase, onConnected]);
 
   if (phase === 'loading') {
     return (
@@ -204,11 +226,7 @@ export function ConnectorIntake({
       </p>
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
-        {starting ? (
-          <Loading className="mr-2 h-4 w-4" />
-        ) : (
-          <Plug className="mr-2 h-4 w-4" />
-        )}
+        {starting ? <Loading className="mr-2 h-4 w-4" /> : <Plug className="mr-2 h-4 w-4" />}
         {starting ? 'Opening…' : `Connect ${appLabel}`}
       </Button>
     </div>

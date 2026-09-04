@@ -4,17 +4,12 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import Hint from '@/components/ui/hint';
-import { useOptionalSidebar } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast, warningToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
-import {
-  sidebarOpenerLabel,
-  useShowPageSidebarOpener,
-} from '@/features/workspace/project-layout/sidebar-opener';
+import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
 import { RenameSessionModal } from '@/features/workspace/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
 import { ShareSessionModal } from '@/features/workspace/project-sidebar/modal/share-session-modal';
@@ -27,7 +22,6 @@ import {
   type SessionSection,
 } from '@/features/workspace/project-sidebar/session-grouping';
 import { useIsCreatingProjectSession } from '@/hooks/projects/new-session-guard';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { cn } from '@/lib/utils';
 import {
   selectCollapsedSections,
@@ -46,15 +40,10 @@ import {
   type ProjectSession,
 } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
-import {
-  CaretRightIcon,
-  ChatIcon,
-  MagnifyingGlassIcon,
-  SidebarSimpleIcon as PanelLeft,
-  PlusIcon,
-} from '@phosphor-icons/react';
+import { CaretRightIcon, ChatIcon, MagnifyingGlassIcon, PlusIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, formatDistanceToNowStrict } from 'date-fns';
+import Link from 'next/link';
 import { useCallback, useDeferredValue, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import {
@@ -186,38 +175,6 @@ function SessionsSection({
   );
 }
 
-/**
- * Absolute top-left opener — same rules as project-home / session header.
- * Inlined here (not via CustomizeSectionWrapper) so this page can own spacing
- * and layout without the shared shell's constraints.
- */
-function SessionsSidebarToggle() {
-  const sidebar = useOptionalSidebar();
-  // Shared gate — see sidebar-opener.ts. Must be called before the early
-  // return, and it already covers the `!sidebar` case.
-  const show = useShowPageSidebarOpener();
-  if (!sidebar || !show) return null;
-
-  const label = sidebarOpenerLabel(sidebar);
-
-  return (
-    <Hint label={label} side="bottom">
-      <Button
-        type="button"
-        aria-label={label}
-        variant="ghost"
-        size="icon"
-        onClick={sidebar.toggleSidebar}
-        onPointerEnter={sidebar.state === 'collapsed' ? sidebar.peekEnter : undefined}
-        onPointerLeave={sidebar.state === 'collapsed' ? sidebar.peekLeave : undefined}
-        className="hover:bg-sidebar-accent hover:text-sidebar-foreground absolute top-2 left-2 z-20 shrink-0 cursor-pointer items-center justify-center rounded-md transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.96]"
-      >
-        <PanelLeft className="cn-rtl-flip size-4" />
-      </Button>
-    </Hint>
-  );
-}
-
 export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -231,7 +188,6 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(
     null,
   );
-  const newSession = useNewProjectSession(projectId);
   const creatingSession = useIsCreatingProjectSession(projectId);
 
   const sessionsQuery = useQuery({
@@ -486,7 +442,6 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
       searchOpen={searchOpen}
       onSearchOpenChange={setSearchOpen}
       onEnterSelectMode={() => setSelectMode(true)}
-      onNewSession={() => newSession()}
       creatingSession={creatingSession}
       canSelect={sessions.length > 0}
     />
@@ -498,7 +453,7 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
           owns the only scroll container on the page. `overflow-hidden` here
           stops the app shell from scrolling when the list grows. */}
       <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-        <SessionsSidebarToggle />
+        <SidebarToggle placement="floating" />
         <header
           className={cn(
             'mx-auto w-full max-w-4xl shrink-0 px-4 pt-10 pb-5 lg:pt-20',
@@ -534,17 +489,22 @@ export function ProjectSessionsView({ projectId }: { projectId: string }) {
               title="No sessions yet"
               description="Start a session to give this project its first task."
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={() => newSession()}
-                  disabled={creatingSession}
-                  aria-busy={creatingSession}
-                >
-                  <PlusIcon className="size-3.5 shrink-0" />
-                  New session
-                </Button>
+                // The composer route is known at render time, so this is an
+                // anchor whose payload Next already holds — the first control a
+                // brand-new project offers must not run a cold RSC fetch.
+                creatingSession ? (
+                  <Button variant="outline" size="sm" className="gap-1.5" disabled aria-busy>
+                    <PlusIcon className="size-3.5 shrink-0" />
+                    New session
+                  </Button>
+                ) : (
+                  <Button asChild variant="outline" size="sm" className="gap-1.5">
+                    <Link href={`/projects/${projectId}`} prefetch>
+                      <PlusIcon className="size-3.5 shrink-0" />
+                      New session
+                    </Link>
+                  </Button>
+                )
               }
             />
           ) : grouped.sections.length === 0 ? (

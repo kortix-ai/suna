@@ -19,7 +19,7 @@ import {
 import { useServerStore } from '../../browser/stores/server-store';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { opencodeKeys } from '../use-opencode-sessions';
 import { useKortixRouteProjectId } from '../route-project';
 import { resetPrefetchState } from '../use-session-prefetch';
@@ -28,7 +28,10 @@ import {
   releaseMessageRehydrate,
   reserveMessageRehydrate,
   resolveClientEvictionUrl,
+  shouldSkipStatusFill,
 } from './helpers';
+import { sessionsNeedingRehydrate } from './rehydrate-targets';
+import { createStreamRevival } from './stream-revival';
 import { useEventStreamRefs } from './use-event-stream-refs';
 import { openEventStream } from '../../core/stream/event-stream';
 
@@ -70,6 +73,15 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
   const isMountRef = useRef(true);
   const prevRuntimeVersionRef = useRef(runtimeVersion);
   const prevServerUrlRef = useRef(activeServerUrl);
+  // Bumped when a parked stream earns another attempt. It is an effect DEP, so
+  // the bump tears the dead handle down and opens a fresh one — the same path
+  // a runtime switch takes, rather than a second reconnect mechanism.
+  const [streamGeneration, setStreamGeneration] = useState(0);
+  const revival = useMemo(
+    () => createStreamRevival(() => setStreamGeneration((generation) => generation + 1)),
+    [],
+  );
+  useEffect(() => revival.stop, [revival]);
 
   const {
     normalizeDiagnosticPaths,
@@ -212,14 +224,64 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
           // for the rest.
           const statuses = res.data ?? {};
           for (const [sessionID, status] of Object.entries(statuses)) {
+            // ONLY where this read is newer than what the live stream has
+            // already said. The read is a snapshot of the moment it was ISSUED,
+            // it carries no timestamp of its own, and it used to be written in
+            // unconditionally — so a `busy` that was true when the request left
+            // overwrote an `idle` frame that arrived while it was in flight, and
+            // because the object identity changed the store restamped the stale
+            // reading as the freshest observation there is. That put the Stop
+            // button and the turn shimmer back on a finished turn, and
+            // `hydrateCore` runs on every heartbeat-gap rehydrate, so it could
+            // land on any turn boundary.
+            // FILL A GAP, NEVER OVERWRITE. This snapshot describes the moment
+            // the request was ISSUED and carries no timestamp of its own, so an
+            // unconditional write let a `busy` that was true on the way out
+            // clobber an `idle` frame that arrived while it was in flight — and
+            // because the object identity changed, the store restamped that
+            // stale reading as the freshest observation there is. Stop and the
+            // turn shimmer came back on a finished turn, and `hydrateCore` runs
+            // on every heartbeat-gap rehydrate, so it could land on any turn
+            // boundary. While the live stream is delivering (~140ms per frame
+            // for a busy session, and this runs on connect) the stream owns this
+            // value; the correction for a session that went idle unseen is
+            // `reconcileMissingBusySessions` below, which reads ABSENCE from the
+            // complete list rather than a per-session reading.
+            //
+            // Only a FRESH wire frame owns the slot (`shouldSkipStatusFill`).
+            // A `'local'` value is the tab's own fabrication (the missing-busy
+            // sweep, a synthetic abort) and never blocks — letting it block
+            // made a fabrication self-sustaining. A STALE wire frame no longer
+            // blocks either: this fill runs on reconnect, a reconnect happens
+            // because a stream died, and a dead stream's last frame — a wire
+            // idle vetoing the open `/turn` row while a long tool call moves
+            // no transcript — is exactly what this read exists to correct
+            // (prod, 2026-08-26).
+            const slotState = useSyncStore.getState();
+            if (
+              shouldSkipStatusFill({
+                hasSlot: !!slotState.sessionStatus[sessionID],
+                origin: slotState.sessionStatusOrigin[sessionID],
+                stampedAtMs: slotState.sessionStatusAt[sessionID],
+                nowMs: Date.now(),
+              })
+            )
+              continue;
             // Locally-synthesized event (this is a REST poll, not an SSE
             // frame) — omits the `id` field every real `Event` union member
-            // carries, hence the assertion.
+            // carries, hence the assertion. `synthetic: true` marks its write
+            // `'local'`: a snapshot is a reading ABOUT the runtime taken at
+            // issue time, not the runtime speaking on the wire.
             applySyncEvent({
               type: 'session.status',
+              synthetic: true,
               properties: { sessionID, status },
             } as unknown as OpenCodeSdkEvent);
           }
+          // The ENUMERATION half is not a per-session reading and does not go
+          // stale the same way: a session absent from a complete list was not
+          // running when the list was taken, and the repair it drives
+          // (`markSessionIdleLocally`) is guarded on its own.
           reconcileMissingBusySessions.current(statuses);
         })
         .catch((err) => {
@@ -241,10 +303,11 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
 
       if (options?.rehydrateMessages) {
         const syncState = useSyncStore.getState();
-        const loadedSessionIds = Object.keys(syncState.messages);
-        for (const sid of loadedSessionIds) {
-          const status = syncState.sessionStatus[sid];
-          if (status?.type !== 'busy' && status?.type !== 'retry') continue;
+        // EVERY held transcript, not only the ones the status slot calls busy
+        // — see `sessionsNeedingRehydrate`. The slot is filled by the stream,
+        // so a gap wide enough to lose message frames is wide enough to lose
+        // the frame that would have marked the session busy.
+        for (const sid of sessionsNeedingRehydrate(Object.keys(syncState.messages))) {
           if (!reserveMessageRehydrate(sid)) continue;
           reconcileSessionTail(sid, 'sse-gap')
             .catch(() => {})
@@ -262,6 +325,17 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     // the QueryClient-dependent event handler and the gap-rehydrate hook.
     const handle = openEventStream({
       client,
+      // A park is not a verdict about the sandbox — only about the last few
+      // attempts. Nothing supplied this callback before, so the stream's
+      // documented "terminal for this handle" silently became terminal for the
+      // PAGE: the session view kept rendering a transcript nobody was updating
+      // until the user reloaded. See `createStreamRevival`.
+      onParked: (info) => {
+        logger.warn('SSE stream parked — arming revival', {
+          consecutiveFailures: info.consecutiveFailures,
+        });
+        revival.park();
+      },
       onEvent: (event) => {
         // Every delivered frame is live proof the runtime is reachable — it
         // vetoes concurrent health-probe failures (a loaded box can miss the
@@ -274,6 +348,7 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     });
 
     return () => {
+      revival.stop();
       handle.close();
     };
     // NOTE: urlVersion is intentionally excluded from deps. We only reconnect
@@ -295,6 +370,10 @@ export function useOpenCodeEventStream(options: { enabled?: boolean } = {}) {
     applySyncEvent,
     stopCompaction,
     projectId,
+    revival,
+    // A revived park re-opens the stream through this effect. Without it the
+    // park stayed terminal for the page.
+    streamGeneration,
   ]);
 }
 

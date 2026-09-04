@@ -10,6 +10,7 @@
 // own write controls on `rbacEnabled`.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { NAV_GROUPS } from '@/features/accounts/hub/sections';
 import { join } from 'node:path';
 
 const dir = import.meta.dir;
@@ -24,7 +25,7 @@ describe('EnterpriseUpsell component', () => {
   });
 
   test('covers the gated surfaces, and no longer carries the dead roles variant', () => {
-    for (const feature of ['groups:', 'audit:', 'identity:']) {
+    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:']) {
       expect(upsellSource).toContain(feature);
     }
     // Deleted 2026-08-18: `RolesTab` gates itself with an inline InfoBanner,
@@ -74,6 +75,12 @@ describe('account page gates each IAM surface behind the entitlement', () => {
     expect(pageSource).toContain('<EnterpriseUpsell feature="identity" />');
   });
 
+  test('branding pane: branding entitlement or upsell', () => {
+    expect(pageSource).toContain('const brandingEnabled = !!entitlements?.branding');
+    expect(pageSource).toMatch(/brandingEnabled \? \(\s*<BrandingTab/);
+    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" />');
+  });
+
   test('no upsell flash while entitlements load', () => {
     expect(pageSource).toContain('entitlementsLoading');
   });
@@ -86,17 +93,20 @@ describe('account page rail groups every access surface under Access', () => {
   // mislabels surfaces that all carry free content (the built-in roles, an
   // account's real group list, the identity intro), and split the one
   // question a visitor has ("who can do what here?") across two headings.
+  // The rail used to be a literal inside `page.tsx` and this read its source.
+  // It is `NAV_GROUPS` in the hub catalog now, so both tests assert on the
+  // real exported data and can no longer silently stop matching.
   test('the rail has a labeled Access group with every access surface in it', () => {
-    const accessGroup = pageSource.match(/label: 'Access',\s*items: \[([\s\S]*?)\],\s*\},/);
-    const groupBody = accessGroup?.[1] ?? '';
-    expect(groupBody).not.toBe('');
-    for (const id of ["'members'", "'groups'", "'roles'", "'identity'", "'audit'"]) {
-      expect(groupBody).toContain(`id: ${id}`);
+    const accessGroup = NAV_GROUPS.find((group) => group.label === 'Access');
+    expect(accessGroup).toBeDefined();
+    const ids = (accessGroup?.items ?? []).map((item) => item.id);
+    for (const id of ['members', 'groups', 'roles', 'identity', 'audit'] as const) {
+      expect(ids).toContain(id);
     }
   });
 
   test('the Enterprise nav group is gone', () => {
-    expect(pageSource).not.toContain("label: 'Enterprise'");
+    expect(NAV_GROUPS.map((group) => group.label)).not.toContain('Enterprise');
   });
 
   test('identity is its own section, not buried in Settings', () => {

@@ -1,5 +1,6 @@
 // Projects — project CRUD, detail, feature flags, warm pool, onboarding.
 
+import type { CatalogModel } from '@kortix/llm-catalog';
 import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
 import type { SandboxProviderName } from '../platform-client/types';
 import {
@@ -28,14 +29,14 @@ export type FeatureFlagKey =
   | 'connectors_api_discover'
   | 'agentmail_email'
   | 'teams'
-  | 'voice'
   | 'llm_gateway'
   | 'review_center'
   | 'meta_agent'
   | 'apps'
   | 'monitors'
   | 'warm_sessions'
-  | 'secrets_egress';
+  | 'secrets_egress'
+  | 'pi_worker';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -48,7 +49,6 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'connectors_api_discover',
   'agentmail_email',
   'teams',
-  'voice',
   'llm_gateway',
   'review_center',
   'meta_agent',
@@ -56,6 +56,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'monitors',
   'warm_sessions',
   'secrets_egress',
+  'pi_worker',
 ] as const;
 
 /**
@@ -147,6 +148,9 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** The agent's `model:` frontmatter (`provider/model`); absent on older
+     *  servers, null when it follows the project default. */
+    model?: string | null;
     source?: 'opencode' | 'kortix.toml';
     enabled?: boolean;
     /** Agent-specific sandbox template. null or absent inherits the project default. */
@@ -275,7 +279,19 @@ export interface ProjectInput {
 
 export interface CreateProjectRepoInput {
   account_id?: string;
+  /**
+   * The GitHub REPOSITORY name. Charset-validated server-side against
+   * `/^[a-zA-Z0-9._-]+$/` — no spaces. A workspace name typed by a person
+   * usually has to be slugified before it can go here; `project_name` below is
+   * where the typed name belongs.
+   */
   name: string;
+  /**
+   * The Kortix WORKSPACE name, when it differs from the repository name.
+   * Omitted, the server derives one from the created repo's full name
+   * (`deriveProjectName`), so "Ana's agents" would land as "Ana-s-agents".
+   */
+  project_name?: string;
   installation_id?: string;
   private?: boolean;
   description?: string;
@@ -469,6 +485,15 @@ export async function getProjectModelPicker(projectId: string, options?: ApiClie
   );
 }
 
+/**
+ * One MODEL row from the live catalog — the route serves the full
+ * `@kortix/llm-catalog` `CatalogModel` shape verbatim
+ * (runtimeModelCatalog.snapshot()), so the wire type IS that shared type:
+ * a hand-rolled twin here is exactly the drift the catalog package exists to
+ * prevent.
+ */
+export type ProjectLlmCatalogProviderModel = CatalogModel;
+
 /** One provider row from the live, server-refreshed models.dev catalog. */
 export interface ProjectLlmCatalogProvider {
   id: string;
@@ -477,7 +502,7 @@ export interface ProjectLlmCatalogProvider {
   doc?: string | null;
   api?: string | null;
   npm?: string | null;
-  models: Array<{ id: string; name: string; released: string | null }>;
+  models: Array<ProjectLlmCatalogProviderModel>;
 }
 
 export interface ProjectLlmCatalogProvidersResponse {
@@ -604,10 +629,9 @@ function parseProvisionStreamFrame(frame: string): ProvisionStreamEvent | null {
     // production nothing to go on — no mention of provisionProjectStream, no
     // mention that this came from an SSE frame, no sight of what the frame
     // actually contained.
-    throw new Error(
-      `provisionProjectStream: received an unparseable SSE frame (${excerpt})`,
-      { cause },
-    );
+    throw new Error(`provisionProjectStream: received an unparseable SSE frame (${excerpt})`, {
+      cause,
+    });
   }
 }
 
@@ -668,7 +692,10 @@ export async function provisionProjectStream(
   );
 
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string; code?: string } | null;
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+      code?: string;
+    } | null;
     // A REAL `ApiError`, not a bare `Error` — see the `ProvisionStreamEvent`
     // doc comment above. `apps/web`'s `messageFor`/`isRetryableError` read
     // `.status`/`.code` off whatever `provisionProject`/`provisionProjectStream`

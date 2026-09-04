@@ -89,6 +89,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       member_ids: [],
       group_ids: [],
       password_configured: false,
+      viewer_token_scope: 'identity',
     });
   });
 
@@ -115,6 +116,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       member_ids: [],
       group_ids: [],
       password_configured: true,
+      viewer_token_scope: 'identity',
     });
 
     const request = new Request('https://dev-access-test-bbbbbbbbbbbbbbbb.apps.kortix.com/asset.js', {
@@ -146,6 +148,7 @@ describeWithDb('App access persistence — real PostgreSQL', () => {
       member_ids: [MEMBER_ID],
       group_ids: [GROUP_ID],
       password_configured: false,
+      viewer_token_scope: 'identity',
     });
     const rows = await testDb().select().from(appAccessGrants)
       .where(eq(appAccessGrants.appId, APP_ID));

@@ -24,7 +24,7 @@ const noop = () => {};
 
 function render(
   toolbarSlot?: React.ReactNode,
-  rewind?: { pending?: boolean; onRestore: () => void },
+  rewind?: { pending?: boolean; disabled?: boolean; onRestore: () => void },
   send?: { agentUnavailable?: boolean; canSubmit?: boolean; submitDisabled?: boolean },
 ): string {
   return renderToStaticMarkup(
@@ -42,8 +42,6 @@ function render(
             projectId={undefined}
             toolbarSlot={toolbarSlot}
             rewind={rewind}
-            onTranscription={noop}
-            voiceDisabled={false}
             isSending={false}
             isBusy={false}
             stopDisabled={false}
@@ -76,18 +74,6 @@ describe('ComposerToolbar toolbarSlot', () => {
   });
 });
 
-describe('ComposerToolbar voice input', () => {
-  // Exactly the `toolbarSlot` failure above, one prop over: `onTranscription`
-  // and `voiceDisabled` were declared, threaded from `composer.tsx`, and
-  // destructured here — and `VoiceRecorder` was never placed in the JSX. The
-  // whole dictation feature was unreachable from every composer in the app,
-  // with nothing type-checking wrong.
-  test('renders the microphone control', () => {
-    const html = render(undefined);
-    expect(html).toContain('aria-label="Start voice input"');
-  });
-});
-
 describe('ComposerToolbar rewound-path control', () => {
   // The "Session rewound" notice moved off the input strip and onto this bar,
   // beside send/stop — send is the action that commits the rewound path. These
@@ -110,6 +96,37 @@ describe('ComposerToolbar rewound-path control', () => {
   test('renders no Restore control on a normal path', () => {
     const html = render(undefined, undefined);
     expect(html).not.toContain('Restore');
+  });
+
+  test('a busy session disables Restore', () => {
+    // OpenCode's `unrevert` asserts the session is idle (`assertNotBusy` →
+    // BusyError), so a click mid-run is a guaranteed silent failure — the
+    // control must refuse up front. (The hover card explains why; its content
+    // mounts only on open, so the copy is not assertable in static markup.)
+    const html = render(undefined, { disabled: true, onRestore: noop });
+    const button = /<button[^>]*>(?:(?!<\/button>)[\s\S])*Restore/.exec(html)?.[0];
+    expect(button).toBeDefined();
+    expect(button).toMatch(/\sdisabled=""/);
+  });
+
+  test('the disabled trigger is span-wrapped so its hover card can still open', () => {
+    // Button base sets `disabled:pointer-events-none`, so the hover must sit
+    // on a wrapping span or the explanation is unreachable exactly when it is
+    // needed.
+    const html = render(undefined, { disabled: true, onRestore: noop });
+    const trigger =
+      /<span[^>]*data-slot="hover-card-trigger"[^>]*>[\s\S]*?Restore<\/button><\/span>/.exec(
+        html,
+      )?.[0];
+    expect(trigger).toBeDefined();
+    expect(trigger).toContain('inline-flex');
+  });
+
+  test('an idle rewound session keeps Restore enabled', () => {
+    const html = render(undefined, { disabled: false, onRestore: noop });
+    const button = /<button[^>]*>(?:(?!<\/button>)[\s\S])*Restore/.exec(html)?.[0];
+    expect(button).toBeDefined();
+    expect(button).not.toMatch(/\sdisabled=""/);
   });
 });
 

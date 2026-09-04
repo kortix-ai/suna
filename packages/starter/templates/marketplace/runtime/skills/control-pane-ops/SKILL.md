@@ -36,8 +36,8 @@ Work out which connected platforms the request touches before doing anything:
 | Platform | Access | Typical read | Typical write |
 |---|---|---|---|
 | Database | Read-only via scoped `DATABASE_URL` | Account/plan lookups, counts, joins | Not possible with this credential — the role cannot run `UPDATE`/`DELETE`/`ALTER` or any schema-changing statement. Surface the exact change needed and hand it to a human to run directly, or route it through an approval-gated connector/tool that supports it |
-| Stripe | Pipedream connector (brokered) | Plan, invoices, subscription status | Refund, plan change, cancellation — **approval gate** |
-| Linear | Pipedream connector (brokered) | Search issues/projects | Invite a member, create a project or issue — safe to do directly |
+| Stripe | Composio connector (brokered) | Plan, invoices, subscription status | Refund, plan change, cancellation — **approval gate** |
+| Linear | Composio connector (brokered) | Search issues/projects | Invite a member, create a project or issue — safe to do directly |
 | GitHub | `gh` CLI + `GH_TOKEN` against `{{target_repo}}` | View/diff a PR, read issues and checks | Review, comment, and open a PR freely — **never merge** |
 | Sandbox | Built-in to the session | — | Spin up an ad hoc sandbox to reproduce a bug or run a one-off script — always disposable, always safe |
 

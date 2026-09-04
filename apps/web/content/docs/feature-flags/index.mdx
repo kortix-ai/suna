@@ -3,7 +3,8 @@ title: Feature flags
 description: Turn a Kortix surface on for one project, and read what every flag gates.
 ---
 
-import { Card, Cards } from 'fumadocs-ui/components/card';
+import { Card, Cards } from '@/components/markdown/docs-card';
+import { BrowserIcon } from '@/lib/icons/ssr';
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A feature flag turns one Kortix surface on for one project. Any surface can
@@ -14,7 +15,7 @@ Flags are per project. Turning a flag on in one project changes nothing in
 another project, and nothing for other accounts.
 
 <Cards>
-  <Card title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon={<BrowserIcon />} title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
 </Cards>
 
 ## Turn a flag on
@@ -28,6 +29,22 @@ another project, and nothing for other accounts.
 
 You need the project's `project.customize.write` permission. The route answers
 `403` for any other caller.
+
+### From the CLI
+
+The same switches are available to scripts and agents through `kortix projects features`:
+
+```bash
+kortix projects features            # every flag: key, state, origin, stability
+kortix projects features enable apps
+kortix projects features disable voice
+kortix projects features reset apps  # drop the override; follow the platform default
+kortix projects features --json      # the full catalog as JSON
+```
+
+Add `--project <id>` to act on a project other than the linked/default one. A
+flag the platform marks unavailable stays off whatever the project override
+says; the CLI prints that as `n/a` / `unavailable`.
 
 <Callout type="info" title="Flag state is not in your repo">
 Per-project flag state lives in the database, on the project row. It is never
@@ -106,7 +123,7 @@ Registry order — the same order **Settings → Experimental** shows.
 | `agentmail_email` | AgentMail Email | Experimental | Off | `routes` |
 | `teams` | Microsoft Teams | Experimental | Off | `routes` |
 | `voice` | Voice | Experimental | Off | `behavioral` |
-| `llm_gateway` | LLM Gateway | Experimental | Operator-set | `behavioral` |
+| `llm_gateway` | LLM Gateway | Experimental | On (operator can default off) | `behavioral` |
 | `review_center` | Review Center | Experimental | Off | `routes` |
 | `meta_agent` | Meta Agent | Experimental | Off | `behavioral` |
 | `apps` | Apps | Stable | Off | `routes` |
@@ -114,7 +131,10 @@ Registry order — the same order **Settings → Experimental** shows.
 | `warm_sessions` | Warm Sessions | Beta | On | `routes` |
 
 `llm_gateway` reads its per-project default from
-`LLM_GATEWAY_DEFAULT_ENABLED`. An explicit project choice still wins.
+`LLM_GATEWAY_DEFAULT_ENABLED`, which defaults to on. Turning the flag off per
+project is a first-class path: the project runs native OpenCode model
+management (provider keys injected into the sandbox, native `provider/model`
+refs). An explicit project choice always wins.
 
 ### What each flag gates
 

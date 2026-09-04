@@ -152,6 +152,17 @@ describe('full self-host Docker distribution', () => {
     ).toBe('2');
   });
 
+  test('passes the gateway request-body cap override through to llm-gateway', () => {
+    // Essentia 2026-08-25: image-heavy turns (>128 MiB) 413'd at the gateway
+    // default with no way to raise it from the box .env.
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+    expect(document.services['llm-gateway']?.environment?.GATEWAY_MAX_REQUEST_BYTES).toBe(
+      '${KORTIX_GATEWAY_MAX_REQUEST_BYTES:-}',
+    );
+  });
+
   test('omits the cloudflared tunnel service when tunnel mode is not selected', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, unknown>;
@@ -246,6 +257,16 @@ describe('full self-host Docker distribution', () => {
     expect(document.services).not.toHaveProperty('caddy');
   });
 
+  test('the API gives remote sandboxes the public self-host gateway route', () => {
+    const document = parse(renderFullDockerCompose('kortix-default')) as {
+      services: Record<string, { environment?: Record<string, string> }>;
+    };
+
+    expect(document.services['kortix-api']?.environment?.LLM_GATEWAY_BASE_URL).toBe(
+      '${KORTIX_URL}/v1/llm',
+    );
+  });
+
   test('the kortix-updater service is always present and mounts the docker socket', () => {
     const document = parse(renderFullDockerCompose('kortix-default')) as {
       services: Record<string, { volumes?: string[]; environment?: Record<string, string> }>;
@@ -324,7 +345,10 @@ describe('full self-host Docker distribution', () => {
     const caddyfile = kortixRuntimeAssets.Caddyfile;
     for (const [name, port, healthPath] of [
       ['kortix-api', '8008', '/v1/health'],
-      ['llm-gateway', '8090', '/health'],
+      // /health/live is the SHALLOW probe. The deep /health 503s while the
+      // Kortix API is unreachable, which would fail every gateway replica at
+      // once on an API blip and turn a healthy gateway into a Caddy 502.
+      ['llm-gateway', '8090', '/health/live'],
       ['frontend', '3000', '/'],
     ] as const) {
       expect(caddyfile, name).toContain(`name ${name}`);

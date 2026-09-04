@@ -1,3 +1,4 @@
+import { approvalReviewable } from '@/components/approvals/approval-request';
 import type { SessionAuditAction } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import {
@@ -95,11 +96,23 @@ describe('approvalRequestFromAction', () => {
     });
   });
 
-  test('blocks review when the preview is incomplete', () => {
+  test('reports a shortened preview as incomplete — which no longer blocks it', () => {
     const request = approvalRequestFromAction(
       action({ result_summary: { args_preview: { to: 'a@b.c' }, args_preview_complete: false } }),
     );
     expect(request.reviewComplete).toBe(false);
+    // The decision gate is `approvalReviewable`, not this flag: the preview is
+    // there, so the call is still decidable.
+    expect(approvalReviewable(request.argsPreview, request.reviewComplete)).toBe(true);
+  });
+
+  test('a pending row with NO result_summary agrees with the server: unreviewable', () => {
+    // `!summary` used to read as "complete", so the card offered an Approve
+    // button that POST /approvals/:id answers with 409.
+    const request = approvalRequestFromAction(action({ result_summary: null }));
+    expect(request.pending).toBe(true);
+    expect(request.reviewComplete).toBe(false);
+    expect(approvalReviewable(request.argsPreview, request.reviewComplete)).toBe(false);
   });
 
   test('reads the recorded decision on a resolved row', () => {

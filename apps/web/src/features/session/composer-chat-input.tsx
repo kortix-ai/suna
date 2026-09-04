@@ -20,6 +20,7 @@ import {
 } from '@kortix/sdk/react';
 import { useProjectConfig } from '@kortix/sdk/react';
 import { isMetaAgentName } from '@kortix/shared';
+import type { DraftScope } from './composer/draft/composer-draft';
 import { resolveComposerAgent } from './composer/composer-agent-access';
 
 export interface ComposerOptions {
@@ -62,6 +63,7 @@ export function ComposerChatInput({
   clearOnSend,
   onAgentSelectionChange,
   sandboxSlot,
+  draftScope,
 }: {
   onSend: (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => void;
   onCommand?: (command: Command, args: string | undefined, options: ComposerOptions) => void;
@@ -103,6 +105,8 @@ export function ComposerChatInput({
   onAgentSelectionChange?: (agentName: string | null) => void;
   /** Pre-create sandbox-template chooser, rendered inside the overrides panel. */
   sandboxSlot?: SessionOverrideSlot;
+  /** Persist the unsent draft under this scope — see `composer/draft/`. */
+  draftScope?: DraftScope | null;
 }) {
   const { data: agents } = useRuntimeAgents({ projectId });
   const { data: providers, isLoading: providersLoading } = useRuntimeProviders();
@@ -241,6 +245,7 @@ export function ComposerChatInput({
       selectedVariant={local.model.variant.current ?? null}
       onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
       commands={commands || []}
+      draftScope={draftScope}
     />
   );
 }

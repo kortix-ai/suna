@@ -8,7 +8,6 @@ import { describe, expect, mock, test } from 'bun:test';
 
 let bedrockKeyReads = 0;
 let openrouterKeyReads = 0;
-let asterKeyReads = 0;
 
 mock.module('../../config', () => ({
   SANDBOX_VERSION: 'test',
@@ -40,11 +39,6 @@ mock.module('../../config', () => ({
           return 'operators-own-openrouter-key';
         }
         if (key === 'OPENROUTER_API_URL') return 'https://openrouter.ai/api/v1';
-        if (key === 'ASTER_API_KEY') {
-          asterKeyReads += 1;
-          return 'fake-aster-key-must-never-be-read';
-        }
-        if (key === 'ASTER_API_URL') return 'https://api.asterlab.ai/v1';
         return target[key];
       },
     },
@@ -120,7 +114,7 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     const full = gatewayModelCatalog('proj');
     expect(full.auto).toBeUndefined();
     expect(full['claude-sonnet-4.6']).toBeUndefined();
-    expect(full['glm-5.2']).toBeUndefined();
+    expect(full['glm-5.3-flash']).toBeUndefined();
   });
 
   test('the compact/Slack picker offers no managed entries', () => {
@@ -130,18 +124,16 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
   test('managedCandidates()/managedDescriptor() (defense-in-depth) refuse to build a descriptor and read NEITHER credential', () => {
     expect(managedCandidates(FAKE_MANAGED_MODEL)).toEqual([]);
     expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'openrouter' })).toEqual([]);
-    expect(managedCandidates({ ...FAKE_MANAGED_MODEL, transport: 'aster' })).toEqual([]);
     expect(managedDescriptor(FAKE_MANAGED_MODEL)).toBeNull();
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
-    expect(asterKeyReads).toBe(0);
   });
 
   test('a request explicitly naming a managed model resolves to NO candidates — never a silent fallback to Kortix credits', async () => {
     await expect(
       resolveCandidates(
         { userId: 'u-managed', accountId: 'a-managed', projectId: 'p-managed' },
-        'glm-5.2',
+        'glm-5.3-flash',
       ),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
@@ -149,7 +141,6 @@ describe('managed provider disabled (KORTIX_MANAGED_PROVIDER_ENABLED=false, the 
     });
     expect(bedrockKeyReads).toBe(0);
     expect(openrouterKeyReads).toBe(0);
-    expect(asterKeyReads).toBe(0);
   });
 
   test('a BYOK request still works on its own key, but gets NO managed fallback appended', async () => {

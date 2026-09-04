@@ -7,12 +7,12 @@ import webSearch from '../../templates/base/.kortix/opencode/tools/web_search';
 const originalFetch = globalThis.fetch;
 const originalEnv = {
   KORTIX_API_URL: process.env.KORTIX_API_URL,
-  KORTIX_SANDBOX_TOKEN: process.env.KORTIX_SANDBOX_TOKEN,
+  KORTIX_TOKEN: process.env.KORTIX_TOKEN,
 };
 
 function configureRouterEnv() {
   process.env.KORTIX_API_URL = 'https://api.kortix.test/v1';
-  process.env.KORTIX_SANDBOX_TOKEN = 'kortix_sb_test';
+  process.env.KORTIX_TOKEN = 'kortix_sb_test';
 }
 
 afterEach(() => {
@@ -119,7 +119,7 @@ describe('OpenCode provider tools', () => {
     });
   });
 
-  test('image enrichment preserves the Serper and Replicate router contracts', async () => {
+  test('image search preserves the Serper router contract without enrichment calls', async () => {
     configureRouterEnv();
     let call = 0;
     globalThis.fetch = (async (input, init) => {
@@ -139,29 +139,22 @@ describe('OpenCode provider tools', () => {
           ],
         });
       }
-      if (call === 2) {
-        expect(String(input)).toBe('https://images.kortix.test/logo.png');
-        return new Response(new Uint8Array([137, 80, 78, 71]), {
-          headers: { 'Content-Type': 'image/png' },
-        });
-      }
-
-      expect(String(input)).toBe('https://api.kortix.test/v1/router/replicate/predictions');
-      expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer kortix_sb_test');
-      const body = JSON.parse(String(init?.body));
-      expect(body.version).toBe('72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31');
-      expect(body.input.prompt).toContain('Describe this image');
-      expect(body.input.image).toStartWith('data:image/png;base64,');
-      return Response.json({ status: 'succeeded', output: 'A black Kortix logo.' });
+      throw new Error(`unexpected image-search request: ${String(input)}`);
     }) as typeof fetch;
 
     const output = await imageSearch.execute(
-      { query: 'Kortix', num_results: 1, enrich: true },
+      { query: 'Kortix', num_results: 1 },
       {} as never,
     );
     const result = JSON.parse(String(output));
 
-    expect(call).toBe(3);
-    expect(result.images[0].description).toBe('A black Kortix logo.');
+    expect(call).toBe(1);
+    expect(result.images[0]).toEqual({
+      url: 'https://images.kortix.test/logo.png',
+      title: 'Kortix',
+      source: 'https://kortix.test',
+      width: 100,
+      height: 100,
+    });
   });
 });

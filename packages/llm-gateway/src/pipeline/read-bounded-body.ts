@@ -19,51 +19,224 @@
  * with the host, which owns the OpenAI- vs Anthropic-shaped error envelope.
  */
 import { gatewayErrorResponse } from './error-response';
+import type { InflightBudget } from './inflight-budget';
 
-export type BoundedBodyResult =
-  | { ok: true; body: string }
-  | { ok: false; bytes: number; limit: number };
+export type AdmittedBodyResult =
+  | { ok: true; body: string; bytes: number; release: () => void }
+  | {
+      ok: false;
+      reason: 'too_large' | 'overloaded' | 'client_aborted';
+      bytes: number;
+      limit: number;
+      retryAfterSeconds?: number;
+    };
 
-export async function readBoundedBody(
+function declaredContentLength(request: Request): number | null {
+  const raw = request.headers.get('content-length');
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : null;
+}
+
+/**
+ * Read a body while its memory is reserved, not before.
+ *
+ * A declared body reserves its full size before the first read. A chunked body
+ * starts at zero and grows its lease before each chunk is retained. This closes
+ * the gap where many concurrent requests could all allocate their bodies and
+ * only then compete for the in-flight budget.
+ */
+export async function readAdmittedBody(
   request: Request,
   maxBytes: number,
-): Promise<BoundedBodyResult> {
-  // A limit of 0 (or unset) disables the check — the documented escape hatch
-  // for hosts that front the gateway with their own body limit.
-  if (!maxBytes || maxBytes <= 0) return { ok: true, body: await request.text() };
+  budget: InflightBudget,
+): Promise<AdmittedBodyResult> {
+  /**
+   * Refusing a request does NOT stop the client from sending its body.
+   *
+   * This is the difference between shedding load and dying. When admission
+   * says no, the caller is already streaming megabytes at us; if we simply
+   * return a 503 and leave the body unread, the server keeps accepting those
+   * bytes into its socket buffers to complete the HTTP transaction. Measured
+   * 2026-08-24: 60 concurrent 27 MiB uploads against a 2 GiB container were
+   * correctly refused by admission and OOM-killed the process anyway, because
+   * ~1.3 GB of refused body was buffered on the way in.
+   *
+   * Cancelling the body tears down the read side, so the bytes we already
+   * decided not to read are never accumulated.
+   */
+  const refuse = (result: AdmittedBodyResult): AdmittedBodyResult => {
+    void request.body?.cancel().catch(() => {});
+    return result;
+  };
 
-  const declared = Number(request.headers.get('content-length') ?? Number.NaN);
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    return { ok: false, bytes: declared, limit: maxBytes };
+  const declared = declaredContentLength(request);
+  if (declared !== null && maxBytes > 0 && declared > maxBytes) {
+    return refuse({ ok: false, reason: 'too_large', bytes: declared, limit: maxBytes });
   }
 
-  const body = request.body;
-  if (!body) return { ok: true, body: await request.text() };
+  const lease = budget.admit(declared ?? 0);
+  if (!lease.ok) {
+    return refuse({
+      ok: false,
+      reason: lease.reason,
+      bytes: declared ?? 0,
+      limit: maxBytes,
+      ...(lease.retryAfterSeconds !== undefined
+        ? { retryAfterSeconds: lease.retryAfterSeconds }
+        : {}),
+    });
+  }
 
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  const parts: string[] = [];
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return { ok: true, body: '', bytes: 0, release: lease.release };
+  }
+
+  // A client that disconnects MID-UPLOAD must not strand its reservation.
+  // Bun does not settle a pending `reader.read()` when the request is aborted,
+  // so without this the loop below awaits forever while holding the lease:
+  // capacity shrinks permanently and, after enough aborted uploads, every
+  // request 503s `gateway_overloaded` on a process that is otherwise idle.
+  // Measured 2026-08-24 against the real container: one aborted 2.8 MB upload
+  // leaked 8,521,827 reserved bytes that were never returned.
+  // Cancelling the reader settles the pending read, so the loop exits through
+  // its normal paths and the lease is released exactly once.
+  const abortRead = () => {
+    void reader.cancel('client aborted upload').catch(() => {});
+  };
+  const signal = request.signal;
+  if (signal?.aborted) {
+    abortRead();
+    lease.release();
+    return { ok: false, reason: 'client_aborted', bytes: 0, limit: maxBytes };
+  }
+  signal?.addEventListener('abort', abortRead, { once: true });
+
+  // Bytes are retained as bytes and decoded to ONE string at the end. The
+  // previous implementation decoded every chunk to a string and then
+  // `join`ed them, which held two full copies of the body (the parts and the
+  // joined result) at the moment of the join. Here a declared body lands in a
+  // single preallocated buffer (each network chunk is released as soon as it
+  // is copied), and an undeclared body is concatenated once. Peak is one
+  // byte buffer plus the decoded string, and the buffer is a local that dies
+  // on return.
+  let buffer: Uint8Array | null =
+    declared !== null && declared > 0 && (maxBytes <= 0 || declared <= maxBytes)
+      ? new Uint8Array(declared)
+      : null;
+  const chunks: Uint8Array[] = [];
   let bytes = 0;
-
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      bytes += value.byteLength;
-      if (bytes > maxBytes) {
-        // Stop pulling and drop what we have. `cancel` releases the upstream
-        // so the sender is not left writing into a socket nobody drains.
+      const nextBytes = bytes + value.byteLength;
+      if (maxBytes > 0 && nextBytes > maxBytes) {
         await reader.cancel().catch(() => {});
-        return { ok: false, bytes, limit: maxBytes };
+        lease.release();
+        return { ok: false, reason: 'too_large', bytes: nextBytes, limit: maxBytes };
       }
-      parts.push(decoder.decode(value, { stream: true }));
+      const resized = lease.resize(nextBytes);
+      if (!resized.ok) {
+        await reader.cancel().catch(() => {});
+        lease.release();
+        return {
+          ok: false,
+          reason: resized.reason,
+          bytes: nextBytes,
+          limit: maxBytes,
+          ...(resized.reason === 'overloaded' ? { retryAfterSeconds: 1 } : {}),
+        };
+      }
+      if (buffer && nextBytes <= buffer.byteLength) {
+        buffer.set(value, bytes);
+      } else {
+        // `content-length` lied (or was absent): fall back to chunk collection.
+        if (buffer) {
+          chunks.push(buffer.subarray(0, bytes));
+          buffer = null;
+        }
+        chunks.push(value);
+      }
+      bytes = nextBytes;
     }
-    parts.push(decoder.decode());
+    let whole: Uint8Array;
+    if (buffer) {
+      whole = bytes === buffer.byteLength ? buffer : buffer.subarray(0, bytes);
+    } else if (chunks.length === 1) {
+      whole = chunks[0];
+    } else {
+      whole = new Uint8Array(bytes);
+      let offset = 0;
+      for (const chunk of chunks) {
+        whole.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+    }
+    chunks.length = 0;
+    buffer = null;
+    // The reader was cancelled by the abort listener: the body is truncated,
+    // so there is nothing to dispatch. Release rather than hand a partial
+    // request to the pipeline (which would fail JSON.parse anyway).
+    if (signal?.aborted) {
+      lease.release();
+      return { ok: false, reason: 'client_aborted', bytes, limit: maxBytes };
+    }
+    return { ok: true, body: new TextDecoder().decode(whole), bytes, release: lease.release };
+  } catch (error) {
+    lease.release();
+    throw error;
   } finally {
+    signal?.removeEventListener('abort', abortRead);
     reader.releaseLock?.();
   }
+}
 
-  return { ok: true, body: parts.join('') };
+/** Keep an admission lease until the response body finishes or is cancelled. */
+export function releaseWhenResponseEnds(response: Response, release: () => void): Response {
+  if (!response.body) {
+    release();
+    return response;
+  }
+
+  const reader = response.body.getReader();
+  let finished = false;
+  const finish = (): void => {
+    if (finished) return;
+    finished = true;
+    release();
+  };
+
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (next.done) {
+          finish();
+          controller.close();
+          return;
+        }
+        controller.enqueue(next.value);
+      } catch (error) {
+        finish();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        finish();
+      }
+    },
+  });
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 /**

@@ -20,20 +20,21 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { useRuntimeConfig, useUpdateRuntimeConfig } from '@kortix/sdk/react';
+import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectPageCans } from '@/lib/use-project-can';
+import { cn } from '@/lib/utils';
+import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
 import {
   allowAllPermissionsForSession,
   resetSessionPermissions,
+  useRuntimeConfig,
+  useRuntimePendingStore,
+  useUpdateRuntimeConfig,
 } from '@kortix/sdk/react';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
-import { useRuntimePendingStore } from '@kortix/sdk/react';
-import { PERMISSION_LABELS, type PermissionRequest } from '@/ui/types';
 import {
   CaretDownIcon,
-  ShieldCheckIcon as ShieldCheck,
   ShieldWarningIcon as ShieldAlert,
+  ShieldCheckIcon as ShieldCheck,
 } from '@phosphor-icons/react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -122,7 +123,7 @@ export function SessionPermissionPrompt({
   // on plain /sessions/[id], `id` IS the session, so no config surface.
   const params = useParams<{ id?: string; sessionId?: string }>();
   const projectId = params?.sessionId ? params.id : undefined;
-  const canWriteConfig = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const canWriteConfig = useProjectPageCans(projectId)[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE];
 
   const autoApprove = useRuntimePendingStore((s) => !!s.autoApproveAllSessions[sessionId]);
   const setAutoApproveAll = useRuntimePendingStore((s) => s.setAutoApproveAll);
@@ -250,7 +251,7 @@ export function SessionPermissionPrompt({
 
   if (autoApprove) {
     return (
-      <div className="border-border bg-popover mb-2 flex items-center gap-2 rounded-md border px-3 py-2">
+      <div className="border-border bg-popover flex w-full items-center gap-2 rounded-md border px-3 py-2">
         <ShieldCheck className="text-kortix-green size-4" />
         <span className="text-muted-foreground flex-1 text-xs">
           Auto-allowing all permission requests for this session
@@ -265,7 +266,9 @@ export function SessionPermissionPrompt({
   if (permissions.length === 0) return null;
 
   return (
-    <div className="bg-popover border-kortix-orange/25 mb-2 overflow-hidden rounded-md border">
+    // `w-full`: the composer strip is an `items-center` flex column, which
+    // sizes a child to its content unless it says otherwise (composer.tsx).
+    <div className="bg-popover border-kortix-orange/25 w-full overflow-hidden rounded-md border">
       <div className="border-kortix-orange/20 flex items-center gap-2 border-b px-3 py-2">
         <ShieldAlert className="text-kortix-orange size-4" />
         <span className="text-foreground text-xs font-medium">
@@ -331,9 +334,7 @@ export function SessionPermissionPrompt({
                   disabled={!!busy}
                   onClick={() => void reply(p.id, 'always')}
                 >
-                  <PendingLabel pending={busy === `${p.id}:always`}>
-                    Allow for session
-                  </PendingLabel>
+                  <PendingLabel pending={busy === `${p.id}:always`}>Allow for session</PendingLabel>
                 </Button>
                 <Button
                   size="xs"

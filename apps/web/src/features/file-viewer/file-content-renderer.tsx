@@ -12,19 +12,11 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import Loading from '@/components/ui/loading';
 import { StatusDot } from '@/components/ui/status';
 import { errorToast, successToast } from '@/components/ui/toast';
-import {
-  appendPreviewToken,
-  isSubdomainPreviewUrl,
-  useAuthenticatedPreviewUrl,
-} from '@/hooks/use-authenticated-preview-url';
 import { useHeicBlob } from '@/hooks/use-heic-url';
-import { getAuthToken } from '@/lib/auth-token';
-import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { findDiagnosticsForFile, useDiagnosticsStore } from '@/stores/diagnostics-store';
 import { isSandboxNotReadyError, toSandboxAbsolutePath } from '@kortix/sdk';
-import { getActiveStaticFileHealthUrl, getActiveStaticFilePreviewUrl } from '@kortix/sdk/react';
 import {
   WarningIcon as AlertTriangle,
   BracketsCurlyIcon as Braces,
@@ -42,6 +34,8 @@ import {
 } from '@phosphor-icons/react';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFileSource } from './file-source';
+// Direct module import, not the feature barrel: the barrel re-exports THIS file.
+import { HtmlPreview } from './html-preview';
 import { usePreviewFit } from './preview-fit';
 
 // ---------------------------------------------------------------------------
@@ -74,13 +68,16 @@ const SqliteRenderer = lazy(() =>
     default: m.SqliteRenderer,
   })),
 );
+const ZipRenderer = lazy(() =>
+  import('@/features/file-renderers/zip/zip-renderer').then((m) => ({ default: m.ZipRenderer })),
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 /** Categories that need a blob fetched via readFileAsBlob */
-const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx'] as const;
+const BLOB_CATEGORIES = ['docx', 'video', 'audio', 'pptx', 'zip'] as const;
 type BlobCategory = (typeof BLOB_CATEGORIES)[number];
 
 export type FileCategory =
@@ -94,6 +91,7 @@ export type FileCategory =
   | 'video'
   | 'audio'
   | 'html'
+  | 'zip'
   | 'code'
   | 'text'
   | 'binary';
@@ -128,6 +126,11 @@ export function getFileCategory(filename: string, mimeType?: string): FileCatego
   if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'].includes(ext)) return 'video';
   if (['mp3', 'wav', 'flac', 'aac', 'ogg', 'm4a', 'wma'].includes(ext)) return 'audio';
   if (['html', 'htm'].includes(ext)) return 'html';
+  // Zip CONTAINERS only. `.docx`/`.xlsx`/`.pptx` are zips too and are matched
+  // above, because their contents are an implementation detail rather than
+  // something anyone wants to browse. `.tar.gz`/`.tgz` are deliberately absent
+  // — they are not zip, and jszip cannot read them.
+  if (['zip', 'jar', 'war', 'whl', 'vsix', 'nupkg', 'xpi', 'apk'].includes(ext)) return 'zip';
 
   // Code/text files
   if (getLanguageFromExt(filename) !== 'plaintext') return 'code';
@@ -344,12 +347,19 @@ export function FileContentRenderer({
   // Text content (for code/text files, CSV, non-HEIC images).
   // HEIC files are loaded exclusively via the blob pipeline — the text/base64
   // endpoint often returns 500 for HEIC because the server can't encode them.
+  // A zip is fetched ONCE, as bytes. Left on the text path as well it would
+  // also be pulled as base64 through /file/content — a second full download of
+  // an archive that is often the largest thing in the workspace, for a string
+  // no branch below reads (`isContentReady` resolves off the blob for every
+  // BLOB_CATEGORY). Keyed off the filename alone, so it cannot depend on the
+  // response it is disabling.
+  const isZipArchive = getFileCategory(fileName) === 'zip';
   const {
     data: fileContent,
     isLoading,
     error,
     refetch,
-  } = useFileContent(isHeicImage ? null : filePath);
+  } = useFileContent(isHeicImage || isZipArchive ? null : filePath);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -381,29 +391,6 @@ export function FileContentRenderer({
   // HTML files default to rendered preview mode
   const [isHtmlPreview, setIsHtmlPreview] = useState(true);
 
-  // Build proxied static-file-server URLs for HTML preview
-  const htmlPreviewUrl = useMemo(() => {
-    if (!isHtmlFile) return '';
-    return getActiveStaticFilePreviewUrl(toSandboxAbsolutePath(filePath));
-  }, [isHtmlFile, filePath]);
-
-  // Health URL: hit /health on the static file server through the proxy
-  const htmlHealthUrl = useMemo(() => {
-    if (!isHtmlFile) return '';
-    return getActiveStaticFileHealthUrl();
-  }, [isHtmlFile]);
-
-  // Authenticate the preview session before rendering the iframe
-  const authenticatedPreviewUrl = useAuthenticatedPreviewUrl(
-    isHtmlFile && isHtmlPreview ? htmlPreviewUrl : '',
-  );
-
-  // Poll the health endpoint until the static server responds
-  const [serverHealth, setServerHealth] = useState<'checking' | 'ready' | 'unavailable'>(
-    'checking',
-  );
-  const [healthRetryNonce, setHealthRetryNonce] = useState(0);
-  const healthRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear the transient "saved" flash timer if we unmount before it fires.
@@ -413,63 +400,6 @@ export function FileContentRenderer({
     },
     [],
   );
-
-  useEffect(() => {
-    if (!isHtmlFile || !isHtmlPreview || !htmlHealthUrl) return;
-
-    let cancelled = false;
-    // Bound the retries so this surface can never spin "Starting preview
-    // server…" forever — after ~30s of failures we surface a recoverable
-    // 'unavailable' state instead of looping silently.
-    let attempts = 0;
-    const MAX_HEALTH_ATTEMPTS = 20; // 20 × 1.5s ≈ 30s
-    setServerHealth('checking');
-
-    async function check() {
-      attempts += 1;
-      try {
-        // Subdomain previews (p{port}-{sandbox}.host, used in local dev) can't
-        // rely on the host-only /v1/p session cookie — it never reaches the
-        // preview subdomain. They authenticate via a one-shot ?token on the
-        // request itself, which the proxy then trusts in-memory for the whole
-        // subdomain. Without it this probe 401s forever and the iframe — gated
-        // on serverHealth==='ready' — never renders, so nothing ever carries a
-        // token and the "Starting preview server…" state deadlocks.
-        let url = htmlHealthUrl;
-        if (isSubdomainPreviewUrl(htmlHealthUrl)) {
-          const token = await getAuthToken();
-          if (cancelled) return;
-          if (token) url = appendPreviewToken(htmlHealthUrl, token);
-        }
-        const res = await fetch(url, { method: 'GET', credentials: 'include' });
-        if (cancelled) return;
-        if (res.ok) {
-          setServerHealth('ready');
-        } else {
-          retry();
-        }
-      } catch {
-        if (!cancelled) retry();
-      }
-    }
-
-    function retry() {
-      if (cancelled) return;
-      if (attempts >= MAX_HEALTH_ATTEMPTS) {
-        setServerHealth('unavailable');
-        return;
-      }
-      setServerHealth('checking');
-      healthRetryRef.current = setTimeout(check, 1500);
-    }
-
-    check();
-
-    return () => {
-      cancelled = true;
-      if (healthRetryRef.current) clearTimeout(healthRetryRef.current);
-    };
-  }, [isHtmlFile, isHtmlPreview, htmlHealthUrl, healthRetryNonce]);
 
   // LSP diagnostics for this file from the global diagnostics store
   // Uses suffix-matching because LSP stores absolute paths but we use relative paths
@@ -512,16 +442,29 @@ export function FileContentRenderer({
     }
   }, [fileContent?.content]);
 
-  // Reset state when file changes — markdown defaults to rendered preview.
+  // Reset state when the FILE changes — markdown defaults to rendered preview.
+  //
+  // `setIsMarkdownPreview` MUST NOT be a dependency here, and this effect must
+  // not call it. That callback is memoized on the preview flag itself, so
+  // listing it made every toggle re-run this effect and force the flag back to
+  // `true` inside the same commit: the source/preview button flipped and
+  // snapped back, which reads as a dead button. It killed BOTH toggles — this
+  // component's own header button and `file-preview-modal`'s toolbar button,
+  // which drives the same state through `onMarkdownPreviewChange`.
+  //
+  // Only the internal (uncontrolled) flag is reset. A controlling parent owns
+  // its copy and resets it on the same file change — see
+  // `file-preview-modal.tsx`'s own `[selectedFilePath]` effect — so notifying
+  // it from here would be a second writer for one piece of state.
   useEffect(() => {
-    setIsMarkdownPreview(true);
+    setInternalMarkdownPreview(true);
     setIsJsonTreeView(false);
     setHasUnsavedChanges(false);
     setSaveFlash(false);
     // HTML files always default to preview mode
     setIsHtmlPreview(true);
     latestContentRef.current = '';
-  }, [filePath, setIsMarkdownPreview]);
+  }, [filePath]);
 
   // Notify parent of unsaved state changes
   useEffect(() => {
@@ -986,6 +929,18 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
+          {/* Zip archive — browse the entries, drill into one, extract it */}
+          {isContentReady && fileCategory === 'zip' && rawBlob && (
+            <Suspense fallback={<RendererFallback />}>
+              {/* `key`: the renderer holds per-archive state (which folders
+                  are open, which entry is drilled into), and switching files
+                  must not carry one archive's expansion onto another's paths.
+                  Remounting is React's own reset, and it costs nothing — the
+                  blob is already cached by the source. */}
+              <ZipRenderer key={filePath} blob={rawBlob} fileName={fileName} className="h-full" />
+            </Suspense>
+          )}
+
           {/* XLSX / XLS preview */}
           {!isLoading && !error && !isNotFound && fileCategory === 'xlsx' && (
             <Suspense fallback={<RendererFallback />}>
@@ -1054,51 +1009,18 @@ export function FileContentRenderer({
             </Suspense>
           )}
 
-          {/* HTML preview via static file server */}
+          {/* HTML preview — served by the sandbox's static file server, so the
+              page's own relative assets resolve. `HtmlPreview` owns the wait,
+              the retry and the frame; the session panel renders the same one. */}
           {isHtmlFile && isHtmlPreview && (
-            <>
-              {/* Server still starting — spinner + polling message */}
-              {serverHealth !== 'unavailable' &&
-                (serverHealth === 'checking' || !authenticatedPreviewUrl) && (
-                  <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3">
-                    <Loading className="h-5 w-5 opacity-40" />
-                    <p className="text-xs opacity-50">
-                      {tHardcodedUi.raw(
-                        'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
-                      )}
-                    </p>
-                  </div>
-                )}
-
-              {/* Preview server never responded — recoverable, offer a retry */}
-              {serverHealth === 'unavailable' && (
-                <div className="text-muted-foreground flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-                  <FileWarning className="h-5 w-5 opacity-40" />
-                  <p className="max-w-xs text-xs opacity-60">
-                    {"Couldn't reach the preview server. The sandbox may still be starting up."}
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setHealthRetryNonce((n) => n + 1)}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Retry
-                  </Button>
-                </div>
+            <HtmlPreview
+              key={`html-preview-${filePath}`}
+              path={toSandboxAbsolutePath(filePath)}
+              fileName={fileName}
+              pendingLabel={tHardcodedUi.raw(
+                'featuresFilesComponentsFileContentRenderer.line805JsxTextStartingPreviewServer',
               )}
-
-              {/* Server ready — render iframe */}
-              {serverHealth === 'ready' && authenticatedPreviewUrl && (
-                <iframe
-                  key={`html-preview-${filePath}`}
-                  src={authenticatedPreviewUrl}
-                  title={fileName}
-                  className="h-full w-full border-0"
-                  sandbox={getIframeSandbox({ isolateHtmlPreview: true })}
-                />
-              )}
-            </>
+            />
           )}
 
           {/* HTML source — shown when preview toggle is off */}
@@ -1174,7 +1096,7 @@ export function FileContentRenderer({
                   //
                   // The cap sits on an inner element so the scroll container
                   // stays full width and its scrollbar rides the panel edge.
-                  <div key={filePath} className="h-full w-full overflow-auto p-6">
+                  <div key={filePath} className="h-full w-full overflow-auto p-6 pb-40">
                     <div className="mx-auto w-full max-w-2xl">
                       <MarkdownWithFrontmatter
                         content={hasUnsavedChanges ? latestContentRef.current : displayContent}

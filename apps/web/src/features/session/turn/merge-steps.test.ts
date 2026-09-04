@@ -110,6 +110,38 @@ describe('mergeBurstSteps', () => {
   });
 });
 
+describe('mergeBurstSteps — how long a thought took', () => {
+  const durationOf = (step: BurstStep) =>
+    (step as Extract<BurstStep, { kind: 'thought' }>).durationMs;
+
+  test('one run of fragments reports first start to last end', () => {
+    // The fragments of one thought are one stretch of thinking, gaps included.
+    // Summing per-fragment durations would silently drop the gaps between them.
+    const steps = mergeBurstSteps(
+      [
+        { ...reasoning('r1', 'first'), time: { start: 1_000, end: 3_000 } } as Part,
+        { ...reasoning('r2', 'second'), time: { start: 5_000, end: 9_000 } } as Part,
+      ],
+      () => 'primary',
+    );
+    expect(steps).toHaveLength(1);
+    expect(durationOf(steps[0])).toBe(8_000);
+  });
+
+  test('a thought still being written has no duration', () => {
+    const steps = mergeBurstSteps(
+      [{ ...reasoning('r1', 'first'), time: { start: 1_000 } } as Part],
+      () => 'primary',
+    );
+    expect(durationOf(steps[0])).toBeUndefined();
+  });
+
+  test('a thought with no timing at all has no duration', () => {
+    const steps = mergeBurstSteps([reasoning('r1', 'first')], () => 'primary');
+    expect(durationOf(steps[0])).toBeUndefined();
+  });
+});
+
 describe('mergeBurstSteps — which thought is still live', () => {
   test('a thought whose last fragment has ended is not running', () => {
     const steps = mergeBurstSteps([settledReasoning('r1', 'done thinking')], tierOf);

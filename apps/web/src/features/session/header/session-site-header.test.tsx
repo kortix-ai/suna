@@ -12,26 +12,24 @@ const exportModalSource = readFileSync(
 );
 
 describe('SessionSiteHeader sidebar toggle', () => {
-  test('connects collapsed-toggle hover to the sidebar peek controller', () => {
-    expect(source).toContain('onPointerEnter={sidebarState ===');
-    expect(source).toContain('peekEnter');
-    expect(source).toContain('peekLeave');
+  // This header used to carry its own eighteen-line copy of the opener — the
+  // peek wiring, the label, the gate call, the ghost icon button. All of it is
+  // `SidebarToggle` now (pinned in project-layout/sidebar-toggle.test.ts), and
+  // the visibility rule it defers to is a truth table in sidebar-opener.test.ts.
+  // The header's only remaining job is to place it, first in the leading
+  // cluster, in flow — never absolute over the row.
+  test('renders the shared opener, first in the leading cluster', () => {
+    expect(source).toContain('<SidebarToggle />');
+    const toggleAt = source.indexOf('<SidebarToggle />');
+    expect(toggleAt).toBeGreaterThan(-1);
+    expect(toggleAt).toBeLessThan(source.indexOf('{headerTitle}'));
   });
 
-  // The collapse control lives in the panel's own header now (ProjectSidebar)
-  // and the desktop shell draws its own opener in the title-bar band, so this
-  // one exists purely to bring a hidden panel back on the web. The rule —
-  // docked-open, mobile, and desktop-shell clauses — is pinned as a truth
-  // table in project-layout/sidebar-opener.test.ts; this header only has to
-  // defer to it rather than re-implement it, which is how four sibling views
-  // ended up drawing a second opener over the macOS traffic lights.
-  test('visibility comes from the shared gate, not a local rule', () => {
-    const gate = source.slice(
-      source.indexOf('const showSidebarToggle ='),
-      source.indexOf(';', source.indexOf('const showSidebarToggle =')),
-    );
-    expect(gate).toContain('useShowPageSidebarOpener()');
-    expect(source).toContain('{showSidebarToggle && (');
+  // `sidebarState` survives for the title-bar indent (`sidebarHidden`), not
+  // for a second opener. A `toggleSidebar` here means one grew back.
+  test('keeps no opener of its own', () => {
+    expect(source).not.toContain('toggleSidebar');
+    expect(source).not.toContain('sidebarOpenerLabel');
   });
 });
 

@@ -48,21 +48,56 @@ describe('stop reaches the queue that actually holds the messages', () => {
   test('a rewind removes the queued rows instead of holding them', () => {
     // A hold cannot be right here, for a reason that is structural rather than
     // a matter of taste: the inbox delivers by `created_at`, so a row queued
-    // BEFORE the rewind is admitted before the replacement prompt the rewind
-    // prefills — and the first delivery is what commits the revert. The old
+    // BEFORE the rewind is admitted before the replacement prompt the edit
+    // sends — and the first delivery is what commits the revert. The old
     // follow-up would commit the user's rewind and run against the trajectory
     // it truncated. A hold also does not hold: `POST .../prompts` releases it,
-    // and the send that releases it is the one the rewind flow itself
-    // prefills. So the rows go, exactly as the browser queue's `clearSession`
-    // took them, and the user is told.
-    const rewind = between(
-      chat,
-      'const handleConfirmRewind = useCallback(',
-      'const handleRestoreRewind',
-    );
+    // and the send that releases it is the edit's own replacement prompt.
+    // So the rows go, exactly as the browser queue's `clearSession` took them,
+    // and the user is told. (`handleEditSend` is the inline editor's Send —
+    // the successor of `handleConfirmRewind` + its ConfirmDialog.)
+    const rewind = between(chat, 'const handleEditSend = useCallback(', 'const handleStop');
     expect(rewind).toContain('promptInbox.remove(');
     expect(rewind).not.toContain('promptInbox.hold(');
     expect(rewind).toContain('infoToast(');
+  });
+
+  test('the edit-send commits the local revert — Restore must not outlive the path it restores', () => {
+    // OpenCode commits a staged revert on ANY prompt delivery
+    // (`SessionRevert.cleanup`, first thing in `SessionPrompt.prompt`), but
+    // the classic server emits no `session.next.revert.*` wire event —
+    // `setRevert`/`clearRevert` are bare session patches, and
+    // `syncSessionRevertFromInfo` deliberately ignores an absent `revert`
+    // field. The inbox send path also never runs the SDK's `sendParts`, whose
+    // trailing `commitSessionRevert` covers this for SDK hosts. So the ONLY
+    // thing that can retire the composer's Restore button after an edit-send
+    // is this handler committing the local record itself; without it the
+    // button survives forever and every click is a guaranteed no-op
+    // (`unrevert` finds nothing staged, or throws BusyError mid-run).
+    const rewind = between(chat, 'const handleEditSend = useCallback(', 'const handleStop');
+    const sendAt = rewind.indexOf('await handleSend(text)');
+    const commitAt = rewind.indexOf('.commitSessionRevert(');
+    expect(sendAt).toBeGreaterThan(-1);
+    expect(commitAt).toBeGreaterThan(sendAt);
+    // Only a SUCCESSFUL send commits: a refused send leaves the revert staged,
+    // where Restore genuinely works.
+    expect(rewind).toContain('if (sendOk');
+  });
+
+  test('the Restore control is disabled while the session is busy', () => {
+    // `unrevert` asserts the session is idle server-side (BusyError) — the
+    // button must refuse up front rather than offer a guaranteed failure.
+    const composerRewind = between(chat, 'const composerRewind =', 'onRestore:');
+    expect(composerRewind).toContain('disabled: isBusy');
+  });
+
+  test('the Restore control never flashes during the edit-send window', () => {
+    // The edit's Send stages the revert first and commits it only after
+    // `handleSend` resolves — ungated, the button paints for the milliseconds
+    // in between and vanishes. It may appear only once the send has FAILED
+    // (record still staged, restore genuinely works).
+    const composerRewind = between(chat, 'const composerRewind =', 'onRestore:');
+    expect(composerRewind).toContain('!editSendPending');
   });
 });
 
@@ -152,6 +187,26 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
   });
 
+  test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {
+    // `registerOptimisticEcho` writes to the sync store: it retires the bubble
+    // the row names when the runtime's echo has already landed unmatched,
+    // which a burst of queued prompts makes the ordinary case. Called from a
+    // `useMemo`, that write lands during render and re-renders every
+    // subscriber mid-render.
+    const effect = between(
+      chat,
+      'const store = useSessionStateStore.getState();\n    for (const prompt of promptInbox.prompts) {',
+      '}, [promptInbox.prompts, sessionId]);',
+    );
+    expect(effect).toContain('store.registerOptimisticEcho(');
+    const rowsByMessageId = between(
+      chat,
+      'const inboxRowsByMessageId = useMemo(() => {',
+      'const queueRows = useMemo(',
+    );
+    expect(rowsByMessageId).not.toContain('registerOptimisticEcho');
+  });
+
   test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {
     // The origin key keeps one element across the re-mint swap; the
     // uniqueness pass keeps React sane when an old echo and its re-placed
@@ -182,7 +237,18 @@ describe('a `/` command is REFUSED mid-turn, not queued', () => {
   test('the refusal reads server turn authority, not the 300 ms busy fade', () => {
     // `isBusy` is a fade timer for the busy indicator: it lapses between
     // agentic steps, which is exactly when a command would land mid-turn.
-    expect(chat).toContain('sessionWorking={effectiveBusy || hasRetryingAssistant}');
+    //
+    // REWRITTEN when the redundant OR was removed (55ee4e2981):
+    // `sessionWorking={effectiveBusy || hasRetryingAssistant}` collapsed to
+    // `sessionWorking={effectiveBusy}` because `effectiveBusy` is now built by
+    // `resolveEffectiveBusy({ isServerBusy, isOptimisticCompacting,
+    // hasRetryingAssistant })` — the retry predicate already folds into it, so
+    // the composer reads one value instead of re-ORing a term it already
+    // contains. The invariant this test actually guards was never asserted
+    // directly: the negative below is it — the refusal must NOT read the
+    // faded `isBusy`, so this test fails if someone points the composer at it.
+    expect(chat).toContain('sessionWorking={effectiveBusy}');
+    expect(chat).not.toContain('sessionWorking={isBusy}');
   });
 
   test('a PROMPT is never refused for being mid-turn — the server orders it', () => {

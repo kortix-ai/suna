@@ -23,9 +23,8 @@ export interface GatewayHooks {
   // Optional combined gate: token → authenticated + billing-active + within
   // budget, in ONE call. When provided, the chat-completions handler uses it
   // instead of authenticate + assertBillingActive + assertBudget — the standalone
-  // gateway sets this to fold three sequential cross-process RPCs into one. The
-  // in-process mount omits it (its three direct calls are free) and keeps using
-  // the granular hooks below. listModels still uses authenticate directly.
+  // gateway sets this to fold three sequential cross-process RPCs into one.
+  // listModels still uses authenticate directly.
   authorize?: (token: string) => Promise<AuthorizeResult>;
   // The host/control plane owns model names, catalog state, defaults, and
   // fallback policy. The gateway sends only opaque model ids + request traits
@@ -55,4 +54,13 @@ export interface GatewayHooks {
  * account with no managed access still gets an empty managed set. */
 export interface ListModelsOptions {
   managedOnly?: boolean;
+  /**
+   * `picker` serves the caller's project SERVABLE set (~80KB): managed models
+   * the account may use + the providers its secrets connect + routing-named
+   * ids, stamped with enablement — the same list the web model picker shows.
+   * A sandbox fetches it at boot so the `kortix` provider it registers is
+   * exactly what the composer offers (a BYOK model newer than the image used
+   * to answer `ModelNotFound`). `managed` is the legacy managed-only subset.
+   */
+  scope?: 'managed' | 'picker';
 }

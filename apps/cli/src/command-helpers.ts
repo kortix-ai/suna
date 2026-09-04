@@ -33,7 +33,7 @@ interface ProjectContextOpts {
  *
  * Host resolution order:
  *   1. --host flag (per-invocation override)
- *   2. KORTIX_CLI_TOKEN (platform-injected sandbox
+ *   2. KORTIX_TOKEN (platform-injected sandbox
  *      auth — resolved through `loadAuth()`; a committed link host has no
  *      credentials inside a sandbox, so the env token must win)
  *   3. .kortix/link.json's `host` field (per-repo binding)

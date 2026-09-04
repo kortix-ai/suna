@@ -43,7 +43,7 @@ curl -sS -X POST \
   -H "Idempotency-Key: $(uuidgen)" \
   -d '{
     "agent_name": "support",
-    "opencode_model": "kortix/glm-5.2",
+    "opencode_model": "kortix/glm-5.3-flash",
     "runtime_context": {
       "ticket_id": "ticket-123"
     },
@@ -77,7 +77,7 @@ const kortix = createScopedKortix({
 
 const session = await kortix.project(projectId).sessions.create({
   agent_name: "support",
-  opencode_model: "kortix/glm-5.2",
+  opencode_model: "kortix/glm-5.3-flash",
   runtime_context: { ticket_id: "ticket-123" },
   connector_bindings: {
     "gmail-read": { connection_id: connectionId },
@@ -445,7 +445,7 @@ An idempotency key longer than 255 characters returns
 | `404`                        | `SECRET_IDENTIFIER_NOT_FOUND`                    | The secret allowlist names an unknown identifier.                       |
 | `409`                        | `CONNECTOR_CONNECTION_REQUIRED`               | A mandatory connector has no active valid connection. Lists every failing connector in `connector_connections`. |
 | `409`                        | `REQUIRED_CONNECTOR_CONNECTION_UNAVAILABLE`         | A required slug has no configured connector. Lists every failing alias in `connectors`. |
-| `409`                        | `CONNECTOR_NOT_PIPEDREAM`                        | The alias is a connector on the project but not a Pipedream one, so no Quick Connect link exists for it. |
+| `409`                        | `CONNECTOR_PROVIDER_UNSUPPORTED`                 | The alias is a connector on the project but its provider has no hosted authorization page, so no connect link exists for it. |
 | `409`                        | `CONNECTOR_PIPEDREAM_APP_MISSING`                | The Pipedream connector names no app, so no connect link can be built.  |
 | `409` create / `403` rescope | `CONNECTOR_CONNECTION_INACTIVE`                     | The connector or connection is inactive.                     |
 | `409`                        | `IDEMPOTENCY_*_CONFLICT`                         | The idempotency key was replayed with a changed request body.           |

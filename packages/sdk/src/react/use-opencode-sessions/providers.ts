@@ -1,6 +1,7 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { useKortixRouteProjectId } from '../route-project';
 import { contract } from '../query-contracts';
@@ -10,6 +11,7 @@ import type { ProviderListResponse } from './keys';
 import { unwrap, getLSCache, setLSCache, LS_PROVIDERS, CACHE_SCOPE_GLOBAL } from './shared';
 import {
   getProjectDetail,
+  getProjectLlmCatalogProviders,
   getProjectModelPicker,
   listProjectSecrets,
 } from '../../core/rest/projects-client';
@@ -18,7 +20,9 @@ import {
   filterToNativeProviders,
   GATEWAY_PROVIDER_IDS,
   LLM_PROVIDER_CREDENTIALS,
+  mergeNativeProviderLists,
   mergeProjectSecretConnectedProviders,
+  nativeProviderListFromCatalog,
   normalizeProviderList,
   projectLlmCatalogToProviderList,
   providerListHasModels,
@@ -32,6 +36,7 @@ import { shouldLoadProjectModelPicker } from './provider-load-plan';
 export { GATEWAY_PROVIDER_IDS };
 
 export function useOpenCodeProviders() {
+  const queryClient = useQueryClient();
   const runtimeReady = useOpenCodeRuntimeReady();
   const projectId = useKortixRouteProjectId();
   const projectDetailQuery = useQuery({
@@ -52,7 +57,16 @@ export function useOpenCodeProviders() {
   const gatewayProvidersQuery = useQuery<ProviderListResponse>({
     queryKey: ['project-providers', projectId, 'gateway'],
     queryFn: async () => {
-      const catalog = await getProjectModelPicker(projectId!);
+      // The picker is read through ITS OWN entry (`qk.project.modelPicker`),
+      // which `useProjectModels` also observes. Calling the fetcher directly
+      // here made two concurrent `GET /model-picker` on every session open
+      // (measured: both 83 KB, 1 ms apart). fetchQuery dedupes the in-flight
+      // read and fills the shared entry.
+      const catalog = await queryClient.fetchQuery({
+        queryKey: qk.project.modelPicker(projectId!),
+        queryFn: () => getProjectModelPicker(projectId!),
+        ...contract('config'),
+      });
       const providers = projectLlmCatalogToProviderList(catalog);
       setLSCache(LS_PROVIDERS, providers, gatewayCacheScope);
       return providers;
@@ -139,5 +153,52 @@ export function useOpenCodeProviders() {
     retry: (failureCount) => failureCount < 10,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8000),
   });
-  return projectId && projectGatewayEnabled ? gatewayProvidersQuery : nativeProvidersQuery;
+  // Native mode, BEFORE the session runtime exists (project home, cold
+  // session): opencode's /provider list — the native query's only source —
+  // cannot be read yet, so without a fallback the composer showed "No models
+  // available" until a sandbox booted, and connecting a key changed nothing.
+  // Synthesize the picker source from the ungated /llm-catalog/providers
+  // route + the project's secret names (nativeProviderListFromCatalog). The
+  // live runtime list takes over the moment it exists; a cached runtime
+  // answer (the native query's placeholderData) also wins, since it is
+  // runtime truth from a previous boot.
+  const nativeCatalogQuery = useQuery<ProviderListResponse>({
+    queryKey: ['project-providers', projectId, 'native-catalog'],
+    queryFn: async () => {
+      const [catalog, secrets] = await Promise.all([
+        getProjectLlmCatalogProviders(projectId!),
+        // `project.secret.read` is manager-tier: a member's read 403s. Treat
+        // that as "no keys visible" — the runtime list corrects it on boot —
+        // rather than erroring the whole picker source.
+        listProjectSecrets(projectId!).catch(() => ({ items: [] as Array<{ name: string }> })),
+      ]);
+      const items = Array.isArray(secrets) ? secrets : (secrets.items ?? []);
+      return nativeProviderListFromCatalog(
+        catalog,
+        new Set(items.map((secret: { name: string }) => secret.name)),
+      );
+    },
+    // Stays live after boot: the merged picker keeps catalog order + curated
+    // defaults under the runtime's provider objects (see
+    // `mergeNativeProviderLists`), so the list does not change under the user
+    // the moment the sandbox reports in.
+    enabled: !!projectId && projectModeKnown && !projectGatewayEnabled,
+    ...contract('config'),
+    retry: false,
+  });
+
+  const mergedNative = useMemo(
+    () => mergeNativeProviderLists(nativeCatalogQuery.data, nativeProvidersQuery.data),
+    [nativeCatalogQuery.data, nativeProvidersQuery.data],
+  );
+
+  if (projectId && projectGatewayEnabled) return gatewayProvidersQuery;
+  if (projectId && projectModeKnown && !projectGatewayEnabled) {
+    // ONE native picker across sandbox states. `isLoading` follows whichever
+    // source is still the only one expected right now: pre-boot the catalog,
+    // post-boot the runtime.
+    const base = runtimeReady || nativeProvidersQuery.data ? nativeProvidersQuery : nativeCatalogQuery;
+    return Object.assign({}, base, { data: mergedNative }) as typeof nativeProvidersQuery;
+  }
+  return nativeProvidersQuery;
 }

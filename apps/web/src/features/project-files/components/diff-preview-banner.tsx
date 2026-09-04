@@ -2,13 +2,16 @@
 
 import { useTranslations } from 'next-intl';
 
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
 import {
-  WarningCircleIcon as AlertCircle,
-  CheckIcon as Check,
-  MinusIcon as Minus,
-} from '@phosphor-icons/react';
+  Alert,
+  AlertContent,
+  AlertDescription,
+  AlertMedia,
+  AlertTitle,
+} from '@/components/ui/alert';
+import Loading from '@/components/ui/loading';
+import { DiffStat } from '@/components/ui/status';
+import { MinusIcon, WarningCircleIcon } from '@phosphor-icons/react';
 import type { VersionDiffPreview } from '../api/change-requests';
 
 interface DiffPreviewBannerProps {
@@ -19,40 +22,61 @@ interface DiffPreviewBannerProps {
 }
 
 /**
- * Small status row rendered inside the Open-CR dialog to surface the live
- * diff between the two selected versions BEFORE the CR is created. Each state
- * is just an <InfoBanner> with the right tone — no hand-rolled colored boxes:
- *   - loading          → neutral spinner
- *   - nothing to merge → warning, blocks submit (parent gates the button)
- *   - has changes      → success file-count + line summary
+ * The live answer to "what would this actually propose?", shown in the
+ * Open-a-change dialog under the From / Into pickers. One `Alert` per state:
+ *
+ *   - comparing        → neutral, spinner
+ *   - could not compare → destructive, with the reason
+ *   - same version     → warning (defensive; the caller already gates on it)
+ *   - nothing to send  → warning, and the parent disables submit
+ *   - has changes      → neutral summary
+ *
+ * Built on `Alert` rather than `InfoBanner` because `InfoBanner`'s tones are
+ * mislabelled — its `info` is yellow and its `destructive` is a grey border —
+ * and its tinted tones carry a 25% fill with no border at all, so a warning
+ * floated as an edgeless orange block. `Alert` is `Item variant="outline"`, so
+ * every state keeps a hairline, and its warning fill is 10%.
+ *
+ * The "has changes" state is deliberately NOT green. It reports a precondition
+ * being met, not a success, and the green belongs on the additions — which is
+ * what `DiffStat` is for. It used to hand-roll its own `+N` / `−N` spans beside
+ * the component that exists to draw exactly that.
  */
 export function DiffPreviewBanner({ loading, error, preview, className }: DiffPreviewBannerProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+
   if (loading) {
     return (
-      <InfoBanner tone="neutral" className={className}>
-        <span className="flex items-center gap-2">
-          <Loading className="h-3.5 w-3.5 shrink-0" />
-          {tHardcodedUi.raw(
-            'featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff',
-          )}
-        </span>
-      </InfoBanner>
+      <Alert className={className}>
+        <AlertMedia>
+          <Loading className="size-4 shrink-0" />
+        </AlertMedia>
+        <AlertContent>
+          <AlertDescription>
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsDiffPreviewBanner.line33JsxTextCalculatingTheDiff',
+            )}
+          </AlertDescription>
+        </AlertContent>
+      </Alert>
     );
   }
 
   if (error) {
     return (
-      <InfoBanner
-        tone="warning"
-        icon={AlertCircle}
-        title={tHardcodedUi.raw(
-          'featuresProjectFilesComponentsDiffPreviewBanner.line44JsxAttrTitleCouldnTComputeTheDiff',
-        )}
-        className={className}
-      >
-        {error.message}
-      </InfoBanner>
+      <Alert variant="destructive" className={className}>
+        <AlertMedia>
+          <WarningCircleIcon className="size-4" />
+        </AlertMedia>
+        <AlertContent>
+          <AlertTitle>
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsDiffPreviewBanner.line44JsxAttrTitleCouldnTComputeTheDiff',
+            )}
+          </AlertTitle>
+          <AlertDescription>{error.message}</AlertDescription>
+        </AlertContent>
+      </Alert>
     );
   }
 
@@ -60,29 +84,48 @@ export function DiffPreviewBanner({ loading, error, preview, className }: DiffPr
 
   if (preview.is_same_ref) {
     return (
-      <InfoBanner tone="warning" icon={Minus} className={className}>
-        {tHardcodedUi.raw(
-          'featuresProjectFilesComponentsDiffPreviewBanner.line57JsxTextSameVersionOnBothSidesPickDifferentVersions',
-        )}
-      </InfoBanner>
+      <Alert variant="warning" className={className}>
+        <AlertMedia>
+          <MinusIcon className="size-4" />
+        </AlertMedia>
+        <AlertContent>
+          <AlertDescription>
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsDiffPreviewBanner.line57JsxTextSameVersionOnBothSidesPickDifferentVersions',
+            )}
+          </AlertDescription>
+        </AlertContent>
+      </Alert>
     );
   }
 
   if (preview.is_up_to_date || preview.files_changed === 0) {
     return (
-      <InfoBanner tone="warning" icon={Minus} className={className}>
-        {tHardcodedUi.raw(
-          'featuresProjectFilesComponentsDiffPreviewBanner.line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds',
-        )}
-      </InfoBanner>
+      <Alert variant="warning" className={className}>
+        <AlertMedia>
+          <MinusIcon className="size-4" />
+        </AlertMedia>
+        <AlertContent>
+          <AlertDescription>
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsDiffPreviewBanner.line65JsxTextNoChangesBetweenTheseVersionsTheSourceNeeds',
+            )}
+          </AlertDescription>
+        </AlertContent>
+      </Alert>
     );
   }
 
   return (
-    <InfoBanner tone="success" icon={Check} className={className}>
-      {preview.files_changed} file{preview.files_changed === 1 ? '' : 's'} changed{' '}
-      <span className="text-kortix-green font-semibold">+{preview.additions}</span>{' '}
-      <span className="text-kortix-red font-semibold">−{preview.deletions}</span>
-    </InfoBanner>
+    <Alert className={className}>
+      <AlertContent>
+        <AlertDescription className="flex items-center gap-2 tabular-nums">
+          <span>
+            {preview.files_changed} file{preview.files_changed === 1 ? '' : 's'} changed
+          </span>
+          <DiffStat additions={preview.additions} deletions={preview.deletions} />
+        </AlertDescription>
+      </AlertContent>
+    </Alert>
   );
 }

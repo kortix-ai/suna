@@ -31,7 +31,7 @@ jobs:
   # suite (the `|| workflow_dispatch` guard on each job).
   changes:
     name: Detect changes
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 5
     outputs:
       api: ${{ steps.filter.outputs.api }}
@@ -98,7 +98,7 @@ jobs:
     name: API typecheck
     needs: changes
     if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -132,7 +132,7 @@ jobs:
     name: Frontend build
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -209,7 +209,7 @@ jobs:
     name: Sandbox agent build
     needs: changes
     if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -223,6 +223,10 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
+
+      - name: Install worker dependencies
+        run: bun install --frozen-lockfile
+        working-directory: apps/kortix-worker
 
       - name: Typecheck
         run: bun run typecheck
@@ -241,7 +245,7 @@ jobs:
     name: CLI binary smoke
     needs: changes
     if: needs.changes.outputs.cli == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -289,7 +293,7 @@ jobs:
     name: Self-host schema bootstrap
     needs: changes
     if: needs.changes.outputs.self_host == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -315,8 +319,16 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
+      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
+        # Same cache-key as the dev/staging/preview API image builds, so this
+        # smoke build starts warm from layers those workflows already built.
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/api/Dockerfile:linux/amd64
       - name: Build API image
-        run: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
+        # --load: the Blacksmith builder is a separate buildkitd, so the result
+        # must be exported into the local daemon for the compose stack below.
+        run: docker build --load --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
 
       - name: Self-host schema-bootstrap check (fresh DB)
         run: bash apps/cli/scripts/self-host-e2e/schema-check.sh
@@ -329,7 +341,7 @@ jobs:
     # still cover the full signed release artifacts.
     needs: changes
     if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-22.04
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -366,7 +378,7 @@ jobs:
 
   dependency-scan:
     name: Dependency + secret scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

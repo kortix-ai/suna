@@ -119,6 +119,12 @@ const EXEMPT_METHOD_PATH_PATTERNS: Array<{ method: string; path: RegExp }> = [
   // 1 MiB / 5 MiB and answers in one shot.
   { method: 'POST', path: /\/secrets\/[^/]+\/relay$/ },
   { method: 'POST', path: /\/secrets\/[^/]+\/relay\/ws-ticket$/ },
+  // The session runtime stream. It is a never-ending `text/event-stream`, so a
+  // 25 s deadline would kill every healthy one on schedule. The `accept:
+  // text/event-stream` catch-all above already covers a well-behaved client;
+  // this entry means the guard does not depend on the CLIENT setting a header
+  // correctly — a curl without `-H accept:` must not be the reason a stream dies.
+  { method: 'GET', path: /\/sessions\/[^/]+\/stream$/ },
   // The ws UPGRADE needs no entry — `isExempt` returns true for any request
   // carrying `Upgrade: websocket` before it reaches these lists.
 ];

@@ -1063,6 +1063,19 @@ const INJECTED_APP_SOURCE_PATTERNS = [
   // from a minified extension function (`d`); the throw is in the extension's
   // own injected code, never in first-party Kortix code.
   /^app:\/\/\/content\/captcha\/mt_captcha\/interceptor\.js$/,
+  // Browser-extension bundle injected as `app:///executors/<chunkId>.js` — the
+  // same synthetic `app:///` empty-host origin shape as the sources above, with
+  // a webpack-style numeric chunk file under an `executors/` directory. Its own
+  // code dereferences an undefined object and throws
+  // `TypeError: Cannot read properties of undefined (reading 'M_ID')` from a
+  // minified extension function (`Y`), which Sentry captures and ships to
+  // Better Stack (Kortix Frontend prod, `app:///executors/200.js`, 10+
+  // occurrences). `M_ID` is not a first-party identifier and there is no
+  // `executors/` path in this app: first-party bundles are always
+  // `app:///_next/…` and de-minify to `apps/web/src/…`, neither of which this
+  // pattern matches. The chunk id varies with the extension's build, so the
+  // stable anchor is the `executors/<digits>.js` shape, not one file name.
+  /^app:\/\/\/executors\/\d+\.js$/,
 ] as const;
 
 // Browser userscript-manager (Tampermonkey / Violentmonkey / Greasemonkey /
@@ -2202,6 +2215,71 @@ export function isPaperShaderWebGLUnsupportedNoise(input: {
   // "any resolvable frame" guard is needed — the message is specific enough
   // (the library's canonical string) that a frameless capture is safe to
   // drop, unlike the generic `undefined` / `OperationError` matchers.
+  if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
+    return false;
+  }
+  return true;
+}
+
+// Paper Shaders (`@paper-design/shaders-react`) image-uniform load-race throw —
+// a THIRD sibling of the two Paper Shaders classes above, and like the
+// WebGL-unsupported one it is the library's OWN deliberate `throw`, not a
+// JS-engine TypeError.
+//
+// Every Paper Shaders effect that dithers or grains its output uploads a small
+// bundled noise bitmap to the `u_noiseTexture` sampler uniform. The library
+// guards that upload with an `img.complete` assertion and throws
+// `Paper Shaders: image for uniform u_noiseTexture must be fully loaded` when
+// the shader mount reaches the upload before the browser finished decoding the
+// bitmap. That is a race inside the library between its own image load and its
+// own rAF-driven mount — first-party code neither supplies this image nor names
+// this uniform (`rg "u_noiseTexture|noiseTexture" apps/web/src` matches
+// nothing). It is transient: the same page renders the shader normally on the
+// next paint once the bitmap is decoded, which is why it appears as scattered
+// single occurrences across visitors rather than a deterministic route failure.
+// Slow connections, throttled background tabs and cold caches all widen the
+// window. Better Stack, Kortix Frontend prod: 10+ occurrences, `Error`, call
+// site `?` in chunk `app:///_next/static/immutable/chunks/2-qxa2k33wllw.js`
+// (Paper Shaders library) — no first-party frame.
+//
+// The throw escapes `<ShaderSafe>` for the same reason the null-context class
+// does: it fires inside an async mount callback, and `getDerivedStateFromError`
+// only catches render-phase throws. `supportsWebGL2()` cannot prevent it
+// either — WebGL2 IS supported here; only the bitmap is late.
+//
+// Same message-only contract as its siblings: the `Paper Shaders:` prefix is
+// the library's canonical marker, never emitted by first-party app code, and
+// the `u_noiseTexture` uniform name pins the single library call site. The
+// first-party negative guard is kept so a hypothetical first-party throw
+// carrying this exact string still reports.
+const PAPER_SHADER_IMAGE_UNIFORM_NOISE_MESSAGE =
+  'Paper Shaders: image for uniform u_noiseTexture must be fully loaded';
+
+/**
+ * Whether a Sentry / window.onerror event is the Paper Shaders
+ * (`@paper-design/shaders-react`) `u_noiseTexture` image-uniform load-race
+ * throw. See {@link PAPER_SHADER_IMAGE_UNIFORM_NOISE_MESSAGE} for the full
+ * rationale.
+ *
+ * Requires the EXACT library message AND a NEGATIVE guard: any frame that
+ * resolves to a de-minified first-party `apps/web/src/…` source keeps
+ * reporting. The production shape carries only minified library chunk frames,
+ * so the guard does not fire for it; a frameless capture with this exact
+ * message still classifies as noise.
+ */
+export function isPaperShaderImageUniformNoise(input: {
+  message?: unknown;
+  frames?: Array<{ filename?: unknown } | undefined>;
+}): boolean {
+  // `stripErrorWrappers` does not strip a bare `Error: ` prefix (its
+  // `[A-Za-z]+Error:` regex needs a leading word), and this class is thrown as
+  // a plain `Error`, so strip that form explicitly — same as
+  // `isPaperShaderWebGLUnsupportedNoise`.
+  const stripped = stripErrorWrappers(normalizeString(input.message)).replace(/^Error: /, '');
+  if (stripped !== PAPER_SHADER_IMAGE_UNIFORM_NOISE_MESSAGE) {
+    return false;
+  }
+  const frames = input.frames ?? [];
   if (frames.some((frame) => isFirstPartyResolvedSource(frame?.filename))) {
     return false;
   }
@@ -4944,6 +5022,17 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   // `@paper-design/shaders` chunk frames. NOT in `ignoreErrors` (no frame
   // context there). See `isPaperShaderWebGLUnsupportedNoise`.
   if (isPaperShaderWebGLUnsupportedNoise({ message, frames })) {
+    return true;
+  }
+
+  // Paper Shaders `u_noiseTexture` image-uniform load race — the library's own
+  // `img.complete` assertion firing when its shader mount beats its bundled
+  // noise bitmap's decode. Transient library-internal race, never a first-party
+  // bug; the same page renders normally on the next paint. Sibling of the
+  // WebGL-unsupported throw above and the null-context class. NOT in
+  // `ignoreErrors` (no frame context there, so the first-party negative guard
+  // could not run). See `isPaperShaderImageUniformNoise`.
+  if (isPaperShaderImageUniformNoise({ message, frames })) {
     return true;
   }
 

@@ -1,4 +1,5 @@
 import { relations, sql } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   bigint,
   boolean,
@@ -182,9 +183,31 @@ export const accounts = kortixSchema.table('accounts', {
   /** When set, PATs not used in this many days are auto-revoked on
    *  next validate. NULL = no idle gate. Units: days. */
   patIdleRevokeDays: integer('pat_idle_revoke_days'),
+  /** Organization branding (enterprise `branding` entitlement): the product
+   *  name plus the Storage URLs of the logo / icon / favicon (light + optional
+   *  dark) that replace the Kortix marks for this account's members. `{}` = default Kortix branding. The
+   *  API owns every URL here (uploads go through
+   *  `POST /accounts/:id/branding/assets/:kind`); clients never write one. */
+  branding: jsonb('branding').default({}).notNull().$type<AccountBrandingRecord>(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Shape of `accounts.branding`. Every key optional; absent == default Kortix. */
+export interface AccountBrandingRecord {
+  /** Product name shown in place of "Kortix" (document title). */
+  app_name?: string | null;
+  /** Wide brandmark (symbol + wordmark). Replaces the `brandmark` logo variant. */
+  logo_url?: string | null;
+  /** Square mark. Replaces the `icon` logo variant and the apple-touch icon. */
+  icon_url?: string | null;
+  /** Browser-tab icon. Falls back to `icon_url` when absent. */
+  favicon_url?: string | null;
+  /** Dark-scheme variants. Each falls back to its light counterpart. */
+  logo_dark_url?: string | null;
+  icon_dark_url?: string | null;
+  favicon_dark_url?: string | null;
+}
 
 export const accountMembers = kortixSchema.table(
   'account_members',
@@ -952,7 +975,7 @@ export const projectSessionSecretHandles = kortixSchema.table('project_session_s
 // synthetic `auto` model in the LLM gateway: a request for `auto` resolves to the
 // per-agent default (scope='agent', scope_key=agent_name) → the account default
 // (scope='account', scope_key='') → the platform default. The stored `model` is a
-// gateway wire model (a bare managed id like 'glm-5.2', a BYOK 'provider/model',
+// gateway wire model (a bare managed id like 'glm-5.3-flash', a BYOK 'provider/model',
 // or 'codex/<id>') — never the synthetic `auto`.
 //
 // `project_id` (added 2026-07-18, see 20260718*_account_model_preferences_project_id.sql)
@@ -1334,6 +1357,12 @@ export const projectMonitorBoxes = kortixSchema.table(
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // NO foreign key: the live database has never had one. A `.references()`
+    // arrived here with the kortixd series (99931e2ef3) and survived its revert,
+    // while no migration ever created the constraint — so schema, snapshot and
+    // database disagreed silently and the next generated migration would have
+    // been diffed against a fiction. Account deletion already reaches these rows
+    // through `project_id` -> projects -> accounts.
     accountId: uuid('account_id').notNull(),
     provider: varchar('provider', { length: 32 }).notNull(),
     /** The provider's sandbox id. Null until the create call returns. */
@@ -1670,14 +1699,8 @@ export const chatTurnStreams = kortixSchema.table(
 );
 
 /**
- * The shared transcript of a live voice call — written by the realtime provider
- * as speech happens, read back by the Kortix session through `voice_read`.
- *
- * `cursor` (bigserial) is what makes the read non-blocking: the agent loop is
- * single-threaded and can never sit on a stream, so it asks "what is new since
- * X" and gets an answer immediately. Ordering is on the cursor, never
- * created_at — two turns can land in the same millisecond and a wall-clock tie
- * would silently drop one on the next poll.
+ * Dormant compatibility table for the removed experimental voice runtime.
+ * A later contract migration removes it after every old API pod is retired.
  */
 export const voiceCallTurns = kortixSchema.table(
   'voice_call_turns',
@@ -1686,9 +1709,7 @@ export const voiceCallTurns = kortixSchema.table(
     callId: text('call_id').notNull(),
     projectId: uuid('project_id').notNull(),
     sessionId: text('session_id').notNull(),
-    /** 'user' (a human in the call) | 'agent' (the voice agent speaking) |
-     *  'tool' (an ask_kortix/run_command call the worker made through the
-     *  voice MCP — see mcp.ts's callTool). CHECK constraint enforces this set. */
+    /** Historical participant classification. The runtime no longer writes this table. */
     role: varchar('role', { length: 16 }).notNull(),
     speaker: text('speaker'),
     text: text('text').notNull(),
@@ -1701,20 +1722,8 @@ export const voiceCallTurns = kortixSchema.table(
 );
 
 /**
- * The Kortix agent's read position in a call's transcript — the state that lets
- * a bare `read_transcript {}` mean "only what I have not been shown yet".
- *
- * Cursor-paging was already incremental, but only for an agent that threaded the
- * returned cursor back on every call; one that forgot passed 0 and re-read the
- * whole conversation. Keeping the position here makes the cheap path the DEFAULT
- * path and removes the agent's obligation to remember anything.
- *
- * `cursor` is the highest `voice_call_turns.cursor` actually handed over, and it
- * only ever moves forward (the upsert's `setWhere` refuses to lower it) — a race
- * between two reads in one call must not rewind it. Exactly one writer: the
- * agent-side `read_transcript`. The call page's poll (r7.ts,
- * public-join-routes.ts) passes its own explicit cursor and never touches this
- * row, so a human scrolling the transcript cannot consume the agent's unread.
+ * Dormant compatibility table for the removed experimental voice runtime.
+ * A later contract migration removes it after every old API pod is retired.
  */
 export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors', {
   /** The call — which is also the session id. */
@@ -1725,22 +1734,8 @@ export const voiceCallReadCursors = kortixSchema.table('voice_call_read_cursors'
 });
 
 /**
- * Short, ungessable join links that resolve server-side to a fresh LiveKit
- * access token — see `apps/api/src/channels/voice/join-links.ts`. Replaces
- * handing out the raw ~300-char LiveKit JWT itself in `voice_spawn`'s
- * `join_url` (fragile in transit: one corrupted character breaks the
- * signature and the browser gets "invalid token").
- *
- * `token_hash` (sha256 of the raw token), never the raw token, is the primary
- * key — same posture as `project_session_public_shares.token_hash`: a DB dump
- * should not itself be a bag of live capability tokens.
- *
- * DB-backed rather than a stateless encrypted envelope (compare
- * `setup-links/token.ts`) for the one property a self-contained token cannot
- * give: revocation. A live call can end while a copy of its link is still
- * sitting in someone's chat history, and that link must stop working the
- * moment the call does (`revoked_at`, set by `endCall`) -- not just whenever
- * its TTL happens to lapse.
+ * Dormant compatibility table for the removed experimental voice runtime.
+ * A later contract migration removes it after every old API pod is retired.
  */
 export const voiceJoinLinks = kortixSchema.table(
   'voice_join_links',
@@ -1846,6 +1841,47 @@ export const sessionSandboxes = kortixSchema.table(
 );
 
 /**
+ * Harness/worker split (P1.7): the lazily-provisioned COMPUTE ENVIRONMENT of a
+ * pi worker session — the full daemon box (repo checkout, secrets, /file,
+ * /find, /pty) the worker's tools act on, provisioned on the FIRST compute
+ * tool call and never before.
+ *
+ * A separate table, not a second row in `session_sandboxes`: that table is
+ * one-row-per-session by DB constraint + anchor-guard trigger, and everything
+ * around it (turn lifecycle, prompt dedupe, compute metering, the reaper's
+ * deadline math) assumes the row IS the session runtime. For a pi session the
+ * session runtime is the WORKER; this environment is an auxiliary box the
+ * worker reaches directly over the provider edge — the session proxy is not in
+ * its data path.
+ *
+ * One environment per session, enforced by the primary key.
+ */
+export const sessionEnvironments = kortixSchema.table(
+  'session_environments',
+  {
+    sessionId: text('session_id').primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    provider: sandboxProviderEnum('provider').default('daytona').notNull(),
+    externalId: text('external_id'),
+    baseUrl: text('base_url'),
+    status: sessionSandboxStatusEnum('status').default('provisioning').notNull(),
+    config: jsonb('config').default({}).$type<Record<string, unknown>>(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_session_environments_project').on(table.projectId),
+    index('idx_session_environments_account').on(table.accountId),
+    index('idx_session_environments_status').on(table.status),
+    index('idx_session_environments_external_id').on(table.externalId),
+  ],
+);
+
+
+/**
  * Durable per-turn ledger.
  *
  * `session_sandboxes.metadata.activeTurns` is the LIFECYCLE authority: the
@@ -1905,6 +1941,198 @@ export const sessionTurns = kortixSchema.table(
     index('session_turns_open_idx')
       .on(table.sandboxId)
       .where(sql`${table.state} <> 'ended'`),
+  ],
+);
+
+/**
+ * Durable transcript mirror — the server-side copy of a session's message
+ * envelope, so the control plane can answer "what was said in this session"
+ * for a session whose sandbox is STOPPED.
+ *
+ * Why it exists. `buildSessionTranscriptDigest` proxies the box's OpenCode
+ * endpoint, so it answers `unavailable` for every non-running session. Opening
+ * a hibernated session therefore showed a full-screen "Connecting…" for the
+ * whole wake (5-240 s) with an empty transcript, although every message
+ * existed. The browser-side IndexedDB mirror that used to cover this was
+ * deleted because its freshness test could not see a turn ENDING, so it painted
+ * a stale thread as live. This mirror inverts that: the SERVER writes it
+ * BECAUSE a turn ended (`turn-stream` kind `end`/`turn_end`, routes/r4.ts), so
+ * freshness is a property of the write, not a client-side guess.
+ *
+ * Identity is the whole point. Rows are keyed by the OpenCode message id — the
+ * SAME id the live sync store sees when the box answers — so a client can
+ * hydrate from the mirror with `source: 'cache'` and let the live read SETTLE
+ * each message by id instead of duplicating it. A mirror without ids would
+ * reproduce the ghost-message failure that got the last one deleted.
+ *
+ * Attachment BYTES are never stored: a file part is reduced to
+ * `{filename, mime}`, exactly as the live digest does. That is the 2026-08-24
+ * "7-19 MB transcript" incident's rule, and it is enforced by the writer.
+ */
+export const sessionTranscriptMirrors = kortixSchema.table(
+  'session_transcript_mirrors',
+  {
+    // Deleting the session must delete its transcript copy: unlike
+    // `session_turns` (routing telemetry that deliberately outlives its
+    // session), every row here is USER CONTENT.
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    // The OpenCode root the captured messages belong to. A re-pin (a restarted
+    // box adopting a different root) makes the previous rows unreachable, so
+    // the writer clears them when this changes.
+    opencodeSessionId: text('opencode_session_id'),
+    // TRUE only when a capture proved it had seen the session's FIRST message
+    // (the box returned fewer messages than the capture window). This is the
+    // single bit `complete` is derived from; it is never assumed. Retention
+    // pruning clears it, because pruning is exactly "the head is gone now".
+    headComplete: boolean('head_complete').default(false).notNull(),
+    // When the newest successful capture ran. The client reads it to know how
+    // far behind the mirror can be, and never to decide whether to render.
+    capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Named explicitly: the drizzle-derived name
+    // (`..._session_id_project_sessions_session_id_fk`) exceeds Postgres's
+    // 63-byte identifier limit and would be silently truncated.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_transcript_mirrors_session_fk',
+    }).onDelete('cascade'),
+    index('session_transcript_mirrors_project_idx').on(table.projectId),
+  ],
+);
+
+/**
+ * One mirrored message.
+ *
+ * `(session_id, message_id)` is the identity the live sync store settles
+ * against — never a synthesized key.
+ *
+ * `info` is OpenCode's message envelope VERBATIM. That is deliberate and it is
+ * the correction to the deleted client mirror: its freshness test read the
+ * transcript's SHAPE (message count, part count, tail id), and the two things
+ * that end a turn move none of them — `time.completed` stamped on the tail
+ * message, and the `error` an abort stamps. A STOP appends no part at all, so a
+ * stopped thread cold-painted as still running and every message under it
+ * dimmed to "Queued". Storing `info` whole means the client reads the MESSAGE,
+ * which is the acceptance criterion written into `use-session-sync.ts`.
+ *
+ * `parts` is the part array with the two unbounded fields removed: a tool
+ * part's `state.input`/`state.output`, and a file part's `url` (base64 data
+ * URLs are what made transcript bodies 7-19 MB). Everything a transcript needs
+ * to render — text, reasoning, tool names and statuses, file names and types,
+ * step boundaries — is kept.
+ */
+export const sessionTranscriptMessages = kortixSchema.table(
+  'session_transcript_messages',
+  {
+    sessionId: text('session_id').notNull(),
+    // The OpenCode message id (`msg_...`), verbatim.
+    messageId: text('message_id').notNull(),
+    // `info.parentID` — the turn linkage OpenCode itself records (which user
+    // message a step was parented on). Null on messages that carry none.
+    parentMessageId: text('parent_message_id'),
+    opencodeSessionId: text('opencode_session_id'),
+    role: text('role').notNull(),
+    // Denormalized out of `info` so ordering and retention are index reads.
+    // Order is (message_created_at, message_id) — the order OpenCode's own
+    // `MessageV2.page()` uses, so the mirror and the live read never disagree
+    // about sequence.
+    messageCreatedAt: timestamp('message_created_at', { withTimezone: true }),
+    // The turn-ended bit, denormalized for the same reason. Never inferred.
+    messageCompletedAt: timestamp('message_completed_at', { withTimezone: true }),
+    info: jsonb('info').$type<Record<string, unknown>>().notNull(),
+    parts: jsonb('parts').default([]).$type<unknown[]>().notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.sessionId, table.messageId],
+      name: 'session_transcript_messages_pkey',
+    }),
+    // Named explicitly — see the sibling FK above for why.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [sessionTranscriptMirrors.sessionId],
+      name: 'session_transcript_messages_mirror_fk',
+    }).onDelete('cascade'),
+    index('session_transcript_messages_order_idx').on(
+      table.sessionId,
+      table.messageCreatedAt,
+      table.messageId,
+    ),
+  ],
+);
+
+/**
+ * The RUNTIME PROJECTION — the daemon's `/kortix/opencode/state` document,
+ * stored server-side so a session open answers "which agents, which commands,
+ * what config, what is pending" from Postgres instead of from the box.
+ *
+ * WHY. WS-V measured the seven proxied reads this replaces at ~3.3 MB and
+ * ~1.4 s EACH across the edge hop — ~9.8 s serial on a session open, paid
+ * before the composer can arm. The daemon already projects all seven into one
+ * ~8.7 KB document (0.9 KB gzipped). Storing it here takes the box off the
+ * read path entirely: a STOPPED session answers from this row with zero
+ * sandbox hops, which is the whole point.
+ *
+ * IT IS A CACHE OF A FACT, NOT A FACT. One row per Kortix session, no history,
+ * last write wins. Nothing may be *decided* from this row that the live
+ * runtime would answer differently — which is why every identity the live read
+ * would produce travels WITH the projection (`opencode_session_id`,
+ * `opencode_version`, `agent_config_etag`) and the serving side refuses to
+ * present a projection whose identity no longer matches. That is
+ * `session-transcript-mirror.ts`'s ghost rule (a cached record whose id the
+ * live read will not also produce is a ghost) applied to config state.
+ *
+ * `epoch` + `seq` are the daemon's stream cursor AT CAPTURE TIME. A client
+ * seeded from this row opens `/stream?epoch=&since=` at exactly that point, so
+ * seeding and streaming cannot disagree about what has already been applied.
+ */
+export const sessionRuntimeProjections = kortixSchema.table(
+  'session_runtime_projections',
+  {
+    sessionId: text('session_id').primaryKey(),
+    projectId: uuid('project_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    /** The sandbox that produced it. Names the winner when a warm fork adopts. */
+    externalId: text('external_id').notNull(),
+    // ── identity (the freshness check reads these, never the jsonb) ──────────
+    opencodeSessionId: text('opencode_session_id'),
+    opencodeVersion: text('opencode_version'),
+    agentConfigEtag: text('agent_config_etag'),
+    daemonBuild: bigint('daemon_build', { mode: 'number' }),
+    /** Daemon boot id. `seq` is meaningless outside it. */
+    epoch: text('epoch'),
+    /** Daemon stream watermark at capture — the client's starting cursor. */
+    seq: bigint('seq', { mode: 'number' }),
+    /** OpenCode's OWN durable cursor per aggregate (`event_sequence.seq`). */
+    headSeq: jsonb('head_seq').$type<Record<string, number>>(),
+    /** sha256 of the canonically serialized projection. A repeat push is a no-op. */
+    projectionEtag: text('projection_etag').notNull(),
+    /** The `/kortix/opencode/state` document, verbatim. */
+    projection: jsonb('projection').$type<Record<string, unknown>>().notNull(),
+    /** Who wrote this row: the daemon pushed it, or the API pulled it through. */
+    source: text('source').notNull(),
+    capturedAt: timestamp('captured_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // Named explicitly: the drizzle-derived name
+    // (`..._session_id_project_sessions_session_id_fk`) exceeds Postgres's
+    // 63-byte identifier limit and would be silently truncated. Same trap the
+    // transcript-mirror tables document.
+    foreignKey({
+      columns: [table.sessionId],
+      foreignColumns: [projectSessions.sessionId],
+      name: 'session_runtime_projections_session_fk',
+    }).onDelete('cascade'),
+    index('session_runtime_projections_project_idx').on(table.projectId),
   ],
 );
 
@@ -2403,15 +2631,96 @@ export const accountTokens = kortixSchema.table(
 
 // ─── OAuth2 Provider ──────────────────────────────────────────────────────
 
-export const oauthClients = kortixSchema.table('oauth_clients', {
-  clientId: uuid('client_id').defaultRandom().primaryKey(),
-  clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
-  name: varchar('name', { length: 255 }).notNull(),
-  redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
-  scopes: jsonb('scopes').default([]).$type<string[]>(),
-  active: boolean('active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+export const oauthClients = kortixSchema.table(
+  'oauth_clients',
+  {
+    clientId: uuid('client_id').defaultRandom().primaryKey(),
+    clientSecretHash: varchar('client_secret_hash', { length: 128 }).notNull(),
+    name: varchar('name', { length: 255 }).notNull(),
+    redirectUris: jsonb('redirect_uris').default([]).$type<string[]>(),
+    scopes: jsonb('scopes').default([]).$type<string[]>(),
+    active: boolean('active').default(true).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Sign in with Kortix (2026-08-26): a client is registered by an account
+    // (self-serve, `/accounts/{id}/iam/oauth-clients`). Null = a legacy
+    // platform-level row inserted by hand before registration existed.
+    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
+    /**
+     * Set for the IMPLICIT client of a Kortix App (2026-08-27). A Kortix-hosted
+     * App never runs the redirect flow — the Apps gate already authenticated
+     * the viewer, so it mints tokens through this row directly. One row per
+     * App; deleting the App revokes every token it ever minted (cascade).
+     */
+    appId: uuid('app_id').references((): AnyPgColumn => apps.appId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    description: text('description'),
+    // `confidential` presents client_secret at /token; `public` (a browser /
+    // native app that cannot keep a secret) relies on PKCE alone.
+    clientType: varchar('client_type', { length: 16 }).default('confidential').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_oauth_clients_account').on(table.accountId),
+    uniqueIndex('idx_oauth_clients_app').on(table.appId),
+  ],
+);
+
+/**
+ * A pending `/oauth/authorize` request, between the redirect to the consent
+ * screen and the user's decision. Was an in-process Map: lost on restart and
+ * invisible to a sibling replica. The request id is a capability, so only its
+ * hash is stored.
+ */
+export const oauthAuthorizationRequests = kortixSchema.table(
+  'oauth_authorization_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    requestIdHash: varchar('request_id_hash', { length: 128 }).notNull(),
+    clientId: uuid('client_id').notNull(),
+    redirectUri: text('redirect_uri').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>().notNull(),
+    state: text('state').default('').notNull(),
+    codeChallenge: text('code_challenge').notNull(),
+    codeChallengeMethod: varchar('code_challenge_method', { length: 10 }).default('S256').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_oauth_auth_requests_hash').on(table.requestIdHash),
+    index('idx_oauth_auth_requests_expires').on(table.expiresAt),
+    // Explicit name: drizzle's default exceeds Postgres's 63-byte identifier cap.
+    foreignKey({
+      columns: [table.clientId],
+      foreignColumns: [oauthClients.clientId],
+      name: 'oauth_auth_requests_client_fk',
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * Remembered consent: the user approved this client for these scopes once, so
+ * a later `/oauth/authorize` for a subset of them completes without the Allow
+ * screen. Deleting the row (or the client) asks again.
+ */
+export const oauthConsents = kortixSchema.table(
+  'oauth_consents',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(),
+    clientId: uuid('client_id').notNull(),
+    scopes: jsonb('scopes').default([]).$type<string[]>().notNull(),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_oauth_consents_user_client').on(table.userId, table.clientId),
+    foreignKey({
+      columns: [table.clientId],
+      foreignColumns: [oauthClients.clientId],
+      name: 'oauth_consents_client_fk',
+    }).onDelete('cascade'),
+  ],
+);
 
 export const oauthAuthorizationCodes = kortixSchema.table(
   'oauth_authorization_codes',
@@ -3259,6 +3568,21 @@ export const apps = kortixSchema.table(
     memoryGb: integer('memory_gb').default(2).notNull(),
     diskGb: integer('disk_gb').default(10).notNull(),
     idleTimeoutSeconds: integer('idle_timeout_seconds').default(300).notNull(),
+    /**
+     * What the Apps gate hands this App about the person looking at it.
+     *
+     * `identity` (default) — a signed viewer header on every request plus a
+     * `profile email` token from `/_kortix/viewer`: the App knows WHO the
+     * viewer is and can authorize its own data on that, but the token opens
+     * nothing else on the Kortix API.
+     * `api` — the same, with the `kortix` scope: the App acts AS the viewer on
+     * the Kortix API (their projects, their sessions, their role). Opt in per
+     * App; the viewer's own IAM role is still the ceiling.
+     * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
+     */
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
+      .default('identity')
+      .notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3279,6 +3603,10 @@ export const apps = kortixSchema.table(
     check('apps_memory_check', sql`${table.memoryGb} BETWEEN 1 AND 512`),
     check('apps_disk_check', sql`${table.diskGb} BETWEEN 1 AND 2048`),
     check('apps_idle_timeout_check', sql`${table.idleTimeoutSeconds} BETWEEN 120 AND 86400`),
+    check(
+      'apps_viewer_token_scope_check',
+      sql`${table.viewerTokenScope} IN ('off', 'identity', 'api')`,
+    ),
     check('apps_budget_check', sql`${table.monthlyBudgetUsd} >= 0`),
     uniqueIndex('apps_project_slug_live_unique')
       .on(table.projectId, table.slug)
@@ -4851,6 +5179,7 @@ export const accountSsoGroupMappings = kortixSchema.table(
  */
 export const connectorProviderEnum = kortixSchema.enum('connector_provider', [
   'pipedream',
+  'composio',
   'mcp',
   'openapi',
   'postman',

@@ -10,6 +10,7 @@ import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { accountRolesForUser } from '../../iam/read-models';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
+import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
@@ -73,43 +74,103 @@ export function registerAccountRoutes(): void {
             // hide controls the server would in fact allow.
             account_role: 'owner',
             is_primary_owner: true,
+            branding: await effectiveBranding(row.accountId, row.branding),
           },
         ]);
       }
 
-      await autoClaimPendingInvites(userId, userEmail);
-
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role. Reading the role off the join labelled the switcher with a value
       // the engine no longer decides on.
-      const [membershipRows, rolesByAccount] = await Promise.all([
-        db
-          .select({
-            accountId: accountMembers.accountId,
-            name: accounts.name,
-            createdAt: accounts.createdAt,
-            updatedAt: accounts.updatedAt,
-          })
-          .from(accountMembers)
-          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-          .where(eq(accountMembers.userId, userId)),
-        accountRolesForUser(userId),
-      ]);
-      const memberships = membershipRows.map((m) => ({
-        ...m,
-        accountRole: rolesByAccount.get(m.accountId) ?? 'member',
-      }));
+      const loadMemberships = async () => {
+        const [membershipRows, rolesByAccount] = await Promise.all([
+          db
+            .select({
+              accountId: accountMembers.accountId,
+              name: accounts.name,
+              createdAt: accounts.createdAt,
+              updatedAt: accounts.updatedAt,
+              branding: accounts.branding,
+            })
+            .from(accountMembers)
+            .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
+            .where(eq(accountMembers.userId, userId)),
+          accountRolesForUser(userId),
+        ]);
+        return membershipRows.map((m) => ({
+          ...m,
+          accountRole: rolesByAccount.get(m.accountId) ?? 'member',
+        }));
+      };
 
-      if (memberships.length > 0) {
-        const displayNames = await resolveAccountDisplayNames(memberships, {
-          userId,
-          email: userEmail,
-        });
-        // Deterministic order (owned first, oldest first): the web landing
-        // door falls back to the FIRST account of this list, so an unordered
-        // result made the default landing account nondeterministic.
-        return c.json(
-          sortAccountsForListing(memberships).map((m) => ({
+      // Bootstrap BEFORE claiming pending invites, not after (R3). The old
+      // order claimed invites first and only bootstrapped when the resulting
+      // membership count was still zero — so the moment ANY invite was
+      // pending, the claim alone made that count nonzero and the bootstrap
+      // never ran. An invite-first signup then had no personal account at
+      // all: its entire `GET /v1/accounts` was the inviter's org, and the
+      // web landing door (which takes the first account in this list) put a
+      // brand-new user straight into a stranger's workspace.
+      //
+      // `resolveAccountId` (shared/resolve-account.ts) never had this bug —
+      // it bootstraps unconditionally the moment a caller has NO membership,
+      // and never claims invites itself. Deciding on the PRE-claim
+      // membership set here (not the post-claim one) makes this route agree
+      // with that one: bootstrap fires exactly when the caller had no
+      // account at all, independent of whether an invite is waiting.
+      //
+      // GET /v1/accounts/me (accounts/core/tokens.ts) applies the identical
+      // pre-claim-decision ordering for the same reason — kept as a
+      // parallel implementation rather than a shared helper because its
+      // bootstrap primitive (`resolveAccountId`, best-effort, never fails
+      // the request), gating (`authType === 'supabase'`), and response
+      // shape all differ from this route's; forcing one function to cover
+      // both would trade a 10-line ordering discipline for a multi-parameter
+      // abstraction that hides the one real asymmetry that matters — this
+      // route's bootstrap failure is fatal (500 below), /me's is not.
+      let memberships = await loadMemberships();
+      if (memberships.length === 0) {
+        try {
+          await bootstrapPersonalAccount(userId, userEmail);
+        } catch (err) {
+          console.warn('[accounts] Failed to bootstrap personal account:', err);
+          return c.json({ error: 'Failed to initialize account' }, 500);
+        }
+      }
+
+      // Claim AFTER the bootstrap decision above. `autoClaimPendingInvites`
+      // already swallows its own errors (best-effort, must never block
+      // listing) and is idempotent — a claimed invite is stamped
+      // `accepted_at` and re-running is a no-op — so a claim failure here
+      // leaves the user with exactly the personal account bootstrapped above
+      // and the invite still pending, to be retried on the next call. No
+      // shared transaction wraps the two steps: bootstrap failure is fatal
+      // (500, above) because without it the account list is meaningless,
+      // while invite-claiming is explicitly optional and self-healing, and
+      // wrapping both in one transaction would contradict the per-invite
+      // isolation `autoClaimPendingInvites` already does internally (one bad
+      // invite must not roll back the others, or the account just bootstrapped).
+      await autoClaimPendingInvites(userId, userEmail);
+
+      memberships = await loadMemberships();
+      if (memberships.length === 0) {
+        console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);
+        return c.json({ error: 'Failed to initialize account' }, 500);
+      }
+
+      const displayNames = await resolveAccountDisplayNames(memberships, {
+        userId,
+        email: userEmail,
+      });
+      // Deterministic order (owned first, oldest first): the web landing
+      // door falls back to the FIRST account of this list, so an unordered
+      // result made the default landing account nondeterministic.
+      // Branding is resolved per account — `effectiveBranding` only touches
+      // billing for accounts that actually carry a record, so this stays a
+      // no-op for the overwhelming majority of lists.
+      return c.json(
+        await Promise.all(
+          sortAccountsForListing(memberships).map(async (m) => ({
             account_id: m.accountId,
             name: displayNames.get(m.accountId) ?? accountDisplayName(m.name, userEmail),
             slug: m.accountId.slice(0, 8),
@@ -117,35 +178,10 @@ export function registerAccountRoutes(): void {
             updated_at: m.updatedAt?.toISOString() ?? new Date().toISOString(),
             account_role: m.accountRole || 'owner',
             is_primary_owner: m.accountRole === 'owner',
+            branding: await effectiveBranding(m.accountId, m.branding),
           })),
-        );
-      }
-
-      try {
-        const { accountId } = await bootstrapPersonalAccount(userId, userEmail);
-        const [row] = await db
-          .select()
-          .from(accounts)
-          .where(eq(accounts.accountId, accountId))
-          .limit(1);
-        if (!row) {
-          throw new Error(`Personal account ${accountId} missing after bootstrap`);
-        }
-        return c.json([
-          {
-            account_id: row.accountId,
-            name: accountDisplayName(row.name, userEmail),
-            slug: row.accountId.slice(0, 8),
-            created_at: row.createdAt.toISOString(),
-            updated_at: row.updatedAt.toISOString(),
-            account_role: 'owner',
-            is_primary_owner: true,
-          },
-        ]);
-      } catch (err) {
-        console.warn('[accounts] Failed to bootstrap personal account:', err);
-        return c.json({ error: 'Failed to initialize account' }, 500);
-      }
+        ),
+      );
     },
   );
 
@@ -299,6 +335,7 @@ export function registerAccountRoutes(): void {
         project_count: Number(projectCountRow?.n ?? 0),
         role: membership.accountRole,
         mfa_required: row.mfaRequired ?? false,
+        branding: await effectiveBranding(row.accountId, row.branding),
         created_at: row.createdAt.toISOString(),
         updated_at: row.updatedAt.toISOString(),
       });

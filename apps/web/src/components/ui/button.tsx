@@ -12,7 +12,7 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-foreground text-background hover:bg-foreground/90',
         brand:
-          'bg-kortix-blue/90 dark:bg-kortix-blue/60 text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/85 dark:hover:bg-kortix-blue/50 transition-colors duration-200 ease-in',
+          'bg-kortix-blue/90 dark:bg-kortix-blue/60 text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/85 dark:hover:bg-kortix-blue/50 transition-colors duration-200 ease-out',
         blue: 'bg-kortix-blue text-background dark:text-foreground shadow-xs hover:bg-kortix-blue/90',
         'blue-ghost': 'hover:bg-sidebar-accent/40 text-kortix-blue',
         'blue-secondary': 'bg-kortix-blue/10 text-kortix-blue hover:bg-kortix-blue/20',
@@ -50,7 +50,7 @@ const buttonVariants = cva(
         success: 'bg-kortix-green/80 text-background hover:bg-kortix-green/85',
         error: 'bg-kortix-red/80 text-background hover:bg-kortix-red/85',
         info: 'bg-kortix-blue/80 text-background hover:bg-kortix-blue/85',
-        warning: 'bg-kortix-yellow/80 text-background hover:bg-kortix-yellow/85',
+        warning: 'bg-kortix-orange/80 text-background hover:bg-kortix-orange/85',
         popover: 'bg-popover text-foreground',
       },
       size: {

@@ -36,13 +36,31 @@ describe('livenessBusy', () => {
     ).toBe(true);
   });
 
-  test('a poll that cannot reach the runtime never runs', () => {
+  test('an offline tab never polls', () => {
     expect(
       livenessBusy({ networkEnabled: false, runtimeHealthy: true, working: true, streamBusy: true }),
     ).toBe(false);
+  });
+
+  /**
+   * The feedback loop this whole file keeps paying for: the repair for a
+   * broken stream was gated on the health probe, and the health probe is the
+   * thing that flaps. A loaded box that misses its probe deadline mid-turn got
+   * its transcript repair switched off at the exact moment the repair was
+   * needed — and stayed off for as long as the probe kept missing.
+   *
+   * The probe does not decide this. A working session polls; if the box really
+   * is unreachable the read fails, bounded, and costs one request per interval.
+   */
+  test('a failing health probe never switches the repair off', () => {
     expect(
-      livenessBusy({ networkEnabled: true, runtimeHealthy: false, working: true, streamBusy: true }),
-    ).toBe(false);
+      livenessBusy({
+        networkEnabled: true,
+        runtimeHealthy: false,
+        working: true,
+        streamBusy: false,
+      }),
+    ).toBe(true);
   });
 });
 
@@ -75,5 +93,56 @@ describe('sessionSyncBusy', () => {
         );
       }
     }
+  });
+});
+
+/**
+ * The chicken-and-egg this input breaks (prod, 2026-08-26): a stale wire idle
+ * frame can veto the server's open turn row in `projectWorking`, so the
+ * projection answers `idle` over a session the control plane says is running.
+ * `working: false` switched THIS poll off — and the poll's tail read is the
+ * only evidence source that could have proven the runtime was still producing
+ * output. One wrong answer froze the transcript for the rest of the turn.
+ *
+ * The control plane holding a turn open (`serverOpenTurnToken !== null`) is
+ * server-owned evidence that work MAY be running, so it keeps the transcript
+ * verification poll on even when the projection answers idle. It does NOT
+ * touch the public `isBusy` — the UI's answer stays the projection's.
+ */
+describe('livenessBusy: an open server turn keeps the repair running', () => {
+  test('idle projection + open server turn still polls', () => {
+    expect(
+      livenessBusy({
+        networkEnabled: true,
+        runtimeHealthy: true,
+        working: false,
+        streamBusy: false,
+        serverHoldsTurn: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('idle projection + no open turn stays off (unchanged)', () => {
+    expect(
+      livenessBusy({
+        networkEnabled: true,
+        runtimeHealthy: true,
+        working: false,
+        streamBusy: false,
+        serverHoldsTurn: false,
+      }),
+    ).toBe(false);
+  });
+
+  test('an offline tab never polls, open turn or not', () => {
+    expect(
+      livenessBusy({
+        networkEnabled: false,
+        runtimeHealthy: true,
+        working: false,
+        streamBusy: false,
+        serverHoldsTurn: true,
+      }),
+    ).toBe(false);
   });
 });

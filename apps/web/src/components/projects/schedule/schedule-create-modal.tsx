@@ -63,6 +63,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { TRIGGER_SESSION_ACCESS_COPY } from './trigger-session-access-copy';
 
 import {
   KIND_COPY,
@@ -116,11 +117,16 @@ export function ScheduleCreateModal({
   open,
   onOpenChange,
   onCreated,
+  initialAgent = null,
 }: {
   projectId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (slug: string) => void;
+  /** Pre-selects the agent the trigger starts. An agent's own page opens
+   *  this modal for "its" triggers, so the picker lands on that agent rather
+   *  than asking a question the page already answered. Still changeable. */
+  initialAgent?: string | null;
 }) {
   const [kind, setKind] = useState<TriggerKind | null>(null);
   const copy = kind ? KIND_COPY[kind] : null;
@@ -129,7 +135,7 @@ export function ScheduleCreateModal({
   const [step, setStep] = useState<Step>('type');
   const [name, setName] = useState('');
   const [instruction, setInstruction] = useState('');
-  const [agentName, setAgentName] = useState<string | null>(null);
+  const [agentName, setAgentName] = useState<string | null>(initialAgent);
   const [model, setModel] = useState<ModelKey | null>(null);
 
   const [cron, setCron] = useState('0 0 9 * * *');
@@ -169,7 +175,11 @@ export function ScheduleCreateModal({
     setKind(null);
     setName('');
     setInstruction('');
-    setAgentName(null);
+    // Back to the caller's agent, not to nothing: this effect also runs on
+    // the first render (the modal mounts closed), and `null` here threw the
+    // agent page's `initialAgent` away before the modal was ever opened — every
+    // trigger created from an agent page landed on `default`.
+    setAgentName(initialAgent);
     setModel(null);
     setCron('0 0 9 * * *');
     setRunAt(null);
@@ -184,7 +194,7 @@ export function ScheduleCreateModal({
     setStartActive(true);
     setSessionAccess({ mode: 'private', memberIds: [], groupIds: [] });
     setError(null);
-  }, [open]);
+  }, [open, initialAgent]);
 
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
@@ -229,7 +239,14 @@ export function ScheduleCreateModal({
         secretEnv =
           normalizeSecretName(secretName) ||
           `WEBHOOK_${slug.toUpperCase().replace(/[^A-Z0-9_]/g, '_')}_SECRET`;
-        await upsertProjectSecret(projectId, { name: secretEnv, value: signingKey.trim() });
+        // Webhook secrets must be delivered as broker to the connector
+        // consumer to pass trigger validation.
+        await upsertProjectSecret(projectId, {
+          name: secretEnv,
+          value: signingKey.trim(),
+          strategy: 'broker',
+          consumer: 'connector',
+        });
       }
 
       const filter = rowsToConditions(conditions);
@@ -475,21 +492,7 @@ export function ScheduleCreateModal({
                         value={sessionAccess}
                         onChange={setSessionAccess}
                         showHeading={false}
-                        copy={{
-                          heading: 'Who can access sessions created by this trigger',
-                          private: {
-                            label: 'Trigger agent and project Managers',
-                            desc: 'Project Managers can always open trigger-created sessions.',
-                          },
-                          members: {
-                            label: 'Selected teammates',
-                            desc: 'Choose additional members and groups. Project Managers always have access.',
-                          },
-                          project: {
-                            label: 'Whole project',
-                            desc: 'Every project member can open these sessions.',
-                          },
-                        }}
+                        copy={TRIGGER_SESSION_ACCESS_COPY}
                       />
                     </Field>
 

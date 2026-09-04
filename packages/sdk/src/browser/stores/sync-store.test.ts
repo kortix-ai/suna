@@ -59,6 +59,174 @@ beforeEach(() => {
 	useSyncStore.getState().reset();
 });
 
+/**
+ * When each session's status frame LANDED — `sessionStatusAt`.
+ *
+ * The store used to keep no arrival time, so freshness was stamped by whichever
+ * component happened to observe the slot: a remount re-stamped a dead stream's
+ * last idle frame as brand new (`Date.now()` in the observing effect), and the
+ * reconnect status fill had no way to tell a frame the live stream just
+ * delivered from one a stream that died a minute ago left behind. Both readers
+ * now use this stamp.
+ */
+describe("sessionStatusAt", () => {
+	test("a status write stamps its arrival; a same-value rewrite keeps the stamp", () => {
+		const sid = "ses_stamp_1";
+		const store = useSyncStore.getState();
+		const before = Date.now();
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		const first = useSyncStore.getState().sessionStatusAt[sid];
+		expect(first).toBeGreaterThanOrEqual(before);
+
+		// Same value, same origin: neither the object identity nor the stamp
+		// may move — a dead stream's frame must not look fresher over time.
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBe(first);
+	});
+
+	test("a value change re-stamps", async () => {
+		const sid = "ses_stamp_2";
+		const store = useSyncStore.getState();
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		const first = useSyncStore.getState().sessionStatusAt[sid];
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		store.setStatus(sid, { type: "idle" } as SessionStatus);
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThan(first);
+	});
+
+	test("an origin flip over an unchanged value re-stamps — it is a new observation", async () => {
+		const sid = "ses_stamp_3";
+		const store = useSyncStore.getState();
+		store.setStatus(sid, { type: "busy" } as SessionStatus, "local");
+		const first = useSyncStore.getState().sessionStatusAt[sid];
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		store.setStatus(sid, { type: "busy" } as SessionStatus, "wire");
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThan(first);
+	});
+
+	test("clearSession stamps its fabricated idle", () => {
+		const sid = "ses_stamp_4";
+		const store = useSyncStore.getState();
+		store.setStatus(sid, { type: "busy" } as SessionStatus);
+		store.clearSession(sid);
+		const state = useSyncStore.getState();
+		expect(state.sessionStatus[sid]).toEqual({ type: "idle" } as SessionStatus);
+		expect(state.sessionStatusOrigin[sid]).toBe("local");
+		expect(state.sessionStatusAt[sid]).toBeGreaterThan(0);
+	});
+});
+
+/**
+ * Runtime-read evidence for `projectWorking` (prod, 2026-08-26): with the SSE
+ * stream dead, a stale wire idle frame vetoed the server's open turn row and
+ * the projection answered idle over a running session. The only remaining
+ * observer is the liveness poll's tail read — and its hydrate proved the
+ * runtime was still producing output without telling anyone. Stamping
+ * `sessionActivityAt` when a RUNTIME read shows the transcript moved mid-turn
+ * hands that proof to the projection's content-first rule.
+ *
+ * Guards, each load-bearing:
+ *  - an initial fill (no prior transcript) is not movement — it is history;
+ *  - a completed tail is a finished turn — its history must not paint busy
+ *    when a backgrounded tab returns hours later;
+ *  - a cache repaint is this tab's own disk, not the runtime speaking.
+ */
+describe("hydrate stamps runtime activity for a moved, still-open transcript", () => {
+	function openAssistant(id: string, sessionID: string): AssistantMessage {
+		return { ...assistantMessage(id, sessionID) };
+	}
+	function completedAssistant(id: string, sessionID: string): AssistantMessage {
+		const message = assistantMessage(id, sessionID);
+		return { ...message, time: { ...message.time, completed: 2 } };
+	}
+
+	test("a new incomplete assistant tail on a held transcript stamps activity", () => {
+		const sid = "ses_act_moved";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [{ info: userMessage("msg_u1", sid), parts: [] }]);
+		// The initial fill is history, not movement.
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "stream…", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+	});
+
+	test("grown text on a known part is movement too", () => {
+		const sid = "ses_act_grown";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hel", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "hello world", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+	});
+
+	test("an unchanged transcript never stamps", () => {
+		const sid = "ses_act_same";
+		const page = [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: openAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "same", sid)],
+			},
+		];
+		const store = useSyncStore.getState();
+		store.hydrate(sid, page);
+		store.hydrate(sid, page);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+
+	test("a completed tail never stamps — finished history is not activity", () => {
+		const sid = "ses_act_done";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [{ info: userMessage("msg_u1", sid), parts: [] }]);
+		store.hydrate(sid, [
+			{ info: userMessage("msg_u1", sid), parts: [] },
+			{
+				info: completedAssistant("msg_a1", sid),
+				parts: [textPart("prt_a1", "msg_a1", "done answer", sid)],
+			},
+		]);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+
+	test("a cache-sourced repaint never stamps — disk is not the runtime", () => {
+		const sid = "ses_act_cache";
+		const store = useSyncStore.getState();
+		store.hydrate(sid, [{ info: userMessage("msg_u1", sid), parts: [] }]);
+		store.hydrate(
+			sid,
+			[
+				{ info: userMessage("msg_u1", sid), parts: [] },
+				{
+					info: openAssistant("msg_a1", sid),
+					parts: [textPart("prt_a1", "msg_a1", "from disk", sid)],
+				},
+			],
+			{ source: "cache" },
+		);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+});
+
 describe("Binary.search", () => {
 	test("finds an existing id and reports its index", () => {
 		const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
@@ -314,6 +482,54 @@ describe("useSyncStore — applyEvent(session.error) patches the last assistant 
 
 		const assistant = useSyncStore.getState().messages.ses_4[0] as AssistantMessage;
 		expect((assistant.error as { data: { reason?: string } }).data.reason).toBeUndefined();
+	});
+
+	// A RETRYABLE provider error is not the end of a turn. OpenCode stamps
+	// `data.isRetryable === true` and keeps writing the SAME assistant message;
+	// apps/api reaches the same conclusion from the same event
+	// (`isTerminalTurnEnd`, sandbox-deadline-policy.ts:295). Flipping the status
+	// to idle here handed `endedByRuntime` an unbounded veto over the still-open
+	// ledger row, which is what removed the Stop button mid-turn (S7).
+	test("a retryable error does NOT flip the session to idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_retry", userMessage("msg_a"));
+		store.upsertMessage("ses_retry", assistantMessage("msg_b"));
+		store.setStatus("ses_retry", { type: "busy" } as never, "wire");
+
+		store.applyEvent({
+			id: "evt_1",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_retry",
+				error: { name: "APIError", data: { message: "429", isRetryable: true } },
+			},
+		} as never);
+
+		// The status slot is untouched — the turn is still open.
+		expect(useSyncStore.getState().sessionStatus.ses_retry).toEqual({ type: "busy" });
+		// The error is still attached, so the UI can show the retry.
+		const assistant = useSyncStore
+			.getState()
+			.messages.ses_retry.find((m) => m.role === "assistant") as AssistantMessage;
+		expect((assistant.error as { data: { isRetryable: boolean } }).data.isRetryable).toBe(true);
+	});
+
+	test("a NON-retryable error still flips the session to idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_term", userMessage("msg_a"));
+		store.upsertMessage("ses_term", assistantMessage("msg_b"));
+		store.setStatus("ses_term", { type: "busy" } as never, "wire");
+
+		store.applyEvent({
+			id: "evt_2",
+			type: "session.error",
+			properties: {
+				sessionID: "ses_term",
+				error: { name: "ProviderAuthError", data: { message: "bad key" } },
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionStatus.ses_term).toEqual({ type: "idle" });
 	});
 });
 
@@ -2845,6 +3061,84 @@ describe("useSyncStore — setStatus writes an observation, never a heartbeat", 
 	});
 });
 
+/**
+ * WHO minted a frame travels with it. A tab-fabricated idle (the missing-busy
+ * sweep, a synthetic abort, `clearSession`) is `'local'`; `projectWorking`
+ * lets it answer for a silent session but never lets it contradict the
+ * server's open `/turn` row. Unmarked, one fabricated frame vetoed the
+ * lifecycle authority for the rest of a quiet turn (dev, 2026-08-24: busy
+ * indicator gone, Send instead of Stop, transcript poll off — mid-run).
+ */
+describe("useSyncStore — sessionStatusOrigin: who minted the frame", () => {
+	test("a plain write is wire by default", () => {
+		useSyncStore.getState().setStatus("ses_1", { type: "busy" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("wire");
+	});
+
+	test("an explicit local write records local", () => {
+		useSyncStore.getState().setStatus("ses_1", { type: "idle" }, "local");
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+
+	test("an equal value with a NEW origin updates origin but keeps identity", () => {
+		// The identity rule above must hold — re-stamping an unchanged value
+		// restarts the staleness clock — but who said it is still news: a wire
+		// frame landing over a fabricated one restores its right to veto.
+		const store = useSyncStore.getState();
+		store.setStatus("ses_1", { type: "idle" }, "local");
+		const first = useSyncStore.getState().sessionStatus.ses_1;
+
+		store.setStatus("ses_1", { type: "idle" }, "wire");
+
+		expect(useSyncStore.getState().sessionStatus.ses_1).toBe(first);
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("wire");
+	});
+
+	test("a synthetic session.idle event lands with local origin", () => {
+		// `markSessionIdleLocally` routes through `applyEvent` with
+		// `synthetic: true` — a field no wire `Event` carries.
+		useSyncStore.getState().applyEvent({
+			type: "session.idle",
+			synthetic: true,
+			properties: { sessionID: "ses_1" },
+		} as never);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+
+	test("a wire session.idle event lands with wire origin", () => {
+		useSyncStore.getState().applyEvent({
+			type: "session.idle",
+			properties: { sessionID: "ses_1" },
+		} as never);
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("wire");
+	});
+
+	test("a synthetic session.error marks its idle write local", () => {
+		// `markSessionAbortedLocally` fires on `server.instance.disposed` for
+		// EVERY non-idle session in the tab — an inference about the runtime,
+		// never the runtime speaking.
+		useSyncStore.getState().setStatus("ses_1", { type: "busy" });
+		useSyncStore.getState().applyEvent({
+			type: "session.error",
+			synthetic: true,
+			properties: {
+				sessionID: "ses_1",
+				error: { name: "AbortError", data: { message: "disposed" } },
+			},
+		} as never);
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+
+	test("clearSession's fabricated idle is local", () => {
+		useSyncStore.getState().setStatus("ses_1", { type: "busy" });
+		useSyncStore.getState().clearSession("ses_1");
+		expect(useSyncStore.getState().sessionStatus.ses_1).toEqual({ type: "idle" });
+		expect(useSyncStore.getState().sessionStatusOrigin.ses_1).toBe("local");
+	});
+});
+
 describe("sameSessionStatus", () => {
 	test("compares exactly the fields the retry readers read", () => {
 		expect(sameSessionStatus({ type: "busy" }, { type: "busy" })).toBe(true);
@@ -2981,6 +3275,173 @@ describe("useSyncStore — an echo under a RE-MINTED id is aliased to the optimi
 		store.applyEvent(userMessageUpdated("msg_reminted"));
 		store.clearSession("ses_1");
 		expect(useSyncStore.getState().optimisticEchoOf("ses_1", "msg_wire")).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// A BURST of queued prompts. Three inbox-backed sends wait in the server queue;
+// the drain delivers them one at a time, each under a RE-MINTED id. The echo
+// carries no parts (they arrive as separate frames) and the row that names the
+// re-mint is up to one poll behind — so neither correlation is available at the
+// instant the echo lands.
+//
+// The store used to `return` there: no bubble may be consumed on a guess with
+// several in flight, which is right, but it dropped the SERVER's message with
+// it. Nothing re-reads a healthy stream, so the delivered prompt was missing
+// until a reload — and the `message.part.updated` that followed re-created it
+// as an ASSISTANT message, putting the user's own words in the agent's voice
+// and re-parenting the reply onto the wrong bubble.
+// ============================================================================
+
+describe("useSyncStore — a burst of inbox-backed sends never loses an echo", () => {
+	function userMessageUpdated(id: string, sessionID = "ses_1") {
+		return {
+			id: "evt_x",
+			type: "message.updated",
+			properties: { info: userMessage(id, sessionID) },
+		} as never;
+	}
+
+	function partUpdated(part: Part, sessionID = "ses_1") {
+		return {
+			id: "evt_p",
+			type: "message.part.updated",
+			properties: { sessionID, part },
+		} as never;
+	}
+
+	/**
+	 * One prompt POSTed to the durable inbox: painted, dispatched, backed.
+	 *
+	 * UNTIMED, like the real stub — `beginOptimisticSend` omits `time.created`
+	 * on purpose, so display order comes from the wire id rather than from a
+	 * browser clock the box may be running ahead of.
+	 */
+	function queueSend(id: string, text: string): void {
+		const store = useSyncStore.getState();
+		const stub = { id, sessionID: "ses_1", role: "user", time: {} } as unknown as Message;
+		store.optimisticAdd("ses_1", stub, [textPart(`prt_${id}`, id, text)]);
+		store.markOptimisticDispatched("ses_1", id);
+		store.markOptimisticInboxBacked("ses_1", id);
+	}
+
+	test("an echo that matches nothing joins the transcript instead of being discarded", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+		queueSend("msg_wire_c", "third");
+
+		useSyncStore.getState().applyEvent(userMessageUpdated("msg_reminted_a"));
+
+		const s = useSyncStore.getState();
+		const rows = s.messages["ses_1"] ?? [];
+		expect(rows.map((m) => m.id)).toContain("msg_reminted_a");
+		// And it consumed nothing: with three in flight there is no safe guess,
+		// so every bubble the user typed is still on screen.
+		expect(rows.map((m) => m.id)).toEqual([
+			"msg_wire_a",
+			"msg_wire_b",
+			"msg_wire_c",
+			"msg_reminted_a",
+		]);
+	});
+
+	test("the part frame that follows never re-creates the prompt as an assistant message", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+
+		const store = useSyncStore.getState();
+		store.applyEvent(userMessageUpdated("msg_reminted_a"));
+		store.applyEvent(partUpdated(textPart("prt_server_a", "msg_reminted_a", "first")));
+
+		const row = useSyncStore
+			.getState()
+			.messages["ses_1"]?.find((m) => m.id === "msg_reminted_a");
+		expect(row?.role).toBe("user");
+	});
+
+	test("the inbox row's alias, arriving after the echo, retires the bubble it names", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+		queueSend("msg_wire_c", "third");
+
+		const store = useSyncStore.getState();
+		store.applyEvent(userMessageUpdated("msg_reminted_a"));
+		// One poll later the row lists both ids, which is the identity match the
+		// echo did not carry.
+		store.registerOptimisticEcho("ses_1", "msg_wire_a", "msg_reminted_a");
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual([
+			"msg_wire_b",
+			"msg_wire_c",
+			"msg_reminted_a",
+		]);
+		expect(s.optimisticOriginOf("ses_1", "msg_reminted_a")).toBe("msg_wire_a");
+		// The bubble's text bridges over, so it never blinks empty while the
+		// server's own part is still in flight.
+		expect(s.parts["msg_reminted_a"]?.[0]).toMatchObject({ text: "first" });
+		expect(s.parts["msg_wire_a"]).toBeUndefined();
+	});
+
+	test("the delivered prompt owns its reply — one bubble, in the agent's turn", () => {
+		// The whole timeline, in wire order: three prompts queue, the drain
+		// delivers the first under a re-minted id, its text and its answer
+		// stream in, and the row that names the pairing lands one poll later.
+		// Real wire ids: `compareMessagesForDisplay` reads the id as the
+		// message's POSITION for anything opencode placed, and the drain's
+		// re-mint deliberately sorts above the ids this tab minted at Enter.
+		const [wireA, wireB, wireC] = [
+			"msg_000000000001aaaa",
+			"msg_000000000002aaaa",
+			"msg_000000000003aaaa",
+		];
+		const remintedA = "msg_000000000009aaaa";
+		const replyA = "msg_00000000000aaaaa";
+		queueSend(wireA, "first");
+		queueSend(wireB, "second");
+		queueSend(wireC, "third");
+
+		const store = useSyncStore.getState();
+		store.applyEvent(userMessageUpdated(remintedA));
+		store.applyEvent(partUpdated(textPart("prt_server_a", remintedA, "first")));
+		store.applyEvent({
+			id: "evt_a",
+			type: "message.updated",
+			properties: { info: { ...assistantMessage(replyA), parentID: remintedA } },
+		} as never);
+		store.applyEvent(partUpdated(textPart("prt_reply_a", replyA, "on it")));
+		store.registerOptimisticEcho("ses_1", wireA, remintedA);
+
+		const turns = groupMessagesIntoTurns(useSyncStore.getState().getMessages("ses_1"));
+		expect(
+			turns.map((t) => ({
+				user: t.userMessage.info.id,
+				role: t.userMessage.info.role,
+				assistants: t.assistantMessages.map((a) => a.info.id),
+			})),
+		).toEqual([
+			// The two prompts still waiting keep the ids this tab minted, which
+			// sort below the re-mint — they are drawn above the answer until the
+			// drain reaches them and re-mints them too.
+			{ user: wireB, role: "user", assistants: [] },
+			{ user: wireC, role: "user", assistants: [] },
+			// ONE bubble for the delivered prompt, as a USER message, with the
+			// reply under it. Before this fix the echo was discarded, the part
+			// frame re-created the id as an assistant message, and the reply
+			// re-parented onto whichever bubble sorted last.
+			{ user: remintedA, role: "user", assistants: [replyA] },
+		]);
+	});
+
+	test("a late alias for a bubble the runtime never echoed changes nothing", () => {
+		queueSend("msg_wire_a", "first");
+		queueSend("msg_wire_b", "second");
+
+		useSyncStore.getState().registerOptimisticEcho("ses_1", "msg_wire_a", "msg_reminted_a");
+
+		const s = useSyncStore.getState();
+		expect(s.messages["ses_1"]?.map((m) => m.id)).toEqual(["msg_wire_a", "msg_wire_b"]);
+		expect(s.optimisticEchoOf("ses_1", "msg_wire_a")).toBe("msg_reminted_a");
 	});
 });
 
@@ -3135,6 +3596,72 @@ describe("useSyncStore — a removed user message the control plane still owns k
 		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_c2"]);
 		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_c2")).toBe("msg_c");
 		expect(useSyncStore.getState().parts.msg_c2?.[0]?.id).toBe("prt_1");
+	});
+
+	test("a re-minted prompt taken back out by Stop is superseded by ITS OWN re-delivery", () => {
+		// The stop-release path, end to end, for TWO prompts queued mid-turn:
+		//
+		//   opt  -> the id this tab painted (the wire id it minted)
+		//   fwd  -> the drain re-mints above the live turn on the first delivery
+		//   Stop -> the settle deletes the fwd copy (message.removed) and holds
+		//           the row; the bubble goes back to being optimistic under `fwd`
+		//   rel  -> the release re-mints AGAIN, so the echo carries a third id
+		//
+		// The inbox row always names {wire_message_id: opt, message_id: <newest>},
+		// so the alias the host registers is opt -> rel. `opt` stopped being
+		// optimistic at the first supersede, and the bubble on screen is `fwd`:
+		// unless the alias follows that chain, the echo matches nothing, and with
+		// two sends in flight the ordinal fallback refuses to guess — each echo is
+		// inserted BESIDE its own bubble and the user sees every prompt twice.
+		const store = useSyncStore.getState();
+		for (const n of ["1", "2"]) {
+			store.optimisticAdd("ses_1", userMessage(`msg_opt${n}`), [
+				textPart(`prt_${n}`, `msg_opt${n}`, `prompt ${n}`),
+			]);
+			store.markOptimisticDispatched("ses_1", `msg_opt${n}`);
+			store.markOptimisticInboxBacked("ses_1", `msg_opt${n}`);
+			// First delivery: the row names the re-minted id before the echo lands.
+			store.registerOptimisticEcho("ses_1", `msg_opt${n}`, `msg_fwd${n}`);
+			store.applyEvent({
+				type: "message.updated",
+				properties: { info: userMessage(`msg_fwd${n}`) },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_fwd1",
+			"msg_fwd2",
+		]);
+
+		// Stop: the settle takes both copies back out of OpenCode.
+		for (const n of ["1", "2"]) {
+			store.applyEvent({
+				type: "message.removed",
+				properties: { sessionID: "ses_1", messageID: `msg_fwd${n}` },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_fwd1",
+			"msg_fwd2",
+		]);
+
+		// Release: the row re-mints once more and names the new id against the
+		// SAME wire id it has always reported.
+		for (const n of ["1", "2"]) {
+			store.registerOptimisticEcho("ses_1", `msg_opt${n}`, `msg_rel${n}`);
+		}
+		for (const n of ["1", "2"]) {
+			store.applyEvent({
+				type: "message.updated",
+				properties: { info: userMessage(`msg_rel${n}`) },
+			} as never);
+		}
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual([
+			"msg_rel1",
+			"msg_rel2",
+		]);
+		// And the host's key for each bubble still points at the id it painted.
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_rel1")).toBe("msg_opt1");
+		expect(useSyncStore.getState().optimisticOriginOf("ses_1", "msg_rel2")).toBe("msg_opt2");
 	});
 
 	test("message.removed for a message nobody owns still removes it", () => {

@@ -76,9 +76,13 @@ export {
   providerTransitions,
   providerTransitionStatusEnum,
   sandboxTemplates,
+  sessionEnvironments,
   sessionSandboxes,
   sessionSandboxStatusEnum,
   sessionTurns,
+  sessionTranscriptMirrors,
+  sessionTranscriptMessages,
+  sessionRuntimeProjections,
   providerEvents,
   sandboxes,
   sandboxMembers,
@@ -134,6 +138,8 @@ export {
   tunnelAuditLogsRelations,
   // OAuth2 Provider
   oauthClients,
+  oauthAuthorizationRequests,
+  oauthConsents,
   oauthAuthorizationCodes,
   oauthAccessTokens,
   oauthRefreshTokens,
@@ -224,6 +230,7 @@ export {
   connectorProjectSettingsRelations,
 } from './schema/kortix';
 export type { AgentGrant } from './schema/kortix';
+export type { AccountBrandingRecord } from './schema/kortix';
 export type { SecretEgressPolicy, SecretEgressRule, SecretInjectionSlot } from './schema/kortix';
 
 export type {

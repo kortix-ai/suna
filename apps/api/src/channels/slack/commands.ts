@@ -14,6 +14,7 @@ import {
 import { channelModelContext } from './model-gate';
 import { listPickerModels, labelForModelRef } from '../../llm-gateway/models/picker';
 import { isModelServableForAccount, resolveEffectiveModel } from '../../llm-gateway/resolution/default-model';
+import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
 import { chooseEffectiveAgent, toOpencodeModelRef, toWireModel } from '../../llm-gateway/resolution/effective';
 import { buildSlackLoginUrl } from './login';
 import { findBotUserIdByName, isBotUser } from '../slack-api';
@@ -119,7 +120,7 @@ function slashHelp(ctx: SlashCtx): SlashResponse {
   // Everything lives behind the one `/kortix` panel; the rest are power-user
   // shortcuts for people who'd rather type than click.
   const advanced: Array<{ cmd: string; desc: string }> = [
-    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.2` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
+    { cmd: `${command} model <id>`, desc: 'Set the channel model directly, e.g. `kortix/glm-5.3-flash` or `anthropic/claude-sonnet-4.6` (`default` to reset).' },
     { cmd: `${command} agent <name>`, desc: 'Set the channel agent directly (`default` to reset).' },
     ...(isProjectScoped ? [] : [{ cmd: `${command} switch`, desc: 'Connect this channel to a different project.' }]),
     { cmd: `${command} policy`,   desc: 'Show or change who can join Slack-started sessions here.' },
@@ -527,7 +528,12 @@ async function slashPanel(ctx: SlashCtx): Promise<SlashResponse> {
   // Effective MODEL (channel override → project/account/platform), with source.
   const gate = await channelModelContext(ctx);
   let modelText = '`not configured` · platform default';
-  if (gate) {
+  if (gate && !gate.llmGatewayEnabled) {
+    // Native mode: report the channel pin verbatim, or OpenCode's own default.
+    modelText = selection?.opencodeModel
+      ? `\`${escapeMrkdwn(selection.opencodeModel)}\` · channel`
+      : '*OpenCode default* · native';
+  } else if (gate) {
     const eff = await resolveEffectiveModel({
       userId: gate.ownerUserId,
       accountId: gate.accountId,
@@ -1090,6 +1096,34 @@ async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
   }
   const selection = await currentChannelSelection(ctx);
   const current = selection?.opencodeModel ?? null;
+  // Native mode: the gateway picker catalog does not exist for this project.
+  // The channel model is a native `provider/model` ref set directly.
+  if (!gate.llmGatewayEnabled) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [
+        { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: current
+              ? `This channel uses \`${escapeMrkdwn(current)}\`.`
+              : 'This channel uses the *project default* (resolved by OpenCode in the sandbox).',
+          },
+        },
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text: `This project runs native OpenCode models (LLM gateway off). Set any connected provider's model with \`${ctx.command} model provider/model\` (e.g. \`anthropic/claude-sonnet-4-6\`), or \`${ctx.command} model default\` to reset.`,
+            },
+          ],
+        },
+      ],
+    };
+  }
   const isCurrent = (id: string) => !!current && toWireModel(current) === toWireModel(id);
 
   // The REAL served catalog — managed models + the project's connected BYOK
@@ -1168,7 +1202,22 @@ async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse>
     return { response_type: 'ephemeral', text: 'Model reset to the project default.' };
   }
   if (/\s/.test(id)) {
-    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.2\` or \`glm-5.2\`).` };
+    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\` (e.g. \`anthropic/claude-sonnet-4.6\`) or a managed id (e.g. \`kortix/glm-5.3-flash\` or \`glm-5.3-flash\`).` };
+  }
+  // Two paths on the project's `llm_gateway` flag (same fork as session
+  // create). Gateway OFF: OpenCode owns the catalog — enforce the native
+  // `provider/model` shape and store verbatim, no gateway servability probe.
+  if (!gate.llmGatewayEnabled) {
+    const nativeShapeError = validateNativeOpencodeModelRef(id);
+    if (nativeShapeError) {
+      return {
+        response_type: 'ephemeral',
+        text: `\`${escapeMrkdwn(id)}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`,
+      };
+    }
+    const ok = await setChannelModel(ctx, id);
+    if (!ok) return { response_type: 'ephemeral', text: `Connect a project first — run \`${ctx.command}\`.` };
+    return { response_type: 'ephemeral', text: `Model for this channel set to \`${escapeMrkdwn(id)}\`. New sessions will use it.` };
   }
   // The servability check is the real gate — never store a model that would 404
   // at request time, whatever shape the id is.

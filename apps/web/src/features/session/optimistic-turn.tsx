@@ -23,6 +23,7 @@ import {
 import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
 // not redeclared here. A local copy drifted twice already — first the dark
@@ -230,24 +231,28 @@ export function HighlightMentions({
     });
   }, [cleanText, sessionTitles, agentNames]);
 
+  const sessionHref = useProjectSessionHref();
+
   const openSessionMention = (raw: string) => {
+    // `/projects/<id>/sessions/<id>`, not `/sessions/<id>`: the latter is not a
+    // route, so the URL it wrote into history 404'd on reload or Back even
+    // though the mounted tab looked fine. See `session-href.ts`.
     // Direct session ID (ses_...) — navigate without title lookup
     if (raw.startsWith('ses_')) {
-      openTabAndNavigate({
-        id: raw,
-        title: 'Session',
-        type: 'session',
-        href: `/sessions/${raw}`,
-      });
+      const href = sessionHref(raw);
+      if (!href) return;
+      openTabAndNavigate({ id: raw, title: 'Session', type: 'session', href });
       return;
     }
     const ref = sessions.find((s) => s.title === raw);
     if (!ref) return;
+    const href = sessionHref(ref.id);
+    if (!href) return;
     openTabAndNavigate({
       id: ref.id,
       title: ref.title || 'Session',
       type: 'session',
-      href: `/sessions/${ref.id}`,
+      href,
     });
   };
 

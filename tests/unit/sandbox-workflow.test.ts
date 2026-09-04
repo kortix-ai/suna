@@ -5,53 +5,61 @@ import { describe, expect, test } from 'vitest';
 const root = resolve(import.meta.dirname, '../..');
 const testWorkflow = readFileSync(resolve(root, '.github/workflows/tests.yml'), 'utf8');
 
-describe('sandbox test workflow', () => {
-  test('runs four root workers at the pull request head SHA', () => {
+describe('native test-lane workflow', () => {
+  test('runs four root lanes natively on Blacksmith at the pull request head SHA', () => {
+    // Since 2026-08-26 the lanes run on the runner itself: Blacksmith has
+    // Docker, 8 vCPU / 32 GB and image caching, and the sandbox-worker path
+    // (Platinum restore timeouts -> Daytona overlay2 failures) failed on its
+    // own on ~every third lane the day before.
     expect(testWorkflow).toContain(
-      'SANDBOX_TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
+      'TEST_SHA: ${{ github.event.pull_request.head.sha || github.sha }}',
     );
+    expect(testWorkflow).toContain("runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(testWorkflow).toContain('- lane: core');
     expect(testWorkflow).toContain('- lane: browser-1');
     expect(testWorkflow).toContain('- lane: browser-2');
     expect(testWorkflow).toContain('- lane: packages');
-    expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts ;;');
-    expect(testWorkflow).toContain(
-      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=1/2',
-    );
-    expect(testWorkflow).toContain(
-      'bun tests/bin/sandbox-ci.ts --browser-only --browser-shard=2/2',
-    );
-    expect(testWorkflow).toContain('bun tests/bin/sandbox-ci.ts --packages-only');
+    expect(testWorkflow).toContain('args: --browser-only --browser-shard=1/2');
+    expect(testWorkflow).toContain('args: --browser-only --browser-shard=2/2');
+    expect(testWorkflow).toContain('args: --packages-only');
+    // The unchanged root command is the whole lane.
+    expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
-    expect(testWorkflow).toContain('timeout-minutes: 90');
-    expect(testWorkflow).toContain('SANDBOX_TEST_RUN_ID: ${{ github.run_id }}-${{ matrix.lane }}');
+    expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
+    expect(testWorkflow).toContain('bun-version: 1.3.14');
+    expect(testWorkflow).toContain('timeout-minutes: 60');
   });
 
-  test('has one provider-neutral executable surface', () => {
-    expect(existsSync(resolve(root, 'tests/bin/sandbox-ci.ts'))).toBe(true);
-    expect(existsSync(resolve(root, 'tests/bin/sandbox-ci-cleanup.ts'))).toBe(true);
-    expect(existsSync(resolve(root, 'tests/bin/platinum-ci.ts'))).toBe(false);
-    expect(existsSync(resolve(root, 'tests/bin/platinum-ci-cleanup.ts'))).toBe(false);
+  test('gives the browser lanes Chromium and a prestarted Supabase, and always stops it', () => {
+    expect(testWorkflow).toContain('pnpm --dir tests exec playwright install --with-deps chromium');
+    expect(testWorkflow).toContain('pnpm exec supabase start --ignore-health-check');
+    expect(testWorkflow).toContain('pnpm exec supabase stop --no-backup || true');
+    expect(testWorkflow).toMatch(/if: always\(\) && matrix\.mode == 'browser'/);
   });
 
-  test('supports explicit providers and automatic infrastructure failover', () => {
-    expect(testWorkflow).toContain('default: auto');
-    expect(testWorkflow).toContain('PLATINUM_API_KEY: ${{ secrets.PLATINUM_API_KEY }}');
-    expect(testWorkflow).toContain('DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}');
-    expect(testWorkflow).toContain('TEST_SANDBOX_PROVIDER: ${{ inputs.provider }}');
-    expect(testWorkflow).toContain('bun tests/bin/sandbox-ci-cleanup.ts');
-
+  test('has no cloud-sandbox worker path left', () => {
+    for (const path of [
+      'tests/bin/sandbox-ci.ts',
+      'tests/bin/sandbox-ci-cleanup.ts',
+      'tests/src/core/sandbox-ci.ts',
+      'tests/bin/platinum-ci.ts',
+      'tests/bin/platinum-ci-cleanup.ts',
+    ]) {
+      expect(existsSync(resolve(root, path)), path).toBe(false);
+    }
+    for (const token of ['sandbox-ci', 'PLATINUM_API_KEY', 'DAYTONA_API_KEY', 'TEST_SANDBOX_PROVIDER']) {
+      expect(testWorkflow, token).not.toContain(token);
+    }
     const testsPr = readFileSync(resolve(root, '.github/workflows/tests-pr.yml'), 'utf8');
-    expect(testsPr).toContain('type: choice');
-    expect(testsPr).toContain('default: daytona');
-    expect(testsPr).toContain("provider: ${{ inputs.provider || 'daytona' }}");
-    expect(testsPr).toContain('- platinum');
-    expect(testsPr).toContain('- daytona');
+    expect(testsPr).not.toContain('provider');
   });
 
   test('uploads results after the worker returns', () => {
     expect(testWorkflow).toContain('actions/upload-artifact@v7');
-    expect(testWorkflow).toContain('path: tests/test-results/**');
+    // The upload path is a multi-line block since the bypass-state exclusion
+    // landed: `path: |` then the glob, then `!…/deployment-bypass-state.json`.
+    expect(testWorkflow).toMatch(/path: \|\s*\n\s*tests\/test-results\/\*\*/);
+    expect(testWorkflow).toContain('!tests/test-results/deployment-bypass-state.json');
     expect(testWorkflow).toContain('if: always()');
   });
 

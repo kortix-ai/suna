@@ -1,7 +1,9 @@
 import { createHash, createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { SESSION_SECRETS_ALLOWLIST_MAX_KEYS } from '@kortix/api-contract';
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
-import { projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
+import { connectors, projectSecrets, projectSessionSecretHandles, projectSessions, projects } from '@kortix/db';
+import { isGatewayManagedEnv } from '../llm-gateway/sandbox-credentials';
+import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
 import { config } from '../config';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
@@ -121,6 +123,7 @@ export async function writeSharedProjectSecret(input: {
 }): Promise<void> {
   const now = new Date();
   const identifier = input.identifier ?? input.name;
+  const serverSide = input.scope === 'connector';
   await db
     .insert(projectSecrets)
     .values({
@@ -128,7 +131,10 @@ export async function writeSharedProjectSecret(input: {
       identifier,
       name: input.name,
       valueEnc: encryptProjectSecret(input.projectId, input.value),
-      scope: input.scope ?? 'runtime',
+      scope: serverSide ? 'connector' : 'runtime',
+      strategy: serverSide ? 'broker' : 'runtime',
+      consumer: serverSide ? 'connector' : 'sandbox',
+      strategyLocked: serverSide,
       createdBy: input.createdBy ?? null,
       updatedAt: now,
     })
@@ -138,9 +144,40 @@ export async function writeSharedProjectSecret(input: {
       set: {
         name: input.name,
         valueEnc: encryptProjectSecret(input.projectId, input.value),
+        ...(serverSide
+          ? {
+              scope: 'connector' as const,
+              strategy: 'broker' as const,
+              consumer: 'connector' as const,
+              strategyLocked: true,
+            }
+          : {}),
         updatedAt: now,
       },
     });
+}
+
+/** Lock a legacy runtime secret to the server-side connector boundary. */
+export async function confineSharedProjectSecretToConnector(
+  projectId: string,
+  identifier: string,
+): Promise<void> {
+  await db
+    .update(projectSecrets)
+    .set({
+      scope: 'connector',
+      strategy: 'broker',
+      consumer: 'connector',
+      strategyLocked: true,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(projectSecrets.projectId, projectId),
+        eq(projectSecrets.identifier, identifier),
+        isNull(projectSecrets.ownerUserId),
+      ),
+    );
 }
 
 /**
@@ -558,6 +595,43 @@ export type SecretHandleMinter = (row: ResolvedProjectSecret) => Promise<string>
  * `rows` contains one deterministic winner per env key. The function mutates
  * the caller-owned map. It never adds a key that the grant resolver excluded.
  */
+/**
+ * Does the LLM-gateway strip apply to this row?
+ *
+ * The strip exists so a PLATFORM-managed model credential never reaches
+ * opencode while the gateway owns that provider. It used to key off the NAME
+ * alone, via `isGatewayManagedEnv`, which answers from the models.dev catalog —
+ * a 204-provider registry that maps `github-copilot` to `GITHUB_TOKEN`. So a
+ * project's own `GITHUB_TOKEN`, stored by the secrets UI as
+ * `consumer: 'sandbox'`, was deleted from every sandbox env by name collision
+ * with a provider nobody in the project had connected. Verified in prod
+ * 2026-08-27: the capability catalog advertised it, no process in the box had
+ * it, and the daemon logged `withheld: 0` because it was dropped server-side.
+ *
+ * The row already carries the answer. The platform stamps `consumer` when it
+ * stores a model credential (`routes/r3.ts` defaultToGateway, the
+ * provider-connect UI) and `sandbox` when a human adds an ordinary secret. Trust
+ * that stamp:
+ *
+ *   - `llm_gateway` (or any non-sandbox consumer) → stripped, as before.
+ *   - `null`/`undefined` → stripped. A row written before the column existed
+ *     carries no intent to trust, so legacy behavior is preserved exactly.
+ *   - `sandbox` → delivered. The user asked for this variable in their own box.
+ *
+ * What this deliberately does NOT weaken: managed credentials and anything the
+ * provider-connect flow stored keep their stamp and stay withheld, and
+ * `CODEX_AUTH_JSON`/`OPENCODE_AUTH_JSON` are unconditionally gateway-managed.
+ *
+ * Pure so the rule is testable without a model catalog.
+ */
+export function gatewayStripsRow(input: {
+  llmGatewayEnabled: boolean;
+  nameIsGatewayManaged: boolean;
+  consumer: SecretConsumer | null | undefined;
+}): boolean {
+  return input.llmGatewayEnabled && input.nameIsGatewayManaged && input.consumer !== 'sandbox';
+}
+
 export async function materializeSecretDelivery(
   rows: ResolvedProjectSecret[],
   env: Record<string, string>,
@@ -565,10 +639,51 @@ export async function materializeSecretDelivery(
     sessionId: string | null;
     grantEnv: string[] | 'all' | undefined;
     mintHandleFor: SecretHandleMinter;
+    /**
+     * The project's effective `llm_gateway` mode — the fork between the two
+     * model-credential delivery paths:
+     *
+     *  • gateway ON  — provider API keys are SERVICE credentials. Every
+     *    gateway-managed name is withheld from the box; the gateway resolves
+     *    the value server-side after authenticating the session token.
+     *  • gateway OFF (native OpenCode) — the same stored rows ARE the box's
+     *    credentials. A `consumer: 'llm_gateway'` row delivers its plaintext
+     *    value so OpenCode's native provider management auto-connects, and a
+     *    provider-key NAME is an ordinary env var.
+     */
+    llmGatewayEnabled: boolean;
   },
-): Promise<void> {
+): Promise<ResolvedProjectSecret[]> {
+  const delivered: ResolvedProjectSecret[] = [];
   for (const row of rows) {
     if (!(row.key in env)) continue;
+    // A gateway-managed NAME is not the same thing as a gateway-managed ROW.
+    // `isGatewayManagedEnv` asks the models.dev catalog, which today maps the
+    // `github-copilot` provider to `GITHUB_TOKEN` — so a project's own
+    // `GITHUB_TOKEN` (stored `consumer: 'sandbox'`, the shape the secrets UI
+    // creates) was silently deleted from every sandbox env while the capability
+    // catalog kept advertising it. The platform stamps `consumer` when it
+    // stores a model credential (`routes/r3.ts` defaultToGateway); trust that
+    // stamp, not a third-party name table. `consumer == null` is a legacy row
+    // with no stamp to trust, so it keeps today's strip.
+    if (
+      gatewayStripsRow({
+        llmGatewayEnabled: input.llmGatewayEnabled,
+        nameIsGatewayManaged: isGatewayManagedEnv(row.key),
+        consumer: row.consumer,
+      })
+    ) {
+      delete env[row.key];
+      continue;
+    }
+    if (!input.llmGatewayEnabled && row.consumer === 'llm_gateway') {
+      // Native mode: the row was stored `broker`/`llm_gateway` only because the
+      // platform defaulted provider keys there (routes/r3.ts `defaultToGateway`,
+      // the provider-connect UI). With no gateway in the path it delivers like a
+      // `runtime` row — plaintext, so toggling the flag never strands the key.
+      delivered.push(row);
+      continue;
+    }
     const delivery = resolveSecretDelivery({
       identifier: row.identifier,
       strategy: row.strategy,
@@ -583,7 +698,10 @@ export async function materializeSecretDelivery(
         : row.egressPolicy?.backend === 'kortix_fetch'
           ? 'http_broker'
           : (row.egressPolicy?.backend ?? null));
-    if (delivery.emit === 'plaintext' && consumer === 'sandbox') continue;
+    if (delivery.emit === 'plaintext' && consumer === 'sandbox') {
+      delivered.push(row);
+      continue;
+    }
     if (
       delivery.emit === 'handle' &&
       delivery.strategy === 'broker' &&
@@ -591,6 +709,7 @@ export async function materializeSecretDelivery(
       row.egressPolicy?.backend === 'kortix_fetch'
     ) {
       env[row.key] = await input.mintHandleFor(row);
+      delivered.push(row);
       continue;
     }
     // Egress-enforced: the KEY holds the HANDLE, never the value.
@@ -619,10 +738,12 @@ export async function materializeSecretDelivery(
       row.egressPolicy
     ) {
       env[row.key] = await input.mintHandleFor(row);
+      delivered.push(row);
       continue;
     }
     delete env[row.key];
   }
+  return delivered;
 }
 
 async function mintSessionSecretHandle(
@@ -751,10 +872,26 @@ export async function listProjectSecretsSnapshotForUser(
   capabilitiesJson: string;
 }> {
   const rows = await listResolvedProjectSecrets(projectId, userId);
-  const { env, selected } = resolveGrantedSecretSelection(rows, grantEnv);
-  await materializeSecretDelivery(selected, env, {
+  const boundConnectorIdentifiers = new Set(
+    (
+      await db
+        .select({ identifier: connectors.authSecret })
+        .from(connectors)
+        .where(eq(connectors.projectId, projectId))
+    )
+      .map((row) => row.identifier)
+      .filter((identifier): identifier is string => Boolean(identifier)),
+  );
+  const sandboxRows = rows.filter((row) => !boundConnectorIdentifiers.has(row.identifier));
+  const { env, selected } = resolveGrantedSecretSelection(sandboxRows, grantEnv);
+  // Resolved HERE, once, so boot, hot push, and the toggle fan-out all deliver
+  // model credentials from the same decision — a caller cannot pass a stale
+  // mode and desynchronise the box from the project's flag.
+  const llmGatewayEnabled = await projectLlmGatewayEnabledById(projectId);
+  const delivered = await materializeSecretDelivery(selected, env, {
     sessionId: sessionId ?? null,
     grantEnv,
+    llmGatewayEnabled,
     mintHandleFor: async (row) => {
       if (!sessionId) throw new Error('Secret handle delivery requires a session');
       return mintSessionSecretHandle(projectId, sessionId, row);
@@ -762,7 +899,12 @@ export async function listProjectSecretsSnapshotForUser(
   });
 
   const names = Object.keys(env).sort();
-  const capabilities = buildSecretCapabilities(selected, {
+  // From `delivered`, never `selected`: a row whose value materialization
+  // dropped must not be advertised. `secretNamesForSandbox` states the
+  // invariant — a name appears IFF a value is emitted for it — and building
+  // capabilities from the pre-delivery set is exactly how the box came to be
+  // told it held a `GITHUB_TOKEN` that was never in its env.
+  const capabilities = buildSecretCapabilities(delivered, {
     grantEnv,
     sessionId: sessionId ?? null,
   });
@@ -823,11 +965,39 @@ export interface ProjectSecretConsumerValue {
   value: string;
 }
 
-export async function projectSecretIsConfiguredForConsumer(input: {
+type ServerSecretConsumer = Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
+
+export type ProjectSecretConsumerConfigurationStatus =
+  | 'configured'
+  | 'missing'
+  | 'inactive'
+  | 'delivery_mismatch';
+
+function secretPolicyAllowsConsumer(
+  row: {
+    scope: string;
+    strategy: SecretStrategy;
+    consumer: SecretConsumer | null;
+  },
+  consumer: ServerSecretConsumer,
+): boolean {
+  return consumer === 'connector'
+    ? (row.strategy === 'broker' && row.consumer === 'connector') ||
+        (row.scope === 'connector' &&
+          (row.consumer === 'connector' || row.consumer === 'sandbox'))
+    : row.strategy === 'broker' && row.consumer === consumer;
+}
+
+/**
+ * Read whether a named shared secret can cross one server-consumer boundary.
+ * This does not decrypt the value. Callers can distinguish a missing secret
+ * from an existing secret whose delivery policy denies the consumer.
+ */
+export async function getProjectSecretConsumerConfigurationStatus(input: {
   projectId: string;
   name: string;
-  consumer: Exclude<SecretConsumer, 'sandbox' | 'network' | 'http_broker'>;
-}): Promise<boolean> {
+  consumer: ServerSecretConsumer;
+}): Promise<ProjectSecretConsumerConfigurationStatus> {
   const normalizedName = input.name.trim().toUpperCase();
   const rows = await db
     .select({
@@ -844,14 +1014,20 @@ export async function projectSecretIsConfiguredForConsumer(input: {
         isNull(projectSecrets.ownerUserId),
       ),
     );
-  return rows.some(
-    (row) =>
-      row.active &&
-      (input.consumer === 'connector'
-        ? row.scope === 'connector' ||
-          (row.strategy === 'broker' && row.consumer === 'connector')
-        : row.strategy === 'broker' && row.consumer === input.consumer),
-  );
+  if (rows.length === 0) return 'missing';
+  if (rows.some((row) => row.active && secretPolicyAllowsConsumer(row, input.consumer))) {
+    return 'configured';
+  }
+  if (rows.some((row) => row.active)) return 'delivery_mismatch';
+  return 'inactive';
+}
+
+export async function projectSecretIsConfiguredForConsumer(input: {
+  projectId: string;
+  name: string;
+  consumer: ServerSecretConsumer;
+}): Promise<boolean> {
+  return (await getProjectSecretConsumerConfigurationStatus(input)) === 'configured';
 }
 
 export async function listProjectSecretNamesForConsumer(input: {
@@ -896,12 +1072,7 @@ export async function listProjectSecretNamesForConsumer(input: {
     const selected = slot.personal?.active ? slot.personal : slot.shared;
     if (!selected?.active || selected.name.toUpperCase().startsWith('KORTIX_')) continue;
     const policy = slot.shared ?? selected;
-    const configured =
-      input.consumer === 'connector'
-        ? (policy.strategy === 'broker' && policy.consumer === 'connector') ||
-          (policy.scope === 'connector' &&
-            (policy.consumer === 'connector' || policy.consumer === 'sandbox'))
-        : policy.strategy === 'broker' && policy.consumer === input.consumer;
+    const configured = secretPolicyAllowsConsumer(policy, input.consumer);
     if (configured) names.add(selected.name.toUpperCase());
   }
   return [...names].sort();
@@ -992,13 +1163,7 @@ async function resolveProjectSecretValuesForConsumer(
 
   const resolved: ProjectSecretConsumerValue[] = [];
   for (const { row, policyRow } of selectedRows) {
-    const allowed =
-      row.active &&
-      (input.consumer === 'connector'
-        ? (policyRow.strategy === 'broker' && policyRow.consumer === 'connector') ||
-          (policyRow.scope === 'connector' &&
-            (policyRow.consumer === 'connector' || policyRow.consumer === 'sandbox'))
-        : policyRow.strategy === 'broker' && policyRow.consumer === input.consumer);
+    const allowed = row.active && secretPolicyAllowsConsumer(policyRow, input.consumer);
     if (!allowed) {
       await recordAuditEvent({
         accountId,

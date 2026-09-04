@@ -546,7 +546,7 @@ describe('the shim fails closed', () => {
     }),
     KORTIX_API_URL: 'https://api.kortix.test/v1',
     KORTIX_PROJECT_ID: 'proj-1',
-    KORTIX_CLI_TOKEN: 'kortix_pat_test',
+    KORTIX_TOKEN: 'kortix_pat_test',
   }
 
   test('a complete environment yields a config', () => {
@@ -554,15 +554,7 @@ describe('the shim fails closed', () => {
     expect(shimUnavailableReason(base)).toBeNull()
   })
 
-  test('the SANDBOX token does not stand in for the session token', () => {
-    // KORTIX_TOKEN is the daemon's identity and project-scoped routes reject
-    // it. Accepting it here would start a shim whose every relay 403s.
-    const env = { ...base, KORTIX_CLI_TOKEN: undefined, KORTIX_TOKEN: 'kortix_sb_daemon' }
-    expect(resolveShimConfig(env)).toBeNull()
-    expect(shimUnavailableReason(env)).toContain('KORTIX_CLI_TOKEN')
-  })
-
-  test.each(['KORTIX_API_URL', 'KORTIX_PROJECT_ID', 'KORTIX_CLI_TOKEN'])(
+  test.each(['KORTIX_API_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN'])(
     'a missing %s names itself in the reason',
     (name) => {
       const env = { ...base, [name]: undefined }

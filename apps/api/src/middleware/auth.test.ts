@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import * as realCrypto from '../shared/crypto';
 import { Hono } from 'hono';
 import * as realPreviewOwnership from '../shared/preview-ownership';
 import * as realRequestContext from '../lib/request-context';
@@ -23,6 +24,9 @@ const sandboxProjectByOwnSandboxId: Record<string, string> = {
 };
 
 mock.module('../shared/crypto', () => ({
+  // Spread the real module: mock.module replaces it WHOLESALE, and the auth
+  // middleware now reaches shared/crypto through oauth/token-hash too.
+  ...realCrypto,
   isAccountToken: (t: string) => t.startsWith('kortix_pat_'),
   isServiceAccountToken: (t: string) => t.startsWith('kortix_sa_'),
   isKortixToken: (t: string) => t.startsWith('kortix_'),
@@ -45,6 +49,18 @@ mock.module('../repositories/account-tokens', () => ({
         userId: 'user-1',
         accountId: ACCOUNT,
         tokenId: 'tok-account',
+      };
+    }
+    if (t === 'kortix_pat_session_bound_a') {
+      // The in-sandbox KORTIX_TOKEN shape: project+SESSION-scoped
+      // ("One sandbox, one session-scoped Kortix credential").
+      return {
+        isValid: true,
+        userId: 'user-1',
+        accountId: ACCOUNT,
+        projectId: PROJECT_A,
+        sessionId: SANDBOX_A,
+        tokenId: 'tok-session-a',
       };
     }
     return { isValid: false, error: 'Invalid PAT' };
@@ -113,6 +129,13 @@ function appWithProbe() {
     c.json({ userId: c.get('userId' as never), projectId: c.req.param('projectId') }),
   );
   app.get('/v1/skills', (c) => c.json({ ok: true }));
+  app.post('/v1/platform/runtime-projection', (c) =>
+    c.json({
+      ok: true,
+      sandboxId: c.get('sandboxId' as never),
+      sessionId: c.get('sessionId' as never),
+    }),
+  );
   app.get('/v1/skills/:name', (c) => c.json({ ok: true, name: c.req.param('name') }));
   app.get('/v1/skills/:name/file', (c) => c.json({ ok: true }));
   return app;
@@ -188,7 +211,7 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     expect(await res.text()).toContain('Project-scoped token cannot access a different project');
   });
 
-  // The in-sandbox `KORTIX_CLI_TOKEN` IS a project+session-scoped PAT, and
+  // The in-sandbox `KORTIX_TOKEN` IS a project+session-scoped PAT, and
   // enforceTokenProjectScope is default-deny. /v1/skills shipped without an
   // allowlist entry, so the one caller the system skills exist for — an agent
   // in a sandbox running the `kortix skills get <name>` that every baked image
@@ -233,5 +256,34 @@ describe('project-scoped PAT on the sandbox-proxy path', () => {
     const body = await res.json();
     expect(body.userId).toBe('user-1');
     expect(body.tokenProjectId).toBeFalsy();
+  });
+
+  // The runtime-projection sink is called by the daemon holding the in-sandbox
+  // KORTIX_TOKEN — a project+SESSION-scoped PAT. enforceTokenProjectScope is
+  // default-deny, so without an explicit allowance the push 403s before the
+  // handler's own isSessionSandboxCredential check ever runs (observed live:
+  // POST /v1/platform/runtime-projection -> 403 "Project-scoped token cannot
+  // call this surface" from a real Platinum box, 2026-08-27).
+  test('a session-BOUND project PAT reaches the runtime-projection sink', async () => {
+    const res = await appWithProbe().request('/v1/platform/runtime-projection', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_session_bound_a' },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // The handler's isSessionSandboxCredential needs both, equal.
+    expect(body.sessionId).toBe(SANDBOX_A);
+    expect(body.sandboxId).toBe(SANDBOX_A);
+  });
+
+  test('a plain project PAT (no session binding) still cannot reach the sink', async () => {
+    const res = await appWithProbe().request('/v1/platform/runtime-projection', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer kortix_pat_project_a' },
+    });
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain('Project-scoped token cannot call this surface');
   });
 });

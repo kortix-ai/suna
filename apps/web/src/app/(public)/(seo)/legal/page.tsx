@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { ArrowUpRightIcon } from '@phosphor-icons/react';
 import { m } from 'motion/react';
 import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useState, type ReactNode } from 'react';
 
 const LEGAL_LAST_UPDATED = 'April 8, 2026';
@@ -292,7 +292,6 @@ function PrivacyPolicy() {
 function LegalContent() {
   const t = useTranslations('hardcodedUi');
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
   // Terms moved to an external Drive folder (see lib/legal-terms-redirect.ts)
@@ -301,10 +300,10 @@ function LegalContent() {
     ? (searchParams.get('tab') as LegalTab)
     : 'imprint';
 
-  // Local state so a click paints immediately — `router.replace` is a soft
-  // navigation and would otherwise gate the swap on an RSC round-trip. The URL
-  // is reconciled *during render*, not in an effect: back/forward still switches
-  // documents, without the render → effect → setState cascade.
+  // Local state so a click paints immediately — a router navigation would
+  // otherwise gate the swap on an RSC round-trip. The URL is reconciled *during
+  // render*, not in an effect: back/forward still switches documents, without
+  // the render → effect → setState cascade.
   const [activeTab, setActiveTab] = useState<LegalTab>(urlTab);
   const [lastUrlTab, setLastUrlTab] = useState<LegalTab>(urlTab);
   if (lastUrlTab !== urlTab) {
@@ -316,7 +315,12 @@ function LegalContent() {
     setActiveTab(tab);
     const params = new URLSearchParams(searchParams);
     params.set('tab', tab);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    // The tab is painted from local state and the page owns no server data per
+    // tab, so the URL only has to record the choice. Next patches
+    // `replaceState` and updates its own canonical URL, which keeps
+    // `useSearchParams` correct with no RSC round-trip — `router.replace`
+    // changes the cache key and buys a cold fetch for nothing.
+    window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
   };
 
   const tabs: { id: LegalTab; label: string }[] = [

@@ -51,7 +51,7 @@ flow(
     });
 
     await ctx.step('a PROJECT-scoped PAT can read it — this is the in-sandbox daemon', async () => {
-      // The KORTIX_CLI_TOKEN injected into every sandbox is a project+session
+      // The KORTIX_TOKEN injected into every sandbox is a project+session
       // scoped PAT, and that is the only caller this route exists for. An owner
       // JWT passing proves nothing about a sandbox.
       const r = await projectPat.get('/v1/runtime-assets/manifest');

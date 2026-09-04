@@ -121,6 +121,11 @@ mock.module('../store', () => ({
   enqueueContinueSessionCommand: async () => {
     throw new Error('not expected');
   },
+  // The delivery path parks a prompt whose RUNTIME was down instead of
+  // dead-lettering it. Present so the module mock stays complete.
+  MAX_RUNTIME_UNREACHABLE_RETRIES: 3,
+  parkPromptForUnreachableRuntime: async () => ({ parked: true, retries: 1 }),
+  reArmRuntimeBlockedPrompts: async () => 0,
   markCommandFailed: async (commandId: string, message: string, opts: unknown) => {
     failedCalls.push({ commandId, message, opts });
   },
@@ -141,6 +146,8 @@ mock.module('../store', () => ({
   // the engine import fails outright. Nothing in this file drives a row through
   // it, so an identity pass-through is the whole of it.
   withNextDeliveryAttempt: (payload: unknown) => payload,
+  // Mirrors the real bound jsonb param so `persistedWireIds` can still read it.
+  withRemintedWireId: (id: string) => JSON.stringify({ redeliveredMessageId: id }),
   resultFromExistingCommand: () => {
     throw new Error('not expected');
   },
@@ -155,6 +162,20 @@ mock.module('../../opencode-mapping', () => ({
     events.push('endpoint');
     return endpointResult;
   },
+}));
+
+// The wake path now converges the box before every delivery (engine.ts
+// `continueSession`): it reads the service key and ingress and calls
+// `syncSandboxEnvForPrompt`. Stubbed here — this file is about what goes on
+// the wire, not about the sync (see continue-session-env-sync.test.ts).
+mock.module('../../../platform/service-key', () => ({
+  serviceKeyForExternalId: async () => 'svc-key-1',
+}));
+mock.module('../../../sandbox-proxy/backend', () => ({
+  resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
+}));
+mock.module('../../lib/sandbox-env-sync', () => ({
+  syncSandboxEnvForPrompt: async () => {},
 }));
 
 const { executeQueuedContinue } = await import('../engine');

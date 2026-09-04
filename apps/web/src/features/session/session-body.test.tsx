@@ -110,7 +110,9 @@ describe('the crossfade covers the screen at every frame', () => {
     expect(pageSource).not.toMatch(/chatReady \? 'opacity-100' : 'pointer-events-none opacity-0'/);
     // ...and the overlay must be opaque, or the always-painted chat reads
     // through the boot loader's transparent centred block.
-    expect(pageSource).toContain("'bg-background absolute inset-0 flex flex-col transition-opacity");
+    expect(pageSource).toContain(
+      "'bg-background absolute inset-0 flex flex-col transition-opacity",
+    );
   });
 
   test('the shell is pinned by the prompt it is painting, not by where it was typed', () => {
@@ -119,7 +121,9 @@ describe('the crossfade covers the screen at every frame', () => {
     // for a boot spinner the moment the transcript arrived.
     expect(pageSource).toContain('useFirstPromptPreviewStore');
     expect(pageSource).toContain('shellShowsFirstPrompt');
-    expect(pageSource).toMatch(/resolveSessionOverlay\(\{ \.\.\.surface, shellShowsFirstPrompt \}\)/);
+    expect(pageSource).toMatch(
+      /resolveSessionOverlay\(\{ \.\.\.surface, shellShowsFirstPrompt \}\)/,
+    );
     // Read at mount as well as live: SessionChat clears the preview the instant
     // the transcript shows the text, and that clear can land in the same commit
     // as `chatReady` — a purely live read would drop the pin on the exact frame
@@ -139,11 +143,11 @@ describe('the overlay never covers a Restart the user needs', () => {
     // reachable once the overlay has faded. `sessionErrorSurfaceReady` must
     // therefore take the same two values the guards do — the ordinary path is
     // the one that waits for `onContentReady`, never these.
+    expect(pageSource).toContain('runtimePresentation.replaceSession');
     expect(pageSource).toContain(
-      'sessionErrorSurfaceReady({ runtimeError, runtimeBootError })',
+      'if (!runtimeReady && runtimeBootError && runtimePresentation.replaceSession) {',
     );
-    expect(pageSource).toContain('if (!runtimeReady && runtimeBootError) {');
-    expect(pageSource).toContain('if (runtimeError) {');
+    expect(pageSource).toContain('if (runtimeError && runtimePresentation.replaceSession) {');
     // Both cards restart in place rather than asking for a page reload.
     expect(pageSource).toMatch(/runtimeBootError[\s\S]{0,700}<RestartSessionButton/);
   });
@@ -153,7 +157,7 @@ describe('the overlay never covers a Restart the user needs', () => {
     // notice an opaque layer on top. Harmless while the shell was torn down in
     // the same commit the chat mounted; a live steal now that the shell is
     // pinned through the crossfade.
-    expect(chatSource).toContain("autoFocus={deferComposerFocus ? false : undefined}");
+    expect(chatSource).toContain('autoFocus={deferComposerFocus ? false : undefined}');
     expect(pageSource).toContain('deferComposerFocus={!chatReady}');
   });
 });
@@ -170,5 +174,28 @@ describe('the first prompt is drawn by one component on both sides of the fade',
 
   test('the shell draws the same component', () => {
     expect(shellSource).toContain('<OptimisticTurn');
+  });
+});
+
+describe('a readable transcript is never covered by the boot overlay', () => {
+  test('the presentation decision is made, and the banner is what replaces the wall', () => {
+    // THE COMPLAINT: opening a stopped/hibernated session showed a full-screen
+    // "Connecting…" for the whole wake (5-240 s) with no transcript, although
+    // every message existed. The server-side transcript mirror puts the thread
+    // on screen from the first frame, so the overlay must step aside.
+    expect(pageSource).toContain('resolveBootPresentation({ overlay, hasTranscript })');
+    expect(pageSource).toContain('<SessionConnectingBanner');
+  });
+
+  test('the overlay is dismissed by the banner flip through the SAME crossfade', () => {
+    // Not a hard unmount: the chat is already painted underneath, and swapping
+    // an opaque panel for the thread in one frame is the flash this route
+    // spent three fixes removing.
+    expect(pageSource).toContain(
+      "const overlayDismissed = chatReady || bootPresentation === 'banner';",
+    );
+    expect(pageSource).toContain(
+      "overlayDismissed ? 'pointer-events-none opacity-0' : 'opacity-100',",
+    );
   });
 });

@@ -8,7 +8,7 @@ const CLI_ENTRY = join(CLI_ROOT, 'src', 'index.ts');
 const ORIGINAL_ENV = { ...process.env };
 const SANDBOX_ENV_OVERRIDES = [
   'KORTIX_API_URL',
-  'KORTIX_CLI_TOKEN',
+  'KORTIX_TOKEN',
   'KORTIX_FRONTEND_URL',
   'KORTIX_PROJECT_ID',
   'KORTIX_TOKEN',
@@ -56,7 +56,7 @@ function routingDoc() {
     version: 1,
     project: routingProject,
     effective: {
-      defaultModel: routingProject.defaultModel ?? 'glm-5.2',
+      defaultModel: routingProject.defaultModel ?? 'glm-5.3-flash',
       defaultModelSource: routingProject.defaultModel ? 'project' : 'platform',
       visionModel: routingProject.visionModel ?? 'claude-sonnet-4.6',
       defaultFallback: routingProject.defaultFallback ?? { models: [], fallbackOn: 'transient' },
@@ -219,7 +219,7 @@ describe('kortix gateway command', () => {
     const cfg = writeConfig(startServer());
     const r = await runCli(['gateway', 'routing', '--json', '--project', PROJECT], cfg);
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).effective.defaultModel).toBe('glm-5.2');
+    expect(JSON.parse(r.stdout).effective.defaultModel).toBe('glm-5.3-flash');
     expect(requests).toEqual([
       { method: 'GET', path: `/v1/projects/${PROJECT}/gateway/routing-policy` },
     ]);

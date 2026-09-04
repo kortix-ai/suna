@@ -28,6 +28,10 @@ const AGENT_ID = 'd7400000-0000-4000-a000-000000000001';
 const HUMAN_ID = 'd7500000-0000-4000-a000-000000000001';
 
 let insertedValues: Array<Record<string, unknown>> = [];
+/** One entry per INSERT statement the handler issued, holding that statement's rows. */
+let insertStatements: Array<Array<Record<string, unknown>>> = [];
+/** When set, the Nth (0-based) statement rejects with this error. */
+let failStatementAt: { index: number; error: unknown } | null = null;
 
 const sandboxScope = {
   sessionId: SESSION_ID,
@@ -65,10 +69,15 @@ mock.module('../../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: Array<Record<string, unknown>>) => {
         if (table !== auditEvents) throw new Error('unexpected insert table');
+        const index = insertStatements.length;
+        insertStatements.push([...values]);
         insertedValues = values;
         return {
           onConflictDoNothing: () => ({
-            returning: async () => values.map((value) => ({ eventId: value.eventId })),
+            returning: async () => {
+              if (failStatementAt?.index === index) throw failStatementAt.error;
+              return values.map((value) => ({ eventId: value.eventId }));
+            },
           }),
         };
       },
@@ -111,6 +120,8 @@ function hostileEvent() {
 
 beforeEach(() => {
   insertedValues = [];
+  insertStatements = [];
+  failStatementAt = null;
 });
 
 afterAll(() => {
@@ -170,6 +181,54 @@ describe('POST /:projectId/sessions/:sessionId/audit/events', () => {
 });
 
 /**
+ * The relay's default batch size is this route's own ceiling
+ * (`MAX_RELAY_BATCH_SIZE` in
+ * apps/kortix-sandbox-agent-server/src/opencode-audit-relay.ts). Pin both ends
+ * of the boundary so raising one without the other cannot ship a 400 into the
+ * emission hot path.
+ */
+describe('relay batch ceiling', () => {
+  function plainEvent(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `rev-${n}`,
+      type: 'file.edited',
+      occurred_at: '2026-08-08T12:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'c'.repeat(64),
+    };
+  }
+
+  async function post(count: number) {
+    const response = await projectsApp.request(
+      `/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ events: Array.from({ length: count }, (_, i) => plainEvent(i)) }),
+      },
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  test('accepts a full 200-event relay batch and writes it in 25-row chunks', async () => {
+    insertStatements.length = 0;
+    const accepted = await post(200);
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({ accepted: 200, inserted: 200 });
+    // Eight bounded statements, never one 200-row lock hold.
+    expect(insertStatements.map((batch) => batch.length)).toEqual([25, 25, 25, 25, 25, 25, 25, 25]);
+  });
+
+  test('rejects one event past the ceiling', async () => {
+    const rejected = await post(201);
+    expect(rejected.status).toBe(400);
+    expect(String(rejected.body.error)).toContain('1 to 200');
+  });
+});
+
+/**
  * The runaway guard, exercised through the real route rather than the pure
  * function — this is the layer that decides what actually reaches the INSERT.
  */
@@ -219,9 +278,7 @@ describe('per-session ingest ceiling', () => {
   });
 
   test('stops persisting deltas over the ceiling and records one notice', async () => {
-    const { status, body } = await post(
-      Array.from({ length: 12 }, (_, i) => deltaEvent(i + 1)),
-    );
+    const { status, body } = await post(Array.from({ length: 12 }, (_, i) => deltaEvent(i + 1)));
 
     expect(status).toBe(200);
     expect(body.accepted).toBe(12);
@@ -259,5 +316,118 @@ describe('per-session ingest ceiling', () => {
     expect(body.suppressed).toBe(0);
     expect(insertedValues).toHaveLength(1);
     expect(insertedValues[0]).toMatchObject({ action: 'opencode.session.idle' });
+  });
+});
+
+/**
+ * The Essentia convoy (2026-08-26): `kortix.audit_prepare_event` locks this
+ * session's `audit_session_sequences` row for every row inserted, and
+ * PostgreSQL holds that lock until COMMIT. One 200-row statement therefore
+ * pinned the session for its whole duration, and a rollback threw away all 200
+ * rows' work — which the relay then re-sent in full, every second, for 3 hours.
+ *
+ * These fixtures use the production default chunk size (25 rows/statement).
+ */
+describe('audit ingest contention', () => {
+  const CHUNK = 25;
+
+  function event(n: number) {
+    return {
+      event_id: n.toString(16).padStart(64, '0'),
+      source_revision: `contention-${n}`,
+      type: 'tool.execute.after',
+      occurred_at: '2026-08-26T09:00:00.000Z',
+      outcome: 'success',
+      phase: 'completed',
+      input_sha256: 'b'.repeat(64),
+    };
+  }
+
+  function request(count: number) {
+    return projectsApp.request(`/${PROJECT_ID}/sessions/${SESSION_ID}/audit/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ events: Array.from({ length: count }, (_, i) => event(i + 1)) }),
+    });
+  }
+
+  async function post(count: number) {
+    const response = await request(count);
+    return {
+      status: response.status,
+      retryAfter: response.headers.get('retry-after'),
+      body: (await response.json()) as Record<string, unknown>,
+    };
+  }
+
+  beforeEach(() => {
+    __resetAuditRateGuardForTest();
+  });
+
+  afterAll(() => {
+    __resetAuditRateGuardForTest();
+  });
+
+  test('writes one batch as bounded statements instead of a single long lock', async () => {
+    const { status, body } = await post(60);
+
+    expect(status).toBe(200);
+    expect(body).toEqual({ accepted: 60, inserted: 60, duplicates: 0, suppressed: 0 });
+    // 25 + 25 + 10, never one 60-row statement holding the session lock throughout.
+    expect(insertStatements.map((batch) => batch.length)).toEqual([CHUNK, CHUNK, 10]);
+  });
+
+  test('lock contention is a retryable 503, never a 500, and keeps committed rows', async () => {
+    // postgres.js surfaces statement_timeout while queued on a row lock as
+    // SQLSTATE 57014 — the exact code Essentia returned 445 times in 3h.
+    failStatementAt = {
+      index: 1,
+      error: Object.assign(new Error('canceling statement due to statement timeout'), {
+        code: '57014',
+      }),
+    };
+
+    const { status, retryAfter, body } = await post(60);
+
+    expect(status).toBe(503);
+    expect(retryAfter).toBe('5');
+    expect(body).toMatchObject({
+      accepted: 60,
+      inserted: CHUNK,
+      duplicates: 0,
+      suppressed: 0,
+      retry_after_seconds: 5,
+    });
+    expect(typeof body.error).toBe('string');
+    // Stopped at the statement that was rejected. Pushing the third chunk into
+    // the same lock queue is what deepened the convoy.
+    expect(insertStatements).toHaveLength(2);
+  });
+
+  test('a lock_timeout rejection (55P03) is treated the same as 57014', async () => {
+    failStatementAt = {
+      index: 0,
+      error: Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' }),
+    };
+
+    const { status, body } = await post(30);
+
+    expect(status).toBe(503);
+    expect(body).toMatchObject({ accepted: 30, inserted: 0 });
+    expect(insertStatements).toHaveLength(1);
+  });
+
+  test('a genuine write failure is not laundered into a retryable 503', async () => {
+    // 23505 is a real defect, not backpressure. Reporting it as retryable would
+    // make the relay re-send a batch that can never land.
+    failStatementAt = {
+      index: 0,
+      error: Object.assign(new Error('duplicate key value'), { code: '23505' }),
+    };
+
+    const response = await request(4);
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('retry-after')).toBeNull();
   });
 });

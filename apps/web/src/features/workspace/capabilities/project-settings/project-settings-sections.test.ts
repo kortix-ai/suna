@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import { CUSTOMIZE_SECTION_ACCESS, isCustomizeSectionVisible } from '@/lib/project-actions';
-import { legacySectionRedirect } from '@/features/workspace/settings/settings-tabs';
 
 import {
   ALL_PROJECT_SETTINGS_SECTIONS,
@@ -15,14 +14,13 @@ import {
 
 const OFF: ProjectSettingsSectionFlags = {
   reviewEnabled: false,
-  voiceEnabled: false,
 };
 
 const keysFor = (flags: ProjectSettingsSectionFlags) =>
   projectSettingsSections(flags).map((s) => s.key);
 
 /**
- * The four sections of `/projects/[id]/config` — the Customize bar's Settings
+ * The four sections of `/projects/[id]/customize/settings` — the Customize bar's Settings
  * tab. Two always-on, two flag-gated. They arrived here from the settings
  * overlay's `Workspace` and `Agent` rail groups, plus its pinned Upgrades row
  * and its `experimental` row; `rail.test.ts` pins that they left there.
@@ -35,34 +33,28 @@ const keysFor = (flags: ProjectSettingsSectionFlags) =>
  */
 describe('projectSettingsSections', () => {
   test('with every flag off it holds the two always-on sections, in order', () => {
-    expect(keysFor(OFF)).toEqual(['general', 'sandbox', 'feature-flags', 'upgrades']);
+    expect(keysFor(OFF)).toEqual(['general', 'git', 'sandbox', 'feature-flags', 'upgrades']);
   });
 
-  test('each flag adds exactly its own section', () => {
-    expect(keysFor({ ...OFF, reviewEnabled: true })).toContain('review');
-    expect(keysFor({ ...OFF, voiceEnabled: true })).toContain('voice');
+  test('the review flag adds no section — Review is a capability tab', () => {
+    expect(keysFor({ ...OFF, reviewEnabled: true })).not.toContain('review');
     expect(keysFor(OFF)).not.toContain('review');
-    expect(keysFor(OFF)).not.toContain('voice');
   });
 
-  test('both flags in one pass both land — the early-return regression the old rail documented', () => {
-    // The old rail's bug: Marketplace defaulted on for effectively every
-    // project, so an early return on the first matching flag made Review and
-    // Voice unreachable. Marketplace is gone now, but the same one-pass rule
-    // still matters for the two flags that are left.
-    const keys = keysFor({ reviewEnabled: true, voiceEnabled: true });
-    expect(keys).toContain('review');
-    expect(keys).toContain('voice');
-    expect(keys).toHaveLength(6);
+  test('the review flag preserves all static sections', () => {
+    const keys = keysFor({ reviewEnabled: true });
+    // Review is a capability tab, not a section, whatever the flag says.
+    expect(keys).not.toContain('review');
+    expect(keys).toHaveLength(5);
   });
 
   test('Upgrades is last, where the rail pinned it', () => {
-    const keys = keysFor({ reviewEnabled: true, voiceEnabled: true });
+    const keys = keysFor({ reviewEnabled: true });
     expect(keys[keys.length - 1]).toBe('upgrades');
   });
 
   test('no section appears twice', () => {
-    const keys = keysFor({ reviewEnabled: true, voiceEnabled: true });
+    const keys = keysFor({ reviewEnabled: true });
     expect(new Set(keys).size).toBe(keys.length);
   });
 
@@ -102,12 +94,12 @@ describe('projectSettingsSections', () => {
   });
 
   test('Marketplace is gone, not merely hidden', () => {
-    expect(keysFor({ reviewEnabled: true, voiceEnabled: true })).not.toContain('marketplace');
+    expect(keysFor({ reviewEnabled: true })).not.toContain('marketplace');
     expect(parseProjectSettingsSection('marketplace')).toBeNull();
   });
 
   test('Models, Channels, Secrets, and Members are not sections here — they graduated to their own tabs', () => {
-    const keys = keysFor({ reviewEnabled: true, voiceEnabled: true });
+    const keys = keysFor({ reviewEnabled: true });
     expect(keys).not.toContain('models');
     expect(keys).not.toContain('channels');
     expect(keys).not.toContain('secrets');
@@ -115,7 +107,7 @@ describe('projectSettingsSections', () => {
   });
 
   test('Repositories is not a section here — it merged into General', () => {
-    const keys = keysFor({ reviewEnabled: true, voiceEnabled: true });
+    const keys = keysFor({ reviewEnabled: true });
     expect(keys).not.toContain('repositories');
     expect(parseProjectSettingsSection('repositories')).toBeNull();
   });
@@ -141,14 +133,14 @@ describe('parseProjectSettingsSection', () => {
 describe('projectSettingsSectionHref', () => {
   test('the default section carries no query, so /config is a stable link', () => {
     expect(projectSettingsSectionHref('p1', DEFAULT_PROJECT_SETTINGS_SECTION)).toBe(
-      '/projects/p1/config',
+      '/projects/p1/customize/settings',
     );
   });
 
   test('every other section names itself in the query', () => {
-    expect(projectSettingsSectionHref('p1', 'sandbox')).toBe('/projects/p1/config?section=sandbox');
+    expect(projectSettingsSectionHref('p1', 'sandbox')).toBe('/projects/p1/customize/settings?section=sandbox');
     expect(projectSettingsSectionHref('p1', 'feature-flags')).toBe(
-      '/projects/p1/config?section=feature-flags',
+      '/projects/p1/customize/settings?section=feature-flags',
     );
   });
 
@@ -157,61 +149,12 @@ describe('projectSettingsSectionHref', () => {
   });
 });
 
-/**
- * The bookmark contract. Every retired `/settings/<tab>` URL has to land on
- * the section that replaced it — without this map the deep-link route falls
- * back to the bare overlay and every old link silently stops working.
- */
-describe('every section is reachable from its retired settings-tab URL', () => {
-  test('legacySectionRedirect points each one at this page', () => {
-    for (const section of ALL_PROJECT_SETTINGS_SECTIONS) {
-      expect(legacySectionRedirect('p1', section.key)).toBe(
-        projectSettingsSectionHref('p1', section.key),
-      );
-    }
-  });
-
-  test('the one renamed id redirects under its old name too', () => {
-    expect(legacySectionRedirect('p1', 'experimental')).toBe(
-      projectSettingsSectionHref('p1', 'feature-flags'),
-    );
-  });
-
-  test('snapshots redirects into the merged sandbox section', () => {
-    expect(legacySectionRedirect('p1', 'snapshots')).toBe(
-      projectSettingsSectionHref('p1', 'sandbox'),
-    );
-  });
-
-  test('secrets, channels, and models redirect OFF this page, to their own top-level tab', () => {
-    expect(legacySectionRedirect('p1', 'secrets')).toBe('/projects/p1/secrets');
-    // Channels came back down off its own tab and into the Connectors page.
-    expect(legacySectionRedirect('p1', 'channels')).toBe(
-      '/projects/p1/connectors?scope=channels',
-    );
-    expect(legacySectionRedirect('p1', 'models')).toBe('/projects/p1/models');
-    expect(legacySectionRedirect('p1', 'llm-providers')).toBe('/projects/p1/models');
-  });
-
-  test('members redirects OFF the project entirely, to the account hub Access tab, scoped to the project', () => {
-    // Members graduated a second time (off this page) and then a third (off
-    // the project): it is account-scoped now, so it needs an account id —
-    // with none, the redirect returns null rather than guessing.
-    expect(legacySectionRedirect('p1', 'members')).toBeNull();
-    expect(legacySectionRedirect('p1', 'members', 'acc1')).toBe(
-      '/accounts/acc1?tab=access-projects&project=p1',
-    );
-  });
-
-  test('repositories and its pre-rename id git redirect to General, where the content lives now', () => {
-    expect(legacySectionRedirect('p1', 'repositories')).toBe('/projects/p1/config');
-    expect(legacySectionRedirect('p1', 'git')).toBe('/projects/p1/config');
-  });
-
-  test('marketplace redirects to the Customize index, not a pane that no longer exists', () => {
-    expect(legacySectionRedirect('p1', 'marketplace')).toBe('/projects/p1/customize');
-  });
-});
+// The retired `/settings/<tab>` URLs redirect to the Settings OVERLAY's
+// Workspace group since 2026-09-02 (`settings-tabs.ts`), not to this page —
+// both hold the same sections, and the overlay is the one a keyboard reaches.
+// This page came back on 2026-09-03 as the Customize bar's Settings tab; the
+// redirect target is a separate decision and is pinned in settings-tabs'
+// own tests.
 
 /**
  * The sub-nav is ONE flat list. It used to fold these rows into three rail
@@ -230,7 +173,9 @@ describe('the sub-nav is flat', () => {
   });
 
   test('the list order IS the rail order — one pass, nothing re-sorted', () => {
-    expect(projectSettingsSections({ reviewEnabled: true, voiceEnabled: true }).map((s) => s.key))
-      .toEqual(['general', 'sandbox', 'review', 'voice', 'feature-flags', 'upgrades']);
+    expect(projectSettingsSections({ reviewEnabled: true }).map((s) => s.key)).toEqual(['general', 'git', 'sandbox',
+      'feature-flags',
+      'upgrades',
+    ]);
   });
 });

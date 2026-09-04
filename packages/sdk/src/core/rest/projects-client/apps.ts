@@ -76,12 +76,21 @@ export interface UpdateAppInput {
   monthly_budget_usd?: number;
 }
 
+/**
+ * What the Apps gate tells a Kortix-hosted App about the person looking at it.
+ * `identity` (the default) signs the viewer's id, email and groups into every
+ * request; `api` adds a token that acts AS the viewer on the Kortix API;
+ * `off` shares nothing. See `kortixAppViewerToken` / `readAppViewer`.
+ */
+export type AppViewerTokenScope = 'off' | 'identity' | 'api';
+
 export interface AppAccessConfig {
   mode: AppAccessMode;
   revision: number;
   member_ids: string[];
   group_ids: string[];
   password_configured: boolean;
+  viewer_token_scope: AppViewerTokenScope;
 }
 
 export interface UpdateAppAccessInput {
@@ -89,6 +98,7 @@ export interface UpdateAppAccessInput {
   member_ids?: string[];
   group_ids?: string[];
   password?: string;
+  viewer_token_scope?: AppViewerTokenScope;
 }
 
 export interface AppAccessSession {

@@ -21,7 +21,6 @@ import { buildOpencodeApp } from '../proxy'
 import { createProjectEnvStore, mergeProjectEnv } from '../project-env'
 import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import {
-  __clearCloneTokenCacheForTests,
   __clearRepoIdentityMemoForTests,
   __setScaffoldRepoPathForTests,
   buildGitAuthArgs,
@@ -59,6 +58,7 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
+    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -173,32 +173,18 @@ function createDetachedWarmCheckout(prefix: string): {
 
 describe('daemon proxy auth gate', () => {
   beforeEach(() => {
-    // Process-global caches reset between tests so each one observes its
-    // own fetch call count + git-config side effects.
-    __clearCloneTokenCacheForTests()
+    // Process-global state resets between tests so each one observes its own
+    // git-config side effects.
     __clearRepoIdentityMemoForTests()
     __setScaffoldRepoPathForTests()
     rmSync(TEST_AGENT_ENV_FILE, { force: true })
   })
 
-  it('uses KORTIX_SANDBOX_TOKEN as the canonical sandbox auth token', () => {
-    const cfg = loadConfig({
-      KORTIX_SANDBOX_TOKEN: TEST_TOKEN,
-      KORTIX_TOKEN: 'legacy-alias-that-must-not-win',
-      KORTIX_CLI_TOKEN: 'legacy-project-pat-that-must-not-shadow',
-    } as NodeJS.ProcessEnv)
+  it('uses KORTIX_TOKEN as the session auth token', () => {
+    const cfg = loadConfig({ KORTIX_TOKEN: TEST_TOKEN } as NodeJS.ProcessEnv)
 
     expect(cfg.sandboxToken).toBe(TEST_TOKEN)
     expect('apiToken' in cfg).toBe(false)
-  })
-
-  it('falls back to the legacy KORTIX_TOKEN sandbox auth alias', () => {
-    const cfg = loadConfig({
-      KORTIX_TOKEN: TEST_TOKEN,
-      KORTIX_CLI_TOKEN: 'project-pat-that-must-not-shadow',
-    } as NodeJS.ProcessEnv)
-
-    expect(cfg.sandboxToken).toBe(TEST_TOKEN)
   })
 
   it('parses the one-time replacement branch restore signal', () => {
@@ -206,18 +192,12 @@ describe('daemon proxy auth gate', () => {
     expect(loadConfig({}).sessionBranchRestore).toBe(false)
   })
 
-  it('scopes git auth headers to the project repo host', () => {
+  it('builds auth headers only for the Kortix Git proxy', () => {
     const encoded = Buffer.from('x-access-token:secret-token').toString('base64')
 
     expect(buildGitAuthArgs(undefined, undefined)).toEqual([])
-    expect(buildGitAuthArgs('https://git.example.test/repo-id', 'secret-token')).toEqual([
-      '-c',
-      `http.https://git.example.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
-    ])
-    expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([
-      '-c',
-      `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`,
-    ])
+    expect(buildGitAuthArgs('https://git.example.test/repo-id', 'secret-token')).toEqual([])
+    expect(buildGitAuthArgs('https://github.com/kortix/suna.git', 'secret-token')).toEqual([])
     expect(buildGitAuthArgs('https://api.kortix.test/v1/git/project-123.git', 'secret-token')).toEqual([
       '-c',
       `http.https://api.kortix.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
@@ -226,20 +206,7 @@ describe('daemon proxy auth gate', () => {
     ])
   })
 
-  it('uses the provider-selected username for direct-upstream auth', () => {
-    const encoded = Buffer.from('t:code-storage-jwt').toString('base64')
-
-    expect(buildGitAuthArgs(
-      'https://kortix.code.storage/project-123.git',
-      'code-storage-jwt',
-      't',
-    )).toEqual([
-      '-c',
-      `http.https://kortix.code.storage/.extraheader=AUTHORIZATION: basic ${encoded}`,
-    ])
-  })
-
-  it('fetches clone credentials from the API v1 project endpoint', async () => {
+  it('does not fetch a provider credential for a local repository fixture', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-clone-credential-'))
     const originalFetch = globalThis.fetch
     const requests: Array<{ url: string; init?: RequestInit }> = []
@@ -275,16 +242,9 @@ describe('daemon proxy auth gate', () => {
         defaultBranch: 'main',
       }))
 
-      // Filter to the clone-credential endpoint — other fetches (env loads,
-      // health probes from supervisors that may have been spawned in earlier
-      // tests in the same process) are unrelated noise.
+      // Local repository fixtures need no network credential.
       const credRequests = requests.filter((r) => r.url.includes('/git/clone-credential'))
-      expect(credRequests).toHaveLength(1)
-      expect(credRequests[0]!.url).toBe('http://api.local/v1/projects/project-123/git/clone-credential')
-      // Assert auth on the credential request itself — not requests[0], which
-      // can be unrelated background-fetch noise (health probes from a daemon
-      // supervisor booted by another test in the same process).
-      expect((credRequests[0]!.init?.headers as Record<string, string>).Authorization).toBe(`Bearer ${TEST_TOKEN}`)
+      expect(credRequests).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('v1\n')
       expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
       expect(gitOutput(['-C', target, 'config', 'user.email'])).toBe('agent@kortix.ai')
@@ -696,7 +656,7 @@ describe('daemon proxy auth gate', () => {
         'session-existing',
       )
       const credentialRequests = requests.filter((url) => url.includes('/git/clone-credential'))
-      expect(credentialRequests).toHaveLength(1)
+      expect(credentialRequests).toHaveLength(0)
 
       writeFileSync(join(target, 'dirty-after-restore.txt'), 'keep after daemon restart\n')
       await materializeRepo(cfg)
@@ -705,7 +665,7 @@ describe('daemon proxy auth gate', () => {
       expect(readFileSync(join(target, 'dirty-after-restore.txt'), 'utf8')).toBe(
         'keep after daemon restart\n',
       )
-      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
     } finally {
       globalThis.fetch = originalFetch
       rmSync(root, { recursive: true, force: true })
@@ -865,7 +825,7 @@ describe('daemon proxy auth gate', () => {
         baseSha: undefined,
       }))
 
-      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('imported repository\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(importedSha)
     } finally {
@@ -998,7 +958,7 @@ describe('daemon proxy auth gate', () => {
         gitDeltaParentCommitBase64: Buffer.from('forged parent commit').toString('base64'),
       }))
 
-      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(1)
+      expect(requests.filter((url) => url.includes('/git/clone-credential'))).toHaveLength(0)
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('remote truth\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
     } finally {
@@ -1023,9 +983,42 @@ describe('daemon proxy auth gate', () => {
     const app = buildOpencodeApp(baseConfig(), fakeOpencode(), Date.now())
     const res = await app.request('/kortix/health')
     expect(res.status).toBe(200)
-    const body = (await res.json()) as { daemon: string; auth: string }
+    const body = (await res.json()) as {
+      daemon: string
+      auth: string
+      compiled_boot_mode: string
+      compiled_checkout: boolean
+      compiled_runtime: boolean
+    }
     expect(body.daemon).toBe('ok')
     expect(body.auth).toBe('configured')
+    expect(body.compiled_boot_mode).toBe('off')
+    expect(body.compiled_checkout).toBe(false)
+    expect(body.compiled_runtime).toBe(false)
+  })
+
+  it('reports when the workspace came from a compiled checkout', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-compiled-health-'))
+    try {
+      const target = join(root, 'workspace')
+      git(['init', '-b', 'main', target])
+      writeFileSync(join(target, '.git', 'kortix-compiled-checkout.json'), '{}')
+      const app = buildOpencodeApp(
+        baseConfig({ projectTarget: target, compiledBootMode: 'prefer' }),
+        fakeOpencode(),
+        Date.now(),
+      )
+
+      const res = await app.request('/kortix/health')
+      const body = (await res.json()) as {
+        compiled_boot_mode: string
+        compiled_checkout: boolean
+      }
+      expect(body.compiled_boot_mode).toBe('prefer')
+      expect(body.compiled_checkout).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('reports auth=unconfigured when the sandbox token is unset', async () => {
@@ -1068,6 +1061,44 @@ describe('daemon proxy auth gate', () => {
       const body = (await res.json()) as { error: string; reason: string }
       expect(body.error).toBe('sandbox runtime not ready')
       expect(body.reason).toBe('repo_materialization_failed')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('names the boot phase on every not-ready answer so the API can measure progress', async () => {
+    // Essentia 2026-08-25 17:23: a resume that converged OpenCode 1.18.19 →
+    // 1.18.23 and sat through the new version's 53 s first init was parked as
+    // runtime_boot_failed by a fixed 90 s budget. The header lets the API
+    // restart its clock on progress instead.
+    const root = mkdtempSync(join(tmpdir(), 'kortix-boot-phase-'))
+    try {
+      const target = join(root, 'workspace')
+      mkdirSync(target)
+      const timeline: { label: string; atMs: number }[] = [{ label: 'config-deps', atMs: 1 }]
+      const app = buildOpencodeApp(
+        baseConfig({ autoClone: false, projectTarget: target }),
+        fakeOpencode('starting'),
+        Date.now(),
+        { repoMaterializationError: null, timeline },
+      )
+      const signed = signCtx({ userId: 'u', sandboxId: 's', sandboxRole: 'owner' }, TEST_TOKEN)
+      const first = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(first.status).toBe(503)
+      const firstPhase = first.headers.get('x-kortix-boot-phase') ?? ''
+      expect(firstPhase).not.toBe('')
+      expect(firstPhase).toContain('config-deps')
+      expect(firstPhase).toContain('opencode=starting')
+      expect(((await first.json()) as { phase: string }).phase).toBe(firstPhase)
+
+      timeline.push({ label: 'opencode-spawned', atMs: 2 })
+      const second = await app.request('/session?directory=%2Fworkspace', {
+        headers: { [KORTIX_USER_CONTEXT_HEADER]: signed },
+      })
+      expect(second.status).toBe(503)
+      expect(second.headers.get('x-kortix-boot-phase')).not.toBe(firstPhase)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -1526,9 +1557,9 @@ describe('daemon proxy auth gate', () => {
 
   it('restarts opencode for model-affecting env sync and applies gateway runtime env', async () => {
     let restartCalls = 0
-    const previousLlmKey = process.env.KORTIX_LLM_API_KEY
+    const previousLlmKey = process.env.KORTIX_TOKEN
     const previousLlmBase = process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_LLM_API_KEY
+    delete process.env.KORTIX_TOKEN
     delete process.env.KORTIX_LLM_BASE_URL
 
     const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
@@ -1555,10 +1586,7 @@ describe('daemon proxy auth gate', () => {
           env: {},
           names: [],
           refreshModels: true,
-          opencodeEnv: {
-            KORTIX_LLM_API_KEY: 'kortix_pat_refresh',
-            KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm',
-          },
+          opencodeEnv: { KORTIX_LLM_BASE_URL: 'https://api.kortix.test/v1/llm' },
         }),
       })
 
@@ -1566,9 +1594,8 @@ describe('daemon proxy auth gate', () => {
       expect(await enable.json()).toMatchObject({
         ok: true,
         opencode_env_changed: true,
-        opencode_env_names: ['KORTIX_LLM_API_KEY', 'KORTIX_LLM_BASE_URL'],
+        opencode_env_names: ['KORTIX_LLM_BASE_URL'],
       })
-      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_refresh')
       expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
       expect(restartCalls).toBe(1)
 
@@ -1583,10 +1610,7 @@ describe('daemon proxy auth gate', () => {
           env: {},
           names: [],
           refreshModels: true,
-          opencodeEnv: {
-            KORTIX_LLM_API_KEY: null,
-            KORTIX_LLM_BASE_URL: null,
-          },
+          opencodeEnv: { KORTIX_LLM_BASE_URL: null },
         }),
       })
 
@@ -1594,14 +1618,13 @@ describe('daemon proxy auth gate', () => {
       expect(await disable.json()).toMatchObject({
         ok: true,
         opencode_env_changed: true,
-        opencode_env_names: ['KORTIX_LLM_API_KEY', 'KORTIX_LLM_BASE_URL'],
+        opencode_env_names: ['KORTIX_LLM_BASE_URL'],
       })
-      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
       expect(process.env.KORTIX_LLM_BASE_URL).toBeUndefined()
       expect(restartCalls).toBe(2)
     } finally {
-      if (previousLlmKey === undefined) delete process.env.KORTIX_LLM_API_KEY
-      else process.env.KORTIX_LLM_API_KEY = previousLlmKey
+      if (previousLlmKey === undefined) delete process.env.KORTIX_TOKEN
+      else process.env.KORTIX_TOKEN = previousLlmKey
       if (previousLlmBase === undefined) delete process.env.KORTIX_LLM_BASE_URL
       else process.env.KORTIX_LLM_BASE_URL = previousLlmBase
     }
@@ -1661,78 +1684,6 @@ describe('daemon proxy auth gate', () => {
     } finally {
       if (previous === undefined) delete process.env.KORTIX_CONNECTORS_MCP_ENABLED
       else process.env.KORTIX_CONNECTORS_MCP_ENABLED = previous
-    }
-  })
-
-  it('flips the provider-key deny-list with llm gateway mode (BYOK works when off)', async () => {
-    const saved = {
-      key: process.env.KORTIX_LLM_API_KEY,
-      base: process.env.KORTIX_LLM_BASE_URL,
-      deny: process.env.KORTIX_OPENCODE_DENY_ENV,
-      exec: process.env.KORTIX_CLI_TOKEN,
-    }
-    delete process.env.KORTIX_LLM_API_KEY
-    delete process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_OPENCODE_DENY_ENV
-    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_exec'
-
-    const store = createProjectEnvStore({} as NodeJS.ProcessEnv)
-    const app = buildOpencodeApp(
-      baseConfig(),
-      fakeOpencode('ok', { restart: () => {} }),
-      Date.now(),
-      { repoMaterializationError: null, timeline: [] },
-      store,
-      null,
-      undefined,
-      TEST_AGENT_ENV_FILE,
-    )
-
-    try {
-      // GATEWAY on: keys withheld from opencode via the injected deny-list.
-      const on = await app.request('/kortix/env', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          revision: 'rev-on',
-          env: {},
-          names: [],
-          refreshModels: true,
-          llmGatewayEnabled: true,
-          llmGatewayBaseUrl: 'https://api.kortix.test/v1/llm',
-          llmGatewayDenyEnv: 'ANTHROPIC_API_KEY,OPENAI_API_KEY',
-        }),
-      })
-      expect(on.status).toBe(200)
-      expect(process.env.KORTIX_LLM_API_KEY as string | undefined).toBe('kortix_pat_exec')
-      expect(process.env.KORTIX_OPENCODE_DENY_ENV as string | undefined).toBe('ANTHROPIC_API_KEY,OPENAI_API_KEY')
-
-      // DIRECT off: deny-list cleared so opencode sees native BYOK keys again.
-      const off = await app.request('/kortix/env', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${TEST_TOKEN}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          revision: 'rev-off',
-          env: {},
-          names: [],
-          refreshModels: true,
-          llmGatewayEnabled: false,
-          llmGatewayDenyEnv: '',
-        }),
-      })
-      expect(off.status).toBe(200)
-      expect(process.env.KORTIX_LLM_API_KEY).toBeUndefined()
-      expect(process.env.KORTIX_OPENCODE_DENY_ENV).toBeUndefined()
-    } finally {
-      for (const [k, v] of Object.entries({
-        KORTIX_LLM_API_KEY: saved.key,
-        KORTIX_LLM_BASE_URL: saved.base,
-        KORTIX_OPENCODE_DENY_ENV: saved.deny,
-        KORTIX_CLI_TOKEN: saved.exec,
-      })) {
-        if (v === undefined) delete process.env[k]
-        else process.env[k] = v
-      }
     }
   })
 

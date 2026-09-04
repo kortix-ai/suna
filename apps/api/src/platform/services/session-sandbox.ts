@@ -14,11 +14,12 @@
 
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { PI_WORKER_SANDBOX_SLUG } from '@kortix/shared';
 import { isMetaAgentName, META_SANDBOX_SLUG } from '@kortix/shared';
 import { db } from '../../shared/db';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
+import { nextFailoverProvider } from '../../projects/lib/provider-precedence';
 import { notifySessionProvisioningFailed } from '../../shared/session-failure-notifier';
-import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { ensureAgentServiceAccount } from '../../repositories/service-accounts';
 import {
@@ -47,8 +48,8 @@ import {
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
-import { deleteProjectSandboxImage } from '../../snapshots/project-image-delete';
 import { config } from '../../config';
+import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
 import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
@@ -62,6 +63,7 @@ import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import { RuntimeIdentityConflictError } from '../../projects/runtime-identity-error';
 import { grantWarmPoolLifetime } from '../../projects/sandbox-deadline';
+import { instanceStampMetadata } from '../../projects/instance-scope';
 import { withTimeout, configuredTimeoutMs } from '../../shared/with-timeout';
 import { classifySandboxProvisioningFailure } from './sandbox-provisioning-error';
 import { platformMetaAgentGrant } from '../../projects/lib/platform-meta-agent';
@@ -133,20 +135,19 @@ function isSnapshotMissingOnProvider(error: unknown): boolean {
 
 /**
  * Resolve the agent's grant from the manifest's `[[agents]]` overlay, then mint
- * the per-session connector/CLI account token carrying it. Best-effort: a manifest
- * hiccup yields a null grant (full access, capped at the user by the route's own
- * role check) and a mint failure yields null — neither bricks a session. The
- * grant is read from the default branch, so any `[[agents]]` change activates
- * only via a merged CR.
+ * the per-session account token carrying it. Grant resolution is fail-closed:
+ * an unreadable manifest stops provisioning instead of minting an unrestricted
+ * credential. The grant is read from the default branch, so any `[[agents]]`
+ * change activates only through a merged change request.
  */
-async function mintConnectorToken(opts: {
+export async function mintSessionToken(opts: {
   accountId: string;
   userId: string;
   projectId: string;
   sandboxId: string;
   agentName: string;
   gitProject: GitBackedProject;
-}): Promise<string | null> {
+}): Promise<string> {
   const platformMetaAgent = isMetaAgentName(opts.agentName);
   // The reserved coordinator uses a platform-owned full project grant. It acts
   // as the launching user and never resolves through a project-declared agent
@@ -155,16 +156,11 @@ async function mintConnectorToken(opts: {
     ? [platformMetaAgentGrant(), null]
     : await Promise.all([
         // Resolve the per-session grant AND the agent's standing-identity
-        // service account in parallel. The SA resolution is FAIL-SAFE: on error
+        // service account in parallel. Grant resolution must throw on failure.
+        // The SA resolution is FAIL-SAFE: on error
         // we mint without a service_account_id, which is the legacy behavior
         // (authorize as the user ∩ grant). It never widens authority.
-        resolveAgentGrant(opts.agentName, opts.gitProject).catch((err) => {
-          console.warn(
-            `[session-sandbox] failed to resolve agent grant for ${opts.projectId}:`,
-            err,
-          );
-          return null;
-        }),
+        resolveAgentGrant(opts.agentName, opts.gitProject),
         ensureAgentServiceAccount({
           accountId: opts.accountId,
           projectId: opts.projectId,
@@ -177,23 +173,19 @@ async function mintConnectorToken(opts: {
           return null;
         }),
       ]);
-  try {
-    const tok = await createAccountToken({
-      accountId: opts.accountId,
-      userId: opts.userId,
-      projectId: opts.projectId,
-      // session_id == sandbox_id by construction — lets the LLM gateway attribute
-      // usage_events to this session (the reaper's reliable activity signal).
-      sessionId: opts.sandboxId,
-      name: `Connector Session ${opts.sandboxId.slice(0, 8)}`,
-      agentGrant,
-      serviceAccountId,
-    });
-    return tok.secretKey;
-  } catch (err) {
-    console.warn(`[session-sandbox] failed to mint connector token for ${opts.projectId}:`, err);
-    return null;
-  }
+  const tok = await createAccountToken({
+    accountId: opts.accountId,
+    userId: opts.userId,
+    projectId: opts.projectId,
+    // session_id == sandbox_id by construction. This is the sandbox's one
+    // Kortix credential. Every API surface derives its narrower authority from
+    // these claims and the route's own authorization gate.
+    sessionId: opts.sandboxId,
+    name: `Session ${opts.sandboxId.slice(0, 8)}`,
+    agentGrant,
+    serviceAccountId,
+  });
+  return tok.secretKey;
 }
 
 /**
@@ -239,7 +231,6 @@ export function decideSessionBoot(input: {
   providerName: string;
   providerSupportsIdBoot: boolean;
   imageIsDefault?: boolean;
-  imageIsProjectImage?: boolean;
   imageSnapshotName?: string;
   disabledForSession?: boolean;
 }): { bootByTemplateId: string | null } {
@@ -305,6 +296,14 @@ export async function provisionSessionSandbox(opts: {
    *  'default' when omitted (legacy callers). */
   agentName?: string;
   provider?: ProviderName;
+  /**
+   * Is `provider` a HARD requirement (explicit request, project pin, or an
+   * existing box restarting on its own runtime) or merely the weighted
+   * balancer's pick? Omitted ⇒ locked whenever `provider` is set, which keeps
+   * every legacy caller's behavior unchanged. Callers that pass the BALANCER's
+   * choice must pass `false`, or one-shot failover can never run for them.
+   */
+  providerLocked?: boolean;
   serverType?: string;
   location?: string;
   metadata?: Record<string, unknown>;
@@ -344,7 +343,7 @@ export async function provisionSessionSandbox(opts: {
   beforeActive?: (externalId: string) => Promise<void>;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
-  const providerWasExplicitlySelected = opts.provider !== undefined;
+  const providerWasExplicitlySelected = opts.providerLocked ?? opts.provider !== undefined;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
@@ -368,7 +367,26 @@ export async function provisionSessionSandbox(opts: {
   ): Promise<EnsureSandboxImageResult> =>
     slug === META_SANDBOX_SLUG
       ? ensureMetaSandboxImage({ source: 'session-start', provider: targetProvider })
-      : ensureSandboxImage(gitProject, {
+      : slug === PI_WORKER_SANDBOX_SLUG
+        ? // The pi worker is a shared content-hashed image like meta — never a
+          // project template. Its harness arrives at boot as the compiled
+          // artifact (KORTIX_PI_RUNTIME_REF/SHA in extraEnvVars).
+          //
+          // Imported lazily, and ONLY this name. `mock.module` replaces a
+          // module wholesale, so every suite that stubs `snapshots/builder` by
+          // listing its exports drops the ones it did not name. Adding
+          // `ensurePiWorkerImage` to the static import above made all eleven of
+          // those suites die at import with `SyntaxError: Export named
+          // 'ensurePiWorkerImage' not found` — attributed to no test, and it
+          // takes an unrelated parallel worker down with it. The register's
+          // rule is "fix the import, not the mocks"
+          // (.claude/skills/learnings/SKILL.md:39). This edge is reached once,
+          // on the pi-worker branch only, so deferring it costs nothing and
+          // needs no test churn.
+          import('../../snapshots/builder').then(({ ensurePiWorkerImage }) =>
+            ensurePiWorkerImage({ source: 'session-start', provider: targetProvider }),
+          )
+        : ensureSandboxImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
@@ -417,6 +435,9 @@ export async function provisionSessionSandbox(opts: {
         config: {},
         metadata: {
           ...(opts.metadata ?? {}),
+          // Instance scope for background work on a shared DB — see
+          // projects/instance-scope.ts. `{}` when KORTIX_INSTANCE_ID is unset.
+          ...instanceStampMetadata(),
           ...(opts.initialTurn
             ? {
                 activeTurns: {
@@ -449,7 +470,7 @@ export async function provisionSessionSandbox(opts: {
         // out. Consume their authorization marker atomically so at most one
         // allocator can claim the row and call provider.create(). New code never
         // creates this marker because established identities are fail-closed.
-        metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt'`,
+        metadata: sql`(coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) - 'identityRecoveryAuthorizedAt') || ${JSON.stringify(instanceStampMetadata())}::jsonb`,
         updatedAt: new Date(),
       })
       .where(
@@ -463,17 +484,12 @@ export async function provisionSessionSandbox(opts: {
       .returning();
   };
 
-  const [sandboxRows, sandboxKey, connectorToken, gatewayEntitled] = await Promise.all([
+  const [sandboxRows, sessionToken, gatewayEntitled] = await Promise.all([
     createOrClaimSandboxRow(),
-    createApiKey({
-      sandboxId,
-      accountId,
-      title: 'Sandbox Token',
-      type: 'sandbox',
-    }),
-    // Resolve the per-agent grant from kortix.yaml's `agents:` overlay and mint
-    // the connector/CLI account token carrying it (best-effort — see helper).
-    mintConnectorToken({
+    // Resolve the per-agent grant and mint the sole sandbox credential. Token
+    // minting is fail-closed: a sandbox without its session identity cannot
+    // securely reach any Kortix service.
+    mintSessionToken({
       accountId,
       userId,
       projectId,
@@ -521,8 +537,7 @@ export async function provisionSessionSandbox(opts: {
   // accountEntitledToLlmGateway gates on the resolved TIER, not billing_model,
   // so legacy paying customers are no longer wrongly stripped to the Zen-only
   // catalog. Per-request affordability stays in the gateway's own billing gate.
-  const gatewayLlmKey: string | null =
-    llmGatewayEnabled && gatewayEntitled ? connectorToken : null;
+  const gatewayEnabled = llmGatewayEnabled && gatewayEntitled;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -537,31 +552,11 @@ export async function provisionSessionSandbox(opts: {
     location,
     envVars: {
       ...(opts.extraEnvVars ?? {}),
-      // ── Sandbox token model — TWO credentials, two principals ──────────────
-      // 1) The SANDBOX credential (`kortix_sb_…`): the daemon's identity. It is
-      //    the HMAC key the API signs `X-Kortix-User-Context` with (the daemon
-      //    verifies it) AND the bearer for the 3 sandbox-identity routes
-      //    (/git/clone-credential, /turn-stream, /turn-question). It carries NO
-      //    user identity, so project-scoped routes reject it. Injected under the
-      //    self-documenting `KORTIX_SANDBOX_TOKEN`; `KORTIX_TOKEN` is kept as a
-      //    back-compat alias for daemons baked before the rename.
-      // 2) The SESSION credential (`kortix_pat_…`, `connectorToken`): acts AS the
-      //    launching user, scoped by the agent grant. It backs the Connector
-      //    gateway AND the in-sandbox `kortix` CLI. Injected under
-      //    `KORTIX_CLI_TOKEN`.
-      // The agent never needs the sandbox credential — see apps/cli config.ts
-      // (activeHost() resolves only the session token).
-      KORTIX_SANDBOX_TOKEN: sandboxKey.secretKey,
-      KORTIX_TOKEN: sandboxKey.secretKey,
-      ...(connectorToken
-        ? { KORTIX_CLI_TOKEN: connectorToken }
-        : {}),
-      ...(gatewayLlmKey
-        ? {
-            KORTIX_LLM_API_KEY: gatewayLlmKey,
-            KORTIX_LLM_BASE_URL: llmBaseUrl,
-          }
-        : {}),
+      // One sandbox, one session-scoped Kortix credential. Provider, connector,
+      // executor and Git credentials stay server-side. The route being called
+      // determines what this token may do.
+      KORTIX_TOKEN: sessionToken,
+      ...(gatewayEnabled ? { KORTIX_LLM_BASE_URL: llmBaseUrl } : {}),
     },
     // Idle lifecycle: we pass NO explicit autoStopInterval for a normal session,
     // so each provider gets its native idle timer set from
@@ -591,8 +586,7 @@ export async function provisionSessionSandbox(opts: {
       slug: string;
       contentHash: string;
       isDefault: boolean;
-      runtimeProfile?: 'standard' | 'fast' | 'meta';
-      isProjectImage?: boolean;
+      runtimeProfile?: 'standard' | 'fast' | 'meta' | 'pi-worker';
     } | null = null;
     // FIX-A: the project's ACTIVATED routing pin (provider + exact template id
     // and image name), read once, best-effort — a DB hiccup yields null → name-boot. Set
@@ -652,7 +646,6 @@ export async function provisionSessionSandbox(opts: {
         contentHash: image.contentHash,
         isDefault: image.isDefault,
         runtimeProfile: image.runtimeProfile,
-        isProjectImage: image.isProjectImage,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
       providerCreateInput.snapshot = image.snapshotName;
@@ -675,13 +668,8 @@ export async function provisionSessionSandbox(opts: {
         // profile has its own content-addressed name and must never boot that
         // standard pin by mistake.
         imageIsDefault: image.isDefault && image.runtimeProfile !== 'fast',
-        imageIsProjectImage: image.isProjectImage,
         imageSnapshotName: image.snapshotName,
-        disabledForSession:
-          idBootDisabled ||
-          opts.allowProjectImage === false ||
-          (config.KORTIX_FAST_COLD_BOOT_CONFIGURED &&
-            !config.KORTIX_FAST_COLD_BOOT_ENABLED),
+        disabledForSession: idBootDisabled || opts.allowProjectImage === false,
       });
       if (bootDecision.bootByTemplateId) {
         console.log(
@@ -697,6 +685,34 @@ export async function provisionSessionSandbox(opts: {
       // §4). The guest holds a handle; the broker route substitutes server-side.
       let result: ProvisionResult;
       let attempts: number;
+      // P1.8 (harness/worker split): a pi worker boot tries the parked pool
+      // first. The claim delivers the exact env the create would have
+      // (session token + gateway URL included), so the box boots the same
+      // session either way; null falls through to the cold create unchanged.
+      const pooledClaim =
+        opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
+          ? await claimParkedPiWorkerBox(providerCreateInput.envVars ?? {}).catch((err) => {
+              console.warn(
+                `[session-sandbox] pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
+                err,
+              );
+              return null;
+            })
+          : null;
+      if (pooledClaim) {
+        result = {
+          externalId: pooledClaim.externalId,
+          baseUrl: pooledClaim.baseUrl,
+          metadata: {
+            provisionedBy: opts.userId,
+            daytonaSandboxId: pooledClaim.externalId,
+            snapshot: imageInfo!.snapshotName,
+            pooled: true,
+          },
+        };
+        attempts = 0;
+        tl.mark('pool-claim');
+      } else {
       try {
       ({ result, attempts } = await retrySandboxProvisionCreate(provider, providerCreateInput, {
         onAttemptStart: async (attempt, maxAttempts) => {
@@ -765,6 +781,12 @@ export async function provisionSessionSandbox(opts: {
           continue provisioning;
         }
         throw createErr;
+      }
+      }
+      // Refill toward target after every pi boot — a consumed claim leaves a
+      // hole, and a claim miss means the pool is empty. Fire-and-forget.
+      if (opts.metadata?.pi_worker_boot === true && providerName === 'daytona') {
+        void maintainPiWorkerPool();
       }
       bgExternalId = result.externalId;
       tl.mark(`provider-create:${attempts}x`);
@@ -913,7 +935,7 @@ export async function provisionSessionSandbox(opts: {
           attempts,
           lastProvisionMaxAttempts,
         ),
-        config: { serviceKey: sandboxKey.secretKey, llmGatewayEnabled: !!gatewayLlmKey },
+        config: { serviceKey: sessionToken, llmGatewayEnabled: gatewayEnabled },
         lastUsedAt: new Date(),
         updatedAt: new Date(),
       };
@@ -1013,10 +1035,10 @@ export async function provisionSessionSandbox(opts: {
       // and retry once. Capped at one heal per session start.
       if (isSnapshotMissingOnProvider(bgErr) && imageInfo && !healedStaleSnapshot) {
         healedStaleSnapshot = true;
-        const imageDelete = imageInfo.isProjectImage
-          ? deleteProjectSandboxImage(imageInfo.snapshotName, providerName)
-          : deleteSandboxImage(opts.gitProject, { slug: imageInfo.slug, provider: providerName });
-        await imageDelete.catch((err) =>
+        await deleteSandboxImage(opts.gitProject, {
+          slug: imageInfo.slug,
+          provider: providerName,
+        }).catch((err: unknown) =>
           console.warn(
             `[session-sandbox] force-rebuild failed for ${imageInfo!.snapshotName}:`,
             err,
@@ -1049,8 +1071,14 @@ export async function provisionSessionSandbox(opts: {
       // only — a running box is never migrated here. The new provider re-resolves
       // its own image (the snapshot is provider-specific), so we clear all image
       // state and re-enter the loop.
-      if (!providerWasExplicitlySelected && !fallbackAttempted && providerFallbackSetting().enabled) {
-        const next = config.ALLOWED_SANDBOX_PROVIDERS.find((p) => p !== providerName);
+      {
+        const next = nextFailoverProvider({
+          providerLocked: providerWasExplicitlySelected,
+          fallbackAttempted,
+          fallbackEnabled: providerFallbackSetting().enabled,
+          current: providerName,
+          allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+        }) as ProviderName | null;
         if (next) {
           fallbackAttempted = true;
           console.warn(

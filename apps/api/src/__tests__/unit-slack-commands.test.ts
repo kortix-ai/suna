@@ -48,6 +48,9 @@ let modelGate: unknown = {
   accountId: 'a1',
   ownerUserId: 'u1',
   freeManagedOnly: false,
+  // These cases exercise the GATEWAY picker/servability path; native mode
+  // (flag off) has its own cases.
+  llmGatewayEnabled: true,
 };
 mock.module('../channels/slack/model-gate', () => ({
   // The gate follows the binding: an unbound channel has no project.
@@ -68,9 +71,9 @@ mock.module('../llm-gateway/models/picker', () => ({
         managed: false,
         hint: 'Most capable',
       },
-      { id: 'kortix/glm-5.2', label: 'GLM 5.2', provider: 'kortix', managed: true, hint: null },
+      { id: 'kortix/glm-5.3-flash', label: 'GLM 5.3 Flash', provider: 'kortix', managed: true, hint: null },
     ],
-    projectDefault: { model: 'kortix/glm-5.2', source: 'project', label: 'GLM 5.2' },
+    projectDefault: { model: 'kortix/glm-5.3-flash', source: 'project', label: 'GLM 5.3 Flash' },
   }),
   labelForModelRef: (id: string) =>
     id === 'anthropic/claude-opus-4-8' ? 'Claude Opus 4.8' : id,
@@ -201,7 +204,7 @@ describe('/kortix model <id>', () => {
   });
   test('sets a valid id', async () => {
     const resp = await handleSlashCommand('model', 'anthropic/claude-opus-4-8', ctx);
-    expect(setModelCalls).toEqual(['anthropic/claude-opus-4-8']);
+    expect(setModelCalls).toEqual(['kortix/anthropic/claude-opus-4-8']);
     expect(resp.text).toContain('set to');
   });
   test('"default" clears the override', async () => {

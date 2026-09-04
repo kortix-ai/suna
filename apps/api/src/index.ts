@@ -3,48 +3,124 @@ import './environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
 import './lib/sentry';
-import { captureException, flushSentry, addBreadcrumb, isSentryIgnoredError } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
-import { emitOtelSpan } from './lib/otel';
 import {
-  recordHttpRequest,
-  incInFlight,
   decInFlight,
-  setEventLoopLagSeconds,
-  renderMetrics,
+  incInFlight,
   metricsEnabled,
+  recordHttpRequest,
+  renderMetrics,
+  setEventLoopLagSeconds,
 } from './lib/metrics';
+import { emitOtelSpan } from './lib/otel';
 import {
   getDiagnosticFields,
   getRequestContext,
   runWithContext,
   setContextField,
 } from './lib/request-context';
-import { getRequestUrl, ensureAbsoluteRequestUrl } from './lib/request-url';
+import { ensureAbsoluteRequestUrl, getRequestUrl } from './lib/request-url';
+import { addBreadcrumb, captureException, flushSentry, isSentryIgnoredError } from './lib/sentry';
 
 import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { mountOpenApiDocs, json, errors, auth } from './openapi';
-import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
-import { sendDemoRequestNotification } from './lib/demo-request-email';
+import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
-import { HTTPException } from 'hono/http-exception';
 import { config } from './config';
 import { BillingError } from './errors';
+import { sendDemoRequestNotification } from './lib/demo-request-email';
+import { auth, errors, json, mountOpenApiDocs } from './openapi';
+import { createDemoRequestRateLimitMiddleware } from './shared/rate-limit';
 
 // ─── Sub-Service Imports ────────────────────────────────────────────────────
 
-import { router } from './router';
-import { billingApp, accountDeletionApp } from './billing';
-import { platformApp } from './platform';
-import { sandboxProxyApp } from './sandbox-proxy';
-import { setupApp } from './setup';
-import { supabaseAuth, combinedAuth } from './middleware/auth';
+import { platformSettings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { accessControlApp } from './access-control';
+import { accountsRouter } from './accounts';
+import { accountInvitesRouter } from './accounts/invites';
+import { adminApp } from './admin';
+import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
+import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
+import {
+  startPiWorkerPoolMaintenance,
+  stopPiWorkerPoolMaintenance,
+} from './platform/services/pi-worker-pool';
+import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
+import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
+import { authRouter } from './auth';
+import { headlessAuthRouter } from './auth/headless';
+import { authEmailHookApp } from './auth/send-email-hook';
+import { accountDeletionApp, billingApp } from './billing';
+import {
+  emailWebhookApp,
+  slackIdentityApp,
+  slackOauthApp,
+  slackWebhookApp,
+  teamsIdentityApp,
+  teamsOauthApp,
+  teamsWebhookApp,
+  telegramWebhookApp,
+} from './channels';
+import { connectorApp } from './connectors';
+import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
+import { edgeApp } from './edge/tls-check';
+import { ensureSchema } from './ensure-schema';
+// STATIC, not `await import(...)`. See the note at the mount site: a top-level
+// await anywhere above the last `app.route(...)` leaves the route table, the
+// error handler and the 404 handler unregistered for any importer that observes
+// `app` before it settles.
+import { gitProxyApp } from './git-proxy';
+import { describeEmailChain } from './lib/email/transport';
+import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
+import { mountLlmGateway } from './llm-gateway/wire';
+import { marketplaceApp } from './marketplace';
+import { combinedAuth, supabaseAuth } from './middleware/auth';
 import { createCorsMiddleware } from './middleware/cors';
-import { requestDeadline, isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { compressResponse } from './middleware/compress';
+import { upstreamTiming } from './middleware/upstream-timing';
+import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
+import { oauthApp } from './oauth';
+import { oauthAuthorizationServerMetadata } from './oauth/discovery';
+import { opsApp } from './ops';
+import { platformApp } from './platform';
+import { sandboxWebhooksApp } from './platform/webhooks/routes';
+import {
+  getTriggerSchedulerHealth,
+  projectWebhooksApp,
+  projectsApp,
+  startProjectTriggerScheduler,
+  stopProjectTriggerScheduler,
+} from './projects';
+import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
+import { GitOperationError, isGitOperationError } from './projects/git/mirror';
+import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
+import {
+  startProviderTransitionWorker,
+  stopProviderTransitionWorker,
+} from './projects/provider-transition/provider-transition-worker';
+import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import {
+  startSunaMigrationWorker,
+  stopSunaMigrationWorker,
+} from './projects/suna-migration/suna-migration-worker';
+import { router } from './router';
+import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
+import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
+import { sandboxProxyApp } from './sandbox-proxy';
+import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
+import { previewBaseDomain, warnIfPreviewOriginsMissing } from './sandbox-proxy/preview-hosts';
+import { scimRouter } from './scim';
+import { setupApp } from './setup';
+import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
+import {
+  startAuditReconciliationWorker,
+  stopAuditReconciliationWorker,
+} from './shared/audit-reconciliation-worker';
+import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
 import { inspectDatabaseError } from './shared/database-errors';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import {
   isDaytonaRateLimitError,
   primeDaytonaRateLimitClassifier,
@@ -53,9 +129,6 @@ import {
   isDaytonaTransientProviderError,
   primeDaytonaTransientClassifier,
 } from './shared/daytona-transient';
-import { GitOperationError, isGitOperationError } from './projects/git/mirror';
-import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
-import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
 // Statically imported (NOT await import() in the handlers): on a long-running
 // `bun --hot` dev process, dynamic import() can wedge permanently after enough
 // hot reloads — the promise never settles, the handler hangs, and Bun's
@@ -63,90 +136,23 @@ import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
 // (maintenance banner, user-roles) must never sit behind a dynamic import.
 import { db, hasDatabase } from './shared/db';
 import { computeEtag, etagMatches } from './shared/http-cache';
-import { getPlatformRole } from './shared/platform-roles';
-import { platformSettings } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { ensureSchema } from './ensure-schema';
-import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
-import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
-import {
-  tunnelApp,
-  wsHandlers as tunnelWsHandlers,
-  startTunnelService,
-  stopTunnelService,
-} from './tunnel';
-import { voiceMcpRoutes } from './channels/voice/routes';
-import { accessControlApp } from './access-control';
-import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
-import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
   isLeader,
+  runsSingletonWorkers,
   startLeaderElection,
   stopLeaderElection,
-  runsSingletonWorkers,
 } from './shared/leader-election';
-import { mountLlmGateway } from './llm-gateway/wire';
-// STATIC, not `await import(...)`. See the note at the mount site: a top-level
-// await anywhere above the last `app.route(...)` leaves the route table, the
-// error handler and the 404 handler unregistered for any importer that observes
-// `app` before it settles.
-import { gitProxyApp } from './git-proxy';
-import { connectorApp } from './connectors';
-import {
-  slackWebhookApp,
-  teamsWebhookApp,
-  teamsIdentityApp,
-  teamsOauthApp,
-  telegramWebhookApp,
-  slackOauthApp,
-  slackIdentityApp,
-  emailWebhookApp,
-} from './channels';
-import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { marketplaceApp } from './marketplace';
+import { getPlatformRole } from './shared/platform-roles';
+import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 import { skillsApp } from './skills';
-import { runtimeAssetsApp, runtimeAssetsManifest } from './runtime-assets';
-import { oauthApp } from './oauth';
-import { nativeOAuth2CallbackApp } from './connectors/oauth2-callback';
-import {
-  projectWebhooksApp,
-  projectsApp,
-  startProjectTriggerScheduler,
-  stopProjectTriggerScheduler,
-  getTriggerSchedulerHealth,
-} from './projects';
-import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
-import { startActiveTurnRenewal, stopActiveTurnRenewal } from './projects/active-turn-renewal';
 import { kickStartupPreBuild } from './snapshots/builder';
-import { projectImageRolloutDiagnostic } from './snapshots/project-image-scope';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
-import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
-import { edgeApp } from './edge/tls-check';
-import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
+import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import {
-  startSunaMigrationWorker,
-  stopSunaMigrationWorker,
-} from './projects/suna-migration/suna-migration-worker';
-import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
-import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import {
-  startProviderTransitionWorker,
-  stopProviderTransitionWorker,
-} from './projects/provider-transition/provider-transition-worker';
-import { accountsRouter } from './accounts';
-import { authRouter } from './auth';
-import { authEmailHookApp } from './auth/send-email-hook';
-import { describeEmailChain } from './lib/email/transport';
-import { scimRouter } from './scim';
-import { accountInvitesRouter } from './accounts/invites';
-import { auditApiRequest, shutdownAuditEvents } from './shared/audit';
-import { startAuditWebhookWorker, stopAuditWebhookWorker } from './shared/audit-webhooks';
-import {
-  startAuditReconciliationWorker,
-  stopAuditReconciliationWorker,
-} from './shared/audit-reconciliation-worker';
-import { opsApp } from './ops';
-import { adminApp } from './admin';
+  startTunnelService,
+  stopTunnelService,
+  tunnelApp,
+  wsHandlers as tunnelWsHandlers,
+} from './tunnel';
 
 /**
  * The streaming secret relay routes, matched on the raw pathname in
@@ -245,6 +251,14 @@ app.use('*', async (c, next) => {
 
 // === Global Middleware ===
 
+// Response compression. Mounted at the OUTSIDE of the chain so it sees the
+// final response of every route, including the ones the middleware below
+// rewrites. Only a NAMED compressible content type is ever compressed, which
+// keeps it away from SSE, the sandbox proxy's streams, the secret relay, the
+// LLM gateway and git pack transfer; the size floor is applied by peeking one
+// kilobyte of the body, never by buffering it. See middleware/compress.ts.
+app.use('*', compressResponse);
+
 const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
   ? process.env.CORS_ALLOWED_ORIGINS.split(',')
       .map((s) => s.trim())
@@ -293,8 +307,44 @@ app.use('*', async (c, next) => {
   );
 });
 
+// Per-request cost attribution (`Server-Timing: up;dur=…, api;dur=…`). Mounted
+// INSIDE the request-context middleware above, because it reads the
+// AsyncLocalStorage scope that one creates. See middleware/upstream-timing.ts.
+app.use('*', upstreamTiming);
+
 // Request logger — uses Hono's built-in logger for stdout (Docker captures these)
 app.use('*', logger());
+
+// ── Never emit 502/504 to a client that reaches us through Cloudflare ────────
+// Cloudflare REPLACES the body of an origin 502/504 with its own HTML "Bad
+// gateway" page and drops our headers with it — including
+// `x-kortix-proxy-hop` / `x-kortix-upstream-status`, the attribution channel,
+// and any JSON `code` a client branches on. Every such response therefore
+// reached users as an unreadable HTML page (dev, 2026-08-24) or as
+// "AI_APICallError: Bad Gateway" inside a session.
+//
+// 503 passes through Cloudflare untouched, so the honest upstream status moves
+// into `x-kortix-upstream-status` and the JSON body survives. Handlers keep
+// returning the semantically correct status internally; this is the single
+// place that makes it safe on the wire, instead of ~40 call sites each having
+// to remember. Bodyless responses and upgrades are left alone.
+// 520-524 are Cloudflare's OWN origin-error statuses. They can appear here
+// because the API->gateway hop itself traverses Cloudflare
+// (LLM_GATEWAY_PROXY_TARGET is a proxied hostname whose ALB only accepts
+// Cloudflare IPs), so an internal-hop failure arrives as a CF HTML page with a
+// 52x status and gets relayed onward. No Kortix handler ever returns 52x, so
+// normalizing them is unambiguous.
+const EDGE_REWRITTEN_STATUSES = new Set([502, 504, 520, 521, 522, 523, 524]);
+app.use('*', async (c, next) => {
+  await next();
+  const res = c.res;
+  if (!res || !EDGE_REWRITTEN_STATUSES.has(res.status)) return;
+  if (res.status === 101 || (res as { webSocket?: unknown }).webSocket) return;
+  const headers = new Headers(res.headers);
+  headers.set('x-kortix-upstream-status', String(res.status));
+  if (!headers.has('retry-after')) headers.set('retry-after', '5');
+  c.res = new Response(res.body, { status: 503, statusText: res.statusText, headers });
+});
 
 // Post-request: Sentry breadcrumbs + slow/error request logging
 app.use('*', async (c, next) => {
@@ -547,6 +597,16 @@ function hasInternalObservabilityAuth(c: any): boolean {
   return (!!bearer && safeEq(bearer, expected)) || (!!header && safeEq(header, expected));
 }
 
+// Sign in with Kortix — RFC 8414 discovery at the API root. The issuer is the
+// configured public API origin (KORTIX_URL); the request origin is only the
+// fallback for a bare local run. Mirrored under /v1/oauth/.well-known/… for
+// edges that route only /v1/*.
+app.get('/.well-known/oauth-authorization-server', (c) => {
+  return c.json(oauthAuthorizationServerMetadata(new URL(c.req.url).origin), 200, {
+    'cache-control': 'public, max-age=3600',
+  });
+});
+
 app.get('/metrics', (c) => {
   if (!hasInternalObservabilityAuth(c)) {
     return c.text('unauthorized\n', 401);
@@ -793,6 +853,9 @@ app.route('/v1/accounts', accountsRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit
 // events for login/logout/failed-login live in the auth middleware
 // + this router so SOC2 reviews see the full auth lifecycle.
+// Headless regular auth (signup / sign-in / magic link / social / refresh /
+// reset) — public, mounted BEFORE the bearer-gated auth router on the same prefix.
+app.route('/v1/auth', headlessAuthRouter);
 app.route('/v1/auth', authRouter);
 // SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
 // Mounted outside /v1 so IdPs configure the documented protocol URL.
@@ -853,8 +916,8 @@ app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — acco
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
-// Auth for the ONE platform route that needs an identity. Scoped to this exact
-// path, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
+// Auth for the platform routes that need an identity. Scoped to these exact
+// paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.
 //
 // Without this the route was unreachable. `auth` from openapi/index.ts is
@@ -865,14 +928,14 @@ app.route('/v1/account', accountDeletionApp); // account deletion status/request
 // supabaseAuth is the middleware carrying the sandbox-token path allowlist
 // (middleware/auth.ts), which already lists `/boot-timeline`.
 app.use('/v1/platform/boot-timeline', supabaseAuth);
+// Same wiring, same reason, for the daemon's runtime-projection push. A route
+// mounted without this is not "insecure" — it is UNREACHABLE, answering 403 to
+// every fire-and-forget push, in silence. That is the exact defect
+// `__tests__/unit-boot-timeline-auth-mount.test.ts` exists to pin, and it now
+// pins this route too.
+app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
-// Voice routes are registered BEFORE projectsApp: Hono matches in registration
-// order, and projectsApp's auth middleware would otherwise claim the worker's
-// MCP callback (/sessions/:id/mcp/voice) and reject it with a generic 401
-// before its own per-call HMAC check ever runs. The worker is not a Kortix
-// session and cannot present session auth.
-app.route('/v1/projects', voiceMcpRoutes);
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
@@ -881,7 +944,7 @@ app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the 
 // what lets an agent in ANY harness, holding only the `kortix` binary and a token,
 // read the platform's own instructions with no repo checkout and no sandbox.
 // combinedAuth (not supabaseAuth) so a CLI `kortix_pat_` and the in-sandbox
-// KORTIX_CLI_TOKEN works; see ./skills/index.ts for the full auth rationale.
+// KORTIX_TOKEN works; see ./skills/index.ts for the full auth rationale.
 app.use('/v1/skills', combinedAuth);
 app.use('/v1/skills/*', combinedAuth);
 app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1], /v1/skills/:name/file?path=
@@ -892,7 +955,7 @@ app.route('/v1/skills', skillsApp); // GET /v1/skills, /v1/skills/:name[?full=1]
 // every session start/restart/resume, which is what stops an old box from
 // running a daemon or CLI that predates the routes it calls. combinedAuth for
 // the same reason as /v1/skills above: the callers are a `kortix_pat_` CLI and
-// the in-sandbox KORTIX_CLI_TOKEN. The `/*` wildcard is what puts every payload
+// the in-sandbox KORTIX_TOKEN. The `/*` wildcard is what puts every payload
 // route behind auth — a new one must be added to runtimeAssetsApp, never mounted
 // beside it.
 app.use('/v1/runtime-assets/*', combinedAuth);
@@ -906,7 +969,7 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agen
 }
 
 // Connector — unified connector layer. Gateway routes (/catalog, /call) use
-// KORTIX_CLI_TOKEN (validated inside the router); admin routes
+// KORTIX_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
   app.use('/v1/connectors/projects/*', combinedAuth);
@@ -972,13 +1035,6 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
-// Anonymous resolve step for a `voice_spawn` join link: exchanges the short,
-// ungessable id for a freshly-minted LiveKit access token + server URL. Backs
-// the logged-out `/voice/[token]` page the same way publicSessionSharesApp
-// backs `/share/[shareId]` above — see join-links.ts / public-join-routes.ts.
-import { voiceJoinPublicApp } from './channels/voice/public-join-routes';
-app.route('/v1/public/voice-join', voiceJoinPublicApp); // /v1/public/voice-join/:token
-
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -992,9 +1048,9 @@ app.route('/v1/admin', adminApp);
 app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
+import { warmPipedreamCatalog } from './connectors/pipedream';
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
-import { warmPipedreamCatalog } from './connectors/pipedream';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
 
 app.use('/v1/tunnel/*', async (c, next) => {
@@ -1018,7 +1074,6 @@ app.route('/v1/p', sandboxProxyApp);
 // === Error Handling ===
 
 app.onError((err, c) => {
-
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
@@ -1396,10 +1451,7 @@ let draining = false;
 // service serve request-path needs (per-node caches + the WS acceptor), so they
 // must be live on each node behind the load balancer.
 async function startReplicaServices() {
-  appLogger.info(
-    '[snapshots] project image rollout',
-    projectImageRolloutDiagnostic(),
-  );
+  warnIfPreviewOriginsMissing(appLogger);
   startAccessControlCache();
   startTunnelService();
   // Warm the runtime-settings cache BEFORE serving traffic so the admin-panel
@@ -1448,6 +1500,10 @@ async function startSingletonWorkers() {
   startProviderTransitionWorker();
   startAppDeploymentWorker();
   startAppIdleReaper();
+  // Pi worker pool (P1.8): keep parked worker boxes at target so pi session
+  // creates claim instead of cold-creating. No-op unless
+  // KORTIX_PI_WORKER_POOL_TARGET > 0.
+  startPiWorkerPoolMaintenance();
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
@@ -1466,6 +1522,7 @@ async function stopSingletonWorkers() {
   stopProviderTransitionWorker();
   stopAppDeploymentWorker();
   stopAppIdleReaper();
+  stopPiWorkerPoolMaintenance();
   await stopAuditWebhookWorker();
   await stopAuditReconciliationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
@@ -1633,7 +1690,9 @@ export default {
     // The standalone-gateway reverse proxy streams chat completions (SSE). Let
     // the gateway's own keep-alive / upstream timeout govern it instead of Bun
     // closing the client socket at idleTimeout with an empty reply.
-    if (url.pathname.startsWith('/v1/llm-gateway')) {
+    // Covers BOTH the internal `/v1/llm-gateway` prefix used by cloud sandboxes
+    // and `/v1/llm`, the documented public path — which was unguarded.
+    if (url.pathname.startsWith('/v1/llm')) {
       server.timeout(req, 0);
     }
 
@@ -1777,6 +1836,9 @@ export default {
       }
       const prep = await preparePreviewWsUpgrade(url);
       if (!prep.ok) {
+        console.warn(
+          `[preview-ws] REFUSED ${prep.status} ${prep.message} path=${url.pathname} hasToken=${url.searchParams.has('token')}`,
+        );
         return new Response(JSON.stringify({ error: prep.message }), {
           status: prep.status,
           headers: { 'Content-Type': 'application/json' },

@@ -56,13 +56,13 @@ describe('seedProjectDefaultModelOnConnect', () => {
   });
 
   test('never clobbers an existing account default', async () => {
-    defaults = { account: 'glm-5.2', agents: {}, projects: {} };
+    defaults = { account: 'glm-5.3-flash', agents: {}, projects: {} };
     await seedProjectDefaultModelOnConnect(params);
     expect(upsert).not.toHaveBeenCalled();
   });
 
   test('never clobbers an existing project default', async () => {
-    defaults = { account: null, agents: {}, projects: { p1: 'glm-5.2' } };
+    defaults = { account: null, agents: {}, projects: { p1: 'glm-5.3-flash' } };
     await seedProjectDefaultModelOnConnect(params);
     expect(upsert).not.toHaveBeenCalled();
   });

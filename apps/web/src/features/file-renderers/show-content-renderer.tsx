@@ -43,6 +43,7 @@ import { useHeicBlob } from '@/hooks/use-heic-url';
 import { safeHttpUrl } from '@/lib/safe-url';
 import { getIframeSandbox } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
+import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import { isHeicFile } from '@/lib/utils/heic-convert';
 import { isAppRouteUrl, parseLocalhostUrl } from '@/lib/utils/sandbox-url';
 import { buildStaticFileLocalUrl } from '@kortix/sdk';
@@ -976,6 +977,7 @@ export function ShowCarousel({
   const [currentIndex, setCurrentIndex] = useState(0);
   const count = items.length;
   const segmentRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const stripRef = useRef<HTMLDivElement | null>(null);
 
   const labels = useMemo(() => items.map(getShowCarouselItemLabel), [items]);
 
@@ -991,11 +993,22 @@ export function ShowCarousel({
   const prev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex]);
   const next = useCallback(() => goTo(currentIndex + 1), [goTo, currentIndex]);
 
+  // Center the active pill by scrolling the pill strip ONLY — never
+  // `scrollIntoView`. That walks every scrollable ancestor, and `overflow:
+  // hidden` boxes are still programmatically scrollable, so the centering the
+  // clamped strip could not absorb for the last pills landed as a permanent
+  // sideways `scrollLeft` on the chat column's overflow-hidden wrappers,
+  // shifting the whole page.
   useEffect(() => {
-    segmentRefs.current[currentIndex]?.scrollIntoView({
+    const pill = segmentRefs.current[currentIndex];
+    const strip = stripRef.current;
+    if (!pill || !strip) return;
+    const pillRect = pill.getBoundingClientRect();
+    const stripRect = strip.getBoundingClientRect();
+    const delta = pillRect.left + pillRect.width / 2 - (stripRect.left + stripRect.width / 2);
+    safeScrollTo(strip, {
+      left: Math.max(0, Math.min(strip.scrollLeft + delta, strip.scrollWidth - strip.clientWidth)),
       behavior: 'smooth',
-      block: 'nearest',
-      inline: 'center',
     });
   }, [currentIndex]);
 
@@ -1074,6 +1087,7 @@ export function ShowCarousel({
           </div>
 
           <FadedScrollArea
+            ref={stripRef}
             orientation="horizontal"
             fadeColor="from-secondary"
             className="min-w-0 flex-1 overscroll-x-contain"

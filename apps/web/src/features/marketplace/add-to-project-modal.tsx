@@ -2,6 +2,7 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
@@ -38,6 +39,7 @@ import {
   isAccountGitAdmin,
 } from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
@@ -92,12 +94,7 @@ export function AddToProjectModal({
   // Pre-check managed git the same way the New Project modal does — self-host
   // with nothing configured should route to Git settings instead of letting
   // the "new project" target hit the provision 503 first.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-    enabled: open && target === NEW_PROJECT,
-  });
+  const accountsQuery = useAccountsList({ enabled: open && target === NEW_PROJECT });
   // No `personal_account` flag on this API — the bootstrapped personal
   // account is the one where the caller is the primary owner. Mirrors the
   // resolution in `onConfirm` below.
@@ -198,14 +195,17 @@ export function AddToProjectModal({
           ...(gitSettingsAccountId
             ? {
                 button: (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      onOpenChange(false);
-                      router.push(`/accounts/${gitSettingsAccountId}?tab=git`);
-                    }}
-                  >
-                    Open Git settings
+                  <Button size="sm" asChild>
+                    {/* An anchor, so the destination is prefetched while the
+                        toast is on screen and the click cannot fall back to a
+                        full document load. */}
+                    <Link
+                      href={`/accounts/${gitSettingsAccountId}?tab=git`}
+                      prefetch
+                      onClick={() => onOpenChange(false)}
+                    >
+                      Open Git settings
+                    </Link>
                   </Button>
                 ),
               }

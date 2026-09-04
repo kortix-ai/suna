@@ -1,7 +1,11 @@
 {
   "generatedAt": "static",
-  "count": 599,
+  "count": 635,
   "routes": [
+    {
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server"
+    },
     {
       "method": "GET",
       "path": "/health"
@@ -215,6 +219,26 @@
       "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId/deliveries/:deliveryId/replay"
     },
     {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/branding"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/branding/assets/:kind"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/branding/assets/:kind"
+    },
+    {
       "method": "GET",
       "path": "/v1/accounts/:accountId/iam/actions"
     },
@@ -309,6 +333,30 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/iam/mfa-required/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/oauth-clients/:clientId/rotate-secret"
     },
     {
       "method": "GET",
@@ -627,6 +675,50 @@
       "path": "/v1/auth/logout"
     },
     {
+      "method": "POST",
+      "path": "/v1/auth/oauth/exchange"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/password/reset"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/password/update"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/refresh"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/magic-link"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/oauth"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-in/password"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/sign-out"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/signup"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/auth/user"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/verify-otp"
+    },
+    {
       "method": "GET",
       "path": "/v1/billing/account-state"
     },
@@ -840,6 +932,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/connect/toolkits"
+    },
+    {
+      "method": "GET",
       "path": "/v1/connectors/projects/:projectId/connectors"
     },
     {
@@ -931,6 +1027,10 @@
       "path": "/v1/connectors/projects/:projectId/policies"
     },
     {
+      "method": "GET",
+      "path": "/v1/connectors/projects/:projectId/sessions/:sessionId/connect-requests"
+    },
+    {
       "method": "POST",
       "path": "/v1/connectors/webhook/pipedream"
     },
@@ -940,7 +1040,27 @@
     },
     {
       "method": "GET",
+      "path": "/v1/edge/tls-check"
+    },
+    {
+      "method": "GET",
       "path": "/v1/generation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/compiled-checkout"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/compiled-pi-runtime"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/compiled-runtime"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/fast-boot-bundle"
     },
     {
       "method": "POST",
@@ -965,34 +1085,6 @@
     {
       "method": "GET",
       "path": "/v1/health/ready"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/chat/completions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/health"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/messages"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/models"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/v1/chat/completions"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/llm/v1/messages"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/llm/v1/models"
     },
     {
       "method": "GET",
@@ -1028,6 +1120,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/oauth/.well-known/oauth-authorization-server"
+    },
+    {
+      "method": "GET",
       "path": "/v1/oauth/authorize"
     },
     {
@@ -1037,6 +1133,10 @@
     {
       "method": "GET",
       "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/revoke"
     },
     {
       "method": "POST",
@@ -1061,6 +1161,10 @@
     {
       "method": "POST",
       "path": "/v1/p/auth"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/p/config"
     },
     {
       "method": "GET",
@@ -1121,6 +1225,10 @@
     {
       "method": "GET",
       "path": "/v1/platform/github-app/status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/runtime-projection"
     },
     {
       "method": "GET",
@@ -1373,10 +1481,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/channels/email/mode"
-    },
-    {
-      "method": "PUT",
-      "path": "/v1/projects/:projectId/channels/meet/name"
     },
     {
       "method": "POST",
@@ -1663,10 +1767,6 @@
       "path": "/v1/projects/:projectId/git-token"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/git/clone-credential"
-    },
-    {
       "method": "POST",
       "path": "/v1/projects/:projectId/git/collaborators"
     },
@@ -1832,11 +1932,11 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/secrets/:identifier/relay"
+      "path": "/v1/projects/:projectId/secrets/:identifier/grant"
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/secrets/:identifier/grant"
+      "path": "/v1/projects/:projectId/secrets/:identifier/relay"
     },
     {
       "method": "PUT",
@@ -1895,12 +1995,28 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/config"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment"
+    },
+    {
       "method": "POST",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/mcp/voice"
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/ensure"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/environment/stop"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/model"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/open-bundle"
     },
     {
       "method": "GET",
@@ -1971,6 +2087,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/sharing"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/snapshot"
+    },
+    {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/start"
     },
@@ -1985,10 +2105,6 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/turn"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/sessions/:sessionId/voice-transcript"
     },
     {
       "method": "POST",
@@ -2123,14 +2239,6 @@
       "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
-      "method": "GET",
-      "path": "/v1/public/voice-join/:token"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/public/voice-join/:token/transcript"
-    },
-    {
       "method": "POST",
       "path": "/v1/router/chat/completions"
     },
@@ -2197,6 +2305,42 @@
     {
       "method": "POST",
       "path": "/v1/setup-links/secret/:token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
     },
     {
       "method": "GET",

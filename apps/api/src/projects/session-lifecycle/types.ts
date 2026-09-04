@@ -11,7 +11,6 @@ export type SessionInvocationSource =
   | 'email'
   | 'telegram'
   | 'teams'
-  | 'voice'
   | 'trigger:webhook'
   | 'trigger:cron'
   | 'trigger:manual'
@@ -145,7 +144,37 @@ export interface StartSessionCommand {
   waitMs?: number;
 }
 
-export type SessionDeliveryOutcome = 'delivered' | 'pending' | 'no-session' | 'failed';
+/**
+ * How one hand-off of a prompt to the runtime ended.
+ *
+ * The RETRY CLASS is the whole point of the split:
+ *  - `delivered`     — OpenCode holds the message. Terminal, success.
+ *  - `pending`       — the runtime did not become ready inside this attempt's
+ *                      budget. Worth another pass soon.
+ *  - `unreachable`   — the RUNTIME is down: the provider has the box stopped,
+ *                      the session row is parked `failed`, or the resolved
+ *                      target reports a dead stage. Nothing about the prompt is
+ *                      wrong; it must wait for the runtime to come back rather
+ *                      than be given up on. Bounded (see
+ *                      `MAX_RUNTIME_UNREACHABLE_RETRIES`).
+ *  - `no-session`    — the session does not exist, or the user deleted it.
+ *                      Terminal: there is nothing to deliver to, ever.
+ *  - `failed`        — a genuine delivery refusal that re-trying cannot fix.
+ *                      Terminal.
+ *
+ * `unreachable` exists because everything that produced `failed` on this path
+ * was in fact a down runtime, and the drain treated it as terminal: a queued
+ * prompt delivered while the box was unreachable went `dead_lettered` on its
+ * FIRST attempt and was never re-tried when the box came back minutes later
+ * (Essentia, 2026-08-26: `state:failed, attempts:1,
+ * last_error:"delivery outcome: failed"`).
+ */
+export type SessionDeliveryOutcome =
+  | 'delivered'
+  | 'pending'
+  | 'unreachable'
+  | 'no-session'
+  | 'failed';
 
 export interface SessionLifecycleResult {
   status: SessionLifecycleStatus;

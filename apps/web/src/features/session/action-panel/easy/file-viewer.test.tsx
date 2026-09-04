@@ -156,6 +156,65 @@ describe('FileViewer toolbar', () => {
 // outside it. These lock the shape, because "one more little icon button" is
 // exactly how the old row grew.
 
+// ── An HTML file is SERVED, never injected ─────────────────────────────────
+// The regression: the preview handed the file's text to the frame as `srcDoc`.
+// A `srcDoc` document has no URL, so `./style.css`, `img/logo.png` and `app.js`
+// had nothing to resolve against — every page arrived unstyled — and the frame
+// carried `sandbox=""`, which made its scripts inert on top of that. The fix is
+// to load the file from the static file server that ships inside the sandbox,
+// which is what `HtmlPreview` does.
+
+describe('FileViewer — HTML is served, not injected', () => {
+  const PAGE = '<link rel="stylesheet" href="./style.css"><p>SENTINEL</p>';
+
+  test('the file text never reaches the frame', () => {
+    // The single assertion that fails the moment anyone reintroduces `srcDoc`:
+    // the markup is data to be fetched by the frame, not markup to be embedded
+    // in this document.
+    const html = render('page.html', PAGE);
+    expect(html).not.toContain('srcdoc');
+    expect(html).not.toContain('SENTINEL');
+    expect(html).not.toContain('style.css');
+  });
+
+  test('the preview waits on the sandbox rather than faking a render', () => {
+    // No effects run in this harness, so what a static render shows IS the
+    // pre-sandbox state: the wait, not a frame pointed at nothing.
+    const html = render('page.html', PAGE);
+    expect(html).toContain('Starting preview server…');
+    expect(html).not.toContain('<iframe');
+  });
+
+  test('a script-inert frame is not the deal any more', () => {
+    // `sandbox=""` withholds every capability, which turns any interactive page
+    // into a screenshot. The preview now runs under
+    // ISOLATED_HTML_PREVIEW_IFRAME_SANDBOX — scripts yes, same-origin no.
+    expect(render('page.html', PAGE)).not.toContain('sandbox=""');
+  });
+
+  test('with no file on disk there is no rendered form, so no toggle', () => {
+    // The preview is the file SERVED. Without a path there is nothing to serve,
+    // and a Preview/Source toggle would have one honest position.
+    const noPath = renderToStaticMarkup(
+      <Wrapped>
+        <FileViewer content={PAGE} fileName="page.html" />
+      </Wrapped>,
+    );
+    expect(noPath).not.toContain('aria-label="Preview"');
+    expect(noPath).not.toContain('Starting preview server…');
+    // …and it falls through to source, where the markup is the document.
+    expect(noPath).toContain('SENTINEL');
+  });
+
+  test('svg still renders inline — only HTML changed', () => {
+    // SVG is loaded through <img> from a blob URL, a path this work did not
+    // touch. Asserted so a future edit cannot quietly route it through the
+    // static file server too.
+    const svg = render('logo.svg', '<svg xmlns="http://www.w3.org/2000/svg" />');
+    expect(svg).not.toContain('Starting preview server…');
+  });
+});
+
 describe('FileViewer actions', () => {
   test('the primary action is a word, with no icon at all', () => {
     // Owner direction: an icon beside a label that already reads "Copy" is

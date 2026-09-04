@@ -25,7 +25,7 @@
  *    (`docs/ENV_SECRET_EXPOSURE_BASELINE.md`). NEVER write "secrets the model
  *    cannot see" about runtime secrets.
  *  - CHANNELS ARE A CLOSED ENUM: Slack live, Teams behind an operator switch,
- *    email and voice experimental. Telegram, WhatsApp, SMS and Discord are NOT
+ *    email experimental. Telegram, WhatsApp, SMS and Discord are NOT
  *    channels, in any tense.
  *  - NEVER claim egress is controlled at the network. NEVER claim microVM
  *    isolation as a blanket fact (true for the Platinum provider only).

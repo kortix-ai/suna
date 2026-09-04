@@ -26,7 +26,7 @@ import {
   classifySnapshotError,
   describeSnapshotError,
 } from '../../snapshots/error-classify';
-import { templateSlugFromBuildSlug } from '../../snapshots/ppwarm-names';
+import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import type { ProjectRole } from '../access';
 import type { ProjectConfigSummary } from '../git/types';
 import { type GitHubRepo, isGithubAppConfigured } from '../github';
@@ -63,6 +63,44 @@ export { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES } from './sessio
 
 export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
 
+/**
+ * Session-metadata keys the LIST response omits.
+ *
+ * These are write-only from a client's point of view: they are stamped by the
+ * server at create/branch/trigger time and no client — web, mobile, SDK or the
+ * whitelabel demo — ever reads them back off a session (verified 2026-08-26 by
+ * an exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
+ * apps/whitelabel-demo). They are also the heavy ones: on a real 60-session
+ * project they are 57% of the whole list body (`initial_prompt` alone is 36%),
+ * which the sidebar re-fetches several times per session open.
+ *
+ * The SINGLE-session read (`GET /:projectId/sessions/:sessionId`) still returns
+ * metadata whole, so nothing loses access to them — only the inventory listing
+ * stops shipping a copy per row. Keys clients DO read off the list —
+ * `pending_prompt`, `session_name`, `last_activity_at`, `spawned_by_session`,
+ * `legacy_migration`, `source`, `trigger_*`, `sandbox_slug`, `warm` — are
+ * deliberately NOT here.
+ */
+export const LIST_OMITTED_SESSION_METADATA_KEYS = [
+  'initial_prompt',
+  'payload_summary',
+  'session_start_timeline',
+  'audit_v2',
+  'remote_branch',
+] as const;
+
+function trimSessionMetadataForList(
+  metadata: Record<string, unknown>,
+): Record<string, unknown> {
+  let trimmed: Record<string, unknown> | null = null;
+  for (const key of LIST_OMITTED_SESSION_METADATA_KEYS) {
+    if (!hasOwn(metadata, key)) continue;
+    if (!trimmed) trimmed = { ...metadata };
+    delete trimmed[key];
+  }
+  return trimmed ?? metadata;
+}
+
 export function serializeSession(
   row: ProjectSessionRow,
   ctx?: {
@@ -91,6 +129,12 @@ export function serializeSession(
     /** Server-managed soft-deletion audit fields. */
     deletedAt?: string | null;
     deletedBy?: string | null;
+    /**
+     * Drop the write-only heavy metadata keys (see
+     * LIST_OMITTED_SESSION_METADATA_KEYS). Set by the inventory LIST only; the
+     * single-session read keeps metadata whole.
+     */
+    trimListMetadata?: boolean;
   },
 ): ProjectSession {
   // Computed BEFORE the metadata-derived fields below, because name,
@@ -139,7 +183,11 @@ export function serializeSession(
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
     // other callers that serialize with canAccess=false. Metadata holds
     // initial_prompt — the literal text an end-user typed.
-    metadata: canAccess ? (row.metadata ?? {}) : {},
+    metadata: canAccess
+      ? ctx?.trimListMetadata
+        ? trimSessionMetadataForList(row.metadata ?? {})
+        : (row.metadata ?? {})
+      : {},
     opencode_sessions: opencodeSessions,
     // Ownership + org-visibility (Phase 2 session sharing).
     created_by: row.createdBy,
@@ -201,10 +249,9 @@ export function serializeProject(
     account_id: row.accountId,
     name: row.name,
     repo_url: row.repoUrl,
-    // Universal client-facing git origin. When the proxy is enabled, runtime
-    // clients (CLI `ship`, web) clone/push this with a Kortix token instead of
-    // the real host URL. Falls back to repo_url so callers can always use it.
-    git_origin_url: config.KORTIX_GIT_PROXY ? proxyGitUrl(row.projectId) : row.repoUrl,
+    // Runtime clients clone and push only through the Kortix Git proxy. The
+    // upstream origin and its credential remain server-side.
+    git_origin_url: proxyGitUrl(row.projectId),
     default_branch: row.defaultBranch,
     manifest_path: row.manifestPath,
     status: row.status,
@@ -280,6 +327,10 @@ export function serializeProjectGitConnection(row: ProjectGitConnectionRow | nul
     default_branch: row.defaultBranch,
     auth_method: row.authMethod,
     installation_id: row.installationId,
+    // The flag the web's repo-access section keys on. It used to be read off
+    // `metadata.git.managed`, which is empty once the connection lives in
+    // this table — every managed repo then read as "Kortix did not create it".
+    managed: row.managed ?? false,
     credential_ref: row.credentialRef,
     permissions: row.permissions ?? {},
     visibility: row.visibility,

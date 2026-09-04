@@ -154,6 +154,7 @@ export const SECRET_DEFS: SecretDef[] = [
   { key: 'AWS_BEDROCK_REGION', category: 'llm', kind: 'operator', required: false },
 
   // Connectors
+  { key: 'COMPOSIO_API_KEY', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_CLIENT_ID', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_CLIENT_SECRET', category: 'connectors', kind: 'operator', required: false },
   { key: 'PIPEDREAM_PROJECT_ID', category: 'connectors', kind: 'operator', required: false },
@@ -293,6 +294,7 @@ export const KEY_SERVICE_MAP: Record<string, readonly string[]> = {
   AWS_BEDROCK_REGION: ['kortix-api'],
 
   // Connectors
+  COMPOSIO_API_KEY: ['kortix-api'],
   PIPEDREAM_CLIENT_ID: ['kortix-api'],
   PIPEDREAM_CLIENT_SECRET: ['kortix-api'],
   PIPEDREAM_PROJECT_ID: ['kortix-api'],

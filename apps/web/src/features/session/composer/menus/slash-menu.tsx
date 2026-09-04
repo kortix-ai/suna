@@ -1,18 +1,24 @@
 'use client';
 
 import { Kbd } from '@/components/ui/kbd';
+import { getFileIcon } from '@/features/project-files';
 import { cn } from '@/lib/utils';
 import {
   ArrowsClockwiseIcon,
   BrainIcon,
-  MicrophoneIcon,
   PaperclipIcon,
   PlugsConnectedIcon,
   PuzzlePieceIcon,
   RobotIcon,
   SlidersHorizontalIcon,
+  StackIcon,
   TerminalWindowIcon,
 } from '@phosphor-icons/react';
+
+import { ProgressRing } from '@/components/ui/progress-ring';
+
+import { ContextRing } from '../context-ring';
+import { ContextUsageCard } from '../token-progress';
 
 import { MenuCard, MenuRow, MenuSectionHeading } from './menu-shell';
 import type { SlashRow, SlashSection } from './slash-items';
@@ -43,6 +49,13 @@ function SlashRowIcon({
   heading: string;
   className?: string;
 }) {
+  // Per-extension, not one generic file glyph: the palette's file rows are the
+  // same files the Outputs and Context cards draw, and those cards use this
+  // exact helper (`outputs-card.tsx`, `mention-menu.tsx`). A `.pdf` that looks
+  // like a `.pdf` in one surface and a blank page in another reads as two
+  // different files. `getFileIcon` returns an ELEMENT, which is also what
+  // keeps this switch free of the `static-components` problem below.
+  if (row.type === 'file' && row.file) return getFileIcon(row.file.path, { className });
   if (row.type === 'action' && row.action) {
     switch (row.action.id) {
       case 'switch-model':
@@ -53,8 +66,26 @@ function SlashRowIcon({
         return <BrainIcon className={className} />;
       case 'attach-file':
         return <PaperclipIcon className={className} />;
-      case 'start-voice':
-        return <MicrophoneIcon className={className} />;
+      // The stack glyph is the compaction mark everywhere else (the
+      // transcript's CompactionDivider and card) — the row must read as the
+      // same feature.
+      case 'compact-session':
+        return <StackIcon className={className} />;
+      // The SAME component as the underbar's context meter (`context-ring.tsx`),
+      // live reading and status tone included: the row opens the surface that
+      // ring opens, so it must BE that control, not a lookalike. The host fills
+      // `action.context` (composer.tsx); a host with no transcript omits it and
+      // gets the static muted fallback.
+      case 'show-context':
+        return row.action.context ? (
+          <ContextRing
+            percent={row.action.context.percent}
+            tone={row.action.context.tone}
+            className={className}
+          />
+        ) : (
+          <ProgressRing value={66} className={className} />
+        );
       default:
         return <SlidersHorizontalIcon className={className} />;
     }
@@ -120,7 +151,7 @@ export function SlashMenu({
     return (
       <MenuCard className={cn('mb-2.5 w-full rounded-lg')}>
         <p role="status" className="text-muted-foreground px-3 py-2.5 text-sm">
-          No matching command or action
+          No matching command, file, or action
         </p>
       </MenuCard>
     );
@@ -130,6 +161,16 @@ export function SlashMenu({
     section.rows.map((row) => ({ row, heading: section.heading })),
   );
   const active = rows.find(({ row }) => row.index === selectedIndex) ?? rows[0];
+
+  // Hovering "Show context" gets the SAME three-tier usage card the toolbar
+  // ring's hover opens (`token-progress.tsx`): the row is that control, so its
+  // preview must be that control's reading, not a prose paraphrase of it. The
+  // snapshot rides on the action (`context`, filled by the host); absent, the
+  // pane keeps the plain description.
+  const activeUsage =
+    active && active.row.type === 'action' && active.row.action?.id === 'show-context'
+      ? active.row.action.context
+      : undefined;
 
   return (
     <MenuCard className={cn('mb-2.5 flex max-h-96 w-full overflow-hidden rounded-lg shadow-xs')}>
@@ -202,6 +243,21 @@ export function SlashMenu({
             <p className="text-muted-foreground mt-2 text-sm leading-relaxed text-pretty">
               {active.row.description}
             </p>
+          )}
+          {activeUsage && (
+            <div className="mt-4 border-t pt-4">
+              {/* `interactive={false}`: this pane already owns a "Use" button
+                  that opens the context modal — a second "View details" inside
+                  the card would be the same action twice. */}
+              <ContextUsageCard
+                breakdown={activeUsage.breakdown}
+                limit={activeUsage.limit}
+                ratio={activeUsage.ratio}
+                tone={activeUsage.tone}
+                modelName={activeUsage.modelName}
+                interactive={false}
+              />
+            </div>
           )}
           <div className="mt-auto flex items-center justify-end gap-2 pt-4">
             <span className="text-muted-foreground flex items-center gap-1 text-xs">
