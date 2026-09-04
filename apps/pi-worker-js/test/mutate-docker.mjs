@@ -181,12 +181,24 @@ const CHECKS = [
     suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
     from: 'const r = await api("POST", "/exec", { body: { cmd: command, timeout_ms: Math.min(Math.max(timeoutMs, 100), 300_000) }, signal });',
     to:   'const r = await api("POST", "/exec-nope", { body: { cmd: command, timeout_ms: Math.min(Math.max(timeoutMs, 100), 300_000) }, signal });' },
+  // THE WORKSPACE CWD REACHES THE TURN'S TOOLS. Two attempts at this survived:
+  // one mutated tools.platinum.js (retired), one mutated the cwd in
+  // executionEnvFor, which is not the builder the agent's tools use — the turn
+  // kept resolving /root while that copy said /home/user. The default now lives
+  // in ONE function, workspaceCwd(), and this pins it: forcing /home/user makes
+  // the cell resolve a relative read under the wrong directory, and dev-e2e's
+  // probe says so by name. This is the first cell->dev failure, as a guard.
+  { claim: "PT_WORKSPACE_CWD reaches the tools the turn actually runs",
+    expect: new RegExp("resolved /home/user/does-not-exist.txt"),
+    suite: "dev-e2e.sh", file: "src/pitools.js",
+    from: 'export const workspaceCwd = (env) => env.PT_WORKSPACE_CWD || "/home/user";',
+    to:   'export const workspaceCwd = (env) => "/home/user";' },
 ];
 
 /**
  * Prune the cells this run creates.
  *
- * Fifteen entries, each a full e2e or eviction run, each making its own cells and
+ * Sixteen entries, each a full e2e or eviction run, each making its own cells and
  * leaving them. The bindings version of this file has to reset its store for
  * CORRECTNESS — its fixture uses a fixed name, and a mutant poisoned it. Here
  * every suite names its cell with $$ or $RANDOM, so nothing is poisoned and the

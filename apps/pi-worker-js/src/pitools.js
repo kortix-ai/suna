@@ -202,13 +202,25 @@ function adapt(tool, envFor, log, inflight) {
   };
 }
 
+// ONE PLACE FOR THE WORKSPACE CWD. It was written out twice — here and in
+// piToolsPlatinum — and a mutation of the first survived the cell->dev e2e
+// while the turn's tools kept using the second. Two copies of a default is a
+// divergence with a test that cannot see it; one function is a single site the
+// guard (mutate-docker entry 16) can pin.
+//
+// /home/user is the Kortix image layout. pt-base runs as root with HOME=/ and
+// no /home/user at all, so a caller on a stock Platinum sandbox MUST pass
+// PT_WORKSPACE_CWD (/root) — measured: the first cell->dev run failed in the
+// sandbox's own words, "can't cd to /home/user/".
+export const workspaceCwd = (env) => env.PT_WORKSPACE_CWD || "/home/user";
+
 export function executionEnvFor(env, sessionId, opId, onOp) {
   if (env.PT_API_URL && env.PT_SANDBOX_KEY && env.PT_WORKSPACE_ID) {
     return platinumExecutionEnv({
       apiUrl: env.PT_API_URL,
       key: env.PT_SANDBOX_KEY,
       sandboxId: env.PT_WORKSPACE_ID,
-      cwd: env.PT_WORKSPACE_CWD || "/home/user",
+      cwd: workspaceCwd(env),
     });
   }
   return remoteExecutionEnv({
@@ -250,7 +262,7 @@ export function piToolsPlatinum(env, sessionId, sql, extras = []) {
     apiUrl: env.PT_API_URL,
     key: env.PT_SANDBOX_KEY,
     sandboxId: env.PT_WORKSPACE_ID,
-    cwd: env.PT_WORKSPACE_CWD || "/home/user",
+    cwd: workspaceCwd(env),
   });
   const log = ledger(sql);
   const inflight = new Map();
