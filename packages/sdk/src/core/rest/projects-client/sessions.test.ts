@@ -37,6 +37,8 @@ import {
   setProjectSessionScope,
   setProjectSessionSharing,
   setProjectSessionStage,
+  answerSessionQuestion,
+  getSessionOpenQuestion,
   sessionTriggerSlug,
   SESSION_STAGES,
   stopProjectSession,
@@ -137,6 +139,40 @@ test('setProjectSessionStage PUTs the stage body and unwraps the session', async
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ stage: 'ready', needs_approval: true, note: 'Plan in PLAN.md' });
   expect(result.stage).toEqual(stage);
+});
+
+test('getSessionOpenQuestion GETs the durable question route and unwraps `question`', async () => {
+  const question = {
+    id: 'Q1',
+    session_id: 'S1',
+    request_id: 'req-1',
+    opencode_session_id: null,
+    questions: [{ question: 'Approve this outline?', header: 'Outline', options: [] }],
+    asked_at: '2026-09-04T10:00:00.000Z',
+  };
+  nextResponse = { status: 200, body: { question } };
+  expect(await getSessionOpenQuestion('P1', 'S1')).toEqual(question);
+  expect(last().url).toContain('/projects/P1/sessions/S1/question');
+  expect(last().method).toBe('GET');
+  nextResponse = { status: 200, body: { question: null } };
+  expect(await getSessionOpenQuestion('P1', 'S1')).toBeNull();
+});
+
+test('answerSessionQuestion POSTs answers (+ request_id) and unwraps the delivery', async () => {
+  nextResponse = { status: 200, body: { ok: true, delivery: 'delivered' } };
+  const result = await answerSessionQuestion('P1', 'S1', {
+    answers: ['Approved. Proceed with the plan.'],
+    request_id: 'req-1',
+  });
+  expect(last().url).toContain('/projects/P1/sessions/S1/question');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    answers: ['Approved. Proceed with the plan.'],
+    request_id: 'req-1',
+  });
+  expect(result).toEqual({ ok: true, delivery: 'delivered' });
+  await answerSessionQuestion('P1', 'S1', { answers: ['x'] });
+  expect(last().body).toEqual({ answers: ['x'] });
 });
 
 test('setProjectSessionStage sends only the stage when nothing else is given', async () => {

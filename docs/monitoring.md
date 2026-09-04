@@ -102,10 +102,15 @@ Serializer: `ProjectSession.stage` is exposed top-level as the object above or
 1. Agent finishes planning and runs
    `kortix sessions stage ready --needs-approval --note "Plan: …"`. Its turn ends.
 2. The card sits in **Ready** with an "Approve" / "Send back" control.
-3. Approve = `PUT …/stage {stage:'in_progress'}` then a durable prompt
-   (`createSessionPrompt`) with text `Approved. Proceed with the plan.` plus the
-   optional reviewer note. Send back = `PUT …/stage {stage:'planning'}` then a
-   prompt with the reviewer's feedback.
+3. Approve = `PUT …/stage {stage:'in_progress'}`, then: if the session has an
+   open durable question (`GET …/question`, i.e. the agent parked itself by
+   asking), answer it (`POST …/question {answers:[text], request_id}`) — the
+   API hands the answer to the agent as its next turn; otherwise a durable
+   prompt (`createSessionPrompt`) with text `Approved. Proceed with the plan.`
+   plus the optional reviewer note. Send back = `PUT …/stage {stage:'planning'}`
+   then the same answer-or-prompt with the reviewer's feedback. The stage
+   write goes first because it is the only window in which a person may
+   write it. SDK: `getSessionOpenQuestion`, `answerSessionQuestion`.
 4. Without `--needs-approval` the agent moves itself straight on:
    `kortix sessions stage in_progress`, later `review`, then `done`.
 

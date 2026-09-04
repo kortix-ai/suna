@@ -10,7 +10,13 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
-import { SESSION_STAGES, type ProjectSession, type SessionStage } from '@kortix/sdk';
+import {
+  SESSION_STAGES,
+  answerSessionQuestion,
+  getSessionOpenQuestion,
+  type ProjectSession,
+  type SessionStage,
+} from '@kortix/sdk';
 import { startSessionWithPrompt, useSetSessionStage } from '@kortix/sdk/react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -72,10 +78,24 @@ function StageCard({ projectId, session }: { projectId: string; session: Project
           : APPROVE_PROMPT
         : `Plan sent back for changes:\n${feedback.trim()}`;
     try {
+      // Stage first, while the card is still `ready` + needs_approval — the
+      // only window in which a person may write it.
       await setStage.mutateAsync({ sessionId: session.session_id, stage: next });
-      await startSessionWithPrompt(projectId, session.session_id, {
-        parts: [{ type: 'text', text }],
-      });
+      // An agent that parked itself by ASKING (the platform's question dialog)
+      // is waiting on that question, not on a fresh prompt: answer it, and the
+      // API hands the answer to the agent as its next turn. Otherwise the
+      // decision goes out as a durable prompt.
+      const open = await getSessionOpenQuestion(projectId, session.session_id).catch(() => null);
+      if (open) {
+        await answerSessionQuestion(projectId, session.session_id, {
+          answers: [text],
+          request_id: open.request_id,
+        });
+      } else {
+        await startSessionWithPrompt(projectId, session.session_id, {
+          parts: [{ type: 'text', text }],
+        });
+      }
       successToast(
         kind === 'approve' ? 'Approved — the agent is continuing' : 'Sent back to planning',
       );

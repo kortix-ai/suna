@@ -214,9 +214,29 @@ sessionTriggerSlug(session);   // the trigger that created it, or null
 
 Inside a sandbox the agent moves its own card with
 `kortix sessions stage ready --needs-approval`. `setStage` returns `403` with
-`code: 'feature_disabled'` until the project enables the flag, and a sandbox
-caller may only move its own session. In React, `useSetSessionStage(projectId)`
-is the same call as a mutation that refreshes every session list.
+`code: 'feature_disabled'` until the project enables the flag. Only the
+session's agent moves the card: a person's `setStage` is accepted solely to
+approve (`in_progress`) or send back (`planning`) a card parked in `ready`
+with `needs_approval`, and answers `403` with `code: 'stage_agent_only'`
+otherwise. In React, `useSetSessionStage(projectId)` is the same call as a
+mutation that refreshes every session list.
+
+An agent that parks its card by asking a question is waiting on that
+question, not on a new prompt. Read and answer it with the durable question
+calls — the answer reaches the agent as its next turn and moves a parked card
+to `in_progress`:
+
+```ts
+import { answerSessionQuestion, getSessionOpenQuestion } from '@kortix/sdk';
+
+const open = await getSessionOpenQuestion(projectId, sessionId); // or null
+if (open) {
+  await answerSessionQuestion(projectId, sessionId, {
+    answers: ['Approved. Proceed with the plan.'],
+    request_id: open.request_id,
+  });
+}
+```
 
 ## Runtime status and previews
 

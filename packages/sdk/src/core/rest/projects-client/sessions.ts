@@ -1082,6 +1082,67 @@ export async function setProjectSessionStage(
   );
 }
 
+/**
+ * The durable question the agent is waiting on (`session_pending_questions`),
+ * kept by the API so it survives a parked sandbox. `questions` is the raw
+ * opencode `QuestionInfo[]` the agent asked with.
+ */
+export interface SessionOpenQuestion {
+  id: string;
+  session_id: string;
+  request_id: string;
+  opencode_session_id: string | null;
+  questions: unknown;
+  asked_at: string;
+}
+
+export interface AnswerSessionQuestionInput {
+  /** One entry per question; an option label, or free text when the question allows it. */
+  answers: string[];
+  /** Defaults to the open question's request id server-side. */
+  request_id?: string;
+}
+
+export interface AnswerSessionQuestionResult {
+  ok: boolean;
+  /** `delivered` | `pending` | the failure the follow-up turn reported. */
+  delivery: string;
+}
+
+/** `GET /projects/:id/sessions/:sid/question` → the open question, or null. */
+export async function getSessionOpenQuestion(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionOpenQuestion | null> {
+  const result = unwrap(
+    await backendApi.get<{ question: SessionOpenQuestion | null }>(
+      `/projects/${projectId}/sessions/${sessionId}/question`,
+    ),
+  );
+  return result.question ?? null;
+}
+
+/**
+ * Answer the open question. The API records the answer and hands it to the
+ * agent as its next turn (the same path the session's question dialog uses),
+ * so a caller never needs a second prompt.
+ */
+export async function answerSessionQuestion(
+  projectId: string,
+  sessionId: string,
+  input: AnswerSessionQuestionInput,
+): Promise<AnswerSessionQuestionResult> {
+  return unwrap(
+    await backendApi.post<AnswerSessionQuestionResult>(
+      `/projects/${projectId}/sessions/${sessionId}/question`,
+      {
+        answers: input.answers,
+        ...(input.request_id ? { request_id: input.request_id } : {}),
+      },
+    ),
+  );
+}
+
 /** The trigger that created this session (`metadata.trigger_slug`), or null. */
 export function sessionTriggerSlug(session: Pick<ProjectSession, 'metadata'>): string | null {
   const slug = session.metadata?.trigger_slug;
