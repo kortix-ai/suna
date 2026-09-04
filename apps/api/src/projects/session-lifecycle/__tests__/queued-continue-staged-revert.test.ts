@@ -135,11 +135,7 @@ mock.module('../store', () => ({
   markCommandForwarded: async (commandId: string, sessionId: string, wireMessageId: string) => {
     forwardedCalls.push({ commandId, sessionId, wireMessageId });
   },
-  markCommandSucceeded: async (
-    commandId: string,
-    result: unknown,
-    sessionId?: string | null,
-  ) => {
+  markCommandSucceeded: async (commandId: string, result: unknown, sessionId?: string | null) => {
     succeededCalls.push({ commandId, result, sessionId });
   },
   // `inbox-rows.ts` imports this at module load, so the mock has to carry it or
@@ -175,7 +171,7 @@ mock.module('../../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://daemon.test', headers: {} }),
 }));
 mock.module('../../lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 
 const { executeQueuedContinue } = await import('../engine');
@@ -240,7 +236,11 @@ describe('executeQueuedContinue — staged-revert guard', () => {
 
     expect(outcome).toBe('succeeded');
     expect(succeededCalls).toEqual([
-      { commandId: 'cmd-1', result: { status: 'skipped', reason: 'staged_revert' }, sessionId: SESSION_ID },
+      {
+        commandId: 'cmd-1',
+        result: { status: 'skipped', reason: 'staged_revert' },
+        sessionId: SESSION_ID,
+      },
     ]);
     expect(failedCalls).toEqual([]);
     // The guard ran (it read the sandbox's OpenCode session) but delivery
@@ -257,7 +257,9 @@ describe('executeQueuedContinue — staged-revert guard', () => {
     const outcome = await executeQueuedContinue(baseRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([{ commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID }]);
+    expect(succeededCalls).toEqual([
+      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
+    ]);
     expect(failedCalls).toEqual([]);
     // Guard ran BEFORE delivery, then delivery proceeded normally.
     const endpointIdx = events.indexOf('endpoint');
@@ -274,7 +276,9 @@ describe('executeQueuedContinue — staged-revert guard', () => {
     const outcome = await executeQueuedContinue(baseRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([{ commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID }]);
+    expect(succeededCalls).toEqual([
+      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
+    ]);
     // The guard tried (endpoint resolution) but got nothing back, so it never
     // even reached the GET /session/{id} fetch — and delivery still ran.
     expect(events).toContain('endpoint');
@@ -289,7 +293,9 @@ describe('executeQueuedContinue — staged-revert guard', () => {
     const outcome = await executeQueuedContinue(baseRow());
 
     expect(outcome).toBe('succeeded');
-    expect(succeededCalls).toEqual([{ commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID }]);
+    expect(succeededCalls).toEqual([
+      { commandId: 'cmd-1', result: { status: 'delivered' }, sessionId: SESSION_ID },
+    ]);
     // Never even reached endpoint resolution — the pin check short-circuits first.
     expect(events).not.toContain('endpoint');
     expect(events).toContain('open');
@@ -355,7 +361,11 @@ describe('executeQueuedContinue — inbox prompts across a staged revert', () =>
     // The row went out and stays OPEN: an inbox prompt carries a wire id, so it
     // reads `delivering` until the ledger says a turn consumed it.
     expect(forwardedCalls).toEqual([
-      { commandId: 'cmd-1', sessionId: SESSION_ID, wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn' },
+      {
+        commandId: 'cmd-1',
+        sessionId: SESSION_ID,
+        wireMessageId: 'msg_0198f3a1b2c4AbCdEfGhIjKlMn',
+      },
     ]);
     expect(succeededCalls).toEqual([]);
     expect(failedCalls).toEqual([]);

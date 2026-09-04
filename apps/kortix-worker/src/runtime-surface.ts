@@ -24,7 +24,8 @@
  * `/messages` always says exactly what `/events` said and ids can never
  * disagree between the two.
  */
-import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { mintWireMessageId, wireIdTime } from './wire-message-id';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
@@ -164,6 +165,16 @@ interface StoredMessage {
 export class WireTranscript {
   private readonly messages = new Map<string, StoredMessage>();
   private order: string[] = [];
+  /**
+   * Ids hidden by a rewind, still held in `messages`.
+   *
+   * Staged, not deleted: `rewind()` promises a reversible rollback, so the
+   * bytes have to survive until either `unrevert()` puts them back or the next
+   * prompt commits the new path. Keeping them out of `order` is what makes
+   * `page()` — and therefore `/messages` — agree with the removal events
+   * already on the wire, with no second code path.
+   */
+  private staged: string[] = [];
 
   apply(wire: { type: string; properties: Record<string, unknown> }): void {
     if (wire.type === 'message.updated') {
@@ -198,7 +209,80 @@ export class WireTranscript {
       }
       if (!message.parts.has(part.id)) message.order.push(part.id);
       message.parts.set(part.id, part);
+      return;
     }
+    // A reconnecting client replays the wire, so `/messages` can only agree
+    // with `/events` if removals are replayable too.
+    if (wire.type === 'message.removed') {
+      const id = wire.properties.messageID as string | undefined;
+      if (!id) return;
+      this.messages.delete(id);
+      this.order = this.order.filter((x) => x !== id);
+      this.staged = this.staged.filter((x) => x !== id);
+      return;
+    }
+    if (wire.type === 'message.part.removed') {
+      const id = wire.properties.messageID as string | undefined;
+      const partId = wire.properties.partID as string | undefined;
+      if (!id || !partId) return;
+      const message = this.messages.get(id);
+      if (!message) return;
+      message.parts.delete(partId);
+      message.order = message.order.filter((x) => x !== partId);
+    }
+  }
+
+  /**
+   * Hide `fromId` and everything after it. Returns the ids removed, oldest
+   * first, so the caller can emit one `message.removed` per id.
+   *
+   * An unknown id removes nothing rather than guessing a position — a rewind
+   * that silently truncated at the wrong place would be worse than one that
+   * did nothing.
+   */
+  revert(fromId: string): string[] {
+    if (!this.messages.has(fromId)) return [];
+    const cut = this.order.filter((id) => id >= fromId);
+    if (cut.length === 0) return [];
+    this.order = this.order.filter((id) => id < fromId);
+    // A second, earlier rewind subsumes the first: everything stays staged and
+    // one restore brings the whole tail back in id order.
+    this.staged = [...this.staged, ...cut].sort();
+    return cut;
+  }
+
+  /** Put every staged message back. Returns the ids restored, oldest first. */
+  unrevert(): string[] {
+    if (this.staged.length === 0) return [];
+    const restored = [...this.staged].sort();
+    this.order = [...this.order, ...restored].sort();
+    this.staged = [];
+    return restored;
+  }
+
+  /**
+   * Drop the staged tail for good — the next prompt has committed the new path.
+   * After this `unrevert()` cannot resurrect it, which is the point: splicing a
+   * dead branch into a conversation that has moved on is worse than losing it.
+   */
+  commitRevert(): string[] {
+    if (this.staged.length === 0) return [];
+    const dropped = [...this.staged].sort();
+    for (const id of dropped) this.messages.delete(id);
+    this.staged = [];
+    return dropped;
+  }
+
+  /** Ids currently hidden by a rewind. */
+  get stagedIds(): string[] {
+    return [...this.staged];
+  }
+
+  /** One message with its parts in order, or null. Used to re-announce a restore. */
+  messageById(id: string): { info: Record<string, unknown>; parts: Record<string, unknown>[] } | null {
+    const m = this.messages.get(id);
+    if (!m) return null;
+    return { info: m.info, parts: m.order.map((pid) => m.parts.get(pid)!).filter(Boolean) };
   }
 
   page(opts: { limit: number; before: string | null }): {
@@ -243,6 +327,16 @@ export interface RuntimeSurfaceOptions {
   agents?: Record<string, { description?: string; model?: string }>;
   defaultModel?: string | null;
   workspace?: string;
+  /**
+   * Stop the run in flight. Wired to `Agent.abort()` by the worker.
+   *
+   * Without it, the client's Stop (`session.abort` -> POST
+   * `session/:id/abort`) fell through to this surface's catch-all 404: the UI
+   * showed "Interrupted" from its own optimistic receipt while the agent kept
+   * generating (reported 2026-08-29, pi). Optional so the bench, which builds
+   * a surface with no agent, keeps working.
+   */
+  onAbort?: () => void;
 }
 
 function agentModel(ref: string | undefined): { providerID: string; modelID: string } | null {
@@ -257,7 +351,13 @@ export class RuntimeSurface {
   readonly bus = new WorkerEventBus();
   readonly transcript = new WireTranscript();
   private status: { type: string } = { type: 'idle' };
+  /** The user message id of the turn currently running, for the health turn
+   *  probe the API's turn-lifecycle polls (`/kortix/health?turn=1`). */
+  private activeTurnMessageId: string | null = null;
+  private turnInFlight = false;
   private messageSeq = 0;
+  /** Clock of the last id this surface minted — see . */
+  private lastMintedTime: bigint | null = null;
   private readonly createdAt = Date.now();
   private updatedAt = Date.now();
   private title: string;
@@ -267,22 +367,242 @@ export class RuntimeSurface {
     this.title = opts.agentName ? `${opts.agentName} session` : 'Pi session';
   }
 
-  /** Zero-padded so message ids sort in mint order — the id ORDER is load-bearing. */
-  mintMessageId = (): string => `msg_pi${String(++this.messageSeq).padStart(8, '0')}`;
+  /**
+   * The id IS the transcript's sort key, so it has to be a real OpenCode wire
+   * id — `msg_` + 12 hex clock chars + 14 base62.
+   *
+   * This used to mint `msg_pi00000001`, zero-padded "so message ids sort in
+   * mint order". They did sort in mint order among THEMSELVES, and that was
+   * the whole bug: the web client splits messages on `/^msg_[0-9a-f]{12}/`
+   * into "the server placed this" and "only this tab knows about it", and
+   * sorts every local one after every placed one. `p` and `i` are not hex,
+   * so every reply this worker produced sorted below the entire transcript and
+   * `groupMessagesIntoTurns` attached them all to the LAST user message —
+   * three questions rendered as three bubbles followed by three answers.
+   *
+   * Seeded from the turn's own user message id, so a reply cannot sort above
+   * the question it answers however far this box's clock has drifted, and from
+   * the previous mint, so two replies inside one millisecond still order.
+   */
+  mintMessageId = (): string => {
+    this.messageSeq++;
+    const parentTime = wireIdTime(this.activeTurnMessageId);
+    const floor =
+      this.lastMintedTime === null
+        ? parentTime
+        : parentTime === null || this.lastMintedTime > parentTime
+          ? this.lastMintedTime
+          : parentTime;
+    const minted = mintWireMessageId({ nowMs: Date.now(), newestKnownTime: floor });
+    this.lastMintedTime = minted.time;
+    return minted.id;
+  };
+
+  /**
+   * Rebuild the transcript from the durable log after a restart (P1.8).
+   *
+   * One pi instance IS one session, so a box that comes back must come back
+   * with the SAME conversation — otherwise the session answers with no memory
+   * of what was said, and `/messages` reports an empty history for a session
+   * the store knows is three turns deep.
+   *
+   * Restored pi messages carry NO wire id (they are storage entries, not wire
+   * frames), so ids are minted here in restore order. That is safe and it is
+   * why this must run BEFORE any live turn: `mintMessageId` seeds each new id
+   * from `lastMintedTime`, so every reply after the restore sorts above the
+   * whole restored transcript rather than back inside it.
+   *
+   * Applied straight to the transcript, not through `publishWire`: history is
+   * not news. Replaying it onto the bus would hand a reconnecting client a
+   * burst of "new" events for messages it already has.
+   */
+  seedRestoredMessages(
+    messages: Array<{
+      role?: string;
+      content?: unknown;
+      timestamp?: number | string;
+      toolCallId?: string;
+      toolName?: string;
+      isError?: boolean;
+    }>,
+  ): number {
+    let seeded = 0;
+    // A tool call and its result are TWO durable messages (the assistant's
+    // `toolCall` block, then a `role: 'toolResult'` message pointing back at it
+    // by `toolCallId`). The live wire shape is one `tool` part that moves from
+    // running to completed, so the result has to fold onto the part the call
+    // created rather than become a bubble of its own — otherwise a resumed
+    // session shows "Successfully wrote 4 bytes to number.txt" as something
+    // the assistant SAID, and the write card it belongs to is missing.
+    const toolParts = new Map<string, { messageId: string; partId: string; tool: string; input: unknown }>();
+
+    for (const message of messages) {
+      const blocks = Array.isArray(message.content) ? message.content : [];
+      const created = typeof message.timestamp === 'number' ? message.timestamp : Date.now();
+
+      if (message.role === 'toolResult') {
+        const pending = message.toolCallId ? toolParts.get(message.toolCallId) : undefined;
+        // An orphan result (its call fell outside the restored window) has no
+        // part to update. Dropping it is right: on its own it is a bare string
+        // with nothing to attach it to.
+        if (!pending) continue;
+        const output = blocks
+          .filter((b: any) => b && typeof b.text === 'string')
+          .map((b: any) => b.text)
+          .join('');
+        this.applyToolPart(pending, {
+          ...(message.isError
+            ? { status: 'error', error: output }
+            : { status: 'completed', output }),
+          input: pending.input,
+          time: { start: created, end: created },
+        });
+        continue;
+      }
+
+      const role = message.role === 'user' ? 'user' : 'assistant';
+      const id = this.mintMessageId();
+      const parts: Array<{ kind: 'text'; text: string } | { kind: 'tool'; call: any }> = [];
+      for (const block of blocks) {
+        if (!block || typeof block !== 'object') continue;
+        const b = block as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
+        if (typeof b.text === 'string' && b.text.length > 0) parts.push({ kind: 'text', text: b.text });
+        else if (b.type === 'toolCall' && b.name) parts.push({ kind: 'tool', call: b });
+      }
+      // A message with nothing renderable would show as an empty bubble.
+      if (parts.length === 0) continue;
+
+      this.transcript.apply({
+        type: 'message.updated',
+        properties: {
+          sessionID: this.rootId,
+          info: { id, role, sessionID: this.rootId, time: { created } },
+        },
+      });
+      parts.forEach((part, index) => {
+        const partId = `${id}-p${index}`;
+        if (part.kind === 'text') {
+          this.transcript.apply({
+            type: 'message.part.updated',
+            properties: {
+              sessionID: this.rootId,
+              part: { id: partId, messageID: id, sessionID: this.rootId, type: 'text', text: part.text },
+            },
+          });
+          return;
+        }
+        const entry = { messageId: id, partId, tool: String(part.call.name), input: part.call.arguments };
+        // Left 'running' on purpose when no result follows: that is exactly
+        // what an interrupted turn was, and claiming it completed would be a lie.
+        this.applyToolPart(entry, { status: 'running', input: entry.input, time: { start: created } });
+        if (typeof part.call.id === 'string') toolParts.set(part.call.id, entry);
+      });
+      seeded++;
+    }
+    return seeded;
+  }
+
+  /** One `tool` part, in the same shape the live adapter emits (chat-events.ts). */
+  private applyToolPart(
+    entry: { messageId: string; partId: string; tool: string },
+    state: Record<string, unknown>,
+  ): void {
+    this.transcript.apply({
+      type: 'message.part.updated',
+      properties: {
+        sessionID: this.rootId,
+        part: {
+          id: entry.partId,
+          messageID: entry.messageId,
+          sessionID: this.rootId,
+          type: 'tool',
+          tool: entry.tool,
+          callID: entry.partId,
+          state,
+        },
+      },
+    });
+  }
 
   /** Sequence one adapter wire event AND fold it into the transcript. */
-  publishWire(wire: { type: string; properties: Record<string, unknown> }): void {
+  publishWire(wire: {
+    type: string;
+    properties: Record<string, unknown>;
+    transcriptOnly?: boolean;
+    /**
+     * Bus only — do NOT apply to the transcript. The mirror of
+     * `transcriptOnly`, and rewind is why it exists: the transcript has
+     * already STAGED the change, and re-applying a `message.removed` through
+     * `apply()` would delete the staged copy for good, so `unrevert()` would
+     * find nothing to restore and a "reversible" rollback would be permanent.
+     */
+    busOnly?: boolean;
+  }): void {
     this.updatedAt = Date.now();
+    // A transcript-only frame is the full-text twin of a `message.part.delta`:
+    // the transcript stores the whole string, the bus carries the append. Put
+    // both on the bus and a subscriber applies the text twice.
+    if (wire.transcriptOnly) {
+      this.transcript.apply(wire);
+      return;
+    }
     if (wire.type === 'session.status') {
       const status = wire.properties.status as { type?: string } | undefined;
       if (status?.type) this.status = { type: status.type };
     }
-    this.transcript.apply(wire);
+    if (!wire.busOnly) this.transcript.apply(wire);
     const session =
       (wire.properties.sessionID as string | undefined) ??
       ((wire.properties.info as { sessionID?: string } | undefined)?.sessionID ??
         (wire.properties.part as { sessionID?: string } | undefined)?.sessionID);
     this.bus.publish(wire.type, wire.properties, session);
+  }
+
+  /** Record turn start/end so the health turn probe can report it. */
+  markTurn(userMessageId: string | null, inFlight: boolean): void {
+    this.turnInFlight = inFlight;
+    this.activeTurnMessageId = inFlight ? userMessageId : null;
+  }
+
+  /**
+   * Who the ending turn IS, for `POST /turn-stream`.
+   *
+   * `completeSandboxTurn` (apps/api) does not close "the open turn" — it
+   * SELECTS one by identity, and both fields are load-bearing:
+   *   • a candidate is only considered when its stored `opencodeSessionId` is
+   *     null OR equals the one reported, and every pi turn stores `ses_pi…`,
+   *     so omitting it makes the candidate set empty;
+   *   • the matched row must then equal the reported `messageId`, because the
+   *     no-id fallback branch only matches turns whose own `messageId` is null.
+   * Relaying without these returns HTTP 200 having closed NOTHING, which the
+   * relay reads as success — the failure mode this method exists to prevent.
+   *
+   * Read SYNCHRONOUSLY at `agent_end`: the id is cleared by `markTurn(_, false)`
+   * in `runTurn`'s `finally`, which runs once `agent.prompt()` resolves.
+   */
+  turnEndIdentity(): { opencodeSessionId: string; messageId: string | null } {
+    return { opencodeSessionId: this.rootId, messageId: this.activeTurnMessageId };
+  }
+
+  /**
+   * The turn-probe answer for `GET /kortix/health?turn=1&turn_message_id=…`.
+   * The API's turn-lifecycle polls this to renew the box's deadline while a
+   * turn runs and to settle it when the turn ends — without it the reaper can
+   * stop the box mid-turn (the "a turn probe" learnings). `turn_in_flight` is
+   * true while a turn runs; when a specific `turn_message_id` is asked for, it
+   * answers about THAT turn (true only while it is the live one).
+   */
+  turnProbe(requestedMessageId: string | null): {
+    turn_in_flight: boolean;
+    turn_message_id: string | null;
+  } {
+    if (requestedMessageId) {
+      return {
+        turn_in_flight: this.turnInFlight && this.activeTurnMessageId === requestedMessageId,
+        turn_message_id: this.activeTurnMessageId,
+      };
+    }
+    return { turn_in_flight: this.turnInFlight, turn_message_id: this.activeTurnMessageId };
   }
 
   /** The first user text names the session, like OpenCode's title adoption. */
@@ -291,6 +611,39 @@ export class RuntimeSurface {
       const line = text.trim().split('\n')[0] ?? '';
       if (line) this.title = line.length > 80 ? `${line.slice(0, 77)}…` : line;
     }
+  }
+
+  /**
+   * The same check every `/kortix/opencode/*` route makes, exposed so the
+   * worker's RAW routes can make it too.
+   *
+   * `worker.ts` serves `/session/:id/prompt_async` and the bench surface
+   * directly, and called nothing — so those routes were the only ones on the
+   * box with no auth at all, while every sibling here had it. Accepts either
+   * the session bearer or the signed user-context header, which is what the
+   * API's sandbox proxy already sends (proven: an abort issued through the
+   * proxy passes this).
+   */
+  authorize(req: IncomingMessage, url: URL): boolean {
+    return this.authorized(req, url);
+  }
+
+  /**
+   * Is this worker running with a credential at all?
+   *
+   * A SESSION box always is — the platform injects KORTIX_TOKEN — so every
+   * product route can and must be gated. The BENCH runs this worker with no
+   * token, and `authorized()` correctly refuses everything when there is none,
+   * which would make the bench's own surface unreachable. So the bench-only
+   * routes ask this first: gate when there is a credential to check, stay open
+   * when there is provably no deployment to protect.
+   *
+   * `prompt_async` deliberately does NOT use this — it is the product's own
+   * delivery route, so a box that somehow lost its token must fail CLOSED
+   * rather than accept anonymous prompts.
+   */
+  requiresAuth(): boolean {
+    return Boolean(this.opts.token);
   }
 
   private authorized(req: IncomingMessage, url: URL): boolean {
@@ -359,6 +712,84 @@ export class RuntimeSurface {
     };
   }
 
+  /**
+   * Stage a rewind at `messageId` and TELL every client.
+   *
+   * The transcript change alone is invisible to anyone already connected —
+   * `/messages` would disagree with what `/events` has said — so each removed
+   * message is published as `message.removed`. Those events already have
+   * consumers everywhere (the SDK parses them, mobile switches on them); until
+   * now nothing produced them, which is exactly why rewind did nothing.
+   */
+  revertFrom(messageId: string): { removed: string[] } {
+    const removed = this.transcript.revert(messageId);
+    for (const id of removed) {
+      this.publishWire({
+        type: 'message.removed',
+        properties: { messageID: id, sessionID: this.rootId },
+        busOnly: true,
+      });
+    }
+    return { removed };
+  }
+
+  /**
+   * Commit a staged rewind — the new path has been taken.
+   *
+   * No events: clients were told `message.removed` when the rewind was staged,
+   * so they already believe these are gone. This only makes that true, and
+   * stops a later `restoreRewind()` splicing a dead branch back into a
+   * conversation that has moved on.
+   */
+  commitStagedRevert(): string[] {
+    return this.transcript.commitRevert();
+  }
+
+  /** Undo a staged rewind, re-announcing each message it had hidden. */
+  restoreRevert(): { restored: string[] } {
+    const restored = this.transcript.unrevert();
+    for (const id of restored) {
+      const message = this.transcript.messageById(id);
+      if (!message) continue;
+      // Bus-only again: `unrevert()` already put these back in the transcript,
+      // and re-applying would be harmless but redundant work on every restore.
+      this.publishWire({
+        type: 'message.updated',
+        properties: { info: message.info },
+        busOnly: true,
+      });
+      for (const part of message.parts) {
+        this.publishWire({ type: 'message.part.updated', properties: { part }, busOnly: true });
+      }
+    }
+    return { restored };
+  }
+
+  /**
+   * Read a small JSON body. A malformed or absent body reads as `null` rather
+   * than throwing: the caller decides whether the field it wanted was required.
+   */
+  private readRevertBody(req: IncomingMessage): Promise<{ messageID?: string } | null> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      let total = 0;
+      req.on('data', (c: Buffer) => {
+        total += c.length;
+        // A revert body is a single id; anything larger is not one.
+        if (total > 64 * 1024) return;
+        chunks.push(c);
+      });
+      req.on('end', () => {
+        try {
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'));
+        } catch {
+          resolve(null);
+        }
+      });
+      req.on('error', () => resolve(null));
+    });
+  }
+
   private opencodeSessionObject() {
     const s = this.sessionProjection();
     return {
@@ -379,6 +810,79 @@ export class RuntimeSurface {
    * auth posture as the namespace routes.
    */
   handleRawSessionList(req: IncomingMessage, res: ServerResponse, url: URL): boolean {
+    // POST /session/:id/abort — the Stop button's REAL path.
+    //
+    // There is a second abort handler under `/kortix/opencode/`, and it is not
+    // the one the product calls. The SDK builds its OpenCode client with
+    // `baseUrl = <backend>/p/<externalId>/8000` (`getClientForUrl` in
+    // packages/sdk/src/core/runtime/client.ts), so `session.abort()` resolves
+    // to `<base>/session/:id/abort` — HERE, at the raw root, with no prefix.
+    //
+    // This method was GET-only, so that POST fell through to the worker's
+    // catch-all 404. Stop therefore did nothing on a pi session: the UI painted
+    // "Interrupted" from its own optimistic receipt while the agent kept
+    // generating to completion, and the turn closed later as if it had never
+    // been stopped. Verified against pi.kortix.com 2026-09-01 — raw path 404,
+    // prefixed path 200.
+    //
+    // Same contract as the prefixed handler: idempotent, root-scoped, and
+    // `Agent.abort()` on an idle agent is a no-op.
+    const rawAbort = url.pathname.match(/^\/session\/([^/]+)\/abort$/);
+    if (rawAbort && req.method === 'POST') {
+      if (!this.authorized(req, url)) {
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      if (decodeURIComponent(rawAbort[1]!) !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      this.opts.onAbort?.();
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true }));
+      return true;
+    }
+    // POST /session/:id/revert and /unrevert — `kortix.session().rewind()` and
+    // `.restoreRewind()` land HERE, at the raw root, for the same reason abort
+    // does: the SDK's OpenCode client has no prefix. Answered 404 before this,
+    // so rewinding a pi session silently did nothing.
+    const rawRevert = url.pathname.match(/^\/session\/([^/]+)\/(revert|unrevert)$/);
+    if (rawRevert && req.method === 'POST') {
+      if (!this.authorized(req, url)) {
+        res
+          .writeHead(401, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unauthorized' }));
+        return true;
+      }
+      if (decodeURIComponent(rawRevert[1]!) !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      void this.readRevertBody(req).then((body) => {
+        if (rawRevert[2] === 'unrevert') {
+          const { restored } = this.restoreRevert();
+          res
+            .writeHead(200, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ ok: true, restored }));
+          return;
+        }
+        const messageId = body?.messageID;
+        if (!messageId) {
+          res
+            .writeHead(400, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'messageID is required' }));
+          return;
+        }
+        const { removed } = this.revertFrom(messageId);
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, removed }));
+      });
+      return true;
+    }
     if (req.method !== 'GET') return false;
     if (!this.authorized(req, url)) {
       res.writeHead(401, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'unauthorized' }));
@@ -386,6 +890,46 @@ export class RuntimeSurface {
     }
     if (url.pathname === '/session') {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify([this.opencodeSessionObject()]));
+      return true;
+    }
+    // GET /session/:id/message[/:messageId] — OpenCode's raw transcript
+    // compatibility surface. The API uses this path at turn end to write its
+    // stopped-session mirror, and its lifecycle reconciler reads the same
+    // route to prove whether a forwarded prompt ran. Serving only the
+    // namespaced `/kortix/opencode/messages/:id` route left both control-plane
+    // reads with a 404 even though the worker held the complete transcript.
+    const rawMessage = url.pathname.match(/^\/session\/([^/]+)\/message(?:\/([^/]+))?$/);
+    if (rawMessage) {
+      const sessionId = decodeURIComponent(rawMessage[1]!);
+      if (sessionId !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      const messageId = rawMessage[2] ? decodeURIComponent(rawMessage[2]) : null;
+      if (messageId) {
+        const message = this.transcript.messageById(messageId);
+        if (!message) {
+          res
+            .writeHead(404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unknown message' }));
+          return true;
+        }
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify(message));
+        return true;
+      }
+      const limitRaw = Number(url.searchParams.get('limit'));
+      const limit =
+        Number.isFinite(limitRaw) && limitRaw > 0
+          ? Math.min(Math.floor(limitRaw), MAX_MESSAGE_PAGE)
+          : Math.max(this.transcript.count, 1);
+      const page = this.transcript.page({ limit, before: null });
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(page.messages));
       return true;
     }
     const m = url.pathname.match(/^\/session\/([^/]+)$/);
@@ -456,6 +1000,24 @@ export class RuntimeSurface {
         tool_outputs_truncated: 0,
         messages: page.messages,
       });
+    }
+
+    // POST session/:id/abort — the client's Stop button.
+    //
+    // Placed BEFORE the GET read below because both match `session/`, and this
+    // one is the state change: `session.abort({ sessionID })` on the OpenCode
+    // runtime client resolves to exactly this path. Answering 200 without
+    // calling the agent would be worse than 404ing, so the handler is only
+    // reached once the session id matches this root.
+    const abortMatch = sub.match(/^session\/([^/]+)\/abort$/);
+    if (abortMatch && req.method === 'POST') {
+      const sessionId = decodeURIComponent(abortMatch[1]!);
+      if (sessionId !== this.rootId) return json(404, { error: 'unknown session' });
+      // Idempotent by contract: the UI can send Stop against a turn row that is
+      // already closed, and `Agent.abort()` on an idle agent is a no-op. An
+      // unwired surface (the bench) answers the same way.
+      this.opts.onAbort?.();
+      return json(200, { ok: true });
     }
 
     if (sub.startsWith('session/') && req.method === 'GET') {

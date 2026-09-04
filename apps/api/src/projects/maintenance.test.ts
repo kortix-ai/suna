@@ -100,6 +100,7 @@ mock.module('./sandbox-reaper', () => ({
     errors: 0,
   }),
   reapOrphanProviderBoxes: async () => ({ listed: 0, orphans: 0, stopped: 0, errors: 0 }),
+  reapOrphanEnvironments: async () => ({ scanned: 0, stopped: 0, deleted: 0, errors: 0 }),
   countBillingInvariantViolations: async () => 0,
   // The mirror monitor: evidence-gated billing under-bills SILENTLY when the
   // reaper is starved, where wall-clock billing over-billed loudly.

@@ -7,14 +7,15 @@
  * traffic runs over the edge, never through the session proxy.
  */
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import {
+  SessionEnvironmentError,
+  SessionEnvironmentStopError,
   ensureSessionEnvironment,
   readSessionEnvironment,
-  SessionEnvironmentError,
   stopSessionEnvironment,
 } from '../../platform/services/session-environment';
 import { db } from '../../shared/db';
@@ -29,6 +30,9 @@ const EnvironmentSchema = z.object({
   external_id: z.string().nullable(),
   preview_url: z.string().nullable(),
   preview_token: z.string().nullable(),
+});
+const EnsureEnvironmentSchema = EnvironmentSchema.extend({
+  rpc_secret: z.string().nullable(),
 });
 
 interface SessionForEnvironment {
@@ -77,6 +81,12 @@ async function authorizeEnvironmentCall(
   if (!callerSession) {
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, action);
   }
+  // Scoped to the project AND account the caller was just authorized for.
+  // Authorization above proves the caller may act on `projectId`; without
+  // these two predicates the ROW is fetched by session id alone, so a caller
+  // authorized on their own project could pass any other project's session id
+  // and act on it — authorization checked against one object, action taken on
+  // another. Mirrors `loadProjectSessionRow` (projects/lib/access.ts).
   const [session] = await db
     .select({
       agentName: projectSessions.agentName,
@@ -84,7 +94,13 @@ async function authorizeEnvironmentCall(
       metadata: projectSessions.metadata,
     })
     .from(projectSessions)
-    .where(eq(projectSessions.sessionId, sessionId))
+    .where(
+      and(
+        eq(projectSessions.sessionId, sessionId),
+        eq(projectSessions.projectId, loaded.row.projectId),
+        eq(projectSessions.accountId, loaded.row.accountId),
+      ),
+    )
     .limit(1);
   if (!session || (session.metadata as Record<string, unknown> | null)?.deletedAt) {
     return { kind: 'error', response: c.json({ error: 'Not found' }, 404) };
@@ -120,6 +136,13 @@ function serialize(info: {
   };
 }
 
+function serializeWithRpc(info: Parameters<typeof serialize>[0] & { rpcSecret: string | null }) {
+  return {
+    ...serialize(info),
+    rpc_secret: info.rpcSecret,
+  };
+}
+
 projectsApp.openapi(
   createRoute({
     method: 'post',
@@ -131,7 +154,7 @@ projectsApp.openapi(
       params: z.object({ projectId: z.string(), sessionId: z.string() }),
     },
     responses: {
-      200: json(EnvironmentSchema, 'The session environment, provisioned or resumed'),
+      200: json(EnsureEnvironmentSchema, 'The session environment, provisioned or resumed'),
       ...errors(400, 403, 404, 409, 502, 504),
     },
   }),
@@ -165,7 +188,7 @@ projectsApp.openapi(
           gitAuthToken: null,
         },
       });
-      return c.json(serialize(info));
+      return c.json(serializeWithRpc(info));
     } catch (err) {
       if (err instanceof SessionEnvironmentError) {
         return c.json({ error: err.message }, err.status as never);
@@ -211,14 +234,27 @@ projectsApp.openapi(
     },
     responses: {
       200: json(EnvironmentSchema, 'The stopped environment'),
-      ...errors(400, 403, 404),
+      ...errors(400, 403, 404, 502),
     },
   }),
   async (c) => {
     const gate = await authorizeEnvironmentCall(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
     if (gate.kind === 'error') return gate.response as never;
-    const info = await stopSessionEnvironment(gate.sessionId);
-    if (!info) return c.json({ error: 'No environment' }, 404);
-    return c.json(serialize(info));
+    try {
+      const info = await stopSessionEnvironment(gate.sessionId);
+      if (!info) return c.json({ error: 'No environment' }, 404);
+      return c.json(serialize(info));
+    } catch (err) {
+      if (err instanceof SessionEnvironmentStopError) {
+        return c.json(
+          {
+            error: 'Environment stop could not be confirmed',
+            provider_status: err.providerStatus,
+          },
+          502,
+        );
+      }
+      throw err;
+    }
   },
 );

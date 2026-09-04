@@ -470,6 +470,55 @@
       "when": 1787848578054,
       "tag": "20260827163618_session_environments",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788332400000,
+      "tag": "20260902070000_session_worker_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788332401000,
+      "tag": "20260902070001_pi_runtime_artifacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1788338411452,
+      "tag": "20260902084011_filesystems",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1788415128245,
+      "tag": "20260903055848_sandbox_compute_environment_workload",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1788422839862,
+      "tag": "20260903080719_pi_runtime_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1788505141547,
+      "tag": "20260904065901_session_worker_log_append_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1788505167134,
+      "tag": "20260904065927_session_worker_log_append_id_unique",
+      "breakpoints": true
     }
   ]
 }

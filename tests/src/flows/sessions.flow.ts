@@ -4,6 +4,7 @@
  * assert the contract (201 provisioning, status transitions) without blocking on
  * a full boot. Gated on the `daytona` capability.
  */
+import { isDeepStrictEqual } from 'node:util';
 import { flow } from '../core/flow';
 
 flow(
@@ -690,6 +691,83 @@ flow(
           { params: { projectId: p.id, sessionId } },
         );
       r.status(401);
+    });
+  },
+);
+
+/**
+ * SESS-27 — the pi worker transcript is a control-plane log. This flow calls
+ * the real HTTP routes as a project owner. The local fixture writes the
+ * project and session directly to PostgreSQL, so this proves append
+ * idempotency, conflict detection, ordering, and stopped-runtime readability
+ * without a worker or sandbox. Session-scoped credential isolation stays
+ * pinned in the route test because the local profile cannot mint a worker
+ * runtime credential.
+ */
+flow(
+  'SESS-27',
+  {
+    domain: 'sessions',
+    routes: [
+      'POST /v1/projects/:projectId/sessions/:sessionId/log',
+      'GET /v1/projects/:projectId/sessions/:sessionId/log',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const session = await ctx.fixtures.session(project);
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const marker = `ke2e-${crypto.randomUUID()}`;
+    const firstKey = crypto.randomUUID();
+    const first = { kind: 'name', name: `${marker}-first`, probe: marker };
+    const second = { kind: 'label', id: 'message-1', label: 'second', probe: marker };
+    const params = { projectId: project.id, sessionId: session.id };
+
+    await ctx.step('append one mutation and replay the same request → 204 twice', async () => {
+      const options = { params, headers: { 'Idempotency-Key': firstKey } };
+      const initial = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        first,
+        options,
+      );
+      initial.status(204);
+      const retry = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        first,
+        options,
+      );
+      retry.status(204);
+    });
+
+    await ctx.step('reuse the key for different content → 409', async () => {
+      const response = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        { ...first, name: `${marker}-conflict` },
+        { params, headers: { 'Idempotency-Key': firstKey } },
+      );
+      response.status(409).body().has('$.error', 'idempotency key reused with different item');
+    });
+
+    await ctx.step('append a second mutation with a new key → 204', async () => {
+      const response = await owner.post(
+        '/v1/projects/:projectId/sessions/:sessionId/log',
+        second,
+        { params, headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      );
+      response.status(204);
+    });
+
+    await ctx.step('read from PostgreSQL returns each probe once, in append order', async () => {
+      const response = await owner.get('/v1/projects/:projectId/sessions/:sessionId/log', {
+        params,
+      });
+      response.status(200);
+      const items = response
+        .json<Array<Record<string, unknown>>>()
+        .filter((item) => item.probe === marker);
+      if (!isDeepStrictEqual(items, [first, second])) {
+        throw new Error(`unexpected durable transcript probe: ${JSON.stringify(items)}`);
+      }
     });
   },
 );

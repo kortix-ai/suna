@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
+import { accountMembers, projectSessions, sessionEnvironments } from '@kortix/db';
 import * as realProviders from '../../platform/providers';
 import * as realSandboxReaper from '../../projects/sandbox-reaper';
 
 type SandboxRow = { sandboxId: string; provider: string; externalId: string | null };
 
 let sandboxRows: SandboxRow[] = [];
+let environmentRows: Array<{ sessionId: string }> = [];
 let sandboxQueryError: Error | null = null;
 let ownedAccountRows: Array<{ accountId: string }> = [];
 let ownedAccountsQueryError: Error | null = null;
@@ -23,6 +24,7 @@ let reconciledRemoved: string[] = [];
 let reconciledStopped: string[] = [];
 let removedReconcileErrorByExternal: Record<string, Error> = {};
 let creditAccount: Record<string, unknown> | null = null;
+let deletedEnvironments: string[] = [];
 
 /**
  * The fake keys off the drizzle table object handed to `.from()` / `.update()`,
@@ -38,6 +40,7 @@ mock.module('../../shared/db', () => ({
             if (ownedAccountsQueryError) throw ownedAccountsQueryError;
             return ownedAccountRows;
           }
+          if (table === sessionEnvironments) return environmentRows;
           sandboxWhereArg = cond;
           if (sandboxQueryError) throw sandboxQueryError;
           return sandboxRows;
@@ -56,6 +59,12 @@ mock.module('../../shared/db', () => ({
         }),
       }),
     }),
+  },
+}));
+
+mock.module('../../platform/services/session-environment-teardown', () => ({
+  deleteSessionEnvironment: async (sessionId: string) => {
+    deletedEnvironments.push(sessionId);
   },
 }));
 
@@ -150,6 +159,7 @@ function conditionValues(node: unknown, seen = new Set<unknown>()): string[] {
 
 beforeEach(() => {
   sandboxRows = [];
+  environmentRows = [];
   sandboxQueryError = null;
   ownedAccountRows = [];
   ownedAccountsQueryError = null;
@@ -166,6 +176,7 @@ beforeEach(() => {
   reconciledStopped = [];
   removedReconcileErrorByExternal = {};
   creditAccount = null;
+  deletedEnvironments = [];
 });
 
 describe('reclaim status filters', () => {
@@ -179,12 +190,7 @@ describe('reclaim status filters', () => {
   });
 
   test('every non-terminal session status is settled', () => {
-    expect([...LIVE_SESSION_STATUSES]).toEqual([
-      'queued',
-      'branching',
-      'provisioning',
-      'running',
-    ]);
+    expect([...LIVE_SESSION_STATUSES]).toEqual(['queued', 'branching', 'provisioning', 'running']);
     for (const terminal of ['stopped', 'failed', 'completed']) {
       expect(LIVE_SESSION_STATUSES).not.toContain(terminal);
     }
@@ -205,10 +211,7 @@ describe('reclaimableAccountIds', () => {
 
   test('the resolved account is never duplicated', async () => {
     ownedAccountRows = [{ accountId: 'acct-1' }, { accountId: 'acct-2' }];
-    expect((await reclaimableAccountIds('acct-1', 'user-1')).sort()).toEqual([
-      'acct-1',
-      'acct-2',
-    ]);
+    expect((await reclaimableAccountIds('acct-1', 'user-1')).sort()).toEqual(['acct-1', 'acct-2']);
   });
 
   test('a failed membership lookup degrades to the single account, never to none', async () => {
@@ -218,6 +221,15 @@ describe('reclaimableAccountIds', () => {
 });
 
 describe('deleteAccountImmediately — sandbox reclaim', () => {
+  test('deletes every environment across every account the user owns', async () => {
+    ownedAccountRows = [{ accountId: 'acct-2' }];
+    environmentRows = [{ sessionId: 'session-1' }, { sessionId: 'session-2' }];
+
+    await deleteAccountImmediately('acct-1', 'user-1');
+
+    expect(deletedEnvironments.sort()).toEqual(['session-1', 'session-2']);
+  });
+
   test('stops AND removes every reclaimable box across every account the user owns', async () => {
     // 2 accounts × 2 boxes. Before this change the sweep saw only acct-1's
     // boxes, because the route resolves the earliest-joined account and nothing

@@ -32,6 +32,7 @@ import { setCurrentRuntime } from '../session/current-runtime';
 import {
   clearSessionRuntime,
   getSessionRuntime,
+  setSessionRuntime,
   type SessionRuntimeEntry,
 } from '../session/session-runtime-registry';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
@@ -67,7 +68,12 @@ function runtime(): OpencodeClient {
  * transient failure doesn't wedge the key — the next call issues a fresh
  * `/start` instead of replaying a stale rejected promise forever.
  */
-const inFlightSessionStarts = new Map<string, Promise<SessionRuntimeEntry>>();
+interface InFlightRuntimeStart {
+  promise: Promise<SessionRuntimeEntry>;
+}
+
+const inFlightSessionStarts = new Map<string, InFlightRuntimeStart>();
+const inFlightEnvironmentStarts = new Map<string, InFlightRuntimeStart>();
 
 export class SessionNotReadyError extends Error {
   constructor(action: string) {
@@ -512,6 +518,29 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       /** Mint a fresh scoped git push token for a managed project (409 for BYO repos). */
       gitToken: () => P.getProjectGitToken(projectId),
 
+      /**
+       * Shared filesystems — a named volume of state every agent in this
+       * project can read and write, alive whether or not any sandbox is.
+       * The project's git repo stays what it is: config, not memory.
+       */
+      filesystems: {
+        list: () => P.listProjectFilesystems(projectId),
+        create: (input: Parameters<typeof P.createProjectFilesystem>[1]) =>
+          P.createProjectFilesystem(projectId, input),
+        remove: (name: string) => P.deleteProjectFilesystem(projectId, name),
+        files: (name: string, options?: Parameters<typeof P.listProjectFilesystemFiles>[2]) =>
+          P.listProjectFilesystemFiles(projectId, name, options),
+        read: (name: string, path: string) => P.readProjectFilesystemFile(projectId, name, path),
+        write: (
+          name: string,
+          path: string,
+          content: string | Uint8Array,
+          options?: Parameters<typeof P.writeProjectFilesystemFile>[4],
+        ) => P.writeProjectFilesystemFile(projectId, name, path, content, options),
+        removeFile: (name: string, path: string) =>
+          P.deleteProjectFilesystemFile(projectId, name, path),
+      },
+
       secrets: {
         list: () => P.listProjectSecrets(projectId),
         upsert: (input: Parameters<typeof P.upsertProjectSecret>[1]) =>
@@ -925,7 +954,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       const key = `${projectId}\n${sessionId}`;
       const inFlight = inFlightSessionStarts.get(key);
       if (inFlight) {
-        _ready = await inFlight;
+        _ready = await inFlight.promise;
         await previewConfig;
         return _ready;
       }
@@ -996,22 +1025,83 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           opencodeSessionId: started.opencode_session_id,
           runtimeUrl,
           sandboxId: externalId,
+          dataRuntimeKind:
+            (started.sandbox.metadata as Record<string, unknown> | undefined)?.sandbox_slug ===
+            'pi-worker'
+              ? 'environment'
+              : 'worker',
         };
       })();
+      const start: InFlightRuntimeStart = { promise: startPromise };
 
-      inFlightSessionStarts.set(key, startPromise);
+      inFlightSessionStarts.set(key, start);
       try {
-        _ready = await startPromise;
+        _ready = await start.promise;
         // Resolved concurrently with the boot above, so this is already
         // settled — awaited here only so `previewUrl()` can never be reached
         // before the deployment's preview addressing is known.
         await previewConfig;
         return _ready;
       } finally {
-        if (inFlightSessionStarts.get(key) === startPromise) {
+        if (inFlightSessionStarts.get(key) === start) {
           inFlightSessionStarts.delete(key);
         }
       }
+    }
+
+    /** Resolve the box that owns files, PTYs, and user-exposed ports. */
+    async function ensureWorkspaceReady(opts?: {
+      readyTimeoutMs?: number;
+    }): Promise<SessionRuntimeEntry> {
+      const ready = await ensureReady(opts);
+      if (ready.dataRuntimeKind !== 'environment') return ready;
+      if (ready.workspaceRuntimeUrl && ready.workspaceSandboxId) return ready;
+
+      const key = `${projectId}\n${sessionId}`;
+      const inFlight = inFlightEnvironmentStarts.get(key);
+      if (inFlight) {
+        _ready = await inFlight.promise;
+        return _ready;
+      }
+
+      const environmentPromise = (async (): Promise<SessionRuntimeEntry> => {
+        const deadline = Date.now() + (opts?.readyTimeoutMs ?? 180_000);
+        let environment: P.ProjectSessionEnvironment | null = null;
+        while (Date.now() < deadline) {
+          environment = await P.ensureProjectSessionEnvironment(projectId, sessionId);
+          if (environment.status === 'active' && environment.external_id) {
+            const workspaceReady: SessionRuntimeEntry = {
+              ...ready,
+              workspaceRuntimeUrl: getSandboxUrlForExternalId(environment.external_id),
+              workspaceSandboxId: environment.external_id,
+            };
+            setSessionRuntime(projectId, sessionId, workspaceReady);
+            return workspaceReady;
+          }
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.min(1_000, Math.max(0, deadline - Date.now()))),
+          );
+        }
+        throw new ApiError(
+          `Session environment not ready (status: ${environment?.status ?? 'unknown'})`,
+          { code: 'ENVIRONMENT_UNAVAILABLE' },
+        );
+      })();
+      const environmentStart: InFlightRuntimeStart = { promise: environmentPromise };
+      inFlightEnvironmentStarts.set(key, environmentStart);
+      try {
+        _ready = await environmentStart.promise;
+        return _ready;
+      } finally {
+        if (inFlightEnvironmentStarts.get(key) === environmentStart) {
+          inFlightEnvironmentStarts.delete(key);
+        }
+      }
+    }
+
+    async function workspaceRuntimeUrl(): Promise<string> {
+      const ready = await ensureWorkspaceReady();
+      return ready.workspaceRuntimeUrl ?? ready.runtimeUrl;
     }
 
     /** Throw `SessionNotReadyError` if neither this handle nor the registry has resolved a runtime yet. */
@@ -1121,6 +1211,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * happens to be globally active.
        */
       ensureReady,
+      /** Ensure the runtime that owns files, PTYs, and user ports. */
+      ensureWorkspaceReady,
+      environment: {
+        get: () => P.getProjectSessionEnvironment(projectId, sessionId),
+        ensure: () => P.ensureProjectSessionEnvironment(projectId, sessionId),
+        stop: () => P.stopProjectSessionEnvironment(projectId, sessionId),
+      },
 
       // ── runtime health + preview (the session owns its runtime) ──────────
       /**
@@ -1138,11 +1235,18 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         rewriteLocalhostUrl(
           port,
           path,
-          resolvePreviewOptsForSandbox(requireReady('previewUrl').sandboxId),
+          resolvePreviewOptsForSandbox(
+            requireReady('previewUrl').workspaceSandboxId ?? requireReady('previewUrl').sandboxId,
+          ),
         ),
       /** Rewrite a localhost URL the agent printed into a reachable proxy URL. */
       proxyUrl: (url?: string) =>
-        proxyLocalhostUrl(url, resolvePreviewOptsForSandbox(requireReady('proxyUrl').sandboxId)),
+        proxyLocalhostUrl(
+          url,
+          resolvePreviewOptsForSandbox(
+            requireReady('proxyUrl').workspaceSandboxId ?? requireReady('proxyUrl').sandboxId,
+          ),
+        ),
 
       // ── agent actions (opinionated wrappers over the runtime) ────────────
       // These do the right thing end-to-end for scripts/non-React hosts: ensure
@@ -1278,34 +1382,31 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
        * `baseUrl` — this just always supplies THIS session's).
        */
       files: {
-        list: async (dirPath: string) => F.listFiles(dirPath, (await ensureReady()).runtimeUrl),
-        read: async (filePath: string) => F.readFile(filePath, (await ensureReady()).runtimeUrl),
-        readBlob: async (filePath: string) =>
-          F.readBlob(filePath, (await ensureReady()).runtimeUrl),
-        status: async () => F.getFileStatus((await ensureReady()).runtimeUrl),
+        list: async (dirPath: string) => F.listFiles(dirPath, await workspaceRuntimeUrl()),
+        read: async (filePath: string) => F.readFile(filePath, await workspaceRuntimeUrl()),
+        readBlob: async (filePath: string) => F.readBlob(filePath, await workspaceRuntimeUrl()),
+        status: async () => F.getFileStatus(await workspaceRuntimeUrl()),
         findFiles: async (
           query: string,
           options?: { type?: 'file' | 'directory'; limit?: number },
-        ) => F.findFiles(query, options, (await ensureReady()).runtimeUrl),
-        findText: async (pattern: string) => F.findText(pattern, (await ensureReady()).runtimeUrl),
+        ) => F.findFiles(query, options, await workspaceRuntimeUrl()),
+        findText: async (pattern: string) => F.findText(pattern, await workspaceRuntimeUrl()),
         upload: async (file: File | Blob, targetPath?: string, filename?: string) =>
-          F.uploadFile(file, targetPath, filename, (await ensureReady()).runtimeUrl),
+          F.uploadFile(file, targetPath, filename, await workspaceRuntimeUrl()),
         /**
          * Overwrite `filePath` in place. The daemon's upload endpoint never
          * overwrites (it uniquifies a colliding name), so a plain `upload` over
          * an existing path silently writes a DIFFERENT file — see `writeFile`.
          */
         write: async (filePath: string, content: Blob | File) =>
-          F.writeFile(filePath, content, (await ensureReady()).runtimeUrl),
-        create: async (filePath: string) =>
-          F.createFile(filePath, (await ensureReady()).runtimeUrl),
+          F.writeFile(filePath, content, await workspaceRuntimeUrl()),
+        create: async (filePath: string) => F.createFile(filePath, await workspaceRuntimeUrl()),
         copy: async (sourcePath: string, destPath: string) =>
-          F.copyFile(sourcePath, destPath, (await ensureReady()).runtimeUrl),
-        remove: async (filePath: string) =>
-          F.deleteFile(filePath, (await ensureReady()).runtimeUrl),
-        mkdir: async (dirPath: string) => F.mkdir(dirPath, (await ensureReady()).runtimeUrl),
+          F.copyFile(sourcePath, destPath, await workspaceRuntimeUrl()),
+        remove: async (filePath: string) => F.deleteFile(filePath, await workspaceRuntimeUrl()),
+        mkdir: async (dirPath: string) => F.mkdir(dirPath, await workspaceRuntimeUrl()),
         rename: async (from: string, to: string) =>
-          F.renameFile(from, to, (await ensureReady()).runtimeUrl),
+          F.renameFile(from, to, await workspaceRuntimeUrl()),
       },
     };
   }

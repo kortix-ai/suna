@@ -535,6 +535,29 @@ const STALE_RUNTIME_WAKE_MS = RUNTIME_WAKE_GRACE_MS;
 // minutes of repeated 8-second /start long-polls. Once the daemon answers, give
 // OpenCode itself a wider window to finish booting.
 const STALE_RUNTIME_UNREACHABLE_MS = 30_000;
+
+/**
+ * Decide whether a stalled wake should try starting the runtime PROCESS.
+ *
+ * Pure so the rule is testable without a provider. `attemptedForExternalId` is
+ * the guard that makes this one-shot per box-run: the recovery is only ever
+ * worth one attempt, and repeating it every poll would hammer the toolbox for
+ * a box whose runtime is broken for some other reason.
+ */
+export function shouldBootstrapSessionRuntime(input: {
+  reason: 'not_ready' | 'unreachable';
+  externalId: string;
+  attemptedForExternalId: unknown;
+  providerSupportsBootstrap: boolean;
+}): boolean {
+  // `not_ready` means the daemon ANSWERED and is still booting — a process is
+  // clearly running, so starting another one would be wrong.
+  if (input.reason !== 'unreachable') return false;
+  if (!input.providerSupportsBootstrap) return false;
+  return input.attemptedForExternalId !== input.externalId;
+}
+
+
 const STALE_OPENCODE_NOT_READY_MS = 90_000;
 
 function parseTimestampMs(value: unknown): number | null {
@@ -1471,7 +1494,66 @@ async function runOpenSession(args: {
       STALE_OPENCODE_BOOT_HARD_MS,
     );
     if (staleBoot) {
-      log.did('reconciled');
+      // The box is RUNNING and only the runtime process is missing — that is
+      // what `unreachable` past this budget means, and cycling the box cannot
+      // fix it. Start the process instead, once per box-run.
+      //
+      // Daytona resumes a sandbox with nothing running inside (it replaces the
+      // image ENTRYPOINT — see `ensureAppRuntimeStarted`, which exists for the
+      // App workload for exactly this reason). Measured on pi.kortix.com
+      // 2026-08-29: every resume of a stopped pi-worker session failed here and
+      // was cycled back to stopped, forever, while never-stopped boxes on the
+      // SAME snapshot stayed ready.
+      //
+      // Best-effort: on any failure we fall straight through to the existing
+      // stop-and-retry, so this can only improve on today's behaviour.
+      if (
+        shouldBootstrapSessionRuntime({
+          reason: ensured.reason === 'unreachable' ? 'unreachable' : 'not_ready',
+          externalId: runningExternalId,
+          attemptedForExternalId: sandboxMetadata(row).sessionRuntimeBootstrapFor,
+          providerSupportsBootstrap: Boolean(
+            getProvider(row.provider as SandboxProviderName).ensureSessionRuntimeStarted,
+          ),
+        })
+      ) {
+        const provider = getProvider(row.provider as SandboxProviderName);
+        let bootstrapped = false;
+        try {
+          await provider.ensureSessionRuntimeStarted!(runningExternalId);
+          bootstrapped = true;
+        } catch (err) {
+          console.warn(
+            `[start] session runtime bootstrap failed for ${row.sandboxId}:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+        // Stamped even on failure: one attempt per box-run either way, so a
+        // broken box cannot spin the toolbox on every poll.
+        await db
+          .update(sessionSandboxes)
+          .set({
+            metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({ sessionRuntimeBootstrapFor: runningExternalId, sessionRuntimeBootstrapAt: new Date().toISOString() })}::jsonb`,
+          })
+          .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+          .catch(() => {});
+        if (bootstrapped) {
+          // Give the process its own budget rather than judging it on the clock
+          // that just expired for a box with nothing running in it.
+          await clearRuntimeReadinessClocks(row);
+          await markOpencodeReadyWaitStarted(row, 'unreachable', ensured.bootPhase);
+          log.did('reconciled');
+          return {
+            stage: 'starting',
+            agent_name: visible.row.agentName ?? 'default',
+            retriable: true,
+            sandbox: serializeSandboxRow(row),
+            opencode_session_id: ensured.pin,
+            runtime_url: sessionRuntimeUrlPath(runningExternalId),
+            reason: 'runtime_process_restarted',
+          } as any;
+        }
+      }
       log.did('reconciled');
     return preserveEstablishedRuntimeOnOpen(
         loaded,

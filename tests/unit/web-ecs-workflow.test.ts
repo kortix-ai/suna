@@ -185,6 +185,15 @@ describe('web ECS migration', () => {
     expect(workflow).toContain('**Preview:**');
   });
 
+  it('does not report target-full as passed when a preview push skips the suite', () => {
+    const workflow = read('.github/workflows/deploy-preview.yml');
+
+    expect(workflow.match(/RUN_TESTS: \$\{\{ env\.PREVIEW_RUN_TESTS \}\}/g)).toHaveLength(2);
+    expect(workflow).toContain('Full self-host preview deployed; target-full was not run');
+    expect(workflow).toContain('## Preview environment - live; tests not run');
+    expect(workflow).toContain('`pnpm test -- --target-full` was skipped for this push.');
+  });
+
   /**
    * A preview environment lives until its BRANCH is deleted.
    *

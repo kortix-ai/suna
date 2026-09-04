@@ -3823,3 +3823,120 @@ describe("a committed revert deletes the captured set, not a string range", () =
 		expect(state.parts.msg_b).toBeUndefined();
 	});
 });
+
+describe("a streamed delta counts as runtime activity", () => {
+	// `projectWorking` ranks "the runtime produced output"
+	// (`sessionActivityAt`) FIRST — above the `/turn` ledger, which lags and,
+	// on pi, leaves rows open. Only `message.part.updated` used to stamp it.
+	// That was harmless while every runtime streamed snapshots; it stopped
+	// being harmless when pi began sending real deltas (~280 deltas and ~6
+	// snapshots per answer), because the stamp then went stale mid-generation
+	// and the composer showed Stop off a poll instead of off the stream.
+	test("message.part.delta stamps sessionActivityAt", () => {
+		const sid = "ses_delta_activity";
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: {
+				sessionID: sid,
+				messageID: "msg_1",
+				partID: "msg_1-p0",
+				field: "text",
+				delta: "Hello",
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThan(0);
+	});
+
+	test("a delta with no sessionID cannot stamp anything", () => {
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: { messageID: "msg_1", partID: "msg_1-p0", field: "text", delta: "x" },
+		} as never);
+		expect(Object.keys(useSyncStore.getState().sessionActivityAt)).toHaveLength(0);
+	});
+});
+
+describe("replayed frames are history, not live output", () => {
+	// The stream replays the `since=` backlog on every connect — a reconnect,
+	// and every page load. Stamping that replay with `Date.now()` made it look
+	// like the runtime producing output NOW: `projectWorking` ranks activity
+	// above everything, so opening a session whose answer had finished long
+	// before pinned the composer on Stop for the full 45s observation window.
+	test("activity is stamped with the frame's own emit time, not now", () => {
+		const sid = "ses_replay";
+		const longAgo = Date.now() - 10 * 60_000;
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			at: longAgo,
+			properties: {
+				sessionID: sid,
+				messageID: "msg_1",
+				partID: "msg_1-p0",
+				field: "text",
+				delta: "old",
+			},
+		} as never);
+
+		const stamped = useSyncStore.getState().sessionActivityAt[sid];
+		expect(stamped).toBe(longAgo);
+		// The point: it must NOT read as fresh.
+		expect(Date.now() - (stamped ?? 0)).toBeGreaterThan(60_000);
+	});
+
+	test("a live frame with no emit time still stamps now", () => {
+		const sid = "ses_live_nostamp";
+		useSyncStore.setState({ sessionActivityAt: {}, messages: {}, parts: {} });
+		const before = Date.now();
+		useSyncStore.getState().applyEvent({
+			type: "message.part.delta",
+			properties: {
+				sessionID: sid,
+				messageID: "msg_1",
+				partID: "msg_1-p0",
+				field: "text",
+				delta: "x",
+			},
+		} as never);
+		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeGreaterThanOrEqual(before);
+	});
+});
+
+describe("a replayed STATUS frame is history too", () => {
+	// The activity stamp was only half of it. `streamAnswers` in projectWorking
+	// reads `sessionStatusAt`, and that was also `Date.now()` — so a stale
+	// `running` status replayed from the since= backlog read as a FRESH
+	// observation and returned working/stream, which is what kept the Stop
+	// button up on a session whose answer had finished the day before
+	// (pi.kortix.com, 6/6 samples on a freshly loaded settled session).
+	test("a replayed running status is stamped old, not now", () => {
+		const sid = "ses_replay_status";
+		const longAgo = Date.now() - 10 * 60_000;
+		useSyncStore.setState({ sessionStatus: {}, sessionStatusAt: {}, sessionStatusOrigin: {} });
+
+		useSyncStore.getState().applyEvent({
+			type: "session.status",
+			at: longAgo,
+			properties: { sessionID: sid, status: { type: "running" } },
+		} as never);
+
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBe(longAgo);
+	});
+
+	test("a status with no emit time still stamps now", () => {
+		const sid = "ses_live_status";
+		useSyncStore.setState({ sessionStatus: {}, sessionStatusAt: {}, sessionStatusOrigin: {} });
+		const before = Date.now();
+		useSyncStore.getState().applyEvent({
+			type: "session.status",
+			properties: { sessionID: sid, status: { type: "running" } },
+		} as never);
+		expect(useSyncStore.getState().sessionStatusAt[sid]).toBeGreaterThanOrEqual(before);
+	});
+});

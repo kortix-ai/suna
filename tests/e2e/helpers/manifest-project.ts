@@ -28,12 +28,11 @@
  * database projects with a local git remote on `local`, provisioned managed-git
  * projects everywhere else. This is the same rule for the browser lane.
  */
-import { execFileSync } from 'node:child_process';
-
 import type { LocalGitRepository } from '../../src/fixtures/local-git';
 import { createLocalGitRepository } from '../../src/fixtures/local-git';
 import { loadEnv } from '../../src/core/env';
 import { createDatabaseProject, deleteDatabaseProject } from '../../src/fixtures/database-project';
+import { runDatabaseSql } from './database';
 
 /**
  * True when the suite runs against a deployed origin (staging, preview) rather
@@ -54,26 +53,19 @@ export interface ManifestProject {
  * `409 {"code":"project_limit_reached"}` otherwise. 13-sdk-only already funds
  * its account by SQL for the same reason; this is that statement, shared.
  */
-export function fundAccount(databaseUrl: string, accountId: string): void {
-  execFileSync(
-    'psql',
-    [
-      databaseUrl,
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-At',
-      '-c',
-      `INSERT INTO kortix.credit_accounts (
-         account_id, balance, balance_precise,
-         non_expiring_credits, non_expiring_credits_precise, tier
-       )
-       VALUES ('${accountId}', 1000, 1000, 1000, 1000, 'tier_2_20')
-       ON CONFLICT (account_id) DO UPDATE SET
-         balance = 1000, balance_precise = 1000,
-         non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
-         tier = 'tier_2_20'`,
-    ],
-    { encoding: 'utf8' },
+export async function fundAccount(databaseUrl: string, accountId: string): Promise<void> {
+  await runDatabaseSql(
+    `INSERT INTO kortix.credit_accounts (
+       account_id, balance, balance_precise,
+       non_expiring_credits, non_expiring_credits_precise, tier
+     )
+     VALUES ($1::uuid, 1000, 1000, 1000, 1000, 'tier_2_20')
+     ON CONFLICT (account_id) DO UPDATE SET
+       balance = 1000, balance_precise = 1000,
+       non_expiring_credits = 1000, non_expiring_credits_precise = 1000,
+       tier = 'tier_2_20'`,
+    [accountId],
+    databaseUrl,
   );
 }
 
@@ -108,7 +100,7 @@ export async function createManifestProject(
 ): Promise<ManifestProject> {
   const { api, accessToken, accountId, userId, name, databaseUrl } = options;
   if (isDeployedTarget()) {
-    fundAccount(databaseUrl, accountId);
+    await fundAccount(databaseUrl, accountId);
     const project = await api<ProvisionResponse>(
       accessToken,
       'POST',

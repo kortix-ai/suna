@@ -992,7 +992,7 @@ describe('pi worker pool claim (P1.8)', () => {
   test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
     const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
     const claim = source.indexOf('const pooledClaim =');
-    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
+    const create = source.indexOf('retrySandboxProvisionCreate(', claim);
     const refill = source.indexOf('void maintainPiWorkerPool()', claim);
     const externalId = source.indexOf('bgExternalId = result.externalId', claim);
     expect(claim).toBeGreaterThan(-1);

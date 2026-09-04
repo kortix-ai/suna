@@ -46,6 +46,9 @@ import { fetchUpstreamBuffered } from './upstream';
 import { makeOpenApiApp } from '../openapi';
 import { loadGitProject } from '../projects/lib/git';
 import { refreshMirror, runGit } from '../projects/git/mirror';
+import { eq } from 'drizzle-orm';
+import { projectSessions } from '@kortix/db';
+import { db } from '../shared/db';
 import { writeScaffoldDeltaBundle } from '../projects/git/commits';
 import { resolveFastBootGitHintWithCache } from '../projects/lib/fast-boot-git-hint';
 import { createHash } from 'node:crypto';
@@ -78,6 +81,13 @@ import {
   COMPILED_RUNTIME_FORMAT,
 } from './compiled-runtime';
 import { prebuildDefaultBranchArtifacts } from './compiled-prebuild';
+import {
+  GIT_SERVICES,
+  type GitService,
+  advertisementPrefix,
+  resolveLocalRepo,
+  runGitService,
+} from './local-upstream';
 import { config } from '../config';
 
 export const gitProxyApp = makeOpenApiApp();
@@ -122,6 +132,29 @@ function validProjectIdOrResponse(c: any, raw: string): string | Response {
     return c.text('invalid project identifier', 400);
   }
   return projectId;
+}
+
+/**
+ * The agent of the session making this request, or '' when the caller is not a
+ * session (a human, the prebuild, a test).
+ *
+ * The pi worker fetches its runtime with its OWN session credential, so the
+ * API can name the agent without the worker sending it. The id comes from the
+ * git-proxy authorization result rather than the Hono context: this route
+ * authenticates its own token and never runs the auth middleware that would
+ * populate the context. That is deliberate:
+ * putting the agent in the fetch URL would mean editing the image's
+ * fetch-runtime script, which changes the pi snapshot fingerprint and rebuilds
+ * the shared template for something the server already knows.
+ */
+async function agentOfCallingSession(sessionId: string | null | undefined): Promise<string> {
+  if (!sessionId) return '';
+  const [row] = await db
+    .select({ agentName: projectSessions.agentName })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.agentName ?? '';
 }
 
 async function authorize(c: any, projectId: string, scope: GitScope): Promise<GitProxyAuth> {
@@ -169,6 +202,66 @@ export function __resetGitProxyMemosForTests(): void {
   upstreamMemo.clear();
 }
 
+/**
+ * Answer a smart-HTTP git request from a bare repo on this filesystem.
+ *
+ * Mirrors what `git http-backend` does for the three routes this proxy
+ * exposes. Authorization already happened in `forward`; `scope` is re-checked
+ * here so a read-scoped caller can never reach `git-receive-pack` even if a
+ * future route wires the suffix differently.
+ */
+async function serveLocalGit(
+  c: any,
+  repoPath: string,
+  scope: GitScope,
+  suffix: string,
+): Promise<Response> {
+  const requested =
+    suffix === '/info/refs'
+      ? (new URL(c.req.url).searchParams.get('service') ?? '')
+      : suffix.replace(/^\//, '');
+
+  if (requested !== 'git-upload-pack' && requested !== 'git-receive-pack') {
+    return c.text('unsupported git service', 400);
+  }
+  const service = requested as GitService;
+  if (GIT_SERVICES[service] === 'write' && scope !== 'write') {
+    return c.text('git-receive-pack requires write scope', 403);
+  }
+
+  // Ref advertisement: banner + flush + `--advertise-refs` output, verbatim.
+  if (suffix === '/info/refs') {
+    const r = await runGitService(service, repoPath, ['--stateless-rpc', '--advertise-refs']);
+    if (!r.ok) {
+      console.warn(`[git-proxy] local ${service} advertise failed for ${repoPath}: ${r.stderr}`);
+      return c.text('git upstream unreachable', 502);
+    }
+    const advertised = Buffer.concat([Buffer.from(advertisementPrefix(service)), r.stdout]);
+    return new Response(new Uint8Array(advertised), {
+      status: 200,
+      headers: {
+        'content-type': `application/x-${service}-advertisement`,
+        'cache-control': 'no-cache, max-age=0, must-revalidate',
+      },
+    });
+  }
+
+  // Negotiation / pack transfer: the request body IS the client's side.
+  const body = new Uint8Array(await c.req.arrayBuffer());
+  const r = await runGitService(service, repoPath, ['--stateless-rpc'], body);
+  if (!r.ok) {
+    console.warn(`[git-proxy] local ${service} failed for ${repoPath}: ${r.stderr}`);
+    return c.text('git upstream unreachable', 502);
+  }
+  return new Response(new Uint8Array(r.stdout), {
+    status: 200,
+    headers: {
+      'content-type': `application/x-${service}-result`,
+      'cache-control': 'no-cache, max-age=0, must-revalidate',
+    },
+  });
+}
+
 async function forward(c: any, projectId: string, scope: GitScope, suffix: string): Promise<Response> {
   const auth = await authorize(c, projectId, scope);
   if (!auth.ok) {
@@ -198,6 +291,13 @@ async function forwardAuthorized(
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
   }
+
+  // A LOCAL upstream (a bare repo on disk) cannot be proxied: `fetch()` does
+  // not speak `file://`, so this used to fall through to the catch below and
+  // answer `502 git upstream unreachable` for every clone. Serve it directly
+  // instead — smart-HTTP is a thin envelope around the same git services.
+  const localRepo = resolveLocalRepo(upstream.url);
+  if (localRepo) return serveLocalGit(c, localRepo, scope, suffix);
 
   const search = new URL(c.req.url).search; // includes leading '?' or ''
   const base = upstream.url.replace(/\/$/, '');
@@ -823,6 +923,12 @@ gitProxyApp.openapi(
       query: z.object({
         ref: z.string().min(1),
         sha: z.string().regex(/^[0-9a-f]{40}$/),
+        // Optional: the artifact is baked for ONE agent. Omitted, the agent is
+        // taken from the calling session (the worker holds its session's own
+        // credential), and failing that the project default. Kept optional so
+        // the worker image's fetch script — and therefore the single pi
+        // snapshot template — needs no change.
+        agent: z.string().max(64).optional(),
       }),
     },
     responses: {
@@ -853,10 +959,13 @@ gitProxyApp.openapi(
     if (!resolveFeatureFlag(auth.project.metadata, 'pi_worker')) {
       return c.json(featureDisabledBody('pi_worker'), 403);
     }
-    const { ref, sha } = c.req.valid('query');
+    const { ref, sha, agent } = c.req.valid('query');
     try {
       const project = await loadGitProject({ row: auth.project });
-      const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha);
+      const callerSessionId =
+        auth.principal.kind === 'session' ? auth.principal.sessionId : null;
+      const agentName = agent ?? (await agentOfCallingSession(callerSessionId));
+      const artifact = await buildCompiledPiRuntimeArtifact(project, ref, sha, agentName);
       return new Response(Bun.file(artifact.path), {
         status: 200,
         headers: {

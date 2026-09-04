@@ -22,8 +22,9 @@ jobs:
   #
   # Each filter = the app's own dir + every workspace package it depends on (its
   # pnpm `--filter "X..."` closure) + the shared foundation files that can break
-  # any pnpm build. The Bun-based sandbox agent has its own in-dir lockfile, so it
-  # only shares tsconfig.base.json; desktop runs no TS typecheck.
+  # any pnpm build. The Bun-based sandbox agent and worker have their own in-dir
+  # lockfiles. The agent imports worker sources, so both paths run the same job.
+  # Desktop runs no TS typecheck.
   #
   # A job gated `if: needs.changes.outputs.* == 'true'` reports as "skipped" when
   # it doesn't run, and GitHub treats a skipped job as passing — safe even if
@@ -78,6 +79,7 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              - 'apps/kortix-worker/**'
             desktop:
               - '.github/workflows/ci.yml'
               - 'apps/desktop-electron/**'
@@ -220,6 +222,11 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Install Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
@@ -227,6 +234,21 @@ jobs:
       - name: Install worker dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-worker
+
+      - name: Test worker
+        run: bun run test
+        working-directory: apps/kortix-worker
+
+      - name: Typecheck worker
+        run: bun run typecheck
+        working-directory: apps/kortix-worker
+
+      - name: Build worker runtime
+        run: bun run build
+        working-directory: apps/kortix-worker
+
+      - name: Verify worker runtime bundle
+        run: test -s apps/kortix-worker/dist/worker-runtime.mjs
 
       - name: Typecheck
         run: bun run typecheck

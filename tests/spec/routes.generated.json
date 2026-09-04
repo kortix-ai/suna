@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 647,
   "routes": [
     {
       "method": "GET",
@@ -1684,6 +1684,34 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/filesystems"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/filesystems"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/filesystems/:name"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/filesystems/:name/files"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/filesystems/:name/files/content"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/filesystems/:name/files/content"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/filesystems/:name/files/content"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/gateway/breakdown"
     },
     {
@@ -1769,6 +1797,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/git/collaborators"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/git/connection"
     },
     {
       "method": "GET",
@@ -2009,6 +2041,14 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/log"
     },
     {
       "method": "PUT",
@@ -2277,6 +2317,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/entrypoint"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/entrypoint"
     },
     {
       "method": "GET",

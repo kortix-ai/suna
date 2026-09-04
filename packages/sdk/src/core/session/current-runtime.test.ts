@@ -1,10 +1,13 @@
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import {
   currentRuntimeStore,
+  getCurrentWorkspaceRuntimeSandboxId,
+  getCurrentWorkspaceRuntimeUrl,
   getCurrentRuntimeDbSandboxId,
   getCurrentRuntimeSandboxId,
   getCurrentRuntimeUrl,
   setCurrentRuntime,
+  setCurrentWorkspaceRuntime,
 } from './current-runtime';
 
 // This is a process-wide singleton (`state` is module-level) — several OTHER
@@ -34,6 +37,35 @@ test('setCurrentRuntime sets url + sandboxId + dbSandboxId, all readable via the
   expect(getCurrentRuntimeUrl()).toBe('http://backend.local/p/sb-1/8000');
   expect(getCurrentRuntimeSandboxId()).toBe('sb-1');
   expect(getCurrentRuntimeDbSandboxId()).toBe('db-sb-1');
+  expect(getCurrentWorkspaceRuntimeUrl()).toBe('http://backend.local/p/sb-1/8000');
+  expect(getCurrentWorkspaceRuntimeSandboxId()).toBe('sb-1');
+});
+
+test('a split Pi runtime has no workspace target until its environment resolves', () => {
+  setCurrentRuntime(
+    'http://backend.local/p/worker-1/8000',
+    'worker-1',
+    'db-worker-1',
+    'environment',
+  );
+
+  expect(getCurrentRuntimeUrl()).toContain('/worker-1/');
+  expect(getCurrentWorkspaceRuntimeUrl()).toBeNull();
+  expect(getCurrentWorkspaceRuntimeSandboxId()).toBeNull();
+
+  setCurrentWorkspaceRuntime('http://backend.local/p/environment-1/8000', 'environment-1');
+  expect(getCurrentRuntimeUrl()).toContain('/worker-1/');
+  expect(getCurrentWorkspaceRuntimeUrl()).toContain('/environment-1/');
+  expect(getCurrentWorkspaceRuntimeSandboxId()).toBe('environment-1');
+});
+
+test('clearing the control runtime clears the workspace runtime too', () => {
+  setCurrentRuntime('http://backend.local/p/worker-1/8000', 'worker-1', null, 'environment');
+  setCurrentWorkspaceRuntime('http://backend.local/p/environment-1/8000', 'environment-1');
+  setCurrentRuntime(null);
+
+  expect(getCurrentWorkspaceRuntimeUrl()).toBeNull();
+  expect(getCurrentWorkspaceRuntimeSandboxId()).toBeNull();
 });
 
 test('setCurrentRuntime defaults sandboxId/dbSandboxId to null when omitted', () => {

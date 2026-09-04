@@ -80,8 +80,20 @@ export const KNOWN_SCHEMA_VERSION = 1;
  * fixed by docs/specs/2026-07-05-agent-first-config-unification.md §2.1/§2.2 —
  * `extractAgents` in `./agents.ts` is the v2-aware consumer). A version above
  * this ceiling is genuinely unknown to the platform and remains refused.
+ *
+ * MUST track `KNOWN_SCHEMA_VERSION` in `@kortix/manifest-schema`. When
+ * `kortix_version: 3` was added there and NOT here, this reader threw on every
+ * v3 project — and its callers swallow the throw rather than surface it:
+ * `loadProjectAgents` turns it into an empty spec list, so
+ * `grantFromLoadedAgents` handed those sessions NO connectors, NO secrets and
+ * NO kortix_cli; `loadProjectTriggers` reported zero triggers; and
+ * `loadManifestForEdit` (which does not catch) made every manifest write 500.
+ * The pi boot path kept working throughout, because `compile-agent-config.ts`
+ * parses the manifest itself — so the failure was invisible from a smoke test
+ * that only checked that a session answered. `manifest-ceiling.test.ts` pins
+ * the two constants together.
  */
-export const MAX_SCHEMA_VERSION = 2;
+export const MAX_SCHEMA_VERSION = 3;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 

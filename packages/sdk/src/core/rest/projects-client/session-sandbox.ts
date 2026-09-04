@@ -1,10 +1,10 @@
 // Session sandbox — runtime sandbox row + the session-open (/start) flow.
 
-import { backendApi } from "../../http/api-client";
-import { isSessionFresh } from "../../http/fresh-sessions";
-import { setSessionRuntime } from "../../session/session-runtime-registry";
-import { getSandboxUrlForExternalId } from "../../session/server-store/url-helpers";
-import type { ProjectSession } from "./sessions";
+import { backendApi } from '../../http/api-client';
+import { isSessionFresh } from '../../http/fresh-sessions';
+import { setSessionRuntime } from '../../session/session-runtime-registry';
+import { getSandboxUrlForExternalId } from '../../session/server-store/url-helpers';
+import type { ProjectSession } from './sessions';
 
 // ---------------------------------------------------------------------------
 // Session sandbox — runtime row in `kortix.session_sandboxes`. Separate from
@@ -13,14 +13,18 @@ import type { ProjectSession } from "./sessions";
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionSandboxStatus =
-  "provisioning" | "active" | "stopped" | "error" | "archived";
+  | 'provisioning'
+  | 'active'
+  | 'stopped'
+  | 'error'
+  | 'archived';
 
 export interface ProjectSessionSandbox {
   sandbox_id: string;
   session_id: string;
   project_id: string;
   account_id: string;
-  provider: "daytona" | "platinum" | "e2b";
+  provider: 'daytona' | 'platinum' | 'e2b';
   external_id: string | null;
   base_url: string | null;
   status: ProjectSessionSandboxStatus;
@@ -31,11 +35,10 @@ export interface ProjectSessionSandbox {
   updated_at: string;
 }
 
-export type SessionStartStage =
-  "provisioning" | "starting" | "ready" | "stopped" | "failed";
+export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
 
 export interface SessionStartFailure {
-  category: "provider-capacity" | "git-auth" | "sandbox-provider";
+  category: 'provider-capacity' | 'git-auth' | 'sandbox-provider';
   message: string;
   /** A user action can retry. Automatic polling must still stop. */
   retryable: boolean;
@@ -87,17 +90,17 @@ export interface SessionStartResult {
    * stamp written hours earlier without contacting a provider.
    */
   action?:
-    | "inspected"
-    | "checked_provider"
-    | "resumed"
-    | "provisioned"
-    | "restored"
-    | "reconciled"
-    | "awaited_wake"
-    | "cooling_down";
+    | 'inspected'
+    | 'checked_provider'
+    | 'resumed'
+    | 'provisioned'
+    | 'restored'
+    | 'reconciled'
+    | 'awaited_wake'
+    | 'cooling_down';
   /** Where the box is in its boot, and whether anything is driving it now. */
   boot?: {
-    phase: "provisioning" | "resuming" | "booting" | "ready" | "parked" | "failed";
+    phase: 'provisioning' | 'resuming' | 'booting' | 'ready' | 'parked' | 'failed';
     since: string | null;
     /**
      * Is a provider operation running for this session right now? `false` on a
@@ -115,7 +118,7 @@ export interface SessionStartResult {
     provider: { known: boolean; status: string | null; checked_at: string | null };
     runtime: {
       known: boolean;
-      state: "ready" | "booting" | "unreachable" | null;
+      state: 'ready' | 'booting' | 'unreachable' | null;
       boot_phase: string | null;
       checked_at: string | null;
     };
@@ -127,11 +130,9 @@ export interface SessionStartResult {
  * seed. The session route renders it immediately, then its normal `/start`
  * query revalidates the server state.
  */
-export function projectSessionStartSeed(
-  session: ProjectSession,
-): SessionStartResult | null {
+export function projectSessionStartSeed(session: ProjectSession): SessionStartResult | null {
   if (
-    session.status !== "running" ||
+    session.status !== 'running' ||
     !session.sandbox_id ||
     !session.sandbox_provider ||
     !session.sandbox_url ||
@@ -142,8 +143,8 @@ export function projectSessionStartSeed(
   const externalId = session.sandbox_url.match(/\/p\/([^/]+)\//)?.[1];
   if (!externalId) return null;
   return {
-    stage: "ready",
-    agent_name: session.agent_name ?? "default",
+    stage: 'ready',
+    agent_name: session.agent_name ?? 'default',
     retriable: true,
     sandbox: {
       sandbox_id: session.sandbox_id,
@@ -153,7 +154,7 @@ export function projectSessionStartSeed(
       provider: session.sandbox_provider,
       external_id: externalId,
       base_url: session.sandbox_url,
-      status: "active",
+      status: 'active',
       config: {},
       metadata: session.metadata,
       last_used_at: session.updated_at,
@@ -170,29 +171,26 @@ export class SessionStartError extends Error {
   code?: string;
   terminal: boolean;
 
-  constructor(message: string, options: { status?: number; code?: string; terminal: boolean },
-  ) {
+  constructor(message: string, options: { status?: number; code?: string; terminal: boolean }) {
     super(message);
-    this.name = "SessionStartError";
+    this.name = 'SessionStartError';
     this.status = options.status;
     this.code = options.code;
     this.terminal = options.terminal;
   }
 }
 
-export function isSessionStartError(error: unknown,
-): error is SessionStartError {
-  return error instanceof Error && error.name === "SessionStartError";
+export function isSessionStartError(error: unknown): error is SessionStartError {
+  return error instanceof Error && error.name === 'SessionStartError';
 }
 
 function classifySessionStartFailure(error?: Error): SessionStartError | null {
   const apiError = error as
-    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string };
-      })
+    | (Error & { status?: number; code?: string; details?: { code?: string; error?: string } })
     | undefined;
   const status = apiError?.status;
   const code = apiError?.code ?? apiError?.details?.code ?? apiError?.details?.error;
-  const message = apiError?.message || "Unable to start this session";
+  const message = apiError?.message || 'Unable to start this session';
 
   if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) {
     return new SessionStartError(message, { status, code, terminal: true });
@@ -214,7 +212,7 @@ export async function startProjectSession(
   // instant it happens instead of on a fixed poll tick. Omit = one-shot.
   waitMs?: number,
 ): Promise<SessionStartResult | null> {
-  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : "";
+  const qs = waitMs && waitMs > 0 ? `?wait_ms=${Math.floor(waitMs)}` : '';
   const response = await backendApi.post<SessionStartResult>(
     `/projects/${projectId}/sessions/${sessionId}/start${qs}`,
     {},
@@ -239,11 +237,13 @@ export async function startProjectSession(
   // `kortix.session(pid, sid)` created for a one-off poll, e.g. — can then
   // adopt this entry instead of throwing SessionNotReadyError or re-POSTing.
   const externalId = result.sandbox?.external_id;
-  if (result.stage === "ready" && externalId && result.opencode_session_id) {
+  if (result.stage === 'ready' && externalId && result.opencode_session_id) {
     setSessionRuntime(projectId, sessionId, {
       opencodeSessionId: result.opencode_session_id,
       runtimeUrl: getSandboxUrlForExternalId(externalId),
       sandboxId: externalId,
+      dataRuntimeKind:
+        result.sandbox?.metadata?.sandbox_slug === 'pi-worker' ? 'environment' : 'worker',
     });
   }
   return result;
@@ -256,5 +256,5 @@ export async function startProjectSession(
  * instead of adopting the in-flight one.
  */
 export function sessionStartKey(projectId: string, sessionId: string) {
-  return ["session-start", projectId, sessionId] as const;
+  return ['session-start', projectId, sessionId] as const;
 }

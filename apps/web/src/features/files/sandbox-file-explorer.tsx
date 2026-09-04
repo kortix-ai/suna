@@ -9,7 +9,7 @@ import {
   FileExplorerSourceProvider,
 } from '@/features/project-files';
 import { useBoundedRuntimeWait } from '@/features/session/use-bounded-runtime-wait';
-import { useRuntimeStore } from '@kortix/sdk/react';
+import { useRuntimeStore, useSessionWorkspace } from '@kortix/sdk/react';
 import {
   ArrowClockwiseIcon as RefreshCw,
   CloudSlashIcon as ServerOff,
@@ -40,7 +40,7 @@ export function SandboxFileExplorer({
 } = {}) {
   return (
     <FileExplorerSourceProvider value={sandboxExplorerSource}>
-      <SandboxServerGate leading={leading}>
+      <SandboxServerGate leading={leading} shareContext={shareContext}>
         <DriveExplorer
           embedded={embedded}
           shareContext={shareContext}
@@ -62,25 +62,34 @@ export function SandboxFileExplorer({
 function SandboxServerGate({
   children,
   leading,
+  shareContext,
 }: {
   children: React.ReactNode;
   leading?: ReactNode;
+  shareContext?: { projectId: string; sessionId: string };
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
+  const workspace = useSessionWorkspace(shareContext?.projectId, shareContext?.sessionId, {
+    enabled: !!shareContext,
+  });
   const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
   const [retryAttempt, setRetryAttempt] = useState(0);
-  const healthWaitExpired = useBoundedRuntimeWait(isHealthLoading, retryAttempt);
+  const healthWaitExpired = useBoundedRuntimeWait(
+    workspace.phase === 'resolving' || isHealthLoading,
+    retryAttempt,
+  );
 
   const retry = () => {
     setRetryAttempt((attempt) => attempt + 1);
+    void workspace.retry();
     void refetch();
   };
 
   // Hold the gate closed while the first probe is in flight. Rendering the
   // explorer during the probe made it mount, fail its own listing, and paint a
   // second failure UI a moment before this one replaced it.
-  if (isHealthLoading && !healthWaitExpired) {
+  if ((workspace.phase === 'resolving' || isHealthLoading) && !healthWaitExpired) {
     return (
       <GateShell leading={leading}>
         <div className="flex flex-col gap-2 p-4">
@@ -92,7 +101,7 @@ function SandboxServerGate({
     );
   }
 
-  if (!health?.healthy || healthWaitExpired) {
+  if (workspace.phase === 'error' || !health?.healthy || healthWaitExpired) {
     return (
       <GateShell leading={leading}>
         <ErrorState

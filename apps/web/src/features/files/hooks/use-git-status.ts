@@ -8,8 +8,7 @@ import { useCurrentProject, useServerHealth } from './use-server-health';
 
 export const gitStatusKeys = {
   all: ['runtime-files', 'git-status'] as const,
-  status: (serverUrl: string) =>
-    ['runtime-files', 'git-status', serverUrl] as const,
+  status: (serverUrl: string) => ['runtime-files', 'git-status', serverUrl] as const,
 };
 
 /**
@@ -17,15 +16,12 @@ export const gitStatusKeys = {
  * Returns an array of files with uncommitted changes (added, modified, deleted).
  */
 export function useGitStatus(options?: { enabled?: boolean }) {
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
   const { data: health } = useServerHealth();
   const { data: project } = useCurrentProject({
     enabled: options?.enabled !== false,
   });
-  const enabled =
-    options?.enabled !== false &&
-    health?.healthy === true &&
-    project?.vcs === 'git';
+  const enabled = options?.enabled !== false && health?.healthy === true && project?.vcs === 'git';
 
   return useQuery<GitFileStatus[]>({
     queryKey: gitStatusKeys.status(serverUrl),

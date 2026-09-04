@@ -36,6 +36,10 @@ interface AppResponse {
   desired_state: string;
 }
 
+interface ApiHealth {
+  environment: 'dev' | 'staging' | 'prod' | 'preview';
+}
+
 test.describe('18 — Kortix Apps UI', () => {
   test('gates Apps on its flag, enables it in place, and renders a read-only deployment index', async ({
     context,
@@ -182,9 +186,12 @@ test.describe('18 — Kortix Apps UI', () => {
       if (env.target === 'local') {
         expect(seededUrl.hostname).toMatch(/\.apps\.localhost$/);
       } else {
-        const environmentPrefix = env.target === 'prod' ? 'prod' : env.target;
+        const health = await api<ApiHealth>(session.access_token, 'GET', '/health');
+        expect(seededUrl.protocol).toBe('https:');
         expect(seededUrl.hostname).toMatch(
-          new RegExp(`^${environmentPrefix}-.+\\.apps\\.kortix\\.com$`),
+          new RegExp(
+            `^${health.environment}-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-[a-f0-9]{16}\\.[a-z0-9.-]+$`,
+          ),
         );
       }
 

@@ -13,8 +13,8 @@
 // `mock.module` is process-global in bun, so this lives in its own file.
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sb-1',
@@ -74,7 +74,7 @@ mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 mock.module('../../projects/lib/session-token-grant', () => ({
   remintGrantForAgentSwitch: async () => ({ action: 'skip' }),

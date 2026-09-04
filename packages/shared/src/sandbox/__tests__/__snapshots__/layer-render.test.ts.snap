@@ -68,7 +68,9 @@ RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packa
         "reportlab==5.0.0" \\
     && python3 -c 'import importlib; [importlib.import_module(m) for m in ["PIL","docx","fitz","lxml","markitdown","openpyxl","pandas","pdf2docx","pdf2image","pdfplumber","playwright","pptx","pypdf","pypdfium2","pytesseract","reportlab"]]; print("python package floor OK")'
 
-ENV SHELL=/bin/bash
+ENV SHELL=/bin/bash \\
+    DISABLE_AUTOUPDATER=1 \\
+    DISABLE_UPDATES=1
 RUN case "$(uname -m)" in \\
       x86_64) pnpm_arch=x64; pnpm_sha=0c1373b6390f6b89ff8b896d3647c9826577ddc49173a2f732da69b36569f9e0 ;; \\
       aarch64|arm64) pnpm_arch=arm64; pnpm_sha=361e385867146972d0635a41a1871cb44c9c23f65acce78a5f1ca1d44ac0afcd ;; \\
@@ -104,6 +106,29 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
+RUN case "$(uname -m)" in \\
+      x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha=1fd52113294979c9936a110cab7cb9d5e9d1e28086f112fd6748a05826a9e5a0; claude_sha=2414f2c35505033e1cc8e50f0d7f3c49fe1af180820a236b1d4733bca4c7bc9d ;; \\
+      aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha=df2f8f764bf86aeae51d71cc37686dcbd2c24e4bce9a9d1e8f249141fd99fac3; claude_sha=7a921243dbbb9d9771d6a59530c38fc820508b3d660ec5aad361f7ecb225f9d5 ;; \\
+      *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \\
+         "https://registry.npmjs.org/@openai/codex/-/codex-0.153.2-linux-\${cli_arch}.tgz" \\
+    && echo "\${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \\
+    && rm -rf /opt/kortix/codex \\
+    && mkdir -p /opt/kortix/codex \\
+    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \\
+    && ln -sfn "/opt/kortix/codex/vendor/\${codex_target}/bin/codex" /home/kortix/.local/bin/codex \\
+    && test -x "/opt/kortix/codex/vendor/\${codex_target}/codex-resources/bwrap" \\
+    && test -x "/opt/kortix/codex/vendor/\${codex_target}/codex-path/rg" \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \\
+         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-\${cli_arch}/-/claude-code-linux-\${cli_arch}-2.1.236.tgz" \\
+    && echo "\${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \\
+    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \\
+    && chmod 0755 /home/kortix/.local/bin/claude \\
+    && rm /tmp/codex.tgz /tmp/claude-code.tgz \\
+    && test "$(codex --version)" = "codex-cli 0.153.2" \\
+    && test "$(claude --version)" = "2.1.236 (Claude Code)"
 
 RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
     && command -v opencode \\
@@ -252,7 +277,9 @@ RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packa
         "reportlab==5.0.0" \\
     && python3 -c 'import importlib; [importlib.import_module(m) for m in ["PIL","docx","fitz","lxml","markitdown","openpyxl","pandas","pdf2docx","pdf2image","pdfplumber","playwright","pptx","pypdf","pypdfium2","pytesseract","reportlab"]]; print("python package floor OK")'
 
-ENV SHELL=/bin/bash
+ENV SHELL=/bin/bash \\
+    DISABLE_AUTOUPDATER=1 \\
+    DISABLE_UPDATES=1
 RUN case "$(uname -m)" in \\
       x86_64) pnpm_arch=x64; pnpm_sha=0c1373b6390f6b89ff8b896d3647c9826577ddc49173a2f732da69b36569f9e0 ;; \\
       aarch64|arm64) pnpm_arch=arm64; pnpm_sha=361e385867146972d0635a41a1871cb44c9c23f65acce78a5f1ca1d44ac0afcd ;; \\
@@ -288,6 +315,29 @@ RUN pnpm add -g --allow-build=agent-browser "agent-browser@0.27.0" \\
     && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \\
     && chromium --version \\
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
+RUN case "$(uname -m)" in \\
+      x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha=1fd52113294979c9936a110cab7cb9d5e9d1e28086f112fd6748a05826a9e5a0; claude_sha=2414f2c35505033e1cc8e50f0d7f3c49fe1af180820a236b1d4733bca4c7bc9d ;; \\
+      aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha=df2f8f764bf86aeae51d71cc37686dcbd2c24e4bce9a9d1e8f249141fd99fac3; claude_sha=7a921243dbbb9d9771d6a59530c38fc820508b3d660ec5aad361f7ecb225f9d5 ;; \\
+      *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \\
+    esac \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \\
+         "https://registry.npmjs.org/@openai/codex/-/codex-0.153.2-linux-\${cli_arch}.tgz" \\
+    && echo "\${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \\
+    && rm -rf /opt/kortix/codex \\
+    && mkdir -p /opt/kortix/codex \\
+    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \\
+    && ln -sfn "/opt/kortix/codex/vendor/\${codex_target}/bin/codex" /home/kortix/.local/bin/codex \\
+    && test -x "/opt/kortix/codex/vendor/\${codex_target}/codex-resources/bwrap" \\
+    && test -x "/opt/kortix/codex/vendor/\${codex_target}/codex-path/rg" \\
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \\
+         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-\${cli_arch}/-/claude-code-linux-\${cli_arch}-2.1.236.tgz" \\
+    && echo "\${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \\
+    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \\
+    && chmod 0755 /home/kortix/.local/bin/claude \\
+    && rm /tmp/codex.tgz /tmp/claude-code.tgz \\
+    && test "$(codex --version)" = "codex-cli 0.153.2" \\
+    && test "$(claude --version)" = "2.1.236 (Claude Code)"
 
 RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@1.18.23" \\
     && command -v opencode \\

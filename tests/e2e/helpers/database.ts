@@ -18,19 +18,20 @@ interface SeedProjectOptions {
 export async function runDatabaseSql(
   sql: string,
   values: unknown[] = [],
+  databaseUrl?: string,
 ): Promise<void> {
-  await queryDatabaseRows(sql, values);
+  await queryDatabaseRows(sql, values, databaseUrl);
 }
 
 export async function queryDatabaseRows<
   T extends QueryResultRow = QueryResultRow,
->(sql: string, values: unknown[] = []): Promise<T[]> {
-  const databaseUrl = requireEnvValue(
+>(sql: string, values: unknown[] = [], databaseUrl?: string): Promise<T[]> {
+  const connectionString = databaseUrl ?? requireEnvValue(
     "DATABASE_URL",
     "apps/api/.env.local",
     "apps/api/.env",
   );
-  const client = new Client({ connectionString: databaseUrl });
+  const client = new Client({ connectionString });
   await client.connect();
   try {
     const result = await client.query<T>(sql, values);

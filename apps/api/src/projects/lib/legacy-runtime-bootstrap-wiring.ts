@@ -3,24 +3,22 @@
  * provider exec → metadata + audit. The policy lives in
  * legacy-runtime-bootstrap.ts and is tested without any of this.
  */
-import { sessionSandboxes } from '@kortix/db';
-import { eq } from 'drizzle-orm';
-import { getProvider, type ProviderName } from '../../platform/providers';
 import { readFileSync } from 'node:fs';
+import { projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
+import { eq, sql } from 'drizzle-orm';
+import { type ProviderName, getProvider } from '../../platform/providers';
+import { mintSessionRuntimeToken } from '../../platform/services/session-runtime-token';
 import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
-import { projectSessions, projects } from '@kortix/db';
-import { sql } from 'drizzle-orm';
-import { mintSessionToken } from '../../platform/services/session-sandbox';
 import { buildSandboxUpstreamHeaders, resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
-  bootstrapLegacyRuntime,
   type LegacyBootstrapDeps,
   type LegacyBootstrapResult,
+  bootstrapLegacyRuntime,
 } from './legacy-runtime-bootstrap';
 
 const SANDBOX_SERVICE_PORT = 8000;
@@ -78,7 +76,8 @@ async function opencodeProbeHeaders(
   const serviceKey = typeof config?.serviceKey === 'string' ? (config.serviceKey as string) : null;
   if (!serviceKey) return null;
   const metadata = (sb?.metadata ?? null) as Record<string, unknown> | null;
-  let userId = typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
+  let userId =
+    typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
   if (!userId && row.sessionId) {
     const [session] = await db
       .select({ createdBy: projectSessions.createdBy })
@@ -88,7 +87,12 @@ async function opencodeProbeHeaders(
     userId = session?.createdBy ?? null;
   }
   if (!userId) return null;
-  return buildSandboxUpstreamHeaders({ sandboxId: row.sandboxId, userId, serviceKey, providerHeaders });
+  return buildSandboxUpstreamHeaders({
+    sandboxId: row.sandboxId,
+    userId,
+    serviceKey,
+    providerHeaders,
+  });
 }
 
 /**
@@ -132,14 +136,17 @@ async function mintReplacementServiceKey(row: LegacyBootstrapRow): Promise<strin
     .where(eq(projects.projectId, session.projectId))
     .limit(1);
   if (!project) return null;
-  return mintSessionToken({
+  const token = await mintSessionRuntimeToken({
     accountId: session.accountId,
     userId: session.createdBy,
     projectId: session.projectId,
-    sandboxId: row.sessionId,
+    sessionId: row.sessionId,
+    runtimeKind: 'worker',
+    runtimeId: row.sandboxId,
     agentName: session.agentName ?? 'default',
     gitProject: { ...project, gitAuthToken: null },
   });
+  return token.secretKey;
 }
 
 async function commitReplacementServiceKey(
@@ -154,17 +161,28 @@ async function commitReplacementServiceKey(
     holds = await probeDaemonWithServiceKey(row, secret);
   }
   if (!holds) {
-    console.warn(`[legacy-bootstrap] ${row.sandboxId}: box did not take the rotated token; service key unchanged`);
+    console.warn(
+      `[legacy-bootstrap] ${row.sandboxId}: box did not take the rotated token; service key unchanged`,
+    );
     return;
   }
-  const patch = { serviceKey: secret, serviceKeyRotatedAt: new Date().toISOString(), legacyServiceKeyRetiredAt: new Date().toISOString() };
+  const patch = {
+    serviceKey: secret,
+    serviceKeyRotatedAt: new Date().toISOString(),
+    legacyServiceKeyRetiredAt: new Date().toISOString(),
+  };
   await db
     .update(sessionSandboxes)
-    .set({ config: sql`coalesce(${sessionSandboxes.config}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb` })
+    .set({
+      config: sql`coalesce(${sessionSandboxes.config}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`,
+    })
     .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
 }
 
-async function probeDaemonWithServiceKey(row: LegacyBootstrapRow, serviceKey: string): Promise<boolean> {
+async function probeDaemonWithServiceKey(
+  row: LegacyBootstrapRow,
+  serviceKey: string,
+): Promise<boolean> {
   try {
     const [sb] = await db
       .select({ metadata: sessionSandboxes.metadata })
@@ -172,11 +190,23 @@ async function probeDaemonWithServiceKey(row: LegacyBootstrapRow, serviceKey: st
       .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
       .limit(1);
     const metadata = (sb?.metadata ?? null) as Record<string, unknown> | null;
-    const userId = typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
+    const userId =
+      typeof metadata?.provisionedBy === 'string' ? (metadata.provisionedBy as string) : null;
     if (!userId) return false;
-    const { url, headers } = await resolveSandboxIngress(row.externalId, { port: OPENCODE_PRIMARY_PORT, transport: 'http' });
-    const probeHeaders = await buildSandboxUpstreamHeaders({ sandboxId: row.sandboxId, userId, serviceKey, providerHeaders: headers });
-    const res = await fetch(`${url.replace(/\/$/, '')}/session/status`, { headers: probeHeaders, signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    const { url, headers } = await resolveSandboxIngress(row.externalId, {
+      port: OPENCODE_PRIMARY_PORT,
+      transport: 'http',
+    });
+    const probeHeaders = await buildSandboxUpstreamHeaders({
+      sandboxId: row.sandboxId,
+      userId,
+      serviceKey,
+      providerHeaders: headers,
+    });
+    const res = await fetch(`${url.replace(/\/$/, '')}/session/status`, {
+      headers: probeHeaders,
+      signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
+    });
     return res.ok;
   } catch {
     return false;
@@ -231,9 +261,13 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         return null;
       }
     },
-    pnpmVersion: () => (typeof (runtimeVersions as { pnpm?: unknown }).pnpm === 'string' ? ((runtimeVersions as { pnpm: string }).pnpm) : null),
+    pnpmVersion: () =>
+      typeof (runtimeVersions as { pnpm?: unknown }).pnpm === 'string'
+        ? (runtimeVersions as { pnpm: string }).pnpm
+        : null,
     rotateKortixToken: () => mintReplacementServiceKey(row),
-    commitKortixToken: (secret, rotatedOnBox) => commitReplacementServiceKey(row, secret, rotatedOnBox),
+    commitKortixToken: (secret, rotatedOnBox) =>
+      commitReplacementServiceKey(row, secret, rotatedOnBox),
     exec: async (command, timeoutMs) => {
       if (!provider.exec) throw new Error(`provider ${row.provider} has no exec channel`);
       return provider.exec(row.externalId, command, { timeoutMs });
@@ -293,7 +327,10 @@ export async function runLegacyRuntimeBootstrap(
  * policy's own gates (recent-check TTL, cooldown, budget, busy) make this
  * cheap on a converged fleet — one health probe per box per 6 h.
  */
-export function scheduleLegacyRuntimeBootstrap(row: LegacyBootstrapRow, reason = 'reaper'): boolean {
+export function scheduleLegacyRuntimeBootstrap(
+  row: LegacyBootstrapRow,
+  reason = 'reaper',
+): boolean {
   if (!legacyRuntimeBootstrapEnabled()) return false;
   if (!row.externalId) return false;
   if (inFlight.has(row.sandboxId) || inFlight.size >= MAX_IN_FLIGHT) return false;

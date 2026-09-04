@@ -37,6 +37,7 @@ import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 import {
   DEPRECATED_KORTIX_CLI_ALIASES,
+  manifestUsesAgentMap,
   resolveGrantSet,
   SLUG_RE,
   WORKSPACE_MODES_V2,
@@ -159,7 +160,7 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
     return { specs: [], errors: [], defaultAgent: null };
   }
 
-  if (manifest.schemaVersion === 2) {
+  if (manifestUsesAgentMap(manifest.schemaVersion)) {
     return extractAgentsV2(raw, manifest, filename);
   }
 

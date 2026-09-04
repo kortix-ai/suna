@@ -1,31 +1,28 @@
+import { accountMembers, projectSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import { accountMembers, projectSessions, sessionSandboxes } from '@kortix/db';
-import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
 import { BillingError } from '../../errors';
 import { tryGetProvider } from '../../platform/providers';
+import { deleteSessionEnvironment } from '../../platform/services/session-environment-teardown';
 import {
   isAlreadyNotRunning,
   reconcileSandboxRemovedByExternalId,
   reconcileSandboxStoppedByExternalId,
 } from '../../projects/sandbox-reaper';
+import { db } from '../../shared/db';
+import { getStripe } from '../../shared/stripe';
+import {
+  cancelDeletionRequest,
+  createDeletionRequest,
+  getActiveDeletionRequest,
+  getScheduledDeletions,
+  markDeletionCompleted,
+} from '../repositories/account-deletion';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
-import {
-  getActiveDeletionRequest,
-  createDeletionRequest,
-  cancelDeletionRequest,
-  markDeletionCompleted,
-  getScheduledDeletions,
-} from '../repositories/account-deletion';
 
 const GRACE_PERIOD_DAYS = 14;
 
-export async function requestAccountDeletion(
-  accountId: string,
-  userId: string,
-  reason?: string,
-) {
+export async function requestAccountDeletion(accountId: string, userId: string, reason?: string) {
   const existing = await getActiveDeletionRequest(accountId);
   if (existing) {
     throw new BillingError('An active deletion request already exists for this account');
@@ -131,16 +128,13 @@ const STOP_CONCURRENCY = 8;
 export const RECLAIMABLE_SANDBOX_STATUSES = ['provisioning', 'active', 'error'] as const;
 
 /** `project_sessions` states that still claim the session is doing something. */
-export const LIVE_SESSION_STATUSES = [
-  'queued',
-  'branching',
-  'provisioning',
-  'running',
-] as const;
+export const LIVE_SESSION_STATUSES = ['queued', 'branching', 'provisioning', 'running'] as const;
 
 export interface SandboxReclaimSummary {
   accounts: number;
   boxes: number;
+  environments: number;
+  environmentsDeleted: number;
   stopped: number;
   removed: number;
   sessionsSettled: number;
@@ -163,10 +157,7 @@ export interface SandboxReclaimSummary {
  * requires (ACCOUNT_ACTIONS.ACCOUNT_DELETE), so this widens the sweep to
  * exactly the accounts the caller could have deleted one at a time anyway.
  */
-export async function reclaimableAccountIds(
-  accountId: string,
-  userId?: string,
-): Promise<string[]> {
+export async function reclaimableAccountIds(accountId: string, userId?: string): Promise<string[]> {
   const ids = new Set<string>([accountId]);
   if (!userId) return [...ids];
   try {
@@ -205,6 +196,8 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
   const summary: SandboxReclaimSummary = {
     accounts: accountIds.length,
     boxes: 0,
+    environments: 0,
+    environmentsDeleted: 0,
     stopped: 0,
     removed: 0,
     sessionsSettled: 0,
@@ -315,6 +308,37 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
     );
   }
 
+  try {
+    const environments = await db
+      .select({ sessionId: sessionEnvironments.sessionId })
+      .from(sessionEnvironments)
+      .where(inArray(sessionEnvironments.accountId, accountIds));
+    summary.environments = environments.length;
+    summary.boxes += environments.length;
+    for (let i = 0; i < environments.length; i += STOP_CONCURRENCY) {
+      await Promise.all(
+        environments.slice(i, i + STOP_CONCURRENCY).map(async ({ sessionId }) => {
+          try {
+            await deleteSessionEnvironment(sessionId);
+            summary.environmentsDeleted++;
+          } catch (err) {
+            summary.errors++;
+            console.error(
+              `[AccountDeletion] Failed to delete environment for session ${sessionId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        }),
+      );
+    }
+  } catch (err) {
+    summary.errors++;
+    console.error(
+      `[AccountDeletion] environment teardown failed for ${accountIds.join(', ')}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   // Settle sessions the sandbox sweep could not reach: a session that never got
   // a `session_sandboxes` row, or whose row had no `external_id`, still shows as
   // `running` forever. Those are the rows the manual playbook had to fix by
@@ -340,7 +364,7 @@ async function reclaimAccountSandboxes(accountIds: string[]): Promise<SandboxRec
   }
 
   console.log(
-    `[AccountDeletion] reclaim: accounts=${summary.accounts} boxes=${summary.boxes} stopped=${summary.stopped} removed=${summary.removed} sessions=${summary.sessionsSettled} errors=${summary.errors}`,
+    `[AccountDeletion] reclaim: accounts=${summary.accounts} boxes=${summary.boxes} environments=${summary.environments} environments_deleted=${summary.environmentsDeleted} stopped=${summary.stopped} removed=${summary.removed} sessions=${summary.sessionsSettled} errors=${summary.errors}`,
   );
   return summary;
 }
@@ -356,7 +380,10 @@ async function performDeletion(accountId: string, userId?: string) {
       const stripe = getStripe();
       await stripe.subscriptions.cancel(account.stripeSubscriptionId);
     } catch (err) {
-      console.error(`[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`, err);
+      console.error(
+        `[AccountDeletion] Failed to cancel Stripe subscription for ${accountId}:`,
+        err,
+      );
     }
   }
 

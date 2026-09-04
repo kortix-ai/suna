@@ -22,13 +22,22 @@ import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema'
 
 /** Highest manifest schema version this platform ships and reads. Mirrored by
  *  `MAX_SCHEMA_VERSION` in `../triggers` (kept separate to avoid an import
- *  cycle: `triggers` pulls in the git layer, which consumes this module). */
-export const LATEST_MANIFEST_VERSION = 2;
+ *  cycle: `triggers` pulls in the git layer, which consumes this module) and by
+ *  `KNOWN_SCHEMA_VERSION` in `@kortix/manifest-schema`. All three are pinned
+ *  together by `apps/api/src/__tests__/manifest-ceiling.test.ts`. */
+export const LATEST_MANIFEST_VERSION = 3;
 
 /**
- * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists today (the
- * `kortix.toml` → `kortix.yaml` governance conversion). Version 2 is the
- * current schema, so a v2 project is reported as current and offered nothing.
+ * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists (the
+ * `kortix.toml` → `kortix.yaml` governance conversion).
+ *
+ * There is deliberately NO 2 → 3 entry. v3 is not the next rung on this
+ * ladder — it is the pi runtime's manifest, and adopting it means MOVING the
+ * project's agents from `.kortix/opencode` to `.kortix/pi` and running a
+ * different runtime. No code performs that move, and per this module's own
+ * rule, advertising a jump the product cannot perform is a bug. So a v2
+ * project reads as `latest_version: 3, migration_offered: false`: honest that
+ * v3 exists, honest that nothing will convert it for you.
  */
 const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2 };
 

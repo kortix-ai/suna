@@ -21,6 +21,7 @@ import { getServerPublicEnv } from '@/lib/public-env-server';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { siteMetadata } from '@/lib/site-metadata';
 import { cn } from '@/lib/utils';
+import { shouldMountVercelTelemetry } from '@/lib/vercel-telemetry';
 import { featureFlags } from '@kortix/sdk';
 import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
@@ -49,11 +50,6 @@ const GoogleTagManager = lazy(() =>
 const PostHogIdentify = lazy(() =>
   import('@/components/posthog-identify').then((mod) => ({
     default: mod.PostHogIdentify,
-  })),
-);
-const AnnouncementDialog = lazy(() =>
-  import('@/components/announcements/announcement-dialog').then((mod) => ({
-    default: mod.AnnouncementDialog,
   })),
 );
 const RouteChangeTracker = lazy(() =>
@@ -408,17 +404,21 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                       </Suspense>
                     </ReactQueryProvider>
                     {/* Analytics - lazy loaded to not block FCP */}
-                    <Suspense fallback={null}>
-                      <Analytics />
-                    </Suspense>
+                    {shouldMountVercelTelemetry() && (
+                      <Suspense fallback={null}>
+                        <Analytics />
+                      </Suspense>
+                    )}
                     {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
                       <Suspense fallback={null}>
                         <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
                       </Suspense>
                     )}
-                    <Suspense fallback={null}>
-                      <SpeedInsights />
-                    </Suspense>
+                    {shouldMountVercelTelemetry() && (
+                      <Suspense fallback={null}>
+                        <SpeedInsights />
+                      </Suspense>
+                    )}
                     <Suspense fallback={null}>
                       <PostHogIdentify />
                     </Suspense>

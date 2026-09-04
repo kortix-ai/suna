@@ -23,11 +23,7 @@ import type { FileNode } from '@/features/file-browser/types';
 export function useFileUpload() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    UploadResult[],
-    Error,
-    { file: File | Blob; targetPath?: string }
-  >({
+  return useMutation<UploadResult[], Error, { file: File | Blob; targetPath?: string }>({
     mutationFn: ({ file, targetPath }) => uploadFile(file, targetPath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });
@@ -75,14 +71,13 @@ export function useFileMkdir() {
 
 export function useFileRename() {
   const queryClient = useQueryClient();
-  const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((s) => s.getActiveWorkspaceUrl());
 
   return useMutation<boolean, Error, { from: string; to: string }>({
     mutationFn: ({ from, to }) => renameFile(from, to),
     onMutate: async ({ from, to }) => {
       // Optimistically update the file list cache for the parent directory
-      const parentPath =
-        from.substring(0, from.lastIndexOf('/')) || '/workspace';
+      const parentPath = from.substring(0, from.lastIndexOf('/')) || '/workspace';
       const newName = to.split('/').pop() || '';
       const queryKey = fileListKeys.dir(serverUrl, parentPath);
 
@@ -98,10 +93,7 @@ export function useFileRename() {
           old?.map((node) => {
             if (node.path !== from) return node;
             // Update the absolute path by replacing the old name with the new one
-            const absoluteDir = node.absolute.substring(
-              0,
-              node.absolute.lastIndexOf('/'),
-            );
+            const absoluteDir = node.absolute.substring(0, node.absolute.lastIndexOf('/'));
             return {
               ...node,
               name: newName,
@@ -115,9 +107,7 @@ export function useFileRename() {
       return { previousData, queryKey };
     },
     onError: (_err: unknown, _vars: unknown, context: unknown) => {
-      const ctx = context as
-        | { previousData?: unknown; queryKey?: unknown[] }
-        | undefined;
+      const ctx = context as { previousData?: unknown; queryKey?: unknown[] } | undefined;
       // Rollback on error
       if (ctx?.previousData && ctx?.queryKey) {
         queryClient.setQueryData(ctx.queryKey, ctx.previousData);
@@ -155,11 +145,7 @@ export function useFileCreate() {
 export function useFileCopy() {
   const queryClient = useQueryClient();
 
-  return useMutation<
-    UploadResult[],
-    Error,
-    { sourcePath: string; destPath: string }
-  >({
+  return useMutation<UploadResult[], Error, { sourcePath: string; destPath: string }>({
     mutationFn: ({ sourcePath, destPath }) => copyFile(sourcePath, destPath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: fileListKeys.all });

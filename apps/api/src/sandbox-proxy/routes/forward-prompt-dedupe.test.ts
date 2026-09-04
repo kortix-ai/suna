@@ -53,7 +53,7 @@ mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async () => {},
+  syncSessionRuntimesEnvForPrompt: async () => {},
 }));
 // Same reason as the env sync above: the pre-prompt grant re-mint reads the
 // session's token row, and this file is about DELIVERY dedupe, not grants. It

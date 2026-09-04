@@ -1,23 +1,22 @@
-import { stripInlineAttachmentBytes } from '../inline-attachments';
-import { timeUpstream } from '../../middleware/upstream-timing';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { config } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { actorForUser } from '../../iam/actor';
 import { getTraceHeaders, setContextField } from '../../lib/request-context';
+import { timeUpstream } from '../../middleware/upstream-timing';
+import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { callerKortixSessionId } from '../../projects/lib/caller-session';
 import {
   PromptConnectorPreflightUnresolved,
   type PromptConnectorVerdict,
   missingPromptConnectorConnections,
 } from '../../projects/lib/prompt-connector-preflight';
-import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
+import { syncSessionRuntimesEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
-import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
-import { recordSessionActivity } from '../../projects/session-activity';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
@@ -26,19 +25,18 @@ import {
   isTurnStartRequest,
   previewGrantMs,
 } from '../../projects/sandbox-deadline';
+import {
+  abandonSandboxTurn,
+  acceptSandboxTurn,
+  beginSandboxTurn,
+  extractTurnIdentity,
+} from '../../projects/sandbox-turn-lifecycle';
+import { recordSessionActivity } from '../../projects/session-activity';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
   KORTIX_SERVICE_CALL_HEADER,
   KORTIX_USER_CONTEXT_HEADER,
 } from '../../shared/kortix-user-context';
-import { config } from '../../config';
-import { previewCorsHeaders } from '../preview-hosts';
-import { appCookieHeader } from '../preview-session';
-import {
-  PREVIEW_STATE_HEADER,
-  previewStatePage,
-  type PreviewState,
-} from '../preview-state-page';
 import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -50,11 +48,7 @@ import {
   routeSandboxIngress,
   wakeSandbox,
 } from '../backend';
-import {
-  recordSseStreamEnd,
-  shouldBypassIngressCache,
-  trackSseBytes,
-} from '../sse-stall';
+import { stripInlineAttachmentBytes } from '../inline-attachments';
 import {
   DEFAULT_AGENT_SENTINEL,
   type PrePromptEnvSyncDeps,
@@ -66,6 +60,22 @@ import {
   secretGrantErrorResponse,
   shouldSyncProjectEnvBeforeProxy,
 } from '../pre-prompt-env-sync';
+import { previewCorsHeaders } from '../preview-hosts';
+import {
+  PROXY_RETRY_BUDGET_MS,
+  isLongTurnCompletionRequest,
+  isUploadRequest,
+  proxyAttemptTimeoutMs,
+} from '../preview-retry-budget';
+import { appCookieHeader } from '../preview-session';
+import { PREVIEW_STATE_HEADER, type PreviewState, previewStatePage } from '../preview-state-page';
+import {
+  claimPromptDelivery,
+  isNonIdempotentSessionWrite,
+  promptDeliveryKey,
+  releasePromptDelivery,
+  shouldClaimPromptDelivery,
+} from '../prompt-dedupe';
 import {
   EFFECTIVE_MESSAGE_ID_HEADER,
   PROMPT_TRANSCRIPT_READ_LIMIT,
@@ -77,31 +87,13 @@ import {
   repairPromptWireId,
 } from '../prompt-wire-id-repair';
 import {
-  PROXY_RETRY_BUDGET_MS,
-  isLongTurnCompletionRequest,
-  isUploadRequest,
-  proxyAttemptTimeoutMs,
-} from '../preview-retry-budget';
-import {
-  claimPromptDelivery,
-  isNonIdempotentSessionWrite,
-  promptDeliveryKey,
-  releasePromptDelivery,
-  shouldClaimPromptDelivery,
-} from '../prompt-dedupe';
-import {
   PROXY_HOP_HEADER,
   PROXY_UPSTREAM_STATUS_HEADER,
-  portFailureHop,
   type ProxyHop,
+  portFailureHop,
 } from '../proxy-hop';
 import { carriesSessionData, requiresSessionVisibility } from '../session-data-ports';
-import {
-  abandonSandboxTurn,
-  acceptSandboxTurn,
-  beginSandboxTurn,
-  extractTurnIdentity,
-} from '../../projects/sandbox-turn-lifecycle';
+import { recordSseStreamEnd, shouldBypassIngressCache, trackSseBytes } from '../sse-stall';
 
 // `userId` is set by combinedAuth (mounted in ../index.ts) before this route.
 // `apiKeyType` is read to decide whether a request may extend the sandbox's
@@ -283,7 +275,8 @@ function isBrowserNavigation(incomingHeaders: Headers): boolean {
  * the headers do not say, which simply omits it from the page.
  */
 function previewReturnTo(incomingHeaders: Headers): string {
-  const forwarded = incomingHeaders.get('x-kortix-preview-host') || incomingHeaders.get('x-forwarded-host');
+  const forwarded =
+    incomingHeaders.get('x-kortix-preview-host') || incomingHeaders.get('x-forwarded-host');
   const host = forwarded || incomingHeaders.get('host') || '';
   if (!host) return '';
   const proto = incomingHeaders.get('x-forwarded-proto') || 'https';
@@ -349,9 +342,11 @@ export function portUnreachableResponse(opts: {
     // response, and both hop headers are set here too, so a fetch probe reads
     // exactly what it always did.
     const state: PreviewState =
-      code === 'sandbox_not_ready' || retry === true ? 'starting'
-      : upstreamStatus === null ? 'not-listening'
-      : 'unreachable';
+      code === 'sandbox_not_ready' || retry === true
+        ? 'starting'
+        : upstreamStatus === null
+          ? 'not-listening'
+          : 'unreachable';
     headers.set(PREVIEW_STATE_HEADER, state);
     return new Response(
       previewStatePage({
@@ -669,7 +664,7 @@ function isConcreteAgentSwitch(requestedAgent: string | null, sessionAgent: stri
 // would cache the real ones for the whole process the first time any test
 // touched it.
 const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
-  syncEnv: syncSandboxEnvForPrompt,
+  syncEnv: syncSessionRuntimesEnvForPrompt,
   remintGrant: remintGrantForAgentSwitch,
   scheduleSnapshot: scheduleOpencodeSnapshotSync,
   generateTitle: generateSessionTitleFromFirstPrompt,
@@ -1638,10 +1633,7 @@ export async function forwardToSandbox(
         method === 'GET' && upstream.ok
           ? /^\/session\/([^/]+)\/message\/?$/.exec(remainingPath)
           : null;
-      if (
-        listMatch &&
-        (upstream.headers.get('content-type') ?? '').includes('application/json')
-      ) {
+      if (listMatch && (upstream.headers.get('content-type') ?? '').includes('application/json')) {
         const sessionID = decodeURIComponent(listMatch[1] ?? '');
         const text = await upstream.text();
         let body = text;

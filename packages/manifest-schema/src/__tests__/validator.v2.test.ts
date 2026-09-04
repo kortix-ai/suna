@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  manifestDefaultConfigDir,
+  manifestDefaultRuntime,
   type ManifestIssue,
   resolveGrantSet,
   validateAgentMdFrontmatter,
@@ -1001,15 +1003,75 @@ agents:
 });
 
 describe('validateManifest — version above known max still rejected', () => {
-  test('kortix_version 3 is rejected as unsupported', () => {
+  test('kortix_version 4 is rejected as unsupported', () => {
     const { errorPaths, issues } = summarize(`
-kortix_version: 3
+kortix_version: 4
 default_agent: w
 agents:
   w: {}
 `);
     expect(errorPaths).toContain('kortix_version');
     expect(issues.some((i) => i.message.includes('Unsupported schema version'))).toBe(true);
+  });
+});
+
+// v3 is v2's body with two defaults flipped for pi, so every v2 rule has to
+// apply to it unchanged — the validator dispatches on `manifestUsesAgentMap`
+// rather than on `version === 2` precisely so this cannot drift.
+describe('kortix_version 3 — pi-native, v2 body', () => {
+  test('a minimal v3 manifest validates', () => {
+    const { issues } = summarize(`
+kortix_version: 3
+default_agent: w
+agents:
+  w: {}
+`);
+    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+  });
+
+  test('runtime defaults to pi at v3, and to opencode before it', () => {
+    expect(manifestDefaultRuntime(3)).toBe('pi');
+    expect(manifestDefaultRuntime(2)).toBe('opencode');
+    expect(manifestDefaultRuntime(1)).toBe('opencode');
+  });
+
+  test('config lives in .kortix/pi at v3, .kortix/opencode before it', () => {
+    expect(manifestDefaultConfigDir(3)).toBe('.kortix/pi');
+    expect(manifestDefaultConfigDir(2)).toBe('.kortix/opencode');
+    expect(manifestDefaultConfigDir(1)).toBe('.kortix/opencode');
+  });
+
+  test('TOML is refused at v3, exactly as at v2', () => {
+    const { errorPaths, issues } = summarize('kortix_version = 3\ndefault_agent = "w"\n', 'toml');
+    expect(errorPaths).toContain('kortix_version');
+    expect(issues.some((i) => i.message.includes('must be kortix.yaml'))).toBe(true);
+  });
+
+  test("v2's deny-by-default grants still apply — an array `agents` is still an error", () => {
+    const { errorPaths } = summarize(`
+kortix_version: 3
+default_agent: w
+agents:
+  - name: w
+`);
+    expect(errorPaths.length).toBeGreaterThan(0);
+  });
+
+  test('a v2-only rejection still fires at v3 (agent_scope on a connector)', () => {
+    const { issues } = summarize(`
+kortix_version: 3
+default_agent: w
+agents:
+  w: {}
+connectors:
+  - slug: c
+    provider: mcp
+    url: https://example.test
+    agent_scope: [w]
+`);
+    const scope = issues.find((i) => i.message.includes('agent_scope is not supported'));
+    expect(scope?.severity).toBe('error');
+    expect(scope?.message).toContain('kortix_version 3');
   });
 });
 

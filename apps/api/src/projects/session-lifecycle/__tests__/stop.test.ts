@@ -7,8 +7,13 @@ import * as realSandboxProxyBackend from '../../../sandbox-proxy/backend';
 let sandboxRow: Record<string, unknown> | null = null;
 let stopCalls: string[] = [];
 let stopError: Error | null = null;
+/** What the provider reports when a refused stop is double-checked. */
+let providerStatus: 'running' | 'stopped' | 'removed' | 'unknown' = 'running';
+let statusCalls: string[] = [];
 let pausedCompute: string[] = [];
 let cacheInvalidations: string[] = [];
+let environmentStopCalls: string[] = [];
+let environmentStopError: Error | null = null;
 let updateCalls: Array<{
   table: unknown;
   updates: Record<string, unknown>;
@@ -31,13 +36,14 @@ const originalFetch = globalThis.fetch;
 /** Flatten a drizzle SQL expression (including its bound params) to text, so a
  *  test can assert what the write actually asks Postgres to do. */
 function describeSql(expression: unknown): string {
-  const chunks: unknown[] = (expression as any)?.queryChunks ?? [];
+  const chunks = (expression as { queryChunks?: unknown[] } | null)?.queryChunks ?? [];
   return chunks
-    .map((chunk: any) => {
+    .map((chunk) => {
       if (typeof chunk === 'string') return chunk;
-      if (Array.isArray(chunk?.value)) return chunk.value.join('');
-      if (typeof chunk?.value === 'string') return chunk.value;
-      return chunk?.name ?? '';
+      const record = chunk as { value?: unknown; name?: string } | null;
+      if (Array.isArray(record?.value)) return record.value.join('');
+      if (typeof record?.value === 'string') return record.value;
+      return record?.name ?? '';
     })
     .join(' ');
 }
@@ -103,6 +109,11 @@ mock.module('../../../platform/providers', () => ({
       stopCalls.push(externalId);
       if (stopError) throw stopError;
     },
+    getStatus: async (externalId: string) => {
+      callOrder.push('provider.getStatus');
+      statusCalls.push(externalId);
+      return providerStatus;
+    },
   }),
 }));
 
@@ -140,6 +151,14 @@ mock.module('../../../sandbox-proxy', () => ({
   },
 }));
 
+mock.module('../../../platform/services/session-environment', () => ({
+  stopSessionEnvironment: async (sessionId: string) => {
+    environmentStopCalls.push(sessionId);
+    if (environmentStopError) throw environmentStopError;
+    return { sessionId, status: 'stopped' };
+  },
+}));
+
 const { stopSession } = await import('../stop');
 
 const baseInput = {
@@ -153,8 +172,12 @@ beforeEach(() => {
   sandboxRow = null;
   stopCalls = [];
   stopError = null;
+  providerStatus = 'running';
+  statusCalls = [];
   pausedCompute = [];
   cacheInvalidations = [];
+  environmentStopCalls = [];
+  environmentStopError = null;
   updateCalls = [];
   executedStatements = [];
   inTransaction = false;
@@ -252,6 +275,7 @@ describe('stopSession', () => {
     expect(stopCalls).toEqual(['ext-1']);
     expect(pausedCompute).toEqual(['sess-1']);
     expect(cacheInvalidations).toEqual(['ext-1']);
+    expect(environmentStopCalls).toEqual(['sess-1']);
 
     const sandboxUpdate = updateCalls.find((c) => c.table === sessionSandboxes);
     expect(sandboxUpdate?.updates.status).toBe('stopped');
@@ -273,6 +297,30 @@ describe('stopSession', () => {
     expect(executedStatements[0]?.inTransaction).toBe(true);
     expect(describeSql(executedStatements[0]?.sql)).toContain('UPDATE kortix.session_turns');
     expect(describeSql(executedStatements[0]?.sql)).toContain('runtime_gone');
+  });
+
+  test('returns 502 when the worker stops but its environment cannot be confirmed stopped', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    environmentStopError = Object.assign(
+      new Error('Environment env-ext-1 is still running after its stop failed'),
+      { providerStatus: 'running' },
+    );
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(502);
+    expect(result.body).toEqual({
+      error: 'Worker stopped but environment stop failed',
+      worker_status: 'stopped',
+      environment_status: 'running',
+    });
+    expect(environmentStopCalls).toEqual(['sess-1']);
   });
 
   // The lost update. This path used to write
@@ -297,7 +345,7 @@ describe('stopSession', () => {
 
     const metadata = updateCalls.find((c) => c.table === sessionSandboxes)?.updates.metadata;
     // A jsonb merge expression, not an object literal.
-    expect(Array.isArray((metadata as any)?.queryChunks)).toBe(true);
+    expect(Array.isArray((metadata as { queryChunks?: unknown[] } | null)?.queryChunks)).toBe(true);
     const rendered = describeSql(metadata);
     expect(rendered).toContain('coalesce');
     expect(rendered).toContain("'{}'::jsonb");
@@ -362,6 +410,54 @@ describe('stopSession', () => {
   });
 
   // T11: close the turn before the box loses power.
+  // Daytona's stop is not idempotent, and its refusal reads the same for a box
+  // it already idled out and for one mid-transition. The old code 502'd on the
+  // message alone, which is how a preview (no reaper ever writes `stopped`)
+  // ended up with 99 "running" sessions no stop could clear.
+  test('a refusal the provider cannot classify is resolved by asking it: already stopped → reconcile, 200', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    stopError = new Error('Sandbox is not in a stoppable state');
+    providerStatus = 'stopped';
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(200);
+    expect(statusCalls).toEqual(['ext-1']);
+    expect(callOrder).toEqual(['abort', 'provider.stop', 'provider.getStatus']);
+    expect(pausedCompute).toEqual(['sess-1']);
+    expect(updateCalls.find((c) => c.table === sessionSandboxes)?.updates.status).toBe('stopped');
+    expect(updateCalls.find((c) => c.table === projectSessions)?.updates.status).toBe('stopped');
+  });
+
+  test('the same refusal over a box the provider still reports running stays a 502, rows untouched', async () => {
+    sandboxRow = {
+      sandboxId: 'sess-1',
+      externalId: 'ext-1',
+      provider: 'daytona',
+      status: 'active',
+      metadata: {},
+    };
+    stopError = new Error('Sandbox is not in a stoppable state');
+    providerStatus = 'running';
+
+    const result = await stopSession(baseInput);
+
+    expect(result.status).toBe(502);
+    expect(result.body).toMatchObject({
+      error: 'Sandbox is not in a stoppable state',
+      provider_status: 'running',
+    });
+    expect(statusCalls).toEqual(['ext-1']);
+    expect(updateCalls).toEqual([]);
+    expect(pausedCompute).toEqual([]);
+  });
+
   describe('pre-stop abort', () => {
     test('issues the daemon abort BEFORE provider.stop() on a running box', async () => {
       sandboxRow = {

@@ -13,6 +13,7 @@ import {
   hasRetryingAssistantTurn,
   listSessionPrompts,
   projectSessionConnection,
+  showsGeneratingIndicator,
 } from '@kortix/sdk';
 import { isOptimisticSessionPrompt, useProjectSession } from '@kortix/sdk/react';
 import {
@@ -38,11 +39,7 @@ import {
   SUGGESTION_MENU_SELECTOR,
   shouldCountEscape,
 } from './esc-to-stop';
-import {
-  SystemNotificationCard,
-  parseSystemNotifications,
-  stripSystemPtyText,
-} from './message-parsing';
+import { stripSystemPtyText } from './message-parsing';
 import { projectQueueRows } from './queue-projection';
 import { createQueueUndoAction } from './queued-message-restore';
 import { ActivityBurst } from './turn/activity-burst';
@@ -120,6 +117,7 @@ import { ChatMinimap } from '@/features/session/chat-minimap';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import { usePlanInChat } from '@/features/session/plan-surface';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { SessionTranscriptSkeleton } from '@/features/session/session-transcript-skeleton';
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   ToolActivateContext,
@@ -166,7 +164,6 @@ import { projectSessionHref } from '@/lib/navigation/session-href';
 import {
   type Command,
   type MessageWithParts,
-  type Part,
   type PermissionRequest,
   type QuestionRequest,
   type TextPart,
@@ -559,56 +556,6 @@ export async function stopThenSendNow(deps: StopThenSendNowDeps): Promise<void> 
     await deps.stop();
   }
   await deps.dispatch();
-}
-
-// ============================================================================
-// Notification-only turn detection
-// ============================================================================
-
-/** True when a turn's user message contains only system notification XML
- *  with no real user-authored text. */
-function isNotificationOnlyMessage(parts: Part[]): boolean {
-  if (parts.length === 0) return false;
-  const textParts = parts.filter(
-    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
-  ) as TextPart[];
-  if (textParts.length === 0) return false;
-  const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
-  return notifications.length > 0 && !cleanText.trim();
-}
-
-// ============================================================================
-// NotificationTurn — lightweight turn for system notification messages
-// ============================================================================
-
-/** Renders notification-only turns (PTY exits, agent completions, etc.)
- *  inline with the conversation flow, styled like tool-call cards. */
-function NotificationTurn({ turn }: { turn: Turn }) {
-  const rawText = useMemo(() => {
-    const texts: string[] = [];
-    for (const p of turn.userMessage.parts) {
-      if (isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored) {
-        texts.push((p as TextPart).text || '');
-      }
-    }
-    return texts.join('\n');
-  }, [turn.userMessage.parts]);
-
-  const { notifications } = useMemo(
-    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
-    [rawText],
-  );
-
-  if (notifications.length === 0) return null;
-
-  return (
-    <div className="flex w-full flex-col gap-1.5">
-      {notifications.map((n) => (
-        <SystemNotificationCard key={`${n.tag}-${n.body}`} notification={n} />
-      ))}
-    </div>
-  );
 }
 
 // ============================================================================
@@ -1188,11 +1135,6 @@ function SessionTurnImpl({
     }
     return result;
   }, [questions, sessionId, turn.assistantMessages]);
-  const answeredQuestionIds = useMemo(
-    () => new Set(answeredQuestionParts.map(({ part }) => part.id)),
-    [answeredQuestionParts],
-  );
-
   // Inline content parts — interleaves text and answered question parts in natural order.
   // When a turn contains answered questions, we need to render text and questions
   // in their original order rather than extracting the last text as a separate "response".
@@ -1384,24 +1326,8 @@ function SessionTurnImpl({
     return () => clearInterval(timer);
   }, [retryInfo]);
 
-  // ---- Duration ticking ----
-  // Only a LIVE turn needs a clock. The old effect also ran for settled turns,
-  // where it called setDuration on mount and forced every completed turn in the
-  // transcript through a second render for a number that never changes. The
-  // early return below is what removes that pass. A settled turn's duration is
-  // now SessionTurnMeta's job, from turnDurationMs.
   const turnEndedAt = useMemo(() => sessionTurnEndedAt(turn), [turn]);
   const turnDurationMs = useMemo(() => sessionTurnDurationMs(turn), [turn]);
-  const [liveDuration, setLiveDuration] = useState('');
-  useEffect(() => {
-    if (!working) return;
-    const { startedAt } = sessionTurnSpan(turn);
-    if (startedAt == null) return;
-    const update = () => setLiveDuration(formatDuration(Date.now() - startedAt));
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [working, turn]);
 
   // ---- Copy response ----
   const handleCopy = async () => {
@@ -2195,7 +2121,6 @@ export function SessionChat({
     loadOlder,
   } = sessionState ?? localSync;
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
-  const messagesLoading = syncMessagesLoading;
   // Project sessions use the server-side project agent roster. Non-project
   // sessions fall back to OpenCode's directory-scoped runtime discovery.
   const { data: agents } = useRuntimeAgents({ directory: session?.directory, projectId });
@@ -2292,10 +2217,6 @@ export function SessionChat({
   const composerAgentName = composerAgent.selected;
   const noAccessibleAgents = composerAgent.disabled;
   const localAgentSet = local.agent.set;
-  const localModelCurrentKey = local.model.currentKey;
-  // Wire model to SEND: `auto` when on the default (gateway resolves it), else
-  // the explicit pick. Always send this — not currentKey, which is for display.
-  const localModelSendKey = local.model.sendKey;
   const localModelList = local.model.list;
   const localModelSet = local.model.set;
   const localModelVisible = local.model.visible;
@@ -2613,9 +2534,47 @@ export function SessionChat({
     hasRetryingAssistant,
   });
 
+  /**
+   * Is the agent GENERATING — the one answer every VISIBLE "something is
+   * running" affordance reads.
+   *
+   * `effectiveBusy` above is the broader "a turn may be open", and it is right
+   * for the decisions that must fail safe. It is wrong for anything the user
+   * SEES, because one of its inputs is a `GET .../turn` read: that reports a
+   * ROW open in the ledger, rows are closed by a separate relay, and one
+   * routinely outlives its turn. Measured on pi.kortix.com: nine rows across
+   * four sessions, every one `active`, the oldest 67 minutes after its answer
+   * was written.
+   *
+   * Driving the visible state off the ledger meant the UI ASSERTED things that
+   * were not true — the shimmer first, and then, once that was fixed, a Stop
+   * button over a session with nothing to stop. Both are the same defect: a
+   * poll is not the runtime speaking. `showsGeneratingIndicator` accepts only
+   * `stream` (the runtime's own SSE) and `optimistic` (this tab's own send).
+   *
+   * Compaction is folded back in deliberately: it is not a turn and the
+   * projection knows nothing about it, but it IS real work this tab can see,
+   * so the Stop button belongs to it.
+   */
+  const generating = showsGeneratingIndicator({ projection: working });
+
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
+  //
+  // Driven by `effectiveBusy` — the BROAD answer, `/turn` read included —
+  // because this flag owns the INTERRUPT affordance (Stop, Escape-to-stop) and
+  // those must fail SAFE. The two failure directions are not symmetric:
+  //
+  //   Stop shown with nothing running  -> one dead click.
+  //   Stop hidden with a turn running  -> the user cannot stop their agent.
+  //
+  // Gating this on `generating` cost exactly that. On a pi-worker session the
+  // runtime does not emit the status frames that produce a `stream` source, so
+  // a genuinely streaming turn is only ever visible through the `/turn` read —
+  // and once the send receipt aged out there was no Stop button at all for a
+  // long answer (reported 2026-08-29, pi). The shimmer keeps the strict rule
+  // below; the escape hatch does not.
   const [isBusy, setIsBusy] = useState(effectiveBusy);
   const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
@@ -2631,11 +2590,34 @@ export function SessionChat({
   // The one working answer the LAST turn card renders (its shimmer). Resolved
   // here, once, so the card never reads the raw slot for a Kortix session —
   // see `resolveLastTurnWorking` for the split and the defect it removes.
+  // What the TURN CARD shows — a strictly narrower question than what the
+  // composer holds on.
+  //
+  // The shimmer means the agent is GENERATING, and only the runtime can report
+  // that: `source: 'stream'` (its own SSE frames, including the content-first
+  // activity rule) or `'optimistic'` (this tab's own send, covering the
+  // milliseconds before the stream takes over). A `GET .../turn` read reports
+  // something else entirely — that a ROW IS OPEN in the ledger — and rows are
+  // closed by a separate relay, so one routinely outlives its turn.
+  //
+  // Measured on pi.kortix.com: nine ledger rows across four sessions, all still
+  // `active`, the oldest 67 minutes after its answer was written. Every one of
+  // those sessions painted the shimmer over a finished transcript.
+  //
+  // The composer keeps the ungated projection below on purpose: holding `/`
+  // commands over a turn that MIGHT be open is the safe direction, while
+  // telling the user the agent is thinking when it is not is simply false.
   const lastTurnWorking = resolveLastTurnWorking({
     isChildSession,
     // The delay-hidden projection, so the card and the composer settle on the
     // same frame instead of the card flickering 300ms earlier.
-    projectionBusy: isBusy,
+    //
+    // `&& generating` is what keeps "Gathering thoughts…" off a finished
+    // transcript: `isBusy` deliberately includes the `/turn` read so Stop can
+    // fail safe, and a stale ledger row would otherwise shimmer for as long as
+    // it stayed open. The CLAIM that the agent is thinking needs the runtime's
+    // own voice; the ESCAPE HATCH does not.
+    projectionBusy: isBusy && generating,
     rawSlotBusy: getWorkingState(sessionStatus, true),
   });
 
@@ -5031,12 +5013,26 @@ export function SessionChat({
             forever with no way out but a page reload. The stage must also track
             the real runtime — hardcoding "ready" froze the copy on
             "Connecting" no matter what the boot was actually doing. */}
-        <SessionStartingLoader
-          stage={runtimeReady ? 'ready' : 'starting'}
-          variant="compact"
-          projectId={projectId}
-          sessionId={projectSessionId}
-        />
+        {/* Two different waits, two different visuals.
+　
+            Reading a transcript back is not a boot: it is fast, it is silent,
+            and it ends with messages. `SessionTranscriptSkeleton` shows the
+            SHAPE of what is arriving, so the swap reads as content landing.
+            The staged boot loader stays for the wait it was written for — a
+            sandbox actually coming up, which is slow enough to need naming
+            ("Preparing your workspace") and to earn a restart offer. Using the
+            boot loader for both made an ordinary session open look like a cold
+            start every time. */}
+        {runtimeReady ? (
+          <SessionTranscriptSkeleton />
+        ) : (
+          <SessionStartingLoader
+            stage="starting"
+            variant="compact"
+            projectId={projectId}
+            sessionId={projectSessionId}
+          />
+        )}
       </div>
     );
   }

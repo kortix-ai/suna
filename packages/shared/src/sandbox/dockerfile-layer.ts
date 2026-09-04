@@ -27,6 +27,12 @@ import {
   BUN_SHA256_AMD64,
   BUN_SHA256_ARM64,
   BUN_VERSION,
+  CLAUDE_CODE_SHA256_AMD64,
+  CLAUDE_CODE_SHA256_ARM64,
+  CLAUDE_CODE_VERSION,
+  CODEX_CLI_SHA256_AMD64,
+  CODEX_CLI_SHA256_ARM64,
+  CODEX_CLI_VERSION,
   NODE_VERSION,
   NPM_VERSION,
   PLAYWRIGHT_VERSION,
@@ -383,7 +389,9 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // repository-controlled checksum. pnpm then owns the JavaScript runtime
     // floor: Node comes from `pnpm runtime`, while npm and global CLIs live in
     // pnpm's isolated global package store.
-    'ENV SHELL=/bin/bash',
+    'ENV SHELL=/bin/bash \\',
+    '    DISABLE_AUTOUPDATER=1 \\',
+    '    DISABLE_UPDATES=1',
     'RUN case "$(uname -m)" in \\',
     `      x86_64) pnpm_arch=x64; pnpm_sha=${PNPM_SHA256_AMD64} ;; \\`,
     `      aarch64|arm64) pnpm_arch=arm64; pnpm_sha=${PNPM_SHA256_ARM64} ;; \\`,
@@ -478,6 +486,35 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
     // detection line, not the launch verdict, so the gate is emulation-safe.
     "    && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
+    '',
+    // Codex and Claude Code are tools inside the full environment, never
+    // alternate server-side harnesses. Pull exact, architecture-specific
+    // artifacts from their publishers' npm packages and verify repository-owned
+    // SHA-256 pins. Preserve Codex's complete vendor tree because bwrap, rg, and
+    // code-mode resources sit beside its main executable. The image-wide Claude
+    // update guards keep this pin stable after startup.
+    'RUN case "$(uname -m)" in \\',
+    `      x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha=${CODEX_CLI_SHA256_AMD64}; claude_sha=${CLAUDE_CODE_SHA256_AMD64} ;; \\`,
+    `      aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha=${CODEX_CLI_SHA256_ARM64}; claude_sha=${CLAUDE_CODE_SHA256_ARM64} ;; \\`,
+    '      *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \\',
+    '    esac \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \\',
+    `         "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_CLI_VERSION}-linux-\${cli_arch}.tgz" \\`,
+    '    && echo "${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \\',
+    '    && rm -rf /opt/kortix/codex \\',
+    '    && mkdir -p /opt/kortix/codex \\',
+    '    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \\',
+    '    && ln -sfn "/opt/kortix/codex/vendor/${codex_target}/bin/codex" /home/kortix/.local/bin/codex \\',
+    '    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-resources/bwrap" \\',
+    '    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-path/rg" \\',
+    '    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \\',
+    `         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-\${cli_arch}/-/claude-code-linux-\${cli_arch}-${CLAUDE_CODE_VERSION}.tgz" \\`,
+    '    && echo "${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \\',
+    '    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \\',
+    '    && chmod 0755 /home/kortix/.local/bin/claude \\',
+    '    && rm /tmp/codex.tgz /tmp/claude-code.tgz \\',
+    `    && test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" \\`,
+    `    && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"`,
     '',
     `RUN pnpm add -g --allow-build=opencode-ai "opencode-ai@${opencodeVersion}" \\`,
     '    && command -v opencode \\',

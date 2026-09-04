@@ -100,10 +100,7 @@ export function parseFileResults(paths: string[]): FileSearchResult[] {
  * Returns plain `string[]` paths (dirs have trailing `/`).
  * Drop-in replacement for `findOpenCodeFiles`.
  */
-export async function searchWorkspaceFiles(
-  query: string,
-  limit = 50,
-): Promise<string[]> {
+export async function searchWorkspaceFiles(query: string, limit = 50): Promise<string[]> {
   return searchWorkspaceFilePaths(query, { limit, apiLimit: Math.max(limit, 100) });
 }
 
@@ -113,7 +110,7 @@ export function useWorkspaceSearch(
   query: string,
   options?: UseWorkspaceSearchOptions,
 ): WorkspaceSearchState {
-  const serverUrl = useRuntimeStore((state) => state.getActiveServerUrl());
+  const serverUrl = useRuntimeStore((state) => state.getActiveWorkspaceUrl());
   const {
     debounceMs = 150,
     maxResults = 50,
@@ -178,17 +175,29 @@ export function useWorkspaceSearch(
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [effectiveQuery, isContentSearch, debounceMs, maxResults, maxTextResults, apiLimit, minQueryLength, serverUrl]);
+  }, [
+    effectiveQuery,
+    isContentSearch,
+    debounceMs,
+    maxResults,
+    maxTextResults,
+    apiLimit,
+    minQueryLength,
+    serverUrl,
+  ]);
 
   const hasResults = results.length > 0 || textResults.length > 0;
 
-  return useMemo(() => ({
-    results,
-    textResults,
-    isLoading,
-    searchedQuery,
-    isContentSearch,
-    effectiveQuery,
-    hasResults,
-  }), [results, textResults, isLoading, searchedQuery, isContentSearch, effectiveQuery, hasResults]);
+  return useMemo(
+    () => ({
+      results,
+      textResults,
+      isLoading,
+      searchedQuery,
+      isContentSearch,
+      effectiveQuery,
+      hasResults,
+    }),
+    [results, textResults, isLoading, searchedQuery, isContentSearch, effectiveQuery, hasResults],
+  );
 }

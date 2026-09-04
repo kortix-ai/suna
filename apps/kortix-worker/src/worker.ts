@@ -5,11 +5,10 @@
  *
  *   toolContext: { env: new KortixExecutionEnv(...) }
  *
- * pi-agent-core's built-in bash/read/write/edit tools resolve their filesystem
- * and shell out of that context. Handing them a KortixExecutionEnv instead of
- * NodeExecutionEnv means the agent has no reachable path to this process's own
- * disk through any default tool. That is the harness/environment split, and it
- * is one object, not a rewritten toolset.
+ * pi-agent-core's built-in bash/read/write/edit tools and Kortix's glob/grep
+ * tools resolve their filesystem and shell out of that context. Handing them a
+ * KortixExecutionEnv means the agent has no reachable path to this process's
+ * own disk through any default tool. That is the harness/environment split.
  *
  * Two model modes:
  *   faux  — a scripted provider. No credentials, no network. Used by the proof.
@@ -17,27 +16,26 @@
  *           traffic goes through the Kortix LLM gateway rather than direct.
  */
 import { createServer } from 'node:http';
-import {
-  Agent,
-  createBashTool,
-  createEditTool,
-  createReadTool,
-  createWriteTool,
-} from '@earendil-works/pi-agent-core';
+import { Agent } from '@earendil-works/pi-agent-core';
+import type { ExecutionEnv } from '@earendil-works/pi-agent-core';
 import {
   InMemoryCredentialStore,
+  createAssistantMessageEventStream,
   createModels,
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
 } from '@earendil-works/pi-ai';
-import { AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import type { AssistantMessage, AssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { Session } from '@earendil-works/pi-agent-core';
 import { ChatEventAdapter } from './chat-events.ts';
 import { KortixExecutionEnv } from './kortix-env.ts';
 import { LazyKortixEnv } from './lazy-env.ts';
 import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
+import { persistNewMessages } from './durable-append.ts';
+import { type TurnEndIdentity, buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
+import { createWorkspaceTools } from './workspace-tools.ts';
 
 /**
  * pi's session layer runs `assertJsonSerializable` on every durable payload:
@@ -69,6 +67,23 @@ function toDurable<T>(value: T, path = 'message'): T {
 }
 
 /**
+ * The branch's messages, oldest first.
+ *
+ * `findEntriesOnBranch` walks parent links UP from the leaf, so it hands the
+ * branch back NEWEST-FIRST. Both consumers need the opposite: the agent
+ * replays this array as its conversation history, and the runtime surface
+ * mints wire ids in array order. Unsorted, a resumed session came back with
+ * its questions answered backwards. Sort on the entry's own `seq` — the walk
+ * order is pi's business, the ordering contract is ours.
+ */
+export function restoredMessagesFromEntries(entries: readonly any[]): any[] {
+  return entries
+    .filter((e: any) => e.type === 'message')
+    .sort((a: any, b: any) => a.seq - b.seq)
+    .map((e: any) => e.message);
+}
+
+/**
  * True time-to-first-token, measured at the provider stream boundary.
  *
  * NOTE — this file previously claimed that `Agent.subscribe` emits no text
@@ -83,7 +98,7 @@ function toDurable<T>(value: T, path = 'message'): T {
  * honest instant for a latency number. It is instrumentation, not plumbing.
  */
 function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number) => void): AssistantMessageEventStream {
-  const out = new AssistantMessageEventStream();
+  const out = createAssistantMessageEventStream();
   const t0 = process.hrtime.bigint();
   let fired = false;
   (async () => {
@@ -107,6 +122,24 @@ function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number)
 }
 
 const BOOT_T0 = Date.now();
+
+/**
+ * Is this process confined by node's permission model?
+ *
+ * The check is the capability itself, not a flag we were told about: asking
+ * `process.permission.has('fs.write')` answers whether a write ANYWHERE would
+ * be allowed. A process started without `--permission` has no
+ * `process.permission` at all and is, by definition, not confined.
+ */
+export function isConfined(): boolean {
+  const permission = (process as { permission?: { has?: (scope: string) => boolean } }).permission;
+  if (!permission || typeof permission.has !== 'function') return false;
+  try {
+    return !permission.has('fs.write');
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Seconds since the machine booted, read at the moment we start serving.
@@ -153,8 +186,14 @@ export interface WorkerConfig {
 
 export function configFromEnv(): WorkerConfig {
   const mode = (process.env.KORTIX_MODEL_MODE ?? 'faux') as 'faux' | 'real';
+  const gatewayUrl = process.env.KORTIX_GATEWAY_URL ?? process.env.KORTIX_LLM_BASE_URL;
   return {
-    port: Number(process.env.PORT ?? 8080),
+    // KORTIX_SERVICE_PORT is what the PLATFORM injects and what the session
+    // proxy dials (sandbox_url ends /8000); PORT is the bench's name. Reading
+    // only PORT made every real session bind 8080 while the proxy asked 8000,
+    // so the box was healthy and answered 502 "proxy upstream error" forever —
+    // with the worker's own log saying "worker listening" the whole time.
+    port: Number(process.env.KORTIX_SERVICE_PORT ?? process.env.PORT ?? 8080),
     envUrl: process.env.KORTIX_ENV_URL ?? 'http://127.0.0.1:8100',
     envUrlExplicit: Boolean(process.env.KORTIX_ENV_URL),
     envCwd: process.env.KORTIX_ENV_CWD ?? '/workspace',
@@ -170,30 +209,29 @@ export function configFromEnv(): WorkerConfig {
     modelMode: mode,
     providerId: process.env.KORTIX_PROVIDER ?? 'openrouter',
     modelId: process.env.KORTIX_MODEL,
-    apiKey: process.env.KORTIX_API_KEY,
-    gatewayUrl: process.env.KORTIX_GATEWAY_URL,
+    // The platform injects the session credential and the gateway base under
+    // its OWN names (KORTIX_TOKEN / KORTIX_LLM_BASE_URL, see
+    // provisionSessionSandbox). The bench sets the KORTIX_API_KEY /
+    // KORTIX_GATEWAY_URL pair. Read both, or a real session finds no
+    // credential at all and cannot start — the bench names are the only ones
+    // that ever existed here, so nothing outside a bench ever worked.
+    // KORTIX_TOKEN is a control-plane session credential. It is valid as model
+    // auth only when sent to the Kortix gateway. Never send it directly to an
+    // external provider when the gateway URL is absent.
+    apiKey: process.env.KORTIX_API_KEY ?? (gatewayUrl ? process.env.KORTIX_TOKEN : undefined),
+    gatewayUrl,
     storeUrl: process.env.KORTIX_STORE_URL,
-    storeHeaders: process.env.KORTIX_STORE_HEADERS ? JSON.parse(process.env.KORTIX_STORE_HEADERS) : undefined,
+    // The control plane sets only KORTIX_STORE_URL and relies on the session
+    // credential it already injects; the bench passes explicit headers. Without
+    // this fallback a real session would post to the log unauthenticated and
+    // every append would 401 — losing the whole transcript, silently, because
+    // appends are the only thing that crosses the network.
+    storeHeaders: process.env.KORTIX_STORE_HEADERS
+      ? JSON.parse(process.env.KORTIX_STORE_HEADERS)
+      : process.env.KORTIX_TOKEN
+        ? { authorization: `Bearer ${process.env.KORTIX_TOKEN}` }
+        : undefined,
     sessionId: process.env.KORTIX_SESSION_ID ?? 'session-local',
-  };
-}
-
-/**
- * Bind an AgentHarnessTool (5-arg execute, takes a context) down to a plain
- * AgentTool (4-arg execute) by closing over the context.
- *
- * pi-agent-core ships two tool shapes. `createBashTool()` and friends are
- * AgentHarnessTools: they take `{ env }` as a 5th argument so the harness can
- * resolve a fresh context per turn. `Agent` takes plain AgentTools. Binding
- * here is what pins EVERY built-in tool to the Kortix environment for the
- * lifetime of the process — there is no per-call opportunity to substitute a
- * local filesystem.
- */
-function bindTool(tool: any, context: object) {
-  return {
-    ...tool,
-    execute: (toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any) =>
-      tool.execute(toolCallId, params, signal, onUpdate, context),
   };
 }
 
@@ -222,6 +260,14 @@ export async function buildHarness(cfg: WorkerConfig) {
   let model: any;
   let faux: ReturnType<typeof fauxProvider> | undefined;
 
+  if (cfg.modelMode === 'real' && !cfg.apiKey) {
+    throw new Error(
+      'real model mode requires a provider API key or a gateway URL with KORTIX_TOKEN',
+    );
+  }
+  // Retained in health for wire compatibility. Invalid real configuration now
+  // fails boot instead of serving fabricated responses.
+  const modelError: string | null = null;
   if (cfg.modelMode === 'faux') {
     faux = fauxProvider({ provider: 'faux', models: [{ id: 'faux-1', name: 'Faux' }] });
     models.setProvider(faux.provider);
@@ -257,14 +303,14 @@ export async function buildHarness(cfg: WorkerConfig) {
     if (!model) throw new Error(`no model resolved for provider ${provider.id}`);
   }
 
-  // THE SEAM. One context object, bound into every built-in tool.
-  const toolContext = { env };
-  const tools = [createBashTool(), createReadTool(), createWriteTool(), createEditTool()]
-    .map((t) => bindTool(t, toolContext));
+  // THE SEAM. Every default tool is bound to the remote environment once.
+  const tools = createWorkspaceTools(env as unknown as ExecutionEnv);
 
   // Durable transcript. The worker is a cache of it, not its owner: kill this
   // process and the conversation is still whole in the store.
   let session: Session | undefined;
+  /** Kept in the health shape for compatibility. Store failures now fail closed. */
+  const storeError: string | null = null;
   let restoredEntries = 0;
   let restoredMessages: any[] = [];
   if (cfg.storeUrl && cfg.sessionId) {
@@ -275,7 +321,7 @@ export async function buildHarness(cfg: WorkerConfig) {
     const leaf = await session.getLeafId();
     if (leaf) {
       const entries = await session.findEntriesOnBranch({ start: leaf } as any);
-      restoredMessages = entries.filter((e: any) => e.type === 'message').map((e: any) => e.message);
+      restoredMessages = restoredMessagesFromEntries(entries);
     }
   }
 
@@ -305,19 +351,88 @@ export async function buildHarness(cfg: WorkerConfig) {
   // when AgentHarness lands.
   if (session) {
     let persisted = restoredMessages.length;
+    // `turn_end` is kept here deliberately (unlike the relay below): persisting
+    // each provider round as it completes is what makes a killed worker
+    // recoverable rather than losing the whole run.
     agent.subscribe(async (event: any) => {
       if (event.type !== 'agent_end' && event.type !== 'turn_end') return;
-      const all = agent.state.messages;
-      for (let i = persisted; i < all.length; i++) {
-        await session!.appendMessage(toDurable(all[i])).catch((e) =>
-          console.error(JSON.stringify({ msg: 'session append failed', error: String(e?.message ?? e) })),
-        );
-      }
-      persisted = all.length;
+      // The watermark advances only over messages that actually landed. It used
+      // to be set to `all.length` unconditionally after a loop that swallowed
+      // its failures, so one 5xx from the store dropped a message for good —
+      // and if that message carried a `toolCall` whose `toolResult` appended
+      // fine, every later turn 400'd at the provider, permanently, because the
+      // hole is in an append-only log.
+      const result = await persistNewMessages(
+        session!,
+        agent.state.messages,
+        persisted,
+        toDurable,
+      );
+      persisted = result.persisted;
+      if (result.error) throw result.error;
     });
   }
 
-  return { agent, env, faux, models, timing, session, restoredEntries, restoredMessages };
+  // Close the control plane's turn row.
+  //
+  // The sandbox daemon does this for an OpenCode session by watching OpenCode's
+  // NATIVE `/event` stream, which the pi worker does not serve — so without
+  // this, a pi turn's row stays `active` forever. Measured on pi.kortix.com
+  // 2026-08-29: nine rows across four sessions, nine still `active`, the oldest
+  // 67 minutes after its answer was written. See `./turn-end-relay`.
+  //
+  // A separate subscriber keeps relay bookkeeping out of transcript storage.
+  // Pi awaits listeners in registration order. A failed append therefore
+  // prevents a false successful relay for that event.
+  const relayTurnEnd = buildTurnEndRelay(cfg);
+  // WHICH turn ended. `completeSandboxTurn` selects the row by identity, so a
+  // relay that names no turn closes none and still answers 200 — set by
+  // `startWorker` once the RuntimeSurface exists (it is built after the
+  // harness, and it is the only holder of the `ses_pi…` id).
+  let turnIdentity: (() => TurnEndIdentity | null) | null = null;
+  const setTurnIdentity = (source: () => TurnEndIdentity | null) => {
+    turnIdentity = source;
+  };
+  // Close whatever a PREVIOUS process left open. Armed here, run after listen.
+  const bootReconcile = scheduleBootReconcile({
+    relay: relayTurnEnd,
+    identity: () => turnIdentity?.() ?? null,
+  });
+  agent.subscribe((event: any) => {
+    // ANY agent event means this process is doing work, so the boot reconcile
+    // must never fire — it exists only for a session that booted idle.
+    bootReconcile.noteTurnStarted();
+    // `agent_end` ONLY — never pi's `turn_end`.
+    //
+    // The two systems use the word "turn" for different things. In pi, a TURN
+    // is ONE provider round: `turn_end` carries a single assistant message plus
+    // its `toolResults`, and the loop then decides whether to start another
+    // round (`shouldStopAfterTurn` — @earendil-works/pi-agent-core types.d.ts).
+    // `agent_end` is the last event of the RUN. A Kortix `session_turns` row
+    // spans the whole run — prompt to final answer.
+    //
+    // Relaying on `turn_end` therefore closed the row on the FIRST tool round,
+    // while the agent was still working: the Stop button and the working
+    // indicator disappeared mid-answer, and the box's deadline was pulled in to
+    // the idle tail under a run that was still generating. It looked correct in
+    // testing because a prompt that uses NO tools has exactly one pi turn, so
+    // `turn_end` and `agent_end` arrive back to back and the second relay is a
+    // harmless no-op.
+    if (event.type !== 'agent_end') return;
+    // Snapshotted HERE, synchronously: `runTurn`'s `finally` clears the active
+    // message id as soon as `agent.prompt()` resolves, so reading it inside the
+    // awaited relay would read null and match nothing.
+    const identity = turnIdentity?.() ?? null;
+    // `error` when the agent ended on a failure, so the API records the same
+    // end_reason the daemon would have. `void`: the relay owns its retries and
+    // never throws, and the turn must not wait on bookkeeping.
+    void relayTurnEnd(event.error || event.status === 'error' ? 'error' : 'idle', identity);
+  });
+
+  // `lazy` is returned because startWorker prewarms it when a prompt arrives.
+  // It was NOT, and the reference there compiled to a binding that does not
+  // exist at runtime — every turn answered `lazy is not defined`.
+  return { agent, env, lazy, faux, models, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity };
 }
 
 let LISTEN_UPTIME_MS: number | null = null;
@@ -326,7 +441,8 @@ let LISTEN_UPTIME_MS: number | null = null;
 let LISTEN_MS: number | null = null;
 
 export async function startWorker(cfg = configFromEnv()) {
-  const { agent, env, faux, timing, session, restoredEntries } = await buildHarness(cfg);
+  const { agent, env, lazy, faux, timing, session, restoredEntries, restoredMessages, storeError, modelError, bootReconcile, setTurnIdentity } =
+    await buildHarness(cfg);
   const listeners = new Set<(chunk: string) => void>();
 
   agent.subscribe((event: any) => {
@@ -359,7 +475,37 @@ export async function startWorker(cfg = configFromEnv()) {
     agents: compiledPayload?.agentConfig?.agent ?? {},
     defaultModel: cfg.modelId ?? compiledPayload?.agentConfig?.model ?? null,
     workspace: cfg.envCwd,
+    // The Stop button. `session.abort` on the runtime client is POST
+    // `session/:id/abort`, which this surface answered with its catch-all 404
+    // until now — so the UI showed "Interrupted" from its own optimistic
+    // receipt while the agent kept generating (reported 2026-08-29, pi).
+    //
+    // Guarded: `abort()` on an idle agent is a no-op, and a throw here must not
+    // take down the request — the caller has already decided to stop.
+    onAbort: () => {
+      try {
+        (agent as { abort?: () => void }).abort?.();
+      } catch (e) {
+        console.error(
+          JSON.stringify({ msg: 'agent abort failed', error: String((e as Error)?.message ?? e) }),
+        );
+      }
+    },
   });
+
+  // The relay's turn identity. Set here because the surface is the only holder
+  // of the `ses_pi…` session id and the live user message id, and it does not
+  // exist until after the harness that owns the relay subscription.
+  setTurnIdentity(() => surface.turnEndIdentity());
+  // A resumed box must come back with the SAME conversation: one pi instance is
+  // one session. Seed BEFORE the adapter is wired so every id this turn mints
+  // sorts above the restored transcript instead of back inside it.
+  const seededMessages = surface.seedRestoredMessages(restoredMessages);
+  if (seededMessages > 0) {
+    console.log(
+      JSON.stringify({ msg: 'transcript restored', messages: seededMessages, entries: restoredEntries }),
+    );
+  }
   const wireAdapter = new ChatEventAdapter({
     sessionID: surface.rootId,
     mintMessageId: surface.mintMessageId,
@@ -372,10 +518,32 @@ export async function startWorker(cfg = configFromEnv()) {
     }
   });
   // pi's stream carries the assistant; the USER message is published at prompt
-  // time so the transcript shows the turn the moment it starts.
-  const publishUserMessage = (text: string) => {
+  // time so the transcript shows the turn the moment it starts. `explicitId`
+  // is the wire id the API pre-placed for a composer/queue send (prompt_async's
+  // `messageID`): the worker MUST reuse it so the transcript, the API's inbox
+  // placement, and the turn oracle all key on the same id.
+  const publishUserMessage = (text: string, explicitId?: string): string => {
+    // Start the environment NOW, in parallel with the model's first token.
+    // Measured on pi.kortix.com: first token 4.25s, first `bash` on that same
+    // cold session 37.5s — the environment's cold start did not go away, it
+    // moved into the middle of the first answer. Kicking it here overlaps it
+    // with the model's own thinking; a session nobody prompts still provisions
+    // nothing, which is the cost argument the split is partly sold on.
+    // Fire-and-forget: a failed prewarm is the tool call's problem to report,
+    // not the prompt's.
+    if (lazy) lazy.prewarm();
+
+    // A new prompt COMMITS a staged rewind: this is the new path, and the
+    // branch the user rewound past is now unreachable. The SDK's `rewind()`
+    // documents exactly this ("The next prompt commits the new path"), and
+    // without it a later `restoreRewind()` would splice the abandoned branch
+    // back in after the conversation had already moved on.
+    const dropped = surface.commitStagedRevert();
+    if (dropped.length > 0) {
+      console.log(JSON.stringify({ msg: 'rewind committed', dropped: dropped.length }));
+    }
     surface.noteUserText(text);
-    const id = surface.mintMessageId();
+    const id = explicitId ?? surface.mintMessageId();
     surface.publishWire({
       type: 'message.updated',
       properties: {
@@ -401,10 +569,26 @@ export async function startWorker(cfg = configFromEnv()) {
         },
       },
     });
+    return id;
   };
-  const runTurn = async (text: string) => {
-    publishUserMessage(text);
-    await agent.prompt(text);
+  // Serialize turns: pi's Agent runs one conversation, and a second concurrent
+  // `prompt()` would interleave two turns' events on one stream. A composer
+  // send that lands while a turn is live queues behind it (OpenCode's own
+  // prompt_async serializes the same way).
+  let turnChain: Promise<unknown> = Promise.resolve();
+  const runTurn = async (text: string, opts?: { userMessageId?: string }) => {
+    const prev = turnChain;
+    turnChain = (async () => {
+      await prev.catch(() => {});
+      publishUserMessage(text, opts?.userMessageId);
+      surface.markTurn(opts?.userMessageId ?? null, true);
+      try {
+        await agent.prompt(text);
+      } finally {
+        surface.markTurn(opts?.userMessageId ?? null, false);
+      }
+    })();
+    return turnChain;
   };
 
   const server = createServer(async (req, res) => {
@@ -417,6 +601,71 @@ export async function startWorker(cfg = configFromEnv()) {
       if (surface.handleRawSessionList(req, res, url)) return;
     }
 
+    // ── prompt_async — the composer/queue delivery route ────────────────────
+    // The API's session lifecycle delivers EVERY composer send and queued
+    // prompt with POST /session/:rootId/prompt_async (engine.ts postPrompt),
+    // NOT the worker's own /say|/turn. OpenCode answers 204 and runs the turn
+    // in the background, streaming events; the worker matches that contract, so
+    // a send reaches the pi agent and the response streams back through the
+    // /events SSE. Without this route the prompt 404s, the delivery loop retries
+    // to `pending`, and the composer's Stop button spins forever with no reply.
+    {
+      const m = url.pathname.match(/^\/session\/([^/]+)\/prompt_async$/);
+      if (m && req.method === 'POST') {
+        // Auth FIRST, and before the session-id probe: an unauthenticated
+        // caller must not be able to distinguish "wrong session" from "right
+        // session" on this box. This route runs the agent with bash/read/
+        // write/edit/glob/grep against the session's environment and secrets; every
+        // `/kortix/opencode/*` sibling has always been gated and this one was
+        // not, purely because it is served here rather than by RuntimeSurface.
+      if (!surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
+        const sid = decodeURIComponent(m[1]!);
+        if (sid !== surface.rootId) {
+          res.writeHead(404, { 'content-type': 'application/json' }).end(
+            JSON.stringify({ error: 'unknown session' }),
+          );
+          return;
+        }
+        let body = '';
+        req.on('data', (c) => (body += c));
+        req.on('end', () => {
+          let text = '';
+          let messageID: string | undefined;
+          try {
+            const parsed = JSON.parse(body || '{}') as {
+              messageID?: string;
+              parts?: Array<{ type?: string; text?: string }>;
+            };
+            messageID = typeof parsed.messageID === 'string' ? parsed.messageID : undefined;
+            text = (parsed.parts ?? [])
+              .filter((p) => p?.type === 'text' && typeof p.text === 'string')
+              .map((p) => p.text)
+              .join('');
+          } catch {
+            res.writeHead(400, { 'content-type': 'application/json' }).end(
+              JSON.stringify({ error: 'invalid json body' }),
+            );
+            return;
+          }
+          // Accept immediately (204), exactly like OpenCode's prompt_async — the
+          // turn runs in the background and its events reach the client over the
+          // /events SSE. runTurn serializes, so a send during a live turn queues.
+          res.writeHead(204).end();
+          void runTurn(text, { userMessageId: messageID }).catch((e: any) =>
+            console.error(
+              JSON.stringify({ msg: 'prompt_async turn failed', error: String(e?.message ?? e) }),
+            ),
+          );
+        });
+        return;
+      }
+    }
+
     // ── Platform compatibility surface ─────────────────────────────────────
     // The session lifecycle (start envelope, wake fences, env fan-out) speaks
     // kortixd's /kortix/* contract. The worker answers just enough of it that
@@ -425,6 +674,13 @@ export async function startWorker(cfg = configFromEnv()) {
       const compiled = (globalThis as Record<string, unknown>).__KORTIX_COMPILED__ as
         | { manifest?: { agent_config_etag?: string | null; source_sha?: string; ref?: string } }
         | undefined;
+      // Turn probe: the API's turn-lifecycle polls ?turn=1 to renew the box's
+      // deadline while a turn runs and to settle it when done. Answer from the
+      // surface's live turn state so the reaper never stops the box mid-turn.
+      const turnProbe =
+        url.searchParams.get('turn') === '1'
+          ? surface.turnProbe(url.searchParams.get('turn_message_id')?.trim() || null)
+          : null;
       const body = JSON.stringify({
         daemon: 'ok',
         status: 'ok',
@@ -436,6 +692,14 @@ export async function startWorker(cfg = configFromEnv()) {
         repo_required: false,
         repo_ready: true,
         boot_error: null,
+        // null = the transcript is durable. A string means this session is
+        // answering but its history will NOT survive the process.
+        store_error: storeError,
+        // Which provider is actually answering, and why if it is not the real
+        // one. `model_error` mirrors `store_error`: null = fine, a string means
+        // this session answers but the answers are worthless.
+        model_mode: modelError ? 'faux' : cfg.modelMode,
+        model_error: modelError,
         // The pi worker has no OpenCode store to pin — the start path must not
         // wait for one.
         opencode_session_id: surface.rootId,
@@ -445,6 +709,7 @@ export async function startWorker(cfg = configFromEnv()) {
         branch: compiled?.manifest?.ref ?? null,
         boot_timeline: [{ label: 'worker-listening', atMs: LISTEN_MS ?? 0 }],
         runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
+        ...(turnProbe ?? {}),
       });
       res.writeHead(200, { 'content-type': 'application/json' }).end(body);
       return;
@@ -463,6 +728,12 @@ export async function startWorker(cfg = configFromEnv()) {
     if (url.pathname === '/health') {
       const body = JSON.stringify({
         ok: true,
+        // Requirement 8, observable from outside: true when this process runs
+        // under node's permission model with fs writes denied (the entrypoint
+        // and park.mjs both start it that way — piWorkerNodeArgs in the API's
+        // build-context.ts). `process.permission` exists only under
+        // --permission, so a worker started bare reports false, honestly.
+        confined: isConfined(),
         bootMs: LISTEN_MS,
         processAgeMs: Date.now() - BOOT_T0,
         vmUptimeAtListenMs: LISTEN_UPTIME_MS,
@@ -485,6 +756,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/events') {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
       const send = (c: string) => res.write(c);
       listeners.add(send);
@@ -493,6 +770,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/prompt' && req.method === 'POST') {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
@@ -526,6 +809,12 @@ export async function startWorker(cfg = configFromEnv()) {
     // chunk that carries assistant text, which is what a user actually waits
     // for — not when the turn finishes.
     if (url.pathname === '/turn' && req.method === 'POST') {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
@@ -559,6 +848,12 @@ export async function startWorker(cfg = configFromEnv()) {
     // One real turn, answer + timings, as JSON. This is the endpoint the
     // comparison benchmark calls, and the one to curl by hand.
     if (url.pathname === '/say' && req.method === 'POST') {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       let body = '';
       req.on('data', (c) => (body += c));
       req.on('end', async () => {
@@ -568,7 +863,9 @@ export async function startWorker(cfg = configFromEnv()) {
           const t0 = process.hrtime.bigint();
           await runTurn(String(text ?? ''));
           const totalMs = Number(process.hrtime.bigint() - t0) / 1e6;
-          const last = agent.state.messages.filter((m: any) => m.role === 'assistant').pop();
+          const last = agent.state.messages
+            .filter((m: any) => m.role === 'assistant')
+            .pop() as AssistantMessage | undefined;
           const answer = (last?.content ?? [])
             .filter((c: any) => c.type === 'text')
             .map((c: any) => c.text)
@@ -595,6 +892,12 @@ export async function startWorker(cfg = configFromEnv()) {
     // the real point is that the SAME data is readable from the store with no
     // worker running at all — see bench/read-transcript.ts.
     if (url.pathname === '/history') {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       if (!session) { res.writeHead(200, { 'content-type': 'application/json' }).end('{"messages":[]}'); return; }
       const leaf = await session.getLeafId();
       const entries = leaf ? await session.findEntriesOnBranch({ start: leaf } as any) : [];
@@ -607,6 +910,12 @@ export async function startWorker(cfg = configFromEnv()) {
     }
 
     if (url.pathname === '/interrupt' && req.method === 'POST') {
+      if (surface.requiresAuth() && !surface.authorize(req, url)) {
+        res.writeHead(401, { 'content-type': 'application/json' }).end(
+          JSON.stringify({ error: 'unauthorized' }),
+        );
+        return;
+      }
       agent.abort();
       res.writeHead(200, { 'content-type': 'application/json' }).end('{"ok":true}');
       return;
@@ -620,6 +929,11 @@ export async function startWorker(cfg = configFromEnv()) {
   LISTEN_MS = Date.now() - BOOT_T0;
   const port = (server.address() as any).port;
   console.log(JSON.stringify({ msg: 'worker listening', port, bootMs: LISTEN_MS, vmUptimeAtListenMs: LISTEN_UPTIME_MS, modelMode: cfg.modelMode, env: cfg.envUrl }));
+  // Fire-and-forget, AFTER listen: a session that booted with no work to do
+  // tells the control plane so, closing a row a previous process left open.
+  // Not awaited — the worker must be answering requests immediately, and the
+  // reconcile deliberately waits out its own race window first.
+  void bootReconcile.run();
   return { server, agent, env, port, close: () => new Promise<void>((r) => server.close(() => r())) };
 }
 

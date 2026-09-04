@@ -21,6 +21,533 @@ linked, not inlined.
 
 ## Register
 
+### A two-runtime lifecycle policy must drive production writes (2026-09-04)
+
+**When:** adding an auxiliary runtime whose lifecycle follows a session worker.
+**Incident:** the worker/environment state matrix existed only in tests, while `ensure` could
+provision compute for a parked worker and stop paths closed rows and meters after an unconfirmed
+provider failure.
+**Rule:** consume the shared state matrix in every ensure and reaper path. Do not report success,
+close metering, or mark the auxiliary runtime stopped until provider state confirms the stop.
+**Enforcer:** lifecycle ensure, teardown, route, reaper, and manual-stop tests cover every pair and
+provider failure outcome.
+
+### Bind internal credentials to their intended endpoint (2026-09-04)
+
+**When:** adapting an internal session token for model-provider authentication.
+**Incident:** the Pi worker treated `KORTIX_TOKEN` as an API key even without a gateway URL,
+which could send the control-plane credential directly to an external provider.
+**Rule:** use the session token for model calls only when the Kortix gateway URL is configured.
+**Enforcer:** `model-credential-required.test.ts` covers direct, gateway, and missing-key paths.
+
+### A command timeout must kill the complete process tree (2026-09-04)
+
+**When:** enforcing a timeout on a shell command that can fork child processes.
+**Incident:** env-rpc killed only the parent shell; a child kept the output pipes open and a
+200 ms timeout returned after 5 seconds.
+**Rule:** start each command in its own process group and signal the group on timeout.
+**Enforcer:** `env-rpc.test.ts` requires a forked five-second command to return within 1.5 seconds.
+
+### A runtime decision and its artifact must use one immutable Git SHA (2026-09-04)
+
+**When:** selecting a runtime and compiling its boot artifact from a moving Git ref.
+**Incident:** session creation read `runtime` and resolved the branch tip in parallel, so a push
+between those reads could select Pi from one commit and boot an artifact from another commit.
+**Rule:** resolve the ref once, then read the manifest and compile every artifact at that SHA.
+**Enforcer:** `sessions.fast-boot-git-hint.test.ts` requires the manifest read after SHA resolution.
+
+### A retryable POST needs a server-enforced idempotency key (2026-09-04)
+
+**When:** retrying an append after a timeout or transport failure can follow a committed write.
+**Incident:** the Pi transcript client could not distinguish a failed request from a lost response;
+retrying could duplicate a durable message, while not retrying could lose it.
+**Rule:** mint one UUID per logical append, reuse it across retries, and reject key/content conflicts.
+**Enforcer:** `session-store.test.ts`, `session-log-http.test.ts`, and the unique database index.
+
+### A standalone artifact lock requires an explicit root quality gate (2026-09-04)
+
+**When:** a workspace package builds its production artifact from a nested package-manager lockfile.
+**Incident:** `apps/kortix-worker` had 155 tests, but root and package lanes ran none of them;
+its real-bundle API suites also passed as skipped whenever `dist/` was absent.
+**Rule:** include the package in the workspace, then run its standalone install, test, typecheck,
+build, and required bundle proof explicitly from the artifact lock.
+**Enforcer:** `worker-quality.ts`, root lane contracts, and the worker-triggered CI build job.
+
+### A lost mutation response is not permission to replay the mutation (2026-09-04)
+
+**When:** retrying RPC after a socket close, reset, pipe failure, or timeout.
+**Incident:** `KortixExecutionEnv.rpc()` retried every socket-shaped failure, so an environment
+mutation that committed before its response dropped could execute twice despite the outer guard.
+**Rule:** retry only an explicit, fail-closed set of read operations. Unknown operations mutate.
+**Enforcer:** `kortix-env.test.ts` commits a side effect, drops the response, and requires one call.
+
+### An ExecutionEnv adapter must return the consumer's exact metadata shape (2026-09-04)
+
+**When:** bridging Pi filesystem operations to another process or runtime.
+**Incident:** env-rpc returned `{isFile,modifiedAt}` while Pi requires `{name,path,kind,mtimeMs}`;
+the real `edit` tool stopped after `fileInfo` and never read or wrote the target file.
+**Rule:** mirror Pi's contract, use `lstat` to preserve symlinks, and test through the real tool.
+**Enforcer:** `env-rpc-worker-integration.test.ts` runs scripted `edit` across worker and daemon.
+
+### A secret allowlist and its runtime collector must be one definition (2026-09-04)
+
+**When:** forwarding CI secrets into a generated preview or deployment runtime.
+**Incident:** `deploy-preview.yml` exported `MANAGED_GIT_GITHUB_TOKEN` and the preview
+allowlist accepted it, but `sandbox-preview.ts` copied a separate ten-key list that omitted it.
+Adding the Actions secret would still have left managed Git unavailable inside the API container.
+**Rule:** derive collection and forwarding from one allowlist. Never duplicate secret key names.
+**Enforcer:** `preview-stack.test.ts` iterates `PREVIEW_RUNTIME_SECRET_ALLOWLIST` and proves every
+listed value is trimmed, forwarded, and isolated from unlisted environment variables.
+
+### A byte-identical migration rename still requires ledger repair (2026-09-04)
+
+**When:** changing any applied migration filename, including a timestamp-only rebase.
+**Incident:** the `pi-worker` full local gate re-ran `secret_consumer_boundary` under its new
+name and failed on duplicate enum `42710`; the database recorded the byte-identical old name.
+**Rule:** add every old-to-new filename pair to the checksum-guarded repair and normalize the
+whole affected ledger suffix by database microsecond order. File-content equality is not identity.
+**Enforcer:** unit and PostgreSQL integration tests cover the secret-consumer rename and strict order.
+
+### Parse untrusted text with one forward scan, not a backtracking regular expression (2026-09-03)
+
+**When:** trimming URLs or extracting text from upstream HTML and other untrusted response bodies.
+**Incident:** the Pi PR introduced three high-severity CodeQL alerts; 30,000 trailing-slash
+candidates took 363 ms, and 10,000 unclosed HTML tags took 425 ms on a developer machine.
+**Rule:** use an index or cursor that advances monotonically. Add an adversarial-size regression test.
+**Enforcer:** CodeQL blocks polynomial regexes; the worker and SDK tests cap both cases at 100 ms.
+
+### Read deployed capability and environment facts from the target, not the runner label (2026-09-03)
+
+**When:** writing browser assertions for a deployed preview, staging, or production target.
+**Incident:** the Pi gate called its target `custom`, while `/v1/health` correctly reported
+`preview`; another test required Platinum even though the target exposed Daytona only.
+**Rule:** read the environment and available providers from target responses, then assert the UI
+renders that exact contract. Do not translate runner labels or hard-code optional providers.
+**Enforcer:** `18-apps-ui.spec.ts` reads health; `12-sandbox-templates.spec.ts` reads provider coverage.
+
+### Browser fixtures must not require host CLIs that the test image does not install (2026-09-03)
+
+**When:** adding database setup to a deployed Playwright journey.
+**Incident:** three Pi browser journeys stopped at `spawnSync psql ENOENT` before opening the UI.
+**Rule:** use the shared `pg` client with parameterized SQL. Do not spawn `psql` from browser fixtures.
+**Enforcer:** `test-runner-contract.test.ts` rejects `execFileSync('psql', ...)` in the fixture helpers.
+
+### Shell you GENERATE is expanded by the shell that writes it — transfer it base64, and prove the secret landed in one file (2026-09-02)
+
+**When:** emitting a shell snippet from a TS template literal
+(`buildPreviewBootstrapScript`), from a Python string, or through
+`docker exec sh -lc "..."` / a provider `exec` API. Anything containing `$1`,
+`$(...)`, `"` or `\n` is interpreted by the OUTER shell (or by TS) before the
+inner script ever exists.
+
+**Two failures in one afternoon, same root cause.** (1) An inline credential
+helper, `git config credential.helper "!f() { ...; echo "password=$(cat $F)"; }; f"`
+— the nested double quotes collapse, the outer shell runs `$(cat $F)` at CONFIG
+time, and git stores the literal token in `.git/config`. (2) The workaround for
+(1), written with `printf %s "...\n..."` through a provider exec: `%s` does not
+interpret `\n` so the helper became one line, `$1` expanded to empty (`[ "" = get ]`),
+and `$(cat ...)` expanded again — inlining the token a second time.
+
+**The rules:** (1) transfer generated scripts **base64-encoded**
+(`echo <b64> | base64 -d > file`) — the repo's own `encodedFileCommand` already
+does this; (2) a credential belongs in exactly ONE file, and the check is a
+`grep` for the token pattern across the config AND the helper, not just the one
+you were thinking about; (3) `bash -n` proves syntax, never semantics — both
+broken versions passed it. Only running the snippet and grepping the result
+caught either.
+
+**The enforcer that works:** a test that WRITES a sentinel token, executes the
+emitted snippet in a temp repo, and asserts the sentinel is absent from
+`.git/config` while the helper still answers `get` with it
+(`tests/unit/sandbox-preview.test.ts`). Text assertions on the generated script
+passed happily while the token leaked.
+
+
+### A second runtime per session inherits none of the first one's reconcilers, and a status column nobody writes is a permanent wedge (2026-09-02)
+
+**When:** giving a session a second box — a pi environment, or anything else
+that gets its own table instead of a `session_sandboxes` row. Every reconciler,
+sweep, meter and stop path in this repo keys on `session_sandboxes`, and a new
+table silently opts out of all of them at once. Grep for the table name across
+`billing/`, `reaping/` and `session-lifecycle/` before assuming a lifecycle is
+wired; `stopX`/`deleteX` existing and being CALLED from the manual paths proves
+only the manual paths.
+
+**The wedge:** `session_environments.status` had exactly one writer
+(`stopSessionEnvironment`, reachable only from the manual Stop and its route),
+while the box carried `autoStopInterval: 60`. So the provider powered boxes off
+and nothing wrote it down. `ensureSessionEnvironment` short-circuited on
+`status === 'active' && externalId`, and `claimEnvironmentWork` re-claims only
+`error`/`stopped`/stale `provisioning` — never `active`. A stopped box therefore
+served forever from a row that could not be re-claimed: every tool call failed
+and nothing in the system could repair it. **20 of 21 rows on pi.kortix.com read
+`active` with a box attached.**
+
+**The rules:** (1) any status column a PROVIDER can change behind your back must
+be verified against the provider before it is trusted, not just written on the
+paths you control; (2) `unknown` from an unreachable provider must not
+authorize a teardown — serving stale is the recoverable mistake (the same split
+`providers/status.ts` records as "the single most expensive bug in this
+subsystem"); (3) a new runtime table needs its billing join, its stop-path
+write, and its reaper entry added deliberately — `startComputeSession` defaulting
+`workloadType` to `'session'` for a non-session box makes the invariant sweep
+close its meter on the first pass. Measured: 21 environments, ONE compute row,
+88.5 s, $0.0049 total.
+
+*Scope:* found by a 55-agent audit — 49 candidate sites, 28 confirmed — recorded
+in `docs/PI_P24_SCOPE.md`. The wedge and the reaper tie-in are fixed; billing
+(needs a `workload_type` CHECK migration) and the automatic stop paths are not.
+*Enforcer:* `environment-liveness.test.ts` pins the decision, and
+`routes/session-environment.test.ts` pins that `ensure` actually calls it.
+Nothing yet asserts that a new runtime table appears in the billing sweep.
+
+
+### A `pull_request_target` deploy runs the DEFAULT BRANCH's scripts, so a fix to the deploy path is dark until it reaches main (2026-09-02)
+
+**When:** changing anything under `tests/src/core/sandbox-preview.ts`,
+`tests/bin/preview-stack.ts`, or the Caddy/compose templates a preview
+generates, and then testing it by pushing to the branch that owns the preview.
+`deploy-preview.yml` is `pull_request_target`; its build jobs check out
+`needs.authorize.outputs.sha` (your commit) but the **deploy job checks out
+`${{ github.event.repository.default_branch }}`**. So the images are yours and
+the deploy logic is main's. A push proves nothing about a deploy-script change,
+and the change cannot fail loudly — it simply never runs.
+
+**The incident:** a branch environment is REUSED, so nothing reclaims the images
+each deploy supersedes; ~3 GB of api/frontend/gateway layers accumulate on a
+50 GB disk. A prune was written on `pi-worker` weeks earlier and never took
+effect, because the deploy reads main. pi.kortix.com reached 100% / 0 avail:
+`supabase-db` crash-looped on `could not write lock file "postmaster.pid": No
+space left on device`, `supabase-kong` restarted, `preview-edge` and 12 other
+services stayed in `Created`, and the deploy's own health gate then refused to
+re-point the hostname — correctly — leaving a 502 for ~30 min. 22.2 GB pruned
+by hand restored it (100% -> 54%).
+
+**The second rule, from the same incident: never gate a cleanup behind the
+health it protects.** The prune ran only AFTER the new stack proved healthy,
+which is exactly the state a full disk prevents — the cleanup sat behind the
+failure it existed to prevent. Reclaim before the pull as well, gated on the
+disk actually being tight (`image prune -af` spares every image a container
+references, running or not).
+
+**Diagnostic:** `x-kortix-environment: pi` present on a Cloudflare 502 means the
+Worker is healthy and passing an upstream failure through; the sandbox origin
+answering `upstream-unreachable: Failed to connect` means nothing is listening
+on 8080. Then `df -h /` inside the box, not the deploy log.
+*Enforcer:* none. A check that a PR touching the preview deploy path is on
+main before it is trusted, or a disk-usage assertion in the deploy summary,
+is the TODO.
+
+
+### A persistent preview sandbox cannot fetch a PRIVATE repo, so the branch env silently freezes on an old commit (2026-09-02)
+
+**When:** relying on a persistent branch environment (`preview` label,
+`deploy-preview.yml`) to reflect what you just pushed.
+`tests/src/core/sandbox-preview.ts:97-99` does
+`git remote set-url origin https://github.com/<repo>.git` and then
+`git fetch --depth=1 origin <ref>` — with NO credential. That only works while
+the sandbox happens to hold one, and `kortix-ai/suna` is private: an anonymous
+`git ls-remote` inside the box answers
+`could not read Username for 'https://github.com'`. Verified in the live pi
+sandbox that it has no credential at all — no repo config, no
+`~/.gitconfig`, no `~/.git-credentials`, no `GIT_ASKPASS`.
+**The failure is SILENT in the worst way.** The deploy step is
+`continue-on-error: true`, so the job keeps going, "Point the stable hostname"
+never runs, and the environment keeps serving the LAST commit that fetched.
+`/v1/health` reports `status: ok` the whole time — it is healthy, just old. Five
+consecutive deploys failed this way before it was noticed, and two rounds of
+"live verification" in between were actually testing stale code and reported
+the OLD behaviour as the current one.
+**Rules:** (1) after any preview deploy, assert `/v1/health`'s `commit` EQUALS
+the SHA you pushed — a 200 proves the environment is alive, never that it is
+current, and this is the same class as the deploy-dev rule about a green
+`/health` not being deployment proof; (2) treat a `continue-on-error` deploy
+step as a step that WILL fail unnoticed — the run's conclusion is not the
+environment's state; (3) a persistent sandbox needs a durable credential, not
+whatever it was created with.
+**Diagnostic:** the deploy log shows `HEAD is now at <older sha>` followed by
+`fatal: could not read Username`, four retries, exit 128 — and the environment
+answers healthy on that older sha.
+*Incident:* pi.kortix.com frozen on `ef2163ba` while seven later commits sat
+pushed and undeployed. Unblocking needs `PREVIEW_MANAGED_GIT_GITHUB_TOKEN` (or
+any repo-scoped credential in the box), which requires repo admin.
+*Enforcer:* none. A post-deploy assertion that health's `commit` equals the
+pushed SHA would have caught it on the first failure instead of the fifth.
+
+### A CLI change does not reach agents until the SANDBOX IMAGE is rebuilt, and the preview never rebuilds it (2026-09-02)
+
+**When:** adding or changing a `kortix` CLI command that agents are meant to
+use. The agent path is `bash` → `kortix …` inside the session ENVIRONMENT, and
+that binary is COMPILED INTO the sandbox image
+(`apps/sandbox/Dockerfile:244`, `COPY --from=cli-builder /cli/kortix
+/usr/local/bin/kortix`). That image is built by `deploy-dev.yml` — on main.
+`deploy-preview.yml` builds only the gateway, API and frontend images, so a
+branch preview runs NEW api code against an OLD sandbox image.
+**Measured:** with `kortix fs` committed and the preview deployed, an agent on
+pi.kortix.com answered `/usr/local/bin/kortix` for `command -v kortix` and
+`FS_SUBCOMMAND_ABSENT` for `kortix fs --help`. The mechanism was fine; the
+binary was three commits stale.
+**Rules:** (1) a CLI change is verifiable on a preview only by running the CLI
+from the REPO against the preview's API (`KORTIX_API_URL` + `KORTIX_TOKEN` +
+`KORTIX_PROJECT_ID` env, which is exactly how the in-sandbox CLI
+authenticates) — the in-sandbox binary proves nothing until dev redeploys;
+(2) never conclude "agents can use it" from a green API test; probe the actual
+binary in a live box; (3) when a new CLI subcommand is the agent surface for a
+feature, say in the PR which deploy makes it real.
+**Diagnostic:** `command -v kortix` succeeds but the new subcommand prints
+usage/unknown — a stale image, not a broken command.
+*Near-miss:* would have shipped `kortix fs` believing agents could already call
+it. Caught by probing a live session instead of trusting the API tests.
+*Enforcer:* none. A check that the sandbox image's CLI version matches the
+deployed API commit would catch it.
+
+### `bun test` is not the SDK's gate — `bun run test` is, and the difference is 532 failures (2026-09-02)
+
+**When:** judging whether a change to `packages/sdk` is green. The package's own
+script is `find src -name '*.test.ts' | xargs -n1 -P4 bun test --isolate` — ONE
+FILE PER PROCESS. Running a bare `bun test` in that directory puts all 188 files
+in one process, where the suite's `mock.module` calls replace modules wholesale
+and take unrelated files down with them: measured 2230 pass / **532 fail**
+against 2770 pass / **0 fail** for the same tree under the real script. The
+failures name real-looking things (`backendApi.post is not a function`,
+`Failed to write file (502)`) and point at the victim, never the polluter.
+**Rules:** (1) use `bun run test`, never `bun test`, to judge this package;
+(2) a new suite here will pass alone and fail in a shared process — that is the
+pre-existing leak, not your code, and the way to tell is a git-stash baseline of
+the SAME command, both numbers written down; (3) when the two numbers differ by
+hundreds, suspect the runner before the diff.
+**The other half:** adding exports fails
+`public-surface`/`public-type-surface` by design. Those are a QUESTION — "did I
+mean to change the public API?" — not a test to re-record. Answer it by
+set-comparing old against new and confirming REMOVED is empty; additive is safe,
+a removal or rename is a breaking change needing an alias. Regenerate only then,
+with `UPDATE_SURFACE_SNAPSHOT=1` / `UPDATE_TYPE_SURFACE_SNAPSHOT=1`.
+*Near-miss:* the filesystems SDK surface looked like it had broken 542 tests;
+the real number was 2 (both snapshots), both additive, both expected.
+*Enforcer:* the package's `test` script already encodes the right invocation —
+the trap is only for someone who types `bun test` out of habit.
+
+### An OpenAPI `{param}` matches ONE path segment, so a route carrying a file path 404s on every real path (2026-09-02)
+
+**When:** putting anything slash-bearing into a typed route parameter — a file
+path, a ref name, a nested key. `@hono/zod-openapi`'s `{path}` compiles to a
+single-segment matcher, so
+`/{projectId}/filesystems/{name}/files/{path}` served `plan.md` and 404'd
+`notes/2026/plan.md` — which is most real paths. The HANDLER was correct; the
+pattern it hung off never matched, so the failure looked like "file not found"
+rather than "route not found", and every negative test still passed for the
+wrong reason.
+**What made it invisible locally:** 32 unit tests were green — the path
+normaliser, the blob store against real MinIO, the whole service layer — because
+none of them route. A green unit suite says the pieces work; it says nothing
+about whether a request can REACH them. The bug surfaced on the first real HTTP
+call to the deployed preview, on the third step of nine.
+**Rules:** (1) a path-shaped value travels as a QUERY parameter
+(`?path=`) unless the router is known to support wildcards — this API already
+established that with `/v1/projects/:id/files/content?path=`; (2) every new
+route family gets one real request against a deployed origin before it is
+called done, and the request must use a REALISTIC value (a nested path, not
+`a.txt`); (3) when a route 404s, check whether the pattern matched at all
+before debugging the handler.
+**Diagnostic:** sibling routes on the same prefix work (`create`, `list`,
+`delete` all 2xx) while one family 404s — that asymmetry is a routing shape
+problem, not a data problem.
+*Near-miss:* caught on the pi-worker preview before reaching main or a user.
+*Enforcer:* flows FS-1..FS-4 use `notes/2026/plan.md`, a genuinely nested path,
+so a segment-matching regression fails the suite rather than passing on a
+flat filename.
+
+### A bare directory pattern in .gitignore matches at EVERY depth, and a test that reads the working tree cannot see what was never committed (2026-09-02)
+
+**When:** adding product content under a directory name that also appears in
+`.gitignore` — starter templates, fixtures, scaffolds, vendored config. Root
+`.gitignore` carried `.kortix/` with no leading slash, written to drop the
+repo's own dogfood project. Git applies such a pattern at ANY depth, so it also
+matched `packages/starter/templates/pi/.kortix/` — the scaffold every new pi
+project is built from. `git add` reported nothing, the commit went in without
+the files, and the branch shipped a pi template of four files: a manifest
+declaring `default_agent: kortix` whose agent markdown did not exist, and no
+`.kortix/pi/` for `kortix init` to link into, so all six of its symlinks
+dangled. `templates/base/` predated the rule and stayed tracked, which is why
+only the NEW template was hit.
+**The reason it survived review:** `pi-template.test.ts` and
+`pi-starter-compiles.test.ts` both assert exactly the missing files
+(`map.has('.kortix/pi/agents/kortix.md')`, body > 200 chars) and both PASSED
+locally — they read the working tree, where the ignored files sat on disk. A
+green local suite says nothing about what is in the commit. Reproducing the
+committed state by moving the two files aside turned 12 pass into 3 fail.
+**Rules:** (1) anchor an ignore meant for the repo root with a leading slash
+(`/.kortix/`), or pair the broad rule with an explicit
+`!packages/**/templates/*/.kortix/` re-include; (2) after adding files under
+any name that appears in `.gitignore`, run `git status --ignored` or
+`git check-ignore -v <path>` before trusting a silent `git add`; (3) verify a
+packaging change from a FRESH CLONE, never from the working tree that authored
+it — `git ls-files <dir>` is the cheap version of that check.
+**Diagnostic:** product files present on disk, absent from `git ls-files`, and
+a scaffold whose file count is smaller than the template's directory listing.
+*Near-miss:* caught on the pi-worker branch before it reached main or any user;
+every `kortix init` on the pi template would have produced an agent-less project.
+*Enforcer:* the two tests above are correct and now run against committed
+content; the `!packages/starter/templates/*/.kortix/` re-include is what keeps
+them honest.
+
+### Two repairs for the same deploy race each other, and the loser's fix is silently undone (2026-09-01)
+
+**When:** any environment where a deploy REGENERATES config and more than one
+actor patches it back. On pi.kortix.com the deploy rewrites
+`docker-compose.preview.yml` from main's `tests/`, dropping the `kortix-api`
+git-cache volume. Two things restore state afterwards: `post-deploy.sh` (runs
+when the deploy run reports success) and the in-sandbox managed-git guard (runs
+150 s after it sees the token wiped). Both call the same
+`docker compose … up -d --force-recreate --no-deps kortix-api`. Whichever runs
+LAST decides the outcome — and the guard recreated against the still-stripped
+overlay at 18:19:43, giving the API an unmounted `/tmp/kortix`. Every project's
+git mirror, including pi-lab's bare upstream, disappeared from the container's
+view and `POST /projects/:id/sessions` answered **500 GitOperationError: '…/pi-lab.git'
+does not appear to be a git repository**. The data was never lost — the volume
+still held all 67 refs; only the mount was missing.
+**Rules:** (1) every actor that recreates a container must ASSERT the full
+desired config first, not assume a sibling script already did — the guard now
+re-appends the volume block before its own recreate; (2) a repair script is not
+a substitute for the config reaching `main`; (3) when a deploy regenerates
+config, enumerate everything that recreates containers on that box before
+declaring the environment fixed.
+**Diagnostic:** `docker inspect <api> --format '{{range .Mounts}}…'` returning
+EMPTY while `docker compose … config` shows the volume correctly — that gap means
+the RUNNING container predates the config, so read the container's `Created`
+timestamp against the repair logs.
+*Incident:* pi.kortix.com session-create broken ~18:19–18:26 UTC, found by a
+verification turn rather than by an alarm. No user traffic.
+*Enforcer:* the guard's own assertion (in-sandbox). The real fix is landing
+`tests/` on main so nothing has to be re-applied at all.
+
+### Env handed to a process over HTTP is not state the box owns; persist it or the first resume loses it (2026-09-01)
+
+**When:** any handoff where a long-lived box is told WHAT to be at runtime — the
+pi worker pool's park/claim, and anything else that boots generic and is
+specialised by a request. `park.mjs` received the claim env over HTTP and
+spawned the worker with it **in the child process only**, while the container's
+own environment still said `KORTIX_PI_PARK=1`. Stop/resume re-ran the
+entrypoint, which exec'd the park script again with the claim gone: port 8000
+answered `{parked:true,runtimeReady:false}` forever,
+`shouldBootstrapSessionRuntime` retried once, and the session could never run
+another turn. Its transcript survived; nothing else did.
+**Rules:** (1) persist the claim to the box's disk BEFORE acknowledging it, and
+prefer it over the generic path on every later boot — the acknowledgement is a
+promise the box must be able to keep; (2) a failed persist answers 500 and stays
+claimable rather than accepting a claim it cannot honour; (3) whenever a
+container has a "mode" env var, ask what re-running the entrypoint does — a
+resume is not a fresh create.
+**Diagnostic:** a session whose transcript loads but whose every turn hangs, on
+a box whose `/kortix/health` says `parked:true`. A cold-created box resumed
+fine, so it read as random until the pool was in the picture.
+*Near-miss:* pool is gated off everywhere (`KORTIX_PI_WORKER_POOL_TARGET=0`), so
+this never reached a user — it would have shipped with the pool.
+*Enforcer:* `pi-worker-park.test.ts` boots the real baked script, claims it,
+kills the box, and re-boots the SAME disk.
+
+### A test that SIGKILLs a child orphans its grandchildren, and a leaked listener poisons a fixed port range (2026-09-01)
+
+**When:** any test that spawns a process which itself spawns another (a
+supervisor, a park/handoff script, a dev server that forks). `child.kill()`
+reaches only the direct child; the grandchild is reparented to init and KEEPS
+its port bound. 42 had accumulated on one machine, each squatting a port in the
+helper's `18800 + random(500)` range, so a later boot drew a stranger's worker,
+got `{runtimeReady:true}` with no `parked` field, and the assertion failed on
+`parked === undefined` — 1 run in 6, at a rate that climbed with every run and
+therefore looked like a change-induced regression rather than a leak.
+**Rules:** (1) `spawn(..., { detached: true })` and kill the process GROUP
+(`process.kill(-pid, 'SIGKILL')`) — the group id survives reparenting, so it
+reaches the orphans; (2) never pick a test port from a fixed range — bind `0`,
+read the assigned port, close, use it; (3) a flake whose rate RISES across a
+session is accumulating state on the machine — count the processes before
+blaming the diff.
+**Diagnostic:** `lsof -nP -iTCP -sTCP:LISTEN` in the range, plus
+`ps -o pid,ppid,pgid,command` showing `ppid=1`.
+*Enforcer:* `killTree()` + `freePort()` in `pi-worker-park.test.ts`; 12/12 clean
+and 0 new leaks afterwards.
+
+### A fix on a path the client never calls is not a fix, and a test that uses the same wrong path certifies it (2026-09-01)
+
+**When:** adding or verifying a route on a runtime the SDK talks to. The pi
+worker served the Stop button's abort at `/kortix/opencode/session/:id/abort`.
+The SDK builds its OpenCode client with `baseUrl = <backend>/p/<externalId>/8000`
+(`getClientForUrl`, packages/sdk/src/core/runtime/client.ts), so
+`session.abort()` posts to `<base>/session/:id/abort` — the RAW root.
+`handleRawSessionList` was GET-only, so that POST fell through to the worker's
+catch-all 404: Stop did nothing, the UI painted "Interrupted" from its own
+optimistic receipt, and the agent generated to completion. The route had been
+added on 2026-08-29 to fix exactly this symptom — on the wrong path — and all
+five of its unit tests drove the prefixed path, so they passed while the
+product stayed broken.
+**Rules:** (1) verify a runtime route by calling the URL the CLIENT builds,
+not the one you wrote — read the client's `baseUrl` and concatenate; (2) when
+a surface answers on two prefixes, one of them is the product's; assert THAT
+one; (3) a bug reported as "the button does nothing" is a routing question
+before it is a logic question — curl both paths and compare status codes.
+*Incident:* pi.kortix.com, found by testing Stop by hand — raw 404 vs prefixed
+200 on one live session. Fixed in `58f5cdf4`; verified live, a 3000-word
+request stopped at 917 words mid-sentence.
+*Enforcer:* `runtime-surface.test.ts` -> "the RAW path the SDK calls" drives
+`handleRawSessionList` directly.
+
+
+### A request that provisions a machine can never satisfy the 25s deadline — return status and do the work out of band (2026-08-29)
+
+**When:** writing or reviewing any endpoint that creates/resumes a sandbox, VM,
+or other multi-second resource, especially one a poller calls.
+`POST /sessions/:id/environment/ensure` awaited a full Daytona provision inside
+the request; `middleware/request-deadline` kills every request at 25s, and the
+loser of the claim waited a further 120s (`CLAIM_WAIT_MS`). So the FIRST compute
+tool call of every pi session got 503 after 503 until the worker's 180s budget
+expired: `write` sat at `running` for three minutes and then failed, on a
+session that was otherwise healthy. The caller was ALREADY a poller
+(`LazyKortixEnv.attach` re-asks every 2s until `active`) — the blocking wait
+bought nothing and cost everything.
+**The rule:** claim, start the work detached, return the current status. And
+detaching costs one thing the request-bound version got free — **a claim whose
+owner dies must expire**: nothing else ever re-claims a `provisioning` row, so
+add a staleness window (`PROVISION_STALE_MS`) or one crash wedges that resource
+forever. Diagnostic: a 503 whose `duration` is exactly the deadline, repeating
+at the caller's poll interval.
+*Incident:* pi.kortix.com, every session, until #7024. No prod impact — pi is
+preview-only. *Enforcer:* `session-environment.test.ts` pins that `ensure` never
+awaits the work and that a stale claim is re-claimable.
+
+### An adapter that passes a foreign error vocabulary through breaks the consumer silently (2026-08-29)
+
+**When:** bridging one runtime's filesystem/exec contract to another's over
+HTTP (env-rpc, tool bridges, anything returning `{code, message}`).
+The daemon's env-rpc is a thin `fs` proxy and returns the real errno; the
+worker's `KortixExecutionEnv` handed it straight to pi as a `FileError.code`.
+pi's `withFileMutationQueue` canonicalises a mutation target first and tolerates
+a path that does not exist YET — but only for code `not_found`, rethrowing
+anything else. So `ENOENT` meant **`write` could never create a file**: every
+new file died on its own pre-flight lstat and the agent fell back to `bash`
+heredocs (10 in one turn, live), while the tool's own description promised
+"Creates the file if it doesn't exist".
+**The rule:** translate at the adapter, mirror the reference implementation
+verbatim (pi's `harness/env/nodejs.js`, its spellings `not_directory` /
+`is_directory` included), and map unmapped errnos to `unknown` rather than
+leaking a second raw code. A passthrough default is what hides this: the happy
+path works, only the CREATE path fails.
+*Incident:* pi.kortix.com, all file creation, until #7024.
+*Enforcer:* `kortix-env.test.ts`.
+
+### `docker image prune --filter until=24h` reclaims nothing on an environment that redeploys daily (2026-08-29)
+
+**When:** adding disk housekeeping to any long-lived, frequently-redeployed box.
+The persistent branch environment pulls ~3GB of images per deploy and never
+reclaimed them; it hit 100% and the stack stopped coming up. The first fix used
+`until=24h` to "keep today's generation as a rollback" — it reclaimed **0 B**,
+because that box deploys several times a day so every superseded image is
+younger than a day. Unfiltered (`docker image prune -af`) the same box went
+90% -> 46%, 20.35 GB, with all 12 services still running: a running container
+holds a reference to its own image, so only genuinely dead layers go.
+**The rule:** prune AFTER the new stack passes its health check, with no age
+filter, never fatal (`|| true`) — and verify the reclaim on the real box, because
+a prune that frees nothing looks exactly like a prune that works.
+*Enforcer:* `tests/unit/sandbox-preview.test.ts`.
 ### A durable FIFO has one order key and advances at one boundary (2026-09-03)
 
 **When:** implementing a queue whose enqueue requests can race. Define one total
@@ -80,7 +607,6 @@ install log said success; `readlink /proc/<pid>/exe` said otherwise.
 relaunches once more after an `updated` boot pass and its health wait requires a
 FRESH daemon (`uptime_s` small), never the one just killed.
 
-||||||| 2108aa3c8a
 ### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
 
 **When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
@@ -1182,10 +1708,6 @@ fixture only proves the class you thought to seed.
 including a free-tier + `active` $0-subscription case modeled on the real prod
 row; `per-seat-pricing.test.ts` pins `resolveRenewalGrant` for per-seat,
 configured-grant and paid-by-amount branches.
-
-||||||| bd5aae39c4
-
-||||||| 0c247496b6
 
 ### A URL that carries a credential must never reach a log line (2026-08-20)
 
@@ -2974,8 +3496,6 @@ still blocked, and the own-session credential still allowed.
 
 *Incident:* essentia project `e7170bf8`, origin counts user 568 / backend 43.
 PR #6828.
-||||||| base
-
 ## Measure the amplification factor; never decode what you can forward
 
 2026-08-24. The gateway's ai-sdk transport decoded every `data:` image with
@@ -3866,6 +4386,34 @@ fix, no code change beyond two regex patterns. No data loss — messages sent at
 dead composer were always durable inbox rows; only the transcript READ
 dead-ended.
 
+## Separate runtime principals require a separate RPC credential
+
+Found 2026-09-03 on the `pi-worker` preview. Worker and environment PATs became
+distinct runtime principals. `LazyKortixEnv` still signed environment RPC with
+the worker PAT. The environment daemon still verified the signature with its
+own PAT. Every Bash and file call therefore returned `401`, which the worker
+rendered as a generic environment error. Unit tests used one shared token on
+both sides and could not detect the broken boundary.
+
+**Rules.**
+1. A credential that identifies one runtime must not authenticate a different
+   runtime's private endpoint.
+2. Cross-runtime RPC must use a purpose-bound secret that grants no control-plane
+   API access.
+3. An integration test for two runtime principals must use different PAT values.
+   A shared test token recreates the coupling that production removed.
+4. A global project-scope gate and the route handler must accept the same runtime
+   principal types. Handler support is unreachable when middleware denies first.
+
+*Automation:* `env-rpc-worker-integration.test.ts` uses distinct worker PAT,
+environment PAT, and RPC secret values across the real client and daemon router.
+`env-rpc.test.ts` rejects an environment PAT as an RPC signature.
+`project-audit-ingestion.test.ts` and `auth.test.ts` pin environment callbacks
+and the session-bound boot-timeline middleware allowance.
+
+*Incident:* The branch preview returned two environment tool errors before the
+fix. No production or dev deployment received this branch. The affected preview
+sessions were stopped after verification.
 ## OAuth loopback redirect URIs are protocol data, not perimeter SSRF attempts
 
 - **Incident (2026-08-28, v0.13.7 release QA):** flow `OAU-8` received an HTML
@@ -4066,6 +4614,43 @@ own config; no real secret was ever written to disk in plaintext.
   `next`. The override now reads `"next@>=15.0.0 <16.3.3": "16.3.3"` and
   `apps/whitelabel-demo` declares `next: 16.3.3` explicitly.
 
+## Renaming an applied migration requires a name-and-order ledger repair
+
+- **Incident (2026-09-03, `pi-worker` preview):** two Pi migrations initially
+  used timestamps before migrations already merged into `main`. Moving the Pi
+  files after the merged migrations fixed fresh and sequential migration gates.
+  The persistent preview database still recorded the old names and their old
+  `run_on` order. `node-pg-migrate` rejected startup before the API bound port
+  `8080`, and the preview hostname returned `502` during the failed cutover. A
+  first repair tried to interpolate the renamed rows between adjacent `run_on`
+  values. PostgreSQL preserved sub-millisecond precision, but the Node `Date`
+  conversion collapsed both bounds to the same millisecond and rejected the
+  second preview deployment.
+- **Rule:** never rename an applied migration without a checksum-guarded ledger
+  repair. The repair must update both `name` and `run_on` when the rename crosses
+  other applied migrations. A fresh database cannot prove this upgrade path.
+- **Enforcement:** `migration-ledger-repair.test.ts` pins both Pi name mappings.
+  `migration-ledger-repair.integration.test.ts` builds a historical ledger with
+  identical sub-millisecond timestamps, runs the locked repair, and requires
+  strict `node-pg-migrate` order to report no pending migrations. The repair
+  normalizes the affected ledger suffix inside PostgreSQL at microsecond
+  precision; it never round-trips ordering bounds through JavaScript.
+
+## A single-origin preview turns service base paths into part of the test contract
+
+- **Incident (2026-09-03, `pi-worker` preview):** `target-full` configured the
+  standalone gateway as `https://pi.kortix.com/_gateway`. The black-box client
+  reduced every configured URL to its origin, so gateway `/health` reached the
+  API `/health`, and gateway `/v1/*` calls reached API routes or 404 responses.
+  The same preview disabled its landing page while the browser lane required
+  the public `/` and `/pricing` contracts.
+- **Rule:** preserve a deployed service's configured path prefix when requests
+  use service-relative route templates. A preview runtime configuration must
+  expose every public surface that its strict target suite exercises.
+- **Enforcement:** `Client.forBaseUrl()` keeps the prefix through auth and retry
+  clones while retaining the original coverage key. `client-resilience.test.ts`
+  pins prefixed and root service URLs. `preview-stack.test.ts` requires preview
+  marketing pages to remain enabled.
 ## A column declared in schema.ts but absent from the migration ledger passes every drift gate (2026-09-03)
 
 *Incident (2026-09-03, ~16:30 UTC onward, every Kortix environment).* Every

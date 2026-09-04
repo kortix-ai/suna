@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer as createSocketServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { piWorkerParkScriptForTest } from './build-context';
@@ -37,20 +38,59 @@ const CLAIM_ENV = {
 
 let child: ChildProcess | null = null;
 const roots: string[] = [];
+
+/**
+ * Kill the park process AND the worker it spawned.
+ *
+ * `child.kill()` reaches only park.mjs. The worker is its GRANDchild, so it is
+ * reparented to init and keeps port bound. A later `bootPark` that draws that
+ * port then probes a stranger's worker, gets `{runtimeReady:true}` with no
+ * `parked` field, and the handshake test fails on `parked === undefined` — a
+ * flake whose rate climbs with every run that leaked one. `detached: true`
+ * makes park a process-group leader so the whole group dies together.
+ */
+function killTree(target: ChildProcess | null): void {
+  if (!target?.pid) return;
+  try {
+    process.kill(-target.pid, 'SIGKILL');
+  } catch {
+    // group already gone
+  }
+  try {
+    target.kill('SIGKILL');
+  } catch {
+    // already gone
+  }
+}
+
+/** Let the OS pick a free port instead of gambling inside a fixed range. */
+async function freePort(): Promise<number> {
+  return await new Promise<number>((resolve, reject) => {
+    const probe = createSocketServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      probe.close(() => (port ? resolve(port) : reject(new Error('no port'))));
+    });
+  });
+}
+
 afterEach(async () => {
-  child?.kill('SIGKILL');
+  killTree(child);
   child = null;
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-async function bootPark(): Promise<{ port: number; base: string }> {
-  const root = await mkdtemp(join(tmpdir(), 'kortix-park-'));
-  roots.push(root);
+async function bootPark(reuseRoot?: string): Promise<{ port: number; base: string; root: string }> {
+  const root = reuseRoot ?? (await mkdtemp(join(tmpdir(), 'kortix-park-')));
+  if (!reuseRoot) roots.push(root);
   await writeFile(join(root, 'park.mjs'), piWorkerParkScriptForTest());
   await writeFile(join(root, 'fetch-runtime.mjs'), FAKE_FETCH);
   await writeFile(join(root, 'session-worker.mjs'), FAKE_WORKER);
-  const port = 18800 + Math.floor(Math.random() * 500);
+  const port = await freePort();
   child = spawn('node', [join(root, 'park.mjs')], {
+    detached: true,
     env: {
       PATH: process.env.PATH,
       PORT: String(port),
@@ -64,7 +104,7 @@ async function bootPark(): Promise<{ port: number; base: string }> {
   for (let i = 0; i < 100; i++) {
     try {
       const res = await fetch(`${base}/kortix/health`);
-      if (res.ok) return { port, base };
+      if (res.ok) return { port, base, root };
     } catch {
       // not listening yet
     }
@@ -74,6 +114,58 @@ async function bootPark(): Promise<{ port: number; base: string }> {
 }
 
 describe('pi worker park server', () => {
+  /**
+   * A CLAIMED box must come back as a worker, not as a parked box.
+   *
+   * The claim env arrived over HTTP and was spawned into a child process. The
+   * container's own environment still carries `KORTIX_PI_PARK=1`, so the first
+   * stop/resume re-ran the entrypoint, which execed this script again — with
+   * the claim env gone. Port 8000 then answered
+   * `{parked:true,runtimeReady:false}` forever, `shouldBootstrapSessionRuntime`
+   * retried once, and the session could never run another turn. Its transcript
+   * survived; nothing else did. A cold-created box resumed fine, so the failure
+   * hit only the pool's fast path and read as random.
+   *
+   * The claim therefore has to be DURABLE on the box: persisted at claim time,
+   * and preferred over parking on every later boot.
+   */
+  test('RESUME: a box claimed once boots the worker again, never re-parks', async () => {
+    const first = await bootPark();
+    const claim = await fetch(`${first.base}/kortix/claim`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-park-token': 'park-tok' },
+      body: JSON.stringify({ env: CLAIM_ENV }),
+    });
+    expect(claim.status).toBe(200);
+
+    // Let the handoff complete, then kill the box as a stop/resume would.
+    for (let i = 0; i < 100; i++) {
+      try {
+        const r = await fetch(`${first.base}/kortix/health`);
+        const j = (await r.json()) as { runtimeReady?: boolean };
+        if (j.runtimeReady) break;
+      } catch {
+        // mid-handoff
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    killTree(child);
+    child = null;
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Same box, same disk, same park env — exactly what a resume re-runs.
+    const second = await bootPark(first.root);
+    const health = (await (await fetch(`${second.base}/kortix/health`)).json()) as {
+      parked?: boolean;
+      runtimeReady?: boolean;
+      sessionId?: string | null;
+    };
+    expect(health.parked).toBeUndefined();
+    expect(health.runtimeReady).toBe(true);
+    // And it is THIS session's worker, restored from the persisted claim.
+    expect(health.sessionId).toBe(CLAIM_ENV.KORTIX_SESSION_ID);
+  });
+
   test('full claim handshake hands the port to a worker running the claim env', async () => {
     const { base } = await bootPark();
 

@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   foreignKey,
   index,
   integer,
@@ -876,10 +877,181 @@ export const projectSessions = kortixSchema.table(
 );
 
 /**
- * Durable, non-secret wrapper context for one project session. It is kept out
- * of user-editable session metadata and materialized only as the single
- * server-owned KORTIX_SESSION_CONTEXT JSON envelope.
+ * Append-only transcript log for a pi worker session (harness/worker split
+ * P1.8 — "history readable with nothing running").
+ *
+ * The worker holds its conversation in memory and writes every MUTATION
+ * through to this table (apps/kortix-worker/src/session-store.ts —
+ * DurableSessionStorage over RemoteSessionLog). Reads during a turn stay
+ * local; only mutations cross the network, so the store never sits on the hot
+ * path of a running turn.
+ *
+ * Why a table and not the sandbox: today history lives inside the running box,
+ * so reading a stopped session's transcript means waking it — the "session
+ * looks stopped, then a huge delay" class of bug the plan calls out. With the
+ * log here, history is servable with nothing running at all.
+ *
+ * ORDER IS THE CONTRACT. The worker replays this log to rebuild its storage on
+ * resume, so a reorder silently corrupts the conversation. `id` is assigned by
+ * the DATABASE rather than the client because the worker's append carries no
+ * sequence of its own — it POSTs the bare mutation and relies on arrival order,
+ * which is safe precisely because one worker writes one session serially.
  */
+export const sessionWorkerLog = kortixSchema.table(
+  'session_worker_log',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    appendId: uuid('append_id'),
+    item: jsonb('item').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // The only read this table has: one session, in append order.
+    index('idx_session_worker_log_session_id').on(table.sessionId, table.id),
+    uniqueIndex('idx_session_worker_log_append_id').on(table.sessionId, table.appendId),
+    check('session_worker_log_item_object_check', sql`jsonb_typeof(${table.item}) = 'object'`),
+  ],
+);
+
+/** Raw bytes. drizzle-orm has no first-class bytea column. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return 'bytea';
+  },
+});
+
+/**
+ * Compiled pi worker runtimes — one row per (project, ref, sha, AGENT).
+ *
+ * The artifact used to live only in `/tmp/kortix/compiled-boot` inside the API
+ * container, which is not a store: it has no mount, so every deploy destroys
+ * it, and each replica keeps its own copy. That made session boot depend on
+ * git being reachable AND on which replica answered. When managed-git auth
+ * broke on 2026-08-29 the compile failed and sessions booted with NO agent
+ * config at all.
+ *
+ * So the durable copy lives here — the one store every environment has,
+ * including self-host, which has no S3. The container directory stays in front
+ * of it as a read-through cache. `content` is ~900 KB of minified JS per row,
+ * TOASTed and compressed by PostgreSQL; `pruneStoredPiRuntimeArtifacts` keeps
+ * only the newest few per (project, agent).
+ */
+export const piRuntimeArtifacts = kortixSchema.table(
+  'pi_runtime_artifacts',
+  {
+    /** The cache key: sha256 of (format, project, ref, sha, workerBundle, agent). */
+    artifactKey: text('artifact_key').primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    ref: text('ref').notNull(),
+    sourceSha: text('source_sha').notNull(),
+    /** '' means the project default, resolved at build time. */
+    agentName: text('agent_name').notNull(),
+    workerBundleSha256: text('worker_bundle_sha256').notNull(),
+    sha256: text('sha256').notNull(),
+    size: integer('size').notNull(),
+    manifest: jsonb('manifest').$type<Record<string, unknown>>().notNull(),
+    content: bytea('content').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    // The retention sweep reads exactly this: newest-first within one agent.
+    index('idx_pi_runtime_artifacts_retention').on(
+      table.projectId,
+      table.agentName,
+      table.createdAt,
+    ),
+  ],
+);
+
+/**
+ * Shared filesystems — "a Google Drive between the agents".
+ *
+ * The design huddle's words: "instead of saving any memories anymore in the
+ * git, we would literally just have file systems", and "the shared file system
+ * should only be used like a Google Drive between the agents to share state".
+ * So this is deliberately NOT the project repo: `/projects/:id/files*` reads
+ * git (config, versioned, cloned per session) and this reads a volume (state,
+ * mutable, shared, and alive whether or not any sandbox is). Keeping the two
+ * apart is the point — "we should not be intermixing the concerns anymore".
+ *
+ * A filesystem outlives every session that touches it. Two agents in the same
+ * project see the same bytes, which is what makes it a hand-off channel rather
+ * than per-session scratch space.
+ */
+export const filesystems = kortixSchema.table(
+  'filesystems',
+  {
+    filesystemId: uuid('filesystem_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    /** Addressed by name, not id: agents write `kortix fs put notes ...`. */
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [unique('filesystems_project_name_key').on(table.projectId, table.name)],
+);
+
+/**
+ * One path in one filesystem. Metadata only — the bytes are in `sha256`.
+ *
+ * `storage` records where THIS row's bytes actually live, rather than trusting
+ * today's configuration. A deployment that gains (or loses) S3 must still be
+ * able to read what it wrote before the switch, and a global config flag cannot
+ * answer that for a row written last month.
+ */
+export const filesystemFiles = kortixSchema.table(
+  'filesystem_files',
+  {
+    filesystemId: uuid('filesystem_id')
+      .notNull()
+      .references(() => filesystems.filesystemId, { onDelete: 'cascade' }),
+    /** Normalised, always relative, no leading slash and no `..` segments. */
+    path: text('path').notNull(),
+    size: integer('size').notNull(),
+    sha256: text('sha256').notNull(),
+    contentType: text('content_type').notNull(),
+    /** 'pg' | 's3' — the backend that holds `sha256`. */
+    storage: text('storage').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.filesystemId, table.path] }),
+    // Listing is always "this filesystem, under this prefix, newest first".
+    index('idx_filesystem_files_listing').on(table.filesystemId, table.path),
+  ],
+);
+
+/**
+ * Content-addressed bytes for the `pg` backend.
+ *
+ * PostgreSQL is a first-class backend, not a stand-in: `pi_runtime_artifacts`
+ * above records why — it is "the one store every environment has, including
+ * self-host, which has no S3". Self-host is a shipping configuration, so a
+ * filesystem that only worked on S3 would be a filesystem Essentia cannot use.
+ * S3 is the backend for scale; this one is the backend for everywhere.
+ *
+ * Keyed by content hash, so re-writing the same bytes under ten paths costs one
+ * row, and the S3 object key is the SAME string — the two backends address
+ * blobs identically, which is what lets a row's `storage` column be the only
+ * thing that differs between them.
+ */
+export const filesystemBlobs = kortixSchema.table('filesystem_blobs', {
+  sha256: text('sha256').primaryKey(),
+  size: integer('size').notNull(),
+  content: bytea('content').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const projectSessionRuntimeContexts = kortixSchema.table(
   'project_session_runtime_contexts',
   {
@@ -1314,10 +1486,7 @@ export const projectMonitorEvents = kortixSchema.table(
     firedAt: timestamp('fired_at', { withTimezone: true }),
   },
   (table) => [
-    check(
-      'project_monitor_events_kind_check',
-      sql`${table.kind} IN ('event', 'lifecycle')`,
-    ),
+    check('project_monitor_events_kind_check', sql`${table.kind} IN ('event', 'lifecycle')`),
     check(
       'project_monitor_events_status_check',
       sql`${table.status} IN ('pending', 'fired', 'skipped', 'suppressed', 'failed')`,
@@ -1860,6 +2029,9 @@ export const sessionEnvironments = kortixSchema.table(
   'session_environments',
   {
     sessionId: text('session_id').primaryKey(),
+    /** Stable control-plane identity. The provider external id can change
+     *  when an environment is rebuilt. */
+    environmentId: uuid('environment_id'),
     accountId: uuid('account_id').notNull(),
     projectId: uuid('project_id').notNull(),
     provider: sandboxProviderEnum('provider').default('daytona').notNull(),
@@ -1879,7 +2051,6 @@ export const sessionEnvironments = kortixSchema.table(
     index('idx_session_environments_external_id').on(table.externalId),
   ],
 );
-
 
 /**
  * Durable per-turn ledger.
@@ -2421,7 +2592,6 @@ export const sandboxes = kortixSchema.table(
   ],
 );
 
-
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
   {
@@ -2605,6 +2775,11 @@ export const accountTokens = kortixSchema.table(
      *  the reaper's reliable activity signal + precise billing. Null for
      *  non-session tokens (laptop CLI PATs, project-scoped operator tokens). */
     sessionId: text('session_id'),
+    /** Exact runtime principal for a session token. Null preserves legacy
+     *  worker tokens during rollout. */
+    runtimeKind: varchar('runtime_kind', { length: 16 }).$type<'worker' | 'environment'>(),
+    /** Stable worker or environment UUID. It is not the provider external id. */
+    runtimeId: uuid('runtime_id'),
     /** The STANDING IDENTITY this session token acts as. When set, the IAM
      *  engine authorizes the request as this service account (its own policies),
      *  not the launching user — `effective = SA standing role ∩ agentGrant`. The
@@ -3524,10 +3699,13 @@ export const sandboxComputeSessions = kortixSchema.table(
   },
   (table) => [
     check(
-      'sandbox_compute_sessions_workload_type_check',
+      'sandbox_compute_sessions_workload_type_check_v2',
       // 'monitor' = the per-project monitor box. Its `sandbox_id` IS
       // `project_monitor_boxes.box_id`; it needs no dedicated join column.
-      sql`${table.workloadType} IN ('session', 'app', 'monitor')`,
+      // 'environment' = the session's lazy compute environment. It joins to
+      // `session_environments` through `session_id`; its `sandbox_id` is the
+      // durable metering identity stored in that row's metadata.
+      sql`${table.workloadType} IN ('session', 'app', 'monitor', 'environment')`,
     ),
     index('idx_sandbox_compute_sessions_account_time').on(table.accountId, table.startedAt),
     index('idx_sandbox_compute_sessions_provider_time').on(table.provider, table.startedAt),
@@ -3580,9 +3758,7 @@ export const apps = kortixSchema.table(
      * App; the viewer's own IAM role is still the ceiling.
      * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
      */
-    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
-      .default('identity')
-      .notNull(),
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 }).default('identity').notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3630,11 +3806,7 @@ export const appAccessGrants = kortixSchema.table(
   },
   (table) => [
     index('app_access_grants_app_idx').on(table.appId),
-    uniqueIndex('app_access_grants_unique').on(
-      table.appId,
-      table.principalType,
-      table.principalId,
-    ),
+    uniqueIndex('app_access_grants_unique').on(table.appId, table.principalType, table.principalId),
   ],
 );
 

@@ -10,6 +10,7 @@ import {
   type SessionTurnEnded,
   getSessionTurn,
 } from '../core/rest/projects-client/sessions';
+import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import {
   type AbortReceipt,
   type SendReceipt,
@@ -19,7 +20,6 @@ import {
   projectWorking,
   workingExpiryAtMs,
 } from '../core/session/working';
-import { claimOpenBundle, openBundleTurn } from '../core/session/open-bundle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
 
@@ -114,10 +114,25 @@ export function buildWorkingInputs(input: {
     // live turns whenever a frame was dropped.
     stream: input.status
       ? {
+          // Only `idle` means idle. Everything else — `busy`, `retry`, and any
+          // word this build does not know — is working.
+          //
+          // This used to be the inverse (`busy`/`retry` kept, EVERYTHING else
+          // collapsed to `idle`), which disagreed with `streamTurnPhase` right
+          // above on the same question. The pi runtime emits
+          // `{type:'running'}`, which is outside OpenCode's `idle|busy|retry`
+          // union, so for the whole of every pi turn this asserted "idle" while
+          // the agent was generating: the working indicator and the Stop button
+          // disappeared mid-answer.
+          //
+          // Unknown is not idle. An unreadable status is a reason to keep the
+          // escape hatch visible, not to hide it.
           type:
-            input.status.type === 'busy' || input.status.type === 'retry'
-              ? input.status.type
-              : 'idle',
+            input.status.type === 'idle'
+              ? 'idle'
+              : input.status.type === 'retry'
+                ? 'retry'
+                : 'busy',
           origin: input.statusOrigin ?? 'wire',
           atMs: input.statusAtMs,
         }
@@ -155,10 +170,7 @@ const workingObserverCounts = new Map<string, number>();
  * `STREAM_OBSERVATION_MAX_MS` window. The frame's age is a fact about the
  * frame, so it lives with the frame.
  */
-export function streamObservationStamp(
-  storeStampMs: number | undefined,
-  nowMs: number,
-): number {
+export function streamObservationStamp(storeStampMs: number | undefined, nowMs: number): number {
   return storeStampMs ?? nowMs;
 }
 
@@ -374,5 +386,6 @@ export function useSessionWorking(
   // it are not re-run once per render just because `now` moved.
   const identity = `${projection.state}|${projection.source}|${projection.turnId}|${projection.since}|${projection.serverOpenTurnToken}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these five fields define projection identity; object identity does not.
   return useMemo(() => projection, [identity]);
 }

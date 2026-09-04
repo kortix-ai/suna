@@ -10,6 +10,7 @@ import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
+import { runFs } from './commands/fs.ts';
 import { runGitCredential } from './commands/git-credential.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGrants } from './commands/grants.ts';
@@ -280,6 +281,11 @@ const TIERS: readonly CommandTier[] = [
             name: 'files',
             args: '<subcommand>',
             blurb: 'Browse repo files, commits, branches, diffs; download a zip',
+          },
+          {
+            name: 'fs',
+            args: '<subcommand>',
+            blurb: 'Shared filesystems — state agents hand to each other (not the repo)',
           },
           { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
           {
@@ -581,6 +587,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'files') {
     return runFiles(argv.slice(1));
+  }
+  if (argv[0] === 'fs') {
+    return runFs(argv.slice(1));
   }
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));

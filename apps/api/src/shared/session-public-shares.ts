@@ -1,14 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   connectorConnections,
+  projectSessions,
   projectSessionConnectorBindings,
   projectSessionPublicShares,
+  sessionEnvironments,
   sessionSandboxes,
 } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from './db';
 import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
+import { selectSessionDataRuntime } from './session-data-runtime';
 
 export type PublicShareResourceType = 'preview' | 'file';
 
@@ -29,7 +32,11 @@ export const PUBLIC_SHARE_VIEW_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * that is not explicitly `interactive` is read-only, and a future mode cannot
  * fail open. A FILE share is always read-only — it names one document.
  */
-export function isViewOnlyShare(share: { mode?: string | null; resourceType?: string | null; filePath?: string | null }): boolean {
+export function isViewOnlyShare(share: {
+  mode?: string | null;
+  resourceType?: string | null;
+  filePath?: string | null;
+}): boolean {
   if (share.resourceType === 'file' || share.filePath) return true;
   return share.mode !== 'interactive';
 }
@@ -89,9 +96,7 @@ function normalizeWorkspaceFilePath(value: unknown): string | null {
   const input = cleanString(value);
   if (!input || input.includes('\0') || /^https?:\/\//i.test(input)) return null;
 
-  const withoutWorkspace = input
-    .replace(/^\/workspace\/?/, '')
-    .replace(/^workspace\/?/, '');
+  const withoutWorkspace = input.replace(/^\/workspace\/?/, '').replace(/^workspace\/?/, '');
   const segments = withoutWorkspace.split('/').filter(Boolean);
   if (segments.length === 0 || segments.some((segment) => segment === '.' || segment === '..')) {
     return null;
@@ -103,7 +108,10 @@ function basename(path: string): string {
   return path.split('/').filter(Boolean).at(-1) || 'Shared file';
 }
 
-function resourceProxyPath(token: string, row: Pick<PublicShareRow, 'resourceType' | 'port' | 'path'>): string {
+function resourceProxyPath(
+  token: string,
+  row: Pick<PublicShareRow, 'resourceType' | 'port' | 'path'>,
+): string {
   if (row.resourceType === 'file') return `/v1/p/public-share/${token}/file`;
   return `/v1/p/public-share/${token}/${row.port}${row.path}`;
 }
@@ -179,26 +187,45 @@ export async function listPublicSharesForSession(sessionId: string) {
 /** The live sandbox external id for a session, or null when none is bound. */
 export async function sessionSandboxExternalId(sessionId: string): Promise<string | null> {
   const [row] = await db
-    .select({ externalId: sessionSandboxes.externalId })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .orderBy(desc(sessionSandboxes.updatedAt))
+    .select({
+      workerExternalId: sessionSandboxes.externalId,
+      workerStatus: sessionSandboxes.status,
+      environmentSessionId: sessionEnvironments.sessionId,
+      environmentExternalId: sessionEnvironments.externalId,
+      environmentStatus: sessionEnvironments.status,
+    })
+    .from(projectSessions)
+    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessions.sessionId))
+    .leftJoin(sessionEnvironments, eq(sessionEnvironments.sessionId, projectSessions.sessionId))
+    .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
-  return row?.externalId ?? null;
+  if (!row) return null;
+  return selectSessionDataRuntime({
+    workerExternalId: row.workerExternalId,
+    workerStatus: row.workerStatus,
+    environmentExists: !!row.environmentSessionId,
+    environmentExternalId: row.environmentExternalId,
+    environmentStatus: row.environmentStatus,
+  }).externalId;
 }
 
-export function buildPublicShareInsert(input: PublicShareInput, ctx: {
-  sessionId: string;
-  projectId: string;
-  accountId: string;
-  userId: string;
-}) {
-  const file = typeof input.file === 'object' && input.file ? input.file as Record<string, unknown> : null;
+export function buildPublicShareInsert(
+  input: PublicShareInput,
+  ctx: {
+    sessionId: string;
+    projectId: string;
+    accountId: string;
+    userId: string;
+  },
+) {
+  const file =
+    typeof input.file === 'object' && input.file ? (input.file as Record<string, unknown>) : null;
   if (file) {
     const filePath = normalizeWorkspaceFilePath(file.path ?? file.file_path);
     if (!filePath) return { ok: false as const, status: 400, error: 'File path cannot be shared' };
     const expiresAt = parseExpiresAt(input.expires_at);
-    if (expiresAt === false) return { ok: false as const, status: 400, error: 'expires_at must be an ISO timestamp' };
+    if (expiresAt === false)
+      return { ok: false as const, status: 400, error: 'expires_at must be an ISO timestamp' };
     return {
       ok: true as const,
       values: {
@@ -215,26 +242,35 @@ export function buildPublicShareInsert(input: PublicShareInput, ctx: {
     };
   }
 
-  const activePreview = typeof input.preview === 'object' && input.preview
-    ? input.preview as Record<string, unknown>
-    : null;
-  const requestedCandidate = typeof input.preview_id === 'string'
-    ? DEFAULT_PREVIEW_CANDIDATES.find((candidate) => candidate.id === input.preview_id)
-    : null;
-  const port = Number(activePreview?.port ?? requestedCandidate?.port ?? DEFAULT_PREVIEW_CANDIDATES[0].port);
+  const activePreview =
+    typeof input.preview === 'object' && input.preview
+      ? (input.preview as Record<string, unknown>)
+      : null;
+  const requestedCandidate =
+    typeof input.preview_id === 'string'
+      ? DEFAULT_PREVIEW_CANDIDATES.find((candidate) => candidate.id === input.preview_id)
+      : null;
+  const port = Number(
+    activePreview?.port ?? requestedCandidate?.port ?? DEFAULT_PREVIEW_CANDIDATES[0].port,
+  );
   if (!Number.isInteger(port) || port < 1 || port > 65535 || PUBLIC_SHARE_BLOCKED_PORTS.has(port)) {
     return { ok: false as const, status: 400, error: 'Preview cannot be shared on this port' };
   }
   const expiresAt = parseExpiresAt(input.expires_at);
-  if (expiresAt === false) return { ok: false as const, status: 400, error: 'expires_at must be an ISO timestamp' };
+  if (expiresAt === false)
+    return { ok: false as const, status: 400, error: 'expires_at must be an ISO timestamp' };
   const mode = input.mode === 'interactive' ? 'interactive' : 'view';
   return {
     ok: true as const,
     values: {
       resourceType: 'preview',
-      label: cleanString(activePreview?.label ?? input.label ?? requestedCandidate?.label) ?? 'App preview',
+      label:
+        cleanString(activePreview?.label ?? input.label ?? requestedCandidate?.label) ??
+        'App preview',
       port,
-      path: normalizeSharePath(activePreview?.path ?? activePreview?.url ?? requestedCandidate?.path ?? '/'),
+      path: normalizeSharePath(
+        activePreview?.path ?? activePreview?.url ?? requestedCandidate?.path ?? '/',
+      ),
       filePath: null,
       mode,
       allowWebsocket: mode === 'interactive',
@@ -250,12 +286,15 @@ function parseExpiresAt(value: unknown): Date | null | false {
   return Number.isNaN(expiresAt.getTime()) ? false : expiresAt;
 }
 
-export async function createPublicShare(input: PublicShareInput, ctx: {
-  sessionId: string;
-  projectId: string;
-  accountId: string;
-  userId: string;
-}) {
+export async function createPublicShare(
+  input: PublicShareInput,
+  ctx: {
+    sessionId: string;
+    projectId: string;
+    accountId: string;
+    userId: string;
+  },
+) {
   const built = buildPublicShareInsert(input, ctx);
   if (!built.ok) return built;
 
@@ -291,12 +330,16 @@ export async function revokePublicShare(sessionId: string, shareId: string) {
   const [row] = await db
     .update(projectSessionPublicShares)
     .set({ revokedAt: new Date(), updatedAt: new Date() })
-    .where(and(
-      eq(projectSessionPublicShares.shareId, shareId),
-      eq(projectSessionPublicShares.sessionId, sessionId),
-    ))
+    .where(
+      and(
+        eq(projectSessionPublicShares.shareId, shareId),
+        eq(projectSessionPublicShares.sessionId, sessionId),
+      ),
+    )
     .returning();
-  return row ? serializePublicShare(row, undefined, await sessionSandboxExternalId(row.sessionId)) : null;
+  return row
+    ? serializePublicShare(row, undefined, await sessionSandboxExternalId(row.sessionId))
+    : null;
 }
 
 export async function touchPublicShare(shareId: string) {
@@ -330,15 +373,33 @@ export async function resolvePublicShare(token: string) {
       allowWebsocket: projectSessionPublicShares.allowWebsocket,
       expiresAt: projectSessionPublicShares.expiresAt,
       revokedAt: projectSessionPublicShares.revokedAt,
-      externalId: sessionSandboxes.externalId,
-      sandboxStatus: sessionSandboxes.status,
+      workerExternalId: sessionSandboxes.externalId,
+      workerStatus: sessionSandboxes.status,
+      environmentSessionId: sessionEnvironments.sessionId,
+      environmentExternalId: sessionEnvironments.externalId,
+      environmentStatus: sessionEnvironments.status,
     })
     .from(projectSessionPublicShares)
-    .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
+    .leftJoin(
+      sessionSandboxes,
+      eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId),
+    )
+    .leftJoin(
+      sessionEnvironments,
+      eq(sessionEnvironments.sessionId, projectSessionPublicShares.sessionId),
+    )
     .where(eq(projectSessionPublicShares.tokenHash, publicShareTokenHash(token)))
     .limit(1);
 
   if (!row) return { ok: false as const, status: 404, error: 'Share link not found' };
+  const target = selectSessionDataRuntime({
+    workerExternalId: row.workerExternalId,
+    workerStatus: row.workerStatus,
+    environmentExists: !!row.environmentSessionId,
+    environmentExternalId: row.environmentExternalId,
+    environmentStatus: row.environmentStatus,
+  });
+  const resolvedRow = { ...row, externalId: target.externalId, sandboxStatus: target.status };
   if (row.revokedAt) return { ok: false as const, status: 410, error: 'Share link revoked' };
   if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
     return { ok: false as const, status: 410, error: 'Share link expired' };
@@ -368,12 +429,14 @@ export async function resolvePublicShare(token: string) {
       error: 'Sessions using a personal connection cannot be shared publicly',
     };
   }
-  if (!row.externalId) return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
+  if (!resolvedRow.externalId) {
+    return { ok: false as const, status: 503, error: 'Sandbox is not ready' };
+  }
   if (row.resourceType === 'preview' && (!row.port || PUBLIC_SHARE_BLOCKED_PORTS.has(row.port))) {
     return { ok: false as const, status: 403, error: 'This service cannot be shared publicly' };
   }
   if (row.resourceType === 'file' && !row.filePath) {
     return { ok: false as const, status: 400, error: 'Shared file path is missing' };
   }
-  return { ok: true as const, row };
+  return { ok: true as const, row: resolvedRow };
 }

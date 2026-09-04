@@ -11,10 +11,7 @@ import type {
   ProviderAuthMethod,
 } from '../core/runtime/client';
 import { getClient } from '../core/runtime/client';
-import {
-  deriveSubdomainOpts,
-  getActiveOpenCodeUrl,
-} from '../browser/stores/server-store';
+import { deriveSubdomainOpts, getActiveOpenCodeUrl } from '../browser/stores/server-store';
 import type { SubdomainUrlOptions } from '../core/session/url';
 import {
   buildStaticFileHealthPreviewUrl,
@@ -52,9 +49,7 @@ export function readRuntimeTextFile(path: string): Promise<string | FileContent>
   return getClient().file.read({ path }).then(unwrapRuntimeResult);
 }
 
-export function getRuntimeProviderAuthMethods(): Promise<
-  Record<string, ProviderAuthMethod[]>
-> {
+export function getRuntimeProviderAuthMethods(): Promise<Record<string, ProviderAuthMethod[]>> {
   return getClient().provider.auth().then(unwrapRuntimeResult);
 }
 
@@ -70,21 +65,22 @@ export function completeRuntimeProviderOAuth(
   method?: number,
   code?: string,
 ): Promise<boolean> {
-  return getClient().provider.oauth.callback({
-    providerID,
-    method,
-    ...(code ? { code } : {}),
-  }).then(unwrapRuntimeResult);
+  return getClient()
+    .provider.oauth.callback({
+      providerID,
+      method,
+      ...(code ? { code } : {}),
+    })
+    .then(unwrapRuntimeResult);
 }
 
-export function setRuntimeProviderApiKey(
-  providerID: string,
-  key: string,
-): Promise<boolean> {
-  return getClient().auth.set({
-    providerID,
-    auth: { type: 'api', key },
-  }).then(unwrapRuntimeResult);
+export function setRuntimeProviderApiKey(providerID: string, key: string): Promise<boolean> {
+  return getClient()
+    .auth.set({
+      providerID,
+      auth: { type: 'api', key },
+    })
+    .then(unwrapRuntimeResult);
 }
 
 export function getRuntimeConfig(): Promise<Config> {
@@ -92,7 +88,9 @@ export function getRuntimeConfig(): Promise<Config> {
 }
 
 export function updateRuntimeConfig(config: Config): Promise<Config> {
-  return getClient().global.config.update({ config } as never).then(unwrapRuntimeResult);
+  return getClient()
+    .global.config.update({ config } as never)
+    .then(unwrapRuntimeResult);
 }
 
 export async function refreshRuntimeConfiguration(): Promise<void> {
@@ -147,7 +145,7 @@ export function createActiveSandboxProxyContext(): ActiveSandboxProxyContext {
  * shape does not.
  */
 export function useActiveSandboxProxyContext(): ActiveSandboxProxyContext {
-  const version = useCurrentRuntime((state) => state.version);
+  const version = useCurrentRuntime((state) => state.workspaceVersion);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` IS the dep;
   // the factory reads module state that only changes when version bumps.
   return useMemo(() => createActiveSandboxProxyContext(), [version]);

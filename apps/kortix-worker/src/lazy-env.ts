@@ -8,20 +8,33 @@
  * flows through the ordinary KortixExecutionEnv against
  * `{edge}/kortix/env-rpc` — the control plane is not in the data path.
  *
- * The daemon's env-rpc route authenticates X-Kortix-User-Context signed with
- * the box's KORTIX_TOKEN. The worker holds the SAME session credential (the
- * environment boots with it, by design), so it mints that header itself.
+ * The daemon's env-rpc route authenticates X-Kortix-User-Context with a
+ * purpose-bound RPC secret returned by ensure. Worker and environment PATs
+ * remain separate control-plane principals.
  *
  * Same contract as the inner env: operations never throw — a failed ensure is
  * a Result the tool renders, not a crash.
  */
 import { createHmac } from 'node:crypto';
 import { KortixExecutionEnv } from './kortix-env.ts';
+import { isEnvironmentUnreachable } from './env-reattach.ts';
 
 type Ok<T> = { ok: true; value: T };
 type Err<E> = { ok: false; error: E };
 type Result<T, E> = Ok<T> | Err<E>;
 const err = <E,>(error: E): Err<E> => ({ ok: false, error });
+
+/**
+ * The environment went away mid-operation and has been re-attached, but the
+ * operation was NOT repeated because repeating it could act twice.
+ */
+class EnvironmentRecoveredError extends Error {
+  code = 'environment_recovered';
+  constructor(message: string) {
+    super(message);
+    this.name = 'EnvironmentRecoveredError';
+  }
+}
 
 class EnvUnavailableError extends Error {
   code = 'environment_unavailable';
@@ -72,6 +85,7 @@ interface EnsureResponse {
   external_id?: string | null;
   preview_url?: string | null;
   preview_token?: string | null;
+  rpc_secret?: string | null;
   error?: string;
 }
 
@@ -118,6 +132,30 @@ export class LazyKortixEnv {
     return body;
   }
 
+  /**
+   * Start provisioning now, without waiting for it.
+   *
+   * Called when a PROMPT arrives, not when the session is created and not when
+   * the first tool runs. Measured on pi.kortix.com: first token 4.25s, first
+   * `bash` on that same cold session 37.5s — the split moved the environment's
+   * cold start out of session setup and into the middle of the first answer.
+   * A prompt means a turn is happening, so provisioning overlaps the model's
+   * own thinking instead of queueing behind it, while a session nobody ever
+   * prompts still provisions nothing.
+   *
+   * Fire-and-forget by contract: a failed prewarm is swallowed here, because
+   * the tool call that actually needs the environment will attach again and
+   * report the failure as its own Result. Surfacing it twice would turn one
+   * provider hiccup into an error the user sees before they asked for
+   * anything.
+   */
+  prewarm(): void {
+    if (this.inner || this.attaching) return;
+    void this.attach().catch(() => {
+      // Deliberately ignored — see above.
+    });
+  }
+
   private async attach(): Promise<KortixExecutionEnv> {
     if (this.inner) return this.inner;
     if (this.attaching) return this.attaching;
@@ -141,9 +179,15 @@ export class LazyKortixEnv {
       if (!ensured?.preview_url) {
         throw new EnvUnavailableError(`could not attach environment: ${lastError}`);
       }
+      if (!ensured.rpc_secret) {
+        throw new EnvUnavailableError('environment ensure returned no RPC secret');
+      }
       const edge = ensured.preview_url.replace(/\/+$/, '');
       const headers: Record<string, string> = {
-        'x-kortix-user-context': mintUserContext(this.opts.token, ensured.external_id ?? 'env'),
+        'x-kortix-user-context': mintUserContext(
+          ensured.rpc_secret,
+          ensured.external_id ?? 'env',
+        ),
         ...(ensured.preview_token ? { 'x-daytona-preview-token': ensured.preview_token } : {}),
       };
       // Wait for the daemon (repo materialization included) before first use.
@@ -172,7 +216,9 @@ export class LazyKortixEnv {
         baseUrl: `${edge}/kortix/env-rpc`,
         cwd: this.cwd,
         headers,
-        transport: 'keepalive',
+        // Negotiated, not pinned: prefer the socket, fall back on an
+        // image-baked daemon that predates `/rpc-ws`.
+        transport: 'auto',
       });
       return this.inner;
     })();
@@ -184,51 +230,120 @@ export class LazyKortixEnv {
     }
   }
 
-  /** Delegate an operation, converting attach failures into Results. */
-  private async op<T>(run: (env: KortixExecutionEnv) => Promise<Result<T, unknown>>): Promise<Result<T, unknown>> {
+  /**
+   * Forget the environment we are attached to.
+   *
+   * Nothing else ever cleared `inner`, which made the client minted on the
+   * first tool call the client used for the worker's whole life — pinned to one
+   * provider-edge URL and one external_id. That was survivable while nothing
+   * stopped an environment out from under a live worker; the sweeps on this
+   * branch now do exactly that (idle-stop at 24h, worker-stopped, and a removed
+   * box reprovisioned under a NEW id).
+   */
+  private discardEnvironment(): void {
+    this.inner = null;
+    this.attaching = null;
+    this.externalId = null;
+  }
+
+  /**
+   * Delegate an operation, converting attach failures into Results.
+   *
+   * P2.5: *"A live worker with a reaped environment must be a DEFINED state,
+   * not a DISCOVERED one — including what the next tool call does when it finds
+   * one."* This is that definition. When an operation comes back saying nothing
+   * on the far side answered, the environment is discarded and re-attached
+   * ONCE, and the operation is retried against the new one. `ensure` resumes a
+   * stopped box or rebuilds a removed one, so the recovery is the control
+   * plane's ordinary path — the worker's only job is to ask again.
+   *
+   * Exactly one retry. `attach()` already retries to its own deadline, so
+   * looping here would multiply that deadline by every tool call in the turn
+   * and tell the model nothing it did not already know.
+   */
+  private async op<T>(
+    run: (env: KortixExecutionEnv) => Promise<Result<T, unknown>>,
+    /**
+     * Does this operation CHANGE the environment? Reads may be replayed for
+     * free; nothing else may be replayed at all. See the note in `op` below.
+     */
+    mutating: boolean,
+  ): Promise<Result<T, unknown>> {
     try {
-      const env = await this.attach();
-      return await run(env);
+      const first = await run(await this.attach());
+      if (first.ok || !isEnvironmentUnreachable(first.error)) return first;
+
+      // Nothing answered. The box may have been stopped, deleted, or rebuilt
+      // under a new id since we attached — all three are states the control
+      // plane creates deliberately and can serve us out of. Re-attaching is
+      // what unwedges the session, and it happens either way.
+      this.discardEnvironment();
+      await this.attach();
+
+      if (!mutating) return await run(await this.attach());
+
+      // A mutating operation is NEVER replayed.
+      //
+      // The inner RPC layer also restricts its socket-error retry to read-only
+      // operations. Keep both boundaries fail-closed: `rpc timeout` and
+      // `fetch failed` are exactly what a connection dropping AFTER the daemon
+      // started the command looks like — it ran, we just never heard the
+      // answer. Replaying `echo hi` is free; replaying `rm -rf`, `git push` or
+      // a migration is not.
+      //
+      // So the model is told the truth instead: the environment is healthy
+      // again, and this command's outcome is unknown. That is a different
+      // situation from "it failed", and it calls for a different next move.
+      return err(
+        new EnvironmentRecoveredError(
+          'The environment became unreachable during this operation and has ' +
+            'been recovered; it is ready to use now. This operation was NOT ' +
+            'retried automatically because it may already have run, and ' +
+            'repeating it could act twice. Retry it yourself if it is safe to ' +
+            'repeat (a read, a list, an idempotent command); otherwise check ' +
+            'whether it took effect before deciding.',
+        ),
+      );
     } catch (e) {
       return err(e instanceof Error ? e : new EnvUnavailableError(String(e)));
     }
   }
 
   // ---- FileSystem (same surface as KortixExecutionEnv) --------------------
-  absolutePath(path: string) { return this.op((env) => env.absolutePath(path)); }
-  joinPath(parts: string[]) { return this.op((env) => env.joinPath(parts)); }
-  readTextFile(path: string) { return this.op((env) => env.readTextFile(path)); }
+  absolutePath(path: string) { return this.op((env) => env.absolutePath(path), false); }
+  joinPath(parts: string[]) { return this.op((env) => env.joinPath(parts), false); }
+  readTextFile(path: string) { return this.op((env) => env.readTextFile(path), false); }
   readTextLines(path: string, options?: { maxLines?: number }) {
-    return this.op((env) => env.readTextLines(path, options));
+    return this.op((env) => env.readTextLines(path, options), false);
   }
-  readBinaryFile(path: string) { return this.op((env) => env.readBinaryFile(path)); }
+  readBinaryFile(path: string) { return this.op((env) => env.readBinaryFile(path), false); }
   writeFile(path: string, content: string | Uint8Array) {
-    return this.op((env) => env.writeFile(path, content));
+    return this.op((env) => env.writeFile(path, content), true);
   }
   appendFile(path: string, content: string | Uint8Array) {
-    return this.op((env) => env.appendFile(path, content));
+    return this.op((env) => env.appendFile(path, content), true);
   }
   renameFile(sourcePath: string, destinationPath: string) {
-    return this.op((env) => env.renameFile(sourcePath, destinationPath));
+    return this.op((env) => env.renameFile(sourcePath, destinationPath), true);
   }
-  fileInfo(path: string) { return this.op((env) => env.fileInfo(path)); }
-  listDir(path: string) { return this.op((env) => env.listDir(path)); }
-  canonicalPath(path: string) { return this.op((env) => env.canonicalPath(path)); }
-  exists(path: string) { return this.op((env) => env.exists(path)); }
+  fileInfo(path: string) { return this.op((env) => env.fileInfo(path), false); }
+  listDir(path: string) { return this.op((env) => env.listDir(path), false); }
+  canonicalPath(path: string) { return this.op((env) => env.canonicalPath(path), false); }
+  exists(path: string) { return this.op((env) => env.exists(path), false); }
   createDir(path: string, options?: { recursive?: boolean }) {
-    return this.op((env) => env.createDir(path, options));
+    return this.op((env) => env.createDir(path, options), true);
   }
   remove(path: string, options?: { recursive?: boolean; force?: boolean }) {
-    return this.op((env) => env.remove(path, options));
+    return this.op((env) => env.remove(path, options), true);
   }
-  createTempDir(prefix?: string) { return this.op((env) => env.createTempDir(prefix)); }
+  createTempDir(prefix?: string) { return this.op((env) => env.createTempDir(prefix), true); }
   createTempFile(options?: { prefix?: string; suffix?: string }) {
-    return this.op((env) => env.createTempFile(options));
+    return this.op((env) => env.createTempFile(options), true);
   }
 
   // ---- Shell --------------------------------------------------------------
   exec(command: string, options?: unknown) {
-    return this.op((env) => env.exec(command, options));
+    return this.op((env) => env.exec(command, options), true);
   }
 
   async cleanup(): Promise<void> {

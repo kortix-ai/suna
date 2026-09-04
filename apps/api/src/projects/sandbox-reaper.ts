@@ -39,6 +39,15 @@ export {
 
 export { type OrphanReapResult, reapOrphanProviderBoxes } from './reaping/orphan-boxes';
 
+export {
+  type EnvironmentReapDecision,
+  type EnvironmentReapResult,
+  ENVIRONMENT_DELETE_HORIZON_MS,
+  ENVIRONMENT_IDLE_HORIZON_MS,
+  decideEnvironmentReaping,
+  reapOrphanEnvironments,
+} from './reaping/orphan-environments';
+
 export { reconcileStuckActiveSessions } from './reaping/stuck-sessions';
 
 export {

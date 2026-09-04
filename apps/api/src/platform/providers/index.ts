@@ -50,7 +50,7 @@ export class SandboxTemplateNotFoundError extends Error {
  * verbatim as `sandbox_compute_sessions.workload_type`, so the union and that
  * column's CHECK constraint must stay in lockstep.
  */
-export type SandboxWorkloadType = 'session' | 'app' | 'monitor';
+export type SandboxWorkloadType = 'session' | 'app' | 'monitor' | 'environment';
 
 export interface CreateSandboxOpts {
   accountId: string;
@@ -269,6 +269,25 @@ export interface SandboxProvider {
    * through their native process API. The operation must be idempotent.
    */
   ensureAppRuntimeStarted(externalId: string): Promise<void>;
+  /**
+   * Ensure the SESSION runtime process is running in an already-running box.
+   *
+   * The same problem `ensureAppRuntimeStarted` solves for appd, for the other
+   * workload. A provider that replaces the image ENTRYPOINT resumes the box
+   * with NOTHING running inside it, so a stopped session never comes back:
+   * measured on pi.kortix.com 2026-08-29, a stopped pi-worker session failed
+   * every resume with `runtime_unreachable_timeout` while never-stopped boxes
+   * on the SAME snapshot stayed ready.
+   *
+   * `shared.ts` calls this at the 30s unreachable stall — the point its own
+   * comment says "needs an explicit restart" — BEFORE cycling the box, because
+   * cycling cannot help when the box is fine and only the process is missing.
+   *
+   * OPTIONAL: a provider that re-runs its entrypoint on resume (Platinum
+   * cold-boots the template) needs no implementation. Must be idempotent and
+   * safe to call on a healthy box.
+   */
+  ensureSessionRuntimeStarted?(externalId: string): Promise<void>;
   /**
    * FIX-A: boot a sandbox from an EXACT provider template id (not a name). The
    * boot path uses this to honor a project's activated

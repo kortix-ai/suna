@@ -97,6 +97,41 @@ trap 'code=$?; finish "$code"' EXIT
 printf 'checkout\n' > "$PHASE"
 test -d "$ROOT/.git"
 git -C "$ROOT" remote set-url origin ${shellQuote(`https://github.com/${input.repository}.git`)}
+
+# Authenticate the fetch when we were given a token.
+#
+# GitHub answers this sandbox's ref advertisement anonymously and then REFUSES
+# the fetch that follows. Measured 2026-09-02 from the stable branch preview sandbox:
+# GET /info/refs?service=git-upload-pack returned 200 ten times out of ten while
+# POST /git-upload-pack returned 401 with www-authenticate: Basic realm="GitHub",
+# and \`git ls-remote\` failed 10 times out of 10. The repository is PUBLIC —
+# GitHub throttles unauthenticated fetches from that datacenter range, and it
+# does it on the expensive request only, which is why a plain curl of the GET
+# looks perfectly healthy. The checkout phase exited 128 and every deploy went
+# red while the stable branch preview served an older commit.
+#
+# The helper is written as its own FILE rather than inlined into
+# \`git config credential.helper "!f() { ... }"\`. That inline form is a quoting
+# trap: the nested double quotes collapse, the shell expands the \$(cat ...) at
+# config time, and git stores the literal token in .git/config — verified by
+# doing exactly that. A file keeps the token out of .git/config, out of this
+# script (which lands in the sandbox mode 0755), and out of the remote URL.
+#
+# No token => anonymous, exactly as before. Most sandboxes are not throttled and
+# a preview must not start REQUIRING a credential it never needed.
+if [ -s "$STATE/.checkout-token" ]; then
+  cat > "$STATE/.checkout-credential-helper" <<'KORTIX_CRED_HELPER'
+#!/bin/sh
+# Only the "get" operation returns anything; store/erase are no-ops.
+[ "$1" = get ] || exit 0
+echo username=x-access-token
+echo "password=$(cat /workspace/kortix-preview/.checkout-token)"
+KORTIX_CRED_HELPER
+  chmod 0700 "$STATE/.checkout-credential-helper"
+  git -C "$ROOT" config credential.helper "$STATE/.checkout-credential-helper"
+else
+  git -C "$ROOT" config --unset-all credential.helper 2>/dev/null || true
+fi
 git -C "$ROOT" fetch --depth=1 origin ${shellQuote(input.ref)}
 git -C "$ROOT" checkout --detach --force FETCH_HEAD
 git -C "$ROOT" clean -ffd
@@ -128,7 +163,58 @@ PREVIEW_SECRETS_FILE="$SECRETS" \
 bun tests/bin/preview-stack.ts
 
 printf 'stack\n' > "$PHASE"
+
+# Reclaim BEFORE pulling, not only after.
+#
+# There is a prune at the end of this script, and it is the right steady-state
+# one: it runs once the new stack is proven healthy, when the running
+# containers pin exactly the images worth keeping. But it is gated on that
+# health check, and a full disk is precisely the condition under which the
+# stack never becomes healthy — supabase-db crash-loops on \`could not write
+# lock file "postmaster.pid": No space left on device\`, preview-edge never
+# starts, and the deploy dies before reaching the cleanup that would have
+# fixed it. The cleanup sat behind the failure it was meant to prevent.
+#
+# So: a second prune, ahead of a ~3 GB pull, gated on the disk actually being
+# tight. \`image prune -af\` spares any image a container references — running,
+# created or exited — so the stack still standing here keeps everything it
+# needs, and this only reclaims what previous deploys superseded.
+used="$(df --output=pcent / | tail -1 | tr -dc '0-9')"
+echo "disk before pull: $used%" >&2
+if [ "\${used:-0}" -ge 80 ]; then
+  docker image prune -af >/dev/null 2>&1 || true
+  docker builder prune -af >/dev/null 2>&1 || true
+  df -h / | tail -1 >&2
+fi
 ${compose} pull --policy always frontend kortix-api llm-gateway preview-edge mailpit
+
+# Restart anything RUNNING-BUT-UNHEALTHY before waiting on it.
+#
+# \`compose up -d\` recreates a container for a new image, env or port (see the
+# Caddyfile note below) and for NOTHING else — so a long-running container that
+# has gone unhealthy is left exactly as it is, forever. Every dependent then
+# fails \`depends_on: service_healthy\`, \`--wait\` times out, and the deploy dies
+# without ever touching the thing that is actually broken. The retry below does
+# not help either: attempt 2 runs the same comparison and reaches the same
+# no-op.
+#
+# Cost of that gap, measured 2026-08-29 on the pi-worker environment:
+# supabase-kong sat \`Up 27 hours (unhealthy)\` while still routing traffic, so
+# nothing looked wrong from outside. The next deploy — an unrelated one-line
+# Mailpit change — could not start a single dependent, and FOUR consecutive
+# deploys across two different commits died on it. The whole origin was down
+# until the container was restarted by hand.
+#
+# A restart, never a recreate: the container keeps its volumes and its config,
+# so this is safe for stateful services too (postgres included) and cannot lose
+# data. Best-effort — a box with nothing unhealthy prints nothing and moves on.
+unhealthy="$(docker ps --filter health=unhealthy --format '{{.Names}}' | grep "^kortix-${instance}-" || true)"
+if [ -n "$unhealthy" ]; then
+  printf 'restarting unhealthy containers before wait: %s\n' "$(printf '%s' "$unhealthy" | tr '\n' ' ')"
+  printf '%s\n' "$unhealthy" | xargs -r docker restart
+  sleep 5
+fi
+
 for stack_attempt in 1 2; do
   if ${compose} up -d --wait --wait-timeout 300; then
     break
@@ -189,24 +275,45 @@ for _ in $(seq 1 60); do
 done
 curl -fsS --max-time 10 "$HEALTH" | jq -e --arg sha ${shellQuote(input.sha)} '.status == "ok" and .environment == "preview" and .commit == $sha' >/dev/null
 
+# A branch environment is REUSED, so nothing ever reclaims the images it
+# replaces: every deploy pulls ~3 GB of new api/frontend/gateway layers and the
+# ones they supersede stay on a 50 GB disk forever. It reached 100% and the
+# stack stopped coming up; 22 GB had to be pruned by hand. Prune here, AFTER the
+# new stack is proven healthy — the running containers hold references to their
+# own images, so this can only take the ones nothing runs from any more.
+#
+# NO age filter. \`until=24h\` was the first attempt and it reclaimed 0 B: a
+# branch environment redeploys several times a day, so every superseded image
+# is younger than a day. Without the filter the same box went 90% -> 46% (20.35
+# GB) with all 12 services still running. Never fatal: a healthy deploy must not
+# fail because a prune did.
+df -h / | tail -1 >&2
+docker container prune -f >/dev/null 2>&1 || true
+docker image prune -af >/dev/null 2>&1 || true
+docker builder prune -af >/dev/null 2>&1 || true
+df -h / | tail -1 >&2
+
 ${
-    input.runTests === false
-      ? `printf 'tests-skipped\\n' > "$PHASE"
+  input.runTests === false
+    ? `printf 'tests-skipped\\n' > "$PHASE"
 printf 'suite skipped — this is a branch environment, not a gate. Run it with:\\n' >&2
 printf '  cd %s && set -a && . %s && set +a && pnpm test -- --target-full\\n' "$ROOT" ${shellQuote(`${instanceDir}/.env.test`)} >&2`
-      : `printf 'tests\\n' > "$PHASE"
+    : `printf 'tests\\n' > "$PHASE"
 set -a
 source ${shellQuote(`${instanceDir}/.env.test`)}
 set +a
 pnpm test -- --target-full`
-  }
+}
 
 printf 'ready\n' > "$PHASE"
 `;
 }
 
 export class PreviewInfrastructureError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'PreviewInfrastructureError';
   }
@@ -224,7 +331,11 @@ export class PreviewInfrastructureError extends Error {
  * session and its Postgres volume across deploys.
  */
 export function branchEnvSandboxName(branch: string): string {
-  const slug = branch.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = branch
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
   if (!slug) throw new Error(`invalid branch for a persistent environment: ${branch}`);
   return `kortix-env-${slug}`;
 }
@@ -370,7 +481,9 @@ export async function runSandboxPreview(
     return await runners.platinum(input);
   } catch (error) {
     if (!(error instanceof PreviewInfrastructureError)) throw error;
-    console.warn(`[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`);
+    console.warn(
+      `[sandbox-preview] Platinum infrastructure failed; fallback=daytona error=${error.message}`,
+    );
     return runners.daytona(input);
   }
 }

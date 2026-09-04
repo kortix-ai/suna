@@ -119,6 +119,22 @@ describe('credential', () => {
     expect(saved).toHaveLength(0);
   });
 
+  test('an environment token cannot overwrite the worker runtime projection', async () => {
+    const response = await post(
+      validBody(),
+      {},
+      {
+        authType: 'pat',
+        apiKeyType: undefined,
+        sessionId: SESSION_ID,
+        sandboxId: '77777777-7777-4777-8777-777777777777',
+        sessionRuntimeKind: 'environment',
+      },
+    );
+    expect(response.status).toBe(403);
+    expect(saved).toHaveLength(0);
+  });
+
   test('an anonymous call is refused', async () => {
     const response = await post(
       validBody(),
@@ -138,9 +154,7 @@ describe('credential', () => {
   });
 
   test('the stored session id comes from the DB row, never from the body', async () => {
-    await post(
-      JSON.stringify({ session_id: SESSION_ID, projection: PROJECTION }),
-    );
+    await post(JSON.stringify({ session_id: SESSION_ID, projection: PROJECTION }));
     expect(saved[0]).toMatchObject({
       sessionId: SESSION_ID,
       projectId: PROJECT_ID,
@@ -205,9 +219,7 @@ describe('capture clock and etag', () => {
   });
 
   test('a missing etag is synthesized from epoch+seq, never left blank', async () => {
-    await post(
-      JSON.stringify({ session_id: SESSION_ID, projection: PROJECTION }),
-    );
+    await post(JSON.stringify({ session_id: SESSION_ID, projection: PROJECTION }));
     expect(saved[0]!.projectionEtag).toBe('push:bmtaokkdb0piayh:41:2026-08-26T22:43:49.919Z');
   });
 

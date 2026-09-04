@@ -11,6 +11,8 @@ import { applyScaffold } from '../scaffold.ts';
 import { prompt, confirm } from '../prompts.ts';
 import { selectMultiFromList } from '../tui-select.ts';
 import {
+  DEFAULT_CONFIG_DIR,
+  PI_CONFIG_DIR,
   wireCodingAgents,
   SUPPORTED_AGENTS,
   DEFAULT_PRIMARY,
@@ -365,10 +367,14 @@ export async function runInit(argv: string[]): Promise<number> {
 
   // ── Wire up the chosen coding agents ─────────────────────────────────
   // Link the canonical skill source into each local tool's discovery path.
+  // The links must follow the TEMPLATE'S config dir. A `pi` project keeps its
+  // config in `.kortix/pi`, so wiring to the OpenCode layout left `.opencode`
+  // and `.agents` dangling and pointed AGENTS.md at a missing skill file.
   const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,
     overwrite: flags.overwrite || configureExisting,
+    configDir: template === 'pi' ? PI_CONFIG_DIR : DEFAULT_CONFIG_DIR,
   });
   if (configureExisting) excludeLocalAgentWiring(cwd);
 

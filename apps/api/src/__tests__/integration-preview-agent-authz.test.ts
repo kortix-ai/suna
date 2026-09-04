@@ -50,7 +50,7 @@ mock.module('../shared/preview-ownership', () => ({
 }));
 mock.module('../projects/lib/sandbox-env-sync', () => ({
   ...realEnvSync,
-  syncSandboxEnvForPrompt: async () => {
+  syncSessionRuntimesEnvForPrompt: async () => {
     envSyncCalls += 1;
   },
 }));

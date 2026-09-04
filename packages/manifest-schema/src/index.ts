@@ -28,6 +28,8 @@ import {
   type ConnectorProvider,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
+  KNOWN_SCHEMA_VERSION,
+  manifestUsesAgentMap,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   DEPRECATED_KORTIX_CLI_ALIASES,
@@ -99,6 +101,10 @@ export {
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
+  KNOWN_SCHEMA_VERSION,
+  manifestDefaultConfigDir,
+  manifestDefaultRuntime,
+  manifestUsesAgentMap,
   LEGACY_SANDBOX_KEYS,
   LEGACY_TOLERATED_KORTIX_CLI_ACTIONS,
   DEPRECATED_KORTIX_CLI_ALIASES,
@@ -163,7 +169,7 @@ export {
  * sets. See docs/specs/2026-07-05-agent-first-config-unification.md
  * §2.1/§2.2/§2.7 (decision 2026-07-05: "one home per concern").
  */
-const KNOWN_SCHEMA_VERSION = 2;
+
 
 /**
  * True when `v` is a value the runtime's `coerceBool` recognizes for an
@@ -245,8 +251,8 @@ export function validateManifest(
 
   const version = validateRoot(parsed, format, issues);
 
-  if (version === 2) {
-    validateManifestBodyV2(parsed, format, issues);
+  if (version !== undefined && manifestUsesAgentMap(version)) {
+    validateManifestBodyV2(parsed, format, issues, version);
   } else {
     validateManifestBodyV1(parsed, format, issues);
   }
@@ -291,6 +297,9 @@ function validateManifestBodyV2(
   parsed: Record<string, unknown>,
   format: ManifestFormat,
   issues: ManifestIssue[],
+  // The manifest's OWN version, not a literal 2 — v3 shares this body, and a
+  // hardcoded 2 made a v3 manifest report "not supported in kortix_version 2".
+  version: number,
 ): void {
   validateProject(parsed.project, 'project', issues);
   validateEnv(parsed.env, 'env', issues);
@@ -298,7 +307,7 @@ function validateManifestBodyV2(
   validateSandbox(parsed.sandbox, 'sandbox', issues, format);
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues, format);
-  validateConnectors(parsed.connectors, 'connectors', issues, 2, format);
+  validateConnectors(parsed.connectors, 'connectors', issues, version, format);
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
@@ -409,10 +418,10 @@ export function validateGrantList(
         issues.push({
           path: `${where}[${k}]`,
           message:
-            version === 2
-              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version 2 — remove it from the manifest.`
+            manifestUsesAgentMap(version)
+              ? `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement) and is not tolerated in kortix_version ${version} — remove it from the manifest.`
               : `"${s}" is a deprecated, no-op kortix_cli action (removed from enforcement — granting or omitting it has no effect). Remove it from the manifest.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
         });
       } else {
         issues.push({
@@ -512,11 +521,11 @@ function validateRoot(
   // v2's nested permission trees, per-value secret scoping, and approval lists
   // are genuinely awkward in TOML (spec §2.7) — TOML sunsets at v1. Point at
   // the migration path rather than silently misparsing.
-  if (version === 2 && format === 'toml') {
+  if (manifestUsesAgentMap(version) && format === 'toml') {
     issues.push({
       path: 'kortix_version',
       message:
-        'kortix_version 2 manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run `kortix migrate`.',
+        `kortix_version ${version} manifests must be kortix.yaml (TOML only supports kortix_version 1). Rename the file to kortix.yaml or run \`kortix migrate\`.`,
       severity: 'error',
     });
     return version;
@@ -1215,7 +1224,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
   });
 }
 
-function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: 1 | 2 = 1, format: ManifestFormat = 'toml'): void {
+function validateConnectors(node: unknown, path: string, issues: ManifestIssue[], version: number = 1, format: ManifestFormat = 'toml'): void {
   if (node == null) return;
   if (!Array.isArray(node)) {
     issues.push({
@@ -1363,10 +1372,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         issues.push({
           path: `${where}.credential`,
           message:
-            version === 2
-              ? 'credential "per_user" is not supported in kortix_version 2 — connectors are always "shared"; remove this key.'
+            manifestUsesAgentMap(version)
+              ? `credential "per_user" is not supported in kortix_version ${version} — connectors are always "shared"; remove this key.`
               : 'credential "per_user" was removed — it is tolerated here for now and resolves to "shared", but should be removed from the manifest.',
-          severity: version === 2 ? 'error' : 'warning',
+          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
         });
       } else if (cm !== 'shared') {
         // The runtime (apps/api's connectors.ts `parseConnectorEntry`)
@@ -1383,7 +1392,7 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         issues.push({
           path: `${where}.credential`,
           message: `credential should be "shared" (got "${cm || 'unset'}"); the runtime rejects anything else.`,
-          severity: version === 2 ? 'error' : 'warning',
+          severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
         });
       }
     }
@@ -1414,10 +1423,10 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
       issues.push({
         path: `${where}.agent_scope`,
         message:
-          version === 2
-            ? 'agent_scope is not supported in kortix_version 2 — connector access is set on the agent (`connectors` grant); remove this key.'
+          manifestUsesAgentMap(version)
+            ? `agent_scope is not supported in kortix_version ${version} — connector access is set on the agent (\`connectors\` grant); remove this key.`
             : 'agent_scope is no longer used — connector access is set on the agent (`connectors` grant), not on the connector. This key is ignored at runtime; remove it from the manifest.',
-        severity: version === 2 ? 'error' : 'warning',
+        severity: manifestUsesAgentMap(version) ? 'error' : 'warning',
       });
     }
     if ((provider === 'pipedream' || provider === 'composio') && entry.auth !== undefined) {
@@ -1687,6 +1696,7 @@ export {
   KORTIX_SCHEMA_BASE_URL,
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
+  KORTIX_V3_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,

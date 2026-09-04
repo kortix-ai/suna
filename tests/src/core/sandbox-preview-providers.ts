@@ -55,6 +55,16 @@ export interface SandboxPreviewDeploymentInput {
   root: string;
   lockfileHash: string;
   secrets: PreviewRuntimeSecrets;
+  /**
+   * A GitHub token used ONLY to fetch the ref in the sandbox.
+   *
+   * Deliberately not a `PreviewRuntimeSecrets` entry: that allowlist is the set
+   * of secrets that end up in the stack's .env, and this one must never reach a
+   * running container. It is written to its own 0600 file which the bootstrap's
+   * credential helper reads. Optional — without it the fetch is anonymous,
+   * which is all most sandboxes ever needed.
+   */
+  checkoutToken?: string;
   platinum: { apiUrl: string; apiKey: string };
   daytona: { apiUrl: string; apiKey: string; target: string };
   /**
@@ -269,6 +279,13 @@ export async function deployPlatinumPreview(
       `${JSON.stringify(input.secrets)}\n`,
       '0600',
     );
+    if (input.checkoutToken) {
+      await api.write(
+        `${sandboxId}:/workspace/kortix-preview/.checkout-token`,
+        input.checkoutToken,
+        '0600',
+      );
+    }
     await api.write(
       `${sandboxId}:/workspace/run-kortix-preview.sh`,
       buildPreviewBootstrapScript({ ...input, origin }),
@@ -419,6 +436,17 @@ export async function deployDaytonaPreview(
       60,
     );
     if (secretsUpload.exitCode !== 0) throw new Error(`Daytona secret upload failed: ${secretsUpload.result}`);
+    if (input.checkoutToken) {
+      const tokenUpload = await executeDaytona(
+        api,
+        sandbox,
+        encodedFileCommand('/workspace/kortix-preview/.checkout-token', input.checkoutToken, '0600'),
+        60,
+      );
+      if (tokenUpload.exitCode !== 0) {
+        throw new Error(`Daytona checkout-token upload failed: ${tokenUpload.result}`);
+      }
+    }
     const scriptUpload = await executeDaytona(
       api,
       sandbox,

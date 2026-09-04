@@ -1,23 +1,27 @@
-import { Context, Next } from 'hono';
+import type { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { validateSecretKey } from '../repositories/api-keys';
+import { buildActor } from '../iam/actor';
+import { syncSsoMembership } from '../iam/sso-sync';
+import { setContextField } from '../lib/request-context';
+import { setSentryUser } from '../lib/sentry';
+import {
+  isOAuthAccessToken,
+  oauthScopeAllowsPath,
+  validateOAuthAccessToken,
+} from '../oauth/access-token';
 import { validateAccountToken } from '../repositories/account-tokens';
+import { validateSecretKey } from '../repositories/api-keys';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
-import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/crypto';
-import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
-import { getSupabase } from '../shared/supabase';
+import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { isAccountToken, isKortixToken, isServiceAccountToken } from '../shared/crypto';
 import { decodeSupabaseJwtPayload, verifySupabaseJwt } from '../shared/jwt-verify';
 // From its own module, not '../shared/jwt-verify': five test files replace that
 // module wholesale, and a mock cannot be allowed to change how a real failure is
 // classified.
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
-import { setSentryUser } from '../lib/sentry';
-import { setContextField } from '../lib/request-context';
-import { syncSsoMembership } from '../iam/sso-sync';
-import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
-import { isOAuthAccessToken, oauthScopeAllowsPath, validateOAuthAccessToken } from '../oauth/access-token';
+import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/preview-ownership';
+import { getSupabase } from '../shared/supabase';
 import { applyImpersonation } from './impersonation';
-import { buildActor } from '../iam/actor';
 
 const PREVIEW_SESSION_COOKIE = '__preview_session';
 
@@ -172,7 +176,12 @@ async function applyOAuthAccessTokenPrincipal(c: Context, token: string): Promis
   }
   const scopes = result.scopes ?? [];
   if (!oauthScopeAllowsPath(scopes, c.req.path)) {
-    auditLoginFail({ c, reason: 'insufficient_scope', authType: 'oauth', accountId: result.accountId ?? null });
+    auditLoginFail({
+      c,
+      reason: 'insufficient_scope',
+      authType: 'oauth',
+      accountId: result.accountId ?? null,
+    });
     throw new HTTPException(403, {
       message: `insufficient_scope: this OAuth token was not granted the "kortix" scope, so it cannot reach ${c.req.path}`,
     });
@@ -279,10 +288,8 @@ async function resolveSupabaseAuth(c: Context, next: Next) {
     if (result.projectId) c.set('tokenProjectId', result.projectId);
     if (result.sessionId) {
       c.set('sessionId', result.sessionId);
-      // A session-scoped token is also the identity of its sandbox. Keep the
-      // route context explicit so daemon-only endpoints can accept the unified
-      // credential without treating an ordinary project PAT as a sandbox.
-      c.set('sandboxId', result.sessionId);
+      c.set('sandboxId', result.runtimeId ?? result.sessionId);
+      c.set('sessionRuntimeKind', result.runtimeKind ?? 'worker');
     }
     if (result.tokenId) c.set('iamTokenId', result.tokenId);
     // Per-agent authorization grant (non-null only for agent-session tokens).
@@ -605,10 +612,8 @@ async function resolveCombinedAuth(c: Context, next: Next) {
     c.set('iamTokenId', patResult.tokenId);
     if (patResult.sessionId) {
       c.set('sessionId', patResult.sessionId);
-      // A session-scoped token is also the identity of its sandbox — mirror
-      // supabaseAuth's PAT branch, so isSessionSandboxCredential() answers the
-      // same on combinedAuth-mounted routes as on supabaseAuth-mounted ones.
-      c.set('sandboxId', patResult.sessionId);
+      c.set('sandboxId', patResult.runtimeId ?? patResult.sessionId);
+      c.set('sessionRuntimeKind', patResult.runtimeKind ?? 'worker');
     }
     c.set('agentGrant', patResult.agentGrant ?? null);
     setSentryUser({ id: patResult.userId, accountId: patResult.accountId });
@@ -843,16 +848,19 @@ async function enforceTokenProjectScope(
 ): Promise<void> {
   const path = c.req.path;
 
-  // `/v1/platform/runtime-projection` — the sandbox daemon pushing its OWN
-  // runtime projection. A session sandbox holds exactly ONE credential — a
-  // project+SESSION-scoped PAT ("One sandbox, one session-scoped Kortix
-  // credential", platform/services/session-sandbox.ts) — so without this
-  // branch the daemon's push can never reach the sink on any environment.
+  // Runtime projection and boot timeline are sandbox daemons pushing their OWN
+  // runtime state. A session runtime holds a project+SESSION-scoped PAT, so
+  // without this branch the daemon cannot reach either sink.
   // Allowed ONLY for a session-BOUND token; an ordinary project PAT stays
-  // denied. The handler re-verifies the binding against `session_sandboxes`
-  // (sandbox id ∧ session ∧ account ∧ live) via isSessionSandboxCredential,
-  // so this gate is authentication, not the authorization boundary.
-  if (opts.sessionBound && path === '/v1/platform/runtime-projection') return;
+  // denied. Each handler re-verifies the binding against the matching worker
+  // or environment runtime row. This gate is authentication, not the
+  // authorization boundary.
+  if (
+    opts.sessionBound &&
+    (path === '/v1/platform/runtime-projection' || path === '/v1/platform/boot-timeline')
+  ) {
+    return;
+  }
 
   // Whitelist a couple of self-identity probes the CLI hits even for
   // project/session-scoped tokens. `/v1/accounts/me` lets the agent confirm

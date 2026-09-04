@@ -6,6 +6,7 @@
     "auth",
     "sign-in",
     "sessions",
+    "filesystems",
     "apps",
     "react",
     "reference"

@@ -16,7 +16,7 @@ import {
   teardownDaytonaPreview,
   teardownPlatinumPreview,
 } from '../src/core/sandbox-preview-providers';
-import type { PreviewRuntimeSecrets } from '../src/core/preview-stack';
+import { readPreviewRuntimeSecrets } from '../src/core/preview-stack';
 
 function value(name: string, fallback = ''): string {
   return process.env[name]?.trim() || fallback;
@@ -38,20 +38,6 @@ function provider(): SandboxPreviewProvider {
   const selected = value('PREVIEW_SANDBOX_PROVIDER', 'auto').toLowerCase();
   if (selected === 'auto' || selected === 'platinum' || selected === 'daytona') return selected;
   throw new Error(`PREVIEW_SANDBOX_PROVIDER must be auto, platinum, or daytona; received ${selected}`);
-}
-
-function runtimeSecrets(): PreviewRuntimeSecrets {
-  return {
-    DAYTONA_API_KEY: value('DAYTONA_API_KEY'),
-    KE2E_STRIPE_SECRET_KEY: value('KE2E_STRIPE_SECRET_KEY'),
-    KE2E_STRIPE_WEBHOOK_SECRET: value('KE2E_STRIPE_WEBHOOK_SECRET'),
-    KORTIX_GITHUB_APP_ID: value('KORTIX_GITHUB_APP_ID'),
-    KORTIX_GITHUB_APP_PRIVATE_KEY: value('KORTIX_GITHUB_APP_PRIVATE_KEY'),
-    KORTIX_GITHUB_APP_SLUG: value('KORTIX_GITHUB_APP_SLUG'),
-    MANAGED_GIT_GITHUB_INSTALL_ID: value('MANAGED_GIT_GITHUB_INSTALL_ID'),
-    MANAGED_GIT_GITHUB_OWNER: value('MANAGED_GIT_GITHUB_OWNER'),
-    OPENROUTER_API_KEY: value('OPENROUTER_API_KEY'),
-  };
 }
 
 async function writeOutput(name: string, outputValue: string): Promise<void> {
@@ -168,7 +154,12 @@ if (action === 'deploy') {
     runAttempt: value('GITHUB_RUN_ATTEMPT', '1'),
     root: resolve(value('PREVIEW_ROOT', resolve(import.meta.dir, '../..'))),
     lockfileHash: required('PREVIEW_LOCKFILE_SHA256'),
-    secrets: runtimeSecrets(),
+    secrets: readPreviewRuntimeSecrets(process.env),
+    // The runner already holds a token good for reading this repo; the sandbox
+    // never got one, and GitHub throttles unauthenticated fetches from
+    // datacenter ranges by 401-ing the upload-pack POST. Optional by design:
+    // absent, the fetch stays anonymous.
+    checkoutToken: value('GH_TOKEN') || value('GITHUB_TOKEN'),
     platinum,
     daytona,
   };

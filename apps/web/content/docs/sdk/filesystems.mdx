@@ -1,0 +1,155 @@
+---
+title: Filesystems
+description: Shared volumes of project state that outlive every session — a Google Drive between your agents.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+A **filesystem** is a named volume of files scoped to a project. Every agent in
+that project reads and writes the same bytes, and the volume is alive whether or
+not any session is running — so one agent can leave state for the next one
+without going through git.
+
+```ts
+const fs = kortix.project(projectId).filesystems;
+```
+
+## Not the repo
+
+The project repo and a filesystem answer different questions, and mixing them is
+the mistake this surface exists to prevent.
+
+| | `project.files` (repo) | `project.filesystems` |
+|---|---|---|
+| What it holds | **Config** — the manifest, agent definitions | **State** — notes, artifacts, hand-offs |
+| Versioned | Yes, by git | No |
+| Lifetime | Cloned into each session | Independent of every session |
+| Who writes it | You, by commit | Agents, at run time |
+
+If you want it reviewed and versioned, commit it. If you want an agent to hand
+it to another agent, put it in a filesystem.
+
+## The facade
+
+| Method | Wraps | What it does |
+|---|---|---|
+| `fs.list()` | `GET /projects/:pid/filesystems` | Lists the project's filesystems |
+| `fs.create(input)` | `POST …/filesystems` | Creates one — **idempotent by name** |
+| `fs.remove(name)` | `DELETE …/filesystems/:name` | Deletes it and every file in it |
+| `fs.files(name, opts?)` | `GET …/:name/files` | Lists file metadata, optionally under a `prefix` |
+| `fs.write(name, path, content, opts?)` | `PUT …/:name/files/content` | Writes bytes |
+| `fs.read(name, path)` | `GET …/:name/files/content` | Reads bytes back |
+| `fs.removeFile(name, path)` | `DELETE …/:name/files/content` | Deletes one file |
+
+```ts
+await fs.create({ name: 'notes', description: 'shared research' });
+
+await fs.write('notes', 'research/2026/summary.md', '# Findings\n', {
+  contentType: 'text/markdown',
+});
+
+const file = await fs.read('notes', 'research/2026/summary.md');
+console.log(file.text());        // '# Findings\n'
+console.log(file.sha256);        // content hash, also the ETag
+```
+
+`create` is idempotent because two agents racing to set up the same shared
+volume must both end up with the one filesystem, not one of them handling a
+conflict. It answers `201` the first time and `200` afterwards.
+
+## Writing bytes, not JSON
+
+`write` takes a `string` or a `Uint8Array` and sends it verbatim — binary
+survives the round trip unchanged. `read` returns the bytes plus the stored
+content type, and `text()` decodes them as UTF-8 without a second request.
+
+```ts
+const png = await Bun.file('chart.png').bytes();
+await fs.write('reports', 'q3/chart.png', png, { contentType: 'image/png' });
+
+const back = await fs.read('reports', 'q3/chart.png');
+back.bytes.length === png.length;   // true
+```
+
+<Callout type="warn" title="Content type is stored, and echoed back">
+The type you write is the type a read returns. Reads are served with
+`X-Content-Type-Options: nosniff` and `Content-Disposition: attachment`, so a
+file written as `text/html` cannot execute in a browser on the API origin — but
+do not treat filesystem contents as trusted input to something that renders them.
+</Callout>
+
+## Paths
+
+Paths are relative and canonical: `a//b`, `a/./b` and `/a/b` all name `a/b`.
+
+Traversal is **refused, never rewritten**. An agent that asks for `../secrets`
+gets an error rather than a different file than the one it named — silently
+rewriting it to `secrets` would be worse than failing. Percent-encoded
+separators (`%2f`, `%2e%2e`, `%5c`, `%00`) are refused for the same reason.
+
+A path is at most 1024 characters and 64 segments; a single file is at most
+25 MB.
+
+Filesystem **names** must start alphanumeric and contain only letters, digits,
+dot, dash and underscore. A handful of names are reserved.
+
+## From the CLI, and from an agent
+
+The same surface is on the CLI, and that is how an **agent** uses it: the pi
+worker's `bash` tool runs in the session environment, where the `kortix` binary
+is already installed and scoped to the project.
+
+```bash
+kortix fs create notes
+echo "handoff to the next agent" | kortix fs put notes plan.md
+kortix fs get notes plan.md            # bytes to stdout
+kortix fs list notes --prefix research --json
+```
+
+Bytes move through stdin and stdout, so no temporary file is needed, and
+`--json` prints to stdout while status goes to stderr — `fs list --json` pipes
+straight into a parser.
+
+## Storage, and what it means for you
+
+Bytes are **content-addressed** by sha256. Writing identical content under
+twenty paths stores one copy, re-writing the same bytes is a no-op, and the
+`sha256` a write returns is the ETag a read serves.
+
+Deleting a file removes the path, not necessarily the bytes: another path may
+still reference the same content. Unreferenced content is reclaimed by a
+background sweep.
+
+The backend is S3 when the deployment configures it and PostgreSQL otherwise.
+Self-hosted deployments have no S3, so PostgreSQL is a first-class backend
+rather than a fallback — the surface is identical either way, and each file
+records which backend holds its bytes.
+
+## Types
+
+```ts
+interface KortixFilesystem {
+  filesystem_id: string;
+  name: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface KortixFilesystemFile {
+  path: string;
+  size: number;
+  sha256: string;
+  content_type: string;
+  storage: string;        // 's3' | 'pg'
+  created_at: string;
+  updated_at: string;
+}
+
+interface KortixFilesystemFileContent {
+  bytes: Uint8Array;
+  contentType: string;
+  sha256: string | null;  // the ETag, unquoted
+  text(): string;         // UTF-8, no second request
+}
+```

@@ -35,6 +35,9 @@
 import { createHash } from 'node:crypto';
 import { z } from '@hono/zod-openapi';
 import {
+  manifestDefaultConfigDir,
+  manifestDefaultRuntime,
+  manifestUsesAgentMap,
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
@@ -114,19 +117,35 @@ function manifestSchemaVersion(manifest: Record<string, unknown>): number {
   return Number.NaN;
 }
 
-/** The project's OpenCode config directory — the SAME top-level `[opencode]
- *  config_dir` v1 already reads (unrelated to per-agent behavior; this is
- *  just "where does `.kortix/opencode/...` live for this project"). Defaults
- *  to `.kortix/opencode`. */
+/** A `config_dir` string off one top-level block, or null when unset. */
+function configDirOf(block: unknown): string | null {
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return null;
+  const dir = (block as Record<string, unknown>).config_dir;
+  if (typeof dir !== 'string' || !dir.trim()) return null;
+  return dir.trim().replace(/\/+$/, '');
+}
+
+/**
+ * Where this project's agents/skills/commands live — "where does
+ * `<config_dir>/agents/...` live for this project", unrelated to per-agent
+ * behavior.
+ *
+ * The default follows the manifest's own version: `.kortix/pi` from v3,
+ * `.kortix/opencode` before it. A v3 project's agents should not sit in a
+ * directory named after the runtime it does not run.
+ *
+ * `pi:` is read before `opencode:` so a v3 manifest can name its own directory
+ * without borrowing the other runtime's block; a v3 manifest that still sets
+ * `opencode: config_dir` is honoured rather than ignored, because that is a
+ * deliberate statement about where the files are and silently reading a
+ * different path would lose them.
+ */
 function resolveConfigDir(manifest: Record<string, unknown>): string {
-  const oc = manifest.opencode;
-  if (oc && typeof oc === 'object' && !Array.isArray(oc)) {
-    const dir = (oc as Record<string, unknown>).config_dir;
-    if (typeof dir === 'string' && dir.trim()) {
-      return dir.trim().replace(/\/+$/, '');
-    }
-  }
-  return '.kortix/opencode';
+  return (
+    configDirOf(manifest.pi) ??
+    configDirOf(manifest.opencode) ??
+    manifestDefaultConfigDir(manifestSchemaVersion(manifest))
+  );
 }
 
 /**
@@ -224,7 +243,7 @@ export function compileAgentConfig(
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
 ): OpencodeConfig | null {
-  if (manifestSchemaVersion(manifest) !== 2) return null;
+  if (!manifestUsesAgentMap(manifestSchemaVersion(manifest))) return null;
 
   if (runtime !== 'opencode') {
     throw new CompileAgentConfigError(
@@ -258,8 +277,8 @@ export function compileSelectedAgentConfig(
   runtime: RuntimeV2 = 'opencode',
   agentMdFiles: Record<string, string> = {},
 ): OpencodeConfig {
-  if (manifestSchemaVersion(manifest) !== 2) {
-    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2.');
+  if (!manifestUsesAgentMap(manifestSchemaVersion(manifest))) {
+    throw new CompileAgentConfigError('Selected-agent compilation requires kortix_version 2 or later.');
   }
   if (runtime !== 'opencode') {
     throw new CompileAgentConfigError(
@@ -272,10 +291,12 @@ export function compileSelectedAgentConfig(
     v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents)
       ? v2.agents
       : {};
-  const block = rawAgents[agentName];
-  if (!block) {
+  // Key presence, not truthiness: a declared agent may legitimately have a
+  // null block (comments only), and that is NOT "undeclared".
+  if (!Object.hasOwn(rawAgents, agentName)) {
     throw new CompileAgentConfigError(`Agent "${agentName}" is not declared.`, agentName);
   }
+  const block: AgentBlockV2 = rawAgents[agentName] ?? ({} as AgentBlockV2);
   if (block.enabled === false) {
     throw new CompileAgentConfigError(`Agent "${agentName}" is disabled.`, agentName);
   }
@@ -299,10 +320,23 @@ export function compileSelectedAgentConfig(
  */
 function compileAgentBlock(
   name: string,
-  block: AgentBlockV2,
+  rawBlock: AgentBlockV2 | null | undefined,
   mdPath: string,
   mdContent: string | undefined,
 ): OpencodeAgentConfig {
+  // A declared agent whose block holds only comments parses as NULL in YAML:
+  //
+  //   echo-probe:
+  //     # grants nothing
+  //
+  // That is a legitimate declaration — the agent exists and grants nothing —
+  // but it used to reach `block.enabled` and throw, and this compile is
+  // ALL-OR-NOTHING: one such agent took down the whole project's config, so
+  // every session booted with no compiled agent config at all and the
+  // per-agent prebuild fell back to the default agent alone. Seen on
+  // pi.kortix.com 2026-08-29: "null is not an object (evaluating
+  // 'block.enabled')".
+  const block: AgentBlockV2 = rawBlock ?? ({} as AgentBlockV2);
   const out: OpencodeAgentConfig = {};
 
   if (mdContent !== undefined) {
@@ -462,10 +496,14 @@ export async function resolveManifestRuntime(
     const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    if (manifestSchemaVersion(raw) !== 2) return null;
+    if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) return null;
+    // An explicit `runtime:` always wins; otherwise the VERSION decides, which
+    // is the whole point of v3 — a pi project should not have to restate `pi`
+    // in a file whose version already says so.
     const runtime = (raw as Record<string, unknown>).runtime;
     if (runtime === 'pi') return 'pi';
-    return 'opencode';
+    if (runtime === 'opencode') return 'opencode';
+    return manifestDefaultRuntime(manifestSchemaVersion(raw));
   } catch {
     return null;
   }
@@ -495,7 +533,7 @@ export async function resolveCompiledAgentConfigForSession(
 
     const format = manifestFormatForPath(found.path);
     const raw = parseManifestText(found.content, format);
-    if (manifestSchemaVersion(raw) !== 2) return null;
+    if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) return null;
 
     const v2 = raw as unknown as ManifestV2;
     const agents =
@@ -557,9 +595,9 @@ export async function resolveSelectedAgentConfigForSession(
 
   const format = manifestFormatForPath(found.path);
   const raw = parseManifestText(found.content, format);
-  if (manifestSchemaVersion(raw) !== 2) {
+  if (!manifestUsesAgentMap(manifestSchemaVersion(raw))) {
     throw new CompileAgentConfigError(
-      `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,
+      `Project ${project.projectId} must use kortix_version 2 or later for selected-agent compilation.`,
       agentName,
     );
   }

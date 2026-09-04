@@ -270,6 +270,15 @@ describe('unwrapError — a message that is itself a serialized body is unwrappe
     expect(unwrapError(html)).toBe('502 Bad Gateway');
   });
 
+  test('hostile unclosed HTML tags are processed in linear time', () => {
+    for (const tag of ['title', 'script', 'style']) {
+      const html = `<html>${`<${tag}`.repeat(10_000)}`;
+      const startedAt = performance.now();
+      expect(unwrapError(html)).toBeDefined();
+      expect(performance.now() - startedAt).toBeLessThan(100);
+    }
+  });
+
   test('a body with no recognizable sentence never renders "[object Object]" or empty', () => {
     // A code or status is still a sentence's worth of information — say it.
     expect(unwrapError({ status: 500 })).toBe('Request failed with status 500');

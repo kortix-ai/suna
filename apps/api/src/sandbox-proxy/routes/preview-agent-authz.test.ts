@@ -12,8 +12,8 @@
 // side-effecting, and the re-mint is the thing that grants B.
 import { afterAll, beforeEach, expect, mock, test } from 'bun:test';
 import * as realRequestContext from '../../lib/request-context';
-import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
+import * as realPreviewOwnership from '../../shared/preview-ownership';
 
 let sessionAgentName: string | null = 'pipeline-hygiene';
 
@@ -71,7 +71,7 @@ mock.module('../../projects/lib/prompt-connector-preflight', () => ({
   missingPromptConnectorConnections: async () => ({ ok: true }),
 }));
 mock.module('../../projects/lib/sandbox-env-sync', () => ({
-  syncSandboxEnvForPrompt: async (input: { requestedAgent?: string | null }) => {
+  syncSessionRuntimesEnvForPrompt: async (input: { requestedAgent?: string | null }) => {
     envSyncCalls.push({ requestedAgent: input.requestedAgent });
   },
 }));
