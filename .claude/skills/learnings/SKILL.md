@@ -4112,3 +4112,44 @@ the class.
 *Fix:* Platinum migration `0068_sandbox_idempotency_keys_expected.sql`
 (`ADD COLUMN IF NOT EXISTS "expected" jsonb`, expand-only) plus journal idx 68.
 *Enforcer:* none yet in Platinum — rule 1 is the CI lane to add there.
+
+## A machine-wide `pkill -f` in one dev launcher is an outage for every other worktree (2026-09-04)
+
+**What happened.** The `subprojects` worktree stack (`pnpm worktree start`,
+API on 13408) died three times in one afternoon with a clean
+`Shutting down gracefully {"signal":"SIGTERM"}` in its own log, at 5, 28 and
+~50 minutes after boot — no crash, no OOM, nothing in its code path. Each
+time a session that was mid-turn lost its API and the worktree launcher
+reaped the whole stack. The signal came from a DIFFERENT checkout: another
+agent's primary `pnpm dev` (`scripts/dev-local.sh`) whose tunnel watchdog
+runs once a minute and, when ITS tunnel is dead, executes
+`pkill -f 'cloudflared tunnel --no-autoupdate'` and
+`pkill -f -- '--hot src/index.ts'`. Both patterns match every Kortix API and
+every quick tunnel on the machine, because every worktree runs the identical
+command on a different port. One unhealthy primary stack took down every
+other stack, once a minute, for as long as its tunnel stayed dead.
+
+Signature, so the next reader recognises the class in one log read: a
+worktree API log ending in `Shutting down gracefully {"signal":"SIGTERM"}`
+with no preceding error, the launcher printing `stopped — N processes
+reaped`, and `pgrep -fl 'bun --no-env-file run --hot'` still showing OTHER
+checkouts' APIs alive afterwards.
+
+**The rules.**
+
+1. **A launcher may only kill processes it started, or processes on its own
+   ports.** Never `pkill -f` on a command pattern that every checkout shares
+   (`--hot src/index.ts`, `next dev`, `cloudflared tunnel …`). Kill by PID you
+   recorded, or by `lsof -tiTCP:<your port> -sTCP:LISTEN`. A pattern that
+   was correct on a one-checkout laptop is a machine-wide outage the day a
+   second worktree exists.
+2. **When a stack dies with a graceful SIGTERM and no error, look OUTSIDE the
+   stack first.** `pgrep -fl` for sibling launchers before reading your own
+   code; the killer is not in the log of the process that died.
+
+*Fix:* `scripts/dev-local.sh` — the watchdog now scopes the tunnel kill to
+its own `--url http://localhost:$PORT` and restarts the API by killing the
+listener on `$PORT` (`lsof -tiTCP`), never by pattern (commit on branch
+`subprojects`).
+*Enforcer:* none yet — a shell lint rule that forbids bare `pkill -f` in
+`scripts/` is the natural one.
