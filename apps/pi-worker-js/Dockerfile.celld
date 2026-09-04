@@ -1,0 +1,14 @@
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+# celld itself, pinned exactly as infra/celld/pt-celld.spec.json pins it.
+RUN set -eu; V=v0.3.0; \
+    SHA=25385ab57f3193aa4f21b554e9460c80568f151fd1725ec6da8124cf3d216768; \
+    curl -fsSL "https://github.com/denoland/celld/releases/download/$V/celld-x86_64-unknown-linux-gnu.gz" -o /tmp/c.gz; \
+    gunzip -c /tmp/c.gz > /usr/local/bin/celld; rm -f /tmp/c.gz; \
+    echo "$SHA  /usr/local/bin/celld" | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/celld; \
+    /usr/local/bin/celld --version | grep -qx "celld 0.3.0"
+# `celld deploy` shells out to esbuild to build the worker, so it must be on PATH.
+RUN set -eu; curl -fsSL https://registry.npmjs.org/@esbuild/linux-x64/-/linux-x64-0.25.0.tgz -o /tmp/e.tgz; \
+    tar -xzf /tmp/e.tgz -C /tmp; mv /tmp/package/bin/esbuild /usr/local/bin/esbuild; \
+    chmod 0755 /usr/local/bin/esbuild; rm -rf /tmp/e.tgz /tmp/package; esbuild --version

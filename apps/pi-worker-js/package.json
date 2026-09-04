@@ -1,0 +1,49 @@
+{
+  "name": "pt-agent-cell",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "daemon": "node daemon/server.js",
+    "spec": "node build-images.mjs",
+    "e2e": "./test/e2e.sh",
+    "bench": "./test/bench.sh",
+    "images": "node build-images.mjs",
+    "shapes": "node test/platinum-shapes.mjs",
+    "platinum": "./test/platinum.sh",
+    "crash": "./test/crash.sh",
+    "compaction": "node test/compaction-logic.mjs",
+    "streaming": "./test/streaming.sh",
+    "test": "./test/all.sh",
+    "safety": "node test/daemon-safety.mjs",
+    "cell": "node --experimental-sqlite test/cell-logic.mjs",
+    "models": "node test/model-logic.mjs",
+    "ctl": "node test/celldctl-logic.mjs",
+    "deploy-contract": "node test/deploy-contract.mjs",
+    "fixture": "node test/build-and-model.mjs",
+    "execenv": "node test/execenv-logic.mjs",
+    "persist": "node test/daemon-persist.mjs",
+    "opid": "node test/opid-identity.mjs",
+    "cancel": "node test/cancel-logic.mjs",
+    "skills": "node test/skills-logic.mjs",
+    "parity": "node test/ledger-parity.mjs",
+    "archive": "node test/archive-logic.mjs",
+    "meter": "node test/meter-logic.mjs",
+    "atob": "node test/atob-shim.mjs",
+    "conditions": "node test/mutate-conditions.mjs",
+    "execenv-platinum": "node test/execenv-platinum.mjs",
+    "guards": "node test/mutate-guards.mjs",
+    "tools": "node test/tools-logic.mjs",
+    "docker-guards": "node test/mutate-docker.mjs",
+    "clean-store": "node clean-store.mjs",
+    "bounds": "node test/mutate-bounds.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.4",
+    "@earendil-works/pi-ai": "0.84.4",
+    "typebox": "1.3.7"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
