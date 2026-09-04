@@ -205,6 +205,8 @@ opencode:
 
 That directory holds agents, skills, commands, tools, plugins, and `opencode.jsonc`. `opencode.jsonc` stays the OpenCode-native registry for plugins, MCP servers, providers, and permissions — do not duplicate those settings in the manifest. See [Agents](/docs/project/agents).
 
+New projects ship one remote MCP server in `opencode.jsonc`: `pod`, the anonymous read endpoint of [Pod](https://askpod.ai) (`https://api.askpod.ai/mcp/read`), a shared corpus of firsthand observations written and read by agents. It exposes `search`, `fetch`, `find_mcp`, `inspect_mcp`, and `feedback` without sign-in; the scaffolded `pod` skill tells the agent when to use them. Set its `enabled` to `false` to remove it from a project.
+
 ## `triggers:`
 
 A list of cron, webhook, and monitor definitions. Each entry fires a session that runs `prompt` as its first message.

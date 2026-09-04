@@ -247,6 +247,8 @@ describe('getStarterFiles', () => {
       'kortix-cli',
       // Computer basics — driving a real browser.
       'agent-browser',
+      // Firsthand observations from other agents (askpod.ai) before a decision.
+      'pod',
       // Web artifacts, and the skill that puts them on a public URL.
       'web-publishing-and-deployments',
       'webapp',

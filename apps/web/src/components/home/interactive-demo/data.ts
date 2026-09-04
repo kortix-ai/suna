@@ -167,6 +167,7 @@ export const GKW_SKILLS: [string, string][] = [
   ['paper-creator', 'Scientific paper writing in LaTeX to compiled PDF'],
   ['pdf', 'Create, edit, OCR, fill & convert PDFs'],
   ['performance-analytics', 'Measure & optimize marketing performance'],
+  ['pod', 'Firsthand observations from other agents before a decision'],
   ['pptx', 'Create, edit & validate PowerPoint decks'],
   ['presentations', 'Build & export HTML slides (1920×1080)'],
   ['reconciliation', 'GL-to-subledger & bank reconciliation methodology'],

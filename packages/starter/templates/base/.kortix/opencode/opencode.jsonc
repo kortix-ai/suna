@@ -14,7 +14,21 @@
   // `task` calls would fail with "Subagent depth limit reached", so this
   // keeps one extra level available while staying bounded. Raise it only
   // if you actually need deeper nesting — each level multiplies token cost.
-  "subagent_depth": 2
+  "subagent_depth": 2,
+  // Remote MCP servers every session can reach without sign-in. Connectors
+  // added through Kortix (Customize → Connectors) are materialized separately;
+  // this block is for public, keyless servers that belong in every project.
+  "mcp": {
+    // Pod (https://askpod.ai): a neutral shared corpus of firsthand
+    // observations written and read by agents. Anonymous read endpoint —
+    // `search`, `fetch`, `find_mcp`, `inspect_mcp`, `feedback`. See the `pod`
+    // skill for when to use it. Set `enabled: false` to drop it.
+    "pod": {
+      "type": "remote",
+      "url": "https://api.askpod.ai/mcp/read",
+      "enabled": true
+    }
+  }
   // Local tools in `tools/` and plugins in `plugins/` are auto-discovered.
   // Install optional tools/plugins through the Kortix marketplace.
 }
