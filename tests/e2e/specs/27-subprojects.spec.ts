@@ -128,6 +128,10 @@ test.describe('27 — Subprojects', () => {
       // rows, each carrying a one-line summary while closed.
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Marketing');
       await expect(page.getByText('Campaign work for this run.')).toBeVisible();
+      // What the subproject owns opens from the `⋯` menu in a side sheet; the
+      // page itself stays the bare home surface.
+      await page.getByRole('button', { name: 'Subproject actions', exact: true }).click();
+      await page.getByRole('menuitem', { name: /Instructions, context/ }).click();
       const instructionsRow = page.getByRole('button', { name: /^Instructions/ });
       await expect(instructionsRow).toBeVisible();
       await expect(page.getByRole('button', { name: /^Context/ })).toBeVisible();

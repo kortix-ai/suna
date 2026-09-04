@@ -1,12 +1,11 @@
 'use client';
 
 /**
- * What a subproject owns, as a quiet strip under its composer: Instructions,
- * Context, Scheduled, and (for a manager) Access. No panels, no borders — a
- * subproject page is the project-home surface wearing a different name, and
- * the home has nothing under its composer at all, so what sits here has to
- * earn its place one row at a time. Each row is a `Disclosure`: the trigger
- * carries the label and a one-line summary, the body is the editor.
+ * What a subproject owns, as a quiet strip of rows: Instructions, Context,
+ * Scheduled, and (for a manager) Access. Rendered in the side sheet the
+ * page's `⋯` menu opens — the page itself is the bare project-home surface.
+ * No panels, no borders. Each row is a `Disclosure`: the trigger carries the
+ * label and a one-line summary, the body is the editor.
  *
  * Every mutation goes through the SDK's subproject client and invalidates
  * both `qk.project.subproject(pid, slug)` (this page) and
@@ -99,10 +98,12 @@ export function SubprojectMeta({
   projectId,
   subproject,
   canManage,
+  className,
 }: {
   projectId: string;
   subproject: Subproject;
   canManage: boolean;
+  className?: string;
 }) {
   const canManageMembers =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
@@ -120,7 +121,7 @@ export function SubprojectMeta({
     // `px-4` puts the rows on the composer's text rail (see the heading's
     // comment in welcome-body.tsx). `divide-y` is deliberately absent: the
     // hover fill is the row's only boundary.
-    <div className="flex w-full flex-col px-4">
+    <div className={cn('flex w-full flex-col px-4', className)}>
       <MetaRow
         icon={NotePencilIcon}
         label="Instructions"

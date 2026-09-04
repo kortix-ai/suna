@@ -6,10 +6,10 @@
  *
  * Same wallpaper, same greeting shape, same composer, same create path
  * (`useProjectHomeSend` with the slug and the default agent). What the page
- * adds is quiet: a breadcrumb floated top-left, a ghost toolbar top-right
- * (share, `⋯`), and under the composer a strip of disclosure rows for what the
- * subproject owns. Its sessions are in the sidebar, nested under its folder —
- * not repeated here. No panels, no borders —
+ * adds is quiet: a breadcrumb floated top-left and a ghost toolbar top-right
+ * (share, `⋯`). What the subproject owns — instructions, context, schedules,
+ * access — opens from the `⋯` menu in a side sheet; its sessions are in the
+ * sidebar, nested under its folder. Nothing under the composer —
  * the home has nothing under its composer, so everything here has to read as
  * part of that page, not as a settings form parked next to it.
  */
@@ -37,6 +37,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -59,6 +67,7 @@ import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import {
   DotsThreeIcon,
   FolderSimpleIcon,
+  NotePencilIcon,
   ShareNetworkIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
@@ -138,10 +147,11 @@ function SubprojectBody({
       toolbar={
         <SubprojectToolbar projectId={projectId} subproject={subproject} canManage={canManage} />
       }
-      // Only the strip. The subproject's sessions live in the sidebar, nested
-      // under its folder — listing them here too made the page a second
-      // sidebar (user, 2026-09-04).
-      below={<SubprojectMeta projectId={projectId} subproject={subproject} canManage={canManage} />}
+      // Nothing under the composer — the same rule the project home follows
+      // (Marko, 2026-09-02: "just have the chat input there & that's it").
+      // Sessions are in the sidebar under the folder; instructions, context,
+      // schedules and access are one press away in the `⋯` menu (user,
+      // 2026-09-04).
     />
   );
 }
@@ -207,6 +217,7 @@ function SubprojectToolbar({
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
   const [shareOpen, setShareOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(subproject.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -346,6 +357,11 @@ function SubprojectToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onSelect={() => requestAnimationFrame(() => setEditOpen(true))}>
+              <NotePencilIcon />
+              Instructions, context & schedules…
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
               Sessions here are readable by
             </DropdownMenuLabel>
@@ -392,6 +408,27 @@ function SubprojectToolbar({
           initialSubprojectIds={[subproject.slug]}
         />
       ) : null}
+
+      {/* What the subproject owns, edited off the page: the home surface stays
+          bare, and the rows keep their editors exactly as they were. */}
+      <Sheet open={editOpen} onOpenChange={setEditOpen}>
+        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
+          <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
+            <SheetTitle className="text-base font-medium">{subproject.name}</SheetTitle>
+            <SheetDescription className="text-xs text-pretty">
+              What the agent is told, what it reads first, what runs on its own, and who may use it.
+            </SheetDescription>
+          </SheetHeader>
+          <SheetBody className="min-h-0 gap-0 px-3 py-3">
+            <SubprojectMeta
+              projectId={projectId}
+              subproject={subproject}
+              canManage={canManage}
+              className="px-0"
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
 
       <ConfirmDialog
         open={confirmDelete}
