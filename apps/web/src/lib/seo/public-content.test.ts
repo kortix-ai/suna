@@ -161,6 +161,27 @@ import { Callout } from 'fumadocs-ui/components/callout';
     expectCleanAgentMarkdown(markdown, 'fixture');
   });
 
+  test('renders ::: container directives as blockquotes', () => {
+    const mdx = `---
+title: Sample
+---
+
+:::warning[Keep this warning]
+Do not drop this meaningful content.
+:::
+
+:::info
+Untitled body line.
+:::
+`;
+    const markdown = renderPlainMarkdownFromMdx(mdx);
+    expect(markdown).toContain('> **Keep this warning**');
+    expect(markdown).toContain('> Do not drop this meaningful content.');
+    expect(markdown).toContain('> Untitled body line.');
+    expect(markdown).not.toContain(':::');
+    expectCleanAgentMarkdown(markdown, 'fixture');
+  });
+
   test('all public Markdown outputs contain no unresolved MDX module syntax or JSX', () => {
     const records = getPublicContentRecords({ includeUseCases: true }).filter(
       (record) => record.markdownPath,
