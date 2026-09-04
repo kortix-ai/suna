@@ -11,6 +11,10 @@ const WORKER_DIST = resolve(
   import.meta.dir,
   '../../../kortix-worker/dist/worker-runtime.mjs',
 );
+const workerDistExists = existsSync(WORKER_DIST);
+if (!workerDistExists && process.env.KORTIX_REQUIRE_PI_WORKER_BUNDLE === '1') {
+  throw new Error(`required pi worker bundle is missing: ${WORKER_DIST}`);
+}
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -48,7 +52,7 @@ describe('getPiWorkerBundle', () => {
 // the artifact would boot in a worker sandbox, serving /health. Skipped when
 // the dist bundle has not been built (CI builds it in the Docker stage; run
 // `bun run build` in apps/kortix-worker locally).
-describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bundle)', () => {
+describe.skipIf(!workerDistExists)('compiled pi runtime artifact (real bundle)', () => {
   test('boots under node and serves /health with the baked identity', async () => {
     process.env.KORTIX_PI_WORKER_BUNDLE_PATH = WORKER_DIST;
     const bundle = await getPiWorkerBundle();
@@ -113,7 +117,7 @@ describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime artifact (real bu
 // web session page reads since #6987 — /state, paged /messages, the sequenced
 // /events SSE — served by the REAL compiled artifact, driven through a real
 // faux turn. Skipped like the sibling when dist has not been built.
-describe.skipIf(!existsSync(WORKER_DIST))('compiled pi runtime — session read surface', () => {
+describe.skipIf(!workerDistExists)('compiled pi runtime — session read surface', () => {
   test('a turn renders: transcript, state, sequenced events, health identity', async () => {
     process.env.KORTIX_PI_WORKER_BUNDLE_PATH = WORKER_DIST;
     const bundle = await getPiWorkerBundle();

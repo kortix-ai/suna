@@ -26,6 +26,18 @@ type Result<T, E> = Ok<T> | Err<E>;
 const ok = <T,>(value: T): Ok<T> => ({ ok: true, value });
 const err = <E,>(error: E): Err<E> => ({ ok: false, error });
 
+const REPLAY_SAFE_RPC_OPERATIONS: ReadonlySet<string> = new Set([
+  'absolutePath',
+  'joinPath',
+  'readTextFile',
+  'readTextLines',
+  'readBinaryFile',
+  'fileInfo',
+  'listDir',
+  'canonicalPath',
+  'exists',
+]);
+
 /** Mirrors pi's FileError shape without importing it, so this file stays dependency-light. */
 class FileErrorLike extends Error {
   code: string;
@@ -147,13 +159,19 @@ export class KortixExecutionEnv {
    */
   private async rpc<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
     this.calls.push({ op, args });
-    // One retry: a pooled keep-alive socket retired by the peer between calls
-    // is a transport artifact, not a tool failure. See the note in
-    // stub-environment.ts — the real fix is a multiplexed connection.
+    // One retry for reads: a pooled keep-alive socket retired by the peer
+    // between calls is a transport artifact, not a tool failure. Mutations
+    // cannot be replayed because the daemon may commit the side effect before
+    // the response disappears.
     const first = await this.rpcOnce<T>(op, args);
     if (first.ok) return first;
     const msg = String((first.error as any)?.message ?? '');
-    if (/socket|ECONNRESET|closed|EPIPE/i.test(msg)) return this.rpcOnce<T>(op, args);
+    if (
+      REPLAY_SAFE_RPC_OPERATIONS.has(op) &&
+      /socket|ECONNRESET|closed|EPIPE/i.test(msg)
+    ) {
+      return this.rpcOnce<T>(op, args);
+    }
     return first;
   }
 
@@ -249,5 +267,7 @@ export class KortixExecutionEnv {
     return r;
   }
 
-  async cleanup(): Promise<void> { /* nothing local to release — that is the point */ }
+  async cleanup(): Promise<void> {
+    await this.transport.close();
+  }
 }

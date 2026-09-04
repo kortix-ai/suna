@@ -39,59 +39,65 @@ function store(failOn: Set<number> = new Set()) {
 describe('persistNewMessages', () => {
   test('appends every new message and advances the watermark', async () => {
     const s = store();
-    const next = await persistNewMessages(s, ['a', 'b', 'c'], 0, toDurable);
+    const result = await persistNewMessages(s, ['a', 'b', 'c'], 0, toDurable);
     expect(s.appended).toEqual(['a', 'b', 'c']);
-    expect(next).toBe(3);
+    expect(result).toEqual({ persisted: 3, error: null });
   });
 
   test('starts from the watermark, never re-appending what is already stored', async () => {
     const s = store();
-    const next = await persistNewMessages(s, ['a', 'b', 'c'], 2, toDurable);
+    const result = await persistNewMessages(s, ['a', 'b', 'c'], 2, toDurable);
     expect(s.appended).toEqual(['c']);
-    expect(next).toBe(3);
+    expect(result).toEqual({ persisted: 3, error: null });
   });
 
   // THE BUG: the watermark must stop AT the failure, not past it.
   test('stops at the first failure and leaves the watermark on it', async () => {
     const s = store(new Set([1])); // 'b' fails
-    const next = await persistNewMessages(s, ['a', 'b', 'c'], 0, toDurable);
+    const result = await persistNewMessages(s, ['a', 'b', 'c'], 0, toDurable);
     expect(s.appended).toEqual(['a']);
     // 1, not 3: 'b' must be retried, and 'c' must NOT be written above a hole.
-    expect(next).toBe(1);
+    expect(result.persisted).toBe(1);
+    expect(result.error?.message).toBe('store 500 at call 1');
   });
 
   test('never writes a later message over a hole', async () => {
     const s = store(new Set([0]));
-    const next = await persistNewMessages(s, ['toolCall', 'toolResult'], 0, toDurable);
+    const result = await persistNewMessages(s, ['toolCall', 'toolResult'], 0, toDurable);
     // The toolResult must not land without its toolCall — that is the exact
     // shape that makes every subsequent provider request 400.
     expect(s.appended).toEqual([]);
-    expect(next).toBe(0);
+    expect(result.persisted).toBe(0);
+    expect(result.error).toBeInstanceOf(Error);
   });
 
   test('the next attempt resumes from the failed index and completes', async () => {
     const failing = store(new Set([0]));
     const after = await persistNewMessages(failing, ['a', 'b'], 0, toDurable);
-    expect(after).toBe(0);
+    expect(after.persisted).toBe(0);
     // The store recovers; the same call retries from the watermark.
     const healthy = store();
-    const done = await persistNewMessages(healthy, ['a', 'b'], after, toDurable);
+    const done = await persistNewMessages(healthy, ['a', 'b'], after.persisted, toDurable);
     expect(healthy.appended).toEqual(['a', 'b']);
-    expect(done).toBe(2);
+    expect(done).toEqual({ persisted: 2, error: null });
   });
 
-  test('reports the failure without throwing — a turn must not die on bookkeeping', async () => {
+  test('returns the failure so the worker can fail closed without losing the watermark', async () => {
     const s = store(new Set([0]));
     const lines: string[] = [];
-    const next = await persistNewMessages(s, ['a'], 0, toDurable, (l) => lines.push(l));
-    expect(next).toBe(0);
+    const result = await persistNewMessages(s, ['a'], 0, toDurable, (l) => lines.push(l));
+    expect(result.persisted).toBe(0);
+    expect(result.error).toBeInstanceOf(Error);
     expect(lines.length).toBe(1);
     expect(lines[0]).toContain('store 500');
   });
 
   test('nothing new is a no-op', async () => {
     const s = store();
-    expect(await persistNewMessages(s, ['a'], 1, toDurable)).toBe(1);
+    expect(await persistNewMessages(s, ['a'], 1, toDurable)).toEqual({
+      persisted: 1,
+      error: null,
+    });
     expect(s.appended).toEqual([]);
   });
 });

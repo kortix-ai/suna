@@ -26,6 +26,7 @@
  * A reader that wants original timestamps reads the log, not the replayed
  * tree. Nothing about a conversation is lost; one derived field is refreshed.
  */
+import { randomUUID } from 'node:crypto';
 import { InMemorySessionStorage } from '@earendil-works/pi-agent-core';
 
 type LogItem =
@@ -41,30 +42,116 @@ export interface SessionLog {
   read(): Promise<LogItem[]>;
 }
 
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+interface RemoteSessionLogOptions {
+  fetch?: FetchLike;
+  createAppendId?: () => string;
+  sleep?: (delayMs: number) => Promise<void>;
+  maxAttempts?: number;
+  requestTimeoutMs?: number;
+}
+
+const RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000, 4_000, 8_000] as const;
+const DEFAULT_MAX_ATTEMPTS = 6;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+function retryableStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function defaultSleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
 /** Append-only log over HTTP. Stands in for the Kortix control plane. */
 export class RemoteSessionLog implements SessionLog {
   constructor(
     private readonly baseUrl: string,
     private readonly sessionId: string,
     private readonly headers: Record<string, string> = {},
+    private readonly options: RemoteSessionLogOptions = {},
   ) {}
 
   async append(item: LogItem): Promise<void> {
-    // Fire-and-await: a lost append is a lost message, which is the one thing
-    // this exists to prevent. Failures propagate rather than being swallowed.
-    const res = await fetch(`${this.baseUrl}/sessions/${this.sessionId}/log`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...this.headers },
-      body: JSON.stringify(item),
-    });
-    if (!res.ok) throw new Error(`session log append failed: HTTP ${res.status}`);
+    const fetcher = this.options.fetch ?? globalThis.fetch;
+    const sleep = this.options.sleep ?? defaultSleep;
+    const maxAttempts = Math.max(1, this.options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+    const appendId = (this.options.createAppendId ?? randomUUID)();
+    const headers = new Headers({ 'content-type': 'application/json', ...this.headers });
+    headers.set('idempotency-key', appendId);
+    const body = JSON.stringify(item);
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const res = await fetcher(`${this.baseUrl}/sessions/${this.sessionId}/log`, {
+          method: 'POST',
+          headers,
+          body,
+          signal: AbortSignal.timeout(
+            Math.max(1, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+          ),
+        });
+        if (res.ok) return;
+        const error = new Error(`session log append failed: HTTP ${res.status}`);
+        if (!retryableStatus(res.status)) throw error;
+        lastError = error;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof Error && error.message.startsWith('session log append failed: HTTP ')) {
+          throw error;
+        }
+      }
+
+      if (attempt + 1 < maxAttempts) {
+        await sleep(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]!);
+      }
+    }
+
+    throw new Error(
+      `session log append failed after ${maxAttempts} attempts: ${String(
+        (lastError as Error)?.message ?? lastError,
+      )}`,
+    );
   }
 
   async read(): Promise<LogItem[]> {
-    const res = await fetch(`${this.baseUrl}/sessions/${this.sessionId}/log`, { headers: this.headers });
-    if (res.status === 404) return [];
-    if (!res.ok) throw new Error(`session log read failed: HTTP ${res.status}`);
-    return (await res.json()) as LogItem[];
+    const fetcher = this.options.fetch ?? globalThis.fetch;
+    const sleep = this.options.sleep ?? defaultSleep;
+    const maxAttempts = Math.max(1, this.options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const res = await fetcher(`${this.baseUrl}/sessions/${this.sessionId}/log`, {
+          headers: this.headers,
+          signal: AbortSignal.timeout(
+            Math.max(1, this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS),
+          ),
+        });
+        if (res.status === 404) return [];
+        if (res.ok) return (await res.json()) as LogItem[];
+        const error = new Error(`session log read failed: HTTP ${res.status}`);
+        if (!retryableStatus(res.status)) throw error;
+        lastError = error;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof Error && error.message.startsWith('session log read failed: HTTP ')) {
+          throw error;
+        }
+      }
+
+      if (attempt + 1 < maxAttempts) {
+        await sleep(RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]!);
+      }
+    }
+
+    throw new Error(
+      `session log read failed after ${maxAttempts} attempts: ${String(
+        (lastError as Error)?.message ?? lastError,
+      )}`,
+    );
   }
 }
 

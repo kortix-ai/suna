@@ -244,9 +244,9 @@ describe('a tool call whose environment went away', () => {
  * NEVER silently re-run a mutating operation.
  *
  * The first version of the re-attach retried whatever failed. That is safe for
- * a read and unsafe for everything else, and the danger compounds: `rpc()`
- * ALREADY retries once on a socket-shaped error (kortix-env.ts:153-157), so an
- * outer retry nests inside it and one `bash` could execute FOUR times.
+ * a read and unsafe for everything else. The inner `rpc()` layer now retries
+ * only a fail-closed allowlist of read operations; this outer boundary must
+ * preserve the same split.
  *
  * And the trigger set makes it likely rather than theoretical. `rpc timeout`
  * and `fetch failed` are exactly what a connection that dropped AFTER the

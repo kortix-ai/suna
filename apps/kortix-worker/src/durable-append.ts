@@ -20,13 +20,16 @@ export interface DurableMessageSink {
   appendMessage(message: unknown): Promise<unknown>;
 }
 
+export interface PersistNewMessagesResult {
+  persisted: number;
+  error: Error | null;
+}
+
 /**
  * Append `messages[from..]`, stopping at the first failure.
  *
- * Returns the new watermark: the index of the first message NOT persisted, so
- * a caller can assign it straight back and resume there next time. Never
- * throws — a turn that produced a correct answer must not be reported as
- * failed because bookkeeping could not be written.
+ * Returns the new watermark and the first append error. The caller decides
+ * whether to retry or fail the turn, without losing how far the append got.
  */
 export async function persistNewMessages(
   sink: DurableMessageSink,
@@ -34,7 +37,7 @@ export async function persistNewMessages(
   from: number,
   toDurable: (message: unknown) => unknown,
   log: (line: string) => void = (line) => console.error(line),
-): Promise<number> {
+): Promise<PersistNewMessagesResult> {
   let persisted = Math.max(0, Math.min(from, messages.length));
   for (let i = persisted; i < messages.length; i++) {
     try {
@@ -48,9 +51,12 @@ export async function persistNewMessages(
           error: String((error as Error)?.message ?? error),
         }),
       );
-      return i;
+      return {
+        persisted: i,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
     }
     persisted = i + 1;
   }
-  return persisted;
+  return { persisted, error: null };
 }

@@ -5,11 +5,10 @@
  *
  *   toolContext: { env: new KortixExecutionEnv(...) }
  *
- * pi-agent-core's built-in bash/read/write/edit tools resolve their filesystem
- * and shell out of that context. Handing them a KortixExecutionEnv instead of
- * NodeExecutionEnv means the agent has no reachable path to this process's own
- * disk through any default tool. That is the harness/environment split, and it
- * is one object, not a rewritten toolset.
+ * pi-agent-core's built-in bash/read/write/edit tools and Kortix's glob/grep
+ * tools resolve their filesystem and shell out of that context. Handing them a
+ * KortixExecutionEnv means the agent has no reachable path to this process's
+ * own disk through any default tool. That is the harness/environment split.
  *
  * Two model modes:
  *   faux  — a scripted provider. No credentials, no network. Used by the proof.
@@ -17,21 +16,17 @@
  *           traffic goes through the Kortix LLM gateway rather than direct.
  */
 import { createServer } from 'node:http';
-import {
-  Agent,
-  createBashTool,
-  createEditTool,
-  createReadTool,
-  createWriteTool,
-} from '@earendil-works/pi-agent-core';
+import { Agent } from '@earendil-works/pi-agent-core';
+import type { ExecutionEnv } from '@earendil-works/pi-agent-core';
 import {
   InMemoryCredentialStore,
+  createAssistantMessageEventStream,
   createModels,
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
 } from '@earendil-works/pi-ai';
-import { AssistantMessageEventStream } from '@earendil-works/pi-ai';
+import type { AssistantMessage, AssistantMessageEventStream } from '@earendil-works/pi-ai';
 import { Session } from '@earendil-works/pi-agent-core';
 import { ChatEventAdapter } from './chat-events.ts';
 import { KortixExecutionEnv } from './kortix-env.ts';
@@ -40,6 +35,7 @@ import { RuntimeSurface } from './runtime-surface.ts';
 import { DurableSessionStorage, RemoteSessionLog } from './session-store.ts';
 import { persistNewMessages } from './durable-append.ts';
 import { type TurnEndIdentity, buildTurnEndRelay, scheduleBootReconcile } from './turn-end-relay.ts';
+import { createWorkspaceTools } from './workspace-tools.ts';
 
 /**
  * pi's session layer runs `assertJsonSerializable` on every durable payload:
@@ -102,7 +98,7 @@ export function restoredMessagesFromEntries(entries: readonly any[]): any[] {
  * honest instant for a latency number. It is instrumentation, not plumbing.
  */
 function tapFirstToken(inner: AssistantMessageEventStream, onFirst: (ms: number) => void): AssistantMessageEventStream {
-  const out = new AssistantMessageEventStream();
+  const out = createAssistantMessageEventStream();
   const t0 = process.hrtime.bigint();
   let fired = false;
   (async () => {
@@ -190,6 +186,7 @@ export interface WorkerConfig {
 
 export function configFromEnv(): WorkerConfig {
   const mode = (process.env.KORTIX_MODEL_MODE ?? 'faux') as 'faux' | 'real';
+  const gatewayUrl = process.env.KORTIX_GATEWAY_URL ?? process.env.KORTIX_LLM_BASE_URL;
   return {
     // KORTIX_SERVICE_PORT is what the PLATFORM injects and what the session
     // proxy dials (sandbox_url ends /8000); PORT is the bench's name. Reading
@@ -218,8 +215,11 @@ export function configFromEnv(): WorkerConfig {
     // KORTIX_GATEWAY_URL pair. Read both, or a real session finds no
     // credential at all and cannot start — the bench names are the only ones
     // that ever existed here, so nothing outside a bench ever worked.
-    apiKey: process.env.KORTIX_API_KEY ?? process.env.KORTIX_TOKEN,
-    gatewayUrl: process.env.KORTIX_GATEWAY_URL ?? process.env.KORTIX_LLM_BASE_URL,
+    // KORTIX_TOKEN is a control-plane session credential. It is valid as model
+    // auth only when sent to the Kortix gateway. Never send it directly to an
+    // external provider when the gateway URL is absent.
+    apiKey: process.env.KORTIX_API_KEY ?? (gatewayUrl ? process.env.KORTIX_TOKEN : undefined),
+    gatewayUrl,
     storeUrl: process.env.KORTIX_STORE_URL,
     // The control plane sets only KORTIX_STORE_URL and relies on the session
     // credential it already injects; the bench passes explicit headers. Without
@@ -232,25 +232,6 @@ export function configFromEnv(): WorkerConfig {
         ? { authorization: `Bearer ${process.env.KORTIX_TOKEN}` }
         : undefined,
     sessionId: process.env.KORTIX_SESSION_ID ?? 'session-local',
-  };
-}
-
-/**
- * Bind an AgentHarnessTool (5-arg execute, takes a context) down to a plain
- * AgentTool (4-arg execute) by closing over the context.
- *
- * pi-agent-core ships two tool shapes. `createBashTool()` and friends are
- * AgentHarnessTools: they take `{ env }` as a 5th argument so the harness can
- * resolve a fresh context per turn. `Agent` takes plain AgentTools. Binding
- * here is what pins EVERY built-in tool to the Kortix environment for the
- * lifetime of the process — there is no per-call opportunity to substitute a
- * local filesystem.
- */
-function bindTool(tool: any, context: object) {
-  return {
-    ...tool,
-    execute: (toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any) =>
-      tool.execute(toolCallId, params, signal, onUpdate, context),
   };
 }
 
@@ -279,27 +260,15 @@ export async function buildHarness(cfg: WorkerConfig) {
   let model: any;
   let faux: ReturnType<typeof fauxProvider> | undefined;
 
-  // A real session with no credential used to take the `else` branch and throw
-  // during boot, which stopped the sandbox — the operator saw a session that
-  // went `running` then died, with the cause nowhere in the session record.
-  // Degrade to faux and SAY SO instead: the turn still answers (emptily), and
-  // the reason is in /kortix/health where it can be read.
-  const missingCredential = cfg.modelMode === 'real' && !cfg.apiKey;
-  // Surfaced in /kortix/health, not only in a log nobody reads. A session in
-  // this state ANSWERS — with the scripted faux provider — so from the product
-  // it looks like the agent replying nonsense, with no error anywhere. The
-  // usual cause is the LLM gateway being off for the project: the API sets
-  // KORTIX_MODEL_MODE=real for every session but injects KORTIX_LLM_BASE_URL
-  // only when the gateway is enabled, and it never sets KORTIX_API_KEY. (No
-  // credential is disclosed by this path — with no key the worker contacts no
-  // provider at all.)
-  let modelError: string | null = null;
-  if (missingCredential) {
-    modelError =
-      'KORTIX_MODEL_MODE=real but no credential (KORTIX_API_KEY / KORTIX_LLM_BASE_URL + KORTIX_TOKEN); answering with the faux provider';
-    console.error(`[worker] ${modelError}`);
+  if (cfg.modelMode === 'real' && !cfg.apiKey) {
+    throw new Error(
+      'real model mode requires a provider API key or a gateway URL with KORTIX_TOKEN',
+    );
   }
-  if (cfg.modelMode === 'faux' || missingCredential) {
+  // Retained in health for wire compatibility. Invalid real configuration now
+  // fails boot instead of serving fabricated responses.
+  const modelError: string | null = null;
+  if (cfg.modelMode === 'faux') {
     faux = fauxProvider({ provider: 'faux', models: [{ id: 'faux-1', name: 'Faux' }] });
     models.setProvider(faux.provider);
     model = faux.getModel();
@@ -334,40 +303,25 @@ export async function buildHarness(cfg: WorkerConfig) {
     if (!model) throw new Error(`no model resolved for provider ${provider.id}`);
   }
 
-  // THE SEAM. One context object, bound into every built-in tool.
-  const toolContext = { env };
-  const tools = [createBashTool(), createReadTool(), createWriteTool(), createEditTool()]
-    .map((t) => bindTool(t, toolContext));
+  // THE SEAM. Every default tool is bound to the remote environment once.
+  const tools = createWorkspaceTools(env as unknown as ExecutionEnv);
 
   // Durable transcript. The worker is a cache of it, not its owner: kill this
   // process and the conversation is still whole in the store.
   let session: Session | undefined;
-  /** Non-null when the transcript is NOT being persisted; surfaced in health. */
-  let storeError: string | null = null;
+  /** Kept in the health shape for compatibility. Store failures now fail closed. */
+  const storeError: string | null = null;
   let restoredEntries = 0;
   let restoredMessages: any[] = [];
   if (cfg.storeUrl && cfg.sessionId) {
     const log = new RemoteSessionLog(cfg.storeUrl, cfg.sessionId, cfg.storeHeaders ?? {});
-    try {
-      const opened = await DurableSessionStorage.open({ id: cfg.sessionId } as any, log);
-      restoredEntries = opened.restoredEntries;
-      session = new Session(opened.storage as any);
-      const leaf = await session.getLeafId();
-      if (leaf) {
-        const entries = await session.findEntriesOnBranch({ start: leaf } as any);
-        restoredMessages = restoredMessagesFromEntries(entries);
-      }
-    } catch (error) {
-      // Durability is a FEATURE, not a precondition for answering. Unguarded,
-      // any store fault — a 401, an outage, a shape change — threw here before
-      // the worker ever listened, so the box died at boot with the cause
-      // nowhere: the operator saw a session go `running` and then 502 forever.
-      // Degrade to in-memory, say so in health, and keep serving.
-      storeError = error instanceof Error ? error.message : String(error);
-      console.error(`[worker] durable session store unavailable, continuing in memory: ${storeError}`);
-      session = undefined;
-      restoredEntries = 0;
-      restoredMessages = [];
+    const opened = await DurableSessionStorage.open({ id: cfg.sessionId } as any, log);
+    restoredEntries = opened.restoredEntries;
+    session = new Session(opened.storage as any);
+    const leaf = await session.getLeafId();
+    if (leaf) {
+      const entries = await session.findEntriesOnBranch({ start: leaf } as any);
+      restoredMessages = restoredMessagesFromEntries(entries);
     }
   }
 
@@ -408,7 +362,14 @@ export async function buildHarness(cfg: WorkerConfig) {
       // and if that message carried a `toolCall` whose `toolResult` appended
       // fine, every later turn 400'd at the provider, permanently, because the
       // hole is in an append-only log.
-      persisted = await persistNewMessages(session!, agent.state.messages, persisted, toDurable);
+      const result = await persistNewMessages(
+        session!,
+        agent.state.messages,
+        persisted,
+        toDurable,
+      );
+      persisted = result.persisted;
+      if (result.error) throw result.error;
     });
   }
 
@@ -420,11 +381,9 @@ export async function buildHarness(cfg: WorkerConfig) {
   // 2026-08-29: nine rows across four sessions, nine still `active`, the oldest
   // 67 minutes after its answer was written. See `./turn-end-relay`.
   //
-  // A SEPARATE subscriber from the persistence one above, deliberately: the
-  // relay must fire even if a message append throws, and an append must not be
-  // skipped because a relay is retrying. Ordering between them does not matter
-  // — the control plane's row and the durable transcript are independent
-  // records.
+  // A separate subscriber keeps relay bookkeeping out of transcript storage.
+  // Pi awaits listeners in registration order. A failed append therefore
+  // prevents a false successful relay for that event.
   const relayTurnEnd = buildTurnEndRelay(cfg);
   // WHICH turn ended. `completeSandboxTurn` selects the row by identity, so a
   // relay that names no turn closes none and still answers 200 — set by
@@ -656,7 +615,7 @@ export async function startWorker(cfg = configFromEnv()) {
         // Auth FIRST, and before the session-id probe: an unauthenticated
         // caller must not be able to distinguish "wrong session" from "right
         // session" on this box. This route runs the agent with bash/read/
-        // write/edit against the session's environment and secrets; every
+        // write/edit/glob/grep against the session's environment and secrets; every
         // `/kortix/opencode/*` sibling has always been gated and this one was
         // not, purely because it is served here rather than by RuntimeSurface.
       if (!surface.authorize(req, url)) {
@@ -904,7 +863,9 @@ export async function startWorker(cfg = configFromEnv()) {
           const t0 = process.hrtime.bigint();
           await runTurn(String(text ?? ''));
           const totalMs = Number(process.hrtime.bigint() - t0) / 1e6;
-          const last = agent.state.messages.filter((m: any) => m.role === 'assistant').pop();
+          const last = agent.state.messages
+            .filter((m: any) => m.role === 'assistant')
+            .pop() as AssistantMessage | undefined;
           const answer = (last?.content ?? [])
             .filter((c: any) => c.type === 'text')
             .map((c: any) => c.text)

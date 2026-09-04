@@ -25,6 +25,7 @@ describe('native test-lane workflow', () => {
     // The unchanged root command is the whole lane.
     expect(testWorkflow).toContain('if [[ -n "$TEST_ARGS" ]]; then pnpm test -- $TEST_ARGS; else pnpm test; fi');
     expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_SDK_TESTS=1');
+    expect(testWorkflow).toContain('export KORTIX_PACKAGE_SKIP_WORKER_QUALITY=1');
     expect(testWorkflow).toContain('pnpm install --frozen-lockfile');
     expect(testWorkflow).toContain('bun-version: 1.3.14');
     expect(testWorkflow).toContain('timeout-minutes: 60');

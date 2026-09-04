@@ -83,15 +83,22 @@ describe('pi worker boot skips the OpenCode boot chain', () => {
     expect(full).toBeGreaterThan(slim);
   });
 
-  test('the pi decision resolves runtime and tip in one parallel round trip', async () => {
+  test('the pi decision reads the runtime from the exact resolved commit', async () => {
     const source = await sessionsSource();
     const decision = source.indexOf("resolveFeatureFlag(project.metadata, 'pi_worker')");
-    const parallel = source.indexOf('const [runtime, sha] = await Promise.all([', decision);
+    const resolveTip = source.indexOf(
+      'const sha = await resolveCommitSha(authedProject, ref)',
+      decision,
+    );
+    const readRuntime = source.indexOf(
+      'const runtime = await resolveManifestRuntime(authedProject, sha)',
+      resolveTip,
+    );
     expect(decision).toBeGreaterThan(-1);
-    expect(parallel).toBeGreaterThan(decision);
-    const block = source.slice(parallel, source.indexOf(']);', parallel));
-    expect(block).toContain('resolveManifestRuntime(authedProject, baseRef)');
-    expect(block).toContain('resolveCommitSha(authedProject, ref).catch(() => null)');
+    expect(resolveTip).toBeGreaterThan(decision);
+    expect(readRuntime).toBeGreaterThan(resolveTip);
+    const block = source.slice(decision, source.indexOf('\n  if (', decision));
+    expect(block).not.toContain('Promise.all');
   });
 });
 

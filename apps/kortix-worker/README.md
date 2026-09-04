@@ -6,10 +6,12 @@ harness/worker split (`docs/specs/2026-08-26-harness-worker-split.md`).
 ## What this package is
 
 A single HTTP+SSE server wrapping `@earendil-works/pi-agent-core`'s `Agent`.
-Every built-in tool (`bash`, `read`, `write`, `edit`) resolves its filesystem
-and shell through an injected `ExecutionEnv` that RPCs into a separate
-environment — no default tool can touch the worker's own disk
-(`src/kortix-env.ts`).
+All six default tools (`bash`, `read`, `write`, `edit`, `glob`, and `grep`)
+resolve their filesystem and shell through an injected `ExecutionEnv` that
+RPCs into a separate environment. Pi 0.84.3 supplies the first four tools.
+Kortix supplies `glob` and `grep` adapters because that release exports no
+search-tool factories. No default tool can touch the worker's own disk
+(`src/workspace-tools.ts`, `src/kortix-env.ts`).
 
 It is **not deployed on its own**. `bun run build` produces one self-contained
 `dist/worker-runtime.mjs` (nothing resolved at runtime); the API's
@@ -42,10 +44,12 @@ methods throw) and the working `Agent` surface was verified against it.
 
 ## Tests
 
-The compile pipeline's tests live beside the pipeline and exercise the built
-bundle directly: `apps/api/src/git-proxy/compiled-pi-runtime.test.ts` and
-`pi-worker-bundle.test.ts` (the latter boots the real `dist/worker-runtime.mjs`
-under node and asserts `/health`). Build first: `bun run build`.
+Run `bun run test`, `bun run typecheck`, and `bun run build` inside this package.
+The repository root `pnpm test` command runs the same standalone gates despite
+the workspace exclusion. It then runs `pi-worker-bundle.test.ts` and
+`pi-worker-lockdown.test.ts` against the real `dist/worker-runtime.mjs`. The
+required-bundle mode fails when the build artifact is absent; it never records
+that proof as skipped.
 
 Provenance: graduated from `spikes/pi-worker` (PR #6924), where the Phase 0
 gates S0.1–S0.5 and the Daytona benchmarks live.

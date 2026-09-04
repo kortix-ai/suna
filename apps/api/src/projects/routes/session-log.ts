@@ -13,13 +13,13 @@
  *     servable from here instead of by waking its sandbox. That wake is the
  *     "session looks stopped, then a huge delay" bug the plan names.
  *
- * `seq` is the WRITER's ordering and is unique per session. Replay depends on
- * it, so a duplicate is rejected rather than renumbered: silently accepting one
- * would reorder someone's conversation on the next resume.
+ * The database assigns append order. The worker supplies an idempotency key so
+ * a response lost after commit can be retried without duplicating a mutation.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, asc, eq, gt } from 'drizzle-orm';
 import { projectSessions, sessionWorkerLog } from '@kortix/db';
+import { isDeepStrictEqual } from 'node:util';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -34,9 +34,10 @@ import { UUID_V4_REGEX } from '../lib/serializers';
  * `RemoteSessionLog`). That contract is already proven by the Phase 0 spike and
  * its benches, so the server matches it rather than the other way round.
  *
- * There is no client sequence number in it. Ordering is arrival order, assigned
- * by the database, which is safe because exactly one worker writes one session
- * and its turns are serialized.
+ * Ordering is arrival order, assigned by the database. The worker adds one
+ * UUID `Idempotency-Key` per append and reuses it across transport retries.
+ * This keeps a response lost after COMMIT from duplicating the mutation.
+ * Missing keys remain accepted while older workers drain during rollout.
  */
 const LogItemSchema = z.record(z.unknown());
 const LogPageSchema = z.array(z.record(z.unknown()));
@@ -109,6 +110,7 @@ projectsApp.openapi(
     responses: {
       204: { description: 'Appended' },
       ...errors(400, 401, 403, 404),
+      409: { description: 'Idempotency key was already used for different content' },
       413: { description: 'Item exceeds the per-append size limit' },
     },
   }),
@@ -116,10 +118,38 @@ projectsApp.openapi(
     const gate = await authorizeLogCall(c, PROJECT_ACTIONS.PROJECT_SESSION_START);
     if (gate.kind === 'error') return gate.response;
     const item = c.req.valid('json') as Record<string, unknown>;
+    const appendId = c.req.header('idempotency-key')?.trim() || null;
+    if (appendId && !UUID_V4_REGEX.test(appendId)) {
+      return c.json({ error: 'idempotency-key must be a UUID v4' }, 400);
+    }
     if (Buffer.byteLength(JSON.stringify(item), 'utf8') > MAX_ITEM_BYTES) {
       return c.json({ error: 'log item too large' }, 413);
     }
-    await db.insert(sessionWorkerLog).values({ sessionId: gate.sessionId, item });
+    if (!appendId) {
+      await db.insert(sessionWorkerLog).values({ sessionId: gate.sessionId, appendId: null, item });
+      return c.body(null, 204);
+    }
+
+    const inserted = await db
+      .insert(sessionWorkerLog)
+      .values({ sessionId: gate.sessionId, appendId, item })
+      .onConflictDoNothing({ target: [sessionWorkerLog.sessionId, sessionWorkerLog.appendId] })
+      .returning({ item: sessionWorkerLog.item });
+    if (inserted.length > 0) return c.body(null, 204);
+
+    const [existing] = await db
+      .select({ item: sessionWorkerLog.item })
+      .from(sessionWorkerLog)
+      .where(
+        and(
+          eq(sessionWorkerLog.sessionId, gate.sessionId),
+          eq(sessionWorkerLog.appendId, appendId),
+        ),
+      )
+      .limit(1);
+    if (!existing || !isDeepStrictEqual(existing.item, item)) {
+      return c.json({ error: 'idempotency key reused with different item' }, 409);
+    }
     return c.body(null, 204);
   },
 );

@@ -3,7 +3,7 @@ import { RuntimeSurface } from './runtime-surface.ts';
 import { ChatEventAdapter } from './chat-events.ts';
 
 function adapterFor(surface: RuntimeSurface) {
-  return new ChatEventAdapter(surface.rootId);
+  return new ChatEventAdapter({ sessionID: surface.rootId });
 }
 
 function textDelta(delta: string, contentIndex = 0) {

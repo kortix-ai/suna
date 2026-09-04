@@ -284,13 +284,12 @@ export class LazyKortixEnv {
 
       // A mutating operation is NEVER replayed.
       //
-      // `rpc()` already retries once on a socket-shaped error
-      // (kortix-env.ts:153-157), so a retry here nests inside that one and a
-      // single `bash` could execute up to four times. And the triggers make it
-      // likely rather than theoretical: `rpc timeout` and `fetch failed` are
-      // exactly what a connection dropping AFTER the daemon started the command
-      // looks like — it ran, we just never heard the answer. Replaying
-      // `echo hi` is free; replaying `rm -rf`, `git push` or a migration is not.
+      // The inner RPC layer also restricts its socket-error retry to read-only
+      // operations. Keep both boundaries fail-closed: `rpc timeout` and
+      // `fetch failed` are exactly what a connection dropping AFTER the daemon
+      // started the command looks like — it ran, we just never heard the
+      // answer. Replaying `echo hi` is free; replaying `rm -rf`, `git push` or
+      // a migration is not.
       //
       // So the model is told the truth instead: the environment is healthy
       // again, and this command's outcome is unknown. That is a different

@@ -5,14 +5,19 @@
   "type": "module",
   "description": "The pi-based session worker: the harness and only the harness. Compiled per (project, sha) into a single .mjs by the API's compiled-boot pipeline (apps/api/src/git-proxy/compiled-pi-runtime.ts) and booted in a minimal worker sandbox.",
   "scripts": {
-    "build": "bash scripts/build.sh"
+    "build": "bash scripts/build.sh",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.84.3",
     "@earendil-works/pi-ai": "0.84.3",
+    "typebox": "1.3.7",
     "ws": "8.21.3"
   },
   "devDependencies": {
-    "@types/ws": "8.18.1"
+    "@types/bun": "1.3.14",
+    "@types/ws": "8.18.1",
+    "typescript": "5.9.3"
   }
 }

@@ -4,10 +4,9 @@ async function routeSource(): Promise<string> {
   return Bun.file(new URL('./session-log.ts', import.meta.url)).text();
 }
 
-// These routes are exercised by a real worker (the appends come from inside a
-// sandbox), which the local flow profile cannot stand up, so their security and
-// ordering contract is pinned at source level — the same treatment the sibling
-// session-environment routes get.
+// The local black-box flow exercises these routes as a project owner without a
+// running sandbox. The worker-token self-scope still needs this source-level
+// assertion because the local profile cannot mint a runtime credential.
 describe('session worker log routes', () => {
   test('a session-scoped caller may only reach its OWN log, before any capability check', async () => {
     const source = await routeSource();
@@ -43,6 +42,16 @@ describe('session worker log routes', () => {
     expect(source).toContain('orderBy(asc(sessionWorkerLog.id))');
     expect(source).toContain('MAX_ITEM_BYTES');
     expect(source).toContain("c.json({ error: 'log item too large' }, 413)");
+  });
+
+  test('append retries are database-idempotent and reject key reuse with different content', async () => {
+    const source = await routeSource();
+    expect(source).toContain("c.req.header('idempotency-key')");
+    expect(source).toContain(
+      'target: [sessionWorkerLog.sessionId, sessionWorkerLog.appendId]',
+    );
+    expect(source).toContain('isDeepStrictEqual(existing.item, item)');
+    expect(source).toContain("c.json({ error: 'idempotency key reused with different item' }, 409)");
   });
 
   test('the read path touches no runtime — that is the whole point of P1.8', async () => {

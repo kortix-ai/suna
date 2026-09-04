@@ -904,12 +904,14 @@ export const sessionWorkerLog = kortixSchema.table(
     sessionId: text('session_id')
       .notNull()
       .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    appendId: uuid('append_id'),
     item: jsonb('item').$type<Record<string, unknown>>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     // The only read this table has: one session, in append order.
     index('idx_session_worker_log_session_id').on(table.sessionId, table.id),
+    uniqueIndex('idx_session_worker_log_append_id').on(table.sessionId, table.appendId),
     check('session_worker_log_item_object_check', sql`jsonb_typeof(${table.item}) = 'object'`),
   ],
 );

@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
+const skipWorkerQuality = process.env.KORTIX_PACKAGE_SKIP_WORKER_QUALITY === '1';
 
 async function run(
   command: string[],
@@ -139,6 +140,7 @@ async function runWorkspaceTests(
   );
 }
 
+if (!skipWorkerQuality) await run(['bun', 'tests/bin/worker-quality.ts']);
 await runAll([
   run(['node', 'scripts/stage-npm-publish.test.mjs']),
   run(['node', 'scripts/publish-npm-package.test.mjs']),
@@ -178,6 +180,7 @@ await runAll([
       '!kortix-api',
       '!@kortix/cli',
       '!@kortix/sandbox-agent-server',
+      '!@kortix/worker',
       '!@kortix/db',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
     ],

@@ -88,9 +88,22 @@ describe('env-rpc route', () => {
     const lines = await call('readTextLines', { path: 'notes/hello.txt', maxLines: 1 })
     expect(lines.body.value).toEqual(['hi worker'])
     const info = await call('fileInfo', { path: 'notes/hello.txt' })
-    expect(info.body.value.isFile).toBe(true)
+    expect(info.body.value).toMatchObject({
+      name: 'hello.txt',
+      path: path.join(workspace, 'notes/hello.txt'),
+      kind: 'file',
+      size: 9,
+    })
+    expect(info.body.value.mtimeMs).toBeNumber()
     const list = await call('listDir', { path: 'notes' })
-    expect(list.body.value.map((e: { name: string }) => e.name)).toEqual(['hello.txt'])
+    expect(list.body.value).toHaveLength(1)
+    expect(list.body.value[0]).toMatchObject({
+      name: 'hello.txt',
+      path: path.join(workspace, 'notes/hello.txt'),
+      kind: 'file',
+      size: 9,
+    })
+    expect(list.body.value[0].mtimeMs).toBeNumber()
     const abs = await call('absolutePath', { path: 'notes/hello.txt' })
     expect(abs.body.value).toBe(path.join(workspace, 'notes/hello.txt'))
 
@@ -109,6 +122,32 @@ describe('env-rpc route', () => {
     expect(gone.body.value).toBe(false)
   })
 
+  test('preserves symlinks, dangling entries, and line semantics from the Pi filesystem contract', async () => {
+    const { call, workspace } = await makeApp()
+    await fs.mkdir(path.join(workspace, 'tree'), { recursive: true })
+    await fs.writeFile(path.join(workspace, 'tree', 'lines.txt'), 'one\ntwo\n')
+    await fs.symlink('missing-target', path.join(workspace, 'tree', 'dangling.txt'))
+
+    const lines = await call('readTextLines', { path: 'tree/lines.txt' })
+    expect(lines.body.value).toEqual(['one', 'two'])
+
+    const info = await call('fileInfo', { path: 'tree/dangling.txt' })
+    expect(info.body.value).toMatchObject({
+      name: 'dangling.txt',
+      path: path.join(workspace, 'tree', 'dangling.txt'),
+      kind: 'symlink',
+    })
+
+    const exists = await call('exists', { path: 'tree/dangling.txt' })
+    expect(exists.body).toEqual({ ok: true, value: true })
+
+    const list = await call('listDir', { path: 'tree' })
+    expect(list.body.value.find((entry: { name: string }) => entry.name === 'dangling.txt')).toMatchObject({
+      path: path.join(workspace, 'tree', 'dangling.txt'),
+      kind: 'symlink',
+    })
+  })
+
   test('exec runs a real shell in the workspace and reports exit codes', async () => {
     const { call } = await makeApp()
     await call('writeFile', { path: 'probe.txt', content: 'exec sees the workspace' })
@@ -121,9 +160,14 @@ describe('env-rpc route', () => {
     const fail = await call('exec', { command: 'exit 3' })
     expect(fail.body.value.exitCode).toBe(3)
 
-    const timedOut = await call('exec', { command: 'sleep 5', timeout: 200 })
+    const timeoutStartedAt = Date.now()
+    const timedOut = await call('exec', {
+      command: "bash -c 'sleep 5 & wait'",
+      timeout: 200,
+    })
     expect(timedOut.body.value.exitCode).not.toBe(0)
     expect(timedOut.body.value.stderr).toContain('killed')
+    expect(Date.now() - timeoutStartedAt).toBeLessThan(1_500)
   })
 
   test('an unknown op is a Result, never a crash', async () => {

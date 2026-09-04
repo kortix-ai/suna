@@ -29,6 +29,10 @@ import { piWorkerNodeArgs, piWorkerParkScriptForTest } from './build-context';
  */
 
 const WORKER_DIST = resolve(import.meta.dir, '../../../kortix-worker/dist/worker-runtime.mjs');
+const workerDistExists = existsSync(WORKER_DIST);
+if (!workerDistExists && process.env.KORTIX_REQUIRE_PI_WORKER_BUNDLE === '1') {
+  throw new Error(`required pi worker bundle is missing: ${WORKER_DIST}`);
+}
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -134,7 +138,7 @@ const server = createServer().listen(0, '127.0.0.1', () => {
   });
 });
 
-describe.skipIf(!existsSync(WORKER_DIST))('pi worker lockdown — the real bundle under the permission model', () => {
+describe.skipIf(!workerDistExists)('pi worker lockdown — the real bundle under the permission model', () => {
   test('boots, serves health, and completes a tool turn whose every operation crosses into the environment', async () => {
     process.env.KORTIX_PI_WORKER_BUNDLE_PATH = WORKER_DIST;
     const bundle = await getPiWorkerBundle();

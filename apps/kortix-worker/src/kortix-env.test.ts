@@ -1,6 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  toExecTimeoutMs, toFileErrorCode } from './kortix-env.ts';
+  KortixExecutionEnv,
+  toExecTimeoutMs,
+  toFileErrorCode,
+} from './kortix-env.ts';
+import type { RpcTransport } from './rpc-transport.ts';
+
+function replaceTransport(
+  env: KortixExecutionEnv,
+  call: RpcTransport['call'],
+  close: RpcTransport['close'] = async () => {},
+): void {
+  (env as unknown as { transport: RpcTransport }).transport = {
+    kind: 'test',
+    call,
+    close,
+  };
+}
 
 // The daemon's env-rpc is a thin fs proxy and reports the real errno. pi's
 // tools compare against pi's OWN codes, so this client has to translate.
@@ -65,5 +81,67 @@ describe('toExecTimeoutMs', () => {
     expect(toExecTimeoutMs(-5)).toBeUndefined();
     expect(toExecTimeoutMs(Number.NaN)).toBeUndefined();
     expect(toExecTimeoutMs(Number.POSITIVE_INFINITY)).toBeUndefined();
+  });
+});
+
+describe('RPC replay safety', () => {
+  test('a mutation that commits before its response drops executes exactly once', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+    });
+    let sideEffects = 0;
+    replaceTransport(env, async () => {
+      sideEffects += 1;
+      if (sideEffects === 1) throw new Error('rpc socket closed after commit');
+      return { ok: true, value: undefined };
+    });
+
+    const result = await env.writeFile('/workspace/result.txt', 'payload');
+
+    expect(sideEffects).toBe(1);
+    expect(result.ok).toBe(false);
+  });
+
+  test('a read still retries once when the response drops', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+    });
+    let attempts = 0;
+    replaceTransport(env, async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('rpc socket closed');
+      return { ok: true, value: 'contents' };
+    });
+
+    const result = await env.readTextFile('/workspace/result.txt');
+
+    expect(attempts).toBe(2);
+    expect(result).toEqual({ ok: true, value: 'contents' });
+  });
+});
+
+describe('RPC transport lifecycle', () => {
+  test('cleanup closes the session transport', async () => {
+    const env = new KortixExecutionEnv({
+      baseUrl: 'http://unused.invalid',
+      cwd: '/workspace',
+      transport: 'fetch',
+    });
+    let closes = 0;
+    replaceTransport(
+      env,
+      async () => ({ ok: true, value: undefined }),
+      async () => {
+        closes += 1;
+      },
+    );
+
+    await env.cleanup();
+
+    expect(closes).toBe(1);
   });
 });

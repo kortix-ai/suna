@@ -1355,29 +1355,22 @@ export async function createProjectSession(input: {
   // declaring `runtime: pi`, the session boots the shared pi worker image and
   // its compiled runtime artifact instead of the OpenCode stack. Both gates or
   // nothing — the flag alone only compiles artifacts, the manifest alone is
-  // inert, and any resolution failure falls back to the OpenCode path.
+  // inert, and any resolution failure falls back to the OpenCode path. Resolve
+  // the moving ref first, then read the manifest at that immutable SHA. Reading
+  // both from the branch in parallel can combine one commit's runtime with the
+  // next commit's worker artifact.
   let piWorkerBoot = false;
   let piWorkerSha: string | null = null;
   if (!platformMetaAgent && resolveFeatureFlag(project.metadata, 'pi_worker')) {
     try {
       const authedProject = await withProjectGitAuth(project);
       const ref = (baseRef ?? '').trim() || project.defaultBranch;
-      // One round trip, not two: the runtime read and the tip resolution are
-      // independent, and both sit on the POST /sessions critical path. A
-      // non-pi manifest wastes one ls-remote-sized read; a pi manifest saves
-      // a full sequential git hop.
-      const [runtime, sha] = await Promise.all([
-        resolveManifestRuntime(authedProject, baseRef),
-        resolveCommitSha(authedProject, ref).catch(() => null),
-      ]);
-      if (runtime === 'pi' && sha) {
+      const sha = await resolveCommitSha(authedProject, ref);
+      const runtime = await resolveManifestRuntime(authedProject, sha);
+      if (runtime === 'pi') {
         piWorkerSha = sha;
         piWorkerBoot = true;
         sandboxSlug = PI_WORKER_SANDBOX_SLUG;
-      } else if (runtime === 'pi') {
-        console.warn(
-          `[sessions] pi manifest on ${projectId} but tip resolution for '${ref}' failed; booting OpenCode path`,
-        );
       }
     } catch (err) {
       console.warn(
