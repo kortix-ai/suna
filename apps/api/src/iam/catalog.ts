@@ -25,7 +25,7 @@ const CATALOG_TTL_MS = (() => {
 })();
 
 export type ScopeType = 'account' | 'project';
-export type ObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger';
+export type ObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'subproject';
 
 export interface PermissionEntry {
   action: string;

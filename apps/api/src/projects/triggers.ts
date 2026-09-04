@@ -201,6 +201,13 @@ export interface GitTriggerSpec {
    * having to narrow the subscription and lose every other event type.
    */
   filter: Record<string, string> | null;
+  /**
+   * The `subprojects.<slug>` this trigger belongs to, or null. Purely a
+   * back-reference: the scheduler is unchanged, and every session this trigger
+   * fires inherits the slug (see `fireGitTrigger`). Cross-validated against
+   * `subprojects:` by the manifest schema and by the trigger CRUD routes.
+   */
+  subproject: string | null;
 }
 
 export type GitTriggerSessionMode = 'fresh' | 'reuse' | 'pinned' | 'keyed';
@@ -638,6 +645,9 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     type: spec.type,
     agent: spec.agent,
   };
+  // Emitted only when set, right after `agent`, so a trigger outside any
+  // subproject round-trips byte-identically.
+  if (spec.subproject) entry.subproject = spec.subproject;
   // Only emit model when set so manifests on the "Default" path stay byte-stable.
   if (spec.model) entry.model = spec.model;
   entry.enabled = spec.enabled;
@@ -744,6 +754,11 @@ function parseTriggerEntry(
         : 'default';
   const model = typeof row.model === 'string' && row.model.trim() ? row.model.trim() : null;
   const enabled = coerceBool(row.enabled, true);
+  // Back-reference to the `subprojects:` block. Structural only here (a string
+  // or absent); "does it name a DECLARED subproject" is cross-validated by
+  // @kortix/manifest-schema and by the trigger CRUD routes.
+  const subproject =
+    typeof row.subproject === 'string' && row.subproject.trim() ? row.subproject.trim() : null;
 
   const sessionModeRaw =
     typeof row.session_mode === 'string'
@@ -848,6 +863,7 @@ function parseTriggerEntry(
         pinnedSessionId,
         sessionKey,
         filter,
+        subproject,
       },
     };
   }
@@ -899,6 +915,7 @@ function parseTriggerEntry(
           pinnedSessionId,
           sessionKey,
           filter,
+          subproject,
         },
       };
     }
@@ -930,6 +947,7 @@ function parseTriggerEntry(
         pinnedSessionId,
           sessionKey,
           filter,
+          subproject,
       },
     };
   }
@@ -973,6 +991,7 @@ function parseTriggerEntry(
       pinnedSessionId,
           sessionKey,
           filter,
+          subproject,
     },
   };
 }

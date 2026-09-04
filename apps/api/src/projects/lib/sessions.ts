@@ -113,6 +113,10 @@ import {
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildPiWorkerSessionEnvVars, buildSessionRuntimeEnv } from './session-runtime-env';
 import {
+  loadSubprojectEnvelopeForSession,
+  type SubprojectEnvelope,
+} from './subproject-envelope';
+import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
@@ -455,6 +459,15 @@ export async function buildSessionSandboxEnvVars(input: {
   /** The reserved platform coordinator receives no project checkout or secrets. */
   platformMetaAgent?: boolean;
   workspaceMode?: WorkspaceModeV2 | null;
+  /** The manifest subproject slug this session runs inside (spec §7).
+   *
+   *  ONLY the create path passes it — its `project_sessions` row may not exist
+   *  yet when this runs. Every other caller (restart, open, ensure-runtime,
+   *  env-sync, the platform session service) leaves it `undefined` and the
+   *  session's own row is read below, so a restarted subproject session keeps
+   *  its envelope without each of those call sites having to remember. Pass
+   *  `null` to force "no subproject". */
+  subproject?: string | null;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -465,6 +478,26 @@ export async function buildSessionSandboxEnvVars(input: {
   // sharing was retired — authorization is centralized on the running agent's
   // `secrets` grant, applied below by identifier).
   let agentGrantEnv: string[] | 'all' | undefined;
+
+  // Per-session policy, read by sessionId inside the builder so all call sites
+  // (create, restart, open/ensure, env-sync) are covered — no caller can forget
+  // them. Read BEFORE the git work below because the compiled config depends on
+  // this row's `subproject`.
+  const [sessionPolicyRow] = await db
+    .select({
+      secretsAllowlist: projectSessions.secretsAllowlist,
+      createdBy: projectSessions.createdBy,
+      subproject: projectSessions.subproject,
+    })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, input.sessionId))
+    .limit(1);
+
+  // `undefined` = "ask the row" (every caller but create); an explicit value
+  // wins because on create the row can still be racing this call.
+  const subprojectSlug =
+    input.subproject !== undefined ? input.subproject : (sessionPolicyRow?.subproject ?? null);
+  let subprojectEnvelope: SubprojectEnvelope | null = null;
 
   // v2-only: compile the manifest's `agents:` map into an OpenCode-native
   // config the sandbox receives sealed (see compile-agent-config.ts). `null`
@@ -484,17 +517,30 @@ export async function buildSessionSandboxEnvVars(input: {
       manifestPath: input.manifestPath ?? 'kortix.yaml',
       gitAuthToken: null,
     };
+    const subprojectOpts = { subproject: subprojectSlug };
     compiledAgentConfig =
       !workspaceModeAllowsFullRepository(input.workspaceMode)
         ? await resolveSelectedAgentConfigForSession(
             gitProject,
             input.agentName,
             input.baseRef,
+            subprojectOpts,
           )
           : await resolveCompiledAgentConfigForSession(
               gitProject,
               input.baseRef,
+              subprojectOpts,
             ).catch(() => null);
+
+    // The standing instructions/description the daemon renders into
+    // /tmp/kortix/subproject.md. Resolved from the SLUG here so every caller
+    // only ever passes a slug; an undeclared one warns and yields null, and
+    // the session still boots.
+    subprojectEnvelope = await loadSubprojectEnvelopeForSession(
+      gitProject,
+      subprojectSlug,
+      input.baseRef,
+    );
 
     // Per-agent secret scoping: an agent declared in `agents:` with a `secrets`
     // allowlist receives ONLY those IDENTIFIERS — so a narrowly-scoped agent
@@ -518,19 +564,10 @@ export async function buildSessionSandboxEnvVars(input: {
     });
   }
 
-  // Per-session secret policy, read by sessionId inside the builder so all three
-  // call sites (create, restart, open/ensure) are covered — no caller can
-  // forget them. `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list)
-  // so a backend-vouched session only receives the secrets the wrapper named
-  // (null → passthrough, byte-identical to pre-KaaB).
-  const [sessionPolicyRow] = await db
-    .select({
-      secretsAllowlist: projectSessions.secretsAllowlist,
-      createdBy: projectSessions.createdBy,
-    })
-    .from(projectSessions)
-    .where(eq(projectSessions.sessionId, input.sessionId))
-    .limit(1);
+  // `secretsAllowlist` NARROWS the agent grant to (grant) ∩ (list) so a
+  // backend-vouched session only receives the secrets the wrapper named
+  // (null → passthrough, byte-identical to pre-KaaB). The row itself is read
+  // above, before the git work that now depends on it.
   const grantEnvForSession = input.platformMetaAgent
     ? []
     : intersectSecretGrants(agentGrantEnv, sessionPolicyRow?.secretsAllowlist ?? null);
@@ -668,6 +705,7 @@ export async function buildSessionSandboxEnvVars(input: {
       gitDeltaParentCommitBase64: input.gitDeltaParentCommitBase64,
       gitDeltaBundleRemote: input.gitDeltaBundleRemote,
       opencodeConfigDir: input.opencodeConfigDir,
+      subproject: subprojectEnvelope,
     }),
     // The platform coordinator uses API-level delegation and never receives a
     // project checkout. Keep this override after buildSessionRuntimeEnv so the
@@ -987,6 +1025,34 @@ export async function createProjectSession(input: {
   }
 
   const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
+  // The subproject join. Declaration is re-checked HERE, not only in the route,
+  // because the route is not the only caller: `fireGitTrigger` passes a
+  // `subproject` straight from the manifest, and a stale one must not persist a
+  // row pointing at a block that no longer exists. Authorization stays with the
+  // caller — a trigger fire is manager tier by construction (spec §5.5).
+  const subproject = normalizeString(body.subproject);
+  if (subproject) {
+    const { loadProjectSubprojects } = await import('../subprojects');
+    const declared = await loadProjectSubprojects(project);
+    const spec = declared.specs.find((s) => s.slug === subproject);
+    if (!spec) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Subproject "${subproject}" is not declared in this project's manifest`,
+            code: 'SUBPROJECT_NOT_DECLARED',
+          },
+        },
+      };
+    }
+    // The subproject's `agent` is a DEFAULT: it fills in only when the caller
+    // named none. The agent gate in the create route already ran on the same
+    // resolution, so this cannot land on an agent that gate never approved.
+    if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
+      body.agent_name = spec.agent;
+    }
+  }
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
     rethrowReadErrors: true,
@@ -1574,6 +1640,7 @@ export async function createProjectSession(input: {
         // Do not set opencodeSessionId during wrapper-session creation.
         // Runtime root discovery persists it only after OpenCode creates its root.
         agentName,
+        subproject,
         status: 'provisioning',
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).

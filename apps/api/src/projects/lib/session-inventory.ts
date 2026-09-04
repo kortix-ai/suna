@@ -86,12 +86,45 @@ export function selectSessionRowsForViewer(input: {
   boundCredentialSessionId: string | null;
   grantsBySession: Map<string, SecretGrant[]>;
   runtimeStatusBySession: Map<string, RuntimeStatus>;
+  /**
+   * The subproject slugs this viewer may see. A row carrying a subproject that
+   * is NOT in this set is dropped in BOTH scopes — a subproject is an IAM
+   * object, so a member without the grant must not even learn the session
+   * exists. Empty/omitted means "no row carries a subproject", so no filtering
+   * is applied; the caller only resolves this when some row does. See
+   * lib/subproject-access.ts.
+   */
+  accessibleSubprojects?: ReadonlySet<string>;
+  /**
+   * Of those, the ones declared `sessions: shared`. A row in a shared
+   * subproject is readable by everyone granted it regardless of its own
+   * visibility. Lifecycle rights are unchanged — `canAccess` widens, nothing
+   * else does.
+   */
+  sharedSubprojects?: ReadonlySet<string>;
+  /**
+   * `?subproject=` — undefined applies no filter, a slug keeps only that
+   * subproject's rows, and the EMPTY STRING keeps only rows with none.
+   */
+  subprojectFilter?: string;
 }): { authorized: boolean; items: SessionInventoryItem[] } {
   if (input.scope === 'project' && !input.canManageProject) {
     return { authorized: false, items: [] };
   }
+  const sharedSubprojects = input.sharedSubprojects;
 
-  const items = input.rows.map((row) => {
+  const rows = input.rows.filter((row) => {
+    if (input.subprojectFilter !== undefined && (row.subproject ?? '') !== input.subprojectFilter) {
+      return false;
+    }
+    // A subproject the viewer holds no grant for hides its sessions entirely,
+    // in BOTH scopes. Applied before the ordinary visibility fold so nothing —
+    // a share, a manager role, the trigger-session override — can widen it back.
+    if (!row.subproject) return true;
+    return input.accessibleSubprojects?.has(row.subproject) ?? false;
+  });
+
+  const items = rows.map((row) => {
     const metadata = (row.metadata ?? {}) as Record<string, unknown>;
     const deletedAt =
       typeof metadata.deletedAt === 'string' ? metadata.deletedAt : null;
@@ -99,6 +132,9 @@ export function selectSessionRowsForViewer(input: {
       typeof metadata.deletedBy === 'string' ? metadata.deletedBy : null;
     const runtimeStatus =
       input.runtimeStatusBySession.get(row.sessionId) ?? null;
+    // `sessions: shared` — the rows that survived the filter above are in a
+    // subproject this viewer holds, so a shared one opens every session in it.
+    const subprojectShares = Boolean(row.subproject && sharedSubprojects?.has(row.subproject));
     const canAccess = isProjectSessionVisibleTo(
       row.visibility as 'private' | 'project' | 'restricted',
       row.createdBy,
@@ -112,7 +148,7 @@ export function selectSessionRowsForViewer(input: {
       },
       { metadata: row.metadata, canManageProject: input.canManageProject },
     );
-    return { row, canAccess, runtimeStatus, deletedAt, deletedBy };
+    return { row, canAccess: canAccess || subprojectShares, runtimeStatus, deletedAt, deletedBy };
   });
 
   if (input.scope === 'project') {

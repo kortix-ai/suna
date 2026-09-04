@@ -178,6 +178,10 @@ export function serializeSession(
     name: customName ?? runtimeTitle ?? autoName,
     custom_name: customName,
     agent_name: row.agentName,
+    // The subproject join. Never redacted with `canAccess: false` — it is a
+    // slug the caller was already allowed to learn (an inaccessible
+    // subproject's rows are dropped from the inventory outright).
+    subproject: row.subproject ?? null,
     status: row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for

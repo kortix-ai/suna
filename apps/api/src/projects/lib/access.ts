@@ -12,8 +12,8 @@ import {
 // Straight from the engine + the actor builder, not the barrel: the barrel is
 // replaced wholesale by `mock.module` in several route tests, so every name
 // imported from it is a name those stubs must also declare.
-import { authorize, assertAuthorized } from '../../iam/authorize';
-import { actorOf, type Actor } from '../../iam/actor';
+import { authorize, assertAuthorized, filterAccessibleObjects } from '../../iam/authorize';
+import { actorOf, actorForToken, type Actor } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { projectRoleForUser } from '../../iam/read-models';
 // Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
@@ -225,6 +225,14 @@ export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   return typeof metadata.deletedAt === 'string';
 }
 
+/** Is this subproject declared `sessions: shared`? Lazily imported so
+ *  `lib/access.ts` keeps no static edge to the manifest/git layer, and never
+ *  throws — an unreadable manifest answers `false`, i.e. `private`. */
+async function subprojectSharesSessions(project: ProjectRow, slug: string): Promise<boolean> {
+  const { loadSubprojectModes } = await import('./subproject-access');
+  return (await loadSubprojectModes(project)).get(slug) === 'shared';
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
@@ -270,6 +278,21 @@ export async function loadVisibleSession(
 } | null> {
   const row = await loadProjectSessionRow(loaded, sessionId);
   if (!row) return null;
+  // A session inside a subproject is invisible — 404, not 403 — to anyone
+  // without that subproject's grant. Enforced HERE, not per route, so all 14
+  // lifecycle call sites are covered by one predicate. Costs nothing for the
+  // ordinary session, whose `subproject` is null.
+  if (row.subproject) {
+    const actor =
+      loaded.actor ?? (await actorForToken(loaded.userId, loaded.row.accountId, undefined));
+    const accessible = await filterAccessibleObjects(
+      actor,
+      loaded.row.projectId,
+      'subproject',
+      [row.subproject],
+    );
+    if (accessible.length === 0) return null;
+  }
   const subject = await resolveShareSubject(loaded.userId);
   const grants = (await loadSessionGrants([sessionId])).get(sessionId) ?? [];
   const ownership = {
@@ -307,7 +330,12 @@ export async function loadVisibleSession(
       subject,
       ownership,
       { metadata: row.metadata, canManageProject },
-    )
+    ) &&
+    // `sessions: shared` — the subproject grant (already verified above) is
+    // itself the read right for every session inside it. Read the manifest only
+    // on this path: an ordinary cross-owner denial in a `private` subproject
+    // still pays nothing extra.
+    !(row.subproject ? await subprojectSharesSessions(loaded.row, row.subproject) : false)
   ) {
     // A platform-admin bypass already verified for the parent project (see
     // loadProjectForUser) also covers a session that would otherwise be

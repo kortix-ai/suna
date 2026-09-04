@@ -152,6 +152,7 @@ describe('draftToSpec — new trigger spec path uses the real manifest file', ()
     expectEventWithinSeconds: null, sessionMode: 'fresh' as const, pinnedSessionId: null,
         sessionKey: null,
         filter: null,
+        subproject: null,
   };
 
   test('YAML project → path is kortix.yaml#triggers.<slug> (not hardcoded toml)', () => {

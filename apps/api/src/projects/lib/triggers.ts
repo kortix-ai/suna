@@ -1075,6 +1075,10 @@ export async function fireGitTrigger(input: {
     body: {
       agent_name: spec.agent,
       initial_prompt: renderedPrompt,
+      // The fired session inherits the trigger's subproject. No per-fire access
+      // check: the trigger actor is manager tier by construction (spec §5.5),
+      // and `createProjectSession` still refuses an undeclared slug.
+      ...(spec.subproject ? { subproject: spec.subproject } : {}),
       // A trigger-level model pins this run's session to that model, taking
       // precedence over the agent/account/platform default chain. Omitted
       // (null) leaves resolution to that chain — see GitTriggerSpec.model.
@@ -1437,6 +1441,7 @@ export async function loadTriggersForResponse(
       session_id: spec.pinnedSessionId,
       session_key: spec.sessionKey,
       filter: spec.filter,
+      subproject: spec.subproject,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
@@ -1480,6 +1485,8 @@ export interface TriggerDraft {
   sessionKey: string | null;
   /** Payload paths that must match for a delivery to fire. Null when unfiltered. */
   filter: Record<string, string> | null;
+  /** The `subprojects.<slug>` this trigger belongs to. `null`/`''` clears it. */
+  subproject: string | null;
 }
 
 export function parseTriggerDraft(
@@ -1545,6 +1552,10 @@ export function parseTriggerDraft(
   }
   const sessionKey: string | null = sessionMode === 'keyed' ? (sessionKeyRaw ?? null) : null;
 
+  // `null` and `''` both clear it (normalizeString returns null for both), so a
+  // PATCH can take a trigger out of its subproject without a delete+recreate.
+  const subproject = normalizeString((body as any).subproject) ?? null;
+
   const filterRaw = (body as any).filter;
   let filter: Record<string, string> | null = null;
   if (filterRaw !== undefined && filterRaw !== null) {
@@ -1586,6 +1597,7 @@ export function parseTriggerDraft(
       pinnedSessionId,
       sessionKey,
       filter,
+      subproject,
     };
   }
 
@@ -1620,6 +1632,7 @@ export function parseTriggerDraft(
         pinnedSessionId,
         sessionKey,
         filter,
+        subproject,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -1647,6 +1660,7 @@ export function parseTriggerDraft(
       pinnedSessionId,
       sessionKey,
       filter,
+      subproject,
     };
   }
 
@@ -1675,6 +1689,7 @@ export function parseTriggerDraft(
     pinnedSessionId,
     sessionKey,
     filter,
+    subproject,
   };
 }
 
@@ -1713,6 +1728,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     session_id: spec.pinnedSessionId,
     session_key: spec.sessionKey,
     filter: spec.filter,
+    subproject: spec.subproject,
   };
 }
 
@@ -1754,6 +1770,7 @@ export function draftToSpec(
     pinnedSessionId: draft.pinnedSessionId,
     sessionKey: draft.sessionKey,
     filter: draft.filter,
+    subproject: draft.subproject,
   };
 }
 

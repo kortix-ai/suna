@@ -471,6 +471,7 @@ const triggerDbMock: any = {
               sandboxUrl: null,
               opencodeSessionId: null,
               agentName: values.agentName ?? 'default',
+              subproject: values.subproject ?? null,
               status: values.status ?? 'provisioning',
               error: null,
               createdBy: values.createdBy ?? null,

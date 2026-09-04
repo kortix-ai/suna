@@ -36,6 +36,9 @@ import { createSession, deleteSession } from '../session-lifecycle';
 import { callerKortixSessionId } from '../lib/caller-session';
 import type { ProjectSessionListScope } from '../lib/session-inventory';
 import { loadProjectSessionInventory } from '../lib/session-list';
+import { assertSubprojectAccessible, subprojectViewerAccess } from '../lib/subproject-access';
+import { loadProjectSubprojects } from '../subprojects';
+import { withProjectGitAuth } from '../lib/git';
 
 const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'deletedAt',
@@ -113,6 +116,37 @@ projectsApp.openapi(
           PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
         )
       : false;
+  // Per-SUBPROJECT scoping. Runs BEFORE the agent gate for two reasons: an
+  // undeclared or ungranted subproject must be refused whatever agent was
+  // asked for, and a granted one supplies the agent when the caller named none
+  // — so the ordinary agent gate below runs on the agent that will actually
+  // start. Declaration is re-checked in `createProjectSession` for the callers
+  // that never pass through here (trigger fires).
+  const requestedSubproject = normalizeString(body.subproject);
+  if (requestedSubproject) {
+    const declared = await loadProjectSubprojects(await withProjectGitAuth(loaded.row));
+    const spec = declared.specs.find((s) => s.slug === requestedSubproject);
+    if (!spec) {
+      return c.json(
+        {
+          error: `Subproject "${requestedSubproject}" is not declared in this project's manifest`,
+          code: 'SUBPROJECT_NOT_DECLARED',
+        },
+        400,
+      );
+    }
+    // Throws the 403 `subproject_not_accessible` with `accessible_subprojects`.
+    await assertSubprojectAccessible(
+      c,
+      loaded,
+      projectId,
+      requestedSubproject,
+      declared.specs.map((s) => s.slug),
+    );
+    if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
+      body.agent_name = spec.agent;
+    }
+  }
   // Per-RESOURCE scoping: a member/department can only launch agents they're
   // scoped to. No-op when the agent isn't scoped (unscoped = project-wide) and
   // for owner/admins. Mirrors the agent the session core resolves (sessions.ts).
@@ -237,6 +271,9 @@ projectsApp.openapi(
         params: z.object({ projectId: z.string() }),
         query: z.object({
           scope: z.enum(['visible', 'project']).optional(),
+          // `?subproject=<slug>` narrows to one subproject; `?subproject=`
+          // (empty) narrows to the sessions that belong to none.
+          subproject: z.string().optional(),
         }),
       },
     responses: {
@@ -250,6 +287,7 @@ projectsApp.openapi(
   async (c: any) => {
   const projectId = c.req.param('projectId');
   const scope = (c.req.valid('query').scope ?? 'visible') as ProjectSessionListScope;
+  const subprojectFilter = c.req.valid('query').subproject as string | undefined;
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -262,6 +300,8 @@ projectsApp.openapi(
     effectiveRole: loaded.effectiveRole,
     scope,
     boundCredentialSessionId: callerKortixSessionId(c),
+    subprojectFilter,
+    loadSubprojectAccess: (slugs) => subprojectViewerAccess(c, loaded, projectId, slugs),
     probeManageCapability: () =>
       projectCapabilityAllowed(
         c,

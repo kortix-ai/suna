@@ -844,6 +844,11 @@ export const SessionCreateInputSchema = z
     sandbox_slug: z.string().min(1).optional(),
     initial_prompt: z.string().optional(),
     pending_prompt: PendingSessionPromptSchema.optional(),
+    // The `subprojects.<slug>` this session belongs to. Must be declared in the
+    // manifest (400 SUBPROJECT_NOT_DECLARED) and granted to the caller (403
+    // subproject_not_accessible). When set with no `agent_name`, the
+    // subproject's own `agent` becomes the requested one.
+    subproject: z.string().min(1).optional(),
     // The clean text auto-titling derives from, when `initial_prompt` is a
     // rendered envelope (channel scaffolding, a coordinator's session
     // contract, a --with-file manifest) rather than the user's own words.
@@ -914,6 +919,8 @@ export const ProjectSessionSchema = z.object({
   /** The user-set override alone, so clients can tell it apart from the auto title. */
   custom_name: z.string().nullable(),
   agent_name: z.string(),
+  /** The `subprojects.<slug>` this session lives in, or null. */
+  subproject: z.string().nullable(),
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
@@ -1237,6 +1244,9 @@ export const TriggerSchema = z.object({
   session_key: z.string().nullable(),
   /** Payload paths that must match for the trigger to fire. Null when unfiltered. */
   filter: z.record(z.string(), z.string()).nullable(),
+  /** The `subprojects.<slug>` this trigger belongs to, or null. Sessions it
+   *  fires inherit it. */
+  subproject: z.string().nullable(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
   last_fired_at: z.string().nullable(),
@@ -1257,6 +1267,47 @@ export const TriggerListSchema = z.object({
   errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
 });
 export type TriggerList = z.infer<typeof TriggerListSchema>;
+
+export const SUBPROJECT_SESSIONS_MODES = ['private', 'shared'] as const;
+export const SubprojectSessionsModeSchema = z.enum(SUBPROJECT_SESSIONS_MODES);
+export type SubprojectSessionsMode = z.infer<typeof SubprojectSessionsModeSchema>;
+
+/**
+ * One `kortix.yaml` → `subprojects.<slug>` block as the API serves it: a named
+ * container inside a project that groups sessions, carries standing
+ * instructions plus context paths, may pin a default agent, and owns the
+ * triggers naming it. Who may use one is an IAM object grant
+ * (`object_type = 'subproject'`), never a field here.
+ */
+export const SubprojectSchema = z.object({
+  slug: z.string(),
+  /** Display label; defaults to the slug. */
+  name: z.string(),
+  description: z.string().nullable(),
+  /** Standing instructions, inline markdown. */
+  instructions: z.string().nullable(),
+  /** Repo-relative files/directories the agent reads first. Always an array. */
+  context: z.array(z.string()),
+  /** Default agent for sessions started here — a default, not a binding. */
+  agent: z.string().nullable(),
+  sessions: SubprojectSessionsModeSchema,
+  /** `<manifest-file>#subprojects.<slug>` breadcrumb. */
+  path: z.string(),
+  /** Non-deleted sessions in this subproject that the CALLER can see. */
+  session_count: z.number(),
+  /** Triggers whose `subproject` names this one. */
+  trigger_count: z.number(),
+  /** True when the caller holds `project.customize.write` (edit/delete). */
+  can_manage: z.boolean(),
+});
+export type Subproject = z.infer<typeof SubprojectSchema>;
+
+/** GET /v1/projects/:id/subprojects — an envelope, like the trigger list. */
+export const SubprojectsResponseSchema = z.object({
+  subprojects: z.array(SubprojectSchema),
+  errors: z.array(z.object({ slug: z.string(), path: z.string(), error: z.string() })),
+});
+export type SubprojectsResponse = z.infer<typeof SubprojectsResponseSchema>;
 
 /**
  * The per-user view of one secret, as built by `buildSecretView`: a secret is

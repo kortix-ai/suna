@@ -37,6 +37,7 @@ function spec(overrides: Partial<GitTriggerSpec> = {}): GitTriggerSpec {
     pinnedSessionId: null,
     sessionKey: null,
     filter: null,
+    subproject: null,
     ...overrides,
   };
 }
