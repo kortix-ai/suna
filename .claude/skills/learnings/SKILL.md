@@ -21,6 +21,16 @@ linked, not inlined.
 
 ## Register
 
+### A secret allowlist and its runtime collector must be one definition (2026-09-04)
+
+**When:** forwarding CI secrets into a generated preview or deployment runtime.
+**Incident:** `deploy-preview.yml` exported `MANAGED_GIT_GITHUB_TOKEN` and the preview
+allowlist accepted it, but `sandbox-preview.ts` copied a separate ten-key list that omitted it.
+Adding the Actions secret would still have left managed Git unavailable inside the API container.
+**Rule:** derive collection and forwarding from one allowlist. Never duplicate secret key names.
+**Enforcer:** `preview-stack.test.ts` iterates `PREVIEW_RUNTIME_SECRET_ALLOWLIST` and proves every
+listed value is trimmed, forwarded, and isolated from unlisted environment variables.
+
 ### A byte-identical migration rename still requires ledger repair (2026-09-04)
 
 **When:** changing any applied migration filename, including a timestamp-only rebase.

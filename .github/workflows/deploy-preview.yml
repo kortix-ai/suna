@@ -498,14 +498,23 @@ jobs:
           DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
           PREVIEW_URL: ${{ steps.preview.outputs.preview_url }}
           PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
+          RUN_TESTS: ${{ env.PREVIEW_RUN_TESTS }}
         run: |
           set -euo pipefail
           if [ "$PREVIEW_OUTCOME" = success ] && [ -n "$PREVIEW_URL" ]; then
             state=success
-            description='Full self-host preview and target-full tests passed'
+            if [ "$RUN_TESTS" = 1 ]; then
+              description='Full self-host preview and target-full tests passed'
+            else
+              description='Full self-host preview deployed; target-full was not run'
+            fi
           else
             state=failure
-            description='Preview deployment or target-full tests failed'
+            if [ "$RUN_TESTS" = 1 ]; then
+              description='Preview deployment or target-full tests failed'
+            else
+              description='Preview deployment failed'
+            fi
           fi
           jq -n \
             --arg state "$state" \
@@ -522,14 +531,21 @@ jobs:
           PROVIDER: ${{ steps.preview.outputs.provider }}
           SANDBOX_ID: ${{ steps.preview.outputs.sandbox_id }}
           PREVIEW_OUTCOME: ${{ steps.preview.outcome }}
+          RUN_TESTS: ${{ env.PREVIEW_RUN_TESTS }}
         run: |
           set -euo pipefail
           marker='<!-- preview-status -->'
           if [ "$PREVIEW_OUTCOME" = success ]; then
-            title='## Preview environment - live and tested'
-            # Markdown needs literal backticks.
-            # shellcheck disable=SC2016
-            result='`pnpm test -- --target-full` passed.'
+            if [ "$RUN_TESTS" = 1 ]; then
+              title='## Preview environment - live and tested'
+              # Markdown needs literal backticks.
+              # shellcheck disable=SC2016
+              result='`pnpm test -- --target-full` passed.'
+            else
+              title='## Preview environment - live; tests not run'
+              # shellcheck disable=SC2016
+              result='`pnpm test -- --target-full` was skipped for this push. Run the workflow manually for a complete deployed-target result.'
+            fi
           elif [ -n "$PREVIEW_URL" ]; then
             title='## Preview environment - live; tests failed'
             result='The sandbox remains available for diagnosis. Open the report and workflow log.'
