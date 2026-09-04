@@ -55,7 +55,17 @@ suite('migration ledger rename repair', () => {
       const connectorIndex = migrationNames.indexOf(migrationLedgerRepairConnectorName);
       expect(connectorIndex).toBeGreaterThan(0);
 
-      for (const [index, name] of migrationNames.slice(0, connectorIndex).entries()) {
+      const renamedDeadlineNames = new Set([
+        '20260730000452547_sandbox_deadline',
+        '20260730000452600_sandbox_deadline_index.concurrent',
+      ]);
+      const appliedNames = migrationNames.filter(
+        (name) =>
+          name !== migrationLedgerRepairConnectorName &&
+          !renamedDeadlineNames.has(name),
+      );
+
+      for (const [index, name] of appliedNames.entries()) {
         await client.query(
           `insert into kortix_migrations.pgmigrations (name, run_on)
            values ($1, $2::timestamptz)`,
@@ -88,6 +98,8 @@ suite('migration ledger rename repair', () => {
         '20260902070000000_session_worker_log',
         '20260902070001000_pi_runtime_artifacts',
       ];
+      const currentSecretConsumerName = '20260805202913539_secret_consumer_boundary';
+      const legacySecretConsumerName = '20260805165801277_secret_consumer_boundary';
       const legacyPiNames = [
         '20260828170156721_session_worker_log',
         '20260829160353474_pi_runtime_artifacts',
@@ -102,8 +114,11 @@ suite('migration ledger rename repair', () => {
         .sort()
         .map((filename) => filename.replace(/\.sql$/, '').replace(/\.ts$/, ''));
       const historicalNames = migrationNames
-        .filter((name) => !currentPiNames.includes(name))
-        .concat(legacyPiNames)
+        .filter(
+          (name) =>
+            !currentPiNames.includes(name) && name !== currentSecretConsumerName,
+        )
+        .concat(legacySecretConsumerName, legacyPiNames)
         .sort();
 
       for (const name of historicalNames) {
@@ -178,9 +193,17 @@ suite('migration ledger rename repair', () => {
       const ledger = await client.query<{ name: string }>(
         `select name
            from kortix_migrations.pgmigrations
+          where name = any($1::text[])
           order by run_on, id`,
+        [
+          [
+            migrationLedgerRepairConnectorName,
+            '20260730000452547_sandbox_deadline',
+            '20260730000452600_sandbox_deadline_index.concurrent',
+          ],
+        ],
       );
-      expect(ledger.rows.slice(-3).map((row) => row.name)).toEqual([
+      expect(ledger.rows.map((row) => row.name)).toEqual([
         migrationLedgerRepairConnectorName,
         '20260730000452547_sandbox_deadline',
         '20260730000452600_sandbox_deadline_index.concurrent',
@@ -199,7 +222,7 @@ suite('migration ledger rename repair', () => {
     }
   });
 
-  test('repairs the applied pi migration names before strict order validation', async () => {
+  test('repairs every applied renamed migration before strict order validation', async () => {
     const runnerOptions = {
       databaseUrl: piDatabaseUrl?.toString(),
       dir: migrationsDir,
@@ -230,6 +253,9 @@ suite('migration ledger rename repair', () => {
     expect(pending.map((migration) => migration.name)).not.toContain(
       '20260902070001000_pi_runtime_artifacts',
     );
+    expect(pending.map((migration) => migration.name)).not.toContain(
+      '20260805202913539_secret_consumer_boundary',
+    );
 
     const client = new pg.Client({ connectionString: piDatabaseUrl?.toString() });
     await client.connect();
@@ -243,12 +269,15 @@ suite('migration ledger rename repair', () => {
           [
             '20260828170156721_session_worker_log',
             '20260829160353474_pi_runtime_artifacts',
+            '20260805165801277_secret_consumer_boundary',
+            '20260805202913539_secret_consumer_boundary',
             '20260902070000000_session_worker_log',
             '20260902070001000_pi_runtime_artifacts',
           ],
         ],
       );
       expect(ledger.rows.map((row) => row.name)).toEqual([
+        '20260805202913539_secret_consumer_boundary',
         '20260902070000000_session_worker_log',
         '20260902070001000_pi_runtime_artifacts',
       ]);

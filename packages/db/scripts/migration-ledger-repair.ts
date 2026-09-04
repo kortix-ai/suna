@@ -41,6 +41,15 @@ const APP_ACCESS_RENAMES = [
   },
 ] as const;
 
+const SECRET_CONSUMER_RENAMES = [
+  {
+    legacyName: '20260805165801277_secret_consumer_boundary',
+    currentName: '20260805202913539_secret_consumer_boundary',
+    filename: '20260805202913539_secret_consumer_boundary.sql',
+    sha256: '9de8e240356235c49d577e219ca83518eceaacfaab16243aa9b6f15847a2e7d1',
+  },
+] as const;
+
 const PI_RUNTIME_RENAMES = [
   {
     legacyName: '20260828170156721_session_worker_log',
@@ -58,6 +67,7 @@ const PI_RUNTIME_RENAMES = [
 
 const MIGRATION_RENAMES = [
   ...SANDBOX_DEADLINE_RENAMES,
+  ...SECRET_CONSUMER_RENAMES,
   ...APP_ACCESS_RENAMES,
   ...PI_RUNTIME_RENAMES,
 ] as const;
@@ -160,14 +170,12 @@ async function inspectRepairPlan(databaseUrl: string): Promise<MigrationLedgerRe
   }
 }
 
-async function reorderAppliedPiRuntimeRenames(
+async function reorderAppliedRenames(
   client: pg.Client,
   renames: MigrationLedgerRepairPlan['renames'],
 ): Promise<void> {
-  const piCurrentNames = new Set(PI_RUNTIME_RENAMES.map(({ currentName }) => currentName));
   const movedNames = renames
     .map(({ currentName }) => currentName)
-    .filter((currentName) => piCurrentNames.has(currentName))
     .sort();
   if (movedNames.length === 0) return;
 
@@ -197,7 +205,7 @@ async function reorderAppliedPiRuntimeRenames(
     [firstName],
   );
   if ((result.rowCount ?? 0) < movedNames.length) {
-    throw new Error('Migration ledger repair could not reorder the renamed pi migrations.');
+    throw new Error('Migration ledger repair could not reorder the renamed migrations.');
   }
 }
 
@@ -249,7 +257,7 @@ async function reconcileRepairPlan(databaseUrl: string): Promise<boolean> {
       }
     }
 
-    await reorderAppliedPiRuntimeRenames(client, plan.renames);
+    await reorderAppliedRenames(client, plan.renames);
 
     await client.query('commit');
     return true;

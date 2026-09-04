@@ -21,6 +21,15 @@ linked, not inlined.
 
 ## Register
 
+### A byte-identical migration rename still requires ledger repair (2026-09-04)
+
+**When:** changing any applied migration filename, including a timestamp-only rebase.
+**Incident:** the `pi-worker` full local gate re-ran `secret_consumer_boundary` under its new
+name and failed on duplicate enum `42710`; the database recorded the byte-identical old name.
+**Rule:** add every old-to-new filename pair to the checksum-guarded repair and normalize the
+whole affected ledger suffix by database microsecond order. File-content equality is not identity.
+**Enforcer:** unit and PostgreSQL integration tests cover the secret-consumer rename and strict order.
+
 ### Parse untrusted text with one forward scan, not a backtracking regular expression (2026-09-03)
 
 **When:** trimming URLs or extracting text from upstream HTML and other untrusted response bodies.
