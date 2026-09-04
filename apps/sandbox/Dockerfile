@@ -6,6 +6,7 @@
 #   - uv + uv-managed Python       (Python tools resolve dependencies per command)
 #   - pnpm + Node.js + npm         (pinned runtime toolchain)
 #   - opencode CLI                  (the supervised child process)
+#   - Codex CLI + Claude Code       (environment tools invoked by the harness)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
 #   - kortix                        (compiled admin CLI from apps/cli — the
@@ -148,7 +149,9 @@ RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packa
         $(python3 -c "import json; print(' '.join(f'{k}=={v}' for k, v in sorted(json.load(open('/tmp/kortix-runtime-versions.json'))['pythonPackages'].items())))") \
     && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')"
 
-ENV SHELL=/bin/bash
+ENV SHELL=/bin/bash \
+    DISABLE_AUTOUPDATER=1 \
+    DISABLE_UPDATES=1
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
     && NODE_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['node'])")" \
     && NPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['npm'])")" \
@@ -191,6 +194,41 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && ln -sf "$(dirname "$pw_chrome")" /home/kortix/.agent-browser/browsers/chrome-linux64 \
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
+
+# The Pi harness invokes these as environment tools. Download only the current
+# architecture from each publisher's official npm package. Repository-owned
+# SHA-256 pins protect the artifact path without executing an installer script.
+# Keep Codex's complete vendor tree because its sandbox and search resources sit
+# beside the main executable. The image-wide Claude update guards keep this pin
+# stable after startup.
+RUN CODEX_CLI_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexCli)")" \
+    && CLAUDE_CODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCode)")" \
+    && CODEX_CLI_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexCliSha256Amd64)")" \
+    && CODEX_CLI_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').codexCliSha256Arm64)")" \
+    && CLAUDE_CODE_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCodeSha256Amd64)")" \
+    && CLAUDE_CODE_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').claudeCodeSha256Arm64)")" \
+    && case "$(uname -m)" in \
+         x86_64) cli_arch=x64; codex_target=x86_64-unknown-linux-musl; codex_sha="$CODEX_CLI_SHA256_AMD64"; claude_sha="$CLAUDE_CODE_SHA256_AMD64" ;; \
+         aarch64|arm64) cli_arch=arm64; codex_target=aarch64-unknown-linux-musl; codex_sha="$CODEX_CLI_SHA256_ARM64"; claude_sha="$CLAUDE_CODE_SHA256_ARM64" ;; \
+         *) echo "unsupported agent CLI architecture: $(uname -m)" >&2; exit 1 ;; \
+       esac \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/codex.tgz \
+         "https://registry.npmjs.org/@openai/codex/-/codex-${CODEX_CLI_VERSION}-linux-${cli_arch}.tgz" \
+    && echo "${codex_sha}  /tmp/codex.tgz" | sha256sum -c - \
+    && rm -rf /opt/kortix/codex \
+    && mkdir -p /opt/kortix/codex \
+    && tar -xzf /tmp/codex.tgz --strip-components=1 -C /opt/kortix/codex \
+    && ln -sfn "/opt/kortix/codex/vendor/${codex_target}/bin/codex" /home/kortix/.local/bin/codex \
+    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-resources/bwrap" \
+    && test -x "/opt/kortix/codex/vendor/${codex_target}/codex-path/rg" \
+    && curl -fsSL --retry 3 --retry-delay 2 -o /tmp/claude-code.tgz \
+         "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-${cli_arch}/-/claude-code-linux-${cli_arch}-${CLAUDE_CODE_VERSION}.tgz" \
+    && echo "${claude_sha}  /tmp/claude-code.tgz" | sha256sum -c - \
+    && tar -xzf /tmp/claude-code.tgz -O package/claude > /home/kortix/.local/bin/claude \
+    && chmod 0755 /home/kortix/.local/bin/claude \
+    && rm /tmp/codex.tgz /tmp/claude-code.tgz \
+    && test "$(codex --version)" = "codex-cli ${CODEX_CLI_VERSION}" \
+    && test "$(claude --version)" = "${CLAUDE_CODE_VERSION} (Claude Code)"
 
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
