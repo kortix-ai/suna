@@ -168,12 +168,25 @@ const CHECKS = [
     suite: "eviction.sh", file: "test/eviction.sh",
     from: "if CELLD_IDLE_EVICT_S=3 node celldctl.mjs up >/dev/null 2>&1; then\n  CELL=$(docker ps --filter name=pt-cell --format '{{.Names}}' | head -1)\n  ID_BEFORE=",
     to: "if node celldctl.mjs up >/dev/null 2>&1; then\n  CELL=$(docker ps --filter name=pt-cell --format '{{.Names}}' | head -1)\n  ID_BEFORE=" },
+  // THE CELL'S BASH REACHES PLATINUM'S /exec — measured against dev, not a stub.
+  //
+  // The first attempt at this entry mutated tools.platinum.js and SURVIVED:
+  // that module's bash is retired (pitools.js routes bash through the
+  // ExecutionEnv in execenv.platinum.js), so the mutation touched code the
+  // turn never ran. This one mutates the call that actually fires. Its failure
+  // text is Platinum dev's own 404, which is also proof the request got there.
+  // SKIPs — reported as `skipped`, not `silent` — when no dev token is present.
+  { claim: "the cell's bash really reaches Platinum's /exec on dev",
+    expect: new RegExp("no such route|not_found"),
+    suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
+    from: 'const r = await api("POST", "/exec", { body: { cmd: command, timeout_ms: Math.min(Math.max(timeoutMs, 100), 300_000) }, signal });',
+    to:   'const r = await api("POST", "/exec-nope", { body: { cmd: command, timeout_ms: Math.min(Math.max(timeoutMs, 100), 300_000) }, signal });' },
 ];
 
 /**
  * Prune the cells this run creates.
  *
- * Fourteen entries, each a full e2e or eviction run, each making its own cells and
+ * Fifteen entries, each a full e2e or eviction run, each making its own cells and
  * leaving them. The bindings version of this file has to reset its store for
  * CORRECTNESS — its fixture uses a fixed name, and a mutant poisoned it. Here
  * every suite names its cell with $$ or $RANDOM, so nothing is poisoned and the

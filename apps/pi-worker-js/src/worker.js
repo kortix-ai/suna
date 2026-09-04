@@ -46,7 +46,9 @@ globalThis.atob = (input) => {
 import { Agent } from "@earendil-works/pi-agent-core";
 import { executionEnvFor, piTools, piToolsPlatinum } from "./pitools.js";
 import { invokeSkill, loadWorkspaceSkills, withSkills } from "./skills.js";
-import { platinumTools } from "./tools.platinum.js";
+// tools.platinum.js is retired for the worker: bash/read/write/list/grep go
+// through the ExecutionEnv in execenv.platinum.js (see pitools.js). The module
+// stays for platinum-shapes.mjs, which unit-tests its ledger and bodies.
 import { providerStream, resolveModel, scriptedStream, supportedProviders } from "./model.js";
 import { SUMMARY_PROMPT, compactionState, maybeCompact } from "./compaction.js";
 
