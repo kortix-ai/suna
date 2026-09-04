@@ -386,7 +386,7 @@ function closesTag(text: string): boolean {
   return text.replace(/\{[^{}]*\}/g, '').includes('>');
 }
 
-const MDX_WRAPPER_TAGS = new Set(['Cards', 'KeyFacts', 'StatGrid', 'Steps']);
+const MDX_WRAPPER_TAGS = new Set(['Cards', 'CardGroup', 'KeyFacts', 'StatGrid', 'Steps']);
 const MDX_BLOCK_TAGS = new Set(['Callout', 'Card', 'Fact', 'Step']);
 
 // `:::warning[Title]` opens a container directive; a bare `:::` closes it.
