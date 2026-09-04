@@ -25,7 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { commentMask, literalMask } from "../../tools/js-mask.mjs";
-import { platinumPath } from "./platinum-repo.mjs";
+import { havePlatinum, platinumPath } from "./platinum-repo.mjs";
 import { countClaims, verdict } from "../../tools/mutant.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 
@@ -226,7 +226,10 @@ const SRC = "const a = 1;\nconst b = 2;\nconst a2 = 1;\n";
   // conditional in this repo lives inside a comment — r2.js's header explains
   // the null contract with `if (!o)` in it — and that number is the guard.
   const sources = [];
-  for (const dir of [`${HERE}src`, platinumPath("infra/celld/bindings")]) {
+  // Without a Platinum checkout only this package's sources are scanned — the
+  // one commented conditional lives in Platinum's r2.js, so the guard is 0 then.
+  const dirs = [`${HERE}src`, ...(havePlatinum ? [platinumPath("infra/celld/bindings")] : [])];
+  for (const dir of dirs) {
     for (const f of readdirSync(dir)) if (f.endsWith(".js")) sources.push(join(dir, f));
   }
   let inComment = 0, total = 0;
@@ -239,10 +242,13 @@ const SRC = "const a = 1;\nconst b = 2;\nconst a2 = 1;\n";
       if (m[hit.index]) { inComment++; where.push(`${f.split("/").pop()}:${src.slice(0, hit.index).split("\n").length}`); }
     }
   }
-  check(`exactly one conditional across all ${sources.length} sources is inside a comment, and it is r2.js's`,
-    inComment === 1 && where[0]?.startsWith("r2.js:"), `${inComment} masked: ${where.join(", ")}`);
-  check("and the other several hundred are code the auditors will still mutate",
-    total - inComment > 200, `${total - inComment} auditable conditionals`);
+  check(havePlatinum
+    ? `exactly one conditional across all ${sources.length} sources is inside a comment, and it is r2.js's`
+    : `no conditional across this package's ${sources.length} sources is inside a comment (no Platinum checkout: r2.js not scanned)`,
+    havePlatinum ? inComment === 1 && where[0]?.startsWith("r2.js:") : inComment === 0, `${inComment} masked: ${where.join(", ")}`);
+  // Measured: 115 in this package alone, several hundred with Platinum's bindings.
+  check(`and the other ${havePlatinum ? "several hundred" : "hundred-odd"} are code the auditors will still mutate`,
+    total - inComment > (havePlatinum ? 200 : 100), `${total - inComment} auditable conditionals`);
 }
 
 // ── the verdict on a mutant, which I got wrong four times by hand ───────────

@@ -19,6 +19,10 @@ const HERE = new URL(".", import.meta.url).pathname;
 const looksLikePlatinum = (p) => existsSync(resolve(p, "apps/api/src/api/sandboxes.ts")) && existsSync(resolve(p, "infra/celld"));
 
 export const PLATINUM_REPO = (() => {
+  // PLATINUM_REPO=none says "there is no checkout" — CI, or a machine without
+  // one — so the suites that read Platinum's source SKIP by name instead of
+  // failing on a path that does not exist.
+  if (process.env.PLATINUM_REPO === "none") return "";
   if (process.env.PLATINUM_REPO && looksLikePlatinum(process.env.PLATINUM_REPO)) return resolve(process.env.PLATINUM_REPO);
   const inside = resolve(HERE, "../../../..");
   if (looksLikePlatinum(inside)) return inside;
@@ -31,3 +35,5 @@ export const PLATINUM_REPO = (() => {
 })();
 
 export const platinumPath = (rel) => resolve(PLATINUM_REPO, rel);
+/** True when a Platinum checkout is present; the contract suites SKIP without one. */
+export const havePlatinum = !!PLATINUM_REPO && looksLikePlatinum(PLATINUM_REPO);

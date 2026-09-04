@@ -42,7 +42,8 @@ import { watchClaims } from "../../tools/crash-reporter.mjs";
 // expects is not found, every derived claim FAILS rather than skipping. A
 // contract test that quietly stops testing when it cannot find the contract is
 // the failure it exists to prevent.
-import { platinumPath } from "./platinum-repo.mjs";
+import { havePlatinum, platinumPath } from "./platinum-repo.mjs";
+if (!havePlatinum) { console.log("  SKIP: no Platinum checkout — this suite reads Platinum's source (set PLATINUM_REPO)"); process.exit(0); }
 const API_SRC = platinumPath("apps/api/src/api/sandboxes.ts");
 
 function execSchemaFromSource() {

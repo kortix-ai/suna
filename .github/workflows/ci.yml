@@ -41,6 +41,7 @@ jobs:
       sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
       desktop: ${{ steps.filter.outputs.desktop }}
       self_host: ${{ steps.filter.outputs.self_host }}
+      pi_worker: ${{ steps.filter.outputs.pi_worker }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -83,6 +84,12 @@ jobs:
             desktop:
               - '.github/workflows/ci.yml'
               - 'apps/desktop-electron/**'
+            # the pi worker in a cell: its suites read apps/tools and the celld spec
+            pi_worker:
+              - '.github/workflows/ci.yml'
+              - 'apps/pi-worker-js/**'
+              - 'apps/tools/**'
+              - 'apps/pt-celld.spec.json'
             # self-host stack: anything that can break `kortix self-host start`'s
             # from-scratch DB bootstrap or the CLI's compose generation.
             self_host:
@@ -397,6 +404,26 @@ jobs:
           files=(apps/desktop-electron/dist/*.AppImage)
           test "${#files[@]}" -gt 0
           ls -lh "${files[@]}"
+
+  pi-worker-sweep:
+    name: pi worker (cell harness) — every suite
+    needs: changes
+    if: needs.changes.outputs.pi_worker == 'true'
+    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install worker dependencies
+        run: npm ci
+        working-directory: apps/pi-worker-js
+      # MinIO and the pinned celld image are provisioned by the script; suites
+      # that need a Platinum checkout or a dev token SKIP by name, never pass.
+      - name: Every suite
+        run: PLATINUM_REPO=none ./test/ci.sh
+        working-directory: apps/pi-worker-js
 
   dependency-scan:
     name: Dependency + secret scan
