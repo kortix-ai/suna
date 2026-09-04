@@ -10,7 +10,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=58
+// EXPECTED_PASSES=61
 
 import { createEditTool, createReadTool, createWriteTool, createBashTool } from "@earendil-works/pi-agent-core";
 import { createServer } from "node:http";
@@ -133,6 +133,22 @@ r = await env.exists("src/nope.py");
 check("exists maps a 404 to false, not an error", r.ok && r.value === false, JSON.stringify(r));
 r = await env.listDir("src");
 check("listDir maps entries to pi's shape", r.ok && r.value.some((e) => e.name === "app.py" && e.kind === "file"), JSON.stringify(r).slice(0, 100));
+// A RANGED READ IS BYTES, AND ANSWERS 206. Platinum's GET /files with offset or
+// limit calls readFileRange({offset, length: limit}) under a byte cap and
+// replies 206. readTextLines used to ask for limit=maxLines and accept only
+// 200 — on dev that was a FileError for a five-line file. The stub used to
+// slice lines and say 200, so the suite could not know.
+{
+  const src = readFileSync(SANDBOXES_SRC, "utf8");
+  const ranged = /readFileRange\(sbx\.id, path, \{ offset, length: limit \}\)[\s\S]{0,400}?status: 206/.exec(src);
+  check("PLATINUM'S RANGED GET /files IS A BYTE WINDOW THAT ANSWERS 206 — read from its source", !!ranged && /MAX_RANGE_READ_BYTES/.test(src));
+  await env.writeFile("lines.txt", "one\ntwo\nthree\nfour\nfive\n");
+  const win = await fetch(`http://127.0.0.1:${PORT}/v1/sandboxes/sbx_env/files?path=${encodeURIComponent(`${ROOT}/w/lines.txt`)}&limit=3`, { headers: { authorization: "Bearer pt_live_envkey" } });
+  check("and so is the stub's: limit=3 is three BYTES, status 206", win.status === 206 && (await win.text()) === "one", `status ${win.status}`);
+  const two = await env.readTextLines("lines.txt", { maxLines: 2 });
+  check("readTextLines(maxLines: 2) on a five-line file is exactly the first two LINES",
+    two.ok && Array.isArray(two.value) && two.value.length === 2 && two.value[0] === "one" && two.value[1] === "two", JSON.stringify(two).slice(0, 120));
+}
 r = await env.readBinaryFile("src/app.py");
 check("readBinaryFile returns bytes from the raw route", r.ok && r.value instanceof Uint8Array && r.value.length > 0);
 r = await env.readTextFile("src/missing.py");

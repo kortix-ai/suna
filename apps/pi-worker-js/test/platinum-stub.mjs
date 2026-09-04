@@ -109,15 +109,14 @@ createServer(async (req, res) => {
         if (!url.searchParams.has("offset") && !url.searchParams.has("limit")) {
           res.writeHead(200, { "content-type": "application/octet-stream", "content-length": String(rawBytes.length) }); return res.end(rawBytes);
         }
-        let content = rawBytes.toString("utf8");
-        const offset = url.searchParams.get("offset");
-        const limit = url.searchParams.get("limit");
-        if (offset || limit) {
-          const lines = content.split("\n");
-          const o = Number(offset ?? 0);
-          content = lines.slice(o, o + Number(limit ?? lines.length)).join("\n");
-        }
-        return text(res, 200, content);
+        // A ranged read is BYTES and answers 206 with x-total-bytes / x-pt-eof,
+        // exactly as Platinum's handler does — this used to slice lines and say 200.
+        const o = Number(url.searchParams.get("offset") ?? "0");
+        const n = Number(url.searchParams.get("limit") ?? String(rawBytes.length - o));
+        const slice = rawBytes.subarray(o, o + n);
+        res.writeHead(206, { "content-type": "application/octet-stream", "content-length": String(slice.length),
+          "x-total-bytes": String(rawBytes.length), "x-pt-eof": o + n >= rawBytes.length ? "true" : "false" });
+        return res.end(slice);
       } catch { return json(res, 404, { error: "not found" }); }
     }
 

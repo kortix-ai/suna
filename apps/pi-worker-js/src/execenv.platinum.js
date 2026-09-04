@@ -118,9 +118,14 @@ export function platinumExecutionEnv({ apiUrl, key, sandboxId, cwd = "/home/user
     },
 
     async readTextLines(path, options = {}) {
-      const res = await api("GET", "/files", { query: { path: abs(path), offset: 0, limit: options.maxLines }, raw: true });
+      // Platinum's offset/limit on GET /files are BYTES (readFileRange, with a
+      // byte cap) and a ranged read answers 206. This used to send
+      // limit=maxLines and reject anything but 200 — measured on dev: a FileError
+      // with code "unknown" for a five-line file. The whole file, lines cut here.
+      const res = await api("GET", "/files", { query: { path: abs(path) }, raw: true }); // whole file: the window is bytes
       if (res.status !== 200) { const t = await res.text(); return fail(t.slice(0, 200) || `read ${res.status}`, path, codeFor(res.status, t)); }
-      return ok((await res.text()).split("\n"));
+      const lines = (await res.text()).split("\n");
+      return ok(options.maxLines !== undefined ? lines.slice(0, options.maxLines) : lines);
     },
 
     async readBinaryFile(path) {

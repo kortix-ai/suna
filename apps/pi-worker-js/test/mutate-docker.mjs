@@ -200,6 +200,18 @@ const CHECKS = [
     suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
     from: '      const r = await api("PUT", "/files", { query: { path: abs(path) }, bytes });',
     to:   '      const r = await api("PUT", "/files", { query: { path: abs(path) }, body: { content: new TextDecoder().decode(bytes) } });' },
+  // A RANGED READ IS BYTES AND ANSWERS 206. Measured on dev before this existed:
+  // readTextLines(maxLines: 2) was a FileError("unknown") for a five-line file.
+  { claim: "readTextLines cuts lines itself — Platinum's window is bytes and 206",
+    expect: new RegExp("exactly the first two LINES"),
+    suite: "execenv-platinum.mjs", file: "src/execenv.platinum.js",
+    from: 'const res = await api("GET", "/files", { query: { path: abs(path) }, raw: true }); // whole file: the window is bytes',
+    to:   'const res = await api("GET", "/files", { query: { path: abs(path), offset: 0, limit: options.maxLines }, raw: true });' },
+  { claim: "and does so against Platinum dev, not only the stub",
+    expect: new RegExp("readTextLines over dev"),
+    suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
+    from: 'const res = await api("GET", "/files", { query: { path: abs(path) }, raw: true }); // whole file: the window is bytes',
+    to:   'const res = await api("GET", "/files", { query: { path: abs(path), offset: 0, limit: options.maxLines }, raw: true });' },
 ];
 
 /**
@@ -233,7 +245,7 @@ for (const c of SELECTED) {
   try {
     const r = await run(process.execPath, [
       `${CELLD}tools/mutate.mjs`, "--file", `${HERE}${c.file}`, "--from", c.from, "--to", c.to,
-      "--build", "npm run --silent build", "--", "sh", "-c", `cd ${HERE} && ./test/${c.suite}`,
+      "--build", "npm run --silent build", "--", "sh", "-c", `cd ${HERE} && ${c.suite.endsWith(".mjs") ? "node " : ""}./test/${c.suite}`,
     ], { cwd: HERE, maxBuffer: 64 * 1024 * 1024, timeout: 900_000 });
     out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
   } catch (e) {
