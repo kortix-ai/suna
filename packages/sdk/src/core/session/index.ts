@@ -24,3 +24,4 @@ export * from './connection';
 export * from './working';
 export * from './compaction';
 export * from './wake-escalation';
+export * from './runtime-question';

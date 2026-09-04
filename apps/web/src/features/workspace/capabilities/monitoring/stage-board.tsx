@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 import {
   SESSION_STAGES,
   answerSessionQuestion,
+  answerSessionRuntimeQuestion,
   getSessionOpenQuestion,
   type ProjectSession,
   type SessionStage,
@@ -91,7 +92,14 @@ function StageCard({ projectId, session }: { projectId: string; session: Project
           answers: [text],
           request_id: open.request_id,
         });
-      } else {
+      } else if (
+        // The daemon does not always relay the ask to the API; the agent's
+        // `question` tool can still be blocked inside the sandbox. Answer it
+        // there, else the decision goes out as a durable prompt.
+        (await answerSessionRuntimeQuestion(projectId, session.session_id, text).catch(
+          () => 'none' as const,
+        )) === 'none'
+      ) {
         await startSessionWithPrompt(projectId, session.session_id, {
           parts: [{ type: 'text', text }],
         });

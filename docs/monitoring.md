@@ -110,7 +110,11 @@ Serializer: `ProjectSession.stage` is exposed top-level as the object above or
    plus the optional reviewer note. Send back = `PUT …/stage {stage:'planning'}`
    then the same answer-or-prompt with the reviewer's feedback. The stage
    write goes first because it is the only window in which a person may
-   write it. SDK: `getSessionOpenQuestion`, `answerSessionQuestion`.
+   write it. When there is no durable question, the board next tries the
+   agent's runtime question (`answerSessionRuntimeQuestion` — the `question`
+   tool blocked inside the sandbox, which the daemon does not always relay),
+   and only then sends the prompt. SDK: `getSessionOpenQuestion`,
+   `answerSessionQuestion`, `answerSessionRuntimeQuestion`.
 4. Without `--needs-approval` the agent moves itself straight on:
    `kortix sessions stage in_progress`, later `review`, then `done`.
 

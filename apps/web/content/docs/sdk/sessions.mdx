@@ -238,6 +238,13 @@ if (open) {
 }
 ```
 
+The durable question exists only when the sandbox daemon relayed the ask. When
+it did not, the agent's `question` tool may still be blocked inside the
+running sandbox; `answerSessionRuntimeQuestion(projectId, sessionId, text)`
+answers that one directly through the session's own runtime and returns
+`'answered'` or `'none'`. The Monitoring board tries the durable question, then
+the runtime question, then falls back to a prompt.
+
 ## Runtime status and previews
 
 | Method                      | Returns                        | Use                                          |
