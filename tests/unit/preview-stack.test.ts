@@ -4,6 +4,7 @@ import {
   applyPreviewEnvironment,
   buildPreviewCaddyfile,
   buildPreviewComposeOverlay,
+  readPreviewRuntimeSecrets,
   validatePreviewRuntimeSecrets,
 } from '../src/core/preview-stack';
 
@@ -108,6 +109,18 @@ describe('ephemeral self-host preview stack', () => {
         DEV_DATABASE_URL: 'forbidden',
       }),
     ).toThrow('DEV_DATABASE_URL');
+  });
+
+  it('reads every allowed runtime secret from the deployment environment', () => {
+    const source = Object.fromEntries(
+      PREVIEW_RUNTIME_SECRET_ALLOWLIST.map((key) => [key, ` ${key}-value `]),
+    );
+
+    expect(readPreviewRuntimeSecrets({ ...source, DEV_DATABASE_URL: 'forbidden' })).toEqual(
+      Object.fromEntries(
+        PREVIEW_RUNTIME_SECRET_ALLOWLIST.map((key) => [key, `${key}-value`]),
+      ),
+    );
   });
 
   it('pins exact images and configures the preview data plane', () => {

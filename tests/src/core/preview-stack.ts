@@ -14,6 +14,14 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
 export type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
 export type PreviewRuntimeSecrets = Partial<Record<PreviewRuntimeSecretName, string>>;
 
+export function readPreviewRuntimeSecrets(
+  environment: Readonly<Record<string, string | undefined>>,
+): PreviewRuntimeSecrets {
+  return Object.fromEntries(
+    PREVIEW_RUNTIME_SECRET_ALLOWLIST.map((key) => [key, environment[key]?.trim() ?? '']),
+  );
+}
+
 export interface PreviewStackInput {
   origin: string;
   sha: string;
