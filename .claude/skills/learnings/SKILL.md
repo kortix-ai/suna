@@ -4132,19 +4132,26 @@ days, each time for a reason the deploy could not repair once it had returned:
    (`ERR_PNPM_NO_OFFLINE_TARBALL` on `@earendil-works/pi-agent-core`).
 
 The part that made every one of these last for hours: **fixes committed on the
-branch did nothing.** `deploy-preview.yml` is `pull_request_target`, and its
-deploy job checks out the DEFAULT branch, so the bootstrap, the Caddyfile and
-the compose overlay always come from `main`'s `tests/`. Four fixes for exactly
-these failures sat on `pi-worker` and `ino/preview-parity` — prune before
-pull, Caddy swap tolerance, the git-cache volume, the offline fallback — each
-verified in a unit test, none ever executed by a deploy.
+branch did nothing where it mattered.** `deploy-preview.yml` is
+`pull_request_target`, and its deploy job checks out the DEFAULT branch, so the
+BOOTSTRAP (`buildPreviewBootstrapScript`, written to the box as
+`run-kortix-preview.sh`) always comes from `main`'s `tests/`. The bootstrap
+then runs `bun tests/bin/preview-stack.ts` INSIDE the box, from the PR-head
+checkout at `/workspace/suna` — so the Caddyfile and the compose overlay come
+from the BRANCH. Two provenances, verified on the first deploy after this
+landed: the guard install and `disk before pull` (bootstrap, main) ran, while
+the generated Caddyfile still lacked `swap_tolerant` (preview-stack, branch)
+until the guard patched it 60 s later. Know which file you are changing:
+`sandbox-preview.ts` → main; `preview-stack.ts` → the branch under test, and
+main only after the branch merges main.
 
 **The rules.**
 
-1. **A change to `tests/src/core/preview-stack.ts`, `sandbox-preview.ts` or
-   `deploy-preview.yml` reaches a preview only from `main`.** Land it there
-   first, in its own PR; a branch preview cannot test it and will keep failing
-   in the way the branch already fixed.
+1. **A change to `sandbox-preview.ts` or `deploy-preview.yml` reaches a
+   preview only from `main`; a change to `preview-stack.ts` reaches it from
+   the branch being deployed.** Land bootstrap and workflow fixes on `main`
+   first, in their own PR; put Caddyfile and overlay fixes on the branch (and
+   on `main`, or the next branch loses them).
 2. **A persistent environment carries its own watcher.** The deploy is on the
    box for ~14 minutes a day; the environment is expected to serve for the
    other 1,426. `tests/src/core/preview-guard.ts` runs as a container on the
