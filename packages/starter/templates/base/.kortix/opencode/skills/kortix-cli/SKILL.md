@@ -73,6 +73,16 @@ model, host switching, orchestration patterns — read
 `kortix skills file kortix-system references/kortix/kortix-cli.md` (the full
 command reference), or `kortix skills get <name>` for another system skill.
 
+## Report your stage (Monitoring board)
+
+When the project has **Monitoring** enabled the platform puts the full stage
+protocol in your system prompt — follow it. The command is
+`kortix sessions stage <backlog|planning|ready|in_progress|review|done>
+[--needs-approval] [--note "<one line>"]`; your session id is implied. After
+`--needs-approval`, end your turn: the decision arrives as a new prompt. A
+`403 … not enabled` means Monitoring is off — skip the stage calls. Only you
+move your card; people can only approve or send back a card awaiting approval.
+
 ## Landing work on `main`
 
 A session runs on its own branch; the **only** sanctioned path to `main` is a

@@ -63,6 +63,7 @@ export const FeatureFlagMapSchema = z.object({
   warm_sessions: z.boolean(),
   secrets_egress: z.boolean(),
   pi_worker: z.boolean(),
+  monitoring: z.boolean(),
 });
 export type FeatureFlagMap = z.infer<typeof FeatureFlagMapSchema>;
 
@@ -898,6 +899,21 @@ export const SessionCreateInputSchema = z
   .strict();
 export type SessionCreateInput = z.infer<typeof SessionCreateInputSchema>;
 
+/** Kanban column on the Monitoring board (`monitoring` flag). Column order = list order. */
+export const SESSION_STAGES = ['backlog', 'planning', 'ready', 'in_progress', 'review', 'done'] as const;
+export const SessionStageSchema = z.enum(SESSION_STAGES);
+export type SessionStage = z.infer<typeof SessionStageSchema>;
+/** `project_sessions.metadata.stage` — server-managed; written only by `PUT /sessions/:id/stage`. */
+export const SessionStageStateSchema = z.object({
+  value: SessionStageSchema,
+  needs_approval: z.boolean(),
+  note: z.string().nullable(),
+  updated_at: z.string(),
+  /** `'agent'` when the session's own sandbox moved it, else the user id. */
+  updated_by: z.string(),
+});
+export type SessionStageState = z.infer<typeof SessionStageStateSchema>;
+
 /** A project session as serialized by `serializeSession`. */
 export const ProjectSessionSchema = z.object({
   session_id: z.string(),
@@ -917,6 +933,8 @@ export const ProjectSessionSchema = z.object({
   status: SessionStatusSchema,
   error: z.string().nullable(),
   metadata: JsonObjectSchema,
+  /** Monitoring-board stage (`metadata.stage`), null when never set. */
+  stage: SessionStageStateSchema.nullable().optional(),
   opencode_sessions: z.array(z.unknown()),
   created_by: z.string().nullable(),
   owner_email: z.string().nullable(),

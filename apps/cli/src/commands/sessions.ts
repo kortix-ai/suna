@@ -46,6 +46,7 @@ import {
 import { runSessionsQueue, wireMessageId } from './sessions-queue.ts';
 import { runSessionsFiles } from './sessions-sandbox-files.ts';
 import { runSessionsScope } from './sessions-scope.ts';
+import { runSessionsStage } from './sessions-stage.ts';
 import { runSessionsLinks, runSessionsShare } from './sessions-share.ts';
 import { runSessionsShell } from './sessions-shell.ts';
 import { runSessionsWaitFor } from './sessions-wait.ts';
@@ -183,6 +184,11 @@ Subcommands:
                                     box restarts, ending the turn in flight.
   compact <session-id>              Summarize the conversation and continue
                                     from the summary.
+  stage [<session-id>] [<stage>]    Move the session's card on the Monitoring
+                                    board (backlog/planning/ready/in_progress/
+                                    review/done), or print it. Inside a sandbox
+                                    the id defaults to $KORTIX_SESSION_ID.
+                                    --needs-approval, --note, --json.
   rename <session-id> <name>        Set a session's name. Pass "" to clear it
                                     and revert to the automatic title.
   rm <session-id>...                Stop + delete one or more sessions.
@@ -277,6 +283,9 @@ export async function runSessions(argv: string[]): Promise<number> {
   }
   if (sub === 'model') {
     return runSessionsModel(argv.slice(1));
+  }
+  if (sub === 'stage') {
+    return runSessionsStage(argv.slice(1));
   }
   if (sub === 'compact' || sub === 'summarize') {
     return runSessionsCompact(argv.slice(1));

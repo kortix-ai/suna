@@ -225,6 +225,9 @@ export async function ensureSessionEnvironment(
         baseRef: input.baseRef,
         agentName: input.agentName,
         llmGatewayEnabled: false,
+        // No project row in scope here; backend-provisioned environments get no
+        // Monitoring stage protocol until this service loads the project.
+        projectMetadata: null,
         // The session branch already exists remotely (pushed at session
         // create); the daemon fetches it instead of assuming branch == base.
         restoreSessionBranch: true,

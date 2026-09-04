@@ -167,6 +167,13 @@ test('session(...).rescope writes canonical connection bindings', async () => {
   });
 });
 
+test('session(...).setStage PUTs the stage board move', async () => {
+  await kortix.session('PID123', 'SID456').setStage({ stage: 'ready', needs_approval: true });
+  expect(last().url).toBe('http://test.local/projects/PID123/sessions/SID456/stage');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ stage: 'ready', needs_approval: true });
+});
+
 test('project(id).sessions.list forwards manager inventory scope', async () => {
   await kortix.project('PID123').sessions.list({ scope: 'project' });
   expect(last().url).toContain('/projects/PID123/sessions?scope=project');

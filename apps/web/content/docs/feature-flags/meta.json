@@ -1,4 +1,4 @@
 {
   "title": "Feature flags",
-  "pages": ["index", "apps"]
+  "pages": ["index", "apps", "monitoring"]
 }

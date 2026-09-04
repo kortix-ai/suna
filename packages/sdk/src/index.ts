@@ -105,6 +105,13 @@ export {
 } from './core/session/message-queue';
 
 /**
+ * Answer the question the agent is blocked on inside its running sandbox —
+ * the last resort behind the durable `answerSessionQuestion` for a Monitoring
+ * approval when the daemon never relayed the ask.
+ */
+export { answerSessionRuntimeQuestion, externalIdFromSandboxUrl } from './core/session/runtime-question';
+
+/**
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →
  * Markdown, zero DOM deps, so any host (web, mobile, CLI) exports a transcript
  * the same way.

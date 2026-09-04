@@ -59,6 +59,7 @@ import {
   SECRET_CAPABILITIES_ENV_NAME,
   writeSecretCapabilitiesInstruction,
 } from './secret-capabilities'
+import { writeStageInstruction } from './stage-instructions'
 
 const READY_POLL_MS = 100
 /** How long the post-respawn turn finalize waits for opencode to answer again.
@@ -244,6 +245,8 @@ export async function buildOpencodeConfigContent(
   opts: {
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    /** Monitoring stage protocol (stage-instructions.ts); null when the flag is off. */
+    stageInstructionPath?: string | null
   } = {},
 ): Promise<string | undefined> {
   const connectorToken = env.KORTIX_TOKEN
@@ -294,6 +297,10 @@ export async function buildOpencodeConfigContent(
   const secretCapabilitiesInstructionPath =
     opts.secretCapabilitiesInstructionPath && existsSync(opts.secretCapabilitiesInstructionPath)
       ? opts.secretCapabilitiesInstructionPath
+      : null
+  const stageInstructionPath =
+    opts.stageInstructionPath && existsSync(opts.stageInstructionPath)
+      ? opts.stageInstructionPath
       : null
   // Native mode (no gateway): the session's model pin still has to reach
   // opencode's config — without an explicit `model`, opencode's default is
@@ -352,13 +359,19 @@ export async function buildOpencodeConfigContent(
   }
   const out: Record<string, unknown> = { ...base }
 
-  if (secretCapabilitiesInstructionPath) {
+  // Platform instruction files OpenCode always loads: the secret catalog and,
+  // when Monitoring is on, the stage protocol. Deduped against the base config.
+  const platformInstructions = [secretCapabilitiesInstructionPath, stageInstructionPath].filter(
+    (path): path is string => Boolean(path),
+  )
+  if (platformInstructions.length > 0) {
     const instructions = Array.isArray(out.instructions)
       ? out.instructions.filter((item): item is string => typeof item === 'string')
       : []
-    out.instructions = instructions.includes(secretCapabilitiesInstructionPath)
-      ? instructions
-      : [...instructions, secretCapabilitiesInstructionPath]
+    out.instructions = [
+      ...instructions,
+      ...platformInstructions.filter((path) => !instructions.includes(path)),
+    ]
   }
 
   // (5) Injected managed skills — append to whatever `skills.paths` the base
@@ -796,11 +809,13 @@ export async function writeKortixOpencodeConfig(
     configPath?: string
     injectedSkillsDir?: string | null
     secretCapabilitiesInstructionPath?: string | null
+    stageInstructionPath?: string | null
   } = {},
 ): Promise<string | null> {
   const content = await buildOpencodeConfigContent(env, {
     injectedSkillsDir: opts.injectedSkillsDir,
     secretCapabilitiesInstructionPath: opts.secretCapabilitiesInstructionPath,
+    stageInstructionPath: opts.stageInstructionPath,
   })
   if (!content) return null
   const configPath = opts.configPath ?? KORTIX_OPENCODE_CONFIG_PATH
@@ -1924,10 +1939,19 @@ export function createOpencodeSupervisor(
         err: err instanceof Error ? err.message : String(err),
       })
     }
+    let stageInstructionPath: string | null = null
+    try {
+      stageInstructionPath = writeStageInstruction(baseEnv)
+    } catch (err) {
+      logger.warn('[opencode] stage instruction file unavailable; the board will not be updated by this agent', {
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
     return writeKortixOpencodeConfig(baseEnv, {
       configPath: options.configPathOverride,
       injectedSkillsDir: join(currentOpencodeConfigDir, 'skills'),
       secretCapabilitiesInstructionPath,
+      stageInstructionPath,
     })
   }
 

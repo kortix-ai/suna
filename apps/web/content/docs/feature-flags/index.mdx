@@ -4,7 +4,7 @@ description: Turn a Kortix surface on for one project, and read what every flag 
 ---
 
 import { Card, Cards } from '@/components/markdown/docs-card';
-import { BrowserIcon } from '@/lib/icons/ssr';
+import { BrowserIcon, KanbanIcon } from '@/lib/icons/ssr';
 import { Callout } from 'fumadocs-ui/components/callout';
 
 A feature flag turns one Kortix surface on for one project. Any surface can
@@ -16,6 +16,7 @@ another project, and nothing for other accounts.
 
 <Cards>
   <Card icon={<BrowserIcon />} title="Apps" href="/docs/feature-flags/apps">Deploy static sites, bundles, Dockerfiles, and OCI images to stable URLs.</Card>
+  <Card icon={<KanbanIcon />} title="Monitoring" href="/docs/feature-flags/monitoring">A stage board over every session you can see, plus each trigger's runs.</Card>
 </Cards>
 
 ## Turn a flag on

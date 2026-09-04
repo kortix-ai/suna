@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 636,
   "routes": [
     {
       "method": "GET",
@@ -2085,6 +2085,10 @@
     {
       "method": "PUT",
       "path": "/v1/projects/:projectId/sessions/:sessionId/sharing"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/stage"
     },
     {
       "method": "GET",

@@ -50,6 +50,7 @@ import './routes/agent-config';
 import './routes/gateway';
 import './routes/channel-bindings';
 import './routes/monitors';
+import './routes/session-stage';
 import '../apps/routes';
 
 // The wired Hono app instances (all routes registered above via side-effect).

@@ -1073,6 +1073,9 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
       setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
         P.setProjectSessionSharing(projectId, sessionId, intent),
+      /** Move this session on the Monitoring board (`metadata.stage`). */
+      setStage: (input: P.SetSessionStageInput) =>
+        P.setProjectSessionStage(projectId, sessionId, input),
       previews: () => P.getSessionPreviewCandidates(projectId, sessionId),
       commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
         P.commitSessionChanges(projectId, sessionId, input),

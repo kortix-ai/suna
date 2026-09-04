@@ -20,6 +20,7 @@ import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sideb
 import { ProjectChatGptConnectNavItem } from '@/features/workspace/project-sidebar/footer/project-chatgpt-connect-nav';
 import { ProjectFilesNavItem } from '@/features/workspace/project-sidebar/footer/project-files-nav';
 import { ProjectManifestUpgradeAlert } from '@/features/workspace/project-sidebar/footer/project-manifest-upgrade-alert';
+import { ProjectMonitoringNavItem } from '@/features/workspace/project-sidebar/footer/project-monitoring-nav';
 import { ProjectSandboxAlert } from '@/features/workspace/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { ProjectCustomizeNavItem } from '@/features/workspace/project-sidebar/project-settings-nav';
@@ -223,6 +224,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
               <ProjectCustomizeNavItem />
               <ProjectAppsNavItem />
+              {/* Same register as Apps: a surface you operate. Self-hides
+                  until the `monitoring` flag is on. */}
+              <ProjectMonitoringNavItem />
             </SidebarMenu>
           </SidebarGroup>
 

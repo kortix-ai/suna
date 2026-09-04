@@ -479,6 +479,7 @@ export async function allocateRuntimeOnOpen(
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
         llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
+        projectMetadata: loaded.row.metadata,
         workspaceMode: workspaceModeFromSessionMetadata(session.metadata),
         restoreSessionBranch: true,
       }),

@@ -36,6 +36,11 @@ import {
   revokeSessionPublicShare,
   setProjectSessionScope,
   setProjectSessionSharing,
+  setProjectSessionStage,
+  answerSessionQuestion,
+  getSessionOpenQuestion,
+  sessionTriggerSlug,
+  SESSION_STAGES,
   stopProjectSession,
   updateProjectSession,
 } from './sessions';
@@ -114,6 +119,86 @@ test('setProjectSessionSharing PUTs the sharing intent', async () => {
   expect(last().url).toContain('/projects/P1/sessions/S1/sharing');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ mode: 'project' });
+});
+
+test('setProjectSessionStage PUTs the stage body and unwraps the session', async () => {
+  const stage = {
+    value: 'ready' as const,
+    needs_approval: true,
+    note: 'Plan in PLAN.md',
+    updated_at: '2026-09-04T10:00:00.000Z',
+    updated_by: 'agent',
+  };
+  nextResponse = { status: 200, body: { session_id: 'S1', stage } };
+  const result = await setProjectSessionStage('P1', 'S1', {
+    stage: 'ready',
+    needs_approval: true,
+    note: 'Plan in PLAN.md',
+  });
+  expect(last().url).toContain('/projects/P1/sessions/S1/stage');
+  expect(last().method).toBe('PUT');
+  expect(last().body).toEqual({ stage: 'ready', needs_approval: true, note: 'Plan in PLAN.md' });
+  expect(result.stage).toEqual(stage);
+});
+
+test('getSessionOpenQuestion GETs the durable question route and unwraps `question`', async () => {
+  const question = {
+    id: 'Q1',
+    session_id: 'S1',
+    request_id: 'req-1',
+    opencode_session_id: null,
+    questions: [{ question: 'Approve this outline?', header: 'Outline', options: [] }],
+    asked_at: '2026-09-04T10:00:00.000Z',
+  };
+  nextResponse = { status: 200, body: { question } };
+  expect(await getSessionOpenQuestion('P1', 'S1')).toEqual(question);
+  expect(last().url).toContain('/projects/P1/sessions/S1/question');
+  expect(last().method).toBe('GET');
+  nextResponse = { status: 200, body: { question: null } };
+  expect(await getSessionOpenQuestion('P1', 'S1')).toBeNull();
+});
+
+test('answerSessionQuestion POSTs answers (+ request_id) and unwraps the delivery', async () => {
+  nextResponse = { status: 200, body: { ok: true, delivery: 'delivered' } };
+  const result = await answerSessionQuestion('P1', 'S1', {
+    answers: ['Approved. Proceed with the plan.'],
+    request_id: 'req-1',
+  });
+  expect(last().url).toContain('/projects/P1/sessions/S1/question');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({
+    answers: ['Approved. Proceed with the plan.'],
+    request_id: 'req-1',
+  });
+  expect(result).toEqual({ ok: true, delivery: 'delivered' });
+  await answerSessionQuestion('P1', 'S1', { answers: ['x'] });
+  expect(last().body).toEqual({ answers: ['x'] });
+});
+
+test('setProjectSessionStage sends only the stage when nothing else is given', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', stage: null } };
+  await setProjectSessionStage('P1', 'S1', { stage: 'done' });
+  expect(last().body).toEqual({ stage: 'done' });
+});
+
+test('setProjectSessionStage surfaces a feature_disabled 403', async () => {
+  nextResponse = {
+    status: 403,
+    body: { error: 'Monitoring is not enabled', code: 'feature_disabled', feature: 'monitoring' },
+  };
+  await expect(setProjectSessionStage('P1', 'S1', { stage: 'ready' })).rejects.toBeTruthy();
+});
+
+test('SESSION_STAGES is the board column order', () => {
+  expect(SESSION_STAGES).toEqual(['backlog', 'planning', 'ready', 'in_progress', 'review', 'done']);
+});
+
+test('sessionTriggerSlug reads metadata.trigger_slug and nothing else', () => {
+  const base = { session_id: 'S1', metadata: {} } as unknown as ProjectSession;
+  expect(sessionTriggerSlug(base)).toBeNull();
+  expect(sessionTriggerSlug({ ...base, metadata: { trigger_slug: 'nightly' } })).toBe('nightly');
+  expect(sessionTriggerSlug({ ...base, metadata: { trigger_slug: 42 } })).toBeNull();
+  expect(sessionTriggerSlug({ ...base, metadata: { trigger_slug: '' } })).toBeNull();
 });
 
 test('getSessionPreviewCandidates hits the previews endpoint', async () => {
