@@ -212,6 +212,17 @@ const CHECKS = [
     suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
     from: 'const res = await api("GET", "/files", { query: { path: abs(path) }, raw: true }); // whole file: the window is bytes',
     to:   'const res = await api("GET", "/files", { query: { path: abs(path), offset: 0, limit: options.maxLines }, raw: true });' },
+  // A TIMEOUT IS A TIMEOUT. Measured on dev before this existed: exec("sleep 5",
+  // {timeout: 1}) came back ok with exit -1 and nothing in stderr.
+  { claim: "a command that hits its timeout is pi's timeout error, not exit -1",
+    expect: new RegExp("not exit -1 with nothing to say"),
+    suite: "execenv-platinum.mjs", file: "src/execenv.platinum.js",
+    from: 'if (r.ok && r.timedOut) return err(new ExecutionError("timeout", `timeout:${options.timeout ?? 120}`));',
+    to:   'if (false && r.timedOut) return err(new ExecutionError("timeout", `timeout:${options.timeout ?? 120}`));' },
+  { claim: "and on Platinum dev, where the guest says timed_out", expect: new RegExp("timeout over dev came back as"),
+    suite: "dev-e2e.sh", file: "src/execenv.platinum.js",
+    from: 'if (r.ok && r.timedOut) return err(new ExecutionError("timeout", `timeout:${options.timeout ?? 120}`));',
+    to:   'if (false && r.timedOut) return err(new ExecutionError("timeout", `timeout:${options.timeout ?? 120}`));' },
 ];
 
 /**

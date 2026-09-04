@@ -69,7 +69,8 @@ function run(cmd, timeoutMs) {
     child.stderr.on("data", (d) => { err += d; });
     child.on("close", (code) => {
       clearTimeout(t);
-      done({ ok: !killed && code === 0, stdout: out, stderr: err, exit_code: killed ? 124 : (code ?? -1), error: killed ? "timeout" : undefined });
+      // Platinum's shape for a timeout: exit_code -1, error "timeout", timed_out true (a pointer bool in the guest: absent when false).
+      done({ ok: !killed && code === 0, stdout: out, stderr: err, exit_code: killed ? -1 : (code ?? -1), error: killed ? "timeout" : undefined, ...(killed ? { timed_out: true } : {}) });
     });
   });
 }
@@ -139,7 +140,7 @@ createServer(async (req, res) => {
       try { full = guestPath(p); } catch (e) { return json(res, 400, { error: e.message }); }
       try {
         const st = await stat(full);
-        return json(res, 200, { ok: true, size: st.size, mode: st.mode, is_dir: st.isDirectory(), mtime: Math.floor(st.mtimeMs / 1000) });
+        return json(res, 200, { ok: true, size: st.size, mode: st.mode, is_dir: st.isDirectory(), mtime: Math.floor(st.mtimeMs) });
       } catch { return json(res, 404, { error: "not found" }); }
     }
 

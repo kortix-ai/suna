@@ -10,7 +10,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=61
+// EXPECTED_PASSES=65
 
 import { createEditTool, createReadTool, createWriteTool, createBashTool } from "@earendil-works/pi-agent-core";
 import { createServer } from "node:http";
@@ -148,6 +148,24 @@ check("listDir maps entries to pi's shape", r.ok && r.value.some((e) => e.name =
   const two = await env.readTextLines("lines.txt", { maxLines: 2 });
   check("readTextLines(maxLines: 2) on a five-line file is exactly the first two LINES",
     two.ok && Array.isArray(two.value) && two.value.length === 2 && two.value[0] === "one" && two.value[1] === "two", JSON.stringify(two).slice(0, 120));
+}
+// A TIMEOUT IS A TIMEOUT, NOT EXIT -1. The guest reports timed_out (a pointer
+// bool, present only when true) with error "timeout" and exit_code -1, at 200.
+// Measured on dev: env.exec("sleep 5", {timeout: 1}) came back ok with exit -1
+// and empty stderr — pi's bash tool could not tell it from a crash.
+{
+  const go = readFileSync(platinumPath("hosts/invm-agent/cmd/invm-agent/main.go"), "utf8");
+  check("THE GUEST'S EXEC RESULT CARRIES timed_out AND mtime IN MILLISECONDS — read from its Go source",
+    /TimedOut\s+\*bool\s+`json:"timed_out,omitempty"`/.test(go) && /Mtime:\s*st\.ModTime\(\)\.UnixMilli\(\)/.test(go));
+  const t = await fetch(`http://127.0.0.1:${PORT}/v1/sandboxes/sbx_env/exec`, { method: "POST", headers: { authorization: "Bearer pt_live_envkey", "content-type": "application/json" }, body: JSON.stringify({ cmd: "sleep 9", timeout_ms: 100 }) });
+  const tr = (await t.json()).result ?? {};
+  check("and so does the stub: a timed-out /exec is 200 with exit_code -1, error timeout, timed_out true",
+    t.status === 200 && tr.exit_code === -1 && tr.error === "timeout" && tr.timed_out === true, JSON.stringify(tr).slice(0, 120));
+  const st = await (await fetch(`http://127.0.0.1:${PORT}/v1/sandboxes/sbx_env/files/stat?path=${encodeURIComponent(`${ROOT}/w/src/app.py`)}`, { headers: { authorization: "Bearer pt_live_envkey" } })).json();
+  check("the stub's mtime is milliseconds, as the guest's", st.mtime > 1e12 && st.mtime < 1e13, String(st.mtime));
+  const to = await env.exec("sleep 9", { timeout: 1 });
+  check("exec that hits its timeout is an ExecutionError of kind timeout naming the seconds — not exit -1 with nothing to say",
+    to.ok === false && to.error?.code === "timeout" && /1/.test(to.error?.message ?? ""), JSON.stringify(to).slice(0, 140));
 }
 r = await env.readBinaryFile("src/app.py");
 check("readBinaryFile returns bytes from the raw route", r.ok && r.value instanceof Uint8Array && r.value.length > 0);

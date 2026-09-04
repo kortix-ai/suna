@@ -81,8 +81,11 @@ echo "== 7. readTextLines over dev: lines, not a byte window =="
 curl -s -m 60 -X POST "$API/v1/sandboxes/$SBX/exec" "${H[@]}" -d '{"cmd":"printf \"one\\ntwo\\nthree\\nfour\\nfive\\n\" > '"$CWD"'/lines.txt","timeout_ms":10000}' >/dev/null
 L=$(PT_CWD=$CWD node --input-type=module -e 'import { platinumExecutionEnv } from "./src/execenv.platinum.js"; const e = platinumExecutionEnv({ apiUrl: process.env.PT_API_URL, key: process.env.PT_SANDBOX_KEY, sandboxId: process.env.PT_WORKSPACE_ID, cwd: process.env.PT_CWD }); const r = await e.readTextLines("lines.txt", { maxLines: 2 }); console.log(r.ok ? r.value.join("|") : "ERR " + JSON.stringify(r.error));' 2>&1)
 [ "$L" = "one|two" ] && pass "readTextLines over dev returns the first two lines of five" || fail "readTextLines over dev returned: ${L:0:120}"
+echo "== 8. a timeout over dev is a timeout, not exit -1 =="
+T=$(node --input-type=module -e 'import { platinumExecutionEnv } from "./src/execenv.platinum.js"; const e = platinumExecutionEnv({ apiUrl: process.env.PT_API_URL, key: process.env.PT_SANDBOX_KEY, sandboxId: process.env.PT_WORKSPACE_ID, cwd: "/root" }); const r = await e.exec("sleep 5; echo late", { timeout: 1 }); console.log(r.ok ? "OK exit " + r.value.exitCode : r.error.code + " " + r.error.message);' 2>&1)
+[ "$T" = "timeout timeout:1" ] && pass "exec that hits its timeout over dev is ExecutionError(timeout) naming the second" || fail "timeout over dev came back as: ${T:0:120}"
 trap - EXIT; cleanup
-EXPECTED_PASSES=9
+EXPECTED_PASSES=10
 echo
 [ "$FAIL" -eq 0 ] && echo "  the harness lives in a cell and the work lands on Platinum dev: ${PASS} claims" || echo "  ${FAIL} of $((PASS+FAIL)) claims failed"
 exit "$FAIL"

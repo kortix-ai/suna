@@ -93,7 +93,9 @@ export function platinumExecutionEnv({ apiUrl, key, sandboxId, cwd = "/home/user
     const r = await api("POST", "/exec", { body: { cmd: command, timeout_ms: Math.min(Math.max(timeoutMs, 100), 300_000) }, signal });
     if (r.status !== 200) return { ok: false, status: r.status, error: r.json?.error ?? `exec ${r.status}`, code: r.json?.code };
     const res = r.json.result ?? {};
-    return { ok: true, stdout: res.stdout ?? "", stderr: res.stderr ?? "", exitCode: res.exit_code ?? (res.ok ? 0 : -1) };
+    // A command that hit timeout_ms comes back 200 with result.timed_out —
+    // measured on dev: {ok:false, exit_code:-1, error:"timeout", timed_out:true}.
+    return { ok: true, stdout: res.stdout ?? "", stderr: res.stderr ?? "", exitCode: res.exit_code ?? (res.ok ? 0 : -1), timedOut: res.timed_out === true };
   }
 
   const codeFor = (status, msg = "") =>
@@ -237,6 +239,10 @@ export function platinumExecutionEnv({ apiUrl, key, sandboxId, cwd = "/home/user
       // "(no output)" for a command that had produced output and exited 0, and
       // the model would have seen an empty result for every successful command.
       // Both are delivered as one chunk because the transport is not streaming.
+      // pi's contract for a timeout is an ExecutionError of kind "timeout" with
+      // the seconds in it — what its own env returns. This used to hand the
+      // bash tool exit -1 with empty stderr, indistinguishable from a crash.
+      if (r.ok && r.timedOut) return err(new ExecutionError("timeout", `timeout:${options.timeout ?? 120}`));
       if (r.ok) {
         if (r.stdout && options.onStdout) options.onStdout(r.stdout);
         if (r.stderr && options.onStderr) options.onStderr(r.stderr);
