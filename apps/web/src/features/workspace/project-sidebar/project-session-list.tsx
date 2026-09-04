@@ -1016,7 +1016,9 @@ const STATUS_DOT_STYLE: Record<
   legacy: { color: 'var(--muted-foreground)', glyph: 'ring', fill: false },
 };
 
-function SessionStatusDot({
+/** The one status glyph a session row wears — exported so the sidebar's
+ *  nested subproject rows draw exactly this, not a lookalike. */
+export function SessionStatusDot({
   session,
   reviewCount = 0,
 }: {

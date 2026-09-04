@@ -31,7 +31,7 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { sessionDisplayStatus } from '@/components/projects/session-label';
+import { SessionStatusDot } from '@/features/workspace/project-sidebar/project-session-list';
 import {
   getSessionDisplayTitle,
   projectSessionsRefetchInterval,
@@ -175,7 +175,6 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
                   <SidebarMenuSub>
                     {shown.map((session) => {
                       const sessionHref = `/projects/${projectId}/sessions/${session.session_id}`;
-                      const status = sessionDisplayStatus(session, 0);
                       return (
                         <SidebarMenuSubItem key={session.session_id}>
                           <SidebarMenuSubButton
@@ -184,17 +183,8 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
                             isActive={activeSessionId === session.session_id}
                           >
                             <HoverPrefetchLink href={sessionHref}>
-                              <span
-                                aria-hidden
-                                className={cn(
-                                  'size-1.5 shrink-0 rounded-full',
-                                  status === 'running' || status === 'starting'
-                                    ? 'bg-kortix-green'
-                                    : status === 'needs-you'
-                                      ? 'bg-kortix-yellow'
-                                      : 'bg-muted-foreground/30',
-                                )}
-                              />
+                              {/* The same glyph the project-level rows wear. */}
+                              <SessionStatusDot session={session} />
                               <span className="truncate">{getSessionDisplayTitle(session)}</span>
                             </HoverPrefetchLink>
                           </SidebarMenuSubButton>
