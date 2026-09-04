@@ -356,7 +356,7 @@ function SubprojectToolbar({
               <DotsThreeIcon className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuContent align="end" className="w-72">
             <DropdownMenuItem onSelect={() => requestAnimationFrame(() => setEditOpen(true))}>
               <NotePencilIcon />
               Instructions, context & schedules…
