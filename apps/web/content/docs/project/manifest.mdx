@@ -82,10 +82,22 @@ agents:
     kortix_cli: [project.gitops.push]
     secrets: [GITHUB_AGENT_TOKEN]
 
+subprojects:
+  marketing:
+    name: Marketing
+    description: Campaign work.
+    instructions: |
+      Always write in British English.
+    context:
+      - docs/brand.md
+    agent: writer
+    sessions: private
+
 triggers:
   - slug: daily-digest
     type: cron
     agent: kortix
+    subproject: marketing
     cron: '0 0 9 * * 1-5'
     timezone: America/Los_Angeles
     prompt: |
@@ -104,6 +116,7 @@ triggers:
 | `sandbox` / `sandbox.templates` / `sandbox.default` | no       | sandbox image(s) and hardware                                                              |
 | `opencode.config_dir`                               | no       | default `.kortix/opencode`                                                                 |
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
+| `subprojects`                                       | no       | slug-to-block map of named containers inside the project                                   |
 | `connectors`                                        | no       | list of connector definitions                                                              |
 | `policy.default_mode`                               | no       | `allow_all` (default) or `risk`; project-wide connector approval mode                      |
 | `agents`                                            | yes      | name-to-block governance map; must not be empty                                            |
@@ -224,12 +237,49 @@ triggers:
 | `prompt`       | yes                   | —                     | Non-empty. Supports templating.                                                                       |
 | `name`         | no                    | slug                  | Human label.                                                                                          |
 | `agent`        | no                    | `default_agent`       | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.      |
+| `subproject`   | no                    | none                   | Must name a key in `subprojects:`. The fired session joins that subproject; unset means none.          |
 | `enabled`      | no                    | `true`                | `false` skips the entry.                                                                              |
 | `model`        | no                    | resolves at fire time | Wire form `provider/model`. Pins the fired session to that model. See [Models](/docs/project/models). |
 | `session_mode` | no                    | `fresh`               | `fresh`, `reuse`, `pinned`, or `keyed`.                                                               |
 | `session_id`   | required for `pinned` | —                     | Exact session to re-prompt.                                                                           |
 
 Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a one-off ISO-8601 timestamp), plus `timezone` as an IANA name. Webhook triggers need `secret_env`, the name of a secret that uses `broker` delivery with the `connector` consumer. Monitor triggers need `run` (a repo-relative command) and `mode` (`poll` or `stream`), and reject every cron and webhook field. Full field reference, credential setup, payload templating, endpoints, and session strategy: see [Triggers](/docs/connect/triggers).
+
+## `subprojects:`
+
+A slug-to-block map. Each entry is a named container inside the project: it groups sessions under one effort, gives the agent standing instructions and reference files, owns the triggers that name it, and is a grantable object exactly like an agent.
+
+```yaml
+subprojects:
+  marketing:
+    name: Marketing
+    description: Campaign work.
+    instructions: |
+      Always write in British English.
+    context:
+      - docs/brand.md
+      - .kortix/subprojects/marketing/
+    agent: writer
+    sessions: private
+```
+
+| Field          | Type       | Default | Notes                                                                                             |
+| -------------- | ---------- | ------- | --------------------------------------------------------------------------------------------------- |
+| _(map key)_    | string     | —       | `[a-z0-9][a-z0-9_-]{0,127}`, unique per project. The IAM object id and the immutable slug.           |
+| `name`         | string     | slug    | Display label.                                                                                     |
+| `description`  | string     | —       | One-liner shown in the picker and the subproject page.                                             |
+| `instructions` | string     | —       | Inline markdown. Delivered to the sandbox by env and rendered into the agent's standing instructions. |
+| `context`      | `string[]` | `[]`    | Repo-relative paths — a file, or a `dir/`. No leading `/`, no `..` segment.                          |
+| `agent`        | string     | —       | Must name a key in `agents:`. A default for sessions started here, not a binding — granting the subproject does not grant this agent. |
+| `sessions`     | string     | `private` | `private` or `shared` (see below).                                                               |
+
+Create/edit/delete need `project.customize.write` (the manifest-editing leaf, manager tier).
+
+**Access model.** A subproject is a closed object, exactly like an agent: the manager tier (owner, admin, project manager, service account, super-admin) sees every subproject; a member sees only the ones with a grant row naming them or one of their groups — zero grant rows means zero subprojects. Grant one through the generic resource-grant surface (`POST /projects/:id/resource-grants {resource_type:'subproject', resource_id:<slug>, principal_type, principal_id}`), the same endpoint that grants agents. Deleting a subproject leaves its grant rows orphaned, flagged rather than silently reinterpreted.
+
+**`sessions:` visibility.** `private` (default) keeps the ordinary per-session model — a session is visible to its creator unless separately shared. `shared` makes every session inside the subproject readable by everyone granted the subproject, regardless of that session's own visibility; lifecycle rights (stop/restart/delete) are unchanged. `GET /projects/:id/sessions?subproject=<slug>` filters the list to one subproject; `?subproject=` (empty) filters to sessions with none.
+
+**What the sandbox receives.** A session started inside a subproject (`sessions.create({ subproject })`, or `kortix sessions new --subproject`) gets `KORTIX_SUBPROJECT=<slug>` and `KORTIX_SUBPROJECT_CONTEXT=<json>` (`{version, slug, name, description, instructions, context[], sessions}`; `instructions` truncated at 32 KB). The sandbox daemon renders that into `/tmp/kortix/subproject.md` — heading, description, instructions, and a listed `context` — and appends it to the OpenCode `instructions` file, alongside each `context` entry (a `dir/` entry expands to every markdown file under it). A session spawned from inside a subproject session inherits the same subproject unless it passes its own `--subproject`.
 
 ## `connectors:`
 
@@ -340,5 +390,5 @@ is project-owned or member-owned.
 Dashboard edits are a read-modify-write on the same file. To keep diffs clean across UI and in-session edits:
 
 1. Keep `kortix_version` as the first key.
-2. Inside a trigger entry, order fields `slug`, `name`, `type`, `agent`, `enabled`, then type-specific fields, then `prompt` last.
+2. Inside a trigger entry, order fields `slug`, `name`, `type`, `agent`, `subproject` (when set), `enabled`, then type-specific fields, then `prompt` last.
 3. If you add a webhook trigger before its secret is set, list the secret name in `env.optional`. Leave the trigger `enabled: false` until the value is in.
