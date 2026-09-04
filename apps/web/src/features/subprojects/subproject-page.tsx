@@ -357,7 +357,7 @@ function SubprojectToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuItem onSelect={() => requestAnimationFrame(() => setEditOpen(true))}>
+            <DropdownMenuItem onSelect={() => setTimeout(() => setEditOpen(true), 0)}>
               <NotePencilIcon />
               Instructions, context & schedules…
             </DropdownMenuItem>
@@ -381,15 +381,18 @@ function SubprojectToolbar({
               onSelect={() => {
                 setDraftName(subproject.name);
                 // After the menu closes, or the input mounts into a tree Radix
-                // is still returning focus through and loses it.
-                requestAnimationFrame(() => setRenaming(true));
+                // is still returning focus through and loses it. A timer, not
+                // requestAnimationFrame: rAF never fires in a tab that is not
+                // painting (background tab, automation), so the open landed on
+                // the NEXT interaction instead of this one (2026-09-04).
+                setTimeout(() => setRenaming(true), 0);
               }}
             >
               Rename
             </DropdownMenuItem>
             <DropdownMenuItem
               variant="destructive"
-              onSelect={() => requestAnimationFrame(() => setConfirmDelete(true))}
+              onSelect={() => setTimeout(() => setConfirmDelete(true), 0)}
             >
               <TrashIcon />
               Delete
