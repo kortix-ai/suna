@@ -190,10 +190,27 @@ export function convertCards(source) {
     // `} from '@/...';` close and drop every line in between. A `{` that
     // opens some other import is left alone — the lookahead only consumes
     // lines when the close line matches one of the two target modules.
+    //
+    // The lookahead must never cross a fence boundary: an unrelated
+    // multi-line import (closing on some other module) would otherwise let
+    // the scan run past a ``` delimiter into fenced example content,
+    // swallow the delimiter as a dropped line, and desync inFence for
+    // everything after it. Bound the scan at the next fence line (abort,
+    // treat the `import {` as not-a-target) and, as a second guard, at a
+    // handful of lines (real import blocks are short; anything longer is
+    // not this import).
     if (/^import\s*\{\s*$/.test(line)) {
+      const MAX_LOOKAHEAD = 20;
       let j = i + 1;
-      while (j < lines.length && !CARD_IMPORT_CLOSE.test(lines[j])) j += 1;
-      if (j < lines.length) {
+      while (
+        j < lines.length &&
+        j - i <= MAX_LOOKAHEAD &&
+        !/^\s*```/.test(lines[j]) &&
+        !CARD_IMPORT_CLOSE.test(lines[j])
+      ) {
+        j += 1;
+      }
+      if (j < lines.length && CARD_IMPORT_CLOSE.test(lines[j])) {
         for (let k = i; k <= j; k += 1) out.push(DROP_MARKER);
         i = j;
         continue;

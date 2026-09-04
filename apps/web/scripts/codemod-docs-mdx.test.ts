@@ -109,4 +109,26 @@ describe('convertCards', () => {
       '```';
     expect(convertCards(input)).toBe(input);
   });
+
+  test('does not let a non-target multi-line import lookahead cross a fence boundary', () => {
+    // A bare multi-line import from some OTHER module, outside any fence,
+    // whose own close line does not match the docs-card/icons-ssr target —
+    // followed by prose, then a fenced block containing a real multi-line
+    // icons/ssr import (so its close line DOES match CARD_IMPORT_CLOSE) and
+    // a Cards/Card example. The unbounded lookahead bug scans past the
+    // fence-open delimiter looking for a '} from .../ssr';' close, finds
+    // one deep inside the fence, swallows the delimiter as a dropped line,
+    // desyncs inFence, and rewrites the fenced example. Nothing here is a
+    // target: the whole input must survive verbatim.
+    const input =
+      "import {\n  foo,\n} from 'some-other-module';\n\n" +
+      'Some prose in between.\n\n' +
+      '```mdx\n' +
+      "import {\n  BrainIcon,\n} from '@/lib/icons/ssr';\n" +
+      '<Cards>\n' +
+      '  <Card icon={<BrainIcon />} title="x">y</Card>\n' +
+      '</Cards>\n' +
+      '```';
+    expect(convertCards(input)).toBe(input);
+  });
 });
