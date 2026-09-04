@@ -139,7 +139,7 @@ function SubprojectBody({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-4 pb-12">
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
             {/* The composer keeps its own hero proportions, so the cell needs a
                 real height rather than collapsing to the content's. */}
             <div className="flex min-h-[26rem] min-w-0 flex-col overflow-hidden rounded-md border">
@@ -213,6 +213,11 @@ function SubprojectHeader({
     onSuccess: async () => {
       successToast(`${subproject.name} deleted`);
       setConfirmDelete(false);
+      // Drop this subproject's own query BEFORE the list invalidation: the
+      // single-item key nests under the list key, so invalidating the list
+      // would refetch a row the server just deleted and toast its 404 while
+      // the page is still mounted (seen 2026-09-04).
+      queryClient.removeQueries({ queryKey: qk.project.subproject(projectId, subproject.slug) });
       // The sessions kept their column and the triggers lost theirs, so both
       // lists move — not just the subproject list.
       await queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) });
@@ -468,7 +473,7 @@ function SubprojectPageSkeleton() {
       <div className="border-border/60 shrink-0 border-b px-5 py-3">
         <Skeleton className="h-5 w-48 rounded-sm" />
       </div>
-      <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <Skeleton className="h-[26rem] w-full rounded-md" />
         <div className="space-y-4">
           <Skeleton className="h-48 w-full rounded-md" />
