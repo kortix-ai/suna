@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # DEPLOY AN AGENT ONTO PLATINUM. Two sandboxes and one bucket write.
 #
+# SUPERSEDED, measured 2026-09-04: the cell runtime refuses inline images
+# (`runtime_capability_unsupported: customImage`) and roots a cell's storage per
+# WORKER (`worker: <name>` → orgs/<org>/workers/<name>/), and the tool daemon
+# this script wires (TOOL_DAEMON_URL) is retired for the worker — the tools go
+# through Platinum's API with CELLD_VAR_PT_*. test/cell-dev-e2e.sh is the
+# working procedure: template from spec, cell with a worker, bundle to the
+# worker's folder, restart. Kept for the parts that still describe the shape.
+#
 #   1. the WORKSPACE — an ordinary microVM from pt-agent-daemon.spec.json. It has
 #      the shell, the filesystem and the compilers. Nothing about it is special;
 #      it is a normal Platinum template.
