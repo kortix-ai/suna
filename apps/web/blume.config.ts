@@ -47,4 +47,50 @@ export default defineConfig({
   // — { enabled: false } is the 1.5.3 equivalent of `mcp: false`.
   ai: { llmsTxt: false, mcp: { enabled: false } },
   seo: { sitemap: false },
+
+  // The old fumadocs root meta.json carried a "---Develop---" separator
+  // splitting cli/sdk/backend (+ an external API-reference link) from the
+  // rest, plus that external link itself. Blume's meta.ts `pages` field is a
+  // plain string array (folderMetaSchema.pages: ZodArray<ZodString> in
+  // node_modules/blume/dist/types/core/schema.d.ts) — no divider or link
+  // syntax. `navigation.links` and `navigation.cta`/`navigation.actions`
+  // (suggested by useblume.dev, which documents 1.6.0) do NOT exist on this
+  // installed 1.5.3's NavigationConfig (config-input.d.ts only has
+  // featured/repo/selectors/sidebar/tabs).
+  //
+  // Fix: an explicit `navigation.sidebar.items` tree (SidebarItemConfig in
+  // schema.d.ts — a page-id string, or an object with label/href/items) can
+  // express a labelled group and an external link without moving any content
+  // file, so cli.mdx, sdk/ and backend.mdx keep their /docs/cli, /docs/sdk,
+  // /docs/backend URLs. Verified against a real `blume build`: the rendered
+  // sidebar groups CLI/TypeScript SDK/Kortix as a Backend/API reference under
+  // a "Develop" header, in the same order as the old meta.json, with every
+  // href unchanged.
+  navigation: {
+    sidebar: {
+      items: [
+        'index',
+        'quickstart',
+        'accounts',
+        'credits',
+        'project',
+        'work',
+        'connect',
+        'feature-flags',
+        'host',
+        {
+          label: 'Develop',
+          items: [
+            'cli',
+            'sdk',
+            'backend',
+            {
+              label: 'API reference',
+              href: 'https://api.kortix.com/v1/docs',
+            },
+          ],
+        },
+      ],
+    },
+  },
 });
