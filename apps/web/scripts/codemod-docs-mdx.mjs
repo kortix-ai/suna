@@ -118,3 +118,54 @@ export function convertSteps(source) {
 
   return collapseDropped(out.join('\n'));
 }
+
+// Phosphor (app) to Lucide (Blume built-in). Blume ships @iconify-json/lucide,
+// so icons are name strings, never React elements. Every one of the 25 icons
+// the docs use is listed; an unmapped icon must fail loudly rather than
+// silently render no icon.
+export const PHOSPHOR_TO_LUCIDE = {
+  AlarmIcon: 'alarm-clock',
+  AtomIcon: 'atom',
+  BookOpenIcon: 'book-open',
+  BrainIcon: 'brain',
+  BrowserIcon: 'app-window',
+  ChatsIcon: 'messages-square',
+  ClipboardTextIcon: 'clipboard-list',
+  CloudIcon: 'cloud',
+  CodeIcon: 'code',
+  CpuIcon: 'cpu',
+  CubeIcon: 'box',
+  DesktopIcon: 'monitor',
+  FileTextIcon: 'file-text',
+  FlagIcon: 'flag',
+  GitBranchIcon: 'git-branch',
+  GitPullRequestIcon: 'git-pull-request',
+  KeyIcon: 'key',
+  PathIcon: 'route',
+  PlugsConnectedIcon: 'cable',
+  RobotIcon: 'bot',
+  RocketIcon: 'rocket',
+  ScrollIcon: 'scroll',
+  ShareNetworkIcon: 'share-2',
+  TerminalIcon: 'terminal',
+  UsersIcon: 'users',
+};
+
+export function convertCards(source) {
+  // Multi-line `import { ... } from '@/lib/icons/ssr';` first, as a block.
+  let out = source.replace(
+    /^import\s*\{[\s\S]*?\}\s*from\s*'@\/(?:lib\/icons\/ssr|components\/markdown\/docs-card)';\s*$/gm,
+    DROP_MARKER,
+  );
+
+  out = out
+    .replace(/<Cards>/g, '<CardGroup>')
+    .replace(/<\/Cards>/g, '</CardGroup>')
+    .replace(/icon=\{<([A-Za-z]+)\s*\/>\}/g, (_match, name) => {
+      const lucide = PHOSPHOR_TO_LUCIDE[name];
+      if (!lucide) throw new Error(`Unmapped icon: ${name}. Add it to PHOSPHOR_TO_LUCIDE.`);
+      return `icon="${lucide}"`;
+    });
+
+  return collapseDropped(out);
+}

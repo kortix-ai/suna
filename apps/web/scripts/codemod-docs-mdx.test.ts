@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { convertCallouts } from './codemod-docs-mdx.mjs';
 import { convertSteps } from './codemod-docs-mdx.mjs';
+import { convertCards, PHOSPHOR_TO_LUCIDE } from './codemod-docs-mdx.mjs';
 
 describe('convertCallouts', () => {
   test('maps warn to :::warning with a title', () => {
@@ -52,5 +53,49 @@ describe('convertSteps', () => {
   test('does not touch a heading that is not a Step title', () => {
     const input = `### Just a heading\n\nBody.`;
     expect(convertSteps(input)).toBe(input);
+  });
+});
+
+describe('convertCards', () => {
+  test('renames Cards to CardGroup', () => {
+    expect(convertCards('<Cards>\n</Cards>')).toBe('<CardGroup>\n</CardGroup>');
+  });
+
+  test('converts a JSX icon element to a Lucide name string', () => {
+    const input = `<Card icon={<RocketIcon />} title="Quickstart" href="/docs/quickstart">Go.</Card>`;
+    expect(convertCards(input)).toBe(
+      `<Card icon="rocket" title="Quickstart" href="/docs/quickstart">Go.</Card>`,
+    );
+  });
+
+  test('drops the docs-card and icons/ssr imports', () => {
+    const input =
+      `import { Card, Cards } from '@/components/markdown/docs-card';\n` +
+      `import { RocketIcon } from '@/lib/icons/ssr';\n\nBody.`;
+    expect(convertCards(input)).toBe('Body.');
+  });
+
+  test('drops a multi-line icons/ssr import', () => {
+    const input = `import {\n  CloudIcon,\n  CodeIcon,\n} from '@/lib/icons/ssr';\n\nBody.`;
+    expect(convertCards(input)).toBe('Body.');
+  });
+
+  test('maps every icon the docs actually use', () => {
+    // All 25 measured in the spec. A missing entry means a silently iconless card.
+    for (const phosphor of [
+      'TerminalIcon', 'RobotIcon', 'PlugsConnectedIcon', 'PathIcon', 'KeyIcon',
+      'GitBranchIcon', 'DesktopIcon', 'CubeIcon', 'ChatsIcon', 'BrainIcon',
+      'AlarmIcon', 'UsersIcon', 'ShareNetworkIcon', 'ScrollIcon', 'RocketIcon',
+      'GitPullRequestIcon', 'FlagIcon', 'FileTextIcon', 'CpuIcon', 'CodeIcon',
+      'CloudIcon', 'ClipboardTextIcon', 'BrowserIcon', 'BookOpenIcon', 'AtomIcon',
+    ]) {
+      expect(PHOSPHOR_TO_LUCIDE[phosphor]).toBeTruthy();
+    }
+  });
+
+  test('throws on an unmapped icon rather than dropping it silently', () => {
+    expect(() => convertCards('<Card icon={<NotARealIcon />} title="x">y</Card>')).toThrow(
+      /Unmapped icon/,
+    );
   });
 });
