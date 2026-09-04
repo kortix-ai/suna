@@ -21,6 +21,24 @@ linked, not inlined.
 
 ## Register
 
+### Every streamed transcript mutation refreshes runtime activity (2026-09-05)
+
+**When:** adding or changing a wire event that mutates visible assistant output.
+Refresh `sessionActivityAt` after the mutation applies. Do not cover only full
+part snapshots; delta-only streams can run past the 45-second observation bound.
+Ignore replayed event IDs because history is not current activity. *Incident:*
+reasoning text kept growing while the composer changed from Stop to Send and the
+turn busy indicator disappeared. *Enforcer:* `sync-store.test.ts`.
+
+### Protocol adapters emit the target vocabulary; consumers fail active-safe (2026-09-04)
+
+**When:** adapting runtime lifecycle events into the OpenCode session protocol.
+Emit only `idle`, `busy`, or `retry`. Treat only explicit `idle` as idle when
+reading an untrusted status discriminator. *Incident:* the pi worker emitted
+`running`; the SDK converted it to `idle`, so the composer and sidebar hid their
+busy indicators while parts continued to stream. *Enforcer:*
+`session-status.test.ts` and `use-session-working.test.ts`.
+
 ### A durable FIFO has one order key and advances at one boundary (2026-09-03)
 
 **When:** implementing a queue whose enqueue requests can race. Define one total
