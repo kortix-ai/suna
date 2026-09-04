@@ -1,6 +1,7 @@
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { agentConfigEtag } from './compile-agent-config';
 import { workspaceModeAllowsFullRepository } from './session-sandbox-metadata';
+import { monitoringStageInstructionsEnv } from './session-stage-instructions';
 
 export interface SessionRuntimeEnvInput {
   projectId: string;
@@ -184,8 +185,11 @@ export function buildPiWorkerSessionEnvVars(input: {
   apiUrl: string;
   frontendUrl?: string;
   opencodeModel?: string | null;
+  /** `projects.metadata` — the `monitoring` flag gates KORTIX_STAGE_INSTRUCTIONS. */
+  projectMetadata: unknown;
 }): Record<string, string> {
   return {
+    ...monitoringStageInstructionsEnv(input.projectMetadata),
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
     KORTIX_SERVICE_PORT: '8000',

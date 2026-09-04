@@ -25,3 +25,19 @@ export function readSessionStage(
     updated_by: typeof s.updated_by === 'string' ? s.updated_by : '',
   };
 }
+
+/**
+ * The only card moves a person may make: approve (→ in_progress) or send back
+ * (→ planning) a card the agent parked in `ready` with `--needs-approval`.
+ * Every other move belongs to the session's agent.
+ */
+export function humanStageMoveAllowed(
+  current: SessionStageState | null,
+  target: SessionStage,
+): boolean {
+  return (
+    current?.value === 'ready' &&
+    current.needs_approval === true &&
+    (target === 'in_progress' || target === 'planning')
+  );
+}

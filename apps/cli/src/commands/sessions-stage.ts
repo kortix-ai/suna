@@ -20,6 +20,11 @@ Move a session's card on the Monitoring board, or print where it is.
 Inside a sandbox <session-id> defaults to $KORTIX_SESSION_ID (your own
 session). Without <stage> the current stage is printed.
 
+Only the session's agent (inside its sandbox) moves the card. From outside
+the sandbox the server accepts just the approval decision on a card parked
+in "ready" awaiting approval: in_progress (approve) or planning (send back);
+anything else answers 403 stage_agent_only.
+
 Stages, in board order:
   backlog  planning  ready  in_progress  review  done
   (aliases: todo, plan, in-progress/inprogress/progress)

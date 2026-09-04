@@ -368,6 +368,7 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     apiUrl: 'https://api.kortix.test/v1',
     frontendUrl: 'https://kortix.test',
     opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5',
+    projectMetadata: {},
   };
 
   test('emits exactly the worker contract, nothing from the OpenCode chain', () => {
@@ -395,6 +396,7 @@ describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
     const env = buildPiWorkerSessionEnvVars({
       projectId: 'proj-1',
       sessionId: 'sess-1',
+      projectMetadata: {},
       agentName: 'dev',
       apiUrl: 'https://api.kortix.test/v1',
     });

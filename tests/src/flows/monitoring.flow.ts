@@ -36,42 +36,26 @@ flow(
     const p = await ctx.fixtures.sharedSeededProject();
     await enableMonitoring(ctx, p.id);
     const s = await ctx.fixtures.session(p);
-    await ctx.step('OWNER parks the session in Ready awaiting approval → 200 with stage', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/sessions/:sessionId/stage',
-          { stage: 'ready', needs_approval: true, note: 'Plan in PLAN.md' },
-          { params: { projectId: p.id, sessionId: s.id } },
-        );
-      r.status(200)
-        .body()
-        .has('$.stage.value', 'ready')
-        .has('$.stage.needs_approval', true)
-        .has('$.stage.note', 'Plan in PLAN.md')
-        .exists('$.stage.updated_at');
-    });
-    await ctx.step('read-back shows the same stage', async () => {
+    await ctx.step(
+      'OWNER (a person, not the session agent) tries to park the card in Ready → 403 stage_agent_only',
+      async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .put(
+            '/v1/projects/:projectId/sessions/:sessionId/stage',
+            { stage: 'ready', needs_approval: true, note: 'Plan in PLAN.md' },
+            { params: { projectId: p.id, sessionId: s.id } },
+          );
+        r.status(403).body().has('$.code', 'stage_agent_only');
+      },
+    );
+    await ctx.step('read-back: the card did not move (stage stays null → Backlog)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/sessions/:sessionId', {
           params: { projectId: p.id, sessionId: s.id },
         });
-      r.status(200).body().has('$.stage.value', 'ready').has('$.stage.needs_approval', true);
-    });
-    await ctx.step('moving on to In progress clears needs_approval and note', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .put(
-          '/v1/projects/:projectId/sessions/:sessionId/stage',
-          { stage: 'in_progress' },
-          { params: { projectId: p.id, sessionId: s.id } },
-        );
-      r.status(200)
-        .body()
-        .has('$.stage.value', 'in_progress')
-        .has('$.stage.needs_approval', false)
-        .has('$.stage.note', null);
+      r.status(200).body().has('$.stage', null);
     });
   },
 );

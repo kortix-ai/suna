@@ -16,6 +16,7 @@
  * things at session-start time (model override, session id, environment URL)
  * that a per-commit artifact cannot.
  */
+import { withStageInstructions } from './stage-instructions.ts';
 import { configFromEnv, startWorker, type WorkerConfig } from './worker.ts';
 
 interface CompiledPayload {
@@ -90,7 +91,11 @@ console.log(
   }),
 );
 
-startWorker(bakedOverlay(configFromEnv())).catch((err) => {
+const config = bakedOverlay(configFromEnv());
+// After the bake/env choice, so the Monitoring stage protocol rides on top of
+// whichever prompt won instead of replacing it.
+config.systemPrompt = withStageInstructions(config.systemPrompt, process.env);
+startWorker(config).catch((err) => {
   console.error(JSON.stringify({ msg: 'kortix-worker fatal', error: String(err?.message ?? err) }));
   process.exit(1);
 });

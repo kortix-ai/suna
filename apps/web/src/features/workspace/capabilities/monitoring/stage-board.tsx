@@ -4,14 +4,6 @@ import { sessionDisplayStatus, sessionSource } from '@/components/projects/sessi
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import Loading from '@/components/ui/loading';
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
@@ -20,7 +12,6 @@ import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 import { SESSION_STAGES, type ProjectSession, type SessionStage } from '@kortix/sdk';
 import { startSessionWithPrompt, useSetSessionStage } from '@kortix/sdk/react';
-import { DotsThreeIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useState } from 'react';
 
@@ -28,7 +19,6 @@ import {
   STAGE_LABELS,
   groupSessionsByStage,
   needsApproval,
-  sessionStage,
   stageMovedAt,
 } from './stage-board-logic';
 
@@ -60,19 +50,18 @@ function StageCard({ projectId, session }: { projectId: string; session: Project
   const [busy, setBusy] = useState<'approve' | 'send-back' | null>(null);
 
   const title = getSessionDisplayTitle(session);
-  const stage = sessionStage(session);
   const status = statusBadge(session);
   const source = sessionSource(session);
   const approval = needsApproval(session);
   const href = `/projects/${projectId}/sessions/${session.session_id}`;
 
-  const move = (next: SessionStage) =>
-    setStage.mutate(
-      { sessionId: session.session_id, stage: next },
-      { onError: (e) => errorToast(e instanceof Error ? e.message : 'Could not move the session') },
-    );
-
-  /** Move first, then hand the agent its next turn as a durable prompt. */
+  /**
+   * The ONLY two moves a person makes: approve or send back a card the agent
+   * parked in Ready with `--needs-approval`. Every other move is the agent's,
+   * from inside the sandbox — the API answers any other human write with
+   * 403 `stage_agent_only`. Move first, then hand the agent its next turn as
+   * a durable prompt.
+   */
   const decide = async (kind: 'approve' | 'send-back') => {
     setBusy(kind);
     const next: SessionStage = kind === 'approve' ? 'in_progress' : 'planning';
@@ -101,43 +90,15 @@ function StageCard({ projectId, session }: { projectId: string; session: Project
 
   return (
     <li className="bg-popover space-y-2 rounded-md border px-3 py-2.5">
-      <div className="flex items-start gap-2">
-        <Link href={href} prefetch={false} className="min-w-0 flex-1">
-          <span className="text-foreground block truncate text-sm font-medium">{title}</span>
-          <span className="text-muted-foreground block truncate text-xs">
-            {session.agent_name ?? 'default'}
-            {source.triggerSlug ? ` · ${source.triggerSlug}` : ''}
-            {' · '}
-            {relativeTime(stageMovedAt(session))}
-          </span>
-        </Link>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Move ${title}`}
-              className="-mt-0.5 -mr-1 shrink-0 active:scale-[0.96]"
-            >
-              {setStage.isPending ? (
-                <Loading className="size-3.5 shrink-0" />
-              ) : (
-                <DotsThreeIcon className="size-3.5 shrink-0" />
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-44">
-            <DropdownMenuLabel>Move to</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {SESSION_STAGES.filter((s) => s !== stage).map((s) => (
-              <DropdownMenuItem key={s} className="cursor-pointer" onSelect={() => move(s)}>
-                {STAGE_LABELS[s]}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <Link href={href} prefetch={false} className="block min-w-0">
+        <span className="text-foreground block truncate text-sm font-medium">{title}</span>
+        <span className="text-muted-foreground block truncate text-xs">
+          {session.agent_name ?? 'default'}
+          {source.triggerSlug ? ` · ${source.triggerSlug}` : ''}
+          {' · '}
+          {relativeTime(stageMovedAt(session))}
+        </span>
+      </Link>
 
       {session.stage?.note ? (
         <p className="text-muted-foreground line-clamp-2 text-xs">{session.stage.note}</p>

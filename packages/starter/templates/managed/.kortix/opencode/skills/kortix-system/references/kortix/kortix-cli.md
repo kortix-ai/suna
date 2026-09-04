@@ -256,22 +256,14 @@ and conversation are intact — `sessions cp`, `sessions chat`, and
 you're running in. `kortix sessions info $KORTIX_SESSION_ID` gives
 you the live view of yourself.
 
-**Report your stage.** When the project has Monitoring enabled, keep
-your own card current so humans can see where every agent is:
-
-```sh
-kortix sessions stage planning                                          # working out the plan
-kortix sessions stage ready --needs-approval --note "Plan in PLAN.md"   # needs a human OK → END YOUR TURN after this
-kortix sessions stage ready                                             # no approval needed → move on immediately
-kortix sessions stage in_progress                                       # executing
-kortix sessions stage review --note "CR #12 open"                       # ready for a human to review
-kortix sessions stage done                                              # finished
-```
-
-After `--needs-approval`, stop and end the turn: the approval or the
-reviewer's feedback arrives as a new prompt. A `403` saying the feature is
-not enabled for this project means Monitoring is off — continue without
-the stage calls.
+**Report your stage.** When the project has Monitoring enabled the
+platform puts the full stage protocol in your system prompt — follow it.
+`kortix sessions stage <backlog|planning|ready|in_progress|review|done>
+[--needs-approval] [--note "<one line>"]` moves your own card (id implied).
+After `--needs-approval`, end your turn: the decision arrives as a new
+prompt. A `403 … not enabled` means Monitoring is off — skip the calls. Only
+you move your card; people can only approve or send back a card awaiting
+approval.
 
 **Watch + talk to other agents.** From any session (or your laptop) you
 can see the whole project's activity and read it live — this is how an

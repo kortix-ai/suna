@@ -112,6 +112,7 @@ import {
 } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { buildPiWorkerSessionEnvVars, buildSessionRuntimeEnv } from './session-runtime-env';
+import { monitoringStageInstructionsEnv } from './session-stage-instructions';
 import {
   buildPlatformMetaOpenCodeConfig,
   resolvePlatformMetaSandbox,
@@ -424,6 +425,9 @@ export async function buildSessionSandboxEnvVars(input: {
    *  OFF (default) → native BYOK providers must reach opencode, so the deny
    *  list is empty. Mirrors the conditional KORTIX_LLM_* injection at provision. */
   llmGatewayEnabled: boolean;
+  /** `projects.metadata` — read for the `monitoring` flag, which decides whether
+   *  the agent receives the always-on stage protocol (KORTIX_STAGE_INSTRUCTIONS). */
+  projectMetadata: unknown;
   /** New session (brand-new branch == base, no remote commits). Lets the
    *  daemon create the session branch LOCALLY instead of a redundant network
    *  fetch of a branch that's identical to base — that fetch cost up to ~10s
@@ -610,6 +614,7 @@ export async function buildSessionSandboxEnvVars(input: {
   const sessionContextEnv = await buildSessionRuntimeContextEnv(input.sessionId);
   return {
     ...runtimeSecrets.env,
+    ...monitoringStageInstructionsEnv(input.projectMetadata),
     // Fleet default for the `kortix-connectors` OpenCode MCP server. Set here
     // rather than in the daemon so it is one operator switch
     // (CONNECTORS_MCP_ENABLED) instead of a rebuilt sandbox image.
@@ -1785,6 +1790,7 @@ export async function createProjectSession(input: {
                   : null,
               apiUrl: deriveKortixApiBase(),
               frontendUrl: sandboxFrontendBaseUrl(),
+              projectMetadata: project.metadata,
             }),
           ).then((envVars) => {
             tl.mark('env-vars');
@@ -1802,6 +1808,7 @@ export async function createProjectSession(input: {
             agentName,
             opencodeModel,
             llmGatewayEnabled,
+            projectMetadata: project.metadata,
             platformMetaAgent,
             freshSession: true,
             baseSha: fastBootGitHint?.baseSha,

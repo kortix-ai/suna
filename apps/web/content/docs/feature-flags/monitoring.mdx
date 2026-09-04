@@ -5,12 +5,14 @@ description: A stage board over every session you can see, plus each trigger's r
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-Monitoring is one page per project, `/projects/<id>/monitoring`, with two
-tabs in its title bar (`?tab=runs` deep-links the second):
+Monitoring is one page per project with two tabs, each its own route the way
+the Customize tabs are: `/projects/<id>/monitoring` and
+`/projects/<id>/monitoring/runs`.
 
 1. **Stage board** — a kanban with six fixed columns. Every session you can
    open is exactly one card. The agent moves its own card from inside the
-   sandbox; you move any card from the board.
+   sandbox; the only move a person makes is to approve or send back a card
+   that is waiting for approval.
 2. **Trigger runs** — one row per trigger with its last runs as a strip of
    status glyphs; open a row to see every run the trigger started.
 
@@ -71,8 +73,11 @@ kortix sessions stage <session-id> --json   # the stage object
 `in-progress`, `inprogress`, `progress` → `in_progress`; `plan` → `planning`;
 `todo` → `backlog`.
 
-An agent can only move **its own** session. A person can move any session
-they can open, from the CLI or from the card's **⋯ → Move to** menu.
+Only the session's agent moves its card, from inside the sandbox. A person
+cannot move cards — not from the board, not from the CLI — except to
+**Approve** or **Send back** a card the agent parked in Ready with
+`--needs-approval`. Any other write from outside the sandbox is refused with
+`403 stage_agent_only`.
 
 ## The approval loop
 
@@ -87,6 +92,12 @@ they can open, from the CLI or from the card's **⋯ → Move to** menu.
 
 Without `--needs-approval` nothing waits: the agent moves itself from `ready`
 to `in_progress` and on.
+
+If the agent asks you a question through the session's question dialog
+instead of running the command, the platform parks its card in **Ready**
+awaiting approval for it, with the question as the note. Your answer in the
+dialog moves the card to **In progress**. Nobody else can move a card: the
+stage route answers a person's direct move with `403 stage_agent_only`.
 
 <Callout type="info" title="Stage is session metadata">
 The stage lives on the session row (`metadata.stage`) and is written only by

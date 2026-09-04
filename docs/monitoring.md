@@ -58,6 +58,12 @@ Column labels: Backlog, Planning, Ready, In progress, Review, Done.
   before the session lookup, so MON-2..5 need no real session.
 - A session-bound caller (`callerKortixSessionId(c)` non-null) may only set the
   stage of **its own** session → otherwise 403 `{ error: 'An agent can only move its own session' }`.
+- **Only the agent moves a card.** A caller that is NOT session-bound (a
+  person, PAT, service account) may write only the approval decision: current
+  stage `ready` with `needs_approval:true` → target `in_progress` (approve) or
+  `planning` (send back). Anything else → 403
+  `{ error: "Only the session's agent moves its card. …", code: 'stage_agent_only' }`.
+  A person's write stores `needs_approval:false` (the approval is consumed).
 - Invalid `stage` → 400 `{ error: 'Invalid stage' }`. `note` longer than 500
   chars → 400. `needs_approval` non-boolean → 400.
 - Writes `metadata.stage` (whole object replaced), bumps `updated_at`.
@@ -103,16 +109,56 @@ Serializer: `ProjectSession.stage` is exposed top-level as the object above or
 4. Without `--needs-approval` the agent moves itself straight on:
    `kortix sessions stage in_progress`, later `review`, then `done`.
 
+## Runtime — how the agent learns the protocol
+
+The `kortix-cli` skill loads on demand, so a plain chat never read the stage
+rules and every card sat in Backlog. The protocol is therefore always-on:
+
+- The API sets `KORTIX_STAGE_INSTRUCTIONS` (markdown, ≤1500 chars, authored
+  in `apps/api/src/projects/lib/session-stage-instructions.ts`) in the sandbox
+  env of every session whose project has `monitoring` on — both the OpenCode
+  env builder (`buildSessionSandboxEnvVars`, all three callers: create,
+  restart, open/ensure) and the pi-worker env builder. Flag off → the variable
+  is absent.
+- OpenCode runtime: the daemon writes it to `/tmp/kortix/stage-instructions.md`
+  and appends that path to OpenCode `instructions` (same mechanism as the
+  secret-capabilities file; `apps/kortix-sandbox-agent-server/src/stage-instructions.ts`).
+- Pi worker runtime: `withStageInstructions` appends it to the system prompt
+  after the baked/env prompt is chosen (`apps/kortix-worker/src/stage-instructions.ts`).
+- The `kortix-cli` and managed `kortix-system` skills keep only a pointer
+  to the command; the protocol text lives in the API.
+- Backend-provisioned environments (`platform/services/session-environment.ts`)
+  pass `projectMetadata: null` and get no protocol yet.
+- **Backstop, driven by what the agent does**
+  (`apps/api/src/projects/lib/session-stage-backstop.ts`): when the agent asks
+  the user something through the question relay
+  (`POST /sessions/:sid/question` from the sandbox), its card parks in
+  `ready` + `needs_approval` with the question as the note, unless the agent
+  already parked it or moved it to `review`/`done`. When a person answers
+  (`POST /sessions/:sid/question` from the web), a parked card moves to
+  `in_progress`, stamped with the answerer. No-op when Monitoring is off. The
+  CLI protocol stays primary; this covers the turn where the agent asked but
+  forgot to report.
+- Delivery: a session gets the protocol only if its sandbox boots with a
+  daemon that knows `KORTIX_STAGE_INSTRUCTIONS` and a CLI that has
+  `sessions stage`. Sessions created while a snapshot is still being re-baked
+  boot the previous snapshot (daemon `agent: staged`, `cli: failed` in
+  `/kortix/health`) and never receive it — observed 2026-09-04 on local dev.
+
 ## Web
 
-- Route `apps/web/src/app/(app)/projects/[id]/monitoring/page.tsx` (top-level like
-  Apps — the capability tab bar is manager-tier `customize`, this page is for
-  anyone who runs a session).
+- Routes `apps/web/src/app/(app)/projects/[id]/monitoring/{layout,page}.tsx`
+  (board) and `monitoring/runs/page.tsx` (trigger runs) — top-level like
+  Apps, since the capability tab bar is manager-tier `customize` and this page
+  is for anyone who runs a session.
+- Tabs are route-based and mounted in the layout, cloned from the Customize
+  bar (`capability-tabs.tsx`): `monitoring-tabs.tsx` + `monitoring-tab-routes.ts`,
+  same `TabsList type="underline"` composition, `Link` triggers, Docs trailing.
 - Feature folder `apps/web/src/features/workspace/capabilities/monitoring/`.
 - Sidebar row `ProjectMonitoringNavItem` (flag-gated, beside Apps).
 - Menu-registry row `proj-monitoring` with `requiresFlag: 'monitoring'`.
-- Two tabs in the title bar, `?tab=board|runs` (board is the default and
-  carries no param).
+- People do not move cards: no "Move to" control. The only human controls
+  are **Approve** / **Send back** on a Ready card awaiting approval.
 - Data: the sidebar's session query (`qk.project.sessions(projectId)` +
   `listProjectSessions`, same refetch interval) + `useProjectTriggers` (runs
   tab only) + `useReviewSessionSummary` for "needs you". No new transport.

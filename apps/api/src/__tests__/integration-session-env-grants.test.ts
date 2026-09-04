@@ -388,6 +388,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       baseRef: 'main',
       agentName: 'default',
       llmGatewayEnabled: false,
+      projectMetadata: {},
     });
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
@@ -435,6 +436,7 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       baseRef: 'main',
       agentName: 'veyris',
       llmGatewayEnabled: false,
+      projectMetadata: {},
     });
     expect(env.VEYRIS_API_URL).toBe('https://fresh.veyris.example.test');
     expect(env.VEYRIS_AGENT_TOKEN).toBe('fresh-capability');

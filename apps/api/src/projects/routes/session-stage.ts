@@ -2,6 +2,12 @@
  * PUT /v1/projects/:projectId/sessions/:sessionId/stage — move a session's
  * card on the Monitoring board (docs/monitoring.md). The only writer of
  * `metadata.stage`; PATCH /sessions/:id rejects that key as server-managed.
+ *
+ * The session's AGENT (a session-bound sandbox token) moves its own card
+ * freely. A person may only approve (→ in_progress) or send back (→ planning)
+ * a card parked in `ready` with needs_approval; anything else is 403
+ * `stage_agent_only`, so the board reflects what the agent reports, not what
+ * someone dragged.
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSessions } from '@kortix/db';
@@ -13,7 +19,13 @@ import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, SessionSchema, projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../lib/caller-session';
 import { UUID_V4_REGEX, hasOwn, readBody, serializeSession } from '../lib/serializers';
-import { SESSION_STAGE_NOTE_MAX, type SessionStageState, isSessionStage } from '../lib/session-stage';
+import {
+  SESSION_STAGE_NOTE_MAX,
+  type SessionStageState,
+  humanStageMoveAllowed,
+  isSessionStage,
+  readSessionStage,
+} from '../lib/session-stage';
 
 projectsApp.openapi(
   createRoute({
@@ -64,10 +76,24 @@ projectsApp.openapi(
     if (agentSessionId && agentSessionId !== sessionId) {
       return c.json({ error: 'An agent can only move its own session' }, 403);
     }
+    if (
+      !agentSessionId &&
+      !humanStageMoveAllowed(readSessionStage(visible.row.metadata), body.stage)
+    ) {
+      return c.json(
+        {
+          error:
+            "Only the session's agent moves its card. You can approve or send back a card that is waiting for approval.",
+          code: 'stage_agent_only',
+        },
+        403,
+      );
+    }
 
     const stage: SessionStageState = {
       value: body.stage,
-      needs_approval: body.needs_approval === true,
+      // A person's move is the decision itself, so the approval is consumed.
+      needs_approval: agentSessionId ? body.needs_approval === true : false,
       note: note === '' ? null : note,
       updated_at: new Date().toISOString(),
       updated_by: agentSessionId ? 'agent' : loaded.userId,

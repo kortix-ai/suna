@@ -111,6 +111,7 @@ import {
   renderAnswerPrompt,
   resolvePendingQuestion,
 } from '../lib/pending-questions';
+import { parkSessionOnAgentQuestion, resumeSessionOnAnswer } from '../lib/session-stage-backstop';
 import { loadProjectAgents } from '../agents';
 import { getAgentGrant } from '../../iam/agent-scope';
 import {
@@ -3674,6 +3675,17 @@ projectsApp.openapi(
         return null;
       });
     }
+    // Monitoring backstop: an agent that asks is waiting for a person, so its
+    // card parks in Ready awaiting approval even when it skipped
+    // `kortix sessions stage ready --needs-approval`. Bookkeeping only —
+    // never fails the relay.
+    await parkSessionOnAgentQuestion({
+      projectId,
+      sessionId,
+      questionText: questions[0]?.header ?? questions[0]?.question ?? '',
+    }).catch((err) => {
+      console.warn('[turn-question] could not park the session on the board:', err);
+    });
 
     // Non-blocking: post the question(s) into the thread and return immediately
     // with sentinel `answers`. The agent does NOT wait for an inline answer — the
@@ -3802,6 +3814,13 @@ projectsApp.openapi(
     if (!claimed) {
       return c.json({ error: 'question was already answered', code: 'ALREADY_ANSWERED' }, 409);
     }
+    // Monitoring backstop: the answer IS the approval — the card leaves Ready
+    // for In progress (no-op unless it was parked there awaiting approval).
+    await resumeSessionOnAnswer({ projectId, sessionId, answeredBy: loaded.userId }).catch(
+      (err) => {
+        console.warn('[question-answer] could not move the session on the board:', err);
+      },
+    );
 
     const outcome = await continueSession({
       source: 'ui',
