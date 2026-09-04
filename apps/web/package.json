@@ -123,6 +123,7 @@
     "ag-grid-community": "^35.1.0",
     "ag-grid-react": "^35.1.0",
     "autoprefixer": "10.4.17",
+    "blume": "1.5.3",
     "cannon-es": "^0.20.0",
     "canvas": "^3.1.0",
     "canvas-confetti": "^1.9.4",

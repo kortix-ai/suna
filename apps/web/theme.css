@@ -1,0 +1,7 @@
+/* Stock Blume theme. Only the accent is pinned, so /docs stays visually
+   self-consistent while the Kortix skin is deferred (spec decision D3). Do not
+   add app tokens here. This file must not couple the docs to the app's design
+   system. */
+:root {
+  --blume-accent: oklch(0.68 0.14 180);
+}
