@@ -12,6 +12,8 @@
  * not a blob store.
  */
 
+import { isModelNativeAttachmentMime } from '@kortix/shared';
+import { parseStagedPromptDataUrl } from './prompt-attachment-materializer';
 import type { PromptPartWire } from './store';
 
 export const PROMPT_MAX_PARTS = 64;
@@ -38,8 +40,8 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
       | 'agent'
       | 'text',
     ...(typeof part?.text === 'string' ? { text: part.text } : {}),
-    ...(typeof part?.mime === 'string' ? { mime: part.mime } : {}),
-    ...(typeof part?.url === 'string' ? { url: part.url } : {}),
+    ...(typeof part?.mime === 'string' ? { mime: part.mime.trim() } : {}),
+    ...(typeof part?.url === 'string' ? { url: part.url.trim() } : {}),
     ...(typeof part?.filename === 'string' ? { filename: part.filename } : {}),
     ...(typeof part?.name === 'string' ? { name: part.name } : {}),
     ...(part?.source === undefined ? {} : { source: part.source }),
@@ -47,6 +49,10 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
   const text = flattenPromptText(parts);
   if (!text && !parts.some((part) => part.type !== 'text')) {
     return { error: 'parts must carry text' };
+  }
+  for (const part of parts as PromptPartWire[]) {
+    const error = validateFilePart(part);
+    if (error) return { error };
   }
   let bytes = 0;
   for (const part of parts) {
@@ -58,6 +64,24 @@ export function sanitizeInboxPromptParts(rawParts: unknown[]): SanitizedPromptPa
     }
   }
   return { parts: parts as PromptPartWire[] };
+}
+
+function validateFilePart(part: PromptPartWire): string | null {
+  if (part.type !== 'file') return null;
+  const filename = part.filename?.trim() || 'File';
+  const mime = part.mime?.trim();
+  const url = part.url?.trim();
+  if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
+  if (isModelNativeAttachmentMime(mime)) return null;
+  if (!url.toLowerCase().startsWith('data:')) {
+    return `file "${filename}" must be uploaded before it can be sent`;
+  }
+  try {
+    parseStagedPromptDataUrl({ filename, mime, url });
+  } catch (error) {
+    return error instanceof Error ? error.message : `file "${filename}" has malformed staged data`;
+  }
+  return null;
 }
 
 /** Flatten a prompt body to the plain text every pre-inbox reader still wants

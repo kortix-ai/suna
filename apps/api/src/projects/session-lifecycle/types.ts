@@ -119,6 +119,18 @@ export interface ContinueSessionCommand {
    * that hold no transcript and therefore cannot place an id correctly.
    */
   wireMessageId?: string;
+  /** Stable lifecycle row identity used only for deterministic workspace paths. */
+  materializationKey?: string;
+  /** Skip legacy first-message repair only for the pending-first row itself. */
+  isPendingFirstPrompt?: boolean;
+}
+
+/** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
+export interface LegacyInlineAttachmentRepairMetadata extends Record<string, unknown> {
+  pending_prompt?: {
+    attachment_names?: unknown;
+  };
+  legacy_inline_attachments_repaired_at?: unknown;
 }
 
 export interface StartSessionCommand {

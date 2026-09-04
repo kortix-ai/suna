@@ -233,6 +233,92 @@ describe('daemon file write routes', () => {
     expect(stat.isDirectory()).toBe(true)
   })
 
+  // Chunked upload. The sandbox provider's edge DISCARDS a request body over
+  // its size ceiling (measured 2026-09-04: ~104 KB lands, ~115 KB does not), so
+  // a single-shot upload cannot carry a real photo or PDF. `/file/append`
+  // writes one bounded chunk at a time: `first` truncates, the rest extend.
+  it('append assembles a file from bounded chunks', async () => {
+    const chunks = ['alpha-', 'beta-', 'gamma']
+    for (const [index, chunk] of chunks.entries()) {
+      const form = new FormData()
+      form.append('path', `${WORKSPACE}/chunked`)
+      form.append('filename', 'joined.txt')
+      form.append('first', index === 0 ? 'true' : 'false')
+      form.append('offset', String(chunks.slice(0, index).join('').length))
+      form.append('file', new File([chunk], 'joined.txt'))
+      const res = await fetch(`${base}/file/append`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: form,
+      })
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { path: string; size: number }
+      expect(body.path).toBe(`${WORKSPACE}/chunked/joined.txt`)
+      // `size` is CUMULATIVE, so the caller can prove every byte landed.
+      expect(body.size).toBe(chunks.slice(0, index + 1).join('').length)
+    }
+    expect(await fs.readFile(`${WORKSPACE}/chunked/joined.txt`, 'utf8')).toBe('alpha-beta-gamma')
+  })
+
+  it('append treats a replayed chunk at the same offset as success without duplicating bytes', async () => {
+    const send = async () => {
+      const form = new FormData()
+      form.append('path', `${WORKSPACE}/chunk-replay`)
+      form.append('filename', 'joined.txt')
+      form.append('first', 'false')
+      form.append('offset', '6')
+      form.append('file', new File(['beta'], 'joined.txt'))
+      return fetch(`${base}/file/append`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: form,
+      })
+    }
+
+    await fs.mkdir(`${WORKSPACE}/chunk-replay`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/chunk-replay/joined.txt`, 'alpha-')
+    expect((await send()).status).toBe(200)
+    expect((await send()).status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/chunk-replay/joined.txt`, 'utf8')).toBe('alpha-beta')
+  })
+
+  // A retried upload must not append onto the previous attempt's bytes.
+  it('append with first=true truncates an existing file', async () => {
+    await fs.mkdir(`${WORKSPACE}/chunked2`, { recursive: true })
+    await fs.writeFile(`${WORKSPACE}/chunked2/retry.txt`, 'STALE-PARTIAL')
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/chunked2`)
+    form.append('filename', 'retry.txt')
+    form.append('first', 'true')
+    form.append('file', new File(['fresh'], 'retry.txt'))
+    const res = await fetch(`${base}/file/append`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    expect(await fs.readFile(`${WORKSPACE}/chunked2/retry.txt`, 'utf8')).toBe('fresh')
+  })
+
+  // Same guard as /file/upload: the name is a NAME, never a path.
+  it('append refuses a filename that escapes the target directory', async () => {
+    const form = new FormData()
+    form.append('path', `${WORKSPACE}/chunked3`)
+    form.append('filename', '../escaped.txt')
+    form.append('first', 'true')
+    form.append('file', new File(['x'], 'escaped.txt'))
+    const res = await fetch(`${base}/file/append`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: form,
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { path: string }
+    // basename()'d to a bare name, so it lands INSIDE the target directory.
+    expect(body.path).toBe(`${WORKSPACE}/chunked3/escaped.txt`)
+    await expect(fs.stat(`${WORKSPACE}/escaped.txt`)).rejects.toThrow()
+  })
+
   it('renames/moves a file', async () => {
     await fs.writeFile(`${WORKSPACE}/src.txt`, 'move me')
     const res = await fetch(`${base}/file/rename`, {

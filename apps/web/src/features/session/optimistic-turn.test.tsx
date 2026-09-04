@@ -110,3 +110,125 @@ describe('OptimisticTurn', () => {
     expect(shell).toContain('@builder');
   });
 });
+
+describe('OptimisticTurn staged attachments', () => {
+  // A reload discards the composer's optimistic state. The durable queued row
+  // is then the only thing that knows the prompt had files, and it carries
+  // NAMES ONLY — no bytes, no sandbox path, because the upload has not landed.
+  // Without this the refreshed tab showed a bare sentence for a send of seven
+  // attachments (2026-09-04), which reads as "my files were dropped".
+  test('draws a pending tile per staged attachment after a reload', () => {
+    const markup = render(
+      <OptimisticTurn
+        text="YO BRO"
+        attachments={[
+          { filename: '20260830_134945.jpg', mime: 'image/jpeg' },
+          { filename: 'spec.pdf', mime: 'application/pdf' },
+        ]}
+      />,
+    );
+    expect(markup).toContain('YO BRO');
+    expect(markup).toContain('20260830_134945.jpg');
+    expect(markup).toContain('spec.pdf');
+  });
+
+  test('keeps send order', () => {
+    const markup = render(
+      <OptimisticTurn
+        text="x"
+        attachments={[
+          { filename: 'first.png', mime: 'image/png' },
+          { filename: 'second.png', mime: 'image/png' },
+        ]}
+      />,
+    );
+    expect(markup.indexOf('first.png')).toBeLessThan(markup.indexOf('second.png'));
+  });
+
+  test('renders nothing extra when the prompt had no files', () => {
+    const withNone = render(<OptimisticTurn text="plain" attachments={[]} />);
+    const withoutProp = render(<OptimisticTurn text="plain" />);
+    expect(withNone).toBe(withoutProp);
+  });
+
+  // Uploads that already landed arrive as `<file …>` refs folded into the text.
+  // A reloaded row supplies the same files as staged names. Rendering both
+  // would double every tile.
+  test('does not double a file that is already a text ref', () => {
+    const text = buildOptimisticPromptTextWithUploads('look', [
+      {
+        kind: 'remote',
+        url: 'https://example.test/a.png',
+        filename: 'a.png',
+        mime: 'image/png',
+        isImage: true,
+      },
+    ]);
+    // One tile prints its name several times (label, alt, title), so the
+    // invariant is not a count — it is that naming the same file twice adds
+    // nothing at all.
+    const withoutStaged = render(<OptimisticTurn text={text} />);
+    const withStaged = render(
+      <OptimisticTurn text={text} attachments={[{ filename: 'a.png', mime: 'image/png' }]} />,
+    );
+    expect(withStaged).toBe(withoutStaged);
+  });
+});
+
+describe('OptimisticTurn upload status', () => {
+  // Jay, 2026-09-04: "Even if the file upload takes time, just update the user
+  // that file 1 is uploading, file 2 is uploading, file 3 is uploading, with a
+  // proper file upload state." The bytes reach the box BEFORE the runtime
+  // creates the message, so this bubble is the only thing on screen for the
+  // whole upload — it has to say what is happening.
+  test('says how many files are still going up', () => {
+    const markup = render(
+      <OptimisticTurn
+        text="YO BRO"
+        attachments={[
+          { filename: 'a.jpg', mime: 'image/jpeg' },
+          { filename: 'b.pdf', mime: 'application/pdf' },
+          { filename: 'c.svg', mime: 'image/svg+xml' },
+        ]}
+        uploadStatus={{ state: 'uploading' }}
+      />,
+    );
+    expect(markup).toContain('Uploading 3 files');
+    expect(markup).toContain('a.jpg');
+    expect(markup).toContain('c.svg');
+  });
+
+  test('says it in the singular for one file', () => {
+    const markup = render(
+      <OptimisticTurn
+        text="x"
+        attachments={[{ filename: 'only.png', mime: 'image/png' }]}
+        uploadStatus={{ state: 'uploading' }}
+      />,
+    );
+    expect(markup).toContain('Uploading 1 file');
+    expect(markup).not.toContain('1 files');
+  });
+
+  // A failed upload must READ as failed. Left as a spinner it is
+  // indistinguishable from a slow one, which is how a dead prompt looked like
+  // a working one for minutes.
+  test('names the failure instead of spinning forever', () => {
+    const markup = render(
+      <OptimisticTurn
+        text="x"
+        attachments={[{ filename: 'photo.jpg', mime: 'image/jpeg' }]}
+        uploadStatus={{ state: 'failed', message: 'photo.jpg — upload failed (503)' }}
+      />,
+    );
+    expect(markup).toContain('photo.jpg — upload failed (503)');
+    expect(markup).not.toContain('Uploading');
+  });
+
+  test('derives the upload status from pending files in a running-session turn', () => {
+    const pending = render(
+      <OptimisticTurn text="x" attachments={[{ filename: 'a.png', mime: 'image/png' }]} />,
+    );
+    expect(pending).toContain('Uploading 1 file');
+  });
+});

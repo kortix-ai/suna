@@ -281,6 +281,16 @@ The session payload reports both verdicts, and a client must not read one for th
 
 `SESS-25` Server-side prompt inbox. `POST /projects/:id/sessions/:sid/prompts` with a client-minted OpenCode wire `message_id` → `202 {prompt_id, state:'queued', message_id, deduped:false}`; the prompt is a DURABLE row in `kortix.session_lifecycle_commands` from that instant, so it survives a closed tab, a second device, and a crash. A `message_id` OpenCode cannot order → `400` (a mis-ordered id reads as already answered and the turn silently never runs). Re-POSTing the SAME `client_message_id` → `200 {deduped:true}` naming the SAME `prompt_id`, enforced by the unique index on `idempotency_key`. The FIFO key is `(clientSentAtMs, wireMessageId, commandId)`, with `created_at` substituted when an older producer has no client timestamp; listing, admission, batch delivery, strand repair, and terminal promotion use that same tuple. `GET .../prompts` lists what the session still owes the user — `queued` / `waiting` (with `reason`: `turn_active`, `older_prompt_pending`, or `held`) / `delivering` (with `reason: 'forwarded'` once it is at OpenCode but no turn has consumed it yet) / `failed`; a CONSUMED prompt is omitted, because it is in the transcript. A live turn holds later prompts until its terminal relay promotes exactly one FIFO head. An automation's own `continue_session` row (trigger, Slack, approval resume) is never listed, deletable, or retryable here. `POST .../prompts/:promptId/retry` is the ONE primitive behind retry and "send now": it re-queues a `queued`/`failed`/`dead_lettered` row — or a STOP-PAUSED one, which is the row the hold is rendered on — RE-MINTED above the transcript (a stale id reads as already answered), promotes it past the ordering gate, releases the session's hold, and `404`s a row already on the wire. A row that has already been POSTed goes out under a NEW idempotency key, so the proxy's 10-minute delivery claim cannot answer it `duplicate` and swallow it. `POST .../prompts/hold {held:boolean}` is what the Stop button writes — every queued prompt of the session reads `waiting`/`held` until an explicit send or send-now releases it; a non-boolean is `400`. `DELETE .../prompts/:promptId` removes a prompt that has not gone out (`204`), refuses one already on the wire (`409` — cancelling it would be a lie), and never addresses another session's row (`404`).
 
+`SESS-27` Durable session attachments. A first prompt containing a ZIP, a text or
+source file, and an image persists before runtime readiness. After readiness, the
+control plane writes every non-native file to a deterministic
+`/workspace/uploads/.kortix-inbox/{command_id}/...` path and forwards text file
+references; only images and PDFs remain OpenCode file parts. One failed write
+forwards no prompt and keeps the inbox row retryable. A later retry reuses the same
+paths. The user message renders every attachment before and after reload, with the
+same exact timestamp and completed-turn duration. A legacy pending-first ZIP part is
+rewritten in place before the next prompt.
+
 ---
 
 ## 8. Sandbox lifecycle + snapshots

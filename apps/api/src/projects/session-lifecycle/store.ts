@@ -278,6 +278,51 @@ export async function enqueueContinueSessionCommand(
   return { row: existing, deduped: true };
 }
 
+/** Load the durable first prompt and every exact runtime message id it used. */
+export async function loadLegacyPendingFirstPrompt(sessionId: string): Promise<{
+  commandId: string;
+  deliveredMessageIds: string[];
+  parts: PromptPartWire[];
+} | null> {
+  const [row] = await db
+    .select({
+      commandId: sessionLifecycleCommands.commandId,
+      payload: sessionLifecycleCommands.payload,
+      result: sessionLifecycleCommands.result,
+    })
+    .from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.idempotencyKey, `prompt:${sessionId}:pending-first`))
+    .limit(1);
+  if (!row) return null;
+
+  const payload = row.payload as unknown as QueuedContinueSessionPayload;
+  const result = row.result as { forwarded_message_id?: unknown };
+  const deliveredMessageIds = [
+    result.forwarded_message_id,
+    payload.redeliveredMessageId,
+    ...(payload.redeliveredMessageIds ?? []).slice().reverse(),
+    payload.wireMessageId,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  return {
+    commandId: row.commandId,
+    deliveredMessageIds: [...new Set(deliveredMessageIds)],
+    parts: Array.isArray(payload.parts) ? payload.parts : [],
+  };
+}
+
+/** Record completion without replacing unrelated session metadata. */
+export async function markLegacyInlineAttachmentsRepaired(sessionId: string): Promise<void> {
+  await db
+    .update(projectSessions)
+    .set({
+      metadata: sql`coalesce(${projectSessions.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        legacy_inline_attachments_repaired_at: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(projectSessions.sessionId, sessionId));
+}
+
 /**
  * Put a claimed row back WITHOUT counting the claim as an attempt.
  *

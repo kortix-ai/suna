@@ -40,6 +40,7 @@ import {
   type Command,
   type FilePart,
   type MessageWithParts,
+  type Part,
   type TextPart,
 } from '@/ui';
 import {
@@ -62,10 +63,10 @@ import {
   SystemNotificationCard,
 } from '../message-parsing';
 
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
-import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -441,8 +442,70 @@ export interface NormalizedAttachment {
   pending?: boolean;
 }
 
+interface OrderedUploadReference {
+  path: string;
+  mime: string;
+  filename: string;
+  pending?: string;
+  sourcePartIndex: number;
+}
+
+interface ParsedAttachmentContent {
+  rawText: string;
+  textAfterFiles: string;
+  replyContext: string | null;
+  uploads: OrderedUploadReference[];
+}
+
 /**
- * The attachment strip's input: message file-parts plus parsed upload refs.
+ * Parse visible text parts once while retaining each upload reference's source
+ * part. The source index lets the attachment normalizer merge references and
+ * native file parts without changing their persisted order.
+ */
+function parseAttachmentContent(parts: readonly Part[]): ParsedAttachmentContent {
+  const rawTextParts: string[] = [];
+  const cleanTextParts: string[] = [];
+  const uploads: OrderedUploadReference[] = [];
+  let replyContext: string | null = null;
+
+  parts.forEach((part, sourcePartIndex) => {
+    if (
+      !isTextPart(part) ||
+      !(part as TextPart).text?.trim() ||
+      (part as TextPart).synthetic ||
+      (part as TextPart & { ignored?: boolean }).ignored
+    ) {
+      return;
+    }
+
+    const rawPartText = stripSystemPtyText((part as TextPart).text);
+    rawTextParts.push(rawPartText);
+
+    const parsedReply = replyContext
+      ? { cleanText: rawPartText, replyContext: null }
+      : parseReplyContext(rawPartText);
+    if (parsedReply.replyContext) replyContext = parsedReply.replyContext;
+
+    const parsedFiles = parseFileReferences(parsedReply.cleanText);
+    cleanTextParts.push(parsedFiles.cleanText);
+    uploads.push(
+      ...parsedFiles.files.map((file) => ({
+        ...file,
+        sourcePartIndex,
+      })),
+    );
+  });
+
+  return {
+    rawText: rawTextParts.join('\n'),
+    textAfterFiles: cleanTextParts.join('\n'),
+    replyContext,
+    uploads,
+  };
+}
+
+/**
+ * The attachment strip's input, merged in original message-part order.
  *
  * Uploads are keyed by POSITION first, then by their pending id or path. Keying
  * on the path alone was a duplicate-key generator: an optimistic ref carries no
@@ -455,25 +518,57 @@ export interface NormalizedAttachment {
  * exist yet.
  */
 export function normalizeAttachments(
-  parts: FilePart[],
-  uploads: ReadonlyArray<{ path: string; mime: string; filename: string; pending?: string }>,
+  parts: readonly Part[],
+  uploads: ReadonlyArray<{
+    path: string;
+    mime: string;
+    filename: string;
+    pending?: string;
+    sourcePartIndex?: number;
+  }>,
 ): NormalizedAttachment[] {
-  return [
-    ...parts.map((file) => ({
-      key: file.id,
-      filename: file.filename || 'File',
-      mime: file.mime,
-      src: file.url,
-    })),
-    ...uploads.map((file, index) => ({
+  const normalized: NormalizedAttachment[] = [];
+  const uploadsByPart = new Map<number, Array<{ file: (typeof uploads)[number]; index: number }>>();
+  const unpositionedUploads: Array<{ file: (typeof uploads)[number]; index: number }> = [];
+
+  uploads.forEach((file, index) => {
+    if (file.sourcePartIndex === undefined) {
+      unpositionedUploads.push({ file, index });
+      return;
+    }
+    const references = uploadsByPart.get(file.sourcePartIndex) ?? [];
+    references.push({ file, index });
+    uploadsByPart.set(file.sourcePartIndex, references);
+  });
+
+  const addUpload = (file: (typeof uploads)[number], index: number) => {
+    normalized.push({
       key: `upload:${index}:${file.pending ?? file.path}`,
       filename: file.filename || getFilename(file.path),
       mime: file.mime,
       src: file.path || undefined,
       path: file.path || undefined,
       pending: Boolean(file.pending) || !file.path,
-    })),
-  ];
+    });
+  };
+
+  parts.forEach((part, sourcePartIndex) => {
+    if (isFilePart(part)) {
+      const file = part as FilePart;
+      normalized.push({
+        key: file.id,
+        filename: file.filename || 'File',
+        mime: file.mime,
+        src: file.url,
+      });
+    }
+    for (const { file, index } of uploadsByPart.get(sourcePartIndex) ?? []) {
+      addUpload(file, index);
+    }
+  });
+
+  for (const { file, index } of unpositionedUploads) addUpload(file, index);
+  return normalized;
 }
 
 /**
@@ -586,90 +681,121 @@ function AttachmentImage({
  * Shared attachment strip — used by the real user turn and the optimistic turn
  * so the shell → chat crossfade never swaps card chrome for tile chrome.
  */
+/**
+ * What the attachment strip should say about bytes still in flight.
+ *
+ * The runtime does not create the user's message until every attachment has
+ * been written to the box, so between Enter and that moment the ONLY thing on
+ * screen is this bubble. A tile's spinner says "this file", and nothing said
+ * how many were left or that one had failed — a stuck upload and a slow one
+ * looked identical for minutes (2026-09-04).
+ */
+export interface AttachmentUploadStatus {
+  state: 'uploading' | 'failed';
+  /** Why it failed, shown verbatim. Ignored while uploading. */
+  message?: string;
+}
+
 export function MessageAttachments({
   attachments,
   pending,
+  status,
 }: {
   attachments: NormalizedAttachment[];
   /** The whole message is still being sent, so every tile is still uploading. */
   pending?: boolean;
+  /** Progress for the strip as a whole — see {@link AttachmentUploadStatus}. */
+  status?: AttachmentUploadStatus;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const [expanded, setExpanded] = useState(false);
 
   const { visible, hidden } = planAttachmentGrid(attachments, expanded);
   if (visible.length === 0) return null;
+  const hasPendingAttachment = Boolean(pending) || attachments.some((file) => file.pending);
+
+  const caption =
+    status?.state === 'failed'
+      ? (status.message ?? 'Upload failed')
+      : status?.state === 'uploading' || hasPendingAttachment
+        ? `Uploading ${attachments.length} file${attachments.length === 1 ? '' : 's'}…`
+        : null;
 
   return (
-    // Fixed 5rem squares that simply wrap, packed against the right rail. No
-    // grid, no column track.
-    //
-    // The cap only reads as deliberate if the rows come out even, and with free
-    // wrapping the row length follows whatever width happens to be available —
-    // at 579px seven fit, so a cap of 8 left one orphan tile stranded on its own
-    // row. `max-w` in the same units as the tile pins it: 4 × 5rem + 3 × 0.5rem
-    // = 21.5rem, so a row is always four and the cap is always two clean rows,
-    // at any root font size.
-    <ul className="flex max-w-[21.5rem] flex-wrap justify-end gap-2">
-      {visible.map((file, index) => {
-        // The LAST visible tile carries the overflow count over its own
-        // contents, so the grid never shows a blank slot — the count is an
-        // overlay, not a placeholder. It opens the rest instead of the file, so
-        // it is a plain button: nesting one inside the preview trigger would be
-        // two buttons deep and invalid.
-        if (hidden > 0 && index === visible.length - 1) {
+    <div className="flex flex-col items-end gap-1.5">
+      <ul className="flex max-w-[21.5rem] flex-wrap justify-end gap-2">
+        {visible.map((file, index) => {
+          // The LAST visible tile carries the overflow count over its own
+          // contents, so the grid never shows a blank slot — the count is an
+          // overlay, not a placeholder. It opens the rest instead of the file, so
+          // it is a plain button: nesting one inside the preview trigger would be
+          // two buttons deep and invalid.
+          if (hidden > 0 && index === visible.length - 1) {
+            return (
+              <li key={file.key} className="contents">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded(true);
+                  }}
+                  aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
+                  className={cn(
+                    TILE_SURFACE,
+                    TILE_INTERACTIVE,
+                    'text-muted-foreground flex items-center justify-center text-sm font-medium',
+                  )}
+                >
+                  +{hidden}
+                </button>
+              </li>
+            );
+          }
+
+          if (isImageAttachment(file)) {
+            return (
+              <li key={file.key} className="contents">
+                <AttachmentImage
+                  file={file}
+                  pending={pending}
+                  className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
+                />
+              </li>
+            );
+          }
+
+          const canOpen = Boolean(file.path);
           return (
             <li key={file.key} className="contents">
               <button
                 type="button"
+                disabled={!canOpen}
+                title={file.filename}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setExpanded(true);
+                  if (file.path) openFileInComputer(file.path);
                 }}
-                aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
-                className={cn(
-                  TILE_SURFACE,
-                  TILE_INTERACTIVE,
-                  'text-muted-foreground flex items-center justify-center text-sm font-medium',
-                )}
+                className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
               >
-                +{hidden}
+                <FileTileBody filename={file.filename} pending={pending || file.pending} />
               </button>
             </li>
           );
-        }
-
-        if (isImageAttachment(file)) {
-          return (
-            <li key={file.key} className="contents">
-              <AttachmentImage
-                file={file}
-                pending={pending}
-                className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
-              />
-            </li>
-          );
-        }
-
-        const canOpen = Boolean(file.path);
-        return (
-          <li key={file.key} className="contents">
-            <button
-              type="button"
-              disabled={!canOpen}
-              title={file.filename}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (file.path) openFileInComputer(file.path);
-              }}
-              className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
-            >
-              <FileTileBody filename={file.filename} pending={pending || file.pending} />
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+        })}
+      </ul>
+      {caption && (
+        // Right-aligned under the strip, on the same rail as the tiles. One
+        // muted line: this is a progress note, not a status card. Failure
+        // reuses the same rung — the WORDS carry the difference, so a failed
+        // upload never needs a colour the palette does not have.
+        <p
+          className="text-muted-foreground max-w-[21.5rem] text-right text-xs leading-tight"
+          role={status?.state === 'failed' ? 'alert' : 'status'}
+        >
+          {caption}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1109,25 +1235,15 @@ export function UserMessage({
     [message.parts],
   );
 
-  // Extract text from sticky parts, parse out <file> and <session_ref> XML references
-  // Filter out both synthetic AND ignored parts from user-visible text
-  const visibleTextParts = stickyParts.filter(
-    (p) =>
-      isTextPart(p) &&
-      (p as TextPart).text?.trim() &&
-      !(p as TextPart).synthetic &&
-      !(p as any).ignored,
-  ) as TextPart[];
-  const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
-  const rawText = stripSystemPtyText(rawVisibleText);
-  const { cleanText: textAfterReply, replyContext } = useMemo(
-    () => parseReplyContext(rawText),
-    [rawText],
-  );
-  const { cleanText: textAfterFiles, files: uploadedFiles } = useMemo(
-    () => parseFileReferences(textAfterReply),
-    [textAfterReply],
-  );
+  // Extract visible text and file references in original part order. This must
+  // keep the source part index because a later native file cannot move ahead
+  // of workspace references that appeared in earlier text parts.
+  const {
+    rawText,
+    textAfterFiles,
+    replyContext,
+    uploads: uploadedFiles,
+  } = useMemo(() => parseAttachmentContent(message.parts), [message.parts]);
   const { cleanText: textAfterProjects } = useMemo(
     () => parseProjectReferences(textAfterFiles),
     [textAfterFiles],
@@ -1159,8 +1275,8 @@ export function UserMessage({
   // Both attachment routes, drawn as one strip. `uploadedFiles` used to be
   // parsed and then discarded — see `normalizeAttachments`.
   const allAttachments = useMemo(
-    () => normalizeAttachments(attachments, uploadedFiles),
-    [attachments, uploadedFiles],
+    () => normalizeAttachments(message.parts, uploadedFiles),
+    [message.parts, uploadedFiles],
   );
 
   /**
@@ -1276,7 +1392,14 @@ export function UserMessage({
   }, [ignoredRawText]);
 
   // Check if any text part was edited
-  const isEdited = visibleTextParts.some((p) => (p as any).metadata?.edited);
+  const isEdited = message.parts.some(
+    (part) =>
+      isTextPart(part) &&
+      (part as TextPart).text?.trim() &&
+      !(part as TextPart).synthetic &&
+      !(part as TextPart & { ignored?: boolean }).ignored &&
+      Boolean((part as TextPart & { metadata?: { edited?: boolean } }).metadata?.edited),
+  );
 
   // Built once and rendered by every branch below — channel card, trigger card,
   // command card, bubble — so all four carry the same meta line.

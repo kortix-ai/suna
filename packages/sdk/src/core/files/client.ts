@@ -321,10 +321,10 @@ async function uploadErrorMessage(res: Response): Promise<string> {
   return text.replace(/\s+/g, ' ').trim().slice(0, 500) || res.statusText || `HTTP ${res.status}`;
 }
 
-async function uploadWithRetry(
+async function uploadWithRetry<T = UploadResult[]>(
   buildForm: () => FormData,
   send: (form: FormData) => Promise<Response>,
-): Promise<UploadResult[]> {
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= UPLOAD_RETRY_DELAYS_MS.length; attempt++) {
     let res: Response;
@@ -338,7 +338,7 @@ async function uploadWithRetry(
       await sleep(UPLOAD_RETRY_DELAYS_MS[attempt]);
       continue;
     }
-    if (res.ok) return res.json();
+    if (res.ok) return res.json() as Promise<T>;
     const message = await uploadErrorMessage(res);
     lastError = new ApiError(`Upload failed (${res.status}): ${message}`, { status: res.status, response: res });
     if (!isTransient(res.status) || attempt === UPLOAD_RETRY_DELAYS_MS.length) throw lastError;
@@ -347,6 +347,48 @@ async function uploadWithRetry(
   if (lastError instanceof ApiError) throw lastError;
   const message = lastError instanceof Error ? lastError.message : String(lastError || 'request failed');
   throw new ApiError(`Upload failed: ${message}`);
+}
+
+/** Byte-level progress for one daemon upload. */
+export interface UploadProgressEvent {
+  loadedBytes: number;
+  totalBytes: number;
+}
+
+/** Optional upload lifecycle callbacks. */
+export interface UploadFileOptions {
+  onProgress?: (event: UploadProgressEvent) => void;
+}
+
+// Requests above this size are not reliable through the sandbox edge. Keep
+// every multipart body below the measured boundary and verify each append.
+const SANDBOX_UPLOAD_CHUNK_BYTES = 64 * 1024;
+
+function notifyUploadProgress(options: UploadFileOptions | undefined, event: UploadProgressEvent): void {
+  try {
+    options?.onProgress?.(event);
+  } catch {
+    // A host-rendering callback must not turn a successful file write into an
+    // upload failure or trigger cleanup of bytes that already landed.
+  }
+}
+
+function buildUploadForm(file: File | Blob, targetPath: string | undefined, name: string): FormData {
+  const form = new FormData();
+  const rawPath = (targetPath ?? '').trim();
+  if (rawPath) form.append('path', rawPath.startsWith('/') ? rawPath : `/${rawPath}`);
+  // The explicit field survives Bun's zero-length multipart parsing. The
+  // daemon uses it when the multipart file part loses its filename.
+  if (name) form.append('filename', name);
+  if (name) form.append('file', file, name);
+  else form.append('file', file);
+  return form;
+}
+
+function splitSandboxPath(filePath: string): { parent: string; name: string } {
+  const slash = filePath.lastIndexOf('/');
+  if (slash < 0) return { parent: '', name: filePath };
+  return { parent: filePath.slice(0, slash) || '/', name: filePath.slice(slash + 1) };
 }
 
 /**
@@ -358,8 +400,11 @@ export async function uploadFile(
   file: File | Blob,
   targetPath?: string,
   filename?: string,
-  baseUrl?: string,
+  baseUrlOrOptions?: string | UploadFileOptions,
+  trailingOptions?: UploadFileOptions,
 ): Promise<UploadResult[]> {
+  const baseUrl = typeof baseUrlOrOptions === 'string' ? baseUrlOrOptions : undefined;
+  const options = typeof baseUrlOrOptions === 'string' ? trailingOptions : baseUrlOrOptions;
   const base = requireBaseUrl(baseUrl);
   // The deadline follows the body. The platform-wide 30s is a hang detector
   // for a JSON call; against a 30 MB attachment it is a throughput limit, and
@@ -369,28 +414,74 @@ export async function uploadFile(
   // that already named its blob; a bare `Blob` has none, and then the daemon
   // resolves the destination from the `path` field alone.
   const name = filename || (file instanceof File ? file.name : '') || '';
-  return uploadWithRetry(
-    () => {
-      const form = new FormData();
-      const rawPath = (targetPath ?? '').trim();
-      if (rawPath) form.append('path', rawPath.startsWith('/') ? rawPath : `/${rawPath}`);
-      // The name travels as its OWN field, not only as the multipart part's
-      // `filename` parameter. Bun 1.3.14's multipart parser DROPS `filename`
-      // on a ZERO-LENGTH part, so a genuinely empty upload reached the daemon
-      // with `file.name === undefined` and landed as a file literally named
-      // "undefined". The SDK used to dodge that by writing a single space into
-      // every "new empty file" — which made every empty `.json` invalid and
-      // every new file 1 byte of 0x20. This field survives an empty body; the
-      // daemon reads it as the per-part fallback (`filenameHint` in
-      // `apps/kortix-sandbox-agent-server/src/routes/files.ts`).
-      if (name) form.append('filename', name);
-      if (name) form.append('file', file, name);
-      else form.append('file', file);
-      return form;
-    },
+  if (file.size <= SANDBOX_UPLOAD_CHUNK_BYTES) {
+    const result = await uploadWithRetry(
+      () => buildUploadForm(file, targetPath, name),
+      (form) =>
+        authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
+    );
+    notifyUploadProgress(options, { loadedBytes: file.size, totalBytes: file.size });
+    return result;
+  }
+
+  // Reserve the collision-safe destination with the daemon's existing upload
+  // semantics. The returned path is authoritative when the requested name
+  // already exists.
+  const reserved = await uploadWithRetry(
+    () => buildUploadForm(new Blob([], { type: file.type }), targetPath, name),
     (form) =>
-      authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
+      authenticatedFetch(
+        `${base}/file/upload`,
+        { method: 'POST', body: form },
+        { timeoutMs: uploadTimeoutMsForBytes(0) },
+      ),
   );
+  const landedPath = reserved[0]?.path;
+  if (!landedPath) {
+    throw new ApiError('Upload reservation returned no file path', { code: 'UPLOAD_NO_RESULT' });
+  }
+  const destination = splitSandboxPath(landedPath);
+  if (!destination.name) {
+    throw new ApiError(`Upload reservation returned an invalid file path: ${landedPath}`, {
+      code: 'UPLOAD_INVALID_PATH',
+    });
+  }
+
+  try {
+    for (let offset = 0; offset < file.size; offset += SANDBOX_UPLOAD_CHUNK_BYTES) {
+      const end = Math.min(file.size, offset + SANDBOX_UPLOAD_CHUNK_BYTES);
+      const chunk = file.slice(offset, end, file.type);
+      const appended = await uploadWithRetry<UploadResult>(
+        () => {
+          const form = new FormData();
+          if (destination.parent) form.append('path', destination.parent);
+          form.append('filename', destination.name);
+          form.append('first', offset === 0 ? 'true' : 'false');
+          form.append('offset', String(offset));
+          form.append('file', chunk, destination.name);
+          return form;
+        },
+        (form) =>
+          authenticatedFetch(
+            `${base}/file/append`,
+            { method: 'POST', body: form },
+            { timeoutMs: uploadTimeoutMsForBytes(chunk.size) },
+          ),
+      );
+      if (appended.path !== landedPath || appended.size !== end) {
+        throw new ApiError(
+          `Upload verification failed for ${landedPath}: expected ${end} bytes, received ${appended.size}`,
+          { code: 'UPLOAD_SIZE_MISMATCH' },
+        );
+      }
+      notifyUploadProgress(options, { loadedBytes: end, totalBytes: file.size });
+    }
+  } catch (error) {
+    await deleteFile(landedPath, base).catch(() => undefined);
+    throw error;
+  }
+
+  return [{ path: landedPath, size: file.size }];
 }
 
 /**

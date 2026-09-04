@@ -30,18 +30,23 @@ const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts
 describe('every first-prompt producer writes a durable row, not a prompt stash', () => {
   test('instant shell POSTs via startSessionWithPrompt with data-URL attachments', () => {
     expect(shell).toContain('startSessionWithPrompt(projectId, sessionId');
-    expect(shell).toContain('attachedFilesToDataUrlParts(files)');
+    expect(shell).toContain('stageFirstPromptAttachments(files)');
     expect(shell).toContain("prompt: ''");
     expect(shell).not.toContain('prompt: text');
   });
 
   test('project home hands the prompt (and its attachments) to the create', () => {
     expect(projectHome).toContain('pending_prompt: {');
-    expect(projectHome).toContain('attachedFilesToDataUrlParts(files)');
+    expect(projectHome).toContain('stageFirstPromptAttachments(files)');
     // The navigate stash is picks-only.
     expect(projectHome).toContain("prompt: ''");
     expect(projectHome).not.toContain('prompt: text');
     expect(projectHome).not.toContain('setPendingFiles');
+  });
+
+  test('both first-message producers use the shared staging contract', () => {
+    expect(shell).not.toContain('attachedFilesToDataUrlParts');
+    expect(projectHome).not.toContain('attachedFilesToDataUrlParts');
   });
 
   test('configure-thread and run-upgrade hand their prompt to the create', () => {

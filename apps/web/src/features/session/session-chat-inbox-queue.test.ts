@@ -280,11 +280,17 @@ describe('the boot shell never swallows what the user typed', () => {
     // never got.
     const send = between(shell, 'const handleSend = useCallback(', "playSound('send');");
     expect(send).toContain('await startSessionWithPrompt(projectId, sessionId');
-    expect(send).toContain('attachedFilesToDataUrlParts(files)');
+    expect(send).toContain('stageFirstPromptAttachments(files)');
     expect(send).toContain('throw error;');
     expect(shell).not.toContain('useMessageQueueStore');
     expect(shell).not.toContain('carryDraft(');
     expect(shell).not.toContain('Still starting this session');
+  });
+
+  test('ready-session sends retain the workspace upload path', () => {
+    expect(chat).toContain(
+      'buildPromptPartsWithUploads(textPrompt.text, attachedFiles, uploadFile)',
+    );
   });
 
   test('the stash carries ONLY the picks — the prompt travels as the row', () => {

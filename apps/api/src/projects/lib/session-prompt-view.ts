@@ -66,6 +66,40 @@ export function promptState(row: Pick<PromptRow, 'status' | 'result'>): {
   return { state: 'queued', reason: null };
 }
 
+/**
+ * What a queued prompt's attachments are, WITHOUT their bytes.
+ *
+ * A reload discards the composer's optimistic bubble, so this durable row is
+ * the only thing left that knows a prompt had files. It carried `text` alone,
+ * and a refreshed tab therefore rendered a bare sentence for a send of seven
+ * attachments while the upload was still in flight (2026-09-04) — the user
+ * could not tell a stuck upload from a prompt that never had files.
+ *
+ * Names and MIME types only. The parts hold `data:` URLs measured in megabytes
+ * and this view is POLLED; shipping the bytes would re-send the whole payload
+ * on every tick. A name and a type is all a pending tile draws.
+ */
+const PROMPT_ATTACHMENT_LIMIT = 32;
+
+function promptAttachments(payload: Record<string, unknown>): Array<{
+  filename: string;
+  mime: string;
+}> {
+  const parts = Array.isArray(payload.parts) ? payload.parts : [];
+  const attachments: Array<{ filename: string; mime: string }> = [];
+  for (const part of parts) {
+    if (!part || typeof part !== 'object') continue;
+    const file = part as { type?: unknown; filename?: unknown; mime?: unknown };
+    if (file.type !== 'file') continue;
+    attachments.push({
+      filename: typeof file.filename === 'string' && file.filename.trim() ? file.filename : 'File',
+      mime: typeof file.mime === 'string' ? file.mime : 'application/octet-stream',
+    });
+    if (attachments.length >= PROMPT_ATTACHMENT_LIMIT) break;
+  }
+  return attachments;
+}
+
 export function serializePrompt(row: PromptRow) {
   const payload = (row.payload ?? {}) as Record<string, unknown>;
   const result = (row.result ?? {}) as Record<string, unknown>;
@@ -104,6 +138,9 @@ export function serializePrompt(row: PromptRow) {
     // of MAX_RUNTIME_UNREACHABLE_RETRIES. 0 for every other row.
     runtime_retries: typeof result.runtime_retries === 'number' ? result.runtime_retries : 0,
     last_error: row.lastError ?? null,
+    /** Names + types of this prompt's files, so a reloaded tab can still draw
+     *  their tiles while the send is in flight. Never the bytes. */
+    attachments: promptAttachments(payload),
     created_at: row.createdAt.toISOString(),
     available_at: row.availableAt.toISOString(),
   };
