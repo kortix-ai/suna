@@ -47,6 +47,7 @@ import {
   requeueAbandonedPrompt,
 } from '../session-lifecycle/redelivery';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
+import { promoteNextInboxRow } from '../session-lifecycle/store';
 import {
   type SandboxTurnDeliveryReconciliation,
   type SandboxTurnObservation,
@@ -111,6 +112,8 @@ export interface SandboxReaperDependencies {
   finalizeHuskTurn: typeof finalizeHuskTurn;
   extendUnconfirmedTurnDeadline: typeof extendUnconfirmedTurnDeadline;
   requeueAbandonedPrompt: typeof requeueAbandonedPrompt;
+  promoteNextInboxRow: typeof promoteNextInboxRow;
+  drainSessionLifecycleQueue: (input: { idempotencyKey: string }) => Promise<unknown>;
 }
 
 const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
@@ -122,6 +125,11 @@ const DEFAULT_REAPER_DEPENDENCIES: SandboxReaperDependencies = {
   finalizeHuskTurn,
   extendUnconfirmedTurnDeadline,
   requeueAbandonedPrompt,
+  promoteNextInboxRow,
+  drainSessionLifecycleQueue: async (input) => {
+    const { drainSessionLifecycleQueue } = await import('../session-lifecycle/engine');
+    return drainSessionLifecycleQueue(input);
+  },
 };
 
 /**
@@ -188,6 +196,45 @@ async function redeliverAbandonedPrompt(
     }
   } catch (error) {
     console.warn('[reaper] prompt redelivery failed', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Release one durable queue row after terminal evidence removed turn authority. */
+async function releaseQueuedPromptAfterTerminalTurn(
+  dependencies: SandboxReaperDependencies,
+  row: { sessionId: string | null; sandboxId: string },
+  turn: { token: string },
+): Promise<void> {
+  if (!row.sessionId) return;
+  try {
+    const promotedPromptId = await dependencies.promoteNextInboxRow(row.sessionId);
+    console.info('[reaper] terminal turn queue settlement', {
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      turnToken: turn.token,
+      queuePromoted: promotedPromptId !== null,
+      promotedPromptId,
+    });
+    if (promotedPromptId) {
+      void dependencies
+        .drainSessionLifecycleQueue({ idempotencyKey: promotedPromptId })
+        .catch((error) =>
+          console.warn('[reaper] targeted queue drain failed', {
+            sandboxId: row.sandboxId,
+            sessionId: row.sessionId,
+            turnToken: turn.token,
+            promotedPromptId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+    }
+  } catch (error) {
+    console.warn('[reaper] terminal turn queue promotion failed', {
       sandboxId: row.sandboxId,
       sessionId: row.sessionId,
       turnToken: turn.token,
@@ -425,6 +472,7 @@ export async function reapAndReconcileSandboxes(
                   // falls back to `abandoned`, which is what "the delivery was
                   // never confirmed by anyone" means.
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
                 } else if (
                   reconciliation === 'deferred' &&
                   // The same delivery-scoped bound as the grace above, for the
@@ -487,7 +535,7 @@ export async function reapAndReconcileSandboxes(
                 // Its own `turn_end` is the authority; failing that, a husk
                 // this pass had to force-close is a turn that did NOT finish;
                 // failing both, the honest record is that nobody can say.
-                await dependencies.clearSandboxTurn(
+                const cleared = await dependencies.clearSandboxTurn(
                   row.sandboxId,
                   turn.token,
                   undefined,
@@ -523,6 +571,9 @@ export async function reapAndReconcileSandboxes(
                   turnAgeMs >= ORPHANED_PROMPT_MIN_AGE_MS
                 ) {
                   await redeliverAbandonedPrompt(dependencies, row, turn, endReason ?? 'abandoned');
+                }
+                if (cleared) {
+                  await releaseQueuedPromptAfterTerminalTurn(dependencies, row, turn);
                 }
               } else if (row.deadlineAt.getTime() <= now.getTime()) {
                 // Unreadable daemon plus an expired deadline: the runtime is

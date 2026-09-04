@@ -30,32 +30,28 @@ describe('SETTINGS_TABS', () => {
     // comment for why this one row is not "configuration" in the sense the
     // graduation below means. Its position is last on purpose — the rail orders
     // itself (`rail.ts`), this list does not.
+    // Seven personal tabs and nothing else since 2026-09-03 (Marko): the
+    // Workspace group is the Customize bar's Settings tab and the Account
+    // group (Credits, Plan) is the account page.
     expect([...SETTINGS_TABS]).toEqual([
       'profile',
       'security',
       'appearance',
       'sessions',
       'preferences',
-      'connected',
       'tokens',
-      'credits',
-      'plan',
-      'workspace',
-      'sandbox',
-      'feature-flags',
-      'upgrades',
     ]);
   });
 
   // The id has to stay `workspace`. `general` is spent on a GRADUATED redirect
   // to `/projects/<id>/config`, and a live tab under that key would shadow
   // every bookmark pointing at the config page.
-  test('the workspace tab does not reclaim the graduated `general` id', () => {
-    expect(SETTINGS_TABS).toContain('workspace');
-    expect(SETTINGS_TABS).not.toContain('general');
+  test('neither the workspace tab nor the graduated `general` id is live', () => {
+    expect(SETTINGS_TABS).not.toContain('workspace' as never);
+    expect(SETTINGS_TABS).not.toContain('general' as never);
   });
 
-  // Every project-configuration id left for `/projects/[id]/config`. Asserted
+  // Every project-configuration id left for `/projects/[id]/customize/settings`. Asserted
   // absent rather than merely left out of the list above, so re-adding one
   // without re-adding a pane fails here instead of shipping a rail row that
   // opens onto nothing.
@@ -77,10 +73,10 @@ describe('SETTINGS_TABS', () => {
     }
   });
 
-  test('sandbox and feature-flags are live tabs, and their old config links open them', () => {
+  test('sandbox and feature-flags are not live tabs; their ids open the Settings tab sections', () => {
     for (const id of ['sandbox', 'feature-flags'] as const) {
-      expect(parseSettingsTab(id)).toBe(id);
-      expect(legacySectionRedirect('p1', id)).toBe(`/projects/p1/settings/${id}`);
+      expect(parseSettingsTab(id)).toBeNull();
+      expect(legacySectionRedirect('p1', id)).toBe(`/projects/p1/customize/settings?section=${id}`);
     }
   });
 
@@ -125,8 +121,8 @@ describe('legacySectionRedirect', () => {
   // entry. Without it the deep-link route falls back to the bare `/settings`
   // overlay and the link silently stops going where it used to.
   test('schedules and webhooks graduated to the merged Triggers page', () => {
-    expect(legacySectionRedirect('p1', 'schedules')).toBe('/projects/p1/triggers');
-    expect(legacySectionRedirect('p1', 'webhooks')).toBe('/projects/p1/triggers');
+    expect(legacySectionRedirect('p1', 'schedules')).toBe('/projects/p1/customize/triggers');
+    expect(legacySectionRedirect('p1', 'webhooks')).toBe('/projects/p1/customize/triggers');
     expect(parseSettingsTab('schedules')).toBeNull();
     expect(parseSettingsTab('webhooks')).toBeNull();
     // They must not reopen the overlay either — a stale `/settings/schedules`
@@ -151,77 +147,81 @@ describe('legacySectionRedirect', () => {
    * redirect back onto `/settings/<id>` would bounce through
    * `parseSettingsTab`, get `null`, and land on the bare overlay.
    */
-  test('the old settings section, general, git and repositories all open the workspace tab', () => {
-    // `/projects/<id>/config` was retired on 2026-09-02. General is the
-    // overlay's `workspace` tab (`general` itself is a spent id); Repositories
-    // and its pre-rename `git` merged INTO General as a "Git repo" section.
-    for (const id of ['settings', 'general', 'git', 'repositories']) {
-      expect(legacySectionRedirect('p1', id)).toBe('/projects/p1/settings/workspace');
-      expect(resolveOverlayTab(id)).toBe('workspace');
+  test('the old settings section, general and workspace open the Settings tab; git and repositories its Git repo section', () => {
+    // `workspace` was the overlay's own id for General between 2026-09-02
+    // and 2026-09-03.
+    for (const id of ['settings', 'general', 'workspace']) {
+      expect(legacySectionRedirect('p1', id)).toBe('/projects/p1/customize/settings');
+      expect(resolveOverlayTab(id)).toBeNull();
+    }
+    for (const id of ['git', 'repositories']) {
+      expect(legacySectionRedirect('p1', id)).toBe('/projects/p1/customize/settings?section=git');
+      expect(resolveOverlayTab(id)).toBeNull();
     }
   });
 
-  test('upgrades is an overlay tab again, and the old singular spelling folds into it', () => {
-    // Moved outright from `/config` on 2026-09-02 — there is no config
-    // section to redirect to any more, so both spellings open the overlay.
-    expect(parseSettingsTab('upgrades')).toBe('upgrades');
-    expect(legacySectionRedirect('p1', 'upgrades')).toBe('/projects/p1/settings/upgrades');
-    expect(legacySectionRedirect('p1', 'upgrade')).toBe('/projects/p1/settings/upgrades');
+  test('upgrades is a Settings tab section, and the old singular spelling folds into it', () => {
+    expect(parseSettingsTab('upgrades')).toBeNull();
+    expect(legacySectionRedirect('p1', 'upgrades')).toBe('/projects/p1/customize/settings?section=upgrades');
+    expect(legacySectionRedirect('p1', 'upgrade')).toBe('/projects/p1/customize/settings?section=upgrades');
     expect(resolveSettingsOverlayHref('/projects/p1/settings/upgrades')).toEqual({
-      opensOverlay: true,
-      tab: 'upgrades',
+      opensOverlay: false,
     });
   });
 
-  test('experimental is renamed to feature-flags, and both ids open the overlay tab', () => {
-    expect(legacySectionRedirect('p1', 'experimental')).toBe('/projects/p1/settings/feature-flags');
-    expect(legacySectionRedirect('p1', 'feature-flags')).toBe(
-      '/projects/p1/settings/feature-flags',
+  test('experimental is renamed to feature-flags, and both ids open the Settings tab section', () => {
+    expect(legacySectionRedirect('p1', 'experimental')).toBe(
+      '/projects/p1/customize/settings?section=feature-flags',
     );
-    expect(resolveOverlayTab('experimental')).toBe('feature-flags');
+    expect(legacySectionRedirect('p1', 'feature-flags')).toBe(
+      '/projects/p1/customize/settings?section=feature-flags',
+    );
+    expect(resolveOverlayTab('experimental')).toBeNull();
   });
 
   // Every id the retired config page's sub-nav ever answered to, pinned in one
   // place: each is an overlay tab now (live, or via `RENAMED`), except Review,
   // which is a capability tab of its own.
-  test('every retired config id lands in the overlay, and review on its tab', () => {
-    const overlay: Record<string, string> = {
-      general: 'workspace',
-      settings: 'workspace',
-      git: 'workspace',
-      repositories: 'workspace',
-      sandbox: 'sandbox',
+  test('every config id lands on the Settings tab, and review on its own tab', () => {
+    const sections: Record<string, string> = {
+      general: '/projects/p1/customize/settings',
+      settings: '/projects/p1/customize/settings',
+      git: '/projects/p1/customize/settings?section=git',
+      repositories: '/projects/p1/customize/settings?section=git',
+      workspace: '/projects/p1/customize/settings',
+      sandbox: '/projects/p1/customize/settings?section=sandbox',
       // Snapshots merged INTO the sandbox pane — a snapshot is the build
       // history of a sandbox template, not a separate pane any more.
-      snapshots: 'sandbox',
-      experimental: 'feature-flags',
-      'feature-flags': 'feature-flags',
-      upgrades: 'upgrades',
-      upgrade: 'upgrades',
+      snapshots: '/projects/p1/customize/settings?section=sandbox',
+      experimental: '/projects/p1/customize/settings?section=feature-flags',
+      'feature-flags': '/projects/p1/customize/settings?section=feature-flags',
+      upgrades: '/projects/p1/customize/settings?section=upgrades',
+      upgrade: '/projects/p1/customize/settings?section=upgrades',
     };
-    for (const [legacyId, tab] of Object.entries(overlay)) {
-      expect(legacySectionRedirect('p1', legacyId)).toBe(`/projects/p1/settings/${tab}`);
-      expect(resolveSettingsOverlayHref(`/projects/p1/settings/${tab}`)).toEqual({
-        opensOverlay: true,
-        tab,
+    for (const [legacyId, href] of Object.entries(sections)) {
+      expect(legacySectionRedirect('p1', legacyId)).toBe(href);
+      // None of them is an overlay tab any more — a `/settings/<id>` link
+      // redirects instead of opening the dialog.
+      expect(resolveSettingsOverlayHref(`/projects/p1/settings/${legacyId}`)).toEqual({
+        opensOverlay: false,
       });
     }
-    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/review');
-    expect(resolveSettingsOverlayHref('/projects/p1/review')).toEqual({ opensOverlay: false });
+    expect(legacySectionRedirect('p1', 'review')).toBe('/projects/p1/customize/review');
+    expect(resolveSettingsOverlayHref('/projects/p1/customize/review')).toEqual({ opensOverlay: false });
   });
 
   test('secrets, channels, and models graduated a SECOND time — off /config, onto their own top-level tab', () => {
     const routes: Record<string, string> = {
-      secrets: '/projects/p1/secrets',
-      channels: '/projects/p1/connectors?scope=channels',
-      models: '/projects/p1/models',
-      'llm-management': '/projects/p1/models',
-      'llm-overview': '/projects/p1/models',
-      'llm-providers': '/projects/p1/models',
-      'llm-logs': '/projects/p1/models',
-      'llm-budgets': '/projects/p1/models',
-      'llm-keys': '/projects/p1/models',
-      'llm-api': '/projects/p1/models',
+      secrets: '/projects/p1/customize/secrets',
+      channels: '/projects/p1/customize/connectors?scope=channels',
+      models: '/projects/p1/customize/models',
+      'llm-management': '/projects/p1/customize/models',
+      'llm-overview': '/projects/p1/customize/models',
+      'llm-providers': '/projects/p1/customize/models',
+      'llm-logs': '/projects/p1/customize/models',
+      'llm-budgets': '/projects/p1/customize/models',
+      'llm-keys': '/projects/p1/customize/models',
+      'llm-api': '/projects/p1/customize/models',
       // `members` graduated a second time too, then a THIRD — off the project
       // entirely, onto the account page's Access tab. It is account-scoped
       // now (`ACCOUNT_GRADUATED`, with a `&project=` special case), covered
@@ -241,9 +241,9 @@ describe('legacySectionRedirect', () => {
   });
 
   test('graduated capability pages still leave the overlay', () => {
-    expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/skills');
-    expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/agent');
-    expect(legacySectionRedirect('p1', 'connectors')).toBe('/projects/p1/connectors');
+    expect(legacySectionRedirect('p1', 'skills')).toBe('/projects/p1/customize/skills');
+    expect(legacySectionRedirect('p1', 'agents')).toBe('/projects/p1/customize/agents');
+    expect(legacySectionRedirect('p1', 'connectors')).toBe('/projects/p1/customize/connectors');
     expect(legacySectionRedirect('p1', 'files')).toBe('/projects/p1/files');
   });
 
@@ -252,7 +252,7 @@ describe('legacySectionRedirect', () => {
     // connector (`ComputerTunnelManager`). Both the legacy `/customize/
     // computers` and the settings-era `/settings/computers` deep links resolve
     // through this map, so neither can land on a tab that no longer exists.
-    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/connectors');
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/customize/connectors');
     expect(SETTINGS_TABS).not.toContain('computers' as never);
     expect(parseSettingsTab('computers')).toBeNull();
   });
@@ -267,7 +267,7 @@ describe('legacySectionRedirect', () => {
       'llm-keys',
       'llm-api',
     ]) {
-      expect(legacySectionRedirect('p1', s)).toBe('/projects/p1/models');
+      expect(legacySectionRedirect('p1', s)).toBe('/projects/p1/customize/models');
     }
   });
 
@@ -278,7 +278,7 @@ describe('legacySectionRedirect', () => {
   // Coverage carried forward from the retired legacy Customize-sections test —
   // cases the spec test above doesn't exercise but the old suite caught.
   test('the graduated agent/agents spellings both redirect', () => {
-    expect(legacySectionRedirect('p1', 'agent')).toBe('/projects/p1/agent');
+    expect(legacySectionRedirect('p1', 'agent')).toBe('/projects/p1/customize/agents');
   });
 
   test('changes redirects to the files proposed-changes panel', () => {
@@ -323,6 +323,10 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     identity: 'identity',
     audit: 'audit',
     members: 'access-projects',
+    // The overlay's Account group (Credits, Plan) left on 2026-09-03.
+    credits: 'transactions',
+    plan: 'billing',
+    connected: 'git',
   };
 
   test('the mirror above is the whole map', () => {
@@ -393,8 +397,8 @@ describe('account-scoped sections redirect to /accounts/[id]', () => {
     // The account branch is checked first, so a bug there would swallow every
     // other id. These must still resolve to their project URLs with an
     // account id in hand.
-    expect(legacySectionRedirect('p1', 'skills', 'acc1')).toBe('/projects/p1/skills');
-    expect(legacySectionRedirect('p1', 'schedules', 'acc1')).toBe('/projects/p1/triggers');
+    expect(legacySectionRedirect('p1', 'skills', 'acc1')).toBe('/projects/p1/customize/skills');
+    expect(legacySectionRedirect('p1', 'schedules', 'acc1')).toBe('/projects/p1/customize/triggers');
     expect(legacySectionRedirect('p1', 'nope', 'acc1')).toBeNull();
   });
 

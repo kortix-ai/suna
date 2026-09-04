@@ -42,13 +42,13 @@ const TABS_DIR = join(import.meta.dir, 'tabs');
  * already renders every one of them at `/accounts/[id]` — so the modules were
  * deleted rather than left mounted from nowhere. Two more left it without
  * being deleted: `models-tab.tsx` graduated a SECOND time, off
- * `/projects/[id]/config` and onto its own top-level Customize tab, so no
+ * `/projects/[id]/customize/settings` and onto its own top-level Customize tab, so no
  * registry `SettingsTabHeader` reads has a `models` entry any more — it
  * renders a hardcoded heading instead (see that file's header comment).
  * `snapshots-tab.tsx` merged INTO the `sandbox` section — `sandbox-tab.tsx`,
  * mounted directly above it wherever `sandbox` renders, owns the one shared
  * heading for both now. `members-tab.tsx` graduated the same second way
- * `models-tab.tsx` did — off `/projects/[id]/config` and onto its own
+ * `models-tab.tsx` did — off `/projects/[id]/customize/settings` and onto its own
  * top-level Customize tab (`/projects/[id]/members`) — then graduated a THIRD
  * time and a FOURTH: first to a hardcoded `CapabilityPageShell` heading (same
  * fix as `models-tab.tsx`), then off the project entirely, onto the account
@@ -64,7 +64,7 @@ const TABS_DIR = join(import.meta.dir, 'tabs');
 const TAB_ID_FOR_FILE: Record<string, string> = {
   'appearance-tab.tsx': 'appearance',
   'connected-tab.tsx': 'connected',
-  // Renamed on the move to `/projects/[id]/config`: the section is called
+  // Renamed on the move to `/projects/[id]/customize/settings`: the section is called
   // "Feature flags" there, which is also the `CustomizeSection` id it has
   // always gated on. `SettingsTabHeader` resolves it through the
   // project-settings registry rather than the rail.

@@ -22,13 +22,6 @@ const password = "E2eFeatureFlagsUi123!";
 const authOptions = { supabaseUrl, password };
 const api = createApiJsonClient(apiBase);
 
-/** The badge each stability renders as (experimental-tab.tsx STABILITY_BADGE). */
-const STABILITY_BADGE: Record<string, string> = {
-  experimental: "Experimental",
-  beta: "Beta",
-  stable: "Stable",
-};
-
 interface AccountSummary {
   account_id: string;
   personal_account?: boolean;
@@ -200,17 +193,19 @@ test.describe("19 — Feature flags UI", () => {
       });
       await dismissOnboarding(page);
 
-      // (b) every available flag renders a row with a stability badge and an
-      //     origin line.
+      // (b) every available flag renders a row with an origin line.
+      //
+      // NO stability badge. The Experimental / Beta / Stable labels were
+      // removed on 2026-09-03 (Marko: "a flag is on or off") — see
+      // `experimental-tab.tsx`'s header. `stability` is still served by
+      // `buildFeatureFlagCatalog`, it is simply not rendered any more, so
+      // asserting a badge here was asserting a deleted element.
       const panel = await openFeatureFlags(page, project.id);
       await expect(panel.getByRole("switch")).toHaveCount(flags.length);
       for (const flag of flags) {
         const row = flagRow(panel, page, flag.name);
         await expect(row).toHaveCount(1);
         await expect(row.getByText(flag.name, { exact: true })).toBeVisible();
-        const badge = STABILITY_BADGE[flag.stability];
-        if (!badge) throw new Error(`unknown stability: ${flag.stability}`);
-        await expect(row.getByText(badge, { exact: true })).toBeVisible();
         await expect(
           row.getByText(originLabel(flag), { exact: true }),
         ).toBeVisible();

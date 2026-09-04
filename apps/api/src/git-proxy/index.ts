@@ -521,9 +521,10 @@ async function gateReceivePack(
   // Pure policy first: it needs no I/O and answers every ordinary push. Only a
   // denial is worth an authorization check, so a session pushing its own branch
   // and a person pushing anything both reach the upstream without one.
-  const denials = denialsAfterScopes(
+  const denials = await denialsAfterScopes(
     c,
     auth.principal,
+    { projectId: auth.project.projectId, accountId: auth.project.accountId },
     evaluateRefUpdates(auth.principal, { defaultBranch: auth.project.defaultBranch }, parsed.updates),
   );
   if (denials.length > 0) {

@@ -206,14 +206,123 @@ describe('per-turn terminal isolation', () => {
     });
     const before = await readRow();
 
-    await completeSandboxTurn(SESSION_ID, 'idle', {
+    const result = await completeSandboxTurn(SESSION_ID, 'idle', {
       opencodeSessionId: 'ses_root',
       messageId: 'msg_old',
     });
 
     const after = await readRow();
+    expect(result).toEqual({
+      outcome: 'identity_mismatch',
+      activeTurnCount: 1,
+      closedTurnCount: 0,
+    });
     expect(after.metadata.activeTurns).toEqual(before.metadata.activeTurns);
     expect(deadlineMs(after)).toBe(deadlineMs(before));
+  });
+
+  test('a terminal event for another root reports identity_mismatch', async () => {
+    await setLifecycleState({
+      activeTurns: {
+        [t('another-root')]: {
+          token: t('another-root'),
+          state: 'active',
+          opencodeSessionId: 'ses_current_root',
+          messageId: 'msg_current_root',
+          startedAtMs: 2,
+        },
+      },
+    });
+    const before = await readRow();
+
+    const result = await completeSandboxTurn(SESSION_ID, 'idle', {
+      opencodeSessionId: 'ses_stale_root',
+      messageId: 'msg_stale_root',
+    });
+
+    expect(result).toEqual({
+      outcome: 'identity_mismatch',
+      activeTurnCount: 1,
+      closedTurnCount: 0,
+    });
+    expect((await readRow()).metadata.activeTurns).toEqual(before.metadata.activeTurns);
+  });
+
+  test('a retried exact terminal identity reports already_closed without another mutation', async () => {
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      {
+        token: t('retry-complete'),
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_retry_complete',
+      },
+      60_000,
+    );
+
+    const first = await completeSandboxTurn(SESSION_ID, 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_retry_complete',
+    });
+    const retry = await completeSandboxTurn(SESSION_ID, 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_retry_complete',
+    });
+
+    expect(first.outcome).toBe('closed');
+    expect(retry).toEqual({
+      outcome: 'already_closed',
+      activeTurnCount: 0,
+      closedTurnCount: 0,
+    });
+    expect((await readRow()).metadata.activeTurns).toEqual({});
+    expect(await readTurn(t('retry-complete'))).toMatchObject({
+      state: 'ended',
+      end_reason: 'completed',
+    });
+  });
+
+  test('a closed identity remains already_closed while a newer turn is active', async () => {
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      {
+        token: t('closed-before-newer'),
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_closed_before_newer',
+      },
+      60_000,
+    );
+    expect(
+      (
+        await completeSandboxTurn(SESSION_ID, 'idle', {
+          opencodeSessionId: 'ses_root',
+          messageId: 'msg_closed_before_newer',
+        })
+      ).outcome,
+    ).toBe('closed');
+
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      {
+        token: t('newer-after-closed'),
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_newer_after_closed',
+      },
+      60_000,
+    );
+    const before = await readRow();
+
+    const retry = await completeSandboxTurn(SESSION_ID, 'idle', {
+      opencodeSessionId: 'ses_root',
+      messageId: 'msg_closed_before_newer',
+    });
+
+    expect(retry).toEqual({
+      outcome: 'already_closed',
+      activeTurnCount: 1,
+      closedTurnCount: 0,
+    });
+    expect((await readRow()).metadata.activeTurns).toEqual(before.metadata.activeTurns);
+    expect(await readTurn(t('newer-after-closed'))).toMatchObject({ state: 'delivering' });
   });
 
   test('an exact message does not consume a queued command record', async () => {
@@ -700,7 +809,7 @@ describe('session_turns ledger', () => {
         undefined,
         60_000,
       ),
-    ).toBe(true);
+    ).toEqual({ outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 });
 
     // This assertion pair is the entire point of the table: the lifecycle
     // authority forgets the turn, the ledger remembers how it ended.
@@ -822,7 +931,7 @@ describe('session_turns ledger', () => {
         undefined,
         60_000,
       ),
-    ).toBe(true);
+    ).toEqual({ outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 });
 
     expect(await readTurn(t('ledger-boot-complete'))).toMatchObject({
       session_id: SESSION_ID,
@@ -855,7 +964,7 @@ describe('session_turns ledger', () => {
         undefined,
         60_000,
       ),
-    ).toBe(true);
+    ).toEqual({ outcome: 'closed', activeTurnCount: 1, closedTurnCount: 1 });
 
     expect((await readRow()).metadata.activeTurn).toBeUndefined();
     expect(await readTurn(t('ledger-legacy'))).toMatchObject({

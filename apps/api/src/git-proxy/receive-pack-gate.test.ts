@@ -29,13 +29,28 @@ let agentGrant: any = null;
 /** Refs the fake upstream actually received — empty means nothing was forwarded. */
 let upstreamReceived: string[] = [];
 
+/** What IAM answers for a human's ref-scope question; swapped per test. */
+let iamAllowsHuman = true;
+const realActor = await import('../iam/actor');
+mock.module('../iam/actor', () => ({ ...realActor, actorForToken: async () => ({ userId: 'u1' }) }));
+const realAuthorize = await import('../iam/authorize');
+mock.module('../iam/authorize', () => ({
+  ...realAuthorize,
+  authorize: async () => ({ allowed: iamAllowsHuman }),
+}));
+
 const realProjects = await import('../projects');
 mock.module('../projects', () => ({
   ...realProjects,
   authorizeGitProxy: async () => ({
     ok: true,
     principal,
-    project: { projectId: PROJECT_ID, defaultBranch: DEFAULT_BRANCH, metadata: {} },
+    project: {
+      projectId: PROJECT_ID,
+      accountId: 'acc-1',
+      defaultBranch: DEFAULT_BRANCH,
+      metadata: {},
+    },
   }),
   resolveProjectUpstream: async () => ({ url: upstreamUrl, headers: {} }),
 }));
@@ -250,7 +265,8 @@ describe('a session principal', () => {
 
 describe('a user principal', () => {
   beforeAll(() => {
-    principal = { kind: 'user', userId: 'user-1' };
+    principal = { kind: 'user', userId: 'user-1', tokenId: 'tok-1' };
+    iamAllowsHuman = true;
   });
 
   test('CAN push the default branch — `kortix ship` on main still works', async () => {
@@ -264,6 +280,23 @@ describe('a user principal', () => {
     const { code } = await push('origin', '--delete', 'refs/heads/feature');
     expect(code).toBe(0);
     expect(upstreamReceived).toEqual(['refs/heads/feature']);
+  });
+
+  test('WITHOUT project.gitops.ref.delete, cannot delete even an ordinary branch', async () => {
+    // `project.gitops.push` authorizes a push, not a deletion: a branch is
+    // frequently someone else's, and the delete is not recoverable from the
+    // client that issued it. `manager` is seeded with the leaf, so a manager is
+    // unaffected; this is a plain member with push rights.
+    await push('--force', 'origin', 'HEAD:refs/heads/revokable');
+    iamAllowsHuman = false;
+    try {
+      const { code, output } = await push('origin', '--delete', 'refs/heads/revokable');
+      expect(code).not.toBe(0);
+      expect(output).toContain('[remote rejected]');
+      expect(upstreamReceived).toEqual([]);
+    } finally {
+      iamAllowsHuman = true;
+    }
   });
 
   test('is refused deleting the default branch', async () => {

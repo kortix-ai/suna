@@ -5,11 +5,10 @@
 //  1. A prompt whose only content is an attachment (no text at all) is a legal
 //     send — the composer allows it and the POST route accepts it — so the
 //     drain must deliver it instead of dead-lettering it as "missing text".
-//  2. A prompt that WAITED behind a live turn must be re-minted before it goes
-//     out. The client minted its id when the user pressed Enter; by the time
-//     admission lets it through, the running turn has written messages with
-//     HIGHER ids, and OpenCode reads a lower id as already answered — the turn
-//     silently never runs.
+//  2. A prompt posted during a live turn must be re-minted before it goes out.
+//     The running turn has written messages with HIGHER ids than the client id,
+//     and OpenCode reads a lower id as already answered — the turn silently
+//     never runs.
 //  3. A redelivery must prove the prompt is still unanswered. A `delivering`
 //     record is only evidence that the ACCEPTANCE write failed; if the
 //     transcript shows an assistant reply under that message, the turn ran and
@@ -48,7 +47,7 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
  */
 const OPENCODE_MINTED_ID = `msg_${((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0')}AbCdEfGhIjKlMn`;
 
-const requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
+let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
 let sessionRow: Record<string, unknown> | null = null;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
@@ -66,6 +65,17 @@ let payloadPatches: Array<Record<string, unknown>> = [];
 let claimed: SessionLifecycleCommandRow[] = [];
 let openDelayBySession: Record<string, Promise<void> | undefined> = {};
 let events: string[] = [];
+let promotionCalls: string[] = [];
+let promotionResult: string | null = null;
+let claimInputs: Array<{ idempotencyKey?: string }> = [];
+let promotionResults: Array<string | null> = [];
+let targetedClaims = new Map<string, SessionLifecycleCommandRow[]>();
+let activePosts = 0;
+let maxActivePosts = 0;
+let postDelayMs = 0;
+// Models the real database state after a drain claims same-session siblings:
+// every claimed row is `running` until the drain releases the tail.
+const simulatedInFlightCommands = new Set<string>();
 
 mock.module('../../../config', () => ({
   config: { KORTIX_URL: 'https://api.test' },
@@ -77,8 +87,8 @@ mock.module('../../../shared/db', () => ({
   db: {
     select: (projection?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
+        where: () => {
+          const limit = async () => {
             if (table === projectSessions) return sessionRow ? [sessionRow] : [];
             if (table === projects) return [{ projectId: PROJECT_ID, accountId: ACCOUNT_ID }];
             if (table === sessionSandboxes) return boxRow ? [boxRow] : [];
@@ -90,9 +100,18 @@ mock.module('../../../shared/db', () => ({
             if (table === sessionLifecycleCommands && projection && 'newest' in projection) {
               return [{ newest: deliveredFloor === null ? null : deliveredFloor.toString() }];
             }
+            if (
+              table === sessionLifecycleCommands &&
+              projection &&
+              'commandId' in projection &&
+              simulatedInFlightCommands.size > 0
+            ) {
+              return [{ commandId: [...simulatedInFlightCommands][0] }];
+            }
             return [];
-          },
-        }),
+          };
+          return { limit, orderBy: () => ({ limit }) };
+        },
       }),
     }),
     update: () => ({
@@ -132,7 +151,11 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     _headers: Headers,
     body: ArrayBuffer,
   ) => {
+    activePosts += 1;
+    maxActivePosts = Math.max(maxActivePosts, activePosts);
+    if (postDelayMs > 0) await Bun.sleep(postDelayMs);
     capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+    activePosts -= 1;
     return new Response(null, { status: 204 });
   },
 }));
@@ -150,14 +173,21 @@ mock.module('../backpressure', () => ({
   sessionBackpressureState: async () => ({ shouldQueue: false, reason: null }),
 }));
 mock.module('../store', () => ({
-  promoteNextInboxRow: async () => null,
+  promoteNextInboxRow: async (sessionId: string) => {
+    promotionCalls.push(sessionId);
+    return promotionResults.length > 0 ? (promotionResults.shift() ?? null) : promotionResult;
+  },
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
+    simulatedInFlightCommands.delete(commandId);
   },
   claimCreateSessionCommand: async () => {
     throw new Error('not expected');
   },
-  claimDueLifecycleCommands: async () => claimed,
+  claimDueLifecycleCommands: async (input: { idempotencyKey?: string }) => {
+    claimInputs.push(input);
+    return input.idempotencyKey ? (targetedClaims.get(input.idempotencyKey) ?? []) : claimed;
+  },
   enqueueContinueSessionCommand: async () => {
     throw new Error('not expected');
   },
@@ -259,6 +289,7 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 }
 
 beforeEach(() => {
+  requeues = [];
   sessionRow = {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
@@ -281,6 +312,15 @@ beforeEach(() => {
   claimed = [];
   openDelayBySession = {};
   events = [];
+  promotionCalls = [];
+  promotionResult = null;
+  claimInputs = [];
+  promotionResults = [];
+  targetedClaims = new Map();
+  activePosts = 0;
+  maxActivePosts = 0;
+  postDelayMs = 0;
+  simulatedInFlightCommands.clear();
   globalThis.fetch = (async (url: string | URL) => {
     const href = String(url);
     // The staged-revert guard reads the session row; the re-mint and the
@@ -346,8 +386,8 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     // stop reading `waiting` — so `admission_reason` cannot be the input to the
     // re-mint decision. The marker that survives lives in the PAYLOAD, which is
     // merged rather than replaced. Without this, "send now" on a prompt that
-    // queued behind a live turn delivers the id minted when the user pressed
-    // Enter, and OpenCode reads it as already answered.
+    // queued behind another prompt delivers the id minted when the user
+    // pressed Enter, and OpenCode reads it as already answered.
     transcript = [
       { info: { id: SUBMITTED_WIRE_ID, role: 'user' } },
       { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
@@ -426,7 +466,17 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(capturedBodies[0].messageID).toBe(SUBMITTED_WIRE_ID);
   });
 
-  test('a prompt submitted into a live turn stays queued until that turn ends', async () => {
+  test('a prompt submitted into a LIVE TURN waits — then goes out re-minted when the turn ends', async () => {
+    // REWRITTEN 2026-09-04, and this is the behaviour change, not a fixture
+    // tweak. It used to assert the prompt was FORWARDED into the live turn.
+    // That is how two queued messages came to share one answer: OpenCode picks
+    // new user messages up at step boundaries inside the running turn and
+    // "answers everything before it in that step", so "tell me HI" and "tell
+    // me bye" queued behind a 13-step turn produced one reply, "bye".
+    //
+    // The prompt now waits for the turn. Nothing about the RE-MINT changes —
+    // the refusal stamps `admission_reason`, which is what `waited` reads, so
+    // the delivery after the turn still lifts the id above the transcript tip.
     boxRow = {
       status: 'active',
       metadata: {
@@ -441,11 +491,31 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
         },
       },
     };
-    const outcome = await executeQueuedContinue(baseRow());
+    transcript = [
+      { info: { id: NEWER_TRANSCRIPT_ID, role: 'assistant', parentID: 'msg_other' } },
+    ];
+    const refused = await executeQueuedContinue(baseRow());
 
-    expect(outcome).toBe('queued');
-    expect(capturedBodies).toHaveLength(0);
-    expect(requeues.map(({ reason }) => reason)).toEqual(['turn_active']);
+    expect(refused).toBe('queued');
+    expect(capturedBodies).toEqual([]);
+    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
+      { commandId: 'cmd-1', reason: 'turn_active' },
+    ]);
+
+    // The daemon's `session.idle` relay ends the turn and promotes this row.
+    boxRow = { status: 'active', metadata: { activeTurns: {} } };
+    const outcome = await executeQueuedContinue(
+      baseRow({ result: { admission_reason: 'turn_active' } }),
+    );
+
+    expect(outcome).toBe('succeeded');
+    expect(capturedBodies).toHaveLength(1);
+    const sent = capturedBodies[0].messageID as string;
+    expect(sent).not.toBe(SUBMITTED_WIRE_ID);
+    expect(wireIdTime(sent)!).toBeGreaterThan(wireIdTime(NEWER_TRANSCRIPT_ID)!);
+    expect(forwardedCalls).toEqual([
+      { commandId: 'cmd-1', sessionId: SESSION_ID, wireMessageId: sent },
+    ]);
   });
 
   test('a second prompt sent inside the persistence lag clears the FIRST one’s id', async () => {
@@ -562,7 +632,7 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     expect(capturedBodies).toHaveLength(2);
   });
 
-  test('one drain sends only the head prompt of a session and requeues its sibling', async () => {
+  test('one drain sends the FIFO head, then targets the promoted sibling', async () => {
     let releaseFirst!: () => void;
     openDelayBySession['sess-ordered'] = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -571,6 +641,8 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
       baseRow({ commandId: 'cmd-1', sessionId: 'sess-ordered' }),
       baseRow({ commandId: 'cmd-2', sessionId: 'sess-ordered' }),
     ];
+    promotionResult = 'queue-next-idempotency-key';
+    simulatedInFlightCommands.add('cmd-2');
 
     const drain = drainSessionLifecycleQueue({ limit: 10 });
     await Bun.sleep(20);
@@ -580,9 +652,102 @@ describe('drainSessionLifecycleQueue — one lane per session', () => {
     releaseFirst();
     await drain;
     expect(capturedBodies).toHaveLength(1);
-    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toContainEqual({
-      commandId: 'cmd-2',
-      reason: 'older_prompt_pending',
-    });
+    expect(requeues.map(({ commandId, reason }) => ({ commandId, reason }))).toEqual([
+      { commandId: 'cmd-2', reason: 'older_prompt_pending' },
+    ]);
+    // AND THE DELIVERY PATH KICKS NOTHING. Promotion belongs to the turn-end
+    // relay (`routes/r4.ts`), which is the only place that knows the answer is
+    // finished. Promoting on accepted delivery instead made the next row due
+    // while this turn was still running — the merge that let two queued
+    // messages share one answer — and it was a lost wake besides: the row was
+    // claimed mid-turn, refused, and requeued AFTER the relay had already
+    // checked the queue, so it waited out the backoff instead.
+    await Bun.sleep(300);
+    expect(promotionCalls).toEqual([]);
+    expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([null]);
+  });
+
+  test('chains three prompts in canonical FIFO order without overlapping posts', async () => {
+    const wireA = mintWireMessageId({ nowMs: NOW_MS - 9 * 60_000, random: () => 0.1 }).id;
+    const wireB = mintWireMessageId({ nowMs: NOW_MS - 8 * 60_000, random: () => 0.2 }).id;
+    const wireC = mintWireMessageId({ nowMs: NOW_MS - 7 * 60_000, random: () => 0.3 }).id;
+    const makeRow = (
+      commandId: string,
+      idempotencyKey: string,
+      text: string,
+      wireMessageId: string,
+      clientSentAtMs: number,
+      createdAt: Date,
+    ) =>
+      baseRow({
+        commandId,
+        idempotencyKey,
+        createdAt,
+        payload: {
+          ...baseRow().payload,
+          text,
+          parts: [{ type: 'text', text }],
+          clientMessageId: `client-${commandId}`,
+          wireMessageId,
+          clientSentAtMs,
+        },
+      });
+
+    // Database arrival order is C, B, A. The client sent A, B, C.
+    const rowA = makeRow(
+      'cmd-a',
+      'queue-a',
+      'PROMPT-A',
+      wireA,
+      NOW_MS - 3_000,
+      new Date(NOW_MS + 3_000),
+    );
+    const rowB = makeRow(
+      'cmd-b',
+      'queue-b',
+      'PROMPT-B',
+      wireB,
+      NOW_MS - 2_000,
+      new Date(NOW_MS + 2_000),
+    );
+    const rowC = makeRow(
+      'cmd-c',
+      'queue-c',
+      'PROMPT-C',
+      wireC,
+      NOW_MS - 1_000,
+      new Date(NOW_MS + 1_000),
+    );
+    claimed = [rowC, rowB, rowA];
+    simulatedInFlightCommands.add('cmd-b');
+    simulatedInFlightCommands.add('cmd-c');
+    promotionResults = ['queue-b', 'queue-c', null];
+    targetedClaims.set('queue-b', [rowB]);
+    targetedClaims.set('queue-c', [rowC]);
+    postDelayMs = 10;
+
+    const result = await drainSessionLifecycleQueue({ limit: 10 });
+    expect(result).toMatchObject({ claimed: 3, succeeded: 1, queued: 2 });
+
+    // ONE drain sends ONE prompt. The other two are put back — the delivery
+    // path no longer chains them, because a chained row lands inside the turn
+    // the first prompt just started and gets merged into its step.
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA]);
+    expect(promotionCalls).toEqual([]);
+
+    // B and C go out on the turn-end relay's targeted drain, one per turn —
+    // `routes/r4.ts` awaits `promoteNextInboxRow` and kicks exactly this.
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-b' });
+    await drainSessionLifecycleQueue({ idempotencyKey: 'queue-c' });
+
+    // CANONICAL SEND ORDER, one post at a time: the client sent A, B, C and the
+    // database handed them over C, B, A.
+    expect(capturedBodies.map((body) => body.messageID)).toEqual([wireA, wireB, wireC]);
+    expect(maxActivePosts).toBe(1);
+    expect(claimInputs.map((input) => input.idempotencyKey ?? null)).toEqual([
+      null,
+      'queue-b',
+      'queue-c',
+    ]);
   });
 });

@@ -72,7 +72,7 @@ describe('the project settings [tab] route resolves legacy segments', () => {
 
   test('and the resolution it delegates to sends computers to Connectors', () => {
     expect(parseSettingsTab('computers')).toBeNull();
-    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/connectors');
+    expect(legacySectionRedirect('p1', 'computers')).toBe('/projects/p1/customize/connectors');
   });
 
   test('a genuinely unknown segment still has nowhere to go but the default tab', () => {

@@ -2768,6 +2768,25 @@ export function SessionChat({
     }
     return ids;
   }, [messages, sessionId, promptInbox.prompts]);
+  // The row names the re-minted id, and it is the ONLY thing that does: the
+  // runtime's echo carries no client id, and this tab strips the part ids that
+  // would otherwise correlate it. So every prompt in the inbox announces its
+  // pairing here — which lets the echo supersede ITS OWN bubble rather than the
+  // oldest one in flight, and (when the echo already landed unmatched, which a
+  // burst makes the common case) retires that bubble on the spot.
+  //
+  // An EFFECT, not the memo below that reads the result: `registerOptimisticEcho`
+  // writes to the sync store, and a store write during render re-renders every
+  // subscriber mid-render. It ran inside the memo until the retire-on-late-alias
+  // rule gave it something to write.
+  useEffect(() => {
+    const store = useSessionStateStore.getState();
+    for (const prompt of promptInbox.prompts) {
+      if (!prompt.message_id || !prompt.wire_message_id) continue;
+      if (prompt.wire_message_id === prompt.message_id) continue;
+      store.registerOptimisticEcho(sessionId, prompt.wire_message_id, prompt.message_id);
+    }
+  }, [promptInbox.prompts, sessionId]);
   // Inbox rows keyed by the transcript id they will confirm under — the
   // original wire id AND, after a re-mint, the echo — so a pending bubble can
   // find its own row for remove / send-now / retry.
@@ -2776,12 +2795,6 @@ export function SessionChat({
     const byId = new Map<string, SessionPrompt>();
     for (const prompt of promptInbox.prompts) {
       if (!prompt.message_id) continue;
-      // The row names the re-minted id BEFORE the runtime echoes it: register
-      // the alias so the echo supersedes ITS OWN optimistic bubble instead of
-      // the ordinal fallback consuming the oldest one in flight.
-      if (prompt.wire_message_id && prompt.wire_message_id !== prompt.message_id) {
-        store.registerOptimisticEcho(sessionId, prompt.wire_message_id, prompt.message_id);
-      }
       byId.set(prompt.message_id, prompt);
       const echo = store.optimisticEchoOf(sessionId, prompt.message_id);
       if (echo) byId.set(echo, prompt);
@@ -2793,7 +2806,12 @@ export function SessionChat({
       }
     }
     return byId;
-  }, [promptInbox.prompts, sessionId]);
+    // `messages` is a dependency because the aliases this reads are registered
+    // by the effect above, i.e. AFTER the render that first sees a row. The
+    // store write that follows changes `messages`, which is what brings this
+    // map back for the ids the alias just added.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promptInbox.prompts, sessionId, messages]);
   const queueRows = useMemo(
     () =>
       projectQueueRows({
