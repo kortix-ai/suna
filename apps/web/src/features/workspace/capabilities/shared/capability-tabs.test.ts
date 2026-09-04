@@ -77,16 +77,17 @@ describe('CapabilityTabs carries no capability-specific control', () => {
  * a second list — so the underline indicator and keyboard roving stay
  * unified.
  */
-describe('CapabilityTabs has no trailing Settings tab', () => {
-  test('nothing trails Members — the config tab is gone', () => {
-    // `/projects/<id>/config` was retired on 2026-09-02; its sections are
-    // Settings-overlay tabs. A `TRAILING_TABS` split or a `config` key coming
-    // back here means the page came back with it.
+describe('CapabilityTabs right-aligns Settings', () => {
+  test('the trailing group is exactly Settings', () => {
+    // `/projects/<id>/config` was retired on 2026-09-02 and came back on
+    // 2026-09-03 (Marko): it trails the row, after Members, in the one list.
     const body = code(source);
-    expect(body).not.toContain('TRAILING_TABS');
-    // `contract('config')` in MembersLaunchLink is a query contract, not a
-    // tab key — so the key is matched in its `tab.key ===` shape.
-    expect(body).not.toContain("=== 'config'");
+    const trailingStart = body.indexOf('TRAILING_TABS');
+    expect(trailingStart).toBeGreaterThan(-1);
+    const trailingDecl = body.slice(trailingStart, body.indexOf(';', trailingStart));
+    expect(trailingDecl).toContain("'config'");
+    expect(trailingDecl).not.toContain("'members'");
+    expect(body).toContain('{trailing.map(renderTab)}');
   });
 
   test('ml-auto lands on MembersLaunchLink, the first trailing element, inside the one shared TabsList', () => {

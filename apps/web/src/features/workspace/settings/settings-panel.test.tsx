@@ -32,7 +32,7 @@ import type { RailItem } from './type';
  *
  * **The overlay is three tabs now.** Twenty-one rows left it: eight
  * account-scoped ones for `/accounts/[id]`, and thirteen project-scoped ones
- * for the Customize bar's Settings tab, `/projects/[id]/config`. What remains
+ * for the Customize bar's Settings tab, `/projects/[id]/customize/settings`. What remains
  * is Profile, Preferences and Connected accounts — the tabs that belong to the
  * signed-in PERSON. Every assertion below is derived from `railGroups()` or
  * `SETTINGS_TABS` rather than hard-coded counts, so the next arrival or
@@ -97,7 +97,7 @@ describe('SettingsPanelShell — desktop rail', () => {
   test('renders one TabsList per rail group — Radix cannot mix a group Label into one shared list', () => {
     const html = render();
     // One list per group, and no pinned extra: the Upgrades footer went to
-    // `/projects/[id]/config` with the rest of project configuration.
+    // `/projects/[id]/customize/settings` with the rest of project configuration.
     expect((html.match(/role="tablist"/g) ?? []).length).toBe(allGroups.length);
   });
 
@@ -121,14 +121,27 @@ describe('SettingsPanelShell — desktop rail', () => {
       expect(html).not.toContain(`>${oneGroup[0].label}<`);
     });
 
-    // This is the live case now: the overlay opened inside a project shows
-    // `Workspace` and `You`, so both headings have to paint.
+    // The production rail is ONE group (Personal) since 2026-09-03, so the
+    // second group is synthesised here to keep the rule itself pinned.
     test('a second group brings every heading back', () => {
-      const html = render({ groups: allGroups });
-      expect(allGroups.length).toBeGreaterThan(1);
-      for (const group of allGroups) {
+      const twoGroups = [allGroups[0], { label: 'More', items: [] }];
+      const html = render({ groups: twoGroups });
+      for (const group of twoGroups) {
         expect(html).toContain(`>${group.label}<`);
       }
+    });
+
+    // The Organizations block counts as a second group for the rule: with it
+    // on screen, "Personal" has to be labelled or the two lists run together.
+    test('the organizations block brings the Personal heading back', () => {
+      const html = render({
+        groups: [allGroups[0]],
+        organizations: [{ account_id: 'acc-1', name: 'Mirkos Org', account_role: 'owner' }],
+      });
+      expect(html).toContain(`>${allGroups[0].label}<`);
+      expect(html).toContain('>Organizations<');
+      expect(html).toContain('Mirkos Org');
+      expect(html).toContain('href="/accounts/acc-1"');
     });
   });
 
@@ -274,7 +287,7 @@ describe('SettingsPanelShell — pane wiring', () => {
  * future Radix upgrade changes that internal.
  *
  * The thirteen project-scoped cases that used to sit here moved with their
- * tabs to `/projects/[id]/config`; the eight account-scoped ones moved to
+ * tabs to `/projects/[id]/customize/settings`; the eight account-scoped ones moved to
  * `/accounts/[id]`. Neither set is asserted here any more, because neither
  * mounts here any more.
  */
@@ -328,10 +341,12 @@ describe('SettingsPanelShell — real tab content gating', () => {
    * It is the exact inverse of the two loops above — same tab, same absence of
    * a `QueryClientProvider`, opposite outcome — so it cannot pass vacuously.
    */
-  test('the workspace panes do NOT mount without a project id', () => {
+  test('the project panes are not offered by this overlay any more', () => {
+    // They are the Customize bar's Settings tab since 2026-09-03; the ids
+    // stay in the type so their panes keep compiling, but no rail row or
+    // route opens them here.
     for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
-      expect(() => render({ tab, projectId: undefined })).not.toThrow();
-      expect(() => render({ tab, projectId: 'p1' })).toThrow();
+      expect(SETTINGS_TABS).not.toContain(tab);
     }
   });
 
@@ -403,7 +418,7 @@ describe('SettingsPanelShell — mobile', () => {
  * rather than mocking it.
  *
  * The overlay is one of TWO hosts of that context now. The other is
- * `/projects/[id]/config`, whose adapter (`buildProjectSettingsNav`) is
+ * `/projects/[id]/customize/settings`, whose adapter (`buildProjectSettingsNav`) is
  * covered in `capabilities/project-settings/project-settings-page.test.ts`.
  */
 describe('buildSettingsPanelSettingsNav', () => {
@@ -467,31 +482,34 @@ describe('buildSettingsPanelSettingsNav', () => {
  * rows the rail may show on each, and — for the two Workspace rows that
  * mount config-page panes — whether the caller's project capabilities admit
  * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves
- * `/projects/[id]/config` reads.
+ * `/projects/[id]/customize/settings` reads.
  */
 describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
   function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
     return { hasProject: false, ...overrides };
   }
 
-  test('with no project, exactly the account-scoped tabs are allowed', () => {
+  test('with no project, every live tab is allowed — all of them are personal', () => {
     const allowed = SETTINGS_TABS.filter((tab) => isSettingsTabAllowed(tab, paramsFor()));
-    expect([...allowed].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
+    expect([...allowed].sort()).toEqual([...SETTINGS_TABS].sort());
+    for (const tab of SETTINGS_TABS) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
   });
 
   // The three project-scoped tabs, and the gate is what hides them — and
   // with them the whole `Workspace` rail group — on `/settings` and under
   // `/accounts/**`, where there is no project to name. Asserted as an exact
   // list so a fourth project-scoped tab cannot be added without a decision.
-  test('exactly four tabs are project-scoped, and the gate hides them with no project', () => {
+  test('no live tab is project-scoped; the retired project ids still gate on a project', () => {
     const projectScoped = SETTINGS_TABS.filter(
       (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
     );
-    expect(projectScoped).toEqual(['workspace', 'sandbox', 'feature-flags', 'upgrades']);
-    for (const tab of projectScoped) {
+    expect(projectScoped).toEqual([]);
+    // The panes still exist behind the type, and the gate still refuses them
+    // without a project, so a stray `openSettings('sandbox')` on `/accounts`
+    // cannot mount a project pane with nothing to point it at.
+    for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
       expect(isSettingsTabAllowed(tab, paramsFor())).toBe(false);
     }
-    expect(isSettingsTabAllowed('workspace', paramsFor({ hasProject: true }))).toBe(true);
   });
 
   /**

@@ -39,9 +39,13 @@
  *              merges. Widened by `project.gitops.ref.any` / `.ref.delete`.
  *   monitor  → nothing. Monitor boxes clone at default-branch HEAD and never
  *              push; there is no principal behind one to hold a scope.
- *   user     → any ref. A human at a laptop running `kortix ship` on `main` is
- *              a shipped, advertised flow, and they hold the ref scopes through
- *              their project role rather than being re-derived per push.
+ *   user     → any ref they may PUSH; deletion is asked of their project role.
+ *              `kortix ship` on `main` is a shipped, advertised flow and stays
+ *              free, but `project.gitops.push` authorizes a push, not every
+ *              destructive shape of one: a deletion is not recoverable from the
+ *              client that issued it and the branch is frequently someone
+ *              else's. `manager` is seeded with `.ref.delete`, so a manager is
+ *              unaffected; a plain member with push rights is refused.
  *   internal → unconstrained above the floor. Server-side writers
  *              (change-request merge, dashboard config commits) do not traverse
  *              this proxy at all; the variant exists so that "who may move a
@@ -69,8 +73,14 @@ export type GitPrincipal =
   | { kind: 'session'; sessionId: string; branch: string }
   /** A monitor box's sandbox token — no session row by design. */
   | { kind: 'monitor' }
-  /** A human credential: account API key, CLI PAT, dashboard. */
-  | { kind: 'user'; userId: string | null }
+  /**
+   * A human credential: account API key, CLI PAT, dashboard. `tokenId` is
+   * threaded so the agent-grant fold fires when a ref scope is resolved — a
+   * bare authorize() would silently skip it, the same trap `authorizeGitProxy`
+   * documents on its own capability check. Null on an account API key, which
+   * carries no user identity.
+   */
+  | { kind: 'user'; userId: string | null; tokenId?: string | null }
   /** Server-side Kortix machinery. Never reaches the proxy today. */
   | { kind: 'internal' };
 
@@ -171,10 +181,8 @@ function denyFor(
 
     case 'user':
       // Deletion is stated as a requirement for every principal so the policy
-      // asks one question rather than branching on who is asking. A person
-      // holds both leaves through their project role (see ref-scopes.ts), so
-      // this is behaviour-neutral today — and the day we want to narrow a
-      // human role, the question is already being asked here.
+      // asks one question rather than branching on who is asking. For a person
+      // ref-scopes.ts resolves it against their project role.
       if (isDelete(update)) {
         return {
           reason: `deleting ${update.ref} requires git ref-delete authority`,

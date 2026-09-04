@@ -274,9 +274,9 @@ describe('queries return the rows they name', () => {
       'nav:account-tokens',
       'nav:account-usage',
       'nav:nav-accounts',
-      'settings:connected',
-      // The Plan row's rail description reads "for this account".
-      'settings:plan',
+      // Credits and Plan left the overlay for the account page on 2026-09-03;
+      // their `nav:account-usage` / `nav:account-billing` rows above own the
+      // word now.
       'settings:profile',
     ]);
   });
@@ -346,11 +346,11 @@ describe('queries return the rows they name', () => {
     // deliberately NOT "logs" — nor "catalog", which is why the Models row
     // does not carry that word either — so an audit search still does not drag
     // either of them in.
-    expect(hits('log')).not.toContain('settings:sandbox');
+    expect(hits('log')).not.toContain('nav:proj-config-sandbox');
     expect(hits('log')).not.toContain('nav:proj-models');
     // The settings overlay's Sandbox templates row is the one door since the
     // config page was retired on 2026-09-02.
-    expect(hits('snapshots')).toEqual(['settings:sandbox']);
+    expect(hits('snapshots')).toEqual(['nav:proj-config-sandbox']);
   });
 });
 
@@ -410,12 +410,12 @@ describe('genuine synonyms still answer', () => {
     ['collaborators', 'nav:proj-members'],
     // The config page's four rows became overlay rows (derived from the rail)
     // and one capability tab on 2026-09-02.
-    ['danger', 'settings:workspace'],
-    ['sandbox', 'settings:sandbox'],
+    ['danger', 'nav:proj-config-general'],
+    ['sandbox', 'nav:proj-config-sandbox'],
     ['approvals', 'nav:proj-review-inbox'],
-    ['experimental', 'settings:feature-flags'],
-    ['labs', 'settings:feature-flags'],
-    ['migration', 'settings:upgrades'],
+    ['experimental', 'nav:proj-config-feature-flags'],
+    ['labs', 'nav:proj-config-feature-flags'],
+    ['migration', 'nav:proj-config-upgrades'],
     ['change requests', 'nav:review-changes'],
     ['github', 'nav:account-git'],
     ['grants', 'nav:account-access-projects'],

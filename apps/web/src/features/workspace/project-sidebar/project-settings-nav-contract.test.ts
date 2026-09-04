@@ -43,10 +43,12 @@ describe('project Customize sidebar entry (the routed one)', () => {
     expect(navItem).toContain('<HoverPrefetchLink');
     expect(navItem).toMatch(/prefetch(\s|>|$)/);
     expect(navItem).not.toContain('prefetch={false}');
-    // The href is the Customize INDEX now, not `capabilityTabHref(projectId,
-    // tab)` — the row lands on a card grid over every tab, not straight into
-    // whichever one the caller happens to be able to read first.
-    expect(navItem).toContain('`/projects/${projectId}/customize`');
+    // The href is the first tab the caller may open — Agents, for anyone who
+    // can read them (Marko, 2026-09-01: Customize is agent-centric). It was
+    // the `/customize` index chooser between 2026-08 and this change; that
+    // route now redirects here.
+    expect(navItem).toContain('href={capabilityTabHref(projectId, tab)}');
+    expect(navItem).not.toContain('href={`/projects/${projectId}/customize`}');
     expect(navItem).toContain('asChild');
     expect(navItem).not.toContain('router.push');
   });

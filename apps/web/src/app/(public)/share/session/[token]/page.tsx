@@ -4,6 +4,7 @@ import {
   ArrowsInSimpleIcon as ArrowsInSimple,
   ArrowsOutSimpleIcon as ArrowsOutSimple,
   DownloadIcon as Download,
+  DownloadSimpleIcon,
   ArrowSquareOutIcon as ExternalLink,
   PlayIcon as Play,
   ShieldWarningIcon as ShieldAlert,
@@ -237,7 +238,7 @@ export default function PublicSessionSharePage() {
                   aria-label="Download"
                   onClick={handleDownload}
                 >
-                  <Download />
+                  <DownloadSimpleIcon />
                 </Button>
               </Hint>
             )}

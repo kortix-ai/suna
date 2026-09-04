@@ -1,9 +1,9 @@
 'use client';
 
 /**
- * Review Center — per-kind detail modal. Friendly, plain-language content up top
- * with an "Advanced" disclosure that keeps the engineer view (refs, SHAs, raw
- * diff, args) one click away.
+ * Review Center — the per-item review page. It replaces the inbox in place
+ * (no modal): a status + title header, the branch/diff facts for a change,
+ * the plain-language body for the item's kind, and the live file diffs.
  *
  * Actions mutate parent state optimistically via the passed handlers.
  */
@@ -14,41 +14,33 @@ import {
 } from '@/components/approvals/approval-request';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
-import { InfoBanner } from '@/components/ui/info-banner';
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item';
 import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
-import { StatusBadge } from '@/components/ui/status';
+import { DiffStat } from '@/components/ui/status';
 import { infoToast, successToast } from '@/components/ui/toast';
-import { useChangeRequestMergePreview } from '@/features/project-files/hooks/use-change-requests';
+import {
+  useChangeRequestDiff,
+  useChangeRequestMergePreview,
+} from '@/features/project-files/hooks/use-change-requests';
 import { cn } from '@/lib/utils';
 import {
+  ArrowLeftIcon as ArrowLeft,
   ArrowUpRightIcon as ArrowUpRight,
   CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
-  CaretDownIcon as ChevronDown,
   EyeIcon as Eye,
   SparkleIcon as SparklesSolid,
 } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { ChangeFilesModal } from './change-files';
+import { ChangeFiles } from './change-files';
 import { connectorCallId, formatItemAgeLong } from './review-actions';
 import {
   APPROVAL_ACTION_ICON,
   KIND_META,
   RISK_META,
-  SOURCE_META,
   STATUS_META,
+  VERIFICATION_BADGE,
 } from './review-meta';
 import { type ApprovalAction, type ReviewItem, type ReviewStatus, isSafeRisk } from './types';
 
@@ -78,98 +70,8 @@ function Panel({ children, className }: { children: React.ReactNode; className?:
   );
 }
 
-function AdvancedDisclosure({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Disclosure open={open} onOpenChange={setOpen} variant="outline" className="overflow-hidden">
-      <DisclosureTrigger variant="outline">
-        <button
-          type="button"
-          className="text-muted-foreground hover:text-foreground flex w-full items-center justify-between rounded-none px-4 py-2.5 text-xs font-medium transition-colors"
-        >
-          <span>Advanced — technical details</span>
-          <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
-        </button>
-      </DisclosureTrigger>
-      <DisclosureContent variant="outline" contentClassName="border-border border-t">
-        <div className="px-4 py-3">{children}</div>
-      </DisclosureContent>
-    </Disclosure>
-  );
-}
-
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-muted-foreground mb-2 text-xs font-medium tracking-wide uppercase">
-      {children}
-    </div>
-  );
-}
-
-/**
- * Compact markdown for agent-written descriptions (no Shiki/KaTeX/Mermaid —
- * same lightweight approach as the session QuestionMarkdown). Styled to the
- * modal's scale: sm body, small semibold headings, muted code chips.
- */
-function ReviewMarkdown({ content }: { content: string }) {
-  return (
-    <div className="min-w-0 text-sm">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          h1: ({ children }) => (
-            <h4 className="text-foreground mt-4 mb-1.5 text-sm font-semibold first:mt-0">
-              {children}
-            </h4>
-          ),
-          h2: ({ children }) => (
-            <h4 className="text-foreground mt-4 mb-1.5 text-sm font-semibold first:mt-0">
-              {children}
-            </h4>
-          ),
-          h3: ({ children }) => (
-            <h5 className="text-foreground mt-3 mb-1 text-sm font-medium first:mt-0">{children}</h5>
-          ),
-          p: ({ children }) => (
-            <p className="text-foreground/90 my-1.5 leading-relaxed text-pretty">{children}</p>
-          ),
-          strong: ({ children }) => (
-            <strong className="text-foreground font-semibold">{children}</strong>
-          ),
-          em: ({ children }) => <em>{children}</em>,
-          ul: ({ children }) => <ul className="my-1.5 list-disc space-y-1 pl-5">{children}</ul>,
-          ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-1 pl-5">{children}</ol>,
-          li: ({ children }) => <li className="text-foreground/90 text-pretty">{children}</li>,
-          code: ({ children }) => (
-            <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">{children}</code>
-          ),
-          pre: ({ children }) => (
-            <pre className="bg-muted my-2 overflow-x-auto rounded-md p-3 font-mono text-xs">
-              {children}
-            </pre>
-          ),
-          a: ({ children, href }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-foreground underline underline-offset-2"
-            >
-              {children}
-            </a>
-          ),
-          blockquote: ({ children }) => (
-            <blockquote className="border-border text-muted-foreground my-2 border-l-2 pl-3">
-              {children}
-            </blockquote>
-          ),
-          hr: () => <hr className="border-border my-3" />,
-        }}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
-  );
+  return <div className="text-muted-foreground mb-2 text-sm font-semibold">{children}</div>;
 }
 
 // ── change ────────────────────────────────────────────────────────────────
@@ -188,112 +90,97 @@ function ChangeBody({
   const whatChanged = d.whatChanged ?? [];
   const verification = d.verification ?? [];
   const requested = d.requestedChanges ?? [];
+  const recovering = actions.recoveringCrId === d.crId;
   return (
     <>
       {requested.length > 0 && (
-        <div className="bg-kortix-orange/[0.06] rounded-lg px-4 py-3.5">
-          <SectionLabel>You asked for changes</SectionLabel>
-          <ul className="space-y-1.5">
-            {requested.map((r) => (
-              <li key={r.at ?? r.text} className="text-foreground flex items-start gap-2 text-sm">
-                <span
-                  className="bg-kortix-orange mt-1.5 size-1.5 shrink-0 rounded-full"
-                  aria-hidden
-                />
-                <span className="text-pretty">{r.text}</span>
-              </li>
-            ))}
-          </ul>
-          {item.sessionId && actions.openSession ? (
-            <button
-              type="button"
-              onClick={() => {
-                actions.openSession?.(item.sessionId as string);
-                onClose();
-              }}
-              className="text-kortix-orange hover:text-kortix-orange/80 mt-2.5 inline-flex items-center gap-1 text-xs font-medium transition-colors"
-            >
-              Sent to the agent — see progress
-              <ArrowUpRight className="size-3" />
-            </button>
-          ) : (
-            <div className="text-muted-foreground mt-2.5 text-xs">
+        <Item variant="outline" size="sm">
+          <ItemContent>
+            <ItemTitle>You asked for changes</ItemTitle>
+            <ul className="text-foreground list-disc space-y-1 pl-5 text-sm">
+              {requested.map((r) => (
+                <li key={r.at ?? r.text} className="text-pretty">
+                  {r.text}
+                </li>
+              ))}
+            </ul>
+            <ItemDescription>
               Sent to the agent — it&apos;ll revise and update this change.
-            </div>
-          )}
-        </div>
+            </ItemDescription>
+          </ItemContent>
+          {item.sessionId && actions.openSession ? (
+            <ItemActions>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  actions.openSession?.(item.sessionId as string);
+                  onClose();
+                }}
+              >
+                See progress
+              </Button>
+            </ItemActions>
+          ) : null}
+        </Item>
       )}
 
-      {(whatChanged.length > 0 || d.descriptionMarkdown || d.impact) && (
-        <div>
-          <SectionLabel>What changed</SectionLabel>
-          {/* An agent-written markdown description renders as real markdown;
-              structured/plain-line payloads keep the checkmark treatment. */}
-          {d.descriptionMarkdown ? (
-            <ReviewMarkdown content={d.descriptionMarkdown} />
-          ) : (
-            whatChanged.length > 0 && (
-              <ul className="space-y-1.5">
-                {whatChanged.map((line) => (
-                  <li key={line} className="text-foreground flex items-start gap-2 text-sm">
-                    <Check className="text-kortix-green mt-0.5 size-4 shrink-0" />
-                    <span className="text-pretty">{line}</span>
-                  </li>
-                ))}
-              </ul>
-            )
+      {(whatChanged.length > 0 || d.impact) && (
+        <div className="space-y-2">
+          {whatChanged.length > 0 && (
+            <ul className="text-muted-foreground list-disc space-y-1 pl-5 text-sm">
+              {whatChanged.map((line) => (
+                <li key={line} className="text-pretty">
+                  {line}
+                </li>
+              ))}
+            </ul>
           )}
-          {d.impact && (
-            <div className="text-muted-foreground mt-2 text-sm text-pretty">{d.impact}</div>
-          )}
+          {d.impact && <p className="text-muted-foreground text-sm text-pretty">{d.impact}</p>}
         </div>
       )}
-
-      {d.advanced && d.advanced.files.length > 0 && (
-        <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          <span className="text-kortix-green font-medium tabular-nums">
-            +{d.advanced.additions.toLocaleString()}
-          </span>
-          <span className="text-kortix-orange font-medium tabular-nums">
-            −{d.advanced.deletions.toLocaleString()}
-          </span>
-          <span className="text-muted-foreground/40">·</span>
-          <span>
-            {d.advanced.files.length} {d.advanced.files.length === 1 ? 'file' : 'files'} changed
-          </span>
-        </div>
-      )}
-
-      {d.crId ? <ChangeFilesModal crId={d.crId} /> : null}
 
       {(verification.length > 0 || d.previewUrl) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {verification.map((v) => (
-            <StatusBadge key={v.label} tone={v.tone}>
-              {v.label}
-            </StatusBadge>
-          ))}
+        <Item variant="outline" size="sm">
+          <ItemContent>
+            <ItemTitle>Verification</ItemTitle>
+            {verification.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {verification.map((v) => (
+                  <Badge key={v.label} variant={VERIFICATION_BADGE[v.tone]} size="sm">
+                    {v.label}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </ItemContent>
           {d.previewUrl && (
-            <Button variant="outline" size="sm" className="gap-1.5" asChild>
-              <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
-                <Eye className="size-3.5" />
-                Open preview
-                <ArrowUpRight className="size-3.5" />
-              </a>
-            </Button>
+            <ItemActions>
+              <Button variant="outline" size="sm" asChild>
+                <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
+                  Open preview
+                </a>
+              </Button>
+            </ItemActions>
           )}
-        </div>
+        </Item>
       )}
 
       {conflicts.length > 0 && (
-        <InfoBanner
-          tone="warning"
-          title={`Merge conflicts in ${conflicts.length} ${conflicts.length === 1 ? 'file' : 'files'}`}
-          action={
+        <Item variant="warning" size="sm">
+          <ItemContent>
+            <ItemTitle>
+              Merge conflicts in {conflicts.length} {conflicts.length === 1 ? 'file' : 'files'}
+            </ItemTitle>
+            <ItemDescription>
+              Start an agent session from this change. The agent merges the latest base branch,
+              resolves the conflicts, runs checks, and opens a replacement change.
+            </ItemDescription>
+          </ItemContent>
+          <ItemActions>
             <Button
               size="sm"
-              variant="secondary"
-              disabled={actions.recoveringCrId === d.crId}
+              disabled={recovering}
               onClick={() => {
                 if (actions.recoverChange) {
                   actions.recoverChange(item, conflicts);
@@ -303,29 +190,11 @@ function ChangeBody({
                 }
               }}
             >
-              {actions.recoveringCrId === d.crId ? (
-                <Loading className="size-3.5 shrink-0" />
-              ) : (
-                <SparklesSolid className="size-3.5 shrink-0" />
-              )}
+              {recovering ? <Loading className="size-3.5 shrink-0" /> : null}
               Solve with agent
             </Button>
-          }
-        >
-          Start an agent session from this change. The agent will merge the latest base branch,
-          resolve the conflicts, run checks, and open a replacement change.
-        </InfoBanner>
-      )}
-
-      {(d.advanced?.headRef || d.advanced?.baseRef) && (
-        <AdvancedDisclosure>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 font-mono text-xs">
-            <dt className="text-muted-foreground">from</dt>
-            <dd className="text-foreground truncate">{d.advanced?.headRef || '—'}</dd>
-            <dt className="text-muted-foreground">into</dt>
-            <dd className="text-foreground truncate">{d.advanced?.baseRef || '—'}</dd>
-          </dl>
-        </AdvancedDisclosure>
+          </ItemActions>
+        </Item>
       )}
     </>
   );
@@ -370,9 +239,9 @@ function ApprovalActionRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="text-foreground text-sm font-medium">{action.title}</span>
-            <StatusBadge tone={RISK_META[action.risk].tone}>
+            <Badge variant={RISK_META[action.risk].badge} size="sm">
               {RISK_META[action.risk].label}
-            </StatusBadge>
+            </Badge>
           </div>
           <div className="text-muted-foreground mt-0.5 text-sm text-pretty">
             {action.consequence}
@@ -590,7 +459,6 @@ function OutputBody({ item }: { item: Extract<ReviewItem, { kind: 'output' }> })
           {d.previewUrl && (
             <Button variant="outline" size="sm" className="shrink-0 gap-1.5" asChild>
               <a href={d.previewUrl} target="_blank" rel="noopener noreferrer">
-                <Eye className="size-3.5" />
                 Open preview
                 <ArrowUpRight className="size-3.5" />
               </a>
@@ -691,7 +559,7 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
               {c.status === 'done' ? (
                 <CheckCircleSolid weight="fill" className="text-kortix-green size-4 shrink-0" />
               ) : (
-                <Eye className="dark:text-kortix-yellow size-4 shrink-0 text-yellow-600" />
+                <Eye className="text-kortix-yellow size-4 shrink-0" />
               )}
               <span className="text-foreground min-w-0 flex-1 truncate text-sm">{c.title}</span>
               {c.status === 'needs_review' && (
@@ -707,7 +575,7 @@ function BatchBody({ item }: { item: Extract<ReviewItem, { kind: 'batch' }> }) {
   );
 }
 
-// ── footer ──────────────────────────────────────────────────────────────────
+// ── actions ─────────────────────────────────────────────────────────────────
 /** Optional free-text feedback returned to the agent when asking for changes. */
 function FeedbackComposer({
   onCancel,
@@ -722,7 +590,7 @@ function FeedbackComposer({
     ref.current?.focus();
   }, []);
   return (
-    <div className="w-full space-y-2">
+    <div className="bg-popover space-y-2 rounded-md border px-4 py-3">
       <textarea
         ref={ref}
         value={text}
@@ -735,11 +603,11 @@ function FeedbackComposer({
         }}
         rows={3}
         aria-label="What should the agent change?"
-        placeholder="What should the agent change? (optional — sent back as a follow-up)"
-        className="bg-popover focus-visible:border-primary/40 w-full resize-none rounded-md border px-3 py-2 text-sm outline-none"
+        placeholder="What should the agent change?"
+        className="placeholder:text-muted-foreground w-full resize-none bg-transparent text-sm outline-none"
       />
       <div className="flex items-center justify-end gap-2">
-        <span className="text-muted-foreground/60 mr-auto text-xs">
+        <span className="text-muted-foreground mr-auto text-xs">
           <Kbd>⌘</Kbd>
           <Kbd>↵</Kbd> to send
         </span>
@@ -754,139 +622,136 @@ function FeedbackComposer({
   );
 }
 
-function Footer({
+/** The header's right-hand group: what you can do to this item right now. */
+function ActionBar({
   item,
   actions,
-  onClose,
+  onBack,
   conflicts,
   checkingConflicts,
+  composing,
+  setComposing,
 }: {
   item: ReviewItem;
   actions: ReviewActions;
-  onClose: () => void;
+  onBack: () => void;
   conflicts: string[];
   checkingConflicts: boolean;
+  composing: boolean;
+  setComposing: (v: boolean) => void;
 }) {
-  const [composing, setComposing] = useState(false);
-
   if (item.status !== 'needs_you') {
     return (
-      <ModalFooter className="border-border/60 border-t pt-4">
-        <span className="text-muted-foreground mr-auto text-xs">
-          {STATUS_META[item.status].label} · {formatItemAgeLong(item.createdAt)}
-        </span>
-        <Button variant="outline-ghost" onClick={onClose}>
-          Close
-        </Button>
-      </ModalFooter>
+      <span className="text-muted-foreground text-xs">
+        {STATUS_META[item.status].label} · {formatItemAgeLong(item.createdAt)}
+      </span>
     );
   }
-
-  if (item.kind === 'decision') {
-    return (
-      <ModalFooter className="border-border/60 border-t pt-4">
-        <Button variant="outline-ghost" onClick={onClose}>
-          Decide later
-        </Button>
-      </ModalFooter>
-    );
-  }
-
-  if (item.kind === 'approval') {
-    return (
-      <ModalFooter className="border-border/60 border-t pt-4">
-        <Button variant="outline-ghost" onClick={onClose}>
-          Close
-        </Button>
-      </ModalFooter>
-    );
-  }
+  // Decisions and approvals decide inside their body.
+  if (item.kind === 'decision' || item.kind === 'approval') return null;
 
   // change · output · batch
   const secondaryLabel = item.secondaryAction;
   const hasConflicts = item.kind === 'change' && conflicts.length > 0;
 
-  if (composing && secondaryLabel) {
-    return (
-      <ModalFooter className="border-border/60 border-t pt-4">
-        <FeedbackComposer
-          onCancel={() => setComposing(false)}
-          onSend={(text) => {
-            actions.resolve(
-              item.id,
-              'changes_requested',
-              text ? `Sent to the agent: “${text}”` : `${secondaryLabel} — sent to the agent`,
-              text || undefined,
-            );
-            onClose();
-          }}
-        />
-      </ModalFooter>
-    );
-  }
-
   return (
-    <ModalFooter className="border-border/60 border-t pt-4">
-      {hasConflicts && (
-        <span className="text-muted-foreground mr-auto text-xs">The change cannot merge yet</span>
-      )}
-      {secondaryLabel && (
-        <Button variant="ghost" onClick={() => setComposing(true)}>
+    <div className="flex items-center gap-2">
+      {secondaryLabel && !composing && (
+        <Button variant="ghost" size="sm" onClick={() => setComposing(true)}>
           {secondaryLabel}
         </Button>
       )}
       {hasConflicts && item.kind === 'change' ? (
         <Button
+          size="sm"
           disabled={actions.recoveringCrId === item.detail.crId}
           onClick={() => {
             if (actions.recoverChange) {
               actions.recoverChange(item, conflicts);
             } else {
               actions.resolve(item.id, 'waiting', 'Solving the merge conflicts with an agent…');
-              onClose();
+              onBack();
             }
           }}
         >
           {actions.recoveringCrId === item.detail.crId ? (
-            <Loading className="size-4 shrink-0" />
+            <Loading className="size-3.5 shrink-0" />
           ) : (
-            <SparklesSolid className="size-4 shrink-0" />
+            <SparklesSolid weight="fill" className="size-3.5 shrink-0" />
           )}
           Solve with agent
         </Button>
       ) : (
         <Button
-          variant={item.risk === 'high' ? 'danger' : item.risk === 'medium' ? 'warning' : 'default'}
+          size="sm"
+          // Ready to ship reads as success. Only high risk keeps the brake.
+          variant={item.risk === 'high' ? 'danger' : checkingConflicts ? 'warning' : 'success'}
           disabled={checkingConflicts}
           onClick={() => {
             actions.resolve(item.id, 'approved', `${item.primaryAction} · done`);
-            onClose();
+            onBack();
           }}
         >
-          {checkingConflicts ? (
-            <Loading className="size-4 shrink-0" />
-          ) : (
-            <Check className="size-4" />
-          )}
-          {checkingConflicts ? 'Checking...' : item.primaryAction}
+          {checkingConflicts ? <Loading className="size-3.5 shrink-0" /> : null}
+          {checkingConflicts ? 'Checking…' : item.primaryAction}
         </Button>
       )}
-    </ModalFooter>
+    </div>
   );
 }
 
-export function ReviewDetailModal({
+/** `main ← feat/branch · 1 file · +38 −2` — the facts a reviewer scans first. */
+function ChangeFacts({ item }: { item: Extract<ReviewItem, { kind: 'change' }> }) {
+  const adv = item.detail.advanced;
+  const crId = item.detail.crId ?? null;
+  // The live diff query is shared with `ChangeFiles` below (same key), so this
+  // costs no extra request; it just lets the header agree with the file list.
+  const diff = useChangeRequestDiff(crId);
+  const files = diff.data?.files_changed ?? adv.files.length;
+  const additions = diff.data?.additions ?? adv.additions;
+  const deletions = diff.data?.deletions ?? adv.deletions;
+  const hasRefs = Boolean(adv.baseRef || adv.headRef);
+  const hasCounts = files > 0 || additions > 0 || deletions > 0;
+  if (!hasRefs && !hasCounts) return null;
+  return (
+    <>
+      {hasRefs && (
+        <span className="flex items-center gap-1.5">
+          <Badge variant="secondary" className="border-0 align-middle font-mono ring-0" size="sm">
+            {adv.baseRef || '—'}
+          </Badge>
+          <ArrowLeft className="text-muted-foreground size-3.5 shrink-0" aria-label="from" />
+          <Badge
+            variant="secondary"
+            size="sm"
+            className="line-clamp-1 max-w-96 truncate border-0 align-middle font-mono ring-0"
+          >
+            <span className="truncate">{adv.headRef || '—'}</span>
+          </Badge>
+        </span>
+      )}
+      {files > 0 && (
+        <span className="tabular-nums">
+          {files} {files === 1 ? 'file' : 'files'}
+        </span>
+      )}
+      <DiffStat additions={additions} deletions={deletions} />
+    </>
+  );
+}
+
+export function ReviewDetail({
   item,
   actions,
-  onClose,
+  onBack,
 }: {
-  item: ReviewItem | null;
+  item: ReviewItem;
   actions: ReviewActions;
-  onClose: () => void;
+  onBack: () => void;
 }) {
-  const crId = item?.kind === 'change' ? (item.detail.crId ?? null) : null;
+  const crId = item.kind === 'change' ? (item.detail.crId ?? null) : null;
   const mergePreview = useChangeRequestMergePreview(crId, Boolean(crId));
-  if (!item) return null;
+  const [composing, setComposing] = useState(false);
 
   const previewHasConflicts = Boolean(
     mergePreview.data && !mergePreview.data.is_up_to_date && !mergePreview.data.can_merge,
@@ -900,67 +765,94 @@ export function ReviewDetailModal({
         : (item.detail.conflicts ?? [])
       : [];
   const kind = KIND_META[item.kind];
-  const Source = SOURCE_META[item.source];
+  const number = item.kind === 'change' ? item.detail.number : undefined;
+  // A change waiting on you is "Open", the way a pull request is; every other
+  // state keeps the inbox's own label.
+  const open = item.status === 'needs_you' && item.kind === 'change';
+  const statusLabel = open ? 'Open' : STATUS_META[item.status].label;
+  const statusBadge = open ? 'success' : STATUS_META[item.status].badge;
+  const secondaryLabel = item.secondaryAction;
 
   return (
-    <Modal open={!!item} onOpenChange={(o) => !o && onClose()}>
-      <ModalContent className="lg:max-w-2xl" closeOnOutsideClick>
-        <ModalHeader>
-          <div className="flex items-start gap-3 pr-8">
-            <span
-              className={cn(
-                'mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-sm',
-                kind.tile,
-              )}
-            >
-              <kind.icon className={cn('size-5', kind.iconColor)} />
-            </span>
-            <div className="min-w-0">
-              <ModalTitle className="text-pretty">{item.title}</ModalTitle>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                <Badge variant="outline" size="xs">
-                  {kind.label}
-                </Badge>
-                {item.risk !== 'none' && (
-                  <StatusBadge tone={RISK_META[item.risk].tone}>
-                    {RISK_META[item.risk].label}
-                  </StatusBadge>
-                )}
-                <span className="text-muted-foreground/70 flex items-center gap-1 text-xs">
-                  <Source.icon className="size-3" />
-                  {Source.label}
-                </span>
-                <span className="text-muted-foreground/40">&bull;</span>
-                <span className="text-muted-foreground/70 truncate text-xs">{item.project}</span>
-              </div>
-            </div>
+    <div className="w-full p-4">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge variant={statusBadge} size="sm">
+              {statusLabel}
+            </Badge>
+            {item.kind !== 'change' && (
+              <Badge variant="outline" size="sm">
+                {kind.label}
+              </Badge>
+            )}
+            {item.risk === 'medium' || item.risk === 'high' ? (
+              <Badge variant={RISK_META[item.risk].badge} size="sm">
+                {RISK_META[item.risk].label}
+              </Badge>
+            ) : null}
           </div>
-        </ModalHeader>
-
-        <ModalBody className="space-y-3">
-          <div className="text-muted-foreground text-xs">
-            {item.agent} · {formatItemAgeLong(item.createdAt)}
+          <div className="space-y-2 mt-10">
+            <p className="text-muted-foreground text-xs">
+              {item.project}
+              {number != null && <span className="tabular-nums"> #{number}</span>}
+            </p>
+            <h1 className="text-foreground line-clamp-2 truncate text-2xl font-semibold tracking-tight text-pretty">
+              {item.title}
+            </h1>
           </div>
+          <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
+            <span>{item.agent}</span>
+            {item.kind === 'change' && <ChangeFacts item={item} />}
+            <span>{formatItemAgeLong(item.createdAt)}</span>
+          </div>
+        </div>
+        <div className="shrink-0 sm:pt-1">
+          <ActionBar
+            item={item}
+            actions={actions}
+            onBack={onBack}
+            conflicts={conflicts}
+            checkingConflicts={Boolean(crId) && mergePreview.isLoading}
+            composing={composing}
+            setComposing={setComposing}
+          />
+        </div>
+      </header>
 
-          {item.kind === 'change' && (
-            <ChangeBody item={item} actions={actions} onClose={onClose} conflicts={conflicts} />
-          )}
-          {item.kind === 'approval' && <ApprovalBody item={item} actions={actions} />}
-          {item.kind === 'output' && <OutputBody item={item} />}
-          {item.kind === 'decision' && (
-            <DecisionBody item={item} actions={actions} onClose={onClose} />
-          )}
-          {item.kind === 'batch' && <BatchBody item={item} />}
-        </ModalBody>
+      <div className="mt-8 space-y-8">
+        {composing && secondaryLabel && (
+          <FeedbackComposer
+            onCancel={() => setComposing(false)}
+            onSend={(text) => {
+              actions.resolve(
+                item.id,
+                'changes_requested',
+                text ? `Sent to the agent: “${text}”` : `${secondaryLabel} — sent to the agent`,
+                text || undefined,
+              );
+              onBack();
+            }}
+          />
+        )}
 
-        <Footer
-          item={item}
-          actions={actions}
-          onClose={onClose}
-          conflicts={conflicts}
-          checkingConflicts={Boolean(crId) && mergePreview.isLoading}
-        />
-      </ModalContent>
-    </Modal>
+        <section className="space-y-3">
+          <h2 className="text-foreground text-sm font-medium">Description</h2>
+          <div className="space-y-4">
+            {item.kind === 'change' && (
+              <ChangeBody item={item} actions={actions} onClose={onBack} conflicts={conflicts} />
+            )}
+            {item.kind === 'approval' && <ApprovalBody item={item} actions={actions} />}
+            {item.kind === 'output' && <OutputBody item={item} />}
+            {item.kind === 'decision' && (
+              <DecisionBody item={item} actions={actions} onClose={onBack} />
+            )}
+            {item.kind === 'batch' && <BatchBody item={item} />}
+          </div>
+        </section>
+
+        {crId && <ChangeFiles crId={crId} />}
+      </div>
+    </div>
   );
 }

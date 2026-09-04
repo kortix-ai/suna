@@ -349,6 +349,76 @@ export async function markTriggerExecutionFailed(input: {
   return terminal ? 'dead_lettered' : 'queued';
 }
 
+/**
+ * Reflect a DELIVERED trigger prompt back onto the trigger runtime row.
+ *
+ * A `session_mode = "reuse" | "pinned" | "keyed"` fire enqueues a durable
+ * `continue_session` command and immediately records `last_status = "queued"`
+ * (`markGitTriggerFired(..., 'queued')`). The command is delivered later, on
+ * the scheduler's drain tick — and that settlement never wrote back to the
+ * runtime row, so `last_status` stayed `queued` forever and monitoring could
+ * not tell a healthy reuse fire from a wedged one. Flipping to `fired` on
+ * delivery makes `queued` strictly the transient in-flight state, so a queue-age
+ * alarm only fires on a real stall. Does NOT advance `last_fired_at` (already
+ * advanced at fire time).
+ */
+export async function markTriggerRuntimeDelivered(input: {
+  projectId: string;
+  slug: string;
+  when: Date;
+}): Promise<void> {
+  await db
+    .insert(projectTriggerRuntime)
+    .values({
+      projectId: input.projectId,
+      slug: input.slug,
+      lastStatus: 'fired',
+      lastError: null,
+      lastAttemptAt: input.when,
+      updatedAt: input.when,
+    })
+    .onConflictDoUpdate({
+      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      set: {
+        lastStatus: 'fired',
+        lastError: null,
+        lastAttemptAt: input.when,
+        updatedAt: input.when,
+      },
+    });
+}
+
+/**
+ * Reflect a DEAD-LETTERED trigger prompt back onto the trigger runtime row.
+ *
+ * `markCommandFailed` already parks the target session `failed` (so the next
+ * `reuse` fire self-heals to a fresh session); this makes the failure VISIBLE in
+ * the triggers API (`last_status: "failed"`, `last_error`) instead of leaving
+ * `last_status` frozen at `queued` — the "monitoring blind" gap this closes.
+ */
+export async function markTriggerRuntimeDeliveryFailed(input: {
+  projectId: string;
+  slug: string;
+  when: Date;
+  error: string;
+}): Promise<void> {
+  const lastError = input.error.slice(0, 1000);
+  await db
+    .insert(projectTriggerRuntime)
+    .values({
+      projectId: input.projectId,
+      slug: input.slug,
+      lastStatus: 'failed',
+      lastError,
+      lastAttemptAt: input.when,
+      updatedAt: input.when,
+    })
+    .onConflictDoUpdate({
+      target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
+      set: { lastStatus: 'failed', lastError, lastAttemptAt: input.when, updatedAt: input.when },
+    });
+}
+
 export async function countUncatalogedTriggerProjects(): Promise<number> {
   const rows = await db
     .select({ count: sql<number>`count(distinct ${projectTriggerRuntime.projectId})` })

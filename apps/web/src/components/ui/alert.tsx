@@ -10,8 +10,11 @@ const alertVariants = cva('w-full rounded-md', {
       default: 'bg-popover text-foreground',
       destructive:
         'text-destructive bg-popover [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-destructive/90',
+      // Foreground text on a faint fill with a tinted edge — the tone is the
+      // border and the icon, never the type (see `info-banner.tsx`). Orange
+      // type on an orange fill was ~2:1 (Marko, 2026-09-03).
       warning:
-        'text-kortix-orange   bg-kortix-orange/10 [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-kortix-orange/90',
+        'text-foreground bg-kortix-orange/10 border border-kortix-orange/40 [&_[data-slot=item-media]_svg]:text-kortix-orange [&_[data-slot=item-description]]:text-foreground/75',
     },
   },
   defaultVariants: {

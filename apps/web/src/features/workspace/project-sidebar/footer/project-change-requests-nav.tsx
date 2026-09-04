@@ -161,14 +161,14 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // mid-deploy, a network blip. The flag-off branch still opens a dialog or a
   // popover in place and stays a button.
   const menuButton = reviewEnabled ? (
-    <SidebarMenuButton asChild      className="group/menu-button text-sidebar-foreground relative">
+    <SidebarMenuButton asChild className="group/menu-button text-sidebar-foreground relative">
       <Link href={capabilityTabHref(projectId, 'review')} prefetch>
         {rowContent}
       </Link>
     </SidebarMenuButton>
   ) : (
     <SidebarMenuButton
-      className="font-medium"
+      className="group/menu-button text-sidebar-foreground relative"
       onClick={c.count === 1 ? () => c.openCr(c.crs[0].cr_id) : undefined}
     >
       {rowContent}

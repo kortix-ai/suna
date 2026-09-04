@@ -21,6 +21,42 @@ linked, not inlined.
 
 ## Register
 
+### A durable FIFO has one order key and advances at one boundary (2026-09-03)
+
+**When:** implementing a queue whose enqueue requests can race. Define one total
+order and reuse it for listing, admission, claims, repair, and promotion. Never
+mix client send time with database insert time. Promote the next item only after
+the current turn closes; delivery-time promotion races terminal promotion and
+loses the wake. *Incident:* queued prompts reversed after hydration, and the
+next prompt paused up to the 2-second admission backoff. *Enforcer:*
+`inbox-order.test.ts`, `integration-prompt-inbox.test.ts`, and
+`queued-continue-inbox-delivery.test.ts`.
+
+### A read that fails is not an admin decision — health flags fail open (2026-09-02)
+
+**When:** writing any code path that answers "is the platform in maintenance /
+locked down / degraded?", especially one an edge proxy polls.
+`getEdgeMaintenanceConfig()` returned a synthetic `level: 'blocking'` whenever
+the Vercel Edge Config read threw *or the key was simply absent*. The
+`api-router` worker polls that route as `MAINTENANCE_STATE_URL` and answers
+every non-read-only request to `api.kortix.com` with a 503 carrying that
+config's `message`. So one failed network call locked production writes, and
+users got `ApiError: Kortix is temporarily unavailable. Service will resume
+automatically.` — the string that only that fallback produces. Nobody had
+touched the admin toggle. **The rule:** an unknown state is `none`. Distinguish
+"the store says nothing" (normal operation) from "the read failed" (serve the
+last value actually read, else normal operation). A lockdown that must survive
+the flag store being down belongs in the consumer as an explicit override
+(`MAINTENANCE_LEVEL_OVERRIDE` on the worker), never as a failure default.
+Commit 005fd6a4c9 fixed three of these paths on 2026-08-02 and missed the
+fourth and fifth — when you flip one fail-closed path, grep for every producer
+of the same message. *Incident:* prod, Better Stack `Kortix Frontend`: 1,000+
+`ApiError` occurrences over ~2 days; the client-side twin
+(`automaticMaintenanceConfig()`) additionally navigated users off a healthy app
+to `/maintenance` on one failed poll. Enforcement:
+`maintenance-store.test.ts` edge-gate cases, `maintenance-client.test.ts`
+"stays out of maintenance after a status request failure".
+
 ### A compatibility repair must recognize the current writer's exact output (2026-09-02)
 
 **When:** adding a repair that runs before later prompt delivery. Derive both the
@@ -4038,3 +4074,107 @@ own config; no real secret was ever written to disk in plaintext.
   test suite whenever `pnpm-lock.yaml` resolves more than one version of
   `next`. The override now reads `"next@>=15.0.0 <16.3.3": "16.3.3"` and
   `apps/whitelabel-demo` declares `next: 16.3.3` explicitly.
+
+## A column declared in schema.ts but absent from the migration ledger passes every drift gate (2026-09-03)
+
+*Incident (2026-09-03, ~16:30 UTC onward, every Kortix environment).* Every
+session start failed with `The sandbox provider could not start this session.
+Try again.` Platinum answered every `POST /v1/sandboxes` that carried an
+`Idempotency-Key` with `500 {"error":"column \"expected\" does not exist"}`.
+Kortix sends that header on every create (`KORTIX_PLATINUM_CREATE_DEDUP`,
+default ON). Local, dev and prod share one Platinum org, so one Platinum
+deploy took all three down at once.
+
+Root cause in the Platinum repo: PR #759 (`f9e63339`) added `expected:
+jsonb('expected')` to `sandboxIdempotencyKeys` in `apps/api/src/db/schema.ts`
+and shipped no migration for it. The create handler does a full-row
+`db.select().from(sandboxIdempotencyKeys)`, so the first request after the prod
+deploy of `2d752cca` hit the missing column. The migrator printed `[migrate] up
+to date`, the PR drift lane passed, and the nightly DB Drift Sentinel passed:
+all three compare **migrations against the database**. None compares
+**schema.ts against migrations**, which is the only comparison that could have
+caught this.
+
+Kortix-side signature, so the next reader recognises the class in one log
+read: `[provision-timeline] deliver … total=6ms … outcome: "unreachable"` (a
+delivery that never touched the network, because `continueSession` returns
+`unreachable` on `project_sessions.status = 'failed'`), then `runtime
+unreachable after 3 attempts` dead-letters ~10.5 min later (30 s + 120 s +
+480 s ladder). A `POST /v1/sandboxes` WITHOUT the header returning 201 confirms
+the class.
+
+**The rules.**
+
+1. **A schema change lands with its migration in the same commit, and CI proves
+   the pair agree.** `drizzle-kit generate` (or `drizzle-kit check`) on the PR
+   head must emit nothing; a non-empty diff fails the lane. A migrations-vs-DB
+   comparison cannot see a column that exists only in code.
+2. **A provider outage needs a Kortix-side lever that a person can flip in one
+   place.** `KORTIX_PLATINUM_CREATE_DEDUP=0` in `apps/api/.env.local` (local)
+   or the deploy env (dev/prod) drops the header and restores session starts
+   while the provider ships its fix. Cost: create dedup is off while it is set.
+3. **Restart the local API through its supervisor, never with a bare kill.**
+   `dev-local.sh` relaunches the API only when `$TUNNEL_URL_FILE.rotated`
+   exists; a bare `pkill` ends `pnpm dev`. Env changes need the relaunch
+   because `dotenvx run` injects `.env.local` at process start.
+
+*Fix:* Platinum migration `0068_sandbox_idempotency_keys_expected.sql`
+(`ADD COLUMN IF NOT EXISTS "expected" jsonb`, expand-only) plus journal idx 68.
+*Enforcer:* none yet in Platinum — rule 1 is the CI lane to add there.
+
+## A persistent environment needs a self-healer on its own box, and a preview fix on a feature branch is inert (2026-09-04)
+
+`pi.kortix.com` — the `pi-worker` branch environment, one Platinum sandbox
+reused across every push — answered Cloudflare 502 for hours on three separate
+days, each time for a reason the deploy could not repair once it had returned:
+
+1. **Disk.** Every deploy pulls ~2.5 GB of new images and nothing pruned the
+   superseded ones. At 100% `supabase-db` crash-loops on `could not write lock
+   file "postmaster.pid": No space left on device`. Measured: 64 images, 34 GB,
+   25 GB unreferenced, 0 bytes free.
+2. **A failed deploy leaves nothing serving.** The bootstrap's retry runs
+   `compose down`, the second `up` fails the same way, the script exits, and
+   every container stays in `Created`. The hostname guard correctly refuses to
+   re-point at a dead stack — but the stack it keeps pointing at IS that box.
+3. **Checkout.** A reused sandbox keeps the rootfs of the template it came
+   from, so `pnpm install --offline` dies the day the branch adds a dependency
+   (`ERR_PNPM_NO_OFFLINE_TARBALL` on `@earendil-works/pi-agent-core`).
+
+The part that made every one of these last for hours: **fixes committed on the
+branch did nothing.** `deploy-preview.yml` is `pull_request_target`, and its
+deploy job checks out the DEFAULT branch, so the bootstrap, the Caddyfile and
+the compose overlay always come from `main`'s `tests/`. Four fixes for exactly
+these failures sat on `pi-worker` and `ino/preview-parity` — prune before
+pull, Caddy swap tolerance, the git-cache volume, the offline fallback — each
+verified in a unit test, none ever executed by a deploy.
+
+**The rules.**
+
+1. **A change to `tests/src/core/preview-stack.ts`, `sandbox-preview.ts` or
+   `deploy-preview.yml` reaches a preview only from `main`.** Land it there
+   first, in its own PR; a branch preview cannot test it and will keep failing
+   in the way the branch already fixed.
+2. **A persistent environment carries its own watcher.** The deploy is on the
+   box for ~14 minutes a day; the environment is expected to serve for the
+   other 1,426. `tests/src/core/preview-guard.ts` runs as a container on the
+   sandbox: prunes unreferenced images when the disk passes 75%, brings the
+   stack back up when the edge stops answering and no deploy is in flight, and
+   keeps Caddy swap-tolerant. It never runs `down -v`. Installed on every
+   deploy, keyed on its own hash, so a recreated sandbox gets it too. Proven
+   by hand on pi.kortix.com before it was committed: installed at 12:41:40,
+   recovered the dead stack at 12:43:27, Caddy patched at 12:44:27.
+3. **A deploy that cannot bring the new stack up puts the last good one
+   back.** The health check saves the proven `.env` (image tags) to
+   `last-good.env`; a stack failure restores it and runs `compose up` before
+   exiting 1. The deploy still fails; the name keeps answering.
+4. **Removing the `preview` label deletes the environment and its data.**
+   That is the design (the label is the off switch), but re-adding it creates
+   an EMPTY environment: new sandbox id, fresh Postgres, no accounts, no
+   projects, no git mirrors. On 2026-09-03 10:19 the label was toggled off and
+   on; the test account and the `pi-lab` project stopped existing.
+
+*Fix:* this entry's PR — `preview-guard.ts`, the bootstrap changes, the two
+preview-parity ports. *Enforcer:* `tests/unit/preview-guard.test.ts`
+(`sh -n` on the guard, never `-v`, deploy-in-flight gate, hash-keyed install)
+and `tests/unit/sandbox-preview.test.ts` (prune before pull, fallback install,
+rollback after the health check, guard before configure).

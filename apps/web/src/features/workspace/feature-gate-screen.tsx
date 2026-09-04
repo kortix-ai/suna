@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
+import { projectSettingsSectionHref } from '@/features/workspace/capabilities/project-settings/project-settings-sections';
 import { FlagIcon } from '@phosphor-icons/react';
 
 /**
@@ -15,9 +16,11 @@ import { FlagIcon } from '@phosphor-icons/react';
  * per-feature switch to hunt for. The button here just takes you there.
  *
  * The destination has moved twice and the content never has: the legacy
- * Customize overlay's `feature-flags` section, then the settings overlay's
- * Experimental tab, and now `/projects/<id>/config?section=feature-flags`.
- * A real `<Link>`, because it is a route now — middle-click and copy-link
+ * Customize overlay's `feature-flags` section, then `/projects/<id>/config
+ * ?section=feature-flags`, and — since that page was retired on 2026-09-02 —
+ * the Customize bar's Settings tab, `/customize/settings?section=feature-flags`
+ * (built by `projectSettingsSectionHref`, never spelled here).
+ * A real `<Link>`, because it is still a route — middle-click and copy-link
  * both work, and the page prefetches.
  *
  * Only reachable surfaces render this. A gated NAV entry, palette action, or
@@ -52,7 +55,7 @@ export function FeatureGateScreen({
         </div>
         {projectId ? (
           <Button asChild size="sm" variant="secondary" className="shrink-0">
-            <Link href={`/projects/${projectId}/settings/feature-flags`}>Feature flags</Link>
+            <Link href={projectSettingsSectionHref(projectId, 'feature-flags')}>Feature flags</Link>
           </Button>
         ) : null}
       </div>

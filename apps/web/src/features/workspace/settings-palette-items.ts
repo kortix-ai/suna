@@ -49,6 +49,7 @@ export const PALETTE_ACCOUNT_SCOPED_TABS: readonly SettingsTab[] = [
   'preferences',
   'connected',
   'tokens',
+  'credits',
   'plan',
 ];
 
@@ -76,9 +77,9 @@ export const PALETTE_NO_PROJECT_DEFAULT_TAB: SettingsTab = 'profile';
  * carried over verbatim from the old `Customize · X` registry entries, so
  * "customize" returned twelve settings tabs plus five navigation rows and
  * "project" returned twelve tabs that are not the Projects page. `customize`
- * survives on exactly one row here — `general`, the Workspace tab that
- * `proj-customize`'s href actually opens (`/projects/{id}/settings/general`) —
- * so the legacy word still lands on the legacy destination and nowhere else.
+ * survives on exactly one row here — `workspace`, the tab labelled "General",
+ * which is what the Customize bar's Settings tab used to open — so the legacy
+ * word still lands on the legacy destination and nowhere else.
  * `project` survives only inside `general`'s phrase "project settings", the
  * pane's own former name.
  *
@@ -124,9 +125,23 @@ const TAB_KEYWORDS: Record<SettingsTab, string> = {
   // "account" owns the word).
   tokens:
     'api keys key tokens token personal access pat cli command line terminal secret credential authentication ci',
-  // The plan is the one account row in the overlay. Its rail description
+  // The row that answers "how much have I got left". It carries `usage`
+  // because that is the word Jay used for it and the id could not be
+  // (`settings-tabs.ts` explains why `usage` is spent), and `balance` /
+  // `wallet` because those moved OFF `plan` below — the Plan pane shows
+  // neither now.
+  credits:
+    'credits credit usage balance wallet spend spent remaining left quota allowance topup top up refresh daily monthly cost',
+  // The plan is the other account row in the overlay. Its rail description
   // says "for this account", so it answers "account" by a word the user reads.
-  plan: 'plan subscription billing credits upgrade invoice payment wallet',
+  //
+  // `credits` deliberately stays on BOTH rows: this is the pane that SELLS
+  // them (`CreditTopupSection`, auto top-up) and `credits` above is the pane
+  // that COUNTS them, so the word names a real subject of each. `wallet` and
+  // `balance` are gone from here — neither is rendered on this pane any more,
+  // and a word that names a different row's subject is the defect this file's
+  // header rule is about.
+  plan: 'plan subscription billing credits buy purchase upgrade downgrade invoice payment seat seats portal stripe',
   // Copy for the two Workspace rows that came back on 2026-09-02 — the words
   // `proj-sandbox` and `proj-feature-flags` carry in `lib/menu-registry.ts`.
   sandbox:
@@ -213,9 +228,10 @@ function toPaletteItem(item: RailItem, groupLabel: string): SettingsPaletteItem 
  * renders an empty heading.
  *
  * `UPGRADE_ITEM` used to be appended to the last group here. It left the rail
- * with the rest of project configuration and is a section of
- * `/projects/<id>/config` now, reached through the `proj-settings` registry
- * row like every other out-of-overlay destination.
+ * with the rest of project configuration, became a section of
+ * `/projects/<id>/config`, and came back on 2026-09-02 when that page was
+ * retired — so it is a derived row from `railGroups()` like every other tab
+ * in this file, with no hand-written registry entry anywhere.
  */
 export function settingsPaletteGroups(params: SettingsPaletteParams): SettingsPaletteGroup[] {
   const groups: SettingsPaletteGroup[] = [];

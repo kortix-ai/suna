@@ -1,6 +1,6 @@
 'use client';
 
-import { automaticMaintenanceConfig } from '@/lib/maintenance-client';
+import { unknownMaintenanceConfig } from '@/lib/maintenance-client';
 import type { MaintenanceConfig } from '@/lib/maintenance-store';
 import { useQuery } from '@tanstack/react-query';
 
@@ -37,12 +37,12 @@ async function fetchMaintenanceConfig(): Promise<MaintenanceConfig> {
     const response = await fetch('/api/maintenance');
     if (!response.ok) {
       console.warn('Failed to fetch maintenance config:', response.status);
-      return automaticMaintenanceConfig();
+      return unknownMaintenanceConfig();
     }
     return await response.json();
   } catch (error) {
     console.warn('Failed to fetch maintenance config:', error);
-    return automaticMaintenanceConfig();
+    return unknownMaintenanceConfig();
   }
 }
 
