@@ -3,8 +3,6 @@ title: Kortix as a Backend
 description: Start and manage Kortix sessions from your backend with explicit connector, model, context, and secret scope.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 Use a Kortix API key to start sessions from your server. Each session has one
 Kortix owner, one project, and one cost record.
 
@@ -34,9 +32,7 @@ before use — see [Accounts & access](/docs/accounts#one-access-model).
 ## 2. Start a session
 
 <Steps>
-<Step>
-### Create with HTTP
-
+<Step title="Create with HTTP">
 ```bash
 curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
   -H "Authorization: Bearer $KORTIX_API_KEY" \
@@ -54,9 +50,7 @@ curl -X POST "$KORTIX_API_URL/projects/$KORTIX_PROJECT_ID/sessions" \
 ```
 
 </Step>
-<Step>
-### Create with the SDK
-
+<Step title="Create with the SDK">
 ```ts
 import { createScopedKortix } from '@kortix/sdk/server';
 

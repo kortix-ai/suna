@@ -69,3 +69,52 @@ export function convertCallouts(source) {
 
   return collapseDropped(mapped);
 }
+
+// Cannot use mapOutsideFences: a bare <Step> needs to look ahead to the
+// heading line that follows it, and that helper only sees one line at a
+// time. Track the fence state directly instead.
+export function convertSteps(source) {
+  const lines = source.split('\n');
+  let inFence = false;
+  const out = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+
+    if (
+      /^import\s*\{[^}]*\bSteps?\b[^}]*\}\s*from\s*'fumadocs-ui\/components\/steps';\s*$/.test(line)
+    ) {
+      out.push(DROP_MARKER);
+      continue;
+    }
+
+    // A bare <Step> takes its title from the first heading that follows,
+    // skipping the blank line fumadocs authors put between them.
+    if (/^\s*<Step>\s*$/.test(line)) {
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j += 1;
+      const heading = lines[j]?.match(/^###\s+(.*)$/);
+      if (heading) {
+        out.push(`<Step title="${heading[1].trim()}">`);
+        let k = j + 1;
+        while (k < lines.length && lines[k].trim() === '') k += 1;
+        i = k - 1; // consume the heading and the blank lines around it
+        continue;
+      }
+      out.push(line);
+      continue;
+    }
+    out.push(line);
+  }
+
+  return collapseDropped(out.join('\n'));
+}
