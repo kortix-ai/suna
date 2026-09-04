@@ -7,7 +7,7 @@ const CURRENT_SQL = '20260730000452547_sandbox_deadline';
 const CONNECTOR = '20260729215216867_executor_policy_arg_conditions';
 const LEGACY_APP_ACCESS = '20260807192000000_add_app_access_control';
 const LEGACY_APP_ACCESS_VALIDATE = '20260807192000001_validate_app_access_constraints';
-const LEGACY_SECRET_CONSUMER = '20260805165801277_secret_consumer_boundary';
+const LEGACY_CONSUMER_BOUNDARY = '20260805165801277_secret_consumer_boundary';
 const LEGACY_SESSION_WORKER_LOG = '20260828170156721_session_worker_log';
 const LEGACY_PI_RUNTIME_ARTIFACTS = '20260829160353474_pi_runtime_artifacts';
 const RUN_ON = new Date('2026-07-29T16:46:37.325Z');
@@ -71,14 +71,14 @@ describe('planMigrationLedgerRepair', () => {
   });
 
   test('maps the byte-identical secret-consumer filename without reapplying its enum', () => {
-    const plan = planMigrationLedgerRepair([row(LEGACY_SECRET_CONSUMER)]);
+    const plan = planMigrationLedgerRepair([row(LEGACY_CONSUMER_BOUNDARY)]);
 
     expect(plan).toEqual({
       connectorMigrationIsMissing: false,
       legacyRunOn: null,
       renames: [
         {
-          legacyName: LEGACY_SECRET_CONSUMER,
+          legacyName: LEGACY_CONSUMER_BOUNDARY,
           currentName: '20260805202913539_secret_consumer_boundary',
         },
       ],

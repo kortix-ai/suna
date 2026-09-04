@@ -98,8 +98,8 @@ suite('migration ledger rename repair', () => {
         '20260902070000000_session_worker_log',
         '20260902070001000_pi_runtime_artifacts',
       ];
-      const currentSecretConsumerName = '20260805202913539_secret_consumer_boundary';
-      const legacySecretConsumerName = '20260805165801277_secret_consumer_boundary';
+      const currentConsumerBoundaryName = '20260805202913539_secret_consumer_boundary';
+      const legacyConsumerBoundaryName = '20260805165801277_secret_consumer_boundary';
       const legacyPiNames = [
         '20260828170156721_session_worker_log',
         '20260829160353474_pi_runtime_artifacts',
@@ -116,9 +116,9 @@ suite('migration ledger rename repair', () => {
       const historicalNames = migrationNames
         .filter(
           (name) =>
-            !currentPiNames.includes(name) && name !== currentSecretConsumerName,
+            !currentPiNames.includes(name) && name !== currentConsumerBoundaryName,
         )
-        .concat(legacySecretConsumerName, legacyPiNames)
+        .concat(legacyConsumerBoundaryName, legacyPiNames)
         .sort();
 
       for (const name of historicalNames) {
