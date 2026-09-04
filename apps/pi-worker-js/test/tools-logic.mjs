@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { commentMask, literalMask } from "../../tools/js-mask.mjs";
+import { platinumPath } from "./platinum-repo.mjs";
 import { countClaims, verdict } from "../../tools/mutant.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 
@@ -225,7 +226,7 @@ const SRC = "const a = 1;\nconst b = 2;\nconst a2 = 1;\n";
   // conditional in this repo lives inside a comment — r2.js's header explains
   // the null contract with `if (!o)` in it — and that number is the guard.
   const sources = [];
-  for (const dir of [`${HERE}src`, `${HERE}../bindings`]) {
+  for (const dir of [`${HERE}src`, platinumPath("infra/celld/bindings")]) {
     for (const f of readdirSync(dir)) if (f.endsWith(".js")) sources.push(join(dir, f));
   }
   let inComment = 0, total = 0;

@@ -42,7 +42,8 @@ import { watchClaims } from "../../tools/crash-reporter.mjs";
 // expects is not found, every derived claim FAILS rather than skipping. A
 // contract test that quietly stops testing when it cannot find the contract is
 // the failure it exists to prevent.
-const API_SRC = new URL("../../../../apps/api/src/api/sandboxes.ts", import.meta.url).pathname;
+import { platinumPath } from "./platinum-repo.mjs";
+const API_SRC = platinumPath("apps/api/src/api/sandboxes.ts");
 
 function execSchemaFromSource() {
   let src;

@@ -31,8 +31,9 @@ import { watchClaims } from "../../tools/crash-reporter.mjs";
 // invmAgent.ts declares the shapes as TypeScript types on the rpcJSON calls,
 // which is a fact in the repo. Parsed here, strictly: if the declaration is not
 // found, the claims FAIL rather than skip.
-const INVM_SRC = new URL("../../../../apps/api/src/invmAgent.ts", import.meta.url).pathname;
-const SANDBOXES_SRC = new URL("../../../../apps/api/src/api/sandboxes.ts", import.meta.url).pathname;
+import { platinumPath } from "./platinum-repo.mjs";
+const INVM_SRC = platinumPath("apps/api/src/invmAgent.ts");
+const SANDBOXES_SRC = platinumPath("apps/api/src/api/sandboxes.ts");
 
 function guestFileShapes() {
   let src;
