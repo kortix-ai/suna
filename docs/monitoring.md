@@ -143,7 +143,11 @@ rules and every card sat in Backlog. The protocol is therefore always-on:
   (`POST /sessions/:sid/question` from the web), a parked card moves to
   `in_progress`, stamped with the answerer. No-op when Monitoring is off. The
   CLI protocol stays primary; this covers the turn where the agent asked but
-  forgot to report.
+  forgot to report. Best-effort: it depends on the daemon relaying OpenCode's
+  `question.asked` to `POST /projects/:id/turn-question`, and on local dev
+  2026-09-04 that relay fired for 1 of 3 dashboard-session questions (the
+  daemon log of the other sandboxes shows no `question.asked` at all). A
+  question the relay misses leaves the card where the agent last put it.
 - Delivery: a session gets the protocol only if its sandbox boots with a
   daemon that knows `KORTIX_STAGE_INSTRUCTIONS` and a CLI that has
   `sessions stage`. Sessions created while a snapshot is still being re-baked
