@@ -277,7 +277,7 @@ completion, confirm the deployed artifact contains the merged SHA, then verify
 | Astro `base` output layout is unverified: `dist/` or `dist/docs/` | blocks the copy step | Phase 0 probe. The copy step handles either. **This is the one untested assumption in this design.** |
 | Web build time grows 30 to 60 seconds | slows every deploy | Measured in Phase 0. If worse than 60s, fall back to a separate Blume deployment behind a proxy rewrite. |
 | Stock Blume theme reads as foreign next to kortix.com | cosmetic | Accepted by D3. Tracked as a follow-up, not a blocker. |
-| Blume 1.6.0 was published 2026-09-04 | new package, possible churn | Pin the exact version. No caret range. |
+| Blume is a young package (1.6.0 shipped 2026-09-04) | churn | Pin exactly, no caret. **Pinned to 1.5.3**, not 1.6.0: this repo's `.npmrc` sets `minimum-release-age=4320` (72h) and refuses anything newer. 1.6.0's changelog confirms every key this design uses pre-dates it. |
 | The `---Develop---` separator has no equivalent | sidebar shape changes | Decided against a rendered build, not on paper. |
 
 ## 10. Out of scope

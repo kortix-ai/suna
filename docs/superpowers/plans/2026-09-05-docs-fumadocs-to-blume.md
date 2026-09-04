@@ -6,7 +6,7 @@
 
 **Architecture:** Blume (Astro + Vite) builds the 33 docs MDX files to static HTML into `apps/web/public/docs/`. Next serves that output as static files and maps clean URLs onto it with two `afterFiles` rewrites. Content stays at `apps/web/content/docs`, so the existing SEO and agent surfaces (`/llms.txt`, `/markdown/docs/*.md`, `/mcp`, `/sitemap.xml`) keep reading it off disk and keep working.
 
-**Tech Stack:** Blume 1.6.0 (Astro + Vite), Next.js 16.3.3, Bun test, TypeScript, pnpm.
+**Tech Stack:** Blume 1.5.3 (Astro + Vite), Next.js 16.3.3, Bun test, TypeScript, pnpm.
 
 **Spec:** `docs/superpowers/specs/2026-09-05-docs-fumadocs-to-blume-design.md`
 
@@ -15,7 +15,7 @@
 These apply to every task. Do not restate them per task; they are always in force.
 
 - **Blume built-in components only in `content/docs`.** No `@/components/*` import. No `@/lib/icons/ssr` Phosphor icon. No React island importing app code. No `KortixLogo` component. The docs logo is a static SVG path in `blume.config.ts`. A page that seems to need an app component means the page changes, not the rule.
-- **Pin Blume exactly: `"blume": "1.6.0"`.** No caret. It was published 2026-09-04.
+- **Pin Blume exactly: `"blume": "1.5.3"`.** No caret. It was published 2026-09-04.
 - **Node 22.12.0 or newer** is Blume's engine floor. Worktree shells need `nvm use 22`.
 - **`fumadocs-core` and `fumadocs-mdx` must stay.** Only `fumadocs-ui` is removed. `/use-cases` still runs on the other two via `source.config.ts` and `src/lib/use-cases-source.ts`.
 - **`/use-cases` is out of scope.** No file under `content/use-cases/` changes.
@@ -52,7 +52,7 @@ SCRATCH="$TMPDIR/blume-probe"
 mkdir -p "$SCRATCH" && cd "$SCRATCH"
 node --version   # must print v22.12.0 or newer; if not, run `nvm use 22`
 npm init -y >/dev/null
-npm i blume@1.6.0
+npm i blume@1.5.3
 npx blume init . --yes --template docs --content-dir docs --package-manager npm
 ```
 
@@ -301,10 +301,10 @@ git commit -m "feat(seo): render Blume CardGroup, Card, Steps and Step in agent 
 
 ```bash
 cd /Users/jay/root/kortix/suna-docs/apps/web
-pnpm add blume@1.6.0
+pnpm add blume@1.5.3
 ```
 
-Then confirm `package.json` reads `"blume": "1.6.0"` with no caret. Edit it by hand if pnpm added one, and rerun `pnpm install`.
+Then confirm `package.json` reads `"blume": "1.5.3"` with no caret. Edit it by hand if pnpm added one, and rerun `pnpm install`.
 
 - [ ] **Step 2: Write `apps/web/blume.config.ts`**
 
@@ -387,7 +387,7 @@ Expected: no unknown-key errors. Fix any key it rejects, then rerun until clean.
 
 ```bash
 git add apps/web/blume.config.ts apps/web/theme.css apps/web/package.json apps/web/.gitignore pnpm-lock.yaml
-git commit -m "feat(docs): add pinned Blume 1.6.0 project config"
+git commit -m "feat(docs): add pinned Blume 1.5.3 project config"
 ```
 
 ---
