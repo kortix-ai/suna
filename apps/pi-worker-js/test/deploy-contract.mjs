@@ -16,9 +16,10 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=15
+// EXPECTED_PASSES=17
 
 import { spawn } from "node:child_process";
+import { createConnection } from "node:net";
 import { existsSync, readFileSync, unlinkSync, copyFileSync } from "node:fs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 
@@ -39,11 +40,40 @@ const restore = () => { try { copyFileSync(backup, wrangler); unlinkSync(backup)
 process.on("exit", restore);
 
 if (existsSync(LOG)) unlinkSync(LOG);
+
+// THE STUB THIS SUITE TALKS TO MUST BE ITS OWN. This used to spawn with stdio
+// ignored and sleep 400 ms: a stub that could not bind — because one from an
+// earlier run was still listening on 7094 — crashed silently, deploy.sh talked
+// to the STALE stub, and this file then read a call log the stale stub never
+// wrote. Measured in a sweep: "the deploy completes" passed while the three
+// claims about what was posted failed, with a leaked node process on :7094
+// from a run that had died before its cp.kill(). So: a stale listener is a
+// named failure, readiness is the stub's own "[cp-stub] :PORT" line, and the
+// stub is killed on EVERY exit path, not only the last line of the file.
+const portBusy = await new Promise((resolve) => {
+  const s = createConnection({ host: "127.0.0.1", port: PORT });
+  s.once("connect", () => { s.destroy(); resolve(true); });
+  s.once("error", () => resolve(false));
+});
+check("nothing is already listening on the stub's port — a leaked stub from an earlier run would answer in its place",
+  !portBusy, `127.0.0.1:${PORT} is bound; kill the leaked cp-stub before trusting any claim here`);
+if (portBusy) { console.log(`\n  ${bad} failure(s)`); process.exit(1); }
+
 const cp = spawn(process.execPath, [`${HERE}cp-stub.mjs`], {
   env: { ...process.env, PORT: String(PORT), PT_TOKEN: "cp-stub-token", CALL_LOG: LOG },
-  stdio: "ignore",
+  stdio: ["ignore", "pipe", "pipe"],
 });
-await new Promise((r) => setTimeout(r, 400));
+const killStub = () => { try { cp.kill(); } catch {} };
+process.on("exit", killStub);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => { killStub(); restore(); process.exit(130); });
+const listening = await new Promise((resolve) => {
+  let out = "", err = "";
+  const t = setTimeout(() => resolve({ ok: false, err }), 5000);
+  cp.stdout.on("data", (d) => { out += d; if (out.includes(`[cp-stub] :${PORT}`)) { clearTimeout(t); resolve({ ok: true, err }); } });
+  cp.stderr.on("data", (d) => { err += d; });
+  cp.on("exit", (code) => { clearTimeout(t); resolve({ ok: false, err: err || `exited ${code} before listening` }); });
+});
+check("the stub started listening for THIS run", listening.ok, listening.err.slice(0, 200));
 
 const runDeploy = (extraEnv = {}) => new Promise((resolve) => {
   const p = spawn("./deploy.sh", [], {
