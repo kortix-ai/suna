@@ -90,6 +90,11 @@ let legacyPendingLoads = 0;
 let promptFailuresRemaining = 0;
 let promptDeduplicationsRemaining = 0;
 let promptResponsePlan: Array<'failed' | 'deduplicated'> = [];
+// Models the sandbox edge DISCARDING an oversized body while answering ok: the
+// POST is captured, but the runtime never holds that message. Scoped to the
+// FIRST posted id, so the delivery's retry lands and the test does not have to
+// sit out the loop's 45s deadline.
+let runtimeDropsFirstDelivery = false;
 let promotionCalls: string[] = [];
 let promotionResult: string | null = null;
 let claimInputs: Array<{ idempotencyKey?: string }> = [];
@@ -179,8 +184,21 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     const messageMatch = /\/message\/([^/]+)$/.exec(path);
     if (method === 'GET' && messageMatch) {
       legacyMessageReads.push({ method, path, query });
-      const message = legacyRuntimeMessages[decodeURIComponent(messageMatch[1]!)];
-      return message ? Response.json(message) : new Response(null, { status: 404 });
+      const requestedId = decodeURIComponent(messageMatch[1]!);
+      const message = legacyRuntimeMessages[requestedId];
+      if (message) return Response.json(message);
+      // The delivery's LANDING PROOF reads back the id it just posted
+      // (`prompt-landing-proof.ts`). A real runtime holds any message it
+      // accepted, so the harness answers for every id this session actually
+      // posted; only ids never posted 404, which is what lets a test assert a
+      // silently-dropped delivery.
+      const posted = capturedBodies.some((sent) => sent.messageID === requestedId);
+      const dropped =
+        runtimeDropsFirstDelivery && requestedId === (capturedBodies[0]?.messageID as string);
+      if (posted && !dropped) {
+        return Response.json({ info: { id: requestedId }, parts: [] });
+      }
+      return new Response(null, { status: 404 });
     }
     if (method === 'PATCH' && path.includes('/part/')) {
       legacyPartUpdates.push({
@@ -420,6 +438,7 @@ beforeEach(() => {
   promptFailuresRemaining = 0;
   promptDeduplicationsRemaining = 0;
   promptResponsePlan = [];
+  runtimeDropsFirstDelivery = false;
   promotionCalls = [];
   promotionResult = null;
   claimInputs = [];
@@ -576,7 +595,10 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
     expect(outcome).toBe('succeeded');
     expect(capturedBodies).toHaveLength(2);
     expect(legacyRepairMarks).toBe(1);
-    expect(legacyMessageReads).toEqual([
+    // The REPAIR's own read, isolated from the landing proof's read-back of
+    // each freshly posted id: what this asserts is that the repair inspects
+    // the legacy first message exactly once across a retried delivery.
+    expect(legacyMessageReads.filter((read) => read.path.endsWith('/msg-first'))).toEqual([
       {
         method: 'GET',
         path: '/session/oc-1/message/msg-first',
@@ -891,6 +913,45 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       },
     ]);
   });
+
+  // The 2026-09-04 incident. The sandbox edge discards a body over its size
+  // ceiling and its RETRY answers 200, so `prompt_async` reports acceptance for
+  // a request OpenCode never saw. Before the landing proof the drain closed the
+  // row `forwarded` on that 200 and the user's message ceased to exist —
+  // no message, no turn, no error, inbox row reporting success. A delivery that
+  // cannot be read back must NOT close the row.
+  test('a prompt the runtime never wrote is not reported as forwarded', async () => {
+    // The first posted id never becomes readable — the edge took the body and
+    // answered ok. The delivery loop keeps retrying under that id, so the test
+    // lets the runtime start answering partway through instead of sitting out
+    // the loop's full 45s deadline.
+    runtimeDropsFirstDelivery = true;
+
+    const running = executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'HII',
+          clientMessageId: 'q_dropped',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [{ type: 'text', text: 'HII' }],
+        },
+      }),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    // The POST went out and `prompt_async` called it accepted...
+    expect(capturedBodies.length).toBeGreaterThan(0);
+    // ...and NOTHING closed the row on that acceptance. This is the whole
+    // incident: before the landing proof the row went `forwarded` here and the
+    // user's message ceased to exist.
+    expect(forwardedCalls).toEqual([]);
+    expect(succeededCalls).toEqual([]);
+
+    // The runtime starts holding the message; the next attempt proves it.
+    runtimeDropsFirstDelivery = false;
+    expect(await running).toBe('succeeded');
+    expect(forwardedCalls).toHaveLength(1);
+  }, 20_000);
 
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {
     // The POST route deliberately accepts an empty flattened text when a

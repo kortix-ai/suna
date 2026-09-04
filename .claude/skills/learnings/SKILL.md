@@ -21,6 +21,84 @@ linked, not inlined.
 
 ## Register
 
+### Retried append writes carry the expected offset (2026-09-04)
+
+**When:** splitting one upload into several mutating requests. A timeout can
+happen after the daemon writes a chunk but before the client receives its 200.
+Blindly retrying that append duplicates the bytes and corrupts the file. **The
+rule:** each append carries its expected file offset. The daemon accepts the
+next offset, treats an exact already-written chunk as a replay, and rejects any
+other offset with 409. *Enforcer:* `files-routes.test.ts` replays one chunk;
+`client.test.ts` and `runtime-prompt-file.test.ts` assert every sent offset.
+
+### Resolve competing UI sources per FIELD, never first-non-null (2026-09-04)
+
+**When:** a surface can learn the same thing from several places (local state,
+an in-memory producer handoff, a durable row, a stash). The session boot shell
+picked its bubble with `submission ?? preview ?? durableRow ?? stash`. The
+durable row is the cross-navigation truth for TEXT but never carries the user's
+`File`s, so on the commonest navigation — home composer → new session — the row
+landed first, won, and dropped three attachments the stash was still holding.
+The prompt appeared instantly and its files only reappeared when the runtime
+echoed the message, minutes later behind a chunked upload. First-non-null let
+the POOREST source win. **The rule:** pick each field from whichever source
+actually has it. Also: the bytes reach the box BEFORE the runtime creates the
+message, so the optimistic bubble owns the whole upload window and must narrate
+it — a tile spinner says "this file", nothing said how many remained or that one
+had failed. *Enforcer:* `optimistic-turn.test.tsx` (staged tiles + "Uploading N
+files…" + named failure), `uploaded-file-refs.test.ts` (batch weighed from
+`File.size` before a byte is read; reads run in parallel).
+
+### Optimistic UI is not durable — the queue row must carry what the UI redraws (2026-09-04)
+
+**When:** a client paints a send before the server confirms it. A reload throws
+that state away, so anything the bubble needs must live on the durable row. The
+prompt row carried `text` and nothing else, so a refreshed tab rendered a send
+of seven attachments as a bare sentence with no tiles — indistinguishable from
+a prompt that never had files, while the upload was in fact still in flight.
+**The rule:** every field the optimistic bubble draws has a durable counterpart
+on the queue row, and the reload path reads it. Names and MIME types only —
+that view is POLLED, so shipping the `data:` bytes would re-send megabytes per
+tick. *Enforcer:* `session-prompt-view.test.ts` ("names every attachment
+without carrying its bytes"), `optimistic-turn.test.tsx` ("draws a pending tile
+per staged attachment after a reload").
+
+### A 2xx from a proxy is not proof the origin got the body (2026-09-04)
+
+**When:** forwarding anything to a sandbox, and any time an inbox row is closed
+on a status code. The provider's edge DISCARDS a request body over its size
+ceiling; the first attempt returns `502` and the RETRY returns `200` for a
+request the runtime never saw. `prompt_async` answers for acceptance, never for
+the turn, so the drain closed the row `forwarded` on that 200 and the user's
+prompt ceased to exist — no message, no turn, no error, row reporting success.
+Measured on a live box: **≤104 KB of body lands, ≥115 KB is dropped**; a 6.1 MB
+prompt (two inline JPEGs) left no `prompt_async` line in the OpenCode log at
+all. **The rule:** prove delivery by READING THE ARTIFACT BACK, and keep every
+request to a box under the chunk budget. A read that FAILS is not proof of
+absence — lean toward "landed" there, or a retry runs the user's turn twice.
+*Enforcer:* `prompt-landing-proof.test.ts`, `runtime-prompt-file.test.ts`
+(chunked appends), `queued-continue-inbox-delivery.test.ts` ("a prompt the
+runtime never wrote is not reported as forwarded"). *Open:* the ceiling itself
+lives in the external provider edge and can move without notice.
+
+### An inline attachment allowlist is what the model DECODES, never a MIME prefix (2026-09-04)
+
+**When:** deciding whether a file part rides inline (base64) or is written to
+the box. `image/*` is not a decodability test. OpenCode decodes every `image/`
+part before it persists the message, so one undecodable type throws
+`ImageDecodeError` inside `prompt_async` and NO message is written — the prompt
+text and every sibling attachment are deleted with it. `prompt_async` answers
+204 for *accepted*, so the inbox row still records `delivered` and nothing
+retries or surfaces. *Incident:* two SVG logos + a PDF from the session
+composer; the whole turn vanished, transcript showed only a spinner, DB said
+`succeeded`. `image/svg+xml`, `bmp`, `x-icon`, `heic`, `heif` are all in the
+composer's own upload allowlist. *Enforcer:* `prompt-attachments.test.ts`
+(allowlist + parameter stripping), `prompt-attachment-materializer.test.ts`
+("materializes image types the model cannot decode"), `user-message.test.tsx`
+("renders the undecodable-image batch that used to delete the message").
+*Open:* delivery still has no read-back proof — a runtime-side throw is still
+recorded as `delivered`.
+
 ### A durable FIFO has one order key and advances at one boundary (2026-09-03)
 
 **When:** implementing a queue whose enqueue requests can race. Define one total

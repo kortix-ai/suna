@@ -83,6 +83,7 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { SessionOutcomesProvider } from '@/features/session/outcomes/session-outcomes-provider';
@@ -2221,6 +2222,21 @@ export function SessionChat({
   // crash cannot lose it, and the server — not this component — decides whether
   // it runs now or waits for the turn in flight.
   const promptInbox = useSessionPrompts(projectId, projectSessionId);
+  /**
+   * What the first prompt's attachment strip should say while its files are
+   * still travelling to the box.
+   *
+   * The runtime creates the user's message only after every attachment has
+   * landed, so for the whole upload the preview bubble is the only thing on
+   * screen — and it used to show tiles with no word about what was happening.
+   * The undelivered row is the witness: it carries the names, and `last_error`
+   * is the one place a failed upload is ever named.
+   */
+  const firstPromptUploadStatus = useMemo((): AttachmentUploadStatus | undefined => {
+    const row = promptInbox.prompts.find((p) => (p.attachments?.length ?? 0) > 0);
+    if (!row) return undefined;
+    return row.last_error ? { state: 'failed', message: row.last_error } : { state: 'uploading' };
+  }, [promptInbox.prompts]);
 
   // T10: the most recently issued stop/cancel's `AbortSettlement`
   // promise for this session, so `stopThenSendNow` (used by
@@ -5256,6 +5272,12 @@ export function SessionChat({
                                 firstPromptPreview.text,
                                 firstPromptPreview.files,
                               )}
+                              // The bytes are still being written to the box
+                              // chunk by chunk; without this the strip's
+                              // "Uploading N files…" line vanished the instant
+                              // the boot shell handed over to this component,
+                              // mid-upload.
+                              uploadStatus={firstPromptUploadStatus}
                               agentNames={agentNames}
                               onFileClick={openFileInComputer}
                               sessionId={sessionId}

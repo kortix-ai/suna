@@ -8,12 +8,37 @@ import {
 } from './prompt-attachments';
 
 describe('isModelNativeAttachmentMime', () => {
-  test('allows images and PDF only', () => {
+  test('allows the four decodable raster formats and PDF', () => {
     expect(isModelNativeAttachmentMime('image/png')).toBe(true);
+    expect(isModelNativeAttachmentMime('image/jpeg')).toBe(true);
+    expect(isModelNativeAttachmentMime('image/gif')).toBe(true);
     expect(isModelNativeAttachmentMime('IMAGE/WEBP')).toBe(true);
     expect(isModelNativeAttachmentMime('application/pdf')).toBe(true);
     expect(isModelNativeAttachmentMime('application/zip')).toBe(false);
     expect(isModelNativeAttachmentMime('text/markdown')).toBe(false);
+  });
+
+  // An `image/*` the model cannot decode is NOT native. Sending one inline
+  // makes the runtime throw `ImageDecodeError` inside `prompt_async`, and
+  // OpenCode then creates NO message at all — the text and every sibling
+  // attachment die with it, while the inbox still records `delivered`
+  // (2026-09-04: two SVG logos + a PDF, whole prompt vanished, transcript
+  // showed only a spinner). Every one of these is in the composer's own
+  // upload allowlist, so each is a live path to that failure.
+  test('rejects image types the model cannot decode', () => {
+    expect(isModelNativeAttachmentMime('image/svg+xml')).toBe(false);
+    expect(isModelNativeAttachmentMime('IMAGE/SVG+XML')).toBe(false);
+    expect(isModelNativeAttachmentMime('image/bmp')).toBe(false);
+    expect(isModelNativeAttachmentMime('image/x-icon')).toBe(false);
+    expect(isModelNativeAttachmentMime('image/heic')).toBe(false);
+    expect(isModelNativeAttachmentMime('image/heif')).toBe(false);
+    expect(isModelNativeAttachmentMime('image/tiff')).toBe(false);
+  });
+
+  test('ignores parameters and surrounding whitespace', () => {
+    expect(isModelNativeAttachmentMime('  image/png ')).toBe(true);
+    expect(isModelNativeAttachmentMime('image/png; charset=binary')).toBe(true);
+    expect(isModelNativeAttachmentMime('image/svg+xml; charset=utf-8')).toBe(false);
   });
 });
 

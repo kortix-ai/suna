@@ -681,90 +681,121 @@ function AttachmentImage({
  * Shared attachment strip — used by the real user turn and the optimistic turn
  * so the shell → chat crossfade never swaps card chrome for tile chrome.
  */
+/**
+ * What the attachment strip should say about bytes still in flight.
+ *
+ * The runtime does not create the user's message until every attachment has
+ * been written to the box, so between Enter and that moment the ONLY thing on
+ * screen is this bubble. A tile's spinner says "this file", and nothing said
+ * how many were left or that one had failed — a stuck upload and a slow one
+ * looked identical for minutes (2026-09-04).
+ */
+export interface AttachmentUploadStatus {
+  state: 'uploading' | 'failed';
+  /** Why it failed, shown verbatim. Ignored while uploading. */
+  message?: string;
+}
+
 export function MessageAttachments({
   attachments,
   pending,
+  status,
 }: {
   attachments: NormalizedAttachment[];
   /** The whole message is still being sent, so every tile is still uploading. */
   pending?: boolean;
+  /** Progress for the strip as a whole — see {@link AttachmentUploadStatus}. */
+  status?: AttachmentUploadStatus;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const [expanded, setExpanded] = useState(false);
 
   const { visible, hidden } = planAttachmentGrid(attachments, expanded);
   if (visible.length === 0) return null;
+  const hasPendingAttachment = Boolean(pending) || attachments.some((file) => file.pending);
+
+  const caption =
+    status?.state === 'failed'
+      ? (status.message ?? 'Upload failed')
+      : status?.state === 'uploading' || hasPendingAttachment
+        ? `Uploading ${attachments.length} file${attachments.length === 1 ? '' : 's'}…`
+        : null;
 
   return (
-    // Fixed 5rem squares that simply wrap, packed against the right rail. No
-    // grid, no column track.
-    //
-    // The cap only reads as deliberate if the rows come out even, and with free
-    // wrapping the row length follows whatever width happens to be available —
-    // at 579px seven fit, so a cap of 8 left one orphan tile stranded on its own
-    // row. `max-w` in the same units as the tile pins it: 4 × 5rem + 3 × 0.5rem
-    // = 21.5rem, so a row is always four and the cap is always two clean rows,
-    // at any root font size.
-    <ul className="flex max-w-[21.5rem] flex-wrap justify-end gap-2">
-      {visible.map((file, index) => {
-        // The LAST visible tile carries the overflow count over its own
-        // contents, so the grid never shows a blank slot — the count is an
-        // overlay, not a placeholder. It opens the rest instead of the file, so
-        // it is a plain button: nesting one inside the preview trigger would be
-        // two buttons deep and invalid.
-        if (hidden > 0 && index === visible.length - 1) {
+    <div className="flex flex-col items-end gap-1.5">
+      <ul className="flex max-w-[21.5rem] flex-wrap justify-end gap-2">
+        {visible.map((file, index) => {
+          // The LAST visible tile carries the overflow count over its own
+          // contents, so the grid never shows a blank slot — the count is an
+          // overlay, not a placeholder. It opens the rest instead of the file, so
+          // it is a plain button: nesting one inside the preview trigger would be
+          // two buttons deep and invalid.
+          if (hidden > 0 && index === visible.length - 1) {
+            return (
+              <li key={file.key} className="contents">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpanded(true);
+                  }}
+                  aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
+                  className={cn(
+                    TILE_SURFACE,
+                    TILE_INTERACTIVE,
+                    'text-muted-foreground flex items-center justify-center text-sm font-medium',
+                  )}
+                >
+                  +{hidden}
+                </button>
+              </li>
+            );
+          }
+
+          if (isImageAttachment(file)) {
+            return (
+              <li key={file.key} className="contents">
+                <AttachmentImage
+                  file={file}
+                  pending={pending}
+                  className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
+                />
+              </li>
+            );
+          }
+
+          const canOpen = Boolean(file.path);
           return (
             <li key={file.key} className="contents">
               <button
                 type="button"
+                disabled={!canOpen}
+                title={file.filename}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setExpanded(true);
+                  if (file.path) openFileInComputer(file.path);
                 }}
-                aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
-                className={cn(
-                  TILE_SURFACE,
-                  TILE_INTERACTIVE,
-                  'text-muted-foreground flex items-center justify-center text-sm font-medium',
-                )}
+                className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
               >
-                +{hidden}
+                <FileTileBody filename={file.filename} pending={pending || file.pending} />
               </button>
             </li>
           );
-        }
-
-        if (isImageAttachment(file)) {
-          return (
-            <li key={file.key} className="contents">
-              <AttachmentImage
-                file={file}
-                pending={pending}
-                className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
-              />
-            </li>
-          );
-        }
-
-        const canOpen = Boolean(file.path);
-        return (
-          <li key={file.key} className="contents">
-            <button
-              type="button"
-              disabled={!canOpen}
-              title={file.filename}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (file.path) openFileInComputer(file.path);
-              }}
-              className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
-            >
-              <FileTileBody filename={file.filename} pending={pending || file.pending} />
-            </button>
-          </li>
-        );
-      })}
-    </ul>
+        })}
+      </ul>
+      {caption && (
+        // Right-aligned under the strip, on the same rail as the tiles. One
+        // muted line: this is a progress note, not a status card. Failure
+        // reuses the same rung — the WORDS carry the difference, so a failed
+        // upload never needs a colour the palette does not have.
+        <p
+          className="text-muted-foreground max-w-[21.5rem] text-right text-xs leading-tight"
+          role={status?.state === 'failed' ? 'alert' : 'status'}
+        >
+          {caption}
+        </p>
+      )}
+    </div>
   );
 }
 

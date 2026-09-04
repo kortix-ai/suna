@@ -15,6 +15,7 @@ import { config } from '../../config';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { materializePromptAttachments } from './prompt-attachment-materializer';
+import { confirmPromptLanded } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
 import {
   parseRuntimeAgentNames,
@@ -505,6 +506,31 @@ export async function continueSession(
         materializationKey: command.materializationKey,
       },
     );
+    // ACCEPTANCE IS NOT DELIVERY. `prompt_async` answers for the request, and
+    // the sandbox edge discards a body over its size ceiling then answers 200
+    // on retry — so a prompt can be "accepted" and never exist. Read it back
+    // before anything closes the row. See `prompt-landing-proof.ts`.
+    if (delivery === 'accepted') {
+      const landed = await confirmPromptLanded({
+        messageId: command.wireMessageId,
+        readMessage: (messageId) =>
+          readLegacyRuntimeMessage({
+            externalId,
+            opencodeSessionId,
+            sessionId,
+            userId,
+            messageId,
+          }),
+      });
+      if (!landed) {
+        logger.error('[session-lifecycle] prompt accepted but never became a message', {
+          session_id: sessionId,
+          wire_message_id: command.wireMessageId,
+          parts: command.parts?.length ?? 0,
+        });
+        return false;
+      }
+    }
     if (delivery === 'accepted' && command.isPendingFirstPrompt === true) {
       // This first message used the canonical command-id path. The marker keeps
       // later prompts from entering repair. If this write fails, repair compares

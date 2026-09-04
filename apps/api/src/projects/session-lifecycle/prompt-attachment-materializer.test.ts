@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { PromptPartWire } from './store';
 import {
+  INLINE_PROMPT_BUDGET_BYTES,
   PromptAttachmentMaterializationError,
   materializePromptAttachments,
 } from './prompt-attachment-materializer';
@@ -41,6 +42,122 @@ function materialize(input: Partial<Parameters<typeof materializePromptAttachmen
 }
 
 describe('materializePromptAttachments', () => {
+  // A model-native attachment is only worth inlining if the prompt body can
+  // still reach the box. Past the budget it is written to the workspace like
+  // any other file — a JPEG the runtime never receives is worth less than a
+  // JPEG the agent can open. Measured ceiling: ~104 KB lands, ~115 KB does not.
+  test('materializes a native image too large to inline', async () => {
+    const big = 'A'.repeat(INLINE_PROMPT_BUDGET_BYTES + 1_000);
+    const writes: string[] = [];
+    const result = await materializePromptAttachments({
+      parts: [
+        { type: 'text', text: 'look' },
+        {
+          type: 'file',
+          mime: 'image/jpeg',
+          filename: 'photo.jpg',
+          url: `data:image/jpeg;base64,${big}`,
+        },
+      ],
+      externalId: 'sbx_1',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      materializationKey: 'command_1',
+      writeFile: async (file) => {
+        writes.push(file.targetPath);
+        return { path: file.targetPath, size: file.bytes.byteLength };
+      },
+    });
+
+    expect(writes).toEqual(['/workspace/uploads/.kortix-inbox/command_1/1-photo.jpg']);
+    expect(result[1]).toMatchObject({ type: 'text' });
+    expect((result[1] as { text: string }).text).toContain('filename="photo.jpg"');
+  });
+
+  // Several small natives together can bust the same ceiling one big one does,
+  // so the budget is spent across the whole prompt, not per attachment.
+  test('spends one inline budget across the whole prompt', async () => {
+    // A multiple of 4, or it is not decodable base64 and the parser rejects it
+    // before the budget ever gets a say.
+    const half = 'A'.repeat(Math.floor((INLINE_PROMPT_BUDGET_BYTES * 0.6) / 4) * 4);
+    const png = (name: string) => ({
+      type: 'file' as const,
+      mime: 'image/png',
+      filename: name,
+      url: `data:image/png;base64,${half}`,
+    });
+    const writes: string[] = [];
+    const result = await materializePromptAttachments({
+      parts: [{ type: 'text', text: 'two shots' }, png('a.png'), png('b.png')],
+      externalId: 'sbx_1',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      materializationKey: 'command_1',
+      writeFile: async (file) => {
+        writes.push(file.targetPath);
+        return { path: file.targetPath, size: file.bytes.byteLength };
+      },
+    });
+
+    // The first fits and stays native; the second would bust the budget.
+    expect(result[1]).toMatchObject({ type: 'file', mime: 'image/png' });
+    expect(result[2]).toMatchObject({ type: 'text' });
+    expect(writes).toEqual(['/workspace/uploads/.kortix-inbox/command_1/2-b.png']);
+  });
+
+  // The 2026-09-04 incident, at the seam that decides it. An SVG left inline
+  // reaches OpenCode as an image part, fails to decode, and takes the prompt
+  // text and every sibling attachment down with it — while the inbox row still
+  // says `delivered`. It must be WRITTEN to the box and referenced instead.
+  test('materializes image types the model cannot decode', async () => {
+    const undecodable: PromptPartWire[] = [
+      { type: 'text', text: 'HII' },
+      {
+        type: 'file',
+        mime: 'image/svg+xml',
+        filename: 'Jay Suthar.svg',
+        url: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+      },
+      {
+        type: 'file',
+        mime: 'image/heic',
+        filename: 'photo.heic',
+        url: 'data:image/heic;base64,AAAA',
+      },
+      {
+        type: 'file',
+        mime: 'application/pdf',
+        filename: 'Account Settings.pdf',
+        url: 'data:application/pdf;base64,JVBERi0=',
+      },
+    ];
+    const writes: string[] = [];
+    const result = await materializePromptAttachments({
+      parts: undecodable,
+      externalId: 'sbx_1',
+      sessionId: 'session_1',
+      userId: 'user_1',
+      materializationKey: 'command_1',
+      writeFile: async (input) => {
+        writes.push(input.targetPath);
+        return { path: input.targetPath, size: input.bytes.byteLength };
+      },
+    });
+
+    expect(writes).toEqual([
+      '/workspace/uploads/.kortix-inbox/command_1/1-Jay Suthar.svg',
+      '/workspace/uploads/.kortix-inbox/command_1/2-photo.heic',
+    ]);
+    // The text survives, the SVG and HEIC become readable file references,
+    // and the PDF stays native — it decodes fine.
+    expect(result[0]).toEqual(undecodable[0]);
+    expect(result[1]).toMatchObject({ type: 'text' });
+    expect((result[1] as { text: string }).text).toContain('mime="image/svg+xml"');
+    expect((result[1] as { text: string }).text).toContain('filename="Jay Suthar.svg"');
+    expect(result[2]).toMatchObject({ type: 'text' });
+    expect(result[3]).toEqual(undecodable[3]);
+  });
+
   test('materializes non-native files while preserving native parts and order', async () => {
     const writes: string[] = [];
     const result = await materialize({

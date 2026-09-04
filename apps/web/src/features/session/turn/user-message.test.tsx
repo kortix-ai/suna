@@ -364,6 +364,58 @@ describe('UserMessage persisted attachments', () => {
     expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('shot.png'));
   });
 
+  // The 2026-09-04 incident, rendered. Two SVG logos plus a PDF used to reach
+  // OpenCode as inline image parts; the SVGs failed to decode, `prompt_async`
+  // threw, and NO message was written — so the transcript showed a spinner and
+  // nothing else, text included. The SVGs now arrive as materialized `<file>`
+  // references beside the still-native PDF, and all three must be visible with
+  // the prompt text intact.
+  test('renders the undecodable-image batch that used to delete the message', () => {
+    const persisted = {
+      info: {
+        id: 'message-svg-batch',
+        role: 'user',
+        time: { created: Date.parse('2026-09-04T13:27:55.967Z') },
+      },
+      parts: [
+        { id: 'p-text', messageID: 'message-svg-batch', type: 'text', text: 'HII' },
+        {
+          id: 'p-svg-1',
+          messageID: 'message-svg-batch',
+          type: 'text',
+          text: '<file path="/workspace/uploads/.kortix-inbox/cmd/1-Jay Suthar.svg" mime="image/svg+xml" filename="Jay Suthar.svg">uploaded</file>',
+        },
+        {
+          id: 'p-svg-2',
+          messageID: 'message-svg-batch',
+          type: 'text',
+          text: '<file path="/workspace/uploads/.kortix-inbox/cmd/2-Jay Suthar@2x.svg" mime="image/svg+xml" filename="Jay Suthar@2x.svg">uploaded</file>',
+        },
+        {
+          id: 'p-pdf',
+          messageID: 'message-svg-batch',
+          type: 'file',
+          mime: 'application/pdf',
+          filename: 'Account Settings _ Kortix Slack.pdf',
+          url: 'data:application/pdf;base64,JVBERi0=',
+        },
+      ],
+    } as MessageWithParts;
+
+    const html = render(false, persisted);
+    expect(html).toContain('HII');
+    expect(html).toContain('Jay Suthar.svg');
+    expect(html).toContain('Jay Suthar@2x.svg');
+    expect(html).toContain('Account Settings _ Kortix Slack.pdf');
+    // Raw XML must never leak into the bubble as text.
+    expect(html).not.toContain('&lt;file path=');
+    // Attached order is send order.
+    expect(html.indexOf('Jay Suthar.svg')).toBeLessThan(html.indexOf('Jay Suthar@2x.svg'));
+    expect(html.indexOf('Jay Suthar@2x.svg')).toBeLessThan(
+      html.indexOf('Account Settings _ Kortix Slack.pdf'),
+    );
+  });
+
   test('keeps workspace references before a later native file after reload', () => {
     const persisted = {
       info: {

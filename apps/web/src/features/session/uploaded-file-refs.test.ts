@@ -310,6 +310,80 @@ describe('uploaded file references', () => {
 });
 
 describe('stageFirstPromptAttachments', () => {
+  // Every byte is read before the session is even created, so this is dead
+  // time the user spends staring at a busy composer. Reading the files one
+  // after another made it the SUM of five reads; they are independent.
+  test('reads the batch in parallel, not one file after another', async () => {
+    const order: string[] = [];
+    const slowFile = (name: string, delayMs: number) =>
+      ({
+        kind: 'local' as const,
+        localUrl: `blob:${name}`,
+        isImage: false,
+        file: {
+          name,
+          size: 4,
+          type: 'text/plain',
+          arrayBuffer: async () => {
+            order.push(`start:${name}`);
+            await new Promise((r) => setTimeout(r, delayMs));
+            order.push(`end:${name}`);
+            return new Uint8Array([1, 2, 3, 4]).buffer;
+          },
+          // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
+        } as any,
+      });
+
+    await stageFirstPromptAttachments([slowFile('a.txt', 40), slowFile('b.txt', 5)]);
+
+    // Both reads are in flight before either finishes. Sequential reading
+    // would give start:a, end:a, start:b, end:b.
+    expect(order.slice(0, 2)).toEqual(['start:a.txt', 'start:b.txt']);
+  });
+
+  // The cap is knowable from `File.size` alone. Reading 9 MB and THEN refusing
+  // it spends the whole cost of the thing being refused.
+  test('refuses an oversized batch without reading a single byte', async () => {
+    let reads = 0;
+    const huge = {
+      kind: 'local' as const,
+      localUrl: 'blob:huge',
+      isImage: false,
+      file: {
+        name: 'huge.bin',
+        size: 20 * 1024 * 1024,
+        type: 'application/octet-stream',
+        arrayBuffer: async () => {
+          reads += 1;
+          return new ArrayBuffer(0);
+        },
+        // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
+      } as any,
+    };
+
+    await expect(stageFirstPromptAttachments([huge])).rejects.toThrow(/after the session starts/i);
+    expect(reads).toBe(0);
+  });
+
+  test('keeps the attachments in the order they were attached', async () => {
+    const file = (name: string) =>
+      ({
+        kind: 'local' as const,
+        localUrl: `blob:${name}`,
+        isImage: false,
+        file: {
+          name,
+          size: 2,
+          type: 'text/plain',
+          arrayBuffer: async () => new Uint8Array([65, 66]).buffer,
+          // biome-ignore lint/suspicious/noExplicitAny: minimal File stand-in
+        } as any,
+      });
+
+    const parts = await stageFirstPromptAttachments([file('1.txt'), file('2.txt'), file('3.txt')]);
+    expect(parts.map((p) => p.filename)).toEqual(['1.txt', '2.txt', '3.txt']);
+  });
+
   const local = (name: string, bytes: Uint8Array, type = 'image/png'): AttachedFile => ({
     kind: 'local',
     file: new File([bytes as unknown as BlobPart], name, { type }),

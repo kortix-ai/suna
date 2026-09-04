@@ -35,6 +35,22 @@ export class PromptAttachmentMaterializationError extends Error {
   }
 }
 
+/**
+ * How many bytes of inline attachment one prompt may carry.
+ *
+ * A model-native attachment rides in the `prompt_async` body as base64. The
+ * sandbox provider's edge DISCARDS a body over its size ceiling and answers ok
+ * anyway — measured 2026-09-04 on a live box: ~104 KB arrives, ~115 KB does
+ * not, and the runtime logged no request at all. A 6.1 MB prompt (two inline
+ * JPEGs) therefore vanished with its text and every sibling attachment.
+ *
+ * So being decodable is no longer enough to be inlined: it also has to FIT.
+ * The budget is spent across the whole prompt, because three small images bust
+ * the same ceiling one large one does. Anything that does not fit is written
+ * to the workspace and referenced, which is a path the agent can still read.
+ */
+export const INLINE_PROMPT_BUDGET_BYTES = 64 * 1024;
+
 function safeKey(value: string): string {
   const safe = value.replace(/[^A-Za-z0-9_-]/g, '_');
   return safe || 'prompt';
@@ -105,12 +121,19 @@ export async function materializePromptAttachments(input: {
   materializationKey: string;
   writeFile: RuntimePromptFileWriter;
 }): Promise<PromptPartWire[]> {
+  // Walked in order so the decision is deterministic: the earliest attachments
+  // keep their native form and the ones that would overflow are written out.
+  let inlineBudget = INLINE_PROMPT_BUDGET_BYTES;
   const candidates = input.parts
     .map((part, index) => ({ part, index }))
-    .filter(
-      ({ part }) =>
-        part.type === 'file' && !isModelNativeAttachmentMime(part.mime ?? ''),
-    );
+    .filter(({ part }) => {
+      if (part.type !== 'file') return false;
+      if (!isModelNativeAttachmentMime(part.mime ?? '')) return true;
+      const inlineCost = part.url?.length ?? 0;
+      if (inlineCost > inlineBudget) return true;
+      inlineBudget -= inlineCost;
+      return false;
+    });
   if (candidates.length === 0) return input.parts;
 
   const settled = await Promise.allSettled(

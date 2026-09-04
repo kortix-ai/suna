@@ -433,6 +433,7 @@ const SessionPromptSchema = z.object({
   text: z.string(),
   attempts: z.number(),
   last_error: z.string().nullable(),
+  attachments: z.array(z.object({ filename: z.string(), mime: z.string() })),
   created_at: z.string(),
   available_at: z.string(),
 });

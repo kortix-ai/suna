@@ -258,34 +258,45 @@ export async function stageFirstPromptAttachments(
   files: AttachedFile[] | undefined,
 ): Promise<PromptFilePart[]> {
   if (!files?.length) return [];
-  let totalBytes = 0;
-  const parts: PromptFilePart[] = [];
-  for (const file of files) {
-    if (file.kind === 'remote') {
-      parts.push({ type: 'file', mime: file.mime, url: file.url, filename: file.filename });
-      continue;
-    }
-    totalBytes += file.file.size;
-    if (totalBytes > DATA_URL_ATTACHMENTS_MAX_BYTES) {
-      throw new Error(
-        `Attachments over ${Math.floor(DATA_URL_ATTACHMENTS_MAX_BYTES / (1024 * 1024))} MB can't ride the first message — send it, then attach the file after the session starts.`,
-      );
-    }
-    const mime = attachmentMime(file.file.type, file.file.name);
-    const bytes = new Uint8Array(await file.file.arrayBuffer());
-    // btoa over chunks: String.fromCharCode(...bytes) overflows the argument
-    // limit on multi-MB files.
-    let binary = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-    }
-    parts.push({
-      type: 'file',
-      mime,
-      url: `data:${mime};base64,${btoa(binary)}`,
-      filename: file.file.name,
-    });
+
+  // THE WHOLE BATCH IS WEIGHED FIRST, from `File.size` — no bytes read.
+  // Accumulating as we went meant a batch that busts the cap on its last file
+  // had already read every file before it: the full cost of the thing being
+  // refused, paid while the composer sat locked.
+  const localFiles = files.filter((file) => file.kind === 'local');
+  const totalBytes = localFiles.reduce((sum, file) => sum + file.file.size, 0);
+  if (totalBytes > DATA_URL_ATTACHMENTS_MAX_BYTES) {
+    throw new Error(
+      `Attachments over ${Math.floor(DATA_URL_ATTACHMENTS_MAX_BYTES / (1024 * 1024))} MB can't ride the first message — send it, then attach the file after the session starts.`,
+    );
   }
-  return parts;
+
+  // IN PARALLEL. Every byte here is read before the session is created, so
+  // this is dead time the user spends on a locked composer watching nothing —
+  // and the reads are independent. Sequentially it was the SUM of them; a
+  // five-file batch paid five round trips through the file system in a row.
+  // Order is preserved because `Promise.all` resolves positionally, and the
+  // attachment order is the order the user attached them in.
+  return Promise.all(
+    files.map(async (file): Promise<PromptFilePart> => {
+      if (file.kind === 'remote') {
+        return { type: 'file', mime: file.mime, url: file.url, filename: file.filename };
+      }
+      const mime = attachmentMime(file.file.type, file.file.name);
+      const bytes = new Uint8Array(await file.file.arrayBuffer());
+      // btoa over chunks: String.fromCharCode(...bytes) overflows the argument
+      // limit on multi-MB files.
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      return {
+        type: 'file',
+        mime,
+        url: `data:${mime};base64,${btoa(binary)}`,
+        filename: file.file.name,
+      };
+    }),
+  );
 }
