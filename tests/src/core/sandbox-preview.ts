@@ -140,7 +140,11 @@ test "$actual_sha" = "${input.sha}"
 
 cd "$ROOT"
 corepack enable
-pnpm install --offline --frozen-lockfile
+# A persistent branch sandbox can outlive its dependency template. Keep the
+# fast offline path, then repair an incomplete package store from the frozen
+# lockfile. The 2026-09-04 pi-worker deploy reused an older store and failed on
+# @earendil-works/pi-agent-core before the stack could start.
+pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile
 
 printf 'docker\n' > "$PHASE"
 for module in overlay bridge br_netfilter veth nf_tables ip_tables iptable_nat; do

@@ -317,6 +317,21 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).not.toContain('ecs-preview');
   });
 
+  it('repairs a reused branch sandbox when its offline package store is stale', () => {
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://pi.example.test',
+      runTests: false,
+    });
+
+    expect(script).toContain(
+      'pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile',
+    );
+  });
+
   it('falls back only after a Platinum infrastructure failure', async () => {
     const platinum = vi.fn().mockRejectedValue(new PreviewInfrastructureError('restore timeout'));
     const daytona = vi.fn().mockResolvedValue({ exitCode: 0, provider: 'daytona' });
