@@ -151,21 +151,68 @@ export const PHOSPHOR_TO_LUCIDE = {
   UsersIcon: 'users',
 };
 
+const CARD_IMPORT_CLOSE =
+  /^\}\s*from\s*'@\/(?:lib\/icons\/ssr|components\/markdown\/docs-card)';\s*$/;
+
+// Cannot use mapOutsideFences: the docs-card / icons-ssr import can span
+// multiple lines (`import {\n  ...\n} from '...';`), and that helper only
+// sees one line at a time. Track the fence state directly, the way
+// convertSteps does, so a `<Cards>` example, a `<Card icon={<X />}>`, or the
+// import itself inside a fenced code block is left byte-for-byte alone.
 export function convertCards(source) {
-  // Multi-line `import { ... } from '@/lib/icons/ssr';` first, as a block.
-  let out = source.replace(
-    /^import\s*\{[\s\S]*?\}\s*from\s*'@\/(?:lib\/icons\/ssr|components\/markdown\/docs-card)';\s*$/gm,
-    DROP_MARKER,
-  );
+  const lines = source.split('\n');
+  let inFence = false;
+  const out = [];
 
-  out = out
-    .replace(/<Cards>/g, '<CardGroup>')
-    .replace(/<\/Cards>/g, '</CardGroup>')
-    .replace(/icon=\{<([A-Za-z]+)\s*\/>\}/g, (_match, name) => {
-      const lucide = PHOSPHOR_TO_LUCIDE[name];
-      if (!lucide) throw new Error(`Unmapped icon: ${name}. Add it to PHOSPHOR_TO_LUCIDE.`);
-      return `icon="${lucide}"`;
-    });
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
 
-  return collapseDropped(out);
+    // Single-line `import { ... } from '@/lib/icons/ssr'` or docs-card.
+    if (
+      /^import\s*\{[^}]*\}\s*from\s*'@\/(?:lib\/icons\/ssr|components\/markdown\/docs-card)';\s*$/.test(
+        line,
+      )
+    ) {
+      out.push(DROP_MARKER);
+      continue;
+    }
+
+    // Multi-line form: `import {` opens, look ahead for the matching
+    // `} from '@/...';` close and drop every line in between. A `{` that
+    // opens some other import is left alone — the lookahead only consumes
+    // lines when the close line matches one of the two target modules.
+    if (/^import\s*\{\s*$/.test(line)) {
+      let j = i + 1;
+      while (j < lines.length && !CARD_IMPORT_CLOSE.test(lines[j])) j += 1;
+      if (j < lines.length) {
+        for (let k = i; k <= j; k += 1) out.push(DROP_MARKER);
+        i = j;
+        continue;
+      }
+      out.push(line);
+      continue;
+    }
+
+    out.push(
+      line
+        .replace(/<Cards>/g, '<CardGroup>')
+        .replace(/<\/Cards>/g, '</CardGroup>')
+        .replace(/icon=\{<([A-Za-z]+)\s*\/>\}/g, (_match, name) => {
+          const lucide = PHOSPHOR_TO_LUCIDE[name];
+          if (!lucide) throw new Error(`Unmapped icon: ${name}. Add it to PHOSPHOR_TO_LUCIDE.`);
+          return `icon="${lucide}"`;
+        }),
+    );
+  }
+
+  return collapseDropped(out.join('\n'));
 }

@@ -98,4 +98,15 @@ describe('convertCards', () => {
       /Unmapped icon/,
     );
   });
+
+  test('leaves a Cards example, a Card icon, and the icons/ssr import INSIDE a fenced code block untouched', () => {
+    const input =
+      '```mdx\n' +
+      "import { RocketIcon } from '@/lib/icons/ssr';\n" +
+      '<Cards>\n' +
+      '  <Card icon={<RocketIcon />} title="x">y</Card>\n' +
+      '</Cards>\n' +
+      '```';
+    expect(convertCards(input)).toBe(input);
+  });
 });
