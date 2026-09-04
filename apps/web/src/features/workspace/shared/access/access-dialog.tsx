@@ -65,12 +65,15 @@ import {
   updateProjectGroupGrant,
   type AccountRole,
   type ProjectAgentResourceItem,
+  type ProjectResourceItem,
   type ProjectRole,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
 import { ArrowElbowDownRightIcon, KeyIcon, PlugIcon, PlusIcon, XIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
+
+import { SUBPROJECT_OBJECT_TYPE } from '@/features/subprojects/subprojects-data';
 
 import { endOfLocalDayIso, isoToDateInputValue, removeAccessCopy } from './access-shared';
 import {
@@ -111,6 +114,9 @@ export interface AccessDialogCurrent {
   role: RoleValue;
   /** `'all'` (no resource grants) or the agent ids currently granted. */
   agentIds?: string[] | 'all';
+  /** Same shape, for the second closed object type. `'all'` (or omitted)
+   *  means "no subproject grant rows exist for this principal". */
+  subprojectIds?: string[] | 'all';
   expiresAt?: string | null;
   /**
    * The principal's EXISTING custom-role assignment id at this scope. Supply it
@@ -168,6 +174,13 @@ export interface AccessDialogProps {
    * Ignored in every other mode, which seeds from `current`.
    */
   initialAgentIds?: string[];
+  /**
+   * Grant mode only: open with the subproject picker already narrowed to
+   * these subprojects. A subproject's own page grants access to THAT
+   * subproject, exactly as an agent's page does with `initialAgentIds`.
+   * Ignored in every other mode, which seeds from `current`.
+   */
+  initialSubprojectIds?: string[];
   onDone?: (result: AccessDialogResult) => void;
 }
 
@@ -228,6 +241,13 @@ export function effectiveAgentIds(
 export interface AccessDraft {
   role: RoleValue;
   agents: AgentSelection;
+  /**
+   * The subproject selection. Optional so a caller that does not edit
+   * subprojects (an account-scope draft, a test) is unchanged — an omitted
+   * selection reads as `ALL_SUBPROJECTS`, which against an empty
+   * `current.subprojectIds` diffs to nothing at all.
+   */
+  subprojects?: AgentSelection;
   /** `<input type="date">` value, `''` for never. */
   expiresAt: string;
 }
@@ -238,6 +258,9 @@ export interface AccessDraftDiff {
   agentsAdded: string[];
   agentsRemoved: string[];
   agentsChanged: boolean;
+  subprojectsAdded: string[];
+  subprojectsRemoved: string[];
+  subprojectsChanged: boolean;
   /** false when nothing at all changed — Save is a no-op. */
   dirty: boolean;
 }
@@ -251,13 +274,22 @@ export function diffAccessDraft(current: AccessDialogCurrent, next: AccessDraft)
   const expiryChanged = isoToDateInputValue(current.expiresAt) !== next.expiresAt;
   const { add, remove } = diffAgentGrants(current.agentIds, next.agents);
   const agentsChanged = add.length > 0 || remove.length > 0;
+  // Object grants are one generic table keyed by object type, so a subproject
+  // diffs by exactly the same rules as an agent — `diffAgentGrants` is reused
+  // rather than copied.
+  const subprojectDiff = diffAgentGrants(current.subprojectIds, next.subprojects ?? ALL_AGENTS);
+  const subprojectsChanged =
+    subprojectDiff.add.length > 0 || subprojectDiff.remove.length > 0;
   return {
     roleChanged,
     expiryChanged,
     agentsAdded: add,
     agentsRemoved: remove,
     agentsChanged,
-    dirty: roleChanged || expiryChanged || agentsChanged,
+    subprojectsAdded: subprojectDiff.add,
+    subprojectsRemoved: subprojectDiff.remove,
+    subprojectsChanged,
+    dirty: roleChanged || expiryChanged || agentsChanged || subprojectsChanged,
   };
 }
 
@@ -359,6 +391,7 @@ interface AccessDraftState {
   principals: PrincipalSelection;
   role: RoleValue;
   agents: AgentSelection;
+  subprojects: AgentSelection;
   /** `<input type="date">` value. */
   expires: string;
   attachProjectId: string;
@@ -371,6 +404,7 @@ function initialDraftState(
   mode: AccessDialogMode,
   roleScope: 'account' | 'project' | null,
   initialAgentIds?: string[],
+  initialSubprojectIds?: string[],
 ): AccessDraftState {
   const role: RoleValue =
     mode.kind === 'edit'
@@ -384,6 +418,12 @@ function initialDraftState(
         ? agentSelectionFromCurrent(mode.current.agentIds)
         : mode.kind === 'grant' && initialAgentIds && initialAgentIds.length > 0
           ? { mode: 'subset', ids: [...initialAgentIds] }
+          : ALL_AGENTS,
+    subprojects:
+      mode.kind === 'edit'
+        ? agentSelectionFromCurrent(mode.current.subprojectIds)
+        : mode.kind === 'grant' && initialSubprojectIds && initialSubprojectIds.length > 0
+          ? { mode: 'subset', ids: [...initialSubprojectIds] }
           : ALL_AGENTS,
     expires: mode.kind === 'edit' ? isoToDateInputValue(mode.current.expiresAt) : '',
     attachProjectId: '',
@@ -408,6 +448,7 @@ export function AccessDialog({
   excludeUserIds,
   inheritedFrom,
   initialAgentIds,
+  initialSubprojectIds,
   onDone,
 }: AccessDialogProps) {
   const queryClient = useQueryClient();
@@ -421,21 +462,35 @@ export function AccessDialog({
   // reopen. Closing never re-seeds, so the exit animation plays over the
   // content the person was looking at.
   const [draft, setDraft] = useState<AccessDraftState>(() =>
-    initialDraftState(mode, roleScope, initialAgentIds),
+    initialDraftState(mode, roleScope, initialAgentIds, initialSubprojectIds),
   );
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);
-    if (open) setDraft(initialDraftState(mode, roleScope, initialAgentIds));
+    if (open) setDraft(initialDraftState(mode, roleScope, initialAgentIds, initialSubprojectIds));
   }
 
-  const { principals, role, agents, expires, attachProjectId, projectGrants, projectAccessOpen, removeOpen } =
-    draft;
+  const {
+    principals,
+    role,
+    agents,
+    subprojects,
+    expires,
+    attachProjectId,
+    projectGrants,
+    projectAccessOpen,
+    removeOpen,
+  } = draft;
   const setPrincipals = (next: PrincipalSelection) =>
     setDraft((d) => ({ ...d, principals: next }));
   const setRole = (next: RoleValue) => setDraft((d) => ({ ...d, role: next }));
   const setAgents = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
     setDraft((d) => ({ ...d, agents: typeof next === 'function' ? next(d.agents) : next }));
+  const setSubprojects = (next: AgentSelection | ((prev: AgentSelection) => AgentSelection)) =>
+    setDraft((d) => ({
+      ...d,
+      subprojects: typeof next === 'function' ? next(d.subprojects) : next,
+    }));
   const setExpires = (next: string) => setDraft((d) => ({ ...d, expires: next }));
   const setAttachProjectId = (next: string) => setDraft((d) => ({ ...d, attachProjectId: next }));
   const setProjectGrants = (next: ProjectGrantRow[]) =>
@@ -461,20 +516,30 @@ export function AccessDialog({
   // Not for a project admin: the manager tier uses every agent regardless of
   // grants (`objectUsable` in `apps/api/src/iam/authorize.ts`), so a picker
   // under that role would write rows that change nothing.
-  const showAgents =
+  const showResourcePickers =
     scope.kind === 'project' &&
     (mode.kind === 'grant' || mode.kind === 'edit') &&
     builtin !== 'manager';
+  const showAgents = showResourcePickers;
   const resourceGrantsQuery = useQuery({
     queryKey: qk.project.resourceGrants(projectId ?? ''),
     queryFn: () => listProjectResourceGrants(projectId as string),
-    enabled: open && showAgents && !!projectId,
+    enabled: open && showResourcePickers && !!projectId,
     ...contract('inventory'),
   });
   const projectAgents = useMemo<ProjectAgentResourceItem[]>(
     () => resourceGrantsQuery.data?.resources.agents ?? [],
     [resourceGrantsQuery.data],
   );
+  // The second closed object type (`object_policies.subproject = closed`), so
+  // it gets the same picker as agents and the same "All means one grant per
+  // one that exists today" rule. The section hides when the project declares
+  // none — an empty checklist under a heading is a question with no answers.
+  const projectSubprojects = useMemo<ProjectResourceItem[]>(
+    () => resourceGrantsQuery.data?.resources.subprojects ?? [],
+    [resourceGrantsQuery.data],
+  );
+  const showSubprojects = showResourcePickers && projectSubprojects.length > 0;
 
   const selectedAgentDeclares = useMemo(() => {
     if (agents.mode !== 'subset' || agents.ids.length === 0) return null;
@@ -600,6 +665,44 @@ export function AccessDialog({
     for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
   }
 
+  /** Give one principal access to ONE subproject. Identical to `assignAgent`
+   *  but for the object type — the assignment table is generic over it, and a
+   *  subproject grant does NOT imply the subproject's agent (spec §2): the
+   *  person needs both, which is why this dialog offers both. */
+  function assignSubproject(
+    principalType: 'member' | 'group',
+    principalId: string,
+    pid: string,
+    subprojectId: string,
+    expiresIso: string | undefined,
+  ) {
+    return createAssignment(accountId, {
+      principal: { type: principalKind(principalType), id: principalId },
+      roleKey: OBJECT_ASSIGNMENT_ROLE_KEY,
+      scope: { type: 'project', id: pid },
+      object: { type: SUBPROJECT_OBJECT_TYPE, id: subprojectId },
+      ...(expiresIso ? { expiresAt: expiresIso } : {}),
+    });
+  }
+
+  /** Take one subproject away — the `unassignAgent` read-back, by object type. */
+  async function unassignSubproject(
+    principalType: 'member' | 'group',
+    principalId: string,
+    pid: string,
+    subprojectId: string,
+  ) {
+    const rows = await listAssignments(accountId, {
+      principalType: principalKind(principalType),
+      principalId,
+      scopeType: 'project',
+      scopeId: pid,
+      objectType: SUBPROJECT_OBJECT_TYPE,
+      objectId: subprojectId,
+    });
+    for (const row of rows) await revokeAssignment(accountId, row.assignment_id);
+  }
+
   /** Drop the principal's existing custom-role assignment at this scope.
    *  `current.assignmentId` is the row the roster handed us; without it, fall
    *  back to a filtered read so an older cached row cannot strand a grant. */
@@ -681,6 +784,11 @@ export function AccessDialog({
     const projectBuiltin = (builtin ?? 'member') as ProjectRole;
     const pid = scope.projectId;
     const agentIdsToGrant = effectiveAgentIds(projectBuiltin, roleId, agents, projectAgents);
+    // Same rule, same helper: subprojects are closed by default too, so "All"
+    // for a plain member is one grant per subproject that exists today.
+    const subprojectIdsToGrant = showSubprojects
+      ? effectiveAgentIds(projectBuiltin, roleId, subprojects, projectSubprojects)
+      : [];
 
     for (const userId of principals.memberIds) {
       tasks.push({
@@ -691,6 +799,9 @@ export function AccessDialog({
           if (roleId) await assignCustomRole('member', userId, roleId, pid, expiresIso);
           for (const resourceId of agentIdsToGrant) {
             await assignAgent('member', userId, pid, resourceId, expiresIso);
+          }
+          for (const resourceId of subprojectIdsToGrant) {
+            await assignSubproject('member', userId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -704,6 +815,9 @@ export function AccessDialog({
           if (roleId) await assignCustomRole('group', groupId, roleId, pid, expiresIso);
           for (const resourceId of agentIdsToGrant) {
             await assignAgent('group', groupId, pid, resourceId, expiresIso);
+          }
+          for (const resourceId of subprojectIdsToGrant) {
+            await assignSubproject('group', groupId, pid, resourceId, expiresIso);
           }
         },
       });
@@ -725,7 +839,16 @@ export function AccessDialog({
       agents.mode === 'all' && builtin !== 'manager' && !isCustom
         ? { mode: 'subset', ids: projectAgents.map((a) => a.id) }
         : agents;
-    const diff = diffAccessDraft(current, { role, agents: effectiveDraftAgents, expiresAt: expires });
+    const effectiveDraftSubprojects: AgentSelection =
+      subprojects.mode === 'all' && builtin !== 'manager' && !isCustom && showSubprojects
+        ? { mode: 'subset', ids: projectSubprojects.map((s) => s.id) }
+        : subprojects;
+    const diff = diffAccessDraft(current, {
+      role,
+      agents: effectiveDraftAgents,
+      subprojects: effectiveDraftSubprojects,
+      expiresAt: expires,
+    });
     if (!diff.dirty) return [];
     const roleId = role.kind === 'custom' ? role.roleId : null;
     const expiresIso = expirySupported ? endOfLocalDayIso(expires) : undefined;
@@ -784,6 +907,12 @@ export function AccessDialog({
           }
           for (const resourceId of diff.agentsRemoved) {
             await unassignAgent(principal.type, principal.id, pid, resourceId);
+          }
+          for (const resourceId of diff.subprojectsAdded) {
+            await assignSubproject(principal.type, principal.id, pid, resourceId, expiresIso);
+          }
+          for (const resourceId of diff.subprojectsRemoved) {
+            await unassignSubproject(principal.type, principal.id, pid, resourceId);
           }
         },
       },
@@ -952,7 +1081,7 @@ export function AccessDialog({
   // ── Submit gate ───────────────────────────────────────────────────────
   const editDiff =
     mode.kind === 'edit'
-      ? diffAccessDraft(mode.current, { role, agents, expiresAt: expires })
+      ? diffAccessDraft(mode.current, { role, agents, subprojects, expiresAt: expires })
       : null;
   const canSubmit =
     !pending &&
@@ -1138,6 +1267,54 @@ export function AccessDialog({
                 {selectedAgentDeclares ? (
                   <BlastRadiusPreview declares={selectedAgentDeclares} />
                 ) : null}
+              </Field>
+            ) : null}
+
+            {/* 4b. Subprojects (project scope) — the same control as Agents,
+                because they are the same thing to the authorization engine:
+                a closed object type granted by one assignment row. A grant
+                here does NOT hand over the subproject's default agent; that
+                is the picker directly above, which is why both are offered. */}
+            {showSubprojects ? (
+              <Field className="gap-1.5">
+                <FieldLabel>Subprojects</FieldLabel>
+                <Tabs
+                  value={subprojects.mode}
+                  onValueChange={(next) =>
+                    setSubprojects(
+                      next === 'all' ? ALL_AGENTS : { mode: 'subset', ids: subprojects.ids },
+                    )
+                  }
+                >
+                  <TabsListCompact>
+                    <TabsTriggerCompact value="all">All subprojects</TabsTriggerCompact>
+                    <TabsTriggerCompact value="subset">Only these…</TabsTriggerCompact>
+                  </TabsListCompact>
+                </Tabs>
+                {subprojects.mode === 'all' ? (
+                  <FieldDescription>
+                    {`Every subproject in this project today (${projectSubprojects.length}). Subprojects added later need a new grant — a subproject with no grant rows is the manager tier's only.`}
+                  </FieldDescription>
+                ) : (
+                  <div className="border-border max-h-40 overflow-y-auto rounded-md border p-1">
+                    {projectSubprojects.map((subproject) => (
+                      <Checkbox
+                        key={subproject.id}
+                        label={subproject.name}
+                        checked={subprojects.ids.includes(subproject.id)}
+                        disabled={pending}
+                        onCheckedChange={() =>
+                          setSubprojects((prev) => ({
+                            mode: 'subset',
+                            ids: prev.ids.includes(subproject.id)
+                              ? prev.ids.filter((x) => x !== subproject.id)
+                              : [...prev.ids, subproject.id],
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
               </Field>
             ) : null}
 

@@ -51,6 +51,7 @@ import {
   type ProjectAccessResponse,
   type ProjectResourceGrant,
   type ProjectRole,
+  type ResourceGrantType,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import { PencilSimpleIcon, PlusIcon, UsersIcon } from '@phosphor-icons/react';
@@ -58,26 +59,31 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 /** The grants that name `agentName`. Orphaned rows (agent renamed) are kept —
- *  they are inert, and hiding them would hide the thing to clean up. */
+ *  they are inert, and hiding them would hide the thing to clean up.
+ *  `resourceType` defaults to `'agent'`, so every existing caller is unchanged;
+ *  a subproject page passes `'subproject'` and gets the identical fold. */
 export function grantsForAgent(
   grants: readonly ProjectResourceGrant[],
   agentName: string,
+  resourceType: ResourceGrantType = 'agent',
 ): ProjectResourceGrant[] {
-  return grants.filter((g) => g.resource_type === 'agent' && g.resource_id === agentName);
+  return grants.filter((g) => g.resource_type === resourceType && g.resource_id === agentName);
 }
 
-/** Every agent a principal holds — the edit dialog's `agentIds` seed. */
+/** Every object of one type a principal holds — the edit dialog's `agentIds` /
+ *  `subprojectIds` seed. */
 export function agentIdsHeldBy(
   grants: readonly ProjectResourceGrant[],
   principalType: 'member' | 'group',
   principalId: string,
+  resourceType: ResourceGrantType = 'agent',
 ): string[] {
   return [
     ...new Set(
       grants
         .filter(
           (g) =>
-            g.resource_type === 'agent' &&
+            g.resource_type === resourceType &&
             g.principal_type === principalType &&
             g.principal_id === principalId,
         )
@@ -85,6 +91,27 @@ export function agentIdsHeldBy(
     ),
   ];
 }
+
+/** The section's copy, per resource type. The two objects the IAM engine
+ *  closes by default are granted the same way, so they get the same section
+ *  with the sentence that names what is actually inherited. */
+const RESOURCE_COPY: Record<
+  'agent' | 'subproject',
+  { description: string; empty: string; rowSuffix: string }
+> = {
+  agent: {
+    description:
+      'Members and groups granted this agent. They inherit its connectors and secrets as their own.',
+    empty: 'No one is granted this agent yet. Project managers can always use it.',
+    rowSuffix: 'grant no longer matches an agent',
+  },
+  subproject: {
+    description:
+      'Members and groups granted this subproject. A subproject grant is not an agent grant — they need its agent in their own right too.',
+    empty: 'No one is granted this subproject yet. Project managers can always use it.',
+    rowSuffix: 'grant no longer matches a subproject',
+  },
+};
 
 // The live `/access` contract carries a custom-role binding per member and a
 // `group_access` array the SDK type does not yet declare — the same gap
@@ -123,10 +150,16 @@ interface EditTarget {
 export function AgentPeopleSection({
   projectId,
   agentName,
+  resourceType = 'agent',
 }: {
   projectId: string;
+  /** The grant key: an agent name, or a subproject slug. */
   agentName: string;
+  /** Which closed object type this section grants. Defaults to `'agent'`, so
+   *  the agent page's two call sites are unchanged. */
+  resourceType?: 'agent' | 'subproject';
 }) {
+  const copy = RESOURCE_COPY[resourceType];
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
@@ -158,12 +191,25 @@ export function AgentPeopleSection({
   const projectName = detailQuery.data?.project?.name ?? '';
 
   const grants = useMemo(() => grantsQuery.data?.grants ?? [], [grantsQuery.data]);
-  const assigned = useMemo(() => grantsForAgent(grants, agentName), [grants, agentName]);
+  const assigned = useMemo(
+    () => grantsForAgent(grants, agentName, resourceType),
+    [grants, agentName, resourceType],
+  );
 
   if (!canManage) return null;
 
   const openEdit = (grant: ProjectResourceGrant) => {
-    const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id);
+    // BOTH object types are seeded, whichever page this section is on: the
+    // dialog's diff writes only what changed, and a `current` missing the
+    // other type would leave that picker showing "All" while the principal
+    // actually holds a subset.
+    const agentIds = agentIdsHeldBy(grants, grant.principal_type, grant.principal_id, 'agent');
+    const subprojectIds = agentIdsHeldBy(
+      grants,
+      grant.principal_type,
+      grant.principal_id,
+      'subproject',
+    );
     if (grant.principal_type === 'member') {
       const member = accessQuery.data?.members.find((m) => m.user_id === grant.principal_id);
       const policy = projectPolicy(member?.custom_role_policies);
@@ -181,6 +227,7 @@ export function AgentPeopleSection({
               ? builtinRole(member.project_role)
               : ROLE_NONE,
           agentIds: agentIds.length > 0 ? agentIds : 'all',
+          subprojectIds: subprojectIds.length > 0 ? subprojectIds : 'all',
           expiresAt: policy ? policy.expires_at : (member?.expires_at ?? null),
         },
         inheritedFrom: (member?.group_sources ?? []).map((g) => g.group_name),
@@ -202,6 +249,7 @@ export function AgentPeopleSection({
               ? builtinRole(group.built_in_role)
               : ROLE_NONE,
           agentIds: agentIds.length > 0 ? agentIds : 'all',
+          subprojectIds: subprojectIds.length > 0 ? subprojectIds : 'all',
           expiresAt: policy ? policy.expires_at : null,
         },
       });
@@ -210,10 +258,7 @@ export function AgentPeopleSection({
   };
 
   return (
-    <EditorSection
-      title="Who can use it"
-      description="Members and groups granted this agent. They inherit its connectors and secrets as their own."
-    >
+    <EditorSection title="Who can use it" description={copy.description}>
       <div className="space-y-3 py-3.5">
         {grantsQuery.isLoading ? (
           <div className="space-y-2">
@@ -221,9 +266,7 @@ export function AgentPeopleSection({
             <Skeleton className="h-11 w-full rounded-md" />
           </div>
         ) : assigned.length === 0 ? (
-          <p className="text-muted-foreground text-xs text-pretty">
-            No one is granted this agent yet. Project managers can always use it.
-          </p>
+          <p className="text-muted-foreground text-xs text-pretty">{copy.empty}</p>
         ) : (
           <ul className="space-y-2">
             {assigned.map((g) => {
@@ -250,7 +293,7 @@ export function AgentPeopleSection({
                       {g.expires_at
                         ? ` · until ${new Date(g.expires_at).toLocaleDateString()}`
                         : ''}
-                      {g.orphaned ? ' · grant no longer matches an agent' : ''}
+                      {g.orphaned ? ` · ${copy.rowSuffix}` : ''}
                     </span>
                   </span>
                   <Button
@@ -289,7 +332,9 @@ export function AgentPeopleSection({
           accountId={accountId}
           scope={{ kind: 'project', projectId, projectName }}
           mode={{ kind: 'grant' }}
-          initialAgentIds={[agentName]}
+          {...(resourceType === 'subproject'
+            ? { initialSubprojectIds: [agentName] }
+            : { initialAgentIds: [agentName] })}
         />
       ) : null}
 

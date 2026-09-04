@@ -17,6 +17,7 @@ import {
   type SessionSourceKind,
 } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { SubprojectBadge } from '@/features/subprojects/subproject-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -91,6 +92,16 @@ import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 
 interface ProjectSessionListProps {
   projectId: string;
+  /**
+   * Narrow the list to one subproject. This is a different SERVER request
+   * (`GET /sessions?subproject=`), not a client-side filter, so it gets its
+   * own cache entry — see `qk.project.sessions(id, scope, subproject)`.
+   * Omitted in the sidebar, where the list is the whole project's.
+   *
+   * When set, the rows drop their subproject chip: every row would wear the
+   * same one, and a chip every row shares says nothing.
+   */
+  subproject?: string;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -166,7 +177,7 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
+export function ProjectSessionList({ projectId, subproject }: ProjectSessionListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { holdPeek } = useSidebar();
@@ -186,8 +197,9 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: qk.project.sessions(projectId),
-    queryFn: () => listProjectSessions(projectId),
+    queryKey: qk.project.sessions(projectId, 'visible', subproject),
+    queryFn: () =>
+      listProjectSessions(projectId, subproject === undefined ? undefined : { subproject }),
     refetchInterval: (query) =>
       projectSessionsRefetchInterval({
         sessions: query.state.data as ProjectSession[] | undefined,
@@ -365,6 +377,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               }
             }}
             displayTitle={getSessionDisplayTitle(session)}
+            showSubproject={subproject === undefined}
             childCount={children.length}
             reviewCount={reviewSummary.needsYouBySession[session.session_id] ?? 0}
             onDelete={(id, label) => setSessionToDelete({ id, label })}
@@ -670,6 +683,9 @@ interface ProjectSessionRowProps {
   onStop: (sessionId: string, label: string) => void;
   isStopping: boolean;
   childCount?: number;
+  /** False on a list already scoped to one subproject — see the list's own
+   *  `subproject` prop. */
+  showSubproject?: boolean;
   /** How many review items from this session are awaiting the human (`needs_you`). */
   reviewCount?: number;
   /** Rendered indented under its coordinator — the indent already conveys the
@@ -692,6 +708,7 @@ function ProjectSessionRow({
   onStop,
   isStopping,
   childCount = 0,
+  showSubproject = true,
   reviewCount = 0,
   nested = false,
 }: ProjectSessionRowProps) {
@@ -713,7 +730,9 @@ function ProjectSessionRow({
   // `gap-2`, so a plain chat session paid 8px of title width for nothing), and
   // the hover shift below only makes sense when there is something to shift.
   const showSpawnedBy = Boolean(spawnedBy) && !nested;
-  const hasIndicators = showSpawnedBy || Boolean(SourceIcon) || sessionIsShared(session);
+  const showSubprojectBadge = showSubproject && Boolean(session.subproject);
+  const hasIndicators =
+    showSpawnedBy || showSubprojectBadge || Boolean(SourceIcon) || sessionIsShared(session);
 
   return (
     <div className="group/session-list block">
@@ -802,6 +821,7 @@ function ProjectSessionRow({
             )}
             data-session-indicators="true"
           >
+            {showSubprojectBadge && <SubprojectBadge session={session} className="mr-1 max-w-20" />}
             {showSpawnedBy && spawnedBy && (
               <Hint side="top" label={`Spawned by session ${spawnedBy.slice(0, 8)}`}>
                 <span className="text-muted-foreground/70 flex size-4 shrink-0 items-center justify-center">

@@ -2,6 +2,7 @@
 
 import { sessionSource, type SessionSourceKind } from '@/components/projects/session-label';
 import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { SubprojectBadge } from '@/features/subprojects/subproject-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -189,6 +190,7 @@ function SessionRowImpl({
             <span className="text-muted-foreground"> · {source.triggerSlug}</span>
           ) : null}
         </span>
+        <SubprojectBadge session={session} />
         <SessionSharedIcon session={session} />
       </span>
     </>

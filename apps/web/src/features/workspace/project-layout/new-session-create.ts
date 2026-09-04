@@ -7,6 +7,9 @@ export interface NewSessionCreateInput {
   agent_name?: string;
   connector_bindings?: SessionConnectorBindingsInput;
   inherit_unbound?: boolean;
+  /** The subproject the session is started inside. Set only by the subproject
+   *  page's composer; the project index composer never sends one. */
+  subproject?: string;
 }
 
 /**
@@ -24,9 +27,15 @@ export interface NewSessionCreateInput {
  * no agent was picked), so callers can omit the create overrides entirely.
  */
 export function buildNewSessionCreateInput(
-  options: Pick<ComposerOptions, 'agent' | 'scope'> & { sandbox_slug?: string } = {},
+  options: Pick<ComposerOptions, 'agent' | 'scope'> & {
+    sandbox_slug?: string;
+    subproject?: string;
+  } = {},
 ): NewSessionCreateInput | undefined {
   const input: NewSessionCreateInput = {};
+  // Before the agent/sandbox branches, because a subproject alone is enough to
+  // need create overrides even when nothing else is picked.
+  if (options.subproject) input.subproject = options.subproject;
   if (isMetaAgentName(options.agent)) {
     input.sandbox_slug = META_SANDBOX_SLUG;
   } else if (options.sandbox_slug) {
