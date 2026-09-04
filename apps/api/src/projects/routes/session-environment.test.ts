@@ -41,6 +41,17 @@ describe('session environment routes', () => {
     expect(source.slice(gate, capability)).toContain('if (!callerSession)');
   });
 
+  test('stop returns 502 when the provider cannot confirm the environment stopped', async () => {
+    const source = await routeSource();
+    const stop = source.slice(
+      source.indexOf("path: '/{projectId}/sessions/{sessionId}/environment/stop'"),
+    );
+    expect(stop).toContain('SessionEnvironmentStopError');
+    expect(stop).toContain('provider_status: err.providerStatus');
+    expect(stop).toContain('...errors(400, 403, 404, 502)');
+    expect(stop).toContain("error: 'Environment stop could not be confirmed'");
+  });
+
   test('ensure refuses non-pi sessions and every handler passes the shared gate', async () => {
     const source = await routeSource();
     const ensure = source.indexOf("path: '/{projectId}/sessions/{sessionId}/environment/ensure'");
@@ -232,9 +243,11 @@ describe('an environment does not outlive the session that owns it', () => {
     const source = await stopSource();
     // Otherwise the compute box runs on nothing but the provider idle timer.
     expect(source).toContain('stopSessionEnvironment(sessionId)');
-    // After the fact and best-effort: the session is already stopped, so a
-    // provider hiccup must not turn a successful stop into a 502.
+    // The worker is already stopped, but a live environment means the
+    // two-runtime stop did not finish. The route must expose the split state.
     expect(source).toContain('[session-stop] environment stop failed');
+    expect(source).toContain("error: 'Worker stopped but environment stop failed'");
+    expect(source).toContain('status: 502');
   });
 
   test('deleting a session deletes its environment box AND row', async () => {

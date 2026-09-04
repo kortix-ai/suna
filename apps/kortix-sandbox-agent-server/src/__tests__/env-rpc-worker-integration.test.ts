@@ -8,8 +8,8 @@ import type { Config } from '../config'
 import type { Opencode } from '../opencode'
 import { startProxy } from '../proxy'
 import { createEnvRpcRouter } from '../routes/env-rpc'
-// The worker half, imported from its real sources (apps/kortix-worker is
-// workspace-excluded but dependency-free on this path — `ws` loads lazily).
+// The worker half, imported from its real sources. `ws` loads lazily, so the
+// HTTP-only test does not create a socket as an import side effect.
 import { KortixExecutionEnv } from '../../../kortix-worker/src/kortix-env.ts'
 import { LazyKortixEnv, mintUserContext } from '../../../kortix-worker/src/lazy-env.ts'
 import { startWorker } from '../../../kortix-worker/src/worker.ts'

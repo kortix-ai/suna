@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  decideSessionRuntimePair,
   type EnvironmentRuntimeState,
   type WorkerRuntimeState,
+  decideSessionRuntimePair,
+  workerRuntimeStateFromSessionStatus,
 } from './session-runtime-state';
 
 const workers: WorkerRuntimeState[] = ['missing', 'live', 'parked'];
@@ -15,6 +16,16 @@ const environments: EnvironmentRuntimeState[] = [
 ];
 
 describe('worker and environment state matrix', () => {
+  test('maps durable session statuses into the matrix worker states', () => {
+    for (const status of ['queued', 'branching', 'provisioning', 'running']) {
+      expect(workerRuntimeStateFromSessionStatus(status)).toBe('live');
+    }
+    for (const status of ['stopped', 'failed', 'completed']) {
+      expect(workerRuntimeStateFromSessionStatus(status)).toBe('parked');
+    }
+    expect(workerRuntimeStateFromSessionStatus(null)).toBe('missing');
+  });
+
   test('defines every reachable pair', () => {
     for (const worker of workers) {
       for (const environment of environments) {

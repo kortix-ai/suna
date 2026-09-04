@@ -2,12 +2,12 @@ import { sessionSandboxes } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
+import { stopSessionEnvironment } from '../../platform/services/session-environment';
 import { db } from '../../shared/db';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
 import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
-import { stopSessionEnvironment } from '../../platform/services/session-environment';
 
 /**
  * Manual, user-triggered stop: pause the running sandbox in place (disk kept,
@@ -104,7 +104,9 @@ export async function stopSession(input: {
       // is already stopped or gone IS the outcome this request wanted, so
       // reconcile our row; anything else is the failure it looks like. Same
       // rule as apps/hosting.ts `stop`.
-      const providerStatus = await provider.getStatus(sandbox.externalId).catch(() => 'unknown' as const);
+      const providerStatus = await provider
+        .getStatus(sandbox.externalId)
+        .catch(() => 'unknown' as const);
       if (providerStatus !== 'stopped' && providerStatus !== 'removed') {
         return {
           status: 502,
@@ -138,14 +140,27 @@ export async function stopSession(input: {
     });
   }
 
-  // A pi session's compute lives in a SECOND box (the environment). Stopping
-  // the worker without it left that box running on nothing but the provider's
-  // 60 s idle timer. Best-effort and after the fact: the session is already
-  // stopped, and a provider hiccup here must not turn a successful stop into a
-  // 502.
-  await stopSessionEnvironment(sessionId).catch((err) => {
+  // A pi session's compute lives in a SECOND box (the environment). The worker
+  // is already stopped, so this cannot be atomic. A failure must still be
+  // visible to the caller: returning 200 would claim the whole session stopped
+  // while the expensive environment can remain active.
+  try {
+    await stopSessionEnvironment(sessionId);
+  } catch (err) {
     console.warn(`[session-stop] environment stop failed for ${sessionId}:`, err);
-  });
+    const providerStatus =
+      err && typeof err === 'object' && 'providerStatus' in err
+        ? String(err.providerStatus)
+        : 'unknown';
+    return {
+      status: 502,
+      body: {
+        error: 'Worker stopped but environment stop failed',
+        worker_status: 'stopped',
+        environment_status: providerStatus,
+      },
+    };
+  }
 
   return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopped' } };
 }

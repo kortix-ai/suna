@@ -1,3 +1,5 @@
+import { projectSessions, sessionEnvironments } from '@kortix/db';
+
 /**
  * Reclaim session environments nothing else will.
  *
@@ -25,13 +27,18 @@
  * sweeps decline it for reasons that are individually correct. This pass is the
  * one that reads the session.
  */
-import { and, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
-import { projectSessions, sessionEnvironments } from '@kortix/db';
-import { db } from '../../shared/db';
+import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import {
   deleteSessionEnvironment,
   stopSessionEnvironment,
 } from '../../platform/services/session-environment-teardown';
+import {
+  type EnvironmentRuntimeState,
+  type WorkerRuntimeState,
+  decideSessionRuntimePair,
+  workerRuntimeStateFromSessionStatus,
+} from '../../platform/services/session-runtime-state';
+import { db } from '../../shared/db';
 
 /**
  * Idle long enough to STOP: power the box off, keep the row and the disk.
@@ -78,13 +85,24 @@ export const DELETED_SESSION_GRACE_MS = 5 * 60 * 1000;
  */
 export const WORKER_STOP_SETTLE_MS = 5 * 60 * 1000;
 
-/**
- * The worker statuses that mean "this session is parked".
- *
- * Deliberately the same three `maintenance.ts` calls TERMINAL_SESSION_STATUSES.
- * `queued`/`branching`/`provisioning`/`running` are all live.
- */
-const PARKED_WORKER_STATUSES = new Set(['stopped', 'failed', 'completed']);
+function workerRuntimeState(candidate: EnvironmentReapCandidate): WorkerRuntimeState {
+  if (candidate.sessionMissing) return workerRuntimeStateFromSessionStatus(null);
+  return workerRuntimeStateFromSessionStatus(candidate.workerStatus ?? 'running');
+}
+
+function environmentRuntimeState(status: string | null): EnvironmentRuntimeState {
+  switch (status) {
+    case 'provisioning':
+    case 'active':
+    case 'stopped':
+    case 'error':
+      return status;
+    case 'archived':
+      return 'stopped';
+    default:
+      return 'active';
+  }
+}
 
 export interface EnvironmentReapCandidate {
   sessionId: string;
@@ -140,9 +158,13 @@ export function decideEnvironmentReaping(
   const out: EnvironmentReapDecision[] = [];
 
   for (const c of candidates) {
+    const runtimeDecision = decideSessionRuntimePair(
+      workerRuntimeState(c),
+      environmentRuntimeState(c.environmentStatus),
+    );
     // No session row at all: nothing will ever tear this down, and nothing can
     // ever resume it.
-    if (c.sessionMissing) {
+    if (runtimeDecision.environmentAction === 'delete') {
       out.push({ sessionId: c.sessionId, action: 'delete', reason: 'session-missing' });
       continue;
     }
@@ -164,9 +186,7 @@ export function decideEnvironmentReaping(
     //
     // Stop, never delete: a parked worker is an ordinary resumable state.
     if (
-      c.workerStatus &&
-      PARKED_WORKER_STATUSES.has(c.workerStatus) &&
-      c.environmentStatus !== 'stopped' &&
+      runtimeDecision.environmentAction === 'stop' &&
       c.workerUpdatedAt &&
       t - c.workerUpdatedAt.getTime() > workerSettle
     ) {
@@ -231,11 +251,12 @@ export async function reapOrphanEnvironments(options?: {
         sql`(${projectSessions.metadata}->>'deletedAt') is not null`,
         // A parked worker qualifies regardless of how recently the environment
         // was used — that is the whole point of the tie-in. Bounded by the
-        // environment not already being stopped, so a fleet of parked sessions
-        // does not re-enter this set every tick forever.
+        // Matrix action=stop applies only to active/provisioning environments.
+        // Error and stopped rows are already legal beside a parked worker and
+        // must not re-enter this set every tick forever.
         and(
           inArray(projectSessions.status, ['stopped', 'failed', 'completed']),
-          ne(sessionEnvironments.status, 'stopped'),
+          inArray(sessionEnvironments.status, ['active', 'provisioning']),
         ),
         and(
           // Drizzle operators, not a raw `sql` fragment. Interpolating a JS Date

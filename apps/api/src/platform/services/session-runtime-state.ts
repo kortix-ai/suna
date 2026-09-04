@@ -15,6 +15,23 @@ export interface SessionRuntimePairDecision {
   turnAuthority: 'worker' | 'none';
 }
 
+export function workerRuntimeStateFromSessionStatus(
+  status: string | null | undefined,
+): WorkerRuntimeState {
+  if (status == null) return 'missing';
+  switch (status) {
+    case 'queued':
+    case 'branching':
+    case 'provisioning':
+    case 'running':
+      return 'live';
+    default:
+      // A new or corrupt durable status cannot grant turn authority until the
+      // lifecycle matrix knows its meaning.
+      return 'parked';
+  }
+}
+
 export function decideSessionRuntimePair(
   worker: WorkerRuntimeState,
   environment: EnvironmentRuntimeState,

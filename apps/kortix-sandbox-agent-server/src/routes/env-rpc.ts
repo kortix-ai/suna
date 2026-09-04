@@ -14,10 +14,10 @@ import { logger } from '../logger'
 /**
  * `/kortix/env-rpc` — the environment half of the harness/worker split (P1.7).
  *
- * The pi worker's built-in tools (bash, read, write, edit) run against an
- * ExecutionEnv whose every operation is one POST here. This route is that
- * environment: direct filesystem + shell access on THIS box, executed as the
- * session (the box exists for exactly one session and holds its credential).
+ * The pi worker's six workspace tools run against an ExecutionEnv. File tools
+ * call their matching operations here. Glob and grep execute remote `rg`
+ * through this route's exec operation. The box exists for one session and
+ * holds that session's workspace credential.
  *
  * Wire contract (mirrors apps/kortix-worker/src/kortix-env.ts):
  *   POST { op, args, cwd }  →  { ok: true, value } | { ok: false, error: { code, message, path? } }

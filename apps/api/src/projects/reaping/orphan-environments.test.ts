@@ -18,10 +18,7 @@
  * age bound, so the row is what protects the box.
  */
 import { describe, expect, test } from 'bun:test';
-import {
-  decideEnvironmentReaping,
-  type EnvironmentReapCandidate,
-} from './orphan-environments';
+import { type EnvironmentReapCandidate, decideEnvironmentReaping } from './orphan-environments';
 
 const NOW = new Date('2026-09-02T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
@@ -149,7 +146,15 @@ test('mixed input: each row gets its own verdict', () => {
 describe("the environment follows its worker's stop", () => {
   const workerStopped = (extra: Partial<EnvironmentReapCandidate> = {}) =>
     decideEnvironmentReaping(
-      [{ ...base, lastUsedAt: ago(10 * 60_000), workerStatus: 'stopped', workerUpdatedAt: ago(HOUR), ...extra }],
+      [
+        {
+          ...base,
+          lastUsedAt: ago(10 * 60_000),
+          workerStatus: 'stopped',
+          workerUpdatedAt: ago(HOUR),
+          ...extra,
+        },
+      ],
       NOW,
     );
 
@@ -187,6 +192,16 @@ describe("the environment follows its worker's stop", () => {
     // Otherwise every tick issues a pointless provider call for every parked
     // session, forever.
     expect(workerStopped({ environmentStatus: 'stopped' })).toEqual([]);
+  });
+
+  test('an environment already in error needs no second stop', () => {
+    expect(workerStopped({ environmentStatus: 'error' })).toEqual([]);
+  });
+
+  test('a provisioning environment is stopped before its claim can publish', () => {
+    expect(workerStopped({ environmentStatus: 'provisioning' })).toEqual([
+      { sessionId: 's1', action: 'stop', reason: 'worker-stopped' },
+    ]);
   });
 
   /**

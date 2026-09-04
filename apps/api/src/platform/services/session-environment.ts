@@ -40,6 +40,11 @@ import { getProvider } from '../providers';
 import { classifyDaytonaState } from '../providers/daytona-state';
 import { decideEnvironmentLiveness, environmentReconcileWrite } from './environment-liveness';
 import type { SessionEnvironmentInfo } from './session-environment-types';
+import {
+  type EnvironmentRuntimeState,
+  decideSessionRuntimePair,
+  workerRuntimeStateFromSessionStatus,
+} from './session-runtime-state';
 import { mintSessionRuntimeToken } from './session-runtime-token';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
@@ -72,6 +77,28 @@ async function readRow(sessionId: string) {
     .where(eq(sessionEnvironments.sessionId, sessionId))
     .limit(1);
   return row ?? null;
+}
+
+async function readWorkerStatus(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ status: projectSessions.status })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.status ?? null;
+}
+
+function environmentStateForRow(row: Awaited<ReturnType<typeof readRow>>): EnvironmentRuntimeState {
+  if (!row) return 'missing';
+  switch (row.status) {
+    case 'provisioning':
+    case 'active':
+    case 'stopped':
+    case 'error':
+      return row.status;
+    case 'archived':
+      return 'stopped';
+  }
 }
 
 async function withPreview(row: {
@@ -216,7 +243,20 @@ export interface EnsureSessionEnvironmentInput {
 export async function ensureSessionEnvironment(
   input: EnsureSessionEnvironmentInput,
 ): Promise<SessionEnvironmentInfo> {
-  let existing = await readRow(input.sessionId);
+  const [workerStatus, initialEnvironment] = await Promise.all([
+    readWorkerStatus(input.sessionId),
+    readRow(input.sessionId),
+  ]);
+  const workerState = workerRuntimeStateFromSessionStatus(workerStatus);
+  const runtimeDecision = decideSessionRuntimePair(
+    workerState,
+    environmentStateForRow(initialEnvironment),
+  );
+  if (runtimeDecision.turnAuthority !== 'worker') {
+    throw new SessionEnvironmentError(`Session worker is ${workerStatus ?? 'missing'}.`, 409);
+  }
+
+  let existing = initialEnvironment;
   if (existing?.status === 'active' && existing.externalId) {
     // Ask the provider before trusting the column. Nothing reconciles it —
     // `applyStoppedState` cannot reach a row with no `session_sandboxes` entry
@@ -639,5 +679,6 @@ export async function readSessionEnvironment(
 // so the split is invisible to callers.
 export {
   deleteSessionEnvironment,
+  SessionEnvironmentStopError,
   stopSessionEnvironment,
 } from './session-environment-teardown';

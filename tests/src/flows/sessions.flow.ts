@@ -4,6 +4,7 @@
  * assert the contract (201 provisioning, status transitions) without blocking on
  * a full boot. Gated on the `daytona` capability.
  */
+import { isDeepStrictEqual } from 'node:util';
 import { flow } from '../core/flow';
 
 flow(
@@ -764,7 +765,7 @@ flow(
       const items = response
         .json<Array<Record<string, unknown>>>()
         .filter((item) => item.probe === marker);
-      if (JSON.stringify(items) !== JSON.stringify([first, second])) {
+      if (!isDeepStrictEqual(items, [first, second])) {
         throw new Error(`unexpected durable transcript probe: ${JSON.stringify(items)}`);
       }
     });

@@ -103,7 +103,7 @@ export interface KortixEnvOptions {
   baseUrl: string;
   /** Working directory inside the environment. */
   cwd: string;
-  /** Bearer token for the environment. Optional for the local stub. */
+  /** Legacy direct-environment token. New sessions use signed headers. */
   token?: string;
   /** Extra headers sent with every RPC (provider preview tokens, tracing). */
   headers?: Record<string, string>;
@@ -153,9 +153,8 @@ export class KortixExecutionEnv {
   /**
    * The single boundary crossing. One persistent-friendly POST per operation.
    *
-   * NOTE for the real implementation: this is where the per-turn RPC tax lives.
-   * A 200-tool-call turn makes 200 of these. It must become one multiplexed
-   * connection before this ships — see the latency budget in the plan.
+   * This is where the per-turn RPC tax lives. The default transport negotiates
+   * one multiplexed WebSocket and falls back to pooled HTTP for older images.
    */
   private async rpc<T>(op: string, args: Record<string, unknown>): Promise<Result<T, any>> {
     this.calls.push({ op, args });

@@ -21,6 +21,74 @@ linked, not inlined.
 
 ## Register
 
+### A two-runtime lifecycle policy must drive production writes (2026-09-04)
+
+**When:** adding an auxiliary runtime whose lifecycle follows a session worker.
+**Incident:** the worker/environment state matrix existed only in tests, while `ensure` could
+provision compute for a parked worker and stop paths closed rows and meters after an unconfirmed
+provider failure.
+**Rule:** consume the shared state matrix in every ensure and reaper path. Do not report success,
+close metering, or mark the auxiliary runtime stopped until provider state confirms the stop.
+**Enforcer:** lifecycle ensure, teardown, route, reaper, and manual-stop tests cover every pair and
+provider failure outcome.
+
+### Bind internal credentials to their intended endpoint (2026-09-04)
+
+**When:** adapting an internal session token for model-provider authentication.
+**Incident:** the Pi worker treated `KORTIX_TOKEN` as an API key even without a gateway URL,
+which could send the control-plane credential directly to an external provider.
+**Rule:** use the session token for model calls only when the Kortix gateway URL is configured.
+**Enforcer:** `model-credential-required.test.ts` covers direct, gateway, and missing-key paths.
+
+### A command timeout must kill the complete process tree (2026-09-04)
+
+**When:** enforcing a timeout on a shell command that can fork child processes.
+**Incident:** env-rpc killed only the parent shell; a child kept the output pipes open and a
+200 ms timeout returned after 5 seconds.
+**Rule:** start each command in its own process group and signal the group on timeout.
+**Enforcer:** `env-rpc.test.ts` requires a forked five-second command to return within 1.5 seconds.
+
+### A runtime decision and its artifact must use one immutable Git SHA (2026-09-04)
+
+**When:** selecting a runtime and compiling its boot artifact from a moving Git ref.
+**Incident:** session creation read `runtime` and resolved the branch tip in parallel, so a push
+between those reads could select Pi from one commit and boot an artifact from another commit.
+**Rule:** resolve the ref once, then read the manifest and compile every artifact at that SHA.
+**Enforcer:** `sessions.fast-boot-git-hint.test.ts` requires the manifest read after SHA resolution.
+
+### A retryable POST needs a server-enforced idempotency key (2026-09-04)
+
+**When:** retrying an append after a timeout or transport failure can follow a committed write.
+**Incident:** the Pi transcript client could not distinguish a failed request from a lost response;
+retrying could duplicate a durable message, while not retrying could lose it.
+**Rule:** mint one UUID per logical append, reuse it across retries, and reject key/content conflicts.
+**Enforcer:** `session-store.test.ts`, `session-log-http.test.ts`, and the unique database index.
+
+### A standalone artifact lock requires an explicit root quality gate (2026-09-04)
+
+**When:** a workspace package builds its production artifact from a nested package-manager lockfile.
+**Incident:** `apps/kortix-worker` had 155 tests, but root and package lanes ran none of them;
+its real-bundle API suites also passed as skipped whenever `dist/` was absent.
+**Rule:** include the package in the workspace, then run its standalone install, test, typecheck,
+build, and required bundle proof explicitly from the artifact lock.
+**Enforcer:** `worker-quality.ts`, root lane contracts, and the worker-triggered CI build job.
+
+### A lost mutation response is not permission to replay the mutation (2026-09-04)
+
+**When:** retrying RPC after a socket close, reset, pipe failure, or timeout.
+**Incident:** `KortixExecutionEnv.rpc()` retried every socket-shaped failure, so an environment
+mutation that committed before its response dropped could execute twice despite the outer guard.
+**Rule:** retry only an explicit, fail-closed set of read operations. Unknown operations mutate.
+**Enforcer:** `kortix-env.test.ts` commits a side effect, drops the response, and requires one call.
+
+### An ExecutionEnv adapter must return the consumer's exact metadata shape (2026-09-04)
+
+**When:** bridging Pi filesystem operations to another process or runtime.
+**Incident:** env-rpc returned `{isFile,modifiedAt}` while Pi requires `{name,path,kind,mtimeMs}`;
+the real `edit` tool stopped after `fileInfo` and never read or wrote the target file.
+**Rule:** mirror Pi's contract, use `lstat` to preserve symlinks, and test through the real tool.
+**Enforcer:** `env-rpc-worker-integration.test.ts` runs scripted `edit` across worker and daemon.
+
 ### A secret allowlist and its runtime collector must be one definition (2026-09-04)
 
 **When:** forwarding CI secrets into a generated preview or deployment runtime.

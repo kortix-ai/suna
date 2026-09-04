@@ -186,6 +186,72 @@ function callRaw(surface: RuntimeSurface, method: string, path: string, token?: 
   return { handled, status, body };
 }
 
+describe('RuntimeSurface raw message reads', () => {
+  test('serves the durable transcript through the OpenCode message-list route', () => {
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+    surface.seedRestoredMessages(restored());
+
+    const response = callRaw(
+      surface,
+      'GET',
+      `/session/${surface.rootId}/message?directory=%2Fworkspace&limit=2`,
+      'tok',
+    );
+
+    expect(response.handled).toBe(true);
+    expect(response.status).toBe(200);
+    const messages = JSON.parse(response.body) as Array<{
+      info: { id: string; role: string };
+      parts: Array<{ text?: string }>;
+    }>;
+    expect(messages).toHaveLength(2);
+    expect(messages.map((message) => message.info.role)).toEqual(['user', 'assistant']);
+    expect(messages.map((message) => message.parts.map((part) => part.text ?? '').join(''))).toEqual([
+      'second question',
+      'second answer',
+    ]);
+  });
+
+  test('serves one message by id and rejects an unknown message', () => {
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+    surface.seedRestoredMessages(restored());
+    const message = surface.transcript.page({ limit: 1, before: null }).messages[0]!;
+
+    const found = callRaw(
+      surface,
+      'GET',
+      `/session/${surface.rootId}/message/${message.info.id}`,
+      'tok',
+    );
+    expect(found.handled).toBe(true);
+    expect(found.status).toBe(200);
+    expect(JSON.parse(found.body)).toEqual(message);
+
+    const missing = callRaw(
+      surface,
+      'GET',
+      `/session/${surface.rootId}/message/msg_missing`,
+      'tok',
+    );
+    expect(missing.handled).toBe(true);
+    expect(missing.status).toBe(404);
+  });
+
+  test('does not expose transcript bytes without runtime authentication', () => {
+    const surface = new RuntimeSurface({ sessionId: 's', token: 'tok' });
+    surface.seedRestoredMessages(restored());
+
+    const response = callRaw(
+      surface,
+      'GET',
+      `/session/${surface.rootId}/message`,
+    );
+
+    expect(response.handled).toBe(true);
+    expect(response.status).toBe(401);
+  });
+});
+
 /**
  * Reported 2026-08-29 on pi: pressing Stop showed "Interrupted" in the
  * transcript and the answer kept streaming.

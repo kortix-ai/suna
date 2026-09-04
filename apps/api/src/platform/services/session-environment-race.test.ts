@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { sessionEnvironments } from '@kortix/db';
+import { projectSessions, sessionEnvironments } from '@kortix/db';
 
 let environmentRow: Record<string, unknown> | null;
 let finishCreate: (value: {
@@ -10,6 +10,9 @@ let finishCreate: (value: {
 let removedExternalIds: string[];
 let startedMeters: string[];
 let endedMeters: string[];
+let workerStatus: string | null;
+let createCalls: number;
+let blockCreate: boolean;
 
 mock.module('../../billing/services/compute-metering', () => ({
   startComputeSession: async ({ sandboxId }: { sandboxId: string }) => {
@@ -52,10 +55,15 @@ mock.module('../../snapshots/builder', () => ({
 
 mock.module('../providers', () => ({
   getProvider: () => ({
-    create: () =>
-      new Promise((resolve) => {
+    create: () => {
+      createCalls += 1;
+      if (!blockCreate) {
+        return Promise.resolve({ externalId: 'env-ext-fast', baseUrl: '', metadata: {} });
+      }
+      return new Promise((resolve) => {
         finishCreate = resolve;
-      }),
+      });
+    },
     remove: async (externalId: string) => {
       removedExternalIds.push(externalId);
     },
@@ -68,6 +76,9 @@ mock.module('../../shared/db', () => ({
       from: (table: unknown) => ({
         where: () => ({
           limit: async () => {
+            if (table === projectSessions) {
+              return workerStatus ? [{ status: workerStatus }] : [];
+            }
             return environmentRow ? [environmentRow] : [];
           },
         }),
@@ -118,9 +129,63 @@ beforeEach(() => {
   removedExternalIds = [];
   startedMeters = [];
   endedMeters = [];
+  workerStatus = 'running';
+  createCalls = 0;
+  blockCreate = true;
 });
 
 describe('session environment provision ownership', () => {
+  test.each(['stopped', 'failed', 'completed'])(
+    'a %s worker cannot provision an environment',
+    async (status) => {
+      workerStatus = status;
+      blockCreate = false;
+
+      await expect(
+        ensureSessionEnvironment({
+          sessionId: 'session-1',
+          projectId: 'project-1',
+          accountId: 'account-1',
+          userId: 'user-1',
+          agentName: 'kortix',
+          baseRef: 'main',
+          gitProject: {
+            projectId: 'project-1',
+            repoUrl: 'https://example.com/repo.git',
+            defaultBranch: 'main',
+            manifestPath: 'kortix.yaml',
+          } as never,
+        }),
+      ).rejects.toThrow(`Session worker is ${status}`);
+      expect(createCalls).toBe(0);
+      expect(environmentRow).toBeNull();
+    },
+  );
+
+  test('a missing worker cannot provision an environment', async () => {
+    workerStatus = null;
+    blockCreate = false;
+
+    await expect(
+      ensureSessionEnvironment({
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        accountId: 'account-1',
+        userId: 'user-1',
+        agentName: 'kortix',
+        baseRef: 'main',
+        gitProject: {
+          projectId: 'project-1',
+          repoUrl: 'https://example.com/repo.git',
+          defaultBranch: 'main',
+          manifestPath: 'kortix.yaml',
+        } as never,
+      }),
+    ).rejects.toThrow('Session worker is missing');
+    expect(createCalls).toBe(0);
+    expect(environmentRow).toBeNull();
+  });
+
   test('removes a provider box that finishes after its row was deleted', async () => {
     await ensureSessionEnvironment({
       sessionId: 'session-1',

@@ -19,9 +19,22 @@ import { revokeAccountToken } from '../../repositories/account-tokens';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { withTimeout } from '../../shared/with-timeout';
+import { getProvider } from '../providers';
+import type { SandboxStatus } from '../providers';
 import type { SessionEnvironmentInfo } from './session-environment-types';
 
 const PROVIDER_CALL_TIMEOUT_MS = 30_000;
+
+export class SessionEnvironmentStopError extends Error {
+  readonly providerStatus: SandboxStatus;
+
+  constructor(externalId: string, providerStatus: SandboxStatus, cause: unknown) {
+    super(`Environment ${externalId} is still ${providerStatus} after its stop failed`);
+    this.name = 'SessionEnvironmentStopError';
+    this.providerStatus = providerStatus;
+    this.cause = cause;
+  }
+}
 
 async function readRow(sessionId: string) {
   const [row] = await db
@@ -38,21 +51,20 @@ export async function stopSessionEnvironment(
 ): Promise<SessionEnvironmentInfo | null> {
   const row = await readRow(sessionId);
   if (!row) return null;
-  if (row.externalId && row.status === 'active') {
+  let clearExternalId = false;
+  if (row.externalId && row.status !== 'stopped' && row.status !== 'archived') {
+    const provider = getProvider(row.provider);
     try {
-      const daytona = getDaytona();
-      const sandbox = await withTimeout(
-        daytona.get(row.externalId),
-        PROVIDER_CALL_TIMEOUT_MS,
-        `Daytona get(${row.externalId})`,
-      );
-      await withTimeout(
-        (daytona as unknown as { stop(sandbox: unknown): Promise<unknown> }).stop(sandbox),
-        60_000,
-        `Daytona stop(${row.externalId})`,
-      );
+      await provider.stop(row.externalId);
     } catch (err) {
-      console.warn(`[session-env] stop of ${row.externalId} failed:`, err);
+      const providerStatus = await provider
+        .getStatus(row.externalId)
+        .catch(() => 'unknown' as const);
+      if (providerStatus === 'removed' || providerStatus === 'terminal') {
+        clearExternalId = true;
+      } else if (providerStatus !== 'stopped') {
+        throw new SessionEnvironmentStopError(row.externalId, providerStatus, err);
+      }
     }
   }
   // Close the meter with the box. `environmentId` is the compute row's
@@ -62,7 +74,11 @@ export async function stopSessionEnvironment(
   if (meteredId) await endComputeSession(meteredId).catch(() => {});
   const [updated] = await db
     .update(sessionEnvironments)
-    .set({ status: 'stopped', updatedAt: new Date() })
+    .set({
+      status: 'stopped',
+      ...(clearExternalId ? { externalId: null, baseUrl: null } : {}),
+      updatedAt: new Date(),
+    })
     .where(eq(sessionEnvironments.sessionId, sessionId))
     .returning();
   return updated

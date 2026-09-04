@@ -892,6 +892,46 @@ export class RuntimeSurface {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify([this.opencodeSessionObject()]));
       return true;
     }
+    // GET /session/:id/message[/:messageId] — OpenCode's raw transcript
+    // compatibility surface. The API uses this path at turn end to write its
+    // stopped-session mirror, and its lifecycle reconciler reads the same
+    // route to prove whether a forwarded prompt ran. Serving only the
+    // namespaced `/kortix/opencode/messages/:id` route left both control-plane
+    // reads with a 404 even though the worker held the complete transcript.
+    const rawMessage = url.pathname.match(/^\/session\/([^/]+)\/message(?:\/([^/]+))?$/);
+    if (rawMessage) {
+      const sessionId = decodeURIComponent(rawMessage[1]!);
+      if (sessionId !== this.rootId) {
+        res
+          .writeHead(404, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: 'unknown session' }));
+        return true;
+      }
+      const messageId = rawMessage[2] ? decodeURIComponent(rawMessage[2]) : null;
+      if (messageId) {
+        const message = this.transcript.messageById(messageId);
+        if (!message) {
+          res
+            .writeHead(404, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ error: 'unknown message' }));
+          return true;
+        }
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify(message));
+        return true;
+      }
+      const limitRaw = Number(url.searchParams.get('limit'));
+      const limit =
+        Number.isFinite(limitRaw) && limitRaw > 0
+          ? Math.min(Math.floor(limitRaw), MAX_MESSAGE_PAGE)
+          : Math.max(this.transcript.count, 1);
+      const page = this.transcript.page({ limit, before: null });
+      res
+        .writeHead(200, { 'content-type': 'application/json' })
+        .end(JSON.stringify(page.messages));
+      return true;
+    }
     const m = url.pathname.match(/^\/session\/([^/]+)$/);
     if (m && decodeURIComponent(m[1]!) === this.rootId) {
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(this.opencodeSessionObject()));
