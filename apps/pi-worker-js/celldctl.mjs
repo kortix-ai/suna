@@ -232,7 +232,53 @@ function deployOutcome({ status, stdout = "", stderr = "" }) {
   return { version: ids[0] };
 }
 
+
+// THE PLATINUM TARGET DEPLOYS THROUGH THE API — no celld binary, no bucket
+// credentials. POST /v1/workers/<name>/versions takes the built module and
+// celld's manifest fields (the manifest celld writes, derived from wrangler.json;
+// Platinum's TS SDK pins the derivation against a real one), then /activate
+// points the worker's folder at it. Needs PT_API_URL, PT_TOKEN and PT_WORKER —
+// the folder a cell created with `worker: <name>` boots from.
+function manifestFromWrangler(cfg) {
+  const doBindings = cfg.durable_objects?.bindings ?? [];
+  const sqlite = [...new Set((cfg.migrations ?? []).flatMap((m) => m.new_sqlite_classes ?? []))];
+  const newClasses = [...new Set((cfg.migrations ?? []).flatMap((m) => m.new_classes ?? []))];
+  const bindings = [
+    ...doBindings.map((b) => ({ class_name: b.class_name, name: b.name, type: "durable_object_namespace", ...(b.script_name ? { script_name: b.script_name } : {}) })),
+    ...Object.entries(cfg.vars ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([name, v]) => ({ name, text: typeof v === "string" ? v : JSON.stringify(v), type: "plain_text" })),
+  ];
+  const migrations = {};
+  if (sqlite.length) migrations.new_sqlite_classes = sqlite;
+  if (newClasses.length) migrations.new_classes = newClasses;
+  return { script_name: cfg.name, main_module: "index.js", do_classes: doBindings.map((b) => b.class_name), sqlite_classes: sqlite,
+    raw_metadata: { bindings, ...(cfg.compatibility_date ? { compatibility_date: cfg.compatibility_date } : {}), main_module: "index.js", migrations } };
+}
+
+async function deployViaPlatinum() {
+  const api = process.env.PT_API_URL, token = process.env.PT_TOKEN, worker = process.env.PT_WORKER;
+  if (!api || !token || !worker) die("the platinum target needs PT_API_URL, PT_TOKEN and PT_WORKER (the worker folder a cell boots from)");
+  console.log(`model      ${syncWorkerVars()}`);
+  execFileSync("npm", ["run", "--silent", "build"], { stdio: "inherit" });
+  const cfg = JSON.parse(readFileSync(new URL("./wrangler.json", import.meta.url), "utf8"));
+  const bundle = readFileSync(new URL(`./${cfg.main}`, import.meta.url));
+  const fd = new FormData();
+  fd.append("bundle", new Blob([bundle], { type: "application/javascript" }), "index.js");
+  fd.append("manifest", JSON.stringify(manifestFromWrangler(cfg)));
+  const h = { authorization: `Bearer ${token}` };
+  const v = await fetch(`${api}/v1/workers/${encodeURIComponent(worker)}/versions`, { method: "POST", headers: h, body: fd });
+  const vj = await v.json().catch(() => ({}));
+  if (v.status !== 201) die(`version upload failed: ${v.status} ${JSON.stringify(vj).slice(0, 200)}`);
+  const a = await fetch(`${api}/v1/workers/${encodeURIComponent(worker)}/activate`, { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ version: vj.version }) });
+  const aj = await a.json().catch(() => ({}));
+  if (a.status !== 200) die(`activate failed: ${a.status} ${JSON.stringify(aj).slice(0, 200)}`);
+  console.log(`deployed ${cfg.name} version ${vj.version} to worker ${worker} (${vj.bytes} bytes)`);
+  if (aj.restart_required && aj.cells?.length) console.log(`restart ${aj.cells.length} cell(s) to load it: ${aj.cells.map((c) => c.id).join(", ")}`);
+  return vj.version;
+}
+
 function cmdDeploy() {
+  if (targetName === "platinum") return deployViaPlatinum();   // a promise; the dispatch below awaits it
   requireLocal();
   console.log(`model      ${syncWorkerVars()}`);
   execFileSync("npm", ["run", "--silent", "build"], { stdio: "inherit" });
@@ -621,7 +667,7 @@ function cmdStatus() {
 // the module URL to argv[1] — the same mistake build-images.mjs made.
 const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href;
 if (isMain) {
-  ({ up: cmdUp, deploy: cmdDeploy, restart: cmdRestart, down: cmdDown, status: cmdStatus, purge: cmdPurge }[cmd]
+  await ({ up: cmdUp, deploy: cmdDeploy, restart: cmdRestart, down: cmdDown, status: cmdStatus, purge: cmdPurge }[cmd]
     ?? (() => die(`unknown command '${cmd}'`)))();
 }
 

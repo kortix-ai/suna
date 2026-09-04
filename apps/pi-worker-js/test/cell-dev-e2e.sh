@@ -69,10 +69,9 @@ sleep 8
 L=$(mc "mc ls --recursive d/$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER/" | grep -c fleet/)
 [ "$L" -ge 1 ] && pass "celld wrote under orgs/$ORG/workers/$WORKER/ (fleet/ present) — the folder, not the org root" || fail "nothing under workers/$WORKER/: $(mc "mc ls --recursive d/$PT_S3_BUCKET/orgs/$ORG/" | head -3 | tr '\n' ' ')"
 
-echo "== 4. the bundle, deployed to the worker's folder, and adopted after a restart =="
-npm run --silent build >/dev/null 2>&1 || { fail "build"; exit 1; }
-D=$(docker run --rm --platform linux/amd64 -v "$PWD:/app" -w /app -e AWS_ACCESS_KEY_ID="$PT_S3_ACCESS_KEY" -e AWS_SECRET_ACCESS_KEY="$PT_S3_SECRET_KEY" -e AWS_REGION="$REGION" pt-celld:0.3.0 celld deploy . --bucket "s3://$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER" --endpoint "$EP" --region "$REGION" 2>&1 | grep -oE "Current Version ID: [0-9a-f]+" | cut -d' ' -f4)
-[ -n "$D" ] && pass "celld deploy wrote version $D to workers/$WORKER/deploy/" || { fail "celld deploy failed"; exit 1; }
+echo "== 4. the bundle, deployed through the API — no storage credentials — and adopted after a restart =="
+D=$(PT_API_URL="$API" PT_TOKEN="$TOK" PT_WORKER="$WORKER" node celldctl.mjs deploy --target platinum 2>&1 | grep -oE "deployed [a-z0-9-]+ version [0-9a-f]{16}" | grep -oE "[0-9a-f]{16}$")
+[ -n "$D" ] && pass "celldctl deploy --target platinum uploaded and activated version $D (POST /v1/workers/$WORKER/versions + /activate)" || { fail "celldctl deploy --target platinum failed"; exit 1; }
 api -X POST "$API/v1/sandboxes/$CELL/stop" >/dev/null; sleep 3; api 120 -X POST "$API/v1/sandboxes/$CELL/start?wait_for_state=running" >/dev/null; sleep 8
 P=$(mc "mc cat d/$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER/deploy/current.json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))')
 [ "$P" = "$D" ] && pass "the worker folder's deploy/current.json points at $D — the version this cell boots" || fail "pointer is '$P', deployed $D"
