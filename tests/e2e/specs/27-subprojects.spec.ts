@@ -122,17 +122,19 @@ test.describe('27 — Subprojects', () => {
         timeout: 30_000,
       });
 
-      // ── 2. The three rail cards ───────────────────────────────────────
-      await expect(page.getByRole('heading', { name: 'Marketing', exact: true })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Instructions', exact: true })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Context', exact: true })).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'Scheduled', exact: true })).toBeVisible();
-      // The empty-state copy is the contract, not decoration: it is what tells
-      // a person what each card is for before anything is in it.
-      await expect(
-        page.getByText('Add documents or other text to reference in this subproject'),
-      ).toBeVisible();
-      await expect(page.getByText('Set up recurring tasks for this subproject')).toBeVisible();
+      // ── 2. The hero and the three rows under the composer ─────────────
+      // The page is the project-home surface with the subproject's name in
+      // the greeting; what it owns sits under the composer as disclosure
+      // rows, each carrying a one-line summary while closed.
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Marketing');
+      await expect(page.getByText('Campaign work for this run.')).toBeVisible();
+      const instructionsRow = page.getByRole('button', { name: /^Instructions/ });
+      await expect(instructionsRow).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Context/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Scheduled/ })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Context/ })).toContainText(
+        'Files the agent reads first',
+      );
 
       // The sidebar picked up the new row without a reload.
       await expect(
@@ -155,8 +157,10 @@ test.describe('27 — Subprojects', () => {
       });
 
       const instructions = 'Always write in British English.';
-      // The card's textarea carries `aria-label="Instructions"`; Save only
-      // exists while the draft differs from what is saved.
+      // The editor lives inside the Instructions row: open it first. Its
+      // textarea carries `aria-label="Instructions"`; Save only exists while
+      // the draft differs from what is saved.
+      await instructionsRow.click();
       await page.getByRole('textbox', { name: 'Instructions', exact: true }).fill(instructions);
       await page.getByRole('button', { name: 'Save', exact: true }).click();
 

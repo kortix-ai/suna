@@ -4,17 +4,17 @@
  * The `Subprojects` group in the project sidebar — between the nav group and
  * the session list.
  *
- * A subproject is a closed IAM object (`object_policies.subproject = closed`),
- * so this list is already the caller's accessible set: a member with no grant
- * rows gets an empty array from the API, not a filtered-in-the-browser one.
- * That is why the group disappears entirely for a member with none and no
- * `project.customize.write` — there is neither anything to show nor anything
- * to add, and an empty header would be chrome advertising a feature they
- * cannot reach.
+ * Each subproject row is a folder that opens: its sessions nest under it as a
+ * sub-menu, and the main `Sessions` list below shows only sessions filed
+ * under no subproject (`ProjectSessionList unfiledOnly`). One inventory
+ * query feeds both — this group reads the same `qk.project.sessions(id)`
+ * entry the list owns and partitions it client-side, so nesting costs no
+ * extra request and the two can never disagree about a row.
  *
- * `HoverPrefetchLink`, not `<Link prefetch>`, for the same reason the session
- * rows use it: a bare Link prefetches every row in the viewport, so opening a
- * project would fetch the RSC payload of every subproject page.
+ * A subproject is a closed IAM object (`object_policies.subproject = closed`),
+ * so the list is already the caller's accessible set. The group disappears
+ * entirely for a member with none and no `project.customize.write` — an empty
+ * header would be chrome advertising a feature they cannot reach.
  */
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
@@ -23,28 +23,73 @@ import Hint from '@/components/ui/hint';
 import {
   SidebarGroup,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { sessionDisplayStatus } from '@/components/projects/session-label';
+import {
+  getSessionDisplayTitle,
+  projectSessionsRefetchInterval,
+  sortSessionsByLastActivity,
+} from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { FolderSimpleIcon, PlusIcon } from '@phosphor-icons/react';
+import { cn } from '@/lib/utils';
+import { listProjectSessions, type ProjectSession } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { CaretRightIcon, FolderSimpleIcon, PlusIcon } from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { CreateSubprojectModal } from './create-subproject-modal';
 import { useProjectSubprojects } from './subprojects-data';
+
+/** Rows shown under a folder before "View all" takes over. */
+const NESTED_LIMIT = 6;
 
 export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
   const canCreate = canWrite.allowed === true;
   const [createOpen, setCreateOpen] = useState(false);
+  // Folders the person toggled by hand. The active subproject opens itself.
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
 
   const query = useProjectSubprojects(projectId);
   const subprojects = query.data?.subprojects ?? [];
   const isEmpty = subprojects.length === 0;
+
+  // The SAME entry `ProjectSessionList` polls — never a second request.
+  const activeSessionId = pathname?.match(/\/sessions\/([^/?]+)/)?.[1] ?? null;
+  const sessionsQuery = useQuery({
+    queryKey: qk.project.sessions(projectId, 'visible'),
+    queryFn: () => listProjectSessions(projectId),
+    refetchInterval: (q) =>
+      projectSessionsRefetchInterval({
+        sessions: q.state.data as ProjectSession[] | undefined,
+        hasOpenSession: Boolean(activeSessionId),
+      }),
+    refetchOnWindowFocus: true,
+    enabled: !isEmpty,
+    ...contract('inventory'),
+  });
+  const sessionsBySlug = useMemo(() => {
+    const map = new Map<string, ProjectSession[]>();
+    for (const session of sessionsQuery.data ?? []) {
+      if (!session.subproject) continue;
+      const bucket = map.get(session.subproject);
+      if (bucket) bucket.push(session);
+      else map.set(session.subproject, [session]);
+    }
+    for (const [slug, list] of map) map.set(slug, sortSessionsByLastActivity(list));
+    return map;
+  }, [sessionsQuery.data]);
 
   // A known deny plus nothing to list: never render, not even the skeleton.
   // Anything else keeps the group while the probe or the list is in flight,
@@ -88,11 +133,20 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
         <SidebarMenu>
           {subprojects.map((subproject) => {
             const href = `/projects/${projectId}/subprojects/${subproject.slug}`;
+            const sessions = sessionsBySlug.get(subproject.slug) ?? [];
+            const holdsActive =
+              activeSessionId !== null &&
+              sessions.some((session) => session.session_id === activeSessionId);
+            const isActive = pathname === href;
+            // Open by hand, or because the person is inside it right now.
+            const open = toggled[subproject.slug] ?? (isActive || holdsActive);
+            const shown = sessions.slice(0, NESTED_LIMIT);
+            const rest = sessions.length - shown.length;
             return (
               <SidebarMenuItem key={subproject.slug}>
                 <SidebarMenuButton
                   asChild
-                  isActive={pathname === href}
+                  isActive={isActive}
                   tooltip={subproject.name}
                   className="text-sidebar-foreground"
                 >
@@ -103,6 +157,61 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
                     <span className="truncate">{subproject.name}</span>
                   </HoverPrefetchLink>
                 </SidebarMenuButton>
+                {sessions.length > 0 ? (
+                  <SidebarMenuAction
+                    showOnHover={!open}
+                    aria-label={open ? `Collapse ${subproject.name}` : `Expand ${subproject.name}`}
+                    aria-expanded={open}
+                    onClick={() =>
+                      setToggled((current) => ({ ...current, [subproject.slug]: !open }))
+                    }
+                  >
+                    <CaretRightIcon
+                      className={cn('size-3.5 transition-transform', open && 'rotate-90')}
+                    />
+                  </SidebarMenuAction>
+                ) : null}
+                {open && sessions.length > 0 ? (
+                  <SidebarMenuSub>
+                    {shown.map((session) => {
+                      const sessionHref = `/projects/${projectId}/sessions/${session.session_id}`;
+                      const status = sessionDisplayStatus(session, 0);
+                      return (
+                        <SidebarMenuSubItem key={session.session_id}>
+                          <SidebarMenuSubButton
+                            asChild
+                            size="sm"
+                            isActive={activeSessionId === session.session_id}
+                          >
+                            <HoverPrefetchLink href={sessionHref}>
+                              <span
+                                aria-hidden
+                                className={cn(
+                                  'size-1.5 shrink-0 rounded-full',
+                                  status === 'running' || status === 'starting'
+                                    ? 'bg-kortix-green'
+                                    : status === 'needs-you'
+                                      ? 'bg-kortix-yellow'
+                                      : 'bg-muted-foreground/30',
+                                )}
+                              />
+                              <span className="truncate">{getSessionDisplayTitle(session)}</span>
+                            </HoverPrefetchLink>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                    {rest > 0 ? (
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton asChild size="sm" className="text-muted-foreground">
+                          <HoverPrefetchLink href={href}>
+                            <span className="truncate">{rest} more…</span>
+                          </HoverPrefetchLink>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ) : null}
+                  </SidebarMenuSub>
+                ) : null}
               </SidebarMenuItem>
             );
           })}

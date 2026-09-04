@@ -102,6 +102,14 @@ interface ProjectSessionListProps {
    * same one, and a chip every row shares says nothing.
    */
   subproject?: string;
+  /**
+   * Show only sessions filed under NO subproject. The sidebar sets this: a
+   * subproject's sessions nest under its own folder in the `Subprojects`
+   * group above (`subprojects-sidebar-group.tsx`), so listing them here too
+   * would show every one twice. Client-side on purpose — both readers share
+   * one inventory query.
+   */
+  unfiledOnly?: boolean;
 }
 
 const SESSION_RELATIVE_TIME_CLASS =
@@ -177,7 +185,11 @@ function ProjectSessionListSkeleton() {
   );
 }
 
-export function ProjectSessionList({ projectId, subproject }: ProjectSessionListProps) {
+export function ProjectSessionList({
+  projectId,
+  subproject,
+  unfiledOnly = false,
+}: ProjectSessionListProps) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { holdPeek } = useSidebar();
@@ -261,7 +273,7 @@ export function ProjectSessionList({ projectId, subproject }: ProjectSessionList
   // Unsorted on purpose: nothing here reads the order. The two consumers are
   // `.length` and `.filter()`, and `groupSessions` sorts each section itself —
   // sorting twice per render bought nothing.
-  const sessions = data ?? [];
+  const sessions = unfiledOnly ? (data ?? []).filter((session) => !session.subproject) : (data ?? []);
   // Filtering itself lives in the nested `⋯` menu (SessionFilterMenu, mounted
   // both on the Sessions header and on every section header below); this list
   // only applies the two ANDed multi-select facets from the store.

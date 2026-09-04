@@ -234,7 +234,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <SubprojectsSidebarGroup projectId={projectId} />
 
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            <ProjectSessionList projectId={projectId} />
+            <ProjectSessionList projectId={projectId} unfiledOnly />
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">

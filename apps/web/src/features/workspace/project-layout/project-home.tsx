@@ -2,12 +2,14 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { ComposerChatInput, type ComposerOptions } from '@/features/session/composer-chat-input';
 import type { DraftScope } from '@/features/session/composer/draft/composer-draft';
 import type { AttachedFile } from '@/features/session/session-chat-input';
+import { useSidebar } from '@/components/ui/sidebar';
 import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
+import { cn } from '@/lib/utils';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
@@ -22,7 +24,11 @@ import { META_SANDBOX_SLUG, isMetaAgentName } from '@kortix/shared';
 import { AccessRequestsBell } from './home/access-requests-bell';
 import { MetaRuntimeIndicator } from './home/meta-runtime-indicator';
 import { SandboxPicker } from './home/sandbox-picker';
-import { ProjectHomeWallpaper, ProjectHomeWelcomeBody } from './home/welcome-body';
+import {
+  type ProjectHomeHero,
+  ProjectHomeWallpaper,
+  ProjectHomeWelcomeBody,
+} from './home/welcome-body';
 
 // This path is this view's public surface — the instant session shell and the
 // IAM tests already import from here, so the moved pieces keep their address.
@@ -48,6 +54,10 @@ export function ProjectHome({
   projectId,
   onSend,
   busy,
+  hero,
+  below,
+  breadcrumb,
+  toolbar,
 }: {
   projectId: string;
   onSend: (
@@ -56,8 +66,17 @@ export function ProjectHome({
     options?: ProjectHomeSendOptions,
   ) => void;
   busy: boolean;
+  /** See `ProjectHomeWelcomeBody` — a subproject wears this surface with its own name. */
+  hero?: ProjectHomeHero;
+  /** Rendered under the composer, inside the hero column. */
+  below?: ReactNode;
+  /** Floated over the top-left corner, beside the sidebar toggle. */
+  breadcrumb?: ReactNode;
+  /** Floated over the top-right corner, ahead of the access-requests bell. */
+  toolbar?: ReactNode;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const sidebarCollapsed = useSidebar().state === 'collapsed';
 
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -194,11 +213,35 @@ export function ProjectHome({
     <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden lg:px-4.5">
       <ProjectHomeWallpaper />
       <SidebarToggle placement="floating" />
-      <AccessRequestsBell count={pendingAccessCount} href={accessRequestsHref} />
+      {breadcrumb ? (
+        // `left-12` clears the floating sidebar toggle (`top-2 left-2`, 32px)
+        // while the sidebar is collapsed; expanded, the toggle is gone and the
+        // breadcrumb takes its place on the rail.
+        <div
+          className={cn(
+            'absolute top-3.5 z-20 flex min-w-0 items-center',
+            sidebarCollapsed ? 'left-12' : 'left-4',
+          )}
+        >
+          {breadcrumb}
+        </div>
+      ) : null}
+      {/* One top-right cluster: the host's toolbar, then the bell — both are
+          `static` inside it so neither has to know about the other. */}
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-1">
+        {toolbar}
+        <AccessRequestsBell
+          count={pendingAccessCount}
+          href={accessRequestsHref}
+          className="static top-auto right-auto"
+        />
+      </div>
 
       <ProjectHomeWelcomeBody
         projectId={projectId}
         onPickSuggestion={applySuggestion}
+        hero={hero}
+        below={below}
         composer={
           <ComposerChatInput
             onSend={handleSend}

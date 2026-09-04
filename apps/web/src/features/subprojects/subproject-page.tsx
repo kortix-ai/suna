@@ -1,27 +1,36 @@
 'use client';
 
 /**
- * /projects/[id]/subprojects/[slug] — one subproject, as a working surface.
+ * /projects/[id]/subprojects/[slug] — a subproject IS the project-home surface
+ * wearing a different name.
  *
- * The shape is the agent page's, one level down: a header carrying the
- * breadcrumb, the name, and the sharing controls; a body whose main column is
- * the project composer and whose rail is the four things a subproject owns —
- * Instructions, Context, Scheduled, and who may use it. Its sessions sit under
- * the composer, rendered by the SAME list component the sidebar uses.
- *
- * The composer is the real `ProjectHome`, not a copy of it: same agent picker,
- * same sandbox picker, same drafts, same billing gate, same create path. The
- * only thing this page adds is two values — the subproject slug, and its
- * default agent — handed to `useProjectHomeSend`.
+ * Same wallpaper, same greeting shape, same composer, same create path
+ * (`useProjectHomeSend` with the slug and the default agent). What the page
+ * adds is quiet: a breadcrumb floated top-left, a ghost toolbar top-right
+ * (who has it, share, `⋯`), and under the composer a strip of disclosure rows
+ * for what the subproject owns, then its sessions. No panels, no borders —
+ * the home has nothing under its composer, so everything here has to read as
+ * part of that page, not as a settings form parked next to it.
  */
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -29,19 +38,15 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
-import { AgentPeopleSection } from '@/features/workspace/capabilities/agents/agent-people-section';
-import { EditorSectionStyleProvider } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import { ProjectHome } from '@/features/workspace/project-layout/project-home';
 import { useProjectHomeSend } from '@/features/workspace/project-layout/use-project-home-send';
 import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
 import {
   deleteProjectSubproject,
   getProjectDetail,
@@ -53,27 +58,15 @@ import {
   type SubprojectSessionsMode,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import {
-  CaretRightIcon,
-  DotsThreeIcon,
-  FolderSimpleIcon,
-  ShareNetworkIcon,
-  TrashIcon,
-  UsersIcon,
-} from '@phosphor-icons/react';
+import { DotsThreeIcon, FolderSimpleIcon, TrashIcon, UsersIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import {
-  SubprojectContextCard,
-  SubprojectInstructionsCard,
-  SubprojectScheduledCard,
-  useInvalidateSubproject,
-} from './subproject-sections';
+import { SubprojectMeta, useInvalidateSubproject } from './subproject-sections';
 
 /** How many avatars the share stack shows before it folds the rest into "+N". */
-const STACK_LIMIT = 4;
+const STACK_LIMIT = 3;
 
 /** The grants naming this subproject. Orphaned rows (the block was deleted)
  *  are kept — they are inert, and hiding them hides the thing to clean up. */
@@ -99,19 +92,21 @@ export function SubprojectPage({ projectId, slug }: { projectId: string; slug: s
     // an undeclared subproject and one this caller is not granted look the
     // same on purpose (spec §5.4), so the copy names both.
     return (
-      <CenteredState>
-        <EmptyState
-          icon={FolderSimpleIcon}
-          size="sm"
-          title={`No subproject named ${slug}`}
-          description="It may have been removed from the project's configuration, or you may not be granted it."
-          action={
-            <Button asChild variant="outline" size="sm">
-              <HoverPrefetchLink href={`/projects/${projectId}`}>Back to the project</HoverPrefetchLink>
-            </Button>
-          }
-        />
-      </CenteredState>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-3xl px-6 py-16">
+          <EmptyState
+            icon={FolderSimpleIcon}
+            size="sm"
+            title={`No subproject named ${slug}`}
+            description="It may have been removed from the project's configuration, or you may not be granted it."
+            action={
+              <Button asChild variant="outline" size="sm">
+                <HoverPrefetchLink href={`/projects/${projectId}`}>Back to the project</HoverPrefetchLink>
+              </Button>
+            }
+          />
+        </div>
+      </div>
     );
   }
 
@@ -134,55 +129,76 @@ function SubprojectBody({
   });
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <SubprojectHeader projectId={projectId} subproject={subproject} canManage={canManage} />
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-7xl space-y-6 px-4 py-4 pb-12">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-            {/* The composer keeps its own hero proportions, so the cell needs a
-                real height rather than collapsing to the content's. */}
-            <div className="flex min-h-[26rem] min-w-0 flex-col overflow-hidden rounded-md border">
-              <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />
-            </div>
-
-            <aside className="min-w-0 space-y-4">
-              <EditorSectionStyleProvider value="panel">
-                <SubprojectInstructionsCard
-                  projectId={projectId}
-                  subproject={subproject}
-                  canManage={canManage}
-                />
-                <SubprojectContextCard
-                  projectId={projectId}
-                  subproject={subproject}
-                  canManage={canManage}
-                />
-                <SubprojectScheduledCard projectId={projectId} slug={subproject.slug} />
-                <AgentPeopleSection
-                  projectId={projectId}
-                  agentName={subproject.slug}
-                  resourceType="subproject"
-                />
-              </EditorSectionStyleProvider>
-            </aside>
-          </div>
-
-          {/* The sidebar's own list, filtered to this subproject — the same
-              rows, the same `⋯` actions, the same grouping menu, so a session
-              looks and behaves identically wherever it is listed. */}
-          <section className="flex h-80 min-h-0 flex-col">
+    <ProjectHome
+      projectId={projectId}
+      onSend={handleSend}
+      busy={sending}
+      hero={{ name: subproject.name, description: subproject.description }}
+      breadcrumb={<SubprojectBreadcrumb projectId={projectId} subproject={subproject} />}
+      toolbar={
+        <SubprojectToolbar projectId={projectId} subproject={subproject} canManage={canManage} />
+      }
+      below={
+        <div className="flex w-full flex-col gap-8">
+          <SubprojectMeta projectId={projectId} subproject={subproject} canManage={canManage} />
+          {/* The sidebar's own list, scoped to this subproject — the same
+              rows, the same `⋯` actions, the same grouping, so a session looks
+              and behaves identically wherever it is listed. */}
+          <section className="flex h-[22rem] min-h-0 flex-col px-2">
             <ProjectSessionList projectId={projectId} subproject={subproject.slug} />
           </section>
         </div>
-      </div>
-    </div>
+      }
+    />
   );
 }
 
-// ─── Header ────────────────────────────────────────────────────────────────
+// ─── Breadcrumb ────────────────────────────────────────────────────────────
 
-function SubprojectHeader({
+function SubprojectBreadcrumb({
+  projectId,
+  subproject,
+}: {
+  projectId: string;
+  subproject: Subproject;
+}) {
+  const detailQuery = useQuery({
+    queryKey: qk.project.detail(projectId),
+    queryFn: () => getProjectDetail(projectId),
+    ...contract('config'),
+  });
+  const projectName = detailQuery.data?.project?.name ?? 'Project';
+  return (
+    <Breadcrumb>
+      <BreadcrumbList className="text-xs sm:gap-1.5">
+        <BreadcrumbItem>
+          <BreadcrumbLink asChild>
+            <HoverPrefetchLink href={`/projects/${projectId}`} className="truncate">
+              {projectName}
+            </HoverPrefetchLink>
+          </BreadcrumbLink>
+        </BreadcrumbItem>
+        <BreadcrumbSeparator />
+        <BreadcrumbItem>
+          <BreadcrumbPage className="truncate">{subproject.name}</BreadcrumbPage>
+        </BreadcrumbItem>
+      </BreadcrumbList>
+    </Breadcrumb>
+  );
+}
+
+// ─── Toolbar ───────────────────────────────────────────────────────────────
+
+/**
+ * Who has this subproject, the way to give it to someone else, and the `⋯`.
+ *
+ * Three ghost controls, no fills — this floats over the hero, and anything
+ * heavier reads as a second header. The avatar stack is the Share button's
+ * own leading content: the people who have it are the reason to press it.
+ * Session visibility (spec §2: `sessions: private | shared`) lives in the
+ * menu as a radio pair — a manifest field, PATCHed like the others.
+ */
+function SubprojectToolbar({
   projectId,
   subproject,
   canManage,
@@ -194,165 +210,13 @@ function SubprojectHeader({
   const router = useRouter();
   const queryClient = useQueryClient();
   const invalidate = useInvalidateSubproject(projectId, subproject.slug);
-  const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState(subproject.name);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const rename = useMutation({
-    mutationFn: (name: string) => updateProjectSubproject(projectId, subproject.slug, { name }),
-    onSuccess: async (updated) => {
-      successToast(`Renamed to ${updated.name}`);
-      setRenaming(false);
-      await invalidate();
-    },
-    onError: (error: Error) => errorToast(error.message || 'Could not rename it'),
-  });
-
-  const remove = useMutation({
-    mutationFn: () => deleteProjectSubproject(projectId, subproject.slug),
-    onSuccess: async () => {
-      successToast(`${subproject.name} deleted`);
-      setConfirmDelete(false);
-      // Drop this subproject's own query BEFORE the list invalidation: the
-      // single-item key nests under the list key, so invalidating the list
-      // would refetch a row the server just deleted and toast its 404 while
-      // the page is still mounted (seen 2026-09-04).
-      queryClient.removeQueries({ queryKey: qk.project.subproject(projectId, subproject.slug) });
-      // The sessions kept their column and the triggers lost theirs, so both
-      // lists move — not just the subproject list.
-      await queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) });
-      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
-      queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId) });
-      router.push(`/projects/${projectId}`);
-    },
-    onError: (error: Error) => errorToast(error.message || 'Could not delete it'),
-  });
-
-  const commitRename = () => {
-    const next = draftName.trim();
-    if (!next || next === subproject.name) {
-      setRenaming(false);
-      setDraftName(subproject.name);
-      return;
-    }
-    rename.mutate(next);
-  };
-
-  return (
-    <header className="border-border/60 shrink-0 border-b px-5 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-sm">
-          <HoverPrefetchLink
-            href="/projects"
-            className="text-muted-foreground hover:text-foreground shrink-0 transition-colors"
-          >
-            Projects
-          </HoverPrefetchLink>
-          <CaretRightIcon aria-hidden className="text-muted-foreground/50 size-3.5 shrink-0" />
-          {renaming ? (
-            <Input
-              aria-label="Subproject name"
-              value={draftName}
-              autoFocus
-              maxLength={64}
-              disabled={rename.isPending}
-              className="h-7 max-w-56 text-sm"
-              onChange={(event) => setDraftName(event.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  commitRename();
-                } else if (event.key === 'Escape') {
-                  event.preventDefault();
-                  setDraftName(subproject.name);
-                  setRenaming(false);
-                }
-              }}
-            />
-          ) : (
-            <h1 className="text-foreground truncate text-sm font-semibold">{subproject.name}</h1>
-          )}
-        </nav>
-
-        <div className="flex shrink-0 items-center gap-2">
-          <SubprojectShareControl projectId={projectId} subproject={subproject} />
-          {canManage ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon-sm" aria-label="Subproject actions">
-                  <DotsThreeIcon className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setDraftName(subproject.name);
-                    // After the menu closes, or the input mounts into a tree
-                    // Radix is still returning focus through and loses it.
-                    requestAnimationFrame(() => setRenaming(true));
-                  }}
-                >
-                  Rename
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  onSelect={() => requestAnimationFrame(() => setConfirmDelete(true))}
-                >
-                  <TrashIcon />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-        </div>
-      </div>
-
-      {subproject.description ? (
-        <p className="text-muted-foreground mt-2 max-w-2xl text-sm text-pretty">
-          {subproject.description}
-        </p>
-      ) : null}
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={`Delete ${subproject.name}?`}
-        description="The block is removed from kortix.yaml and its triggers lose the back-reference. Its sessions are kept, but members granted only this subproject stop seeing them."
-        confirmLabel="Delete"
-        confirmVariant="destructive"
-        isPending={remove.isPending}
-        onConfirm={() => remove.mutate()}
-      />
-    </header>
-  );
-}
-
-/**
- * Who has this subproject, the way to give it to someone else, and who may
- * read the sessions started in it.
- *
- * Same shape as `AgentShareControl` — an avatar stack of the grants, a Share
- * button opening the shared `AccessDialog` narrowed to this subproject — plus
- * the one control an agent has no equivalent of: the session-visibility mode
- * (spec §2), which is a manifest field and so PATCHes the subproject.
- *
- * Gated on `project.members.manage`, the leaf the grants endpoint asserts.
- */
-function SubprojectShareControl({
-  projectId,
-  subproject,
-}: {
-  projectId: string;
-  subproject: Subproject;
-}) {
   const canManageMembers =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
-  const invalidate = useInvalidateSubproject(projectId, subproject.slug);
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftName, setDraftName] = useState(subproject.name);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const grantsQuery = useQuery({
     queryKey: qk.project.resourceGrants(projectId),
@@ -367,7 +231,6 @@ function SubprojectShareControl({
     ...contract('config'),
   });
   const projectName = detailQuery.data?.project?.name ?? '';
-
   const assigned = useMemo(
     () => grantsForSubproject(grantsQuery.data?.grants ?? [], subproject.slug),
     [grantsQuery.data, subproject.slug],
@@ -389,69 +252,186 @@ function SubprojectShareControl({
     onError: (error: Error) => errorToast(error.message || 'Could not change session visibility'),
   });
 
-  if (!canManageMembers || !accountId) return null;
+  const rename = useMutation({
+    mutationFn: (name: string) => updateProjectSubproject(projectId, subproject.slug, { name }),
+    onSuccess: async (updated) => {
+      successToast(`Renamed to ${updated.name}`);
+      setRenaming(false);
+      await invalidate();
+    },
+    onError: (error: Error) => errorToast(error.message || 'Could not rename it'),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => deleteProjectSubproject(projectId, subproject.slug),
+    onSuccess: async () => {
+      successToast(`${subproject.name} deleted`);
+      setConfirmDelete(false);
+      // Drop this subproject's own query BEFORE the list invalidation: the
+      // single-item key nests under the list key, so invalidating the list
+      // would refetch a row the server just deleted and toast its 404 while
+      // the page is still mounted.
+      queryClient.removeQueries({ queryKey: qk.project.subproject(projectId, subproject.slug) });
+      // The sessions kept their column and the triggers lost theirs, so both
+      // lists move — not just the subproject list.
+      await queryClient.invalidateQueries({ queryKey: qk.project.subprojects(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
+      queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId) });
+      router.push(`/projects/${projectId}`);
+    },
+    onError: (error: Error) => errorToast(error.message || 'Could not delete it'),
+  });
+
+  const commitRename = () => {
+    const next = draftName.trim();
+    if (!next || next === subproject.name) {
+      setRenaming(false);
+      setDraftName(subproject.name);
+      return;
+    }
+    rename.mutate(next);
+  };
 
   const shown = assigned.slice(0, STACK_LIMIT);
   const rest = assigned.length - shown.length;
 
   return (
-    <div className="flex items-center gap-2">
-      <Hint label="Who may read the sessions started in this subproject">
-        <Tabs
-          value={subproject.sessions}
-          onValueChange={(next) => setMode.mutate(next as SubprojectSessionsMode)}
-        >
-          <TabsListCompact aria-label="Session visibility">
-            <TabsTriggerCompact value="private" disabled={setMode.isPending}>
-              Only their own
-            </TabsTriggerCompact>
-            <TabsTriggerCompact value="shared" disabled={setMode.isPending}>
-              Everyone granted
-            </TabsTriggerCompact>
-          </TabsListCompact>
-        </Tabs>
-      </Hint>
+    <div className="flex items-center gap-1">
+      {renaming ? (
+        <Input
+          aria-label="Subproject name"
+          value={draftName}
+          autoFocus
+          maxLength={64}
+          disabled={rename.isPending}
+          className="h-8 w-56 text-sm"
+          onChange={(event) => setDraftName(event.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commitRename();
+            } else if (event.key === 'Escape') {
+              event.preventDefault();
+              setDraftName(subproject.name);
+              setRenaming(false);
+            }
+          }}
+        />
+      ) : null}
 
-      {assigned.length > 0 ? (
+      {canManageMembers && accountId ? (
         <Hint
-          label={`${assigned.length} ${assigned.length === 1 ? 'grant' : 'grants'} on this subproject`}
+          label={
+            assigned.length === 0
+              ? 'Grant this subproject to people or groups'
+              : `${assigned.length} ${assigned.length === 1 ? 'grant' : 'grants'} — share with more`
+          }
         >
-          {/* Overlapping stack: each bubble sits 6px into the one before, with
-              a ring in the page background so the overlap reads as depth. */}
-          <span className={cn('flex items-center pl-1')}>
-            {shown.map((grant) => (
-              <span
-                key={grant.grant_id}
-                className="ring-background -ml-1.5 inline-flex rounded-full ring-2 first:ml-0"
-              >
-                {grant.principal_type === 'group' ? (
-                  <EntityAvatar icon={UsersIcon} size="sm" className="rounded-full" />
-                ) : (
-                  <UserAvatar email={grant.principal_label} size="sm" />
-                )}
-              </span>
-            ))}
-            {rest > 0 ? (
-              <span className="bg-muted text-muted-foreground ring-background -ml-1.5 inline-flex size-6 items-center justify-center rounded-full text-xs font-medium tabular-nums ring-2">
-                +{rest}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground gap-2"
+            onClick={() => setShareOpen(true)}
+          >
+            {assigned.length > 0 ? (
+              // Overlapping stack: each bubble sits 6px into the one before,
+              // with a ring in the page background so the overlap reads as
+              // depth rather than a smear.
+              <span className="flex items-center">
+                {shown.map((grant) => (
+                  <span
+                    key={grant.grant_id}
+                    className="ring-background -ml-1.5 inline-flex rounded-full ring-2 first:ml-0"
+                  >
+                    {grant.principal_type === 'group' ? (
+                      <EntityAvatar icon={UsersIcon} size="xs" className="rounded-full" />
+                    ) : (
+                      <UserAvatar email={grant.principal_label} size="xs" />
+                    )}
+                  </span>
+                ))}
+                {rest > 0 ? (
+                  <span className="bg-muted text-muted-foreground ring-background -ml-1.5 inline-flex size-5 items-center justify-center rounded-full text-[10px] font-medium tabular-nums ring-2">
+                    +{rest}
+                  </span>
+                ) : null}
               </span>
             ) : null}
-          </span>
+            Share
+          </Button>
         </Hint>
       ) : null}
 
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        <ShareNetworkIcon className="size-3.5 shrink-0" />
-        Share
-      </Button>
+      {canManage ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Subproject actions"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <DotsThreeIcon className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
+              Sessions here are readable by
+            </DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={subproject.sessions}
+              onValueChange={(next) => setMode.mutate(next as SubprojectSessionsMode)}
+            >
+              <DropdownMenuRadioItem value="private" disabled={setMode.isPending}>
+                Only whoever started them
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="shared" disabled={setMode.isPending}>
+                Everyone granted this subproject
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                setDraftName(subproject.name);
+                // After the menu closes, or the input mounts into a tree Radix
+                // is still returning focus through and loses it.
+                requestAnimationFrame(() => setRenaming(true));
+              }}
+            >
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => requestAnimationFrame(() => setConfirmDelete(true))}
+            >
+              <TrashIcon />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
 
-      <AccessDialog
-        open={open}
-        onOpenChange={setOpen}
-        accountId={accountId}
-        scope={{ kind: 'project', projectId, projectName }}
-        mode={{ kind: 'grant' }}
-        initialSubprojectIds={[subproject.slug]}
+      {canManageMembers && accountId ? (
+        <AccessDialog
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          accountId={accountId}
+          scope={{ kind: 'project', projectId, projectName }}
+          mode={{ kind: 'grant' }}
+          initialSubprojectIds={[subproject.slug]}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${subproject.name}?`}
+        description="The block is removed from kortix.yaml and its triggers lose the back-reference. Its sessions are kept, but members granted only this subproject stop seeing them."
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+        isPending={remove.isPending}
+        onConfirm={() => remove.mutate()}
       />
     </div>
   );
@@ -459,25 +439,16 @@ function SubprojectShareControl({
 
 // ─── States ────────────────────────────────────────────────────────────────
 
-function CenteredState({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-6 py-16">{children}</div>
-    </div>
-  );
-}
-
 function SubprojectPageSkeleton() {
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
-      <div className="border-border/60 shrink-0 border-b px-5 py-3">
-        <Skeleton className="h-5 w-48 rounded-sm" />
-      </div>
-      <div className="mx-auto grid w-full max-w-7xl gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <Skeleton className="h-[26rem] w-full rounded-md" />
-        <div className="space-y-4">
-          <Skeleton className="h-48 w-full rounded-md" />
-          <Skeleton className="h-40 w-full rounded-md" />
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="m-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
+        <Skeleton className="h-9 w-2/3 rounded-md" />
+        <Skeleton className="h-28 w-full rounded-md" />
+        <div className="space-y-1 pt-4">
+          <Skeleton className="h-9 w-full rounded-md" />
+          <Skeleton className="h-9 w-full rounded-md" />
+          <Skeleton className="h-9 w-full rounded-md" />
         </div>
       </div>
     </div>
