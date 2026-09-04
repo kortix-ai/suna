@@ -7,8 +7,9 @@
  * Same wallpaper, same greeting shape, same composer, same create path
  * (`useProjectHomeSend` with the slug and the default agent). What the page
  * adds is quiet: a breadcrumb floated top-left, a ghost toolbar top-right
- * (who has it, share, `⋯`), and under the composer a strip of disclosure rows
- * for what the subproject owns, then its sessions. No panels, no borders —
+ * (share, `⋯`), and under the composer a strip of disclosure rows for what the
+ * subproject owns. Its sessions are in the sidebar, nested under its folder —
+ * not repeated here. No panels, no borders —
  * the home has nothing under its composer, so everything here has to read as
  * part of that page, not as a settings form parked next to it.
  */
@@ -34,16 +35,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ProjectHome } from '@/features/workspace/project-layout/project-home';
 import { useProjectHomeSend } from '@/features/workspace/project-layout/use-project-home-send';
-import { ProjectSessionList } from '@/features/workspace/project-sidebar/project-session-list';
 import { AccessDialog } from '@/features/workspace/shared/access/access-dialog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -58,15 +56,17 @@ import {
   type SubprojectSessionsMode,
 } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { DotsThreeIcon, FolderSimpleIcon, TrashIcon, UsersIcon } from '@phosphor-icons/react';
+import {
+  DotsThreeIcon,
+  FolderSimpleIcon,
+  ShareNetworkIcon,
+  TrashIcon,
+} from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { SubprojectMeta, useInvalidateSubproject } from './subproject-sections';
-
-/** How many avatars the share stack shows before it folds the rest into "+N". */
-const STACK_LIMIT = 3;
 
 /** The grants naming this subproject. Orphaned rows (the block was deleted)
  *  are kept — they are inert, and hiding them hides the thing to clean up. */
@@ -138,17 +138,10 @@ function SubprojectBody({
       toolbar={
         <SubprojectToolbar projectId={projectId} subproject={subproject} canManage={canManage} />
       }
-      below={
-        <div className="flex w-full flex-col gap-8">
-          <SubprojectMeta projectId={projectId} subproject={subproject} canManage={canManage} />
-          {/* The sidebar's own list, scoped to this subproject — the same
-              rows, the same `⋯` actions, the same grouping, so a session looks
-              and behaves identically wherever it is listed. */}
-          <section className="flex h-[22rem] min-h-0 flex-col px-2">
-            <ProjectSessionList projectId={projectId} subproject={subproject.slug} />
-          </section>
-        </div>
-      }
+      // Only the strip. The subproject's sessions live in the sidebar, nested
+      // under its folder — listing them here too made the page a second
+      // sidebar (user, 2026-09-04).
+      below={<SubprojectMeta projectId={projectId} subproject={subproject} canManage={canManage} />}
     />
   );
 }
@@ -192,11 +185,11 @@ function SubprojectBreadcrumb({
 /**
  * Who has this subproject, the way to give it to someone else, and the `⋯`.
  *
- * Three ghost controls, no fills — this floats over the hero, and anything
- * heavier reads as a second header. The avatar stack is the Share button's
- * own leading content: the people who have it are the reason to press it.
- * Session visibility (spec §2: `sessions: private | shared`) lives in the
- * menu as a radio pair — a manifest field, PATCHed like the others.
+ * Two ghost controls, no fills — this floats over the hero, and anything
+ * heavier reads as a second header. Share carries the grant count; the
+ * people themselves are one press away in the Access row. Session visibility
+ * (spec §2: `sessions: private | shared`) lives in the menu as a radio pair —
+ * a manifest field, PATCHed like the others.
  */
 function SubprojectToolbar({
   projectId,
@@ -292,9 +285,6 @@ function SubprojectToolbar({
     rename.mutate(next);
   };
 
-  const shown = assigned.slice(0, STACK_LIMIT);
-  const rest = assigned.length - shown.length;
-
   return (
     <div className="flex items-center gap-1">
       {renaming ? (
@@ -325,40 +315,20 @@ function SubprojectToolbar({
           label={
             assigned.length === 0
               ? 'Grant this subproject to people or groups'
-              : `${assigned.length} ${assigned.length === 1 ? 'grant' : 'grants'} — share with more`
+              : `Granted to ${assigned.length} ${assigned.length === 1 ? 'person or group' : 'people and groups'}`
           }
         >
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground hover:text-foreground gap-2"
+            className="text-muted-foreground hover:text-foreground gap-1.5"
             onClick={() => setShareOpen(true)}
           >
-            {assigned.length > 0 ? (
-              // Overlapping stack: each bubble sits 6px into the one before,
-              // with a ring in the page background so the overlap reads as
-              // depth rather than a smear.
-              <span className="flex items-center">
-                {shown.map((grant) => (
-                  <span
-                    key={grant.grant_id}
-                    className="ring-background -ml-1.5 inline-flex rounded-full ring-2 first:ml-0"
-                  >
-                    {grant.principal_type === 'group' ? (
-                      <EntityAvatar icon={UsersIcon} size="xs" className="rounded-full" />
-                    ) : (
-                      <UserAvatar email={grant.principal_label} size="xs" />
-                    )}
-                  </span>
-                ))}
-                {rest > 0 ? (
-                  <span className="bg-muted text-muted-foreground ring-background -ml-1.5 inline-flex size-5 items-center justify-center rounded-full text-[10px] font-medium tabular-nums ring-2">
-                    +{rest}
-                  </span>
-                ) : null}
-              </span>
-            ) : null}
+            <ShareNetworkIcon className="size-4 shrink-0" />
             Share
+            {assigned.length > 0 ? (
+              <span className="text-muted-foreground/70 tabular-nums">{assigned.length}</span>
+            ) : null}
           </Button>
         </Hint>
       ) : null}
