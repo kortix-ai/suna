@@ -1,0 +1,105 @@
+---
+title: Monitoring
+description: A stage board over every session you can see, plus each trigger's runs.
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Monitoring is one page per project, `/projects/<id>/monitoring`, with two
+parts:
+
+1. **Stage board** — a kanban with six fixed columns. Every session you can
+   open is exactly one card. The agent moves its own card from inside the
+   sandbox; you move any card from the board.
+2. **Trigger runs** — one block per trigger, listing the sessions that trigger
+   started, newest first, with the runtime status and the stage of each.
+
+Monitoring is a [feature flag](/docs/feature-flags). Its stability is
+**experimental**, and it is off by default.
+
+## Turn Monitoring on
+
+Open **Settings → Experimental** and switch **Monitoring** on for the project.
+You need `project.customize.write`.
+
+While the flag is off:
+
+- `PUT /projects/<id>/sessions/<sid>/stage` answers `403` with
+  `{ error, code: "feature_disabled", feature: "monitoring" }`.
+- `kortix sessions stage` prints the same sentence and exits `1`. An agent
+  that sees it continues its work without reporting a stage.
+- The **Monitoring** entry does not appear in the project sidebar. Opening
+  `/projects/<id>/monitoring` directly shows a gate screen that links to the
+  flag.
+
+## The six stages
+
+A stage says where a session is in its **work**. It is separate from the
+runtime status (`running`, `stopped`, …), which says whether the sandbox is
+alive. Both show on the card.
+
+| Stage         | Column      | Meaning                                                                  |
+| ------------- | ----------- | ------------------------------------------------------------------------ |
+| `backlog`     | Backlog     | Nothing has started. Every session with no stage sits here.              |
+| `planning`    | Planning    | The agent is working out what to do.                                     |
+| `ready`       | Ready       | The plan is done. With `--needs-approval`, the agent waits here for you. |
+| `in_progress` | In progress | The agent is executing.                                                  |
+| `review`      | Review      | The work is ready for a human to look at.                                |
+| `done`        | Done        | Finished.                                                                |
+
+## Move a card from the CLI
+
+Inside a sandbox the session id is implied (`KORTIX_SESSION_ID`):
+
+```bash
+kortix sessions stage planning
+kortix sessions stage ready --needs-approval --note "Plan in PLAN.md"
+kortix sessions stage in_progress
+kortix sessions stage review
+kortix sessions stage done
+```
+
+From your own machine, name the session:
+
+```bash
+kortix sessions stage <session-id> review --note "Ready for a look"
+kortix sessions stage <session-id>          # print the current stage
+kortix sessions stage <session-id> --json   # the stage object
+```
+
+`--note` is at most 500 characters and shows on the card. Aliases:
+`in-progress`, `inprogress`, `progress` → `in_progress`; `plan` → `planning`;
+`todo` → `backlog`.
+
+An agent can only move **its own** session. A person can move any session
+they can open, from the CLI or from the card's **⋯ → Move to** menu.
+
+## The approval loop
+
+1. The agent finishes planning and runs
+   `kortix sessions stage ready --needs-approval --note "…"`, then ends its
+   turn.
+2. The card sits in **Ready** with a **Needs approval** badge and two buttons.
+3. **Approve** moves the card to **In progress** and sends the agent a prompt:
+   `Approved. Proceed with the plan.` The agent's next turn starts from it.
+4. **Send back** asks for feedback, moves the card to **Planning**, and sends
+   the agent `Plan sent back for changes:` followed by your feedback.
+
+Without `--needs-approval` nothing waits: the agent moves itself from `ready`
+to `in_progress` and on.
+
+<Callout type="info" title="Stage is session metadata">
+The stage lives on the session row (`metadata.stage`) and is written only by
+the stage route. `PATCH /sessions/<sid>` rejects a `metadata.stage` key with
+`400`. The SDK exposes it as `ProjectSession.stage` and writes it with
+`setProjectSessionStage` / `useSetSessionStage`.
+</Callout>
+
+## Trigger runs
+
+A session started by a schedule, webhook, or monitor carries the trigger's
+slug. The **Trigger runs** section groups those sessions under their trigger,
+in the order the Triggers page lists them, and shows each run's runtime status,
+stage, and start time. A trigger with no runs still appears. A run whose slug
+no longer matches any trigger in `kortix.yaml` appears under its slug with a
+**Not in manifest** badge.

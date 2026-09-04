@@ -53,6 +53,9 @@ const PATCH_SERVER_MANAGED_SESSION_METADATA_KEYS = [
   ...SERVER_MANAGED_SESSION_METADATA_KEYS,
   'workspace_mode',
   'sandbox_slug',
+  // Written only by PUT /sessions/:id/stage (routes/session-stage.ts), which
+  // validates the enum and gates on the `monitoring` flag.
+  'stage',
 ] as const;
 
 function serverManagedSessionMetadataKey(

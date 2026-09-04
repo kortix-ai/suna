@@ -242,6 +242,7 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 | `kortix sessions restart <id>` | Re-provision a session in place. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
+| `kortix sessions stage [<id>] [<stage>] [--needs-approval] [--note "<text>"] [--json]` | Move a session's card on the **Monitoring** board (`backlog`, `planning`, `ready`, `in_progress`, `review`, `done`; aliases `todo`, `plan`, `in-progress`) or print it. Inside a sandbox `<id>` defaults to `$KORTIX_SESSION_ID`. `--needs-approval` (only with `ready`) parks the card until a human approves. |
 
 Session ids can be abbreviated: any unambiguous prefix works (the 8-char
 ids `sessions ls` prints are fine).
@@ -254,6 +255,23 @@ and conversation are intact — `sessions cp`, `sessions chat`, and
 **Inside a sandbox:** `KORTIX_SESSION_ID` tells you which session
 you're running in. `kortix sessions info $KORTIX_SESSION_ID` gives
 you the live view of yourself.
+
+**Report your stage.** When the project has Monitoring enabled, keep
+your own card current so humans can see where every agent is:
+
+```sh
+kortix sessions stage planning                                          # working out the plan
+kortix sessions stage ready --needs-approval --note "Plan in PLAN.md"   # needs a human OK → END YOUR TURN after this
+kortix sessions stage ready                                             # no approval needed → move on immediately
+kortix sessions stage in_progress                                       # executing
+kortix sessions stage review --note "CR #12 open"                       # ready for a human to review
+kortix sessions stage done                                              # finished
+```
+
+After `--needs-approval`, stop and end the turn: the approval or the
+reviewer's feedback arrives as a new prompt. A `403` saying the feature is
+not enabled for this project means Monitoring is off — continue without
+the stage calls.
 
 **Watch + talk to other agents.** From any session (or your laptop) you
 can see the whole project's activity and read it live — this is how an

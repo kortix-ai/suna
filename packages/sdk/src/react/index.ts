@@ -99,6 +99,7 @@ export { useChatTurns, type TurnView, renderParts, type PartRenderers } from './
 // wired so writes reflect without a manual refetch.
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export { useSetSessionStage } from './use-set-session-stage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {

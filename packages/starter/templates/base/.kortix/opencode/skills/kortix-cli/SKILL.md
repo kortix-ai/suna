@@ -73,6 +73,25 @@ model, host switching, orchestration patterns — read
 `kortix skills file kortix-system references/kortix/kortix-cli.md` (the full
 command reference), or `kortix skills get <name>` for another system skill.
 
+## Report your stage (Monitoring board)
+
+When the project has **Monitoring** enabled, every session is a card on a
+board: `backlog → planning → ready → in_progress → review → done`. You move
+your own card; the id defaults to `$KORTIX_SESSION_ID`.
+
+```bash
+kortix sessions stage planning                                    # while you work out the plan
+kortix sessions stage ready --needs-approval --note "Plan in PLAN.md"  # plan needs a human OK → then STOP and end your turn
+kortix sessions stage ready                                       # no approval needed → move straight on
+kortix sessions stage in_progress                                 # executing
+kortix sessions stage review --note "CR #12 open"                 # work is ready for a human
+kortix sessions stage done                                        # finished
+```
+
+With `--needs-approval`, end your turn right after the command: the approval
+(or feedback) arrives as a new prompt. A `403 … not enabled for this project`
+means Monitoring is off — keep working, skip the stage calls.
+
 ## Landing work on `main`
 
 A session runs on its own branch; the **only** sanctioned path to `main` is a

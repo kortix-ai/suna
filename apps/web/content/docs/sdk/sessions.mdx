@@ -192,6 +192,32 @@ The record combines finalized LLM cost, billed sandbox compute cost, model
 usage, token totals, compute duration, and ledger entries. `s.cost()` does not
 call `ensureReady()`.
 
+## Stage (Monitoring board)
+
+`stage` is where a session is in its work, not whether its sandbox is alive.
+The Monitoring page (feature flag `monitoring`) renders every visible session as
+one card in one of six columns: `backlog`, `planning`, `ready`, `in_progress`,
+`review`, `done` (`SESSION_STAGES`, in that order). A session with `stage: null`
+renders in Backlog.
+
+```ts
+import { SESSION_STAGES, sessionTriggerSlug } from '@kortix/sdk';
+
+await s.setStage({ stage: 'ready', needs_approval: true, note: 'Plan in PLAN.md' });
+
+const session = await s.get();
+session.stage?.value;          // 'ready'
+session.stage?.needs_approval; // true — parked until a human approves
+session.stage?.updated_by;     // 'agent' or a user id
+sessionTriggerSlug(session);   // the trigger that created it, or null
+```
+
+Inside a sandbox the agent moves its own card with
+`kortix sessions stage ready --needs-approval`. `setStage` returns `403` with
+`code: 'feature_disabled'` until the project enables the flag, and a sandbox
+caller may only move its own session. In React, `useSetSessionStage(projectId)`
+is the same call as a mutation that refreshes every session list.
+
 ## Runtime status and previews
 
 | Method                      | Returns                        | Use                                          |

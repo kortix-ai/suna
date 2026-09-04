@@ -292,6 +292,18 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
+  {
+    key: 'monitoring',
+    name: 'Monitoring',
+    description:
+      'A stage board (Backlog → Planning → Ready → In progress → Review → Done) over every session you can see, plus per-trigger run lists; agents move their own card with `kortix sessions stage`, and a card parked in Ready with --needs-approval waits for your go-ahead.',
+    stability: 'experimental',
+    // Pure web/DB surface — no operator env gates it.
+    available: () => true,
+    // Explicit opt-in per project.
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
 ];
 
 const FLAG_BY_KEY: Record<FeatureFlagKey, FeatureFlagDef> = Object.fromEntries(

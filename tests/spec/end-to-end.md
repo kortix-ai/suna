@@ -361,6 +361,20 @@ DB `review_items` (per-project; `kind change|approval|output|decision|batch`, `s
 
 ---
 
+## 11c. Monitoring (session stage board; behind the `monitoring` flag)
+
+Contract: `docs/monitoring.md`. No table — the stage is one server-managed key, `project_sessions.metadata.stage` `{value,needs_approval,note,updated_at,updated_by}`, `value ∈ backlog|planning|ready|in_progress|review|done`; a session with no key renders in Backlog. `serializeSession` exposes it top-level as `stage` (object or null) on every session read. The board itself is read from the existing `GET /projects/:id/sessions` (visible scope) and `GET /projects/:id/triggers` (trigger runs group visible sessions by `metadata.trigger_slug`); no new read route.
+
+`MON-1` OWNER enables `monitoring` through `PATCH /projects/:id/features`, creates a session, then `PUT /projects/:id/sessions/:sid/stage {stage:'ready',needs_approval:true,note:'…'}` → `session` (any project member, session must be visible) → 200 serialized session with `stage.value:'ready'`, `stage.needs_approval:true`, `stage.note`, `stage.updated_at`; `GET …/sessions/:sid` reads the same `stage` back. A later `{stage:'in_progress'}` replaces the object whole: `needs_approval:false`, `note:null`. (`daytona`+`funded` — needs a real session.)
+`MON-2` flag off (fresh project, default) → **403** `{code:'feature_disabled',feature:'monitoring'}`. The gate runs after membership authz and BEFORE the session lookup, so it answers 403 even for an unknown session id.
+`MON-3` validation (flag on) — `stage` not in the enum → 400 `Invalid stage`; `note` longer than 500 chars → 400; non-boolean `needs_approval` → 400; non-uuid `sid` → 400; valid body against an unknown/invisible session → 404. Validation precedes the session lookup.
+`MON-4` `PATCH /projects/:id/sessions/:sid {metadata:{stage:…}}` → 400 `metadata key is server-managed: stage` — the PUT route is the only writer.
+`MON-5` access: NONMEMBER → 403/404; ANON → 401.
+
+**Agent self-move (no black-box flow in the local profile).** A session-bound caller (the sandbox's own token, `callerKortixSessionId`) may only move ITS OWN session: any other `sid` → 403 `An agent can only move its own session`; its writes stamp `updated_by:'agent'`, a human's stamp the user id. The CLI entry is `kortix sessions stage [<session-id>] <stage> [--needs-approval] [--note "…"]`, defaulting `<session-id>` to `$KORTIX_SESSION_ID`.
+
+---
+
 ## 12. Triggers (cron + webhook + monitor; source of truth = `kortix.yaml`)
 
 Specs in `[[triggers]]`; CRUD commits the manifest; runtime state and account-local session access live in `project_trigger_runtime`. Types: `cron`, `webhook`, `monitor` (experimental, behind the `monitors` feature flag — see `docs/specs/2026-08-12-monitors.md`). A `monitor` entry requires `run` + `mode` (`poll`|`stream`; `interval` ≥30s required iff `poll`, rejected on `stream`), rejects cron/webhook-only fields (`cron`, `schedule`, `run_at`, `timezone`, `secret_env`), and defaults `session_mode` to `reuse`. Monitor FIRING is not an end-user HTTP surface: the per-project monitor box posts to `POST /projects/:id/monitors/ingest` with its own sandbox token (coverage-allowlisted; auth/dedup/rate-limit behavior pinned in `apps/api/src/__tests__/unit-monitor-ingest-route.test.ts`), and `drainMonitorEvents` hands events to `fireGitTrigger` on the scheduler tick, beside the trigger execution queue. The local test profile excludes cloud sandboxes, so the box lifecycle is covered by unit tests plus the live verification recorded in the spec doc.

@@ -36,7 +36,8 @@ export type FeatureFlagKey =
   | 'monitors'
   | 'warm_sessions'
   | 'secrets_egress'
-  | 'pi_worker';
+  | 'pi_worker'
+  | 'monitoring';
 
 /**
  * Every {@link FeatureFlagKey}, at runtime. Kept in the same order as the
@@ -57,6 +58,7 @@ export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'warm_sessions',
   'secrets_egress',
   'pi_worker',
+  'monitoring',
 ] as const;
 
 /**

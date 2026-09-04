@@ -71,6 +71,7 @@ import {
   GithubLogoIcon as GithubLogoBase,
   GooglePlayLogoIcon as GooglePlayLogoBase,
   HandshakeIcon as HandshakeBase,
+  KanbanIcon as KanbanBase,
   KeyIcon as KeyBase,
   LinuxLogoIcon as LinuxLogoBase,
   ListChecksIcon as ListChecksBase,
@@ -168,6 +169,7 @@ export const GitPullRequestIcon = withDefaultWeight(GitPullRequestBase);
 export const GithubLogoIcon = withDefaultWeight(GithubLogoBase);
 export const GooglePlayLogoIcon = withDefaultWeight(GooglePlayLogoBase);
 export const HandshakeIcon = withDefaultWeight(HandshakeBase);
+export const KanbanIcon = withDefaultWeight(KanbanBase);
 export const KeyIcon = withDefaultWeight(KeyBase);
 export const LinuxLogoIcon = withDefaultWeight(LinuxLogoBase);
 export const ListChecksIcon = withDefaultWeight(ListChecksBase);

@@ -20,6 +20,42 @@ export type ProjectSessionStatus =
   | 'failed'
   | 'completed';
 
+/**
+ * Where a session is in its WORK — the Monitoring board column — as distinct
+ * from `status`, which says whether its sandbox is alive. The agent moves its
+ * own card with `kortix sessions stage <stage>`; a human moves any visible
+ * card from the board. Column order is {@link SESSION_STAGES}.
+ */
+export type SessionStage = 'backlog' | 'planning' | 'ready' | 'in_progress' | 'review' | 'done';
+
+/** Every {@link SessionStage}, in board column order. */
+export const SESSION_STAGES = [
+  'backlog',
+  'planning',
+  'ready',
+  'in_progress',
+  'review',
+  'done',
+] as const satisfies readonly SessionStage[];
+
+/** The server-managed `metadata.stage` object, exposed as `ProjectSession.stage`. */
+export interface SessionStageState {
+  value: SessionStage;
+  /** Only meaningful in `ready`: the agent is parked until a human approves. */
+  needs_approval: boolean;
+  note: string | null;
+  updated_at: string;
+  /** `'agent'` when the session moved itself; otherwise the user id. */
+  updated_by: string;
+}
+
+/** Body of `PUT /projects/:id/sessions/:sid/stage`. */
+export interface SetSessionStageInput {
+  stage: SessionStage;
+  needs_approval?: boolean;
+  note?: string | null;
+}
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -84,6 +120,8 @@ export interface ProjectSession {
   /** Server-managed soft-deletion audit fields, present in project inventory mode. */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** Monitoring board stage; null = never staged (renders in Backlog). */
+  stage?: SessionStageState | null;
   created_at: string;
   updated_at: string;
 }
@@ -1024,6 +1062,30 @@ export async function updateProjectSession(
   return unwrap(
     await backendApi.patch<ProjectSession>(`/projects/${projectId}/sessions/${sessionId}`, input),
   );
+}
+
+/**
+ * Move a session on the Monitoring board. 403 `feature_disabled` unless the
+ * project has the `monitoring` flag on; a session-bound (sandbox) caller may
+ * only move its own session.
+ */
+export async function setProjectSessionStage(
+  projectId: string,
+  sessionId: string,
+  input: SetSessionStageInput,
+) {
+  return unwrap(
+    await backendApi.put<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}/stage`,
+      input,
+    ),
+  );
+}
+
+/** The trigger that created this session (`metadata.trigger_slug`), or null. */
+export function sessionTriggerSlug(session: Pick<ProjectSession, 'metadata'>): string | null {
+  const slug = session.metadata?.trigger_slug;
+  return typeof slug === 'string' && slug.length > 0 ? slug : null;
 }
 
 export async function deleteProjectSession(projectId: string, sessionId: string) {
