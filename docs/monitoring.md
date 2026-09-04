@@ -18,9 +18,12 @@ flag `monitoring` (experimental, default off, `enforcement: 'routes'`).
 1. **Stage board** — a kanban with six fixed columns. Every session visible to
    the caller is exactly one card. The agent moves its own card from inside
    the sandbox with the CLI; a human moves any visible card from the page.
-2. **Trigger runs** — one section per trigger (`GET /triggers`) listing the
-   sessions that trigger created (`metadata.trigger_slug`), newest first, with
-   runtime `status`, stage, and timestamps. Not a kanban.
+2. **Trigger runs** — a second tab (`?tab=runs`): one row per trigger
+   (`GET /triggers`) with its last 12 runs as status glyphs (oldest → newest)
+   and the newest run's age; opening a row lists every session the trigger
+   created (`metadata.trigger_slug`), newest first, with runtime `status`,
+   stage, and start time. "Needs you" = open review item OR
+   `stage.needs_approval`. Not a kanban.
 
 ## Data model
 
@@ -108,9 +111,13 @@ Serializer: `ProjectSession.stage` is exposed top-level as the object above or
 - Feature folder `apps/web/src/features/workspace/capabilities/monitoring/`.
 - Sidebar row `ProjectMonitoringNavItem` (flag-gated, beside Apps).
 - Menu-registry row `proj-monitoring` with `requiresFlag: 'monitoring'`.
+- Two tabs in the title bar, `?tab=board|runs` (board is the default and
+  carries no param).
 - Data: the sidebar's session query (`qk.project.sessions(projectId)` +
-  `listProjectSessions`, same refetch interval) + `useProjectTriggers`. No new
-  transport.
+  `listProjectSessions`, same refetch interval) + `useProjectTriggers` (runs
+  tab only) + `useReviewSessionSummary` for "needs you". No new transport.
+- The status glyph is the sidebar's, extracted to
+  `components/projects/session-status-dot.tsx` (`StatusGlyph`).
 
 ## Tests
 

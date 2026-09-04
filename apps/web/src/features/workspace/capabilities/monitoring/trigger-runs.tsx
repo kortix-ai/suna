@@ -1,38 +1,73 @@
 'use client';
 
-import {
-  SESSION_DISPLAY_STATUS_LABELS,
-  sessionDisplayStatus,
-} from '@/components/projects/session-label';
+import { SESSION_DISPLAY_STATUS_LABELS } from '@/components/projects/session-label';
+import { StatusGlyph } from '@/components/projects/session-status-dot';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Hint from '@/components/ui/hint';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { useReviewSessionSummary } from '@/features/review-center/hooks/use-review-session-summary';
 import { getSessionDisplayTitle } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import { relativeTime } from '@/lib/relative-time';
+import { cn } from '@/lib/utils';
 import type { ProjectSession, ProjectTrigger } from '@kortix/sdk';
-import { AlarmIcon } from '@phosphor-icons/react';
+import { useFeatureFlag } from '@kortix/sdk/react';
+import { AlarmIcon, CaretRightIcon, EyeIcon, WebhooksLogoIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
+import { useState } from 'react';
 
 import { STAGE_LABELS, sessionStage } from './stage-board-logic';
-import { groupSessionsByTrigger, type TriggerRunGroup } from './trigger-runs-logic';
+import {
+  RUN_LEGEND,
+  groupSessionsByTrigger,
+  runDisplayStatus,
+  runStrip,
+  summarizeRuns,
+  type TriggerRunGroup,
+} from './trigger-runs-logic';
 
-function statusVariant(session: ProjectSession): 'success' | 'warning' | 'destructive' | 'muted' {
-  switch (sessionDisplayStatus(session)) {
-    case 'running':
-      return 'success';
-    case 'starting':
-      return 'warning';
-    case 'failed':
-      return 'destructive';
-    default:
-      return 'muted';
-  }
+const TYPE_ICON: Record<ProjectTrigger['type'], typeof AlarmIcon> = {
+  cron: AlarmIcon,
+  webhook: WebhooksLogoIcon,
+  monitor: EyeIcon,
+};
+
+function Legend({ totals }: { totals: { triggers: number; runs: number; failed: number } }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
+      {RUN_LEGEND.map((display) => (
+        <span key={display} className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <StatusGlyph display={display} />
+          {SESSION_DISPLAY_STATUS_LABELS[display]}
+        </span>
+      ))}
+      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
+        {totals.triggers} trigger{totals.triggers === 1 ? '' : 's'} · {totals.runs} run
+        {totals.runs === 1 ? '' : 's'}
+        {totals.failed > 0 ? (
+          <>
+            {' · '}
+            <span className="text-kortix-red">{totals.failed} failed</span>
+          </>
+        ) : null}
+      </span>
+    </div>
+  );
 }
 
-function RunRow({ projectId, session }: { projectId: string; session: ProjectSession }) {
-  const status = sessionDisplayStatus(session);
+function RunRow({
+  projectId,
+  session,
+  needsYouBySession,
+}: {
+  projectId: string;
+  session: ProjectSession;
+  needsYouBySession: Readonly<Record<string, number>>;
+}) {
+  const display = runDisplayStatus(session, needsYouBySession);
   return (
     <li className="flex items-center gap-3 border-t px-4 py-2">
+      <StatusGlyph display={display} />
       <Link
         href={`/projects/${projectId}/sessions/${session.session_id}`}
         prefetch={false}
@@ -40,16 +75,16 @@ function RunRow({ projectId, session }: { projectId: string; session: ProjectSes
       >
         {getSessionDisplayTitle(session)}
       </Link>
-      <Badge variant={statusVariant(session)} size="xs">
-        {SESSION_DISPLAY_STATUS_LABELS[status]}
-      </Badge>
+      <span className="text-muted-foreground hidden text-xs sm:inline">
+        {SESSION_DISPLAY_STATUS_LABELS[display]}
+      </span>
       <Badge variant="outline" size="xs">
         {STAGE_LABELS[sessionStage(session)]}
       </Badge>
       <time
         dateTime={session.created_at}
         title={session.created_at}
-        className="text-muted-foreground w-16 shrink-0 text-right text-xs tabular-nums"
+        className="text-muted-foreground w-14 shrink-0 text-right text-xs tabular-nums"
       >
         {relativeTime(session.created_at)}
       </time>
@@ -57,50 +92,116 @@ function RunRow({ projectId, session }: { projectId: string; session: ProjectSes
   );
 }
 
-function TriggerBlock({ projectId, group }: { projectId: string; group: TriggerRunGroup }) {
+/**
+ * One trigger: its name, the last runs as a strip of status glyphs (oldest →
+ * newest, so it reads like a timeline), and the newest run's age. Clicking
+ * the row opens every run the trigger has under it.
+ */
+function TriggerRow({
+  projectId,
+  group,
+  needsYouBySession,
+}: {
+  projectId: string;
+  group: TriggerRunGroup;
+  needsYouBySession: Readonly<Record<string, number>>;
+}) {
+  const [open, setOpen] = useState(false);
   const trigger = group.trigger;
+  const Icon = trigger ? TYPE_ICON[trigger.type] : AlarmIcon;
+  const latest = group.sessions[0];
+  const strip = runStrip(group);
+  const panelId = `trigger-runs-${group.slug}`;
+
   return (
-    <section className="bg-popover rounded-md border">
-      <header className="flex flex-wrap items-center gap-2 px-4 py-3">
+    <li className="bg-popover rounded-md border">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'hover:bg-muted/40 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors',
+          open && 'rounded-b-none',
+        )}
+      >
+        <CaretRightIcon
+          className={cn(
+            'text-muted-foreground size-3.5 shrink-0 transition-transform',
+            open && 'rotate-90',
+          )}
+          aria-hidden
+        />
+        <Icon className="text-muted-foreground size-4 shrink-0" aria-hidden />
         <span className="text-foreground min-w-0 flex-1 truncate text-sm font-medium">
           {trigger?.name ?? group.slug}
         </span>
-        {trigger ? (
-          <>
-            <Badge variant="outline" size="xs">
-              {trigger.type}
-            </Badge>
-            {!trigger.enabled ? (
-              <Badge variant="muted" size="xs">
-                Disabled
-              </Badge>
-            ) : null}
-          </>
-        ) : (
+        {trigger && !trigger.enabled ? (
+          <Badge variant="muted" size="xs">
+            Disabled
+          </Badge>
+        ) : null}
+        {!trigger ? (
           <Badge variant="muted" size="xs">
             Not in manifest
           </Badge>
+        ) : null}
+        {strip.length === 0 ? (
+          <span className="text-muted-foreground text-xs">No runs yet</span>
+        ) : (
+          <span className="flex items-center gap-1.5" aria-label={`${group.sessions.length} runs`}>
+            {strip.map((session) => {
+              const display = runDisplayStatus(session, needsYouBySession);
+              return (
+                <Hint
+                  key={session.session_id}
+                  side="top"
+                  label={
+                    <span className="text-xs">
+                      {getSessionDisplayTitle(session)} · {SESSION_DISPLAY_STATUS_LABELS[display]}
+                    </span>
+                  }
+                >
+                  <span className="flex size-4 items-center justify-center">
+                    <StatusGlyph display={display} />
+                  </span>
+                </Hint>
+              );
+            })}
+          </span>
         )}
-        <span className="text-muted-foreground text-xs">
-          {trigger?.last_fired_at
-            ? `Last fired ${relativeTime(trigger.last_fired_at)}`
-            : `${group.sessions.length} run${group.sessions.length === 1 ? '' : 's'}`}
-        </span>
-      </header>
-      {group.sessions.length === 0 ? (
-        <p className="text-muted-foreground border-t px-4 py-3 text-xs">No runs yet.</p>
-      ) : (
-        <ul>
-          {group.sessions.map((session) => (
-            <RunRow key={session.session_id} projectId={projectId} session={session} />
-          ))}
+        <time
+          dateTime={latest?.created_at ?? trigger?.last_fired_at ?? undefined}
+          className="text-muted-foreground w-14 shrink-0 text-right text-xs whitespace-nowrap tabular-nums"
+        >
+          {latest ? relativeTime(latest.created_at) : ''}
+        </time>
+      </button>
+      {open ? (
+        <ul id={panelId}>
+          {group.sessions.length === 0 ? (
+            <li className="text-muted-foreground border-t px-4 py-3 text-xs">
+              {trigger?.enabled === false
+                ? 'This trigger is disabled. Enable it under Customize → Triggers to start runs.'
+                : 'No runs yet. Fire the trigger or wait for its next schedule.'}
+            </li>
+          ) : (
+            group.sessions.map((session) => (
+              <RunRow
+                key={session.session_id}
+                projectId={projectId}
+                session={session}
+                needsYouBySession={needsYouBySession}
+              />
+            ))
+          )}
         </ul>
-      )}
-    </section>
+      ) : null}
+    </li>
   );
 }
 
-/** One block per trigger with the sessions it created, newest first. */
+/** Every trigger as one row; open a row to see all of its runs. */
 export function TriggerRuns({
   projectId,
   sessions,
@@ -110,6 +211,12 @@ export function TriggerRuns({
   sessions: readonly ProjectSession[];
   triggers: readonly ProjectTrigger[];
 }) {
+  // Same "needs you" source as the sidebar, so a run that is waiting on a
+  // review here is the same run that carries the badge there.
+  const reviewGate = useFeatureFlag(projectId, 'review_center');
+  const review = useReviewSessionSummary(projectId, { enabled: reviewGate.enabled });
+  const needsYouBySession = review.needsYouBySession;
+
   const groups = groupSessionsByTrigger(sessions, triggers);
   if (groups.length === 0) {
     return (
@@ -128,11 +235,20 @@ export function TriggerRuns({
       />
     );
   }
+  const totals = summarizeRuns(groups, needsYouBySession);
   return (
-    <div className="space-y-2">
-      {groups.map((group) => (
-        <TriggerBlock key={group.slug} projectId={projectId} group={group} />
-      ))}
+    <div className="space-y-3">
+      <Legend totals={totals} />
+      <ul className="space-y-2">
+        {groups.map((group) => (
+          <TriggerRow
+            key={group.slug}
+            projectId={projectId}
+            group={group}
+            needsYouBySession={needsYouBySession}
+          />
+        ))}
+      </ul>
     </div>
   );
 }

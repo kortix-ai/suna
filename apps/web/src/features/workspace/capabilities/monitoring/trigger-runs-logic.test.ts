@@ -1,7 +1,13 @@
 import type { ProjectSession, ProjectTrigger } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
-import { groupSessionsByTrigger } from './trigger-runs-logic';
+import {
+  RUN_STRIP_LENGTH,
+  groupSessionsByTrigger,
+  runDisplayStatus,
+  runStrip,
+  summarizeRuns,
+} from './trigger-runs-logic';
 
 const trigger = (slug: string) => ({ slug, name: slug }) as ProjectTrigger;
 const session = (id: string, trigger_slug: string | null, created_at: string) =>
@@ -44,5 +50,51 @@ describe('groupSessionsByTrigger', () => {
       ['alpha', true],
       ['zeta', true],
     ]);
+  });
+});
+
+describe('run status, strip, and totals', () => {
+  const run = (id: string, status: string, stage: Record<string, unknown> | null = null) =>
+    ({
+      session_id: id,
+      status,
+      stage,
+      created_at: `2026-09-0${id.length}T00:00:00.000Z`,
+      metadata: { trigger_slug: 'nightly' },
+    }) as unknown as ProjectSession;
+
+  test('runDisplayStatus: review items and --needs-approval both read as needs-you', () => {
+    expect(runDisplayStatus(run('a', 'running'))).toBe('running');
+    expect(runDisplayStatus(run('a', 'running'), { a: 2 })).toBe('needs-you');
+    expect(runDisplayStatus(run('a', 'running', { value: 'ready', needs_approval: true }))).toBe(
+      'needs-you',
+    );
+    expect(runDisplayStatus(run('a', 'failed'))).toBe('failed');
+    expect(runDisplayStatus(run('a', 'completed'))).toBe('done');
+    expect(runDisplayStatus(run('a', 'stopped'))).toBe('stopped');
+  });
+
+  test('runStrip: last RUN_STRIP_LENGTH runs, oldest → newest', () => {
+    const sessions = Array.from({ length: 15 }, (_, i) =>
+      session(`s${i}`, 'nightly', `2026-08-${String(i + 1).padStart(2, '0')}T00:00:00.000Z`),
+    );
+    const [group] = groupSessionsByTrigger(sessions, [trigger('nightly')]);
+    const strip = runStrip(group);
+    expect(strip).toHaveLength(RUN_STRIP_LENGTH);
+    expect(strip[0].session_id).toBe('s3');
+    expect(strip[strip.length - 1].session_id).toBe('s14');
+  });
+
+  test('summarizeRuns counts triggers, runs, failed, needs-you', () => {
+    const groups = groupSessionsByTrigger(
+      [run('a', 'failed'), run('bb', 'running'), run('ccc', 'completed')],
+      [trigger('nightly'), trigger('idle')],
+    );
+    expect(summarizeRuns(groups, { bb: 1 })).toEqual({
+      triggers: 2,
+      runs: 3,
+      failed: 1,
+      needsYou: 1,
+    });
   });
 });

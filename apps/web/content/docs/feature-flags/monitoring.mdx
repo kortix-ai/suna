@@ -6,13 +6,13 @@ description: A stage board over every session you can see, plus each trigger's r
 import { Callout } from 'fumadocs-ui/components/callout';
 
 Monitoring is one page per project, `/projects/<id>/monitoring`, with two
-parts:
+tabs in its title bar (`?tab=runs` deep-links the second):
 
 1. **Stage board** — a kanban with six fixed columns. Every session you can
    open is exactly one card. The agent moves its own card from inside the
    sandbox; you move any card from the board.
-2. **Trigger runs** — one block per trigger, listing the sessions that trigger
-   started, newest first, with the runtime status and the stage of each.
+2. **Trigger runs** — one row per trigger with its last runs as a strip of
+   status glyphs; open a row to see every run the trigger started.
 
 Monitoring is a [feature flag](/docs/feature-flags). Its stability is
 **experimental**, and it is off by default.
@@ -98,8 +98,17 @@ the stage route. `PATCH /sessions/<sid>` rejects a `metadata.stage` key with
 ## Trigger runs
 
 A session started by a schedule, webhook, or monitor carries the trigger's
-slug. The **Trigger runs** section groups those sessions under their trigger,
-in the order the Triggers page lists them, and shows each run's runtime status,
-stage, and start time. A trigger with no runs still appears. A run whose slug
-no longer matches any trigger in `kortix.yaml` appears under its slug with a
+slug. The **Trigger runs** tab lists one row per trigger, in the order the
+Triggers page lists them. Each row shows the trigger's type, its last 12 runs
+as a strip of status glyphs (oldest on the left, newest on the right — the
+same glyphs the sidebar uses: green ring running, filled green needs you,
+check done, red failed, hollow ring stopped), and the newest run's age. The
+legend above the rows explains the glyphs and totals the triggers, runs, and
+failures.
+
+Click a row to open every run the trigger has: title, status, stage, and
+start time, newest first. **Needs you** means a person has to act — the run
+has an open review item, or its card is parked in Ready with
+`--needs-approval`. A trigger with no runs still appears. A run whose slug no
+longer matches any trigger in `kortix.yaml` appears under its slug with a
 **Not in manifest** badge.
