@@ -55,6 +55,7 @@ export function ComposerChatInput({
   prefill,
   inputSlot,
   toolbarSlot,
+  underbarSlot,
   underbarPlacement,
   slashMenuPlacement,
   cardClassName,
@@ -93,6 +94,7 @@ export function ComposerChatInput({
   } | null;
   inputSlot?: ReactNode;
   toolbarSlot?: ReactNode;
+  underbarSlot?: ReactNode;
   underbarPlacement?: SessionChatInputProps['underbarPlacement'];
   slashMenuPlacement?: SessionChatInputProps['slashMenuPlacement'];
   /** Extra classes for the input card (e.g. the project-home radius override). */
@@ -221,6 +223,7 @@ export function ComposerChatInput({
       prefill={prefill}
       inputSlot={inputSlot}
       toolbarSlot={combinedToolbarSlot}
+      underbarSlot={underbarSlot}
       underbarPlacement={underbarPlacement}
       slashMenuPlacement={slashMenuPlacement}
       cardClassName={cardClassName}

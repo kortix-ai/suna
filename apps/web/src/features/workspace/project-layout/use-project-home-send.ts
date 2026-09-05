@@ -7,12 +7,14 @@
  * a subproject page (`/projects/[id]/subprojects/[slug]`) — and they must do
  * the SAME thing on Enter: gate on billing, turn attachments into data: URLs,
  * create the session with a durable `pending_prompt`, stash the picks, seed
- * the first-prompt preview, navigate. The only difference between them is two
- * values, and both are arguments here:
+ * the first-prompt preview, navigate. Where the session STARTS is not a
+ * difference between them any more: the composer carries a subproject picker
+ * (`ProjectHome` owns it; a subproject page preselects its own), and each send
+ * arrives here with two option fields:
  *
  *  - `subproject` — filed onto the create body, and the reason the warm-session
- *    pool is skipped (`use-new-project-session.ts`).
- *  - `defaultAgent` — the subproject's own `agent`, used when the composer
+ *    pool is skipped (`use-new-project-session.ts`). `null` is the whole project.
+ *  - `subproject_agent` — that subproject's own `agent`, used when the composer
  *    picked none. It is resolved ONCE and then used for the create bind, the
  *    pending prompt and the start stash, so those three can never disagree.
  *
@@ -42,14 +44,10 @@ import { writeStartStash } from '@kortix/sdk/react';
 export interface ProjectHomeSendConfig {
   /** The owning account, for the billing gate's upgrade dialog. */
   accountId?: string;
-  /** Start every session from this composer inside this subproject. */
-  subproject?: string;
-  /** Boot agent when the composer picked none — a subproject's `agent`. */
-  defaultAgent?: string | null;
 }
 
 export function useProjectHomeSend(projectId: string, config: ProjectHomeSendConfig = {}) {
-  const { accountId, subproject, defaultAgent } = config;
+  const { accountId } = config;
   const { isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -77,7 +75,8 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
 
       // The one resolved agent. The create bind, the durable pending prompt and
       // the start stash all read THIS value.
-      const agent = options?.agent || defaultAgent || null;
+      const agent = options?.agent || options?.subproject_agent || null;
+      const subproject = options?.subproject ?? undefined;
 
       setSending(true);
       // Attachments ride the create itself as data: URLs — the session's
@@ -134,8 +133,6 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
       accountId,
       openUpgradeDialog,
       newSession,
-      subproject,
-      defaultAgent,
     ],
   );
 

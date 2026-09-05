@@ -133,8 +133,6 @@ function SubprojectBody({
   const accountId = useProjectAccountId(projectId);
   const { handleSend, sending } = useProjectHomeSend(projectId, {
     accountId: accountId ?? undefined,
-    subproject: subproject.slug,
-    defaultAgent: subproject.agent,
   });
 
   return (
@@ -142,6 +140,9 @@ function SubprojectBody({
       projectId={projectId}
       onSend={handleSend}
       busy={sending}
+      // The composer's subproject picker starts on THIS one; the send carries
+      // whatever the picker says (`use-project-home-send.ts`).
+      subproject={subproject}
       hero={{ name: subproject.name, description: subproject.description }}
       breadcrumb={<SubprojectBreadcrumb projectId={projectId} subproject={subproject} />}
       toolbar={

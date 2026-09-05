@@ -245,6 +245,8 @@ export interface SessionChatInputProps {
   inputSlot?: React.ReactNode;
 
   toolbarSlot?: React.ReactNode;
+  /** After the agent picker, whichever placement — see `ComposerUnderbar`. */
+  underbarSlot?: React.ReactNode;
   /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.
@@ -434,6 +436,7 @@ function ComposerImpl({
   onCompactClick,
   inputSlot,
   toolbarSlot,
+  underbarSlot,
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
   cardClassName,
@@ -1594,6 +1597,7 @@ function ComposerImpl({
                     models={models}
                     selectedModel={availableSelectedModel}
                     onContextClick={onContextClick}
+                    underbarSlot={underbarSlot}
                   />
                 ) : null
               }
@@ -1668,6 +1672,7 @@ function ComposerImpl({
           selectedModel={availableSelectedModel}
           onContextClick={onContextClick}
           toolbarSlot={toolbarSlot}
+          underbarSlot={underbarSlot}
         />
       )}
 

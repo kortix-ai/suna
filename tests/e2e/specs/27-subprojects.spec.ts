@@ -128,6 +128,11 @@ test.describe('27 — Subprojects', () => {
       // rows, each carrying a one-line summary while closed.
       await expect(page.getByRole('heading', { level: 1 })).toContainText('Marketing');
       await expect(page.getByText('Campaign work for this run.')).toBeVisible();
+      // The composer's own picker starts on this page's subproject — that is
+      // the choice the send in step 4 carries (`ProjectHome` owns it).
+      await expect(
+        page.getByRole('button', { name: 'Select subproject', exact: true }),
+      ).toContainText('Marketing');
       // What the subproject owns opens from the `⋯` menu in a side sheet; the
       // page itself stays the bare home surface.
       await page.getByRole('button', { name: 'Subproject actions', exact: true }).click();
@@ -239,6 +244,19 @@ test.describe('27 — Subprojects', () => {
         // same body — proving the composer wiring is the shared one, not a copy.
         expect(createBody?.pending_prompt).toMatchObject({ text: 'Draft the launch note.' });
       }
+
+      // ── 5. The project home carries the same picker, starting on the whole
+      //      project, and can be pointed at a subproject before a send ────
+      await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
+      await dismissOnboarding(page);
+      const homePicker = page.getByRole('button', { name: 'Select subproject', exact: true });
+      await expect(homePicker).toContainText('Subproject');
+      await homePicker.click();
+      await page.getByRole('option', { name: /^Marketing/ }).click();
+      await expect(homePicker).toContainText('Marketing');
+      await homePicker.click();
+      await page.getByRole('option', { name: /^Whole project/ }).click();
+      await expect(homePicker).toContainText('Subproject');
 
       expect(pageErrors).toEqual([]);
     } finally {

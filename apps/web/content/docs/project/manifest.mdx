@@ -279,6 +279,8 @@ Create/edit/delete need `project.customize.write` (the manifest-editing leaf, ma
 
 **`sessions:` visibility.** `private` (default) keeps the ordinary per-session model — a session is visible to its creator unless separately shared. `shared` makes every session inside the subproject readable by everyone granted the subproject, regardless of that session's own visibility; lifecycle rights (stop/restart/delete) are unchanged. `GET /projects/:id/sessions?subproject=<slug>` filters the list to one subproject; `?subproject=` (empty) filters to sessions with none.
 
+**Starting a session inside one.** In the web app, the composer on the project home carries a subproject picker beside the agent picker, and a subproject's own page preselects it. From code or the CLI: `sessions.create({ subproject })`, or `kortix sessions new --subproject <slug>`.
+
 **What the sandbox receives.** A session started inside a subproject (`sessions.create({ subproject })`, or `kortix sessions new --subproject`) gets `KORTIX_SUBPROJECT=<slug>` and `KORTIX_SUBPROJECT_CONTEXT=<json>` (`{version, slug, name, description, instructions, context[], sessions}`; `instructions` truncated at 32 KB). The sandbox daemon renders that into `/tmp/kortix/subproject.md` — heading, description, instructions, and a listed `context` — and appends it to the OpenCode `instructions` file, alongside each `context` entry (a `dir/` entry expands to every markdown file under it). A session spawned from inside a subproject session inherits the same subproject unless it passes its own `--subproject`.
 
 ## `connectors:`
