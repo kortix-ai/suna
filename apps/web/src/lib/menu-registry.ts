@@ -952,7 +952,7 @@ export const menuRegistry: MenuItemDef[] = [
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
-    href: '/docs/changelog',
+    href: '/changelog',
   },
   {
     id: 'credits-explained',
