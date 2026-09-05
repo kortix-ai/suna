@@ -4202,3 +4202,67 @@ preview-parity ports. *Enforcer:* `tests/unit/preview-guard.test.ts`
 (`sh -n` on the guard, never `-v`, deploy-in-flight gate, hash-keyed install)
 and `tests/unit/sandbox-preview.test.ts` (prune before pull, fallback install,
 rollback after the health check, guard before configure).
+
+## A liveness TTL that only one caller refreshes kills the thing it protects (2026-09-05)
+
+For four days Kortix "ignored" incident mentions in Slack. It did not. Every
+mention created its session in the right project within 5 seconds — checked
+against the four Slack root timestamps the reporter recorded
+(`1788612689.109129`, `1788588042.924019`, `1788502072.103999`,
+`1788483216.407779`), all `source: slack`, channel `C0BQCDKMTGX`, project
+`Kortix Company` `fda4e35e`, binding correct. **The agent ran. Its output was
+thrown away.**
+
+`chat_turn_streams.expires_at` was a reaper inside `loadTurn`: the row was
+deleted the moment it passed. `STREAM_TTL_MS` is 15 minutes and exactly ONE
+caller refreshed it — `relayTurnStep`, i.e. the agent choosing to run `slack
+step`. Model tokens, tool calls, edits, a 15-minute `pnpm install`: none of them
+touched it. So a run that went quiet longer than the TTL destroyed its own
+stream, and every later step AND the final `slack send` then found no row and
+were dropped — while the route still answered the sandbox HTTP 200
+`{"ok":false}`, so the agent believed it had replied.
+
+Session `e58ddd55`, read live from its OpenCode transcript: `slack step` at
+12:54:42, next at 13:19:22. A 24m40s gap, so the row was reaped at 13:09:42 and
+the next five steps plus the answer went nowhere while the agent worked two more
+hours. It noticed the silence itself and started a `while sleep 200; do slack
+step` keepalive at 13:37:21 — after the row was already gone. Session
+`d08cccb4` is the "it started then died" report: three steps, closed by the GC
+as "Run timed out" at 30 minutes, finished at 09:06:28 — 2h58m in — with its
+answer nowhere to land.
+
+**The rules.**
+
+1. **A TTL that expresses "is this alive?" must be refreshed by the thing that
+   makes it alive, not by an optional courtesy call.** Tying liveness to `slack
+   step` made the timeout a test of whether the agent narrated its work. Either
+   refresh from real activity, or do not reap on it.
+2. **One reaper, and it must be the one that tells someone.** Two reapers ran
+   here: the GC sweep (30 min on `updated_at`, posts "Run timed out" before it
+   deletes) and this silent one inside `loadTurn`. The silent one raced and won,
+   so the failure had no message anywhere — in Slack, or in the logs.
+3. **Never return "not delivered" into a 200 and call it handled.** The agent
+   had a real answer and no way to learn it was discarded.
+   `relayTurnAnswer` now falls back to `project_sessions.metadata.slack`
+   (channel + thread_ts, written at session create) and posts it anyway,
+   claimed once per session per TTL so a duplicate `slack send` cannot
+   double-post.
+4. **The same defect ships to every channel that copied the file.** Teams
+   carried an identical `loadTurn` reap. Grep the sibling channel before you
+   call a channel bug fixed.
+
+*Fix:* PR #7127 (merge `8254011d`). *Enforcer:*
+`apps/api/src/__tests__/unit-slack-turn.test.ts` — "a turn row past expires_at
+is still live" (answer + step) and "answer rescue when the GC already deleted
+the row" (delivery, non-Slack session, duplicate guard) — plus the Teams
+equivalent in `unit-teams-turn.test.ts`. The test that asserted the OLD
+behaviour ("drops a late answer relay without posting") encoded the bug; it now
+asserts delivery.
+
+*Verified on dev* (`dev-api.kortix.com` at `fc731bcd`, which contains the
+merge), against the real deployed route:
+a row aged 1h past `expires_at` → `kind=step` returned `{"ok":true}` and Slack
+returned `message_ts 1788626658.830069`; the row with no entry at all →
+`kind=answer` returned `{"ok":true}` and wrote its rescue claim; the same call
+again → `{"ok":false}`; a session with no `metadata.slack` → `{"ok":false}` and
+no post.
