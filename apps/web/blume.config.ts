@@ -72,7 +72,16 @@ export default defineConfig({
   // The whole Blume site is served under /docs by the Next app, which maps
   // clean URLs onto public/docs/ with two afterFiles rewrites. `base`
   // rewrites internal links and asset hrefs to match.
-  deployment: { base: '/docs' },
+  deployment: {
+    base: '/docs',
+    // Canonical URLs and OG image URLs need an absolute origin; without it
+    // `blume audit` reports the site as non-indexable. Always the production
+    // origin, including in dev builds — a canonical is meant to point at the
+    // canonical home, not at whichever host rendered the page.
+    // seo.sitemap stays false: the Next app owns /sitemap.xml for the whole
+    // domain, so setting `site` must not hand that surface to Blume.
+    site: 'https://kortix.com',
+  },
 
   // Stock theme, deliberately. A Kortix skin is a separate follow-up; see
   // decision D3 in the spec. The accent is NOT set here: it is bound to the
@@ -123,6 +132,23 @@ export default defineConfig({
     dir: 'apps/web',
   },
 
+  seo: {
+    // D2: the Next app owns every domain-wide discovery surface, and these two
+    // contradicted it rather than merely duplicating it.
+    //
+    // robots — Blume emitted dist/robots.txt (served at /docs/robots.txt) with
+    // `Content-Signal: ai-train=yes`. src/app/robots.txt, the real one, says
+    // `ai-train=no`. Shipping a second robots that inverts the company's stated
+    // AI-training position is worse than shipping none.
+    //
+    // agentReadability — dist/agent-readability.json carried the same
+    // inversion as machine-readable JSON ("ai-train": true). /llms.txt already
+    // advertises the markdown mirrors for the whole domain.
+    robots: false,
+    agentReadability: false,
+    sitemap: false,
+  },
+
   ai: {
     llmsTxt: false,
     mcp: { enabled: false },
@@ -135,7 +161,6 @@ export default defineConfig({
     // localhost in dev and kortix.com in production with nothing to configure.
     openInChat: ['kortix', 'chatgpt', 'claude', 'cursor'],
   },
-  seo: { sitemap: false },
 
   // The old fumadocs root meta.json carried a "---Develop---" separator
   // splitting cli/sdk/backend (+ an external API-reference link) from the
