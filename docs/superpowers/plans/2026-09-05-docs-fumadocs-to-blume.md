@@ -1027,6 +1027,46 @@ Look at the rendered sidebar. The old `meta.json` split the list into an unnamed
 
 Record the choice and the reason in this plan file before continuing.
 
+**Decision recorded (Task 8 execution):** neither Option A nor Option B.
+Read the installed 1.5.3 types
+(`apps/web/node_modules/blume/dist/types/core/schema.d.ts`) and found a third
+construct the brief didn't name: `SidebarItemConfig` (a page-id string, or
+`{ label, href, items }`) lets `navigation.sidebar.items` express an explicit
+sidebar tree with a labelled group, with no content file moved. Chose that:
+`blume.config.ts` sets `navigation: { sidebar: { items: [...] } }` with a
+`{ label: 'Develop', items: ['cli', <sdk group>, 'backend', <API link>] }`
+node. `cli.mdx`, `sdk/`, `backend.mdx` never moved — `/docs/cli`, `/docs/sdk`,
+`/docs/backend` keep their published URLs, so Option B's redirect/link-update
+cost never applies. Verified against a real `blume build`: rendered sidebar
+groups CLI / TypeScript SDK / Kortix as a Backend / API reference under a
+"Develop" header, in the same order as the old meta.json, every href
+unchanged.
+
+**Correction found in review (fix round 1):** `config-input.d.ts:374` says
+setting `navigation.sidebar.items` at all puts the whole sidebar into
+"fully explicit" mode — "Omit `items` to generate the sidebar from the
+content tree; provide `items` for a fully explicit sidebar." A first version
+gave each directory (`project`, `work`, `connect`, `feature-flags`, `host`,
+`sdk`) as a bare id string with no nested `items`. That built and looked
+right at the top level, but silently orphaned every one of that directory's
+OWN sub-pages: `/docs/sdk/sign-in` and `/docs/sdk/apps` built fine at their
+URLs and rendered in **zero** sidebar entries (`grep -c` on the built HTML —
+not a lazy-render false negative). Auto mode (no `navigation` block, or
+`navigation.featured` for the external link) renders every page but reorders
+the top level to files-then-directories, which cannot reproduce the
+interleaved original order. The only build-verified fix with 0 missing pages
+and the exact target order is full nesting: every directory entry needs its
+own `items:` listing every one of its sub-pages, not just its own id.
+
+Full nesting would have duplicated each directory's title and page list
+between its `meta.ts` and `blume.config.ts` (9 top-level entries becoming 36
+nested ones). `blume.config.ts` instead imports each directory's `meta.ts`
+module directly and derives the nested `items:` from that module's `pages`
+array (see `directoryGroup`/`toSidebarItem` in `blume.config.ts`) — one
+source of truth for each section's title and order, with `blume.config.ts`
+contributing only the "Develop" grouping and the external link, neither of
+which exists anywhere in `content/docs/**/meta.ts`.
+
 - [ ] **Step 5: Add the external API-reference link**
 
 In `blume.config.ts`, add the sidebar entry that replaces `"[API reference](https://api.kortix.com/v1/docs)"`:

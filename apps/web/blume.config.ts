@@ -1,4 +1,62 @@
-import { defineConfig } from 'blume';
+import { defineConfig, type FolderMetaDefinition } from 'blume';
+import rootMeta from './content/docs/meta';
+import connectMeta from './content/docs/connect/meta';
+import featureFlagsMeta from './content/docs/feature-flags/meta';
+import hostMeta from './content/docs/host/meta';
+import projectMeta from './content/docs/project/meta';
+import sdkMeta from './content/docs/sdk/meta';
+import workMeta from './content/docs/work/meta';
+
+// `defineMeta` accepts a plain object or an (async) factory
+// (FolderMetaDefinition). Every meta.ts in this repo is a plain object
+// literal, so resolving one here is always synchronous — this throws if that
+// ever stops being true, rather than silently building a broken sidebar.
+function resolveMeta(def: FolderMetaDefinition) {
+  const resolved = typeof def === 'function' ? def() : def;
+  if (resolved instanceof Promise) {
+    throw new Error(
+      'blume.config.ts navigation cannot resolve an async meta.ts factory synchronously',
+    );
+  }
+  return resolved;
+}
+
+// Expands one directory's own meta.ts into an explicit sidebar group: its
+// `index` page becomes the group's own link, every other page becomes
+// `${dir}/${page}`. meta.ts stays the single source of truth for a section's
+// title and page order — nothing here is re-typed.
+function directoryGroup(dir: string, def: FolderMetaDefinition) {
+  const meta = resolveMeta(def);
+  return {
+    label: meta.title ?? dir,
+    items: (meta.pages ?? []).map((page) =>
+      page === 'index' ? dir : `${dir}/${page}`,
+    ),
+  };
+}
+
+// Directories that have their own meta.ts and therefore expand into a
+// labelled group instead of staying a bare page-id string.
+const directoryMeta: Record<string, FolderMetaDefinition> = {
+  project: projectMeta,
+  work: workMeta,
+  connect: connectMeta,
+  'feature-flags': featureFlagsMeta,
+  host: hostMeta,
+  sdk: sdkMeta,
+};
+
+// The only ids fumadocs used to render under the "---Develop---" separator.
+// This membership is not recorded anywhere else — it is the one piece of
+// structure this config genuinely adds on top of content/docs/meta.ts.
+const developIds = new Set(['cli', 'sdk', 'backend']);
+
+const rootPages = resolveMeta(rootMeta).pages ?? [];
+
+function toSidebarItem(id: string) {
+  const dirMeta = directoryMeta[id];
+  return dirMeta ? directoryGroup(id, dirMeta) : id;
+}
 
 // The docs render through Blume, not through the Next app. Nothing in
 // content/docs may import an app component. Blume built-ins only.
@@ -62,28 +120,37 @@ export default defineConfig({
   // schema.d.ts — a page-id string, or an object with label/href/items) can
   // express a labelled group and an external link without moving any content
   // file, so cli.mdx, sdk/ and backend.mdx keep their /docs/cli, /docs/sdk,
-  // /docs/backend URLs. Verified against a real `blume build`: the rendered
-  // sidebar groups CLI/TypeScript SDK/Kortix as a Backend/API reference under
-  // a "Develop" header, in the same order as the old meta.json, with every
-  // href unchanged.
+  // /docs/backend URLs.
+  //
+  // config-input.d.ts:374 — "Omit `items` to generate the sidebar from the
+  // content tree; provide `items` for a fully explicit sidebar" — is
+  // all-or-nothing. A first attempt gave directory entries (project, work,
+  // connect, feature-flags, host, sdk) as bare id strings with no nested
+  // `items`, which built and looked right at the top level but orphaned
+  // every one of that directory's OWN sub-pages from the sidebar: sdk/apps
+  // and sdk/sign-in built fine at their URLs but rendered in 0 sidebar
+  // entries (`grep -c` on the built HTML, not a rendering-timing issue).
+  // Auto mode (no `navigation` block, or `navigation.featured` for the
+  // external link) renders every page but reorders the top level to
+  // files-then-directories, which cannot reproduce the interleaved original
+  // order. Full, byte-verified fix: every directory entry needs its own
+  // nested `items:` listing every one of its sub-pages, confirmed against a
+  // real `blume build` with 0 missing pages and the exact target order.
+  //
+  // Full nesting means every directory's title + page list would otherwise
+  // be duplicated between its meta.ts and this file (9 top-level entries ->
+  // 36 nested ones). `directoryGroup`/`toSidebarItem` above avoid that by
+  // reading each directory's title and page order directly out of its own
+  // meta.ts module — this file adds only the one thing meta.ts cannot
+  // express: which ids sit under "Develop", and the external link.
   navigation: {
     sidebar: {
       items: [
-        'index',
-        'quickstart',
-        'accounts',
-        'credits',
-        'project',
-        'work',
-        'connect',
-        'feature-flags',
-        'host',
+        ...rootPages.filter((id) => !developIds.has(id)).map(toSidebarItem),
         {
           label: 'Develop',
           items: [
-            'cli',
-            'sdk',
-            'backend',
+            ...rootPages.filter((id) => developIds.has(id)).map(toSidebarItem),
             {
               label: 'API reference',
               href: 'https://api.kortix.com/v1/docs',
