@@ -62,6 +62,7 @@ import {
   parkPromptForUnreachableRuntime,
   markCommandForwarded,
   markCommandQueued,
+  requeueUnlandedPrompt,
   markCommandSucceeded,
   requeueForAdmission,
   resultFromExistingCommand,
@@ -474,6 +475,9 @@ export async function continueSession(
           userId,
           materializationKey: key,
           writeFile: writeRuntimePromptFile,
+          // The runtime already holds this message's native images inline;
+          // only the legacy non-native parts need a file behind them.
+          inlineBudgetBytes: Number.POSITIVE_INFINITY,
         }),
       updatePart: ({ messageId, partId, text: replacementText }) =>
         updateLegacyRuntimePart({
@@ -510,7 +514,15 @@ export async function continueSession(
     // the sandbox edge discards a body over its size ceiling then answers 200
     // on retry — so a prompt can be "accepted" and never exist. Read it back
     // before anything closes the row. See `prompt-landing-proof.ts`.
-    if (delivery === 'accepted') {
+    //
+    // `deduplicated` is checked too: it is the proxy asserting an EARLIER
+    // POST under this key delivered, and that assertion is exactly what the
+    // proof exists to test. And a refusal THROWS rather than returning false:
+    // `deliverWithRetry` re-sends a false under the same Idempotency-Key, the
+    // proxy's claim answers `duplicate`, and the row closed as delivered anyway
+    // — 3.6 s later (review finding, 2026-09-05). The throw escapes the loop so
+    // the row can go back out under a fresh attempt, key and wire id.
+    if (delivery === 'accepted' || delivery === 'deduplicated') {
       const landed = await confirmPromptLanded({
         messageId: command.wireMessageId,
         readMessage: (messageId) =>
@@ -526,9 +538,10 @@ export async function continueSession(
         logger.error('[session-lifecycle] prompt accepted but never became a message', {
           session_id: sessionId,
           wire_message_id: command.wireMessageId,
+          delivery,
           parts: command.parts?.length ?? 0,
         });
-        return false;
+        throw new PromptNeverLandedError(command.wireMessageId);
       }
     }
     if (delivery === 'accepted' && command.isPendingFirstPrompt === true) {
@@ -613,7 +626,7 @@ export async function continueSession(
         };
       },
       send: sendPrompt,
-    });
+    }).catch(notLandedOutcome);
   }
 
   const deadline = Date.now() + READY_DEADLINE_MS;
@@ -706,8 +719,17 @@ export async function continueSession(
       return healed ? toTarget(healed) : null;
     },
     send: sendPrompt,
-  });
+  }).catch(notLandedOutcome);
 }
+
+/** A refused landing proof is its own outcome; anything else keeps throwing. */
+function notLandedOutcome(error: unknown): SessionDeliveryOutcome {
+  if (error instanceof PromptNeverLandedError) return 'not-landed';
+  throw error;
+}
+
+/** Pause before re-sending a prompt the runtime accepted but never wrote. */
+const NOT_LANDED_RETRY_DELAY_MS = 2_000;
 
 /** How far out a released foreign command is re-queued; the owner's drain ticks every 1s. */
 const INSTANCE_RELEASE_DELAY_MS = 2_000;
@@ -1942,6 +1964,32 @@ export async function executeQueuedContinue(
       );
       return 'failed';
     }
+    // 'not-landed' = the runtime accepted the prompt and never wrote it. Back
+    // on the queue under a FRESH attempt — fresh key, fresh wire id — never a
+    // retry under this one (see `requeueUnlandedPrompt`). Bounded: past the
+    // budget it dead-letters with the one error that names what happened.
+    if (delivery === 'not-landed') {
+      const reason = 'prompt accepted by the runtime but never became a message';
+      const requeue = await requeueUnlandedPrompt(
+        row.commandId,
+        reason,
+        new Date(Date.now() + NOT_LANDED_RETRY_DELAY_MS),
+      );
+      if (requeue.requeued) {
+        logger.warn('[session-lifecycle] prompt never landed — re-sending under a fresh key', {
+          session_id: row.sessionId,
+          command_id: row.commandId,
+          refusals: requeue.refusals,
+        });
+        return 'queued';
+      }
+      await markCommandFailed(row.commandId, reason, {
+        retryable: false,
+        attempts: row.attempts,
+        sessionId: row.sessionId,
+      });
+      return 'failed';
+    }
     // 'pending' = runtime not ready in time — worth another pass. 'no-session'
     // and 'failed' are terminal for this command.
     const retryable = delivery === 'pending';
@@ -2280,6 +2328,15 @@ function legacyRuntimeAccess(input: LegacyRuntimePartTarget) {
     boundCredentialSessionId: input.sessionId,
     sandboxAuthored: false,
   };
+}
+
+/** Thrown out of `sendPrompt` when the runtime accepted a prompt and never
+ *  wrote its message — see the landing-proof block in `continueSession`. */
+class PromptNeverLandedError extends Error {
+  constructor(readonly wireMessageId: string | undefined) {
+    super('prompt accepted but never became a message');
+    this.name = 'PromptNeverLandedError';
+  }
 }
 
 async function readLegacyRuntimeMessage(

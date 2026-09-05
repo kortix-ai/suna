@@ -145,10 +145,31 @@ export async function writeRuntimePromptFile(
   const directory = path.posix.dirname(input.targetPath);
   const temporaryName = `.kortix-prompt-${token()}`;
   const fileBytes = new Uint8Array(input.bytes);
-  const temporaryPath =
-    fileBytes.byteLength > RUNTIME_PROMPT_CHUNK_BYTES
-      ? await appendInChunks(input, forward, directory, temporaryName, fileBytes)
-      : await uploadWhole(input, forward, directory, temporaryName, fileBytes);
+  let temporaryPath: string;
+  if (fileBytes.byteLength > RUNTIME_PROMPT_CHUNK_BYTES) {
+    try {
+      temporaryPath = await appendInChunks(input, forward, directory, temporaryName, fileBytes);
+    } catch (error) {
+      // A chunk that failed mid-way leaves a truncated temp file in the
+      // workspace — junk the agent can trip over. Only the chunked path can
+      // leave one (a whole-file upload either lands or writes nothing). Best
+      // effort, never masks the real error.
+      const deleteBody = new TextEncoder().encode(
+        JSON.stringify({ path: path.posix.join(directory, temporaryName) }),
+      );
+      await forwarded(
+        input,
+        forward,
+        'DELETE',
+        '/file',
+        new Headers({ 'Content-Type': 'application/json' }),
+        deleteBody.buffer as ArrayBuffer,
+      ).catch(() => undefined);
+      throw error;
+    }
+  } else {
+    temporaryPath = await uploadWhole(input, forward, directory, temporaryName, fileBytes);
+  }
 
   const renameBody = new TextEncoder().encode(
     JSON.stringify({ from: temporaryPath, to: input.targetPath }),

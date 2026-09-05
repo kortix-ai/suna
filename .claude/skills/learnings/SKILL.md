@@ -21,6 +21,56 @@ linked, not inlined.
 
 ## Register
 
+### Verify a browser fix through the app's OWN API, not a proxy to another stack (2026-09-05)
+
+**When:** browser-verifying a worktree's web change. `NEXT_PUBLIC_BACKEND_URL`
+is inlined into the client bundle at compile, so a hand-booted `pnpm dev` that
+does not set the worktree's full env bakes `localhost:8008` — the browser then
+calls the PRIMARY api cross-origin and every request dies on CORS
+("This project didn't load / Failed to fetch"), testing nothing. `pnpm worktree
+start <name>` sets `NEXT_PUBLIC_BACKEND_URL`, `KORTIX_API_PROXY_TARGET`,
+`FRONTEND_URL`, `CORS_ALLOWED_ORIGINS` and `KORTIX_INSTANCE_ID` together
+(`scripts/worktree/lib/launch-env.ts`). **The rule:** boot a worktree for
+browser verification with `pnpm worktree start`, and PROVE the bundle hit the
+branch api — assert the `/v1/` request host is the worktree api port before
+trusting the result. A green DOM over the wrong backend is a false pass.
+
+### The queue row must carry every field a bubble draws, INCLUDING per-file upload state (2026-09-05)
+
+**When:** a durable row stands in for an optimistic bubble across a reload or a
+warm-box handover. The prompt row exposed `text` + `attachments` names but not a
+usable upload STATE, and three client sites derived "failed" from `last_error`
+alone. The API writes `last_error` on rows it keeps `queued` and RETRIES and
+never clears it on success, so a transient `runtime_unreachable` retry rendered
+as "upload failed". **The rule:** derive failure from `state === 'failed'`,
+never from the presence of `last_error`; a queued row with an error is
+retrying, not failed. Also: a refused landing proof must re-send under a FRESH
+attempt (fresh `Idempotency-Key` + wire id via `withNextDeliveryAttempt`),
+never `return false` into `deliverWithRetry` — the proxy's 10-minute dedupe
+claim answers the same-key retry `duplicate`, which closes the row as delivered
+(the exact silent loss the proof exists to stop). *Enforcer:*
+`queue-projection.test.ts` (stale-error row still uploading), the two
+"never wrote" cases in `queued-continue-inbox-delivery.test.ts` (fresh-key
+requeue + dead-letter), `user-message.test.tsx` (pending tiles without doubling).
+These seven defects were found by an adversarial multi-agent review of the first
+fix set — review your own fixes before shipping.
+
+### A streamed message is "there" when its LAST promised part lands, not its first (2026-09-04)
+
+**When:** swapping an optimistic/placeholder render for the runtime's own copy
+of a message. The runtime streams a message's parts, TEXT FIRST — measured in a
+real browser: file parts followed ~6 s later. The boot preview was released
+"the frame the transcript shows the text", so for those seconds the bubble
+went from three tiles + "Uploading 3 files…" to nothing under it, then the
+tiles trickled back one by one. That frame is the user's bug report. **The
+rule:** release the placeholder when the real copy carries at least what the
+placeholder promised (text AND attachment count, counting materialized
+`<file>` refs as attachments), or when the turn is answered (nothing more is
+streaming). Measure such handovers with a per-second DOM probe, not a
+screenshot at the end. *Enforcer:* `first-prompt-handover.test.ts`; the browser
+probe in this incident's session showed `tiles=0` for two consecutive seconds
+before the fix and none after.
+
 ### Retried append writes carry the expected offset (2026-09-04)
 
 **When:** splitting one upload into several mutating requests. A timeout can

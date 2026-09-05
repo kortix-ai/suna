@@ -186,7 +186,12 @@ export type SessionDeliveryOutcome =
   | 'pending'
   | 'unreachable'
   | 'no-session'
-  | 'failed';
+  | 'failed'
+  /** The runtime ACCEPTED the prompt and then never wrote the message. Not a
+   *  retry under the same key: the proxy's dedupe claim would answer that
+   *  `duplicate` and the row would close as delivered again. The row goes
+   *  back on the queue with a fresh attempt, a fresh key and a fresh wire id. */
+  | 'not-landed';
 
 export interface SessionLifecycleResult {
   status: SessionLifecycleStatus;

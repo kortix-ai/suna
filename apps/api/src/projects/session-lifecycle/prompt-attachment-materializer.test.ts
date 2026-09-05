@@ -288,3 +288,69 @@ describe('materializePromptAttachments', () => {
     ]);
   });
 });
+
+describe('materializePromptAttachments — review findings 2026-09-05', () => {
+  const base = {
+    externalId: 'sbx_1',
+    sessionId: 'session_1',
+    userId: 'user_1',
+    materializationKey: 'command_1',
+  };
+  const png = (n: number) => ({
+    type: 'file' as const,
+    mime: 'image/png',
+    filename: 'shot.png',
+    url: `data:image/png;base64,${'A'.repeat(Math.floor(n / 4) * 4)}`,
+  });
+
+  test('prompt text spends the same inline budget as the files', async () => {
+    const writes: string[] = [];
+    const longText = 'x'.repeat(INLINE_PROMPT_BUDGET_BYTES - 1000);
+    // Alone this image fits; beside a long prompt it does not.
+    const result = await materializePromptAttachments({
+      ...base,
+      parts: [{ type: 'text', text: longText }, png(4000)],
+      writeFile: async (f) => {
+        writes.push(f.targetPath);
+        return { path: f.targetPath, size: f.bytes.byteLength };
+      },
+    });
+    expect(writes).toHaveLength(1);
+    expect(result[1]).toMatchObject({ type: 'text' });
+  });
+
+  test('a native file that is a remote URL stays inline whatever the budget', async () => {
+    const writes: string[] = [];
+    const result = await materializePromptAttachments({
+      ...base,
+      inlineBudgetBytes: 10,
+      parts: [
+        { type: 'text', text: 'see' },
+        { type: 'file', mime: 'image/png', filename: 'in-box.png', url: 'https://box.test/uploads/in-box.png' },
+      ],
+      writeFile: async (f) => {
+        writes.push(f.targetPath);
+        return { path: f.targetPath, size: f.bytes.byteLength };
+      },
+    });
+    expect(writes).toEqual([]);
+    expect(result[1]).toMatchObject({ type: 'file', url: 'https://box.test/uploads/in-box.png' });
+  });
+
+  test('the legacy repair keeps native images inline via an unbounded budget', async () => {
+    const writes: string[] = [];
+    await materializePromptAttachments({
+      ...base,
+      inlineBudgetBytes: Number.POSITIVE_INFINITY,
+      parts: [
+        png(INLINE_PROMPT_BUDGET_BYTES * 4),
+        { type: 'file', mime: 'application/zip', filename: 'b.zip', url: 'data:application/zip;base64,UEsDBA==' },
+      ],
+      writeFile: async (f) => {
+        writes.push(f.filename);
+        return { path: f.targetPath, size: f.bytes.byteLength };
+      },
+    });
+    expect(writes).toEqual(['b.zip']);
+  });
+});

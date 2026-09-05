@@ -571,7 +571,7 @@ EOF
   source "$ROOT_DIR/apps/web/.env.local"
   set +a
 
-  kill_dev_ports 3000 8008 "${PORT:-8008}"
+  kill_dev_ports "${WEB_PORT:-3000}" "${PORT:-8008}"
 
   # A freshly-cloned session has no node_modules — install first. (Warm volumes
   # / a baked pnpm store make this near-instant later; cold it's a few minutes.)
@@ -617,7 +617,9 @@ if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
 fi
 
 load_local_env
-kill_dev_ports 3000 8008 "${PORT:-8008}" "$GATEWAY_PORT"
+# ONLY the ports THIS run will bind. Hardcoding 3000/8008 made every worktree
+# `pnpm dev` kill the primary checkout's web and API (2026-09-04, repeatedly).
+kill_dev_ports "${WEB_PORT:-3000}" "${PORT:-8008}" "$GATEWAY_PORT"
 
 echo "[dev] Checking Supabase configuration..."
 if ! docker info >/dev/null 2>&1; then

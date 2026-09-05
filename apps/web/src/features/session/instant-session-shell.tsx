@@ -156,9 +156,11 @@ export function InstantSessionShell({
       // one chunk at a time before the runtime creates the message, so an
       // undelivered row with attachments means "still going up" — and
       // `last_error` is the only place a failed upload is ever named.
+      // `state`, never `last_error` alone: the API writes `last_error` on
+      // rows it keeps `queued` and retries, and never clears it on success.
       uploadStatus: (row.attachments?.length ?? 0) > 0
-        ? row.last_error
-          ? ({ state: 'failed', message: row.last_error } as const)
+        ? row.state === 'failed'
+          ? ({ state: 'failed', message: row.last_error ?? 'Upload failed' } as const)
           : ({ state: 'uploading' } as const)
         : undefined,
     };

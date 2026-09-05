@@ -72,8 +72,14 @@ function validateFilePart(part: PromptPartWire): string | null {
   const mime = part.mime?.trim();
   const url = part.url?.trim();
   if (!mime || !url) return `file "${filename}" is missing MIME or URL data`;
-  if (isModelNativeAttachmentMime(mime)) return null;
-  if (!url.toLowerCase().startsWith('data:')) {
+  const staged = url.toLowerCase().startsWith('data:');
+  // A native file may arrive as a remote URL (already in the box) or staged
+  // as a data: URL. A staged one is parsed HERE: past the inline budget the
+  // drain materializes it, and a malformed data URL that slipped in unparsed
+  // failed there on every attempt instead of as a 400 at the door (review
+  // finding, 2026-09-05).
+  if (isModelNativeAttachmentMime(mime) && !staged) return null;
+  if (!staged) {
     return `file "${filename}" must be uploaded before it can be sent`;
   }
   try {

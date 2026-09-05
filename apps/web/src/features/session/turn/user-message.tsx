@@ -1192,6 +1192,8 @@ export function UserMessage({
   leadingActions,
   leadingStatus,
   actionsAlwaysVisible = false,
+  pendingAttachments,
+  uploadStatus,
 }: {
   message: MessageWithParts;
   agentNames?: string[];
@@ -1228,6 +1230,16 @@ export function UserMessage({
   leadingStatus?: React.ReactNode;
   /** See `UserMessageActions.alwaysVisible`. */
   actionsAlwaysVisible?: boolean;
+  /**
+   * Files this message is KNOWN to carry that its parts do not show yet. The
+   * runtime streams a message's parts text-first and the file parts seconds
+   * later; drawing these as pending tiles in the meantime is what keeps the
+   * strip from blinking out for that window. Deduped by name against the
+   * parts that have arrived.
+   */
+  pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  /** What the strip says while `pendingAttachments` are in flight. */
+  uploadStatus?: AttachmentUploadStatus;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
@@ -1274,10 +1286,20 @@ export function UserMessage({
 
   // Both attachment routes, drawn as one strip. `uploadedFiles` used to be
   // parsed and then discarded — see `normalizeAttachments`.
-  const allAttachments = useMemo(
-    () => normalizeAttachments(message.parts, uploadedFiles),
-    [message.parts, uploadedFiles],
-  );
+  const allAttachments = useMemo(() => {
+    const arrived = normalizeAttachments(message.parts, uploadedFiles);
+    if (!pendingAttachments?.length) return arrived;
+    const drawn = new Set(arrived.map((tile) => tile.filename));
+    const missing = pendingAttachments
+      .filter((file) => !drawn.has(file.filename))
+      .map((file, index) => ({
+        key: `pending:${message.info.id}:${index}:${file.filename}`,
+        filename: file.filename,
+        mime: file.mime,
+        pending: true,
+      }));
+    return [...arrived, ...missing];
+  }, [message.parts, uploadedFiles, pendingAttachments, message.info.id]);
 
   /**
    * Whether THIS turn draws the plan.
@@ -1660,7 +1682,9 @@ export function UserMessage({
         showPlan ? 'max-w-full' : 'max-w-[80%]',
       )}
     >
-      {allAttachments.length > 0 && <MessageAttachments attachments={allAttachments} />}
+      {allAttachments.length > 0 && (
+        <MessageAttachments attachments={allAttachments} status={uploadStatus} />
+      )}
 
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
       {dcpNotifications.length > 0 && (

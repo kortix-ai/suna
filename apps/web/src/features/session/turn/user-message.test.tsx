@@ -416,6 +416,51 @@ describe('UserMessage persisted attachments', () => {
     );
   });
 
+  // The runtime streams the text part first and the file parts seconds later.
+  // The names the preview promised fill the gap as pending tiles, and the
+  // strip says so — instead of blinking out (review finding, 2026-09-05: the
+  // earlier fix held a SECOND bubble over this one).
+  test('draws promised-but-unarrived files as pending tiles on the real message', () => {
+    const streaming = {
+      info: { id: 'message-streaming', role: 'user', time: { created: Date.parse('2026-09-05T22:00:00.000Z') } },
+      parts: [
+        { id: 'p-text', messageID: 'message-streaming', type: 'text', text: 'REPRO' },
+        { id: 'p-png', messageID: 'message-streaming', type: 'file', mime: 'image/png', filename: 'tiny.png', url: 'data:image/png;base64,iVBORw0KGgo=' },
+      ],
+    } as MessageWithParts;
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <UserMessage
+            message={streaming}
+            sessionId="s"
+            ownsPlan={false}
+            pendingAttachments={[
+              { filename: 'tiny.png', mime: 'image/png' },
+              { filename: 'logo.svg', mime: 'image/svg+xml' },
+              { filename: 'doc.pdf', mime: 'application/pdf' },
+            ]}
+            uploadStatus={{ state: 'uploading' }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('REPRO');
+    expect(html).toContain('logo.svg');
+    expect(html).toContain('doc.pdf');
+    // tiny.png arrived as a real part — it is drawn ONCE, not doubled by its name.
+    expect(html.split('tiny.png').length - 1).toBe(
+      renderToStaticMarkup(
+        <QueryClientProvider client={new QueryClient()}>
+          <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+            <UserMessage message={streaming} sessionId="s" ownsPlan={false} />
+          </NextIntlClientProvider>
+        </QueryClientProvider>,
+      ).split('tiny.png').length - 1,
+    );
+    expect(html).toContain('Uploading 3 files');
+  });
+
   test('keeps workspace references before a later native file after reload', () => {
     const persisted = {
       info: {

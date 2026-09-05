@@ -214,3 +214,28 @@ test('a failed chunk aborts the write', async () => {
     ),
   ).rejects.toThrow(/append failed \(503\)/);
 });
+
+// A chunk that fails mid-way must not leave a truncated temp file behind.
+test('a failed chunked upload deletes its partial temp file', async () => {
+  const calls: string[] = [];
+  await expect(
+    writeRuntimePromptFile(
+      { ...input, bytes: new Uint8Array(RUNTIME_PROMPT_CHUNK_BYTES * 2) },
+      async (_e, _p, _a, method, route, _q, _h, body) => {
+        calls.push(`${method} ${route}`);
+        if (route === '/file/append' && calls.filter((c) => c.endsWith('/file/append')).length === 2) {
+          return new Response(null, { status: 503 });
+        }
+        if (route === '/file/append') return Response.json({ path: '/tmp/x', size: 1 });
+        if (method === 'DELETE') {
+          const { path } = JSON.parse(new TextDecoder().decode(body));
+          calls.push(`deleted ${path}`);
+          return Response.json(true);
+        }
+        return Response.json(true);
+      },
+      () => 'fixed',
+    ),
+  ).rejects.toThrow(/append failed \(503\)/);
+  expect(calls.some((c) => c.startsWith('deleted /workspace/uploads/.kortix-inbox/command_1/.kortix-prompt-fixed'))).toBe(true);
+});

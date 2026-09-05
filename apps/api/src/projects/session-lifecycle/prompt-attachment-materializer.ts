@@ -120,16 +120,35 @@ export async function materializePromptAttachments(input: {
   userId: string;
   materializationKey: string;
   writeFile: RuntimePromptFileWriter;
+  /**
+   * Override the inline budget. The legacy repair passes `Infinity`: it is
+   * patching a message the runtime ALREADY holds, native images included, and
+   * re-uploading those would rewrite parts that were never broken.
+   */
+  inlineBudgetBytes?: number;
 }): Promise<PromptPartWire[]> {
+  // The TEXT rides in the same body as the inline files, so it spends the same
+  // budget — a long prompt beside a mid-size image busts the ceiling exactly
+  // like a large image alone (review finding, 2026-09-05).
+  const textCost = input.parts.reduce(
+    (sum, part) => sum + (part.type === 'text' ? (part.text?.length ?? 0) : 0),
+    0,
+  );
   // Walked in order so the decision is deterministic: the earliest attachments
   // keep their native form and the ones that would overflow are written out.
-  let inlineBudget = INLINE_PROMPT_BUDGET_BYTES;
+  let inlineBudget = (input.inlineBudgetBytes ?? INLINE_PROMPT_BUDGET_BYTES) - textCost;
   const candidates = input.parts
     .map((part, index) => ({ part, index }))
     .filter(({ part }) => {
       if (part.type !== 'file') return false;
-      if (!isModelNativeAttachmentMime(part.mime ?? '')) return true;
-      const inlineCost = part.url?.length ?? 0;
+      const url = part.url ?? '';
+      const staged = url.toLowerCase().startsWith('data:');
+      if (!isModelNativeAttachmentMime(part.mime ?? '')) return staged;
+      // A native file that is a REMOTE URL costs the URL, not the bytes, and
+      // there are no bytes here to write out: it stays inline whatever the
+      // budget says.
+      if (!staged) return false;
+      const inlineCost = url.length;
       if (inlineCost > inlineBudget) return true;
       inlineBudget -= inlineCost;
       return false;

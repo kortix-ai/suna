@@ -48,6 +48,8 @@ const NEWER_TRANSCRIPT_ID = mintWireMessageId({ nowMs: NOW_MS - 60_000, random: 
 const OPENCODE_MINTED_ID = `msg_${(((BigInt(NOW_MS - 40_000) * BigInt(0x1000)) & BigInt(0xffffffffffff)).toString(16).padStart(12, '0'))}AbCdEfGhIjKlMn`;
 
 let requeues: Array<{ commandId: string; reason: string; availableAt: Date }> = [];
+let unlandedRequeues: Array<{ commandId: string; reason: string }> = [];
+let unlandedBudgetLeft = 2;
 let sessionRow: Record<string, unknown> | null = null;
 /** The session's one box, as the turn-authority read sees it. Null = no box. */
 let boxRow: { status: string; metadata: Record<string, unknown> | null } | null = null;
@@ -56,6 +58,8 @@ let boxRow: { status: string; metadata: Record<string, unknown> | null } | null 
 let deliveredFloor: bigint | null = null;
 let transcript: Array<Record<string, unknown>> = [];
 let capturedBodies: Array<Record<string, unknown>> = [];
+let capturedKeys: string[] = [];
+const seenKeys = new Set<string>();
 let succeededCalls: Array<{ commandId: string; result: unknown }> = [];
 // A delivered row that carries a wire id no longer closes — it stays OPEN as
 // `forwarded` until the session_turns ledger confirms a turn consumed that id.
@@ -213,20 +217,38 @@ mock.module('../../../sandbox-proxy/routes/preview', () => ({
     maxActivePosts = Math.max(maxActivePosts, activePosts);
     try {
       if (postDelayMs > 0) await Bun.sleep(postDelayMs);
+      // The real proxy takes a 10-minute dedupe claim on the Idempotency-Key
+      // of every prompt POST and answers a repeat `200 {deduplicated:true}` —
+      // WITHOUT forwarding it. A harness that forwarded repeats let a retry
+      // under the same key look like a delivery (review finding, 2026-09-05).
+      const idempotencyKey = _headers.get('Idempotency-Key') ?? '';
+      capturedKeys.push(idempotencyKey);
+      if (idempotencyKey && seenKeys.has(idempotencyKey)) {
+        return Response.json({ status: 'duplicate', deduplicated: true });
+      }
       capturedBodies.push(JSON.parse(new TextDecoder().decode(body)));
+      // The claim outlives only a delivery the daemon ACCEPTED: a 5xx is
+      // provable non-delivery and the real proxy releases it, so a retry under
+      // the same key after a 500 is forwarded again, not deduped.
+      const remember = () => {
+        if (idempotencyKey) seenKeys.add(idempotencyKey);
+      };
       const plannedResponse = promptResponsePlan.shift();
       if (plannedResponse === 'failed') return new Response(null, { status: 500 });
       if (plannedResponse === 'deduplicated') {
+        remember();
         return Response.json({ status: 'duplicate', deduplicated: true });
       }
       if (promptDeduplicationsRemaining > 0) {
         promptDeduplicationsRemaining -= 1;
+        remember();
         return Response.json({ deduplicated: true });
       }
       if (promptFailuresRemaining > 0) {
         promptFailuresRemaining -= 1;
         return new Response(null, { status: 500 });
       }
+      remember();
       return new Response(null, { status: 204 });
     } finally {
       activePosts -= 1;
@@ -269,6 +291,14 @@ mock.module('../store', () => ({
       };
     }
   },
+  requeueUnlandedPrompt: async (commandId: string, reason: string) => {
+    unlandedRequeues.push({ commandId, reason });
+    simulatedInFlightCommands.delete(commandId);
+    if (unlandedBudgetLeft <= 0) return { requeued: false, refusals: 2 };
+    unlandedBudgetLeft -= 1;
+    return { requeued: true, refusals: 2 - unlandedBudgetLeft };
+  },
+  MAX_LANDING_RETRIES: 2,
   requeueForAdmission: async (commandId: string, reason: string, availableAt: Date) => {
     requeues.push({ commandId, reason, availableAt });
     simulatedInFlightCommands.delete(commandId);
@@ -404,6 +434,8 @@ function baseRow(overrides: Partial<SessionLifecycleCommandRow> = {}): SessionLi
 
 beforeEach(() => {
   requeues = [];
+  unlandedRequeues = [];
+  unlandedBudgetLeft = 2;
   sessionRow = {
     accountId: ACCOUNT_ID,
     projectId: PROJECT_ID,
@@ -419,6 +451,8 @@ beforeEach(() => {
   deliveredFloor = null;
   transcript = [];
   capturedBodies = [];
+  capturedKeys = [];
+  seenKeys.clear();
   succeededCalls = [];
   forwardedCalls = [];
   failedCalls = [];
@@ -921,13 +955,11 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
   // no message, no turn, no error, inbox row reporting success. A delivery that
   // cannot be read back must NOT close the row.
   test('a prompt the runtime never wrote is not reported as forwarded', async () => {
-    // The first posted id never becomes readable — the edge took the body and
-    // answered ok. The delivery loop keeps retrying under that id, so the test
-    // lets the runtime start answering partway through instead of sitting out
-    // the loop's full 45s deadline.
+    // The edge took the body and answered ok; the runtime never wrote it. The
+    // POST is captured, the read-back 404s for good.
     runtimeDropsFirstDelivery = true;
 
-    const running = executeQueuedContinue(
+    const outcome = await executeQueuedContinue(
       baseRow({
         payload: {
           text: 'HII',
@@ -938,19 +970,47 @@ describe('executeQueuedContinue — what actually goes on the wire', () => {
       }),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-    // The POST went out and `prompt_async` called it accepted...
-    expect(capturedBodies.length).toBeGreaterThan(0);
-    // ...and NOTHING closed the row on that acceptance. This is the whole
-    // incident: before the landing proof the row went `forwarded` here and the
-    // user's message ceased to exist.
+    // ONE POST under this row's key — never a second under the same key,
+    // which the proxy would have answered `duplicate` and the old code read
+    // as delivery (review finding, 2026-09-05).
+    expect(capturedKeys).toEqual(['cmd-1']);
+    // Nothing closed the row. It went back on the queue under a FRESH attempt
+    // (fresh key + re-mint on the next drain), which is the whole fix.
     expect(forwardedCalls).toEqual([]);
     expect(succeededCalls).toEqual([]);
+    expect(unlandedRequeues).toEqual([
+      {
+        commandId: 'cmd-1',
+        reason: 'prompt accepted by the runtime but never became a message',
+      },
+    ]);
+    expect(outcome).toBe('queued');
+  }, 20_000);
 
-    // The runtime starts holding the message; the next attempt proves it.
-    runtimeDropsFirstDelivery = false;
-    expect(await running).toBe('succeeded');
-    expect(forwardedCalls).toHaveLength(1);
+  // And when the fresh attempts are spent, the user gets an error instead of
+  // a spinner: dead-lettered with the one reason that names what happened.
+  test('a prompt that never lands after its retry budget is dead-lettered, not delivered', async () => {
+    runtimeDropsFirstDelivery = true;
+    unlandedBudgetLeft = 0;
+
+    const outcome = await executeQueuedContinue(
+      baseRow({
+        payload: {
+          text: 'HII',
+          clientMessageId: 'q_dropped_final',
+          wireMessageId: SUBMITTED_WIRE_ID,
+          parts: [{ type: 'text', text: 'HII' }],
+        },
+      }),
+    );
+
+    expect(forwardedCalls).toEqual([]);
+    expect(outcome).toBe('failed');
+    expect(failedCalls.at(-1)).toMatchObject({
+      commandId: 'cmd-1',
+      message: 'prompt accepted by the runtime but never became a message',
+      options: { retryable: false },
+    });
   }, 20_000);
 
   test('an ATTACHMENT-ONLY prompt is delivered, not dead-lettered', async () => {

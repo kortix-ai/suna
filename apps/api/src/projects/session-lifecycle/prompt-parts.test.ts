@@ -181,3 +181,22 @@ describe('flattenPromptText', () => {
     ).toBe('a\nb');
   });
 });
+
+// A native file staged as a data: URL is parsed at the door. Over the inline
+// budget the drain materializes it, and a malformed one that slipped past the
+// sanitizer failed at every drain instead of as a 400 here (review, 2026-09-05).
+test('a malformed staged native image is refused at the door', () => {
+  const out = sanitizeInboxPromptParts([
+    { type: 'text', text: 'hi' },
+    { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'data:image/jpeg;base64,not*base64' },
+  ]);
+  expect('error' in out).toBe(true);
+});
+
+test('a native image that is a remote URL is still admitted', () => {
+  const out = sanitizeInboxPromptParts([
+    { type: 'text', text: 'hi' },
+    { type: 'file', mime: 'image/jpeg', filename: 'p.jpg', url: 'https://box.test/p.jpg' },
+  ]);
+  expect('error' in out).toBe(false);
+});

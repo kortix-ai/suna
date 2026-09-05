@@ -83,6 +83,7 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
+import { transcriptCarriesFirstPrompt } from '@/features/session/first-prompt-handover';
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
@@ -702,6 +703,9 @@ interface SessionTurnProps {
    * in the bubble's own meta row — the bubble IS the queue entry.
    */
   queueRow?: SessionPrompt | null;
+  /** Files this turn is known to carry that its parts do not show yet — see `UserMessage`. */
+  pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  uploadStatus?: AttachmentUploadStatus;
   queueHeld?: boolean;
   onQueueRemove?: (promptId: string) => void;
   onQueueSendNow?: (promptId: string) => void;
@@ -824,6 +828,8 @@ function SessionTurnImpl({
   suppressBusyIndicator,
   pending,
   queueRow,
+  pendingAttachments,
+  uploadStatus,
   queueHeld,
   onQueueRemove,
   onQueueSendNow,
@@ -1629,6 +1635,8 @@ function SessionTurnImpl({
         >
           <UserMessage
             message={turn.userMessage}
+            pendingAttachments={pendingAttachments}
+            uploadStatus={uploadStatus}
             agentNames={agentNames}
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
@@ -2235,7 +2243,13 @@ export function SessionChat({
   const firstPromptUploadStatus = useMemo((): AttachmentUploadStatus | undefined => {
     const row = promptInbox.prompts.find((p) => (p.attachments?.length ?? 0) > 0);
     if (!row) return undefined;
-    return row.last_error ? { state: 'failed', message: row.last_error } : { state: 'uploading' };
+    // `state`, never `last_error` alone: the API writes `last_error` on rows
+    // it keeps `queued` and retries, and never clears it on success — read
+    // as a failure it turned every transient retry into "upload failed"
+    // (review finding, 2026-09-05).
+    return row.state === 'failed'
+      ? { state: 'failed', message: row.last_error ?? 'Upload failed' }
+      : { state: 'uploading' };
   }, [promptInbox.prompts]);
 
   // T10: the most recently issued stop/cancel's `AbortSettlement`
@@ -3291,24 +3305,46 @@ export function SessionChat({
   const clearFirstPromptPreview = useFirstPromptPreviewStore(
     (state) => state.clearFirstPromptPreview,
   );
-  // "The transcript has it" means a user message WITH text on screen — the
-  // info frame and the text part arrive separately, and a bubble with no text
-  // renders nothing. Until then the preview stands in.
+  // Two different questions, and they used to be one.
+  //
+  // WHEN DOES THE STAND-IN STEP ASIDE? The frame the transcript shows the
+  // text. Holding it past that stacked a second bubble on top of the real one
+  // for the whole text-first window (review finding, 2026-09-05).
+  //
+  // WHEN IS THE PREVIEW FORGOTTEN? Only once the transcript's message carries
+  // the attachments it promised — the runtime streams the text part first and
+  // the file parts seconds later, and forgetting on text alone was what left
+  // the real bubble with no tiles for those seconds. Until then the preview's
+  // file NAMES are handed to the real turn to draw as pending tiles, so the
+  // strip never blinks out. See `first-prompt-handover.ts`.
   const transcriptShowsFirstPrompt = useMemo(
-    () =>
-      turns.some((turn) =>
-        turn.userMessage.parts.some(
-          (part) =>
-            isTextPart(part) && !!part.text?.trim() && !(part as { synthetic?: boolean }).synthetic,
-        ),
-      ),
+    () => transcriptCarriesFirstPrompt(turns, 0),
     [turns],
+  );
+  const previewAttachmentCount = firstPromptPreview?.files.length ?? 0;
+  const transcriptCarriesFirstPromptFiles = useMemo(
+    () => transcriptCarriesFirstPrompt(turns, previewAttachmentCount),
+    [turns, previewAttachmentCount],
   );
   const showFirstPromptPreview = !!firstPromptPreview && !transcriptShowsFirstPrompt;
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
-    if (transcriptShowsFirstPrompt) clearFirstPromptPreview(projectSessionId);
-  }, [projectSessionId, firstPromptPreview, transcriptShowsFirstPrompt, clearFirstPromptPreview]);
+    if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
+  }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
+  /** The first prompt's promised files, by name, for the real turn to draw as
+   *  pending tiles while its own file parts are still streaming in. */
+  const firstTurnPendingAttachments = useMemo(
+    (): ReadonlyArray<{ filename: string; mime: string }> | undefined => {
+      if (!firstPromptPreview || transcriptCarriesFirstPromptFiles) return undefined;
+      const names = firstPromptPreview.files.map((file) =>
+        file.kind === 'local'
+          ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
+          : { filename: file.filename, mime: file.mime },
+      );
+      return names.length > 0 ? names : undefined;
+    },
+    [firstPromptPreview, transcriptCarriesFirstPromptFiles],
+  );
 
   /**
    * Which turn, if any, draws the plan.
@@ -5362,6 +5398,14 @@ export function SessionChat({
                                   questions={pendingQuestions}
                                   agentNames={agentNames}
                                   isFirstTurn={turnIndex === 0}
+                                  pendingAttachments={
+                                    turnIndex === 0 ? firstTurnPendingAttachments : undefined
+                                  }
+                                  uploadStatus={
+                                    turnIndex === 0 && firstTurnPendingAttachments
+                                      ? (firstPromptUploadStatus ?? { state: 'uploading' })
+                                      : undefined
+                                  }
                                   sessionWorking={lastTurnWorking}
                                   isWorkingTurn={
                                     turn.userMessage.info.id === workingTurn.workingTurnId

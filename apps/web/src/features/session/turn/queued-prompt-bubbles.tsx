@@ -29,13 +29,28 @@ import {
   WarningIcon,
   XIcon,
 } from '@phosphor-icons/react';
-import { BUBBLE_SURFACE, BUBBLE_TEXT } from './user-message';
+import {
+  type AttachmentUploadStatus,
+  BUBBLE_SURFACE,
+  BUBBLE_TEXT,
+  MessageAttachments,
+  type NormalizedAttachment,
+} from './user-message';
 
 export interface QueuedPromptRow {
   id: string;
   text: string;
   /** Present on a failed row. */
   lastError?: string;
+  /**
+   * The row's files, by NAME and TYPE. A queued row is the only thing on
+   * screen for a prompt whose bytes are still travelling to the box, and on a
+   * warm box that is the whole upload window: drawn text-only, a send of
+   * three files read as a send of none (2026-09-04, browser-measured).
+   */
+  attachments?: ReadonlyArray<{ filename: string; mime: string }>;
+  /** What the strip says about them — see `AttachmentUploadStatus`. */
+  uploadStatus?: AttachmentUploadStatus;
 }
 
 /** The dim a scheduled bubble sits at. One number, so the transcript's
@@ -261,6 +276,13 @@ function QueuedBubble({
   onRetry?: (id: string) => void;
 }) {
   const failed = state === 'failed';
+  const queuedTiles: NormalizedAttachment[] = (row.attachments ?? []).map((file, index) => ({
+    key: `queued:${row.id}:${index}:${file.filename}`,
+    filename: file.filename,
+    mime: file.mime,
+    // No `src`/`path`: nothing to preview until the runtime holds the bytes.
+    pending: true,
+  }));
   return (
     <div
       data-queued-prompt-id={row.id}
@@ -270,6 +292,13 @@ function QueuedBubble({
       {/* Bubble + its controls in ONE row: the actions sit beside the bubble,
           to its right, revealed on hover — never floating in space. The
           column is width-reserved (`w-6`) so nothing shifts on hover. */}
+      {/* The row's files, ABOVE the bubble exactly where the sent message will
+          draw them, every tile pending: the bytes are still on their way. Same
+          strip and the same "Uploading N files…" line the boot shell shows, so
+          the warm-box path stops being the one path with no tiles. */}
+      {queuedTiles.length > 0 && (
+        <MessageAttachments attachments={queuedTiles} pending status={row.uploadStatus} />
+      )}
       <div className="flex w-full items-center justify-end gap-1">
         <div
           className={cn(

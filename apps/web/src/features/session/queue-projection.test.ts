@@ -183,3 +183,101 @@ describe('projectQueueRows', () => {
     expect(projection.queued[0]).toEqual({ id: 'server-1', text: 'say hi' });
   });
 });
+
+// A warm box mounts the transcript within seconds, and until the runtime
+// echoes the prompt the queued row is the ONLY thing on screen for it. Drawn
+// text-only it read as a send of no files (2026-09-04, browser-measured).
+test('a queued row carries its attachment names and an uploading status', () => {
+  const { queued } = projectQueueRows({
+    prompts: [
+      {
+        prompt_id: 'p1',
+        client_message_id: 'c1',
+        message_id: 'msg_1',
+        state: 'queued',
+        reason: null,
+        text: 'YO BRO',
+        attempts: 0,
+        last_error: null,
+        created_at: '2026-09-04T15:06:47.900Z',
+        available_at: '2026-09-04T15:06:47.900Z',
+        attachments: [
+          { filename: 'a.jpg', mime: 'image/jpeg' },
+          { filename: 'b.pdf', mime: 'application/pdf' },
+        ],
+      },
+    ],
+  });
+  expect(queued[0]?.attachments).toEqual([
+    { filename: 'a.jpg', mime: 'image/jpeg' },
+    { filename: 'b.pdf', mime: 'application/pdf' },
+  ]);
+  expect(queued[0]?.uploadStatus).toEqual({ state: 'uploading' });
+});
+
+test('a failed row names the failure on its attachments', () => {
+  const { failed } = projectQueueRows({
+    prompts: [
+      {
+        prompt_id: 'p2',
+        client_message_id: 'c2',
+        message_id: 'msg_2',
+        state: 'failed',
+        reason: null,
+        text: 'x',
+        attempts: 3,
+        last_error: 'photo.jpg — upload failed (503)',
+        created_at: '2026-09-04T15:06:47.900Z',
+        available_at: '2026-09-04T15:06:47.900Z',
+        attachments: [{ filename: 'photo.jpg', mime: 'image/jpeg' }],
+      },
+    ],
+  });
+  expect(failed[0]?.uploadStatus).toEqual({ state: 'failed', message: 'photo.jpg — upload failed (503)' });
+});
+
+test('a text-only row carries no attachment fields at all', () => {
+  const { queued } = projectQueueRows({
+    prompts: [
+      {
+        prompt_id: 'p3',
+        client_message_id: 'c3',
+        message_id: 'msg_3',
+        state: 'queued',
+        reason: null,
+        text: 'plain',
+        attempts: 0,
+        last_error: null,
+        created_at: '2026-09-04T15:06:47.900Z',
+        available_at: '2026-09-04T15:06:47.900Z',
+        attachments: [],
+      },
+    ],
+  });
+  expect('attachments' in (queued[0] ?? {})).toBe(false);
+  expect('uploadStatus' in (queued[0] ?? {})).toBe(false);
+});
+
+// The API writes `last_error` on rows it keeps `queued` and retries, and never
+// clears it on success. Read as a failure, every transient retry said "upload
+// failed" (review finding, 2026-09-05).
+test('a queued row with a stale last_error is still uploading, not failed', () => {
+  const { queued } = projectQueueRows({
+    prompts: [
+      {
+        prompt_id: 'p4',
+        client_message_id: 'c4',
+        message_id: 'msg_4',
+        state: 'queued',
+        reason: null,
+        text: 'retrying',
+        attempts: 1,
+        last_error: 'delivery outcome: unreachable',
+        created_at: '2026-09-04T15:06:47.900Z',
+        available_at: '2026-09-04T15:06:47.900Z',
+        attachments: [{ filename: 'a.jpg', mime: 'image/jpeg' }],
+      },
+    ],
+  });
+  expect(queued[0]?.uploadStatus).toEqual({ state: 'uploading' });
+});
