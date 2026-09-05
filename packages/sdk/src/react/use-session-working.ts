@@ -114,10 +114,14 @@ export function buildWorkingInputs(input: {
     // live turns whenever a frame was dropped.
     stream: input.status
       ? {
+          // Only an explicit terminal state can clear an active session. An
+          // unknown producer state must preserve the user's Stop control.
           type:
-            input.status.type === 'busy' || input.status.type === 'retry'
-              ? input.status.type
-              : 'idle',
+            input.status.type === 'idle'
+              ? 'idle'
+              : input.status.type === 'retry'
+                ? 'retry'
+                : 'busy',
           origin: input.statusOrigin ?? 'wire',
           atMs: input.statusAtMs,
         }
