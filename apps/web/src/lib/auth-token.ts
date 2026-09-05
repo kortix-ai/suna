@@ -51,6 +51,14 @@ let bootstrapToken: string | null = null;
  * identity must never land its answer on top of whatever replaced it.
  */
 let authEpoch = 0;
+/**
+ * The epoch stamped by the most recent CLEAR (`setCachedAuthToken(null)`). A
+ * clear is an identity boundary — a sign-out, a 401, a stale session — and a
+ * fetch that began before one must never answer at all. Every other
+ * authoritative write ESTABLISHES an identity; a fetch that began before one
+ * of those answers with what it established (see `getSupabaseAccessToken`).
+ */
+let lastClearEpoch = 0;
 
 // ── Inflight deduplication ──
 let inflight: Promise<string | null> | null = null;
@@ -121,9 +129,25 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
 		if (authEpoch !== epochAtStart) {
 			// Invalidated (or reseeded) mid-flight. This result's provenance
 			// can't be trusted against whichever identity is current now —
-			// never commit it to the cache, and never hand it back either.
-			// Applies to EVERY caller waiting on this fetch, not just the
-			// one that started it.
+			// never commit it to the cache. Applies to EVERY caller waiting on
+			// this fetch, not just the one that started it.
+			//
+			// What the caller gets instead depends on WHICH write moved the
+			// epoch. A clear (`setCachedAuthToken(null)`: sign-out, 401, stale
+			// session) is an identity boundary, and a request issued under the
+			// identity before it must not be sent under the one after it —
+			// null, even if a newer fetch has since committed a token.
+			if (lastClearEpoch > epochAtStart) return null;
+			// Otherwise the write ESTABLISHED an identity with no boundary in
+			// between. On a cold load that write is `AuthProvider` hydrating the
+			// live session while this fetch is still in flight — the SDK request
+			// path asks exactly once, with no retry, so answering null here
+			// turned every request racing hydration into a synthetic `AuthError`
+			// and the project shell into "This project didn't load." (dev,
+			// 2026-09-05). The request belongs to the identity the cookies named
+			// all along; hand it that identity's token.
+			if (bootstrapToken) return bootstrapToken;
+			if (cachedToken) return cachedToken;
 			return null;
 		}
 		cachedToken = token;
@@ -189,6 +213,7 @@ export function setCachedAuthToken(token: string | null): void {
 	cachedToken = token;
 	cachedAt = token ? Date.now() : 0;
 	if (!token) {
+		lastClearEpoch = authEpoch;
 		inflight = null;
 	}
 }
@@ -225,6 +250,7 @@ export function __resetAuthTokenCacheForTests(): void {
 	cachedAt = 0;
 	bootstrapToken = null;
 	authEpoch = 0;
+	lastClearEpoch = 0;
 	inflight = null;
 	inflightEpoch = 0;
 	fetchTokenImpl = () => fetchToken();

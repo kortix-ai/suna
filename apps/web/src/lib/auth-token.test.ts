@@ -4,6 +4,7 @@ import {
   __resetAuthTokenCacheForTests,
   __setFetchTokenForTests,
   getSupabaseAccessToken,
+  setBootstrapAuthToken,
   setCachedAuthToken,
 } from './auth-token';
 
@@ -137,5 +138,86 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
     await expect(first).resolves.toBe('shared-token');
     await expect(second).resolves.toBe('shared-token');
     expect(fetchCount).toBe(1);
+  });
+});
+
+/**
+ * Cold-load race (dev, 2026-09-05 — "This project didn't load." on some
+ * opens). The SDK request path calls `getSupabaseAccessToken()` ONCE, with no
+ * retry, the moment a query mounts. That fetch is usually still in flight when
+ * `AuthProvider` finishes hydrating and writes the live session through
+ * `setCachedAuthToken(token)`. The epoch guard above then discarded the fetch
+ * as stale and returned NULL — even though the cache now held the exact token
+ * the caller needed — so the SDK answered a synthetic `AuthError` and the
+ * boundary rendered the terminal error screen. A write that ESTABLISHES an
+ * identity is the answer, not a reason to have none.
+ */
+describe('getSupabaseAccessToken: an authoritative token write lands mid-flight', () => {
+  test('returns the token the write established — not null', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const pending = getSupabaseAccessToken(); // starts the fetch, cache empty
+
+    // AuthProvider hydrates while the fetch is still in flight.
+    setCachedAuthToken('live-token-from-auth-provider');
+
+    fetch.resolve('token-from-the-in-flight-fetch');
+
+    await expect(pending).resolves.toBe('live-token-from-auth-provider');
+    // The authoritative write stays in the cache; the fetch result never
+    // overwrites it.
+    await expect(getSupabaseAccessToken()).resolves.toBe('live-token-from-auth-provider');
+  });
+
+  test('a piggybacking caller gets the established token too', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const callerA = getSupabaseAccessToken();
+    const callerB = getSupabaseAccessToken();
+
+    setCachedAuthToken('live-token-from-auth-provider');
+    // The provider clears bootstrap mode right after (a second epoch bump
+    // with the cache still holding the token).
+    setBootstrapAuthToken(null);
+    fetch.resolve('token-from-the-in-flight-fetch');
+
+    await expect(callerA).resolves.toBe('live-token-from-auth-provider');
+    await expect(callerB).resolves.toBe('live-token-from-auth-provider');
+  });
+
+  test('a bootstrap token written mid-flight is returned as well', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const pending = getSupabaseAccessToken();
+    setBootstrapAuthToken('bootstrap-token');
+    fetch.resolve('token-from-the-in-flight-fetch');
+
+    await expect(pending).resolves.toBe('bootstrap-token');
+  });
+});
+
+describe('getSupabaseAccessToken: a clear is an identity boundary even when a token follows it', () => {
+  test('clear → new token, both mid-flight: the fetch that began before the clear still gets null', async () => {
+    __resetAuthTokenCacheForTests();
+    const fetch = deferred<string | null>();
+    __setFetchTokenForTests(() => fetch.promise);
+
+    const pending = getSupabaseAccessToken(); // began under identity A
+
+    setCachedAuthToken(null); // sign-out / 401: boundary
+    setCachedAuthToken('identity-b-token'); // a new sign-in lands
+
+    fetch.resolve('identity-a-token');
+
+    // Never identity B's token for a request identity A issued.
+    await expect(pending).resolves.toBeNull();
+    // A fresh caller belongs to identity B and gets B.
+    await expect(getSupabaseAccessToken()).resolves.toBe('identity-b-token');
   });
 });
