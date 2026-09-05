@@ -118,9 +118,11 @@ export default defineConfig({
     // "Open in chat" providers, in display order. Blume's default is all six;
     // v0, t3 and Scira are dropped because they are not tools this audience
     // reaches for. `openInChatProviders` in the installed package is a closed
-    // enum (["v0","chatgpt","claude","t3","scira","cursor"]) — a Kortix entry
-    // cannot be added here, see the note in the migration report.
-    openInChat: ['chatgpt', 'claude', 'cursor'],
+    // enum, so "kortix" is added to it by patches/blume@1.5.3.patch, which also
+    // carries the Kortix mark and the URL builder in PageActions.astro. The
+    // Kortix link is ORIGIN-RELATIVE (/projects/start?q=…), so it resolves to
+    // localhost in dev and kortix.com in production with nothing to configure.
+    openInChat: ['kortix', 'chatgpt', 'claude', 'cursor'],
   },
   seo: { sitemap: false },
 

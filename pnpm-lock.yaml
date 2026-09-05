@@ -56,6 +56,9 @@ overrides:
   markdown-it@>=0.0.0 <14.2.0: 14.2.0
 
 patchedDependencies:
+  blume@1.5.3:
+    hash: ufswcwixm6cdsr2qyqtc3qgu7y
+    path: patches/blume@1.5.3.patch
   e2b@2.37.0:
     hash: yvfhnsbredtxqzv5fhmwxaetam
     path: patches/e2b@2.37.0.patch
@@ -1051,7 +1054,7 @@ importers:
         version: 10.4.17(postcss@8.5.18)
       blume:
         specifier: 1.5.3
-        version: 1.5.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(next@16.3.3)(preact@10.29.4)(prettier@3.9.4)(svelte@5.56.4)(vite@8.2.2)(vue@3.5.39)
+        version: 1.5.3(patch_hash=ufswcwixm6cdsr2qyqtc3qgu7y)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(next@16.3.3)(preact@10.29.4)(prettier@3.9.4)(svelte@5.56.4)(vite@8.2.2)(vue@3.5.39)
       cannon-es:
         specifier: ^0.20.0
         version: 0.20.0
@@ -16783,7 +16786,7 @@ packages:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
     dev: true
 
-  /blume@1.5.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(next@16.3.3)(preact@10.29.4)(prettier@3.9.4)(svelte@5.56.4)(vite@8.2.2)(vue@3.5.39):
+  /blume@1.5.3(patch_hash=ufswcwixm6cdsr2qyqtc3qgu7y)(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(@types/node@20.19.43)(@types/react-dom@19.2.3)(@types/react@19.2.18)(next@16.3.3)(preact@10.29.4)(prettier@3.9.4)(svelte@5.56.4)(vite@8.2.2)(vue@3.5.39):
     resolution: {integrity: sha512-8oaUwDtMcEWdCxnUmnPnw6SJol93EAavUq7ihFcr6ur2mCPcdkMjMzphM5Y3qIAexwy2J/bsQKRzAWKqHqIUSw==}
     engines: {node: '>=22.12.0'}
     hasBin: true
@@ -16964,6 +16967,7 @@ packages:
       - ws
       - yaml
     dev: false
+    patched: true
 
   /body-parser@2.3.0:
     resolution: {integrity: sha512-2cGmJupaNgg+QUwVLAucDuWuoMZ6EX9iHDRswZ5lsNYEmwPaRknMPCLZz07yTzVq/83p4o/wzbDZbBrTvGGTIw==}

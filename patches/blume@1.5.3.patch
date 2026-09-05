@@ -1,0 +1,66 @@
+diff --git a/dist/cli/index.js b/dist/cli/index.js
+index 86b5ac91369bd68964575d1cb60014408df27166..8841c8c5880beeee91e474dbf4bd42e9ebef049d 100755
+--- a/dist/cli/index.js
++++ b/dist/cli/index.js
+@@ -9652,7 +9652,8 @@ var openInChatProviders = [
+   "claude",
+   "t3",
+   "scira",
+-  "cursor"
++  "cursor",
++  "kortix"
+ ];
+ 
+ // src/core/standard-schema.ts
+diff --git a/dist/types/core/open-in-chat.d.ts b/dist/types/core/open-in-chat.d.ts
+index 5c8740e19ce9103799fbc49456231f70bc5b022d..9b6b5172421e8948392ccb15ee514f3773339101 100644
+--- a/dist/types/core/open-in-chat.d.ts
++++ b/dist/types/core/open-in-chat.d.ts
+@@ -5,5 +5,5 @@
+  * Lives outside `schema.ts` so the component can import the list without
+  * pulling the whole config schema into the layout module graph.
+  */
+-export declare const openInChatProviders: readonly ["v0", "chatgpt", "claude", "t3", "scira", "cursor"];
++export declare const openInChatProviders: readonly ["v0", "chatgpt", "claude", "t3", "scira", "cursor", "kortix"];
+ export type OpenInChatProvider = (typeof openInChatProviders)[number];
+diff --git a/src/components/layout/PageActions.astro b/src/components/layout/PageActions.astro
+index 03f3926ddc15546f0473a1a08557255dd4b2ea31..d8c1fc3cdb9c413b1520eed108307e57bcdc484b 100644
+--- a/src/components/layout/PageActions.astro
++++ b/src/components/layout/PageActions.astro
+@@ -53,6 +53,8 @@ const LOGOS: Record<string, string> = {
+     '<svg class="size-4 shrink-0" fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"/></svg>',
+   cursor:
+     '<svg class="size-4 shrink-0" viewBox="0 0 466.73 532.09" xmlns="http://www.w3.org/2000/svg"><path d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z" fill="currentColor"/></svg>',
++  kortix:
++    '<svg class="size-4 shrink-0" fill="currentColor" viewBox="0 0 30 25" xmlns="http://www.w3.org/2000/svg"><path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z"/></svg>',
+   scira:
+     '<svg class="size-4 shrink-0" fill="none" viewBox="0 0 910 934" xmlns="http://www.w3.org/2000/svg"><path d="M647.664 197.775C569.13 189.049 525.5 145.419 516.774 66.8849C508.048 145.419 464.418 189.049 385.884 197.775C464.418 206.501 508.048 250.131 516.774 328.665C525.5 250.131 569.13 206.501 647.664 197.775Z" fill="currentColor" stroke="currentColor" stroke-linejoin="round" stroke-width="8"/><path d="M857.5 508.116C763.259 497.644 710.903 445.288 700.432 351.047C689.961 445.288 637.605 497.644 543.364 508.116C637.605 518.587 689.961 570.943 700.432 665.184C710.903 570.943 763.259 518.587 857.5 508.116Z" stroke="currentColor" stroke-linejoin="round" stroke-width="20"/><path d="M889.949 121.237C831.049 114.692 798.326 81.9698 791.782 23.0692C785.237 81.9698 752.515 114.692 693.614 121.237C752.515 127.781 785.237 160.504 791.782 219.404C798.326 160.504 831.049 127.781 889.949 121.237Z" fill="currentColor" stroke="currentColor" stroke-linejoin="round" stroke-width="8"/><path d="M760.632 764.337C720.719 814.616 669.835 855.1 611.872 882.692C553.91 910.285 490.404 924.255 426.213 923.533C362.022 922.812 298.846 907.419 241.518 878.531C184.19 849.643 134.228 808.026 95.4548 756.863C56.6815 705.7 30.1238 646.346 17.8129 583.343C5.50207 520.339 7.76433 455.354 24.4266 393.359C41.089 331.364 71.7099 274.001 113.947 225.658C156.184 177.315 208.919 139.273 268.117 114.442" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="30"/></svg>',
+   t3: '<svg class="size-4 shrink-0" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>',
+@@ -64,6 +66,7 @@ const PROVIDER_NAMES: Record<OpenInChatProvider, string> = {
+   chatgpt: "ChatGPT",
+   claude: "Claude",
+   cursor: "Cursor",
++  kortix: "Kortix",
+   scira: "Scira",
+   t3: "T3 Chat",
+   v0: "v0",
+@@ -259,6 +262,7 @@ const menuRowClass =
+     chatgpt: (q) => `https://chatgpt.com/?hints=search&prompt=${q}`,
+     claude: (q) => `https://claude.ai/new?q=${q}`,
+     cursor: (q) => `https://cursor.com/link/prompt?text=${q}`,
++    kortix: (q) => `/projects/start?q=${q}`,
+     scira: (q) => `https://scira.ai/?q=${q}`,
+     t3: (q) => `https://t3.chat/new?q=${q}`,
+     v0: (q) => `https://v0.app?q=${q}`,
+diff --git a/src/core/open-in-chat.ts b/src/core/open-in-chat.ts
+index f82351f0e90208d87398b7c5983622f5cc69c503..8e886f73d6728dbae709070cc733ec3a72b2d369 100644
+--- a/src/core/open-in-chat.ts
++++ b/src/core/open-in-chat.ts
+@@ -12,6 +12,7 @@ export const openInChatProviders = [
+   "t3",
+   "scira",
+   "cursor",
++  "kortix",
+ ] as const;
+ 
+ export type OpenInChatProvider = (typeof openInChatProviders)[number];
