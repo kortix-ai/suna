@@ -75,9 +75,9 @@ export default defineConfig({
   deployment: { base: '/docs' },
 
   // Stock theme, deliberately. A Kortix skin is a separate follow-up; see
-  // decision D3 in the spec. Only the logo and accent are set here.
+  // decision D3 in the spec. The accent is NOT set here: it is bound to the
+  // foreground token in theme.css so it flips with the theme by itself.
   theme: {
-    accent: 'teal',
     radius: 'md',
     mode: 'system',
   },
