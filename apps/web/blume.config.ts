@@ -132,6 +132,23 @@ export default defineConfig({
     dir: 'apps/web',
   },
 
+  seo: {
+    // D2: the Next app owns every domain-wide discovery surface, and these two
+    // contradicted it rather than merely duplicating it.
+    //
+    // robots — Blume emitted dist/robots.txt (served at /docs/robots.txt) with
+    // `Content-Signal: ai-train=yes`. src/app/robots.txt, the real one, says
+    // `ai-train=no`. Shipping a second robots that inverts the company's stated
+    // AI-training position is worse than shipping none.
+    //
+    // agentReadability — dist/agent-readability.json carried the same
+    // inversion as machine-readable JSON ("ai-train": true). /llms.txt already
+    // advertises the markdown mirrors for the whole domain.
+    robots: false,
+    agentReadability: false,
+    sitemap: false,
+  },
+
   ai: {
     llmsTxt: false,
     mcp: { enabled: false },
@@ -144,7 +161,6 @@ export default defineConfig({
     // localhost in dev and kortix.com in production with nothing to configure.
     openInChat: ['kortix', 'chatgpt', 'claude', 'cursor'],
   },
-  seo: { sitemap: false },
 
   // The old fumadocs root meta.json carried a "---Develop---" separator
   // splitting cli/sdk/backend (+ an external API-reference link) from the
