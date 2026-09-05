@@ -15,11 +15,18 @@
  *   1. The cell's port is NOT public on the Platinum edge. The edge wants the
  *      exposure token (`?t=` or `x-pt-preview-token`); this Worker injects it
  *      from the PT_PREVIEW_TOKEN secret, so the token never reaches a browser.
- *   2. If ACCESS_TOKEN is set, the public name itself requires
+ *   2. The name FAILS CLOSED. With ACCESS_TOKEN set, every request must carry
  *      `Authorization: Bearer <ACCESS_TOKEN>` or `x-kortix-access: <ACCESS_TOKEN>`
- *      (the header is consumed here, not forwarded). Unset = open, which is
- *      pi.kortix.com parity — an explicit choice for the operator, not a default
- *      this file makes silently: the 401 body names the missing header.
+ *      (consumed here, never forwarded). With no ACCESS_TOKEN the Worker answers
+ *      503 — unless the operator deployed with the plain var OPEN_ACCESS=true,
+ *      which is pi.kortix.com parity stated out loud in the deploy, not a
+ *      default a cleared secret can fall into (Strix review of #7125, CWE-306).
+ *
+ * The upstream URL is built from the TARGET origin and then given the incoming
+ * path and query — never by resolving the incoming path against the origin. A
+ * path that starts with `//` is a scheme-relative reference, and
+ * `new URL('//evil/x', target)` would send the request — with the exposure
+ * token attached — to evil. Such paths are refused with 400 (CWE-918).
  *
  * WebSocket upgrades pass through untouched (the agent streams turn events over
  * a socket); SSE/streaming bodies are piped, not buffered.
@@ -38,6 +45,24 @@ function sameSecret(a, b) {
   return diff === 0;
 }
 
+/**
+ * The upstream URL for an incoming request URL, or null when the path must not
+ * be forwarded. The origin is ALWAYS the configured target: the path and query
+ * are copied onto it, never resolved against it.
+ */
+export function upstreamUrl(target, requestUrl) {
+  const incoming = new URL(requestUrl);
+  // `//host/...` and `/\host/...` are scheme-relative to a URL parser; a proxy
+  // that resolved them would leave its own origin. Nothing legitimate here
+  // starts a path that way.
+  if (/^\/[\/\\]/.test(incoming.pathname)) return null;
+  const upstream = new URL(target);
+  upstream.pathname = incoming.pathname;
+  upstream.search = incoming.search;
+  upstream.hash = '';
+  return upstream;
+}
+
 /** The credential the caller presented for pi-js.kortix.com itself, if any. */
 export function presentedAccess(headers) {
   const bearer = headers.get('authorization') || '';
@@ -45,10 +70,21 @@ export function presentedAccess(headers) {
   return (headers.get('x-kortix-access') || '').trim();
 }
 
-/** null = let it through; otherwise the Response to answer with. */
+/**
+ * null = let it through; otherwise the Response to answer with.
+ * Fails closed: no ACCESS_TOKEN and no explicit OPEN_ACCESS=true is a 503, not
+ * an open door in front of a shell-capable agent.
+ */
 export function accessRefusal(request, env) {
   const required = (env.ACCESS_TOKEN || '').trim();
-  if (!required) return null;
+  const openAccess = (env.OPEN_ACCESS || '').trim() === 'true';
+  if (!required) {
+    if (openAccess) return null;
+    return Response.json(
+      { error: 'pi-js.kortix.com is not configured: set the ACCESS_TOKEN secret, or deploy with OPEN_ACCESS=true to run it open' },
+      { status: 503, headers: { 'retry-after': '60' } },
+    );
+  }
   if (sameSecret(presentedAccess(request.headers), required)) return null;
   return Response.json(
     { error: 'pi-js.kortix.com requires Authorization: Bearer <access token> (or x-kortix-access)' },
@@ -68,13 +104,13 @@ export default {
     const refused = accessRefusal(request, env);
     if (refused) return refused;
 
-    const url = new URL(request.url);
-    const upstream = new URL(`${url.pathname}${url.search}`, target);
+    const upstream = upstreamUrl(target, request.url);
+    if (!upstream) return Response.json({ error: 'invalid path' }, { status: 400 });
 
     const headers = new Headers(request.headers);
     for (const name of STRIPPED) headers.delete(name);
     for (const name of CONSUMED) headers.delete(name);
-    headers.set('x-forwarded-host', url.host);
+    headers.set('x-forwarded-host', new URL(request.url).host);
     headers.set('x-forwarded-proto', 'https');
     // The Platinum edge's exposure token. Accepted as a header so it is never
     // part of a URL a browser could see or a log could keep.
