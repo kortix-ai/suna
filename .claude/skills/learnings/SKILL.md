@@ -199,6 +199,38 @@ components, the bypass stays deleted on both sides of the wire);
 `billing-state.test.ts` sweeps every Stripe status x plan class against the
 universal floor; `settle-credits.test.ts` pins the settlement contract.
 
+### Reach for a leaf, not the module that happens to hold the helper (2026-08-30)
+
+**When:** you need one small function that currently lives inside a large module
+in `apps/api`. Import the module and you import its whole graph. `subproject-index.ts`
+needed `githubLoaderOptions` — a ~40-line token-attaching fetch wrapper — and
+imported it from `marketplace/catalog.ts` (2,200 lines, full config/db graph).
+That one edge, reached from `projects/index.ts`, took the API suite from
+**8,742 tests / 2 fail to 6,062 / 250 fail**: hand-written `db` mocks across
+billing, accounts and connectors lost the exports the newly-pulled real modules
+needed, surfacing as `db.update is not a function` — never as a test naming the
+cause.
+
+**The rule** is the 2026-08-27 entry below, applied one level earlier: ask what
+the code actually NEEDS, and if the answer is a self-contained helper, move that
+helper to a leaf module and have both callers import the leaf. Here
+`shared/github-fetch.ts` imports only the SSRF guard; `marketplace/catalog.ts`
+re-exports it so no existing importer changed. It also de-duplicated the
+exact-hostname token rule, which is a security detail that should never have had
+two homes.
+
+**Diagnostic:** a suite that drops thousands of tests while gaining hundreds of
+failures, with the errors reading as broken mocks in files you never touched, is
+an import edge — not your logic. Bisect it by stubbing the new import inline and
+re-running; the before/after counts name the cause in one step.
+*Near-miss:* caught pre-merge while building the subproject install routes. Third
+instance of this class in the register, and the first where the fix was to
+relocate the helper rather than to defer the import.
+*Enforcer:* still none. The entry below already calls for a lint on `mock.module`
+factories that do not spread the real module; this instance adds the other half —
+nothing warns when a leaf-shaped helper is imported from a heavy module. A CI
+check on the import-graph weight of `projects/index.ts` would catch it.
+
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
 **When:** a package imports source files from another package without installing

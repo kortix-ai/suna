@@ -1,0 +1,99 @@
+---
+title: Marketplace
+description: Browse the template catalog and install a template from the SDK and from React.
+---
+
+A **template** is a Kortix project you install into your own: a public GitHub
+repository whose `kortix.yaml` declares agents, skills, connectors and
+triggers. This page covers the SDK surface: the public catalog reads, the
+per-project install, the exported types, and the React hooks.
+
+For the product — the flag, the catalog, what an install does — read
+[Marketplace](/docs/feature-flags/marketplace).
+
+```ts
+const catalog = kortix.marketplace; // public — needs no token
+const install = kortix.project(projectId).marketplace; // per project
+```
+
+:::info[Install is a feature flag; the catalog is not]
+`project(id).marketplace.install()` answers `403` with
+`{ error, code: "feature_disabled", feature: "marketplace" }` until the project
+turns Marketplace on. Use `isFeatureDisabledError(error)` to branch on it. The
+catalog reads take no token and no flag. See [Feature flags](/docs/feature-flags).
+:::
+
+## The catalog — `kortix.marketplace`
+
+| Method                       | Wraps                                     | What it does                                                            |
+| ---------------------------- | ----------------------------------------- | ----------------------------------------------------------------------- |
+| `marketplace.list(options?)` | `GET /public/marketplace/templates`       | Every template; `options.q` narrows by title, description, repo or slug |
+| `marketplace.get(slug)`      | `GET /public/marketplace/templates/:slug` | One template, or a `MarketplaceError` with `status: 404`                |
+
+Both are anonymous by design. They are not built on the authenticated client,
+so a server render with `getToken: () => null` can read them, and a signed-in
+visitor's token never leaks into a cached page.
+
+## The install — `kortix.project(id).marketplace`
+
+| Method                      | Wraps                                             | What it does                                                                      |
+| --------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `marketplace.install(slug)` | `POST /projects/:pid/marketplace/install-session` | Starts the agent session that installs the template; resolves to `{ session_id }` |
+
+`install` returns a **session id**, not a result. The agent inside that session
+reads both manifests, merges, and opens one change request a human reviews.
+The project changes when that change request merges. Reverting it is the
+uninstall, which is why there is no `list`, no `uninstall` and no activation
+call here.
+
+```ts
+const { templates } = await kortix.marketplace.list({ q: 'seo' });
+const { session_id } = await kortix.project(projectId).marketplace.install(templates[0].slug);
+// Open the session; the agent does the merge and opens the change request.
+```
+
+## Types
+
+| Type                              | Shape                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MarketplaceTemplate`             | `slug`, `title`, `description`, `repo` (`owner/repo`), `repo_owner`, `repo_name`, `git_ref`, `resolved_sha`, `agents`, `triggers`, `connectors`, `skills`, `env_required` |
+| `MarketplaceTemplateAgent`        | `name`, `description`                                                                                                                                                     |
+| `MarketplaceTemplateTrigger`      | `slug`, `name`, `type`, `cron`, `agent`, `enabled`                                                                                                                        |
+| `MarketplaceTemplateConnector`    | `slug`, `provider`, `app`                                                                                                                                                 |
+| `MarketplaceTemplateListing`      | `{ templates }`                                                                                                                                                           |
+| `ListMarketplaceTemplatesOptions` | `{ q? }`                                                                                                                                                                  |
+| `MarketplaceError`                | `Error` with a numeric `status` — `404` for an unknown slug, `429` when rate limited                                                                                      |
+
+`resolved_sha` is the commit the card was derived from and the commit the
+install reads. A template's trigger `enabled` values describe the source
+repository; the install ships every trigger disabled regardless.
+
+## React
+
+```tsx
+import { useMarketplaceInstall, useMarketplaceTemplates } from '@kortix/sdk/react';
+
+function Marketplace({ projectId }: { projectId: string }) {
+  const catalog = useMarketplaceTemplates();
+  const install = useMarketplaceInstall(projectId);
+  return (
+    <ul>
+      {catalog.data?.templates.map((template) => (
+        <li key={template.slug}>
+          {template.title}
+          <button onClick={() => install.mutate(template.slug)}>Install</button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+| Hook                                | What it does                                                  |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `useMarketplaceTemplates(options?)` | The catalog, keyed on `options.q`                             |
+| `useMarketplaceTemplate(slug)`      | One template; disabled without a slug                         |
+| `useMarketplaceInstall(projectId)`  | A mutation over `install(slug)`; resolves to `{ session_id }` |
+
+Key factories `marketplaceTemplatesKey(options?)` and
+`marketplaceTemplateKey(slug)` are exported for manual invalidation.

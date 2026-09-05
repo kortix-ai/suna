@@ -52,6 +52,26 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 export const qk = {
+  /** The marketplace template catalog — public, not per-project. */
+  marketplace: {
+    /** Invalidation prefix over every catalog listing, whatever it searched for. */
+    scope: () => ['kx', 'marketplace'] as const,
+
+    /**
+     * One catalog listing. The search term is part of the key because
+     * `listMarketplaceTemplates({ q })` is a different SERVER request per term,
+     * not a client-side filter of one response — sharing a key would let
+     * whichever fetch resolved last overwrite what the other search's readers
+     * see. `'all'` stands in for "no search", so an absent option and an
+     * explicit `undefined` land on the same entry rather than flickering.
+     */
+    list: (options?: { q?: string }) =>
+      [...qk.marketplace.scope(), 'list', options?.q?.trim() || 'all'] as const,
+
+    /** One template's detail, by slug. */
+    detail: (slug: string) => [...qk.marketplace.scope(), 'detail', slug] as const,
+  },
+
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
    *
@@ -267,8 +287,7 @@ export const qk = {
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
-    connectorConfig: (id: string, slug: string) =>
-      [...qk.project.connectors(id), slug] as const,
+    connectorConfig: (id: string, slug: string) => [...qk.project.connectors(id), slug] as const,
     /** One connector's OAuth2 authorization discovery —
      *  `discoverConnectionOAuth2Resource(id, connectionId)`. Keyed by connector
      *  slug, not connection id: the probe reads the connector's server, and the

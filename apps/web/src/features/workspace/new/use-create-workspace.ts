@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
+import { useAuth } from '@/features/providers/auth-provider';
 import { attemptKeyFor, clearAttemptKey } from '@/features/workspace/new/create-workspace-key';
 import {
   buildCreateRepoPayload,
@@ -17,19 +18,18 @@ import {
   type NewWorkspaceFormState,
 } from '@/features/workspace/new/new-workspace-form';
 import { onboardingPath } from '@/features/workspace/new/onboarding-param';
-import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import {
   isManagedGitUnavailableError,
   isProjectLimitError,
 } from '@/lib/onboarding/ensure-first-project';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import {
   createProjectRepo,
   linkRepository,
+  PROVISION_IN_FLIGHT_CODE,
   provisionProject,
   provisionProjectStream,
-  PROVISION_IN_FLIGHT_CODE,
   type CreateProjectRepoInput,
   type KortixAccount,
   type KortixProject,
@@ -57,7 +57,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * Deliberately NOT the full form state. `icon` and `defaultBranch` are
  * refinements a user can still be adjusting between a failed submit and a
  * retry — a retry must reuse the SAME key, not mint a new one just because
- * the icon changed. `name`, `accountId`, `templateId` and `source` are what
+ * the icon changed. `name`, `accountId` and `source` are what
  * actually identifies a genuinely different workspace: keying on those means
  * creating "suna-web" then, moments later, "kortix-api" in the same account
  * mints two independent keys instead of the second create silently returning
@@ -65,9 +65,7 @@ export const RETRY_DELAY_MS = [400, 1_200];
  * comment warns about).
  */
 export function fingerprintOf(state: NewWorkspaceFormState): string {
-  return [state.accountId ?? 'default', state.name.trim(), state.templateId ?? '', state.source].join(
-    ':',
-  );
+  return [state.accountId ?? 'default', state.name.trim(), state.source].join(':');
 }
 
 /**
@@ -136,14 +134,18 @@ export function resolveTargetAccountId(
   userId: string | null,
 ): string | undefined {
   if (isForeignAccountList(creatableAccounts, userId)) {
-    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
   }
   const resolved =
     state.accountId ?? resolveDefaultCreatableAccountId(creatableAccounts, userId) ?? undefined;
   if (resolved === undefined) return undefined;
   const isCreatable = creatableAccounts.some((account) => account.account_id === resolved);
   if (!isCreatable) {
-    throw new Error('Could not verify the target account for this workspace. Refresh and try again.');
+    throw new Error(
+      'Could not verify the target account for this workspace. Refresh and try again.',
+    );
   }
   return resolved;
 }
@@ -187,7 +189,10 @@ export function buildGitHubImportPayload(
   creatableAccounts: KortixAccount[],
   userId: string | null,
 ): LinkRepositoryInput {
-  return buildLinkRepositoryPayload(state, resolveTargetAccountId(state, creatableAccounts, userId));
+  return buildLinkRepositoryPayload(
+    state,
+    resolveTargetAccountId(state, creatableAccounts, userId),
+  );
 }
 
 /**
@@ -206,10 +211,11 @@ export function buildGitHubImportPayload(
  * server, a server-config state no client-side retry can fix. Telling the
  * user to "try again" there is false: nothing they do changes the outcome
  * until an operator configures it. 502 (an upstream/gateway fault) keeps the
- * retryable generic message, matching every OTHER call site that reuses
- * `isManagedGitUnavailableError` (`project-create-modal.tsx:352`,
- * `add-to-project-modal.tsx:188`) — same title, so the wording never drifts
- * between the toast those use and the inline message here.
+ * retryable generic message, matching the OTHER call site that reuses
+ * `isManagedGitUnavailableError`
+ * (`components/use-cases/template-session-install-dialog.tsx:114`) — same
+ * title, so the wording never drifts between the toast it uses and the inline
+ * message here.
  *
  * `project_limit_reached` (final-review FIX 2) is checked BEFORE the generic
  * 403 branch, and deliberately, not folded into it: `enforceProjectQuota`
@@ -237,7 +243,9 @@ export function messageFor(error: unknown): string {
   const status = (error as { status?: number } | null | undefined)?.status;
   const message = error instanceof Error ? error.message : undefined;
   if (isProjectLimitError(error)) {
-    return message || "This account has reached its plan's workspace limit. Upgrade to create another.";
+    return (
+      message || "This account has reached its plan's workspace limit. Upgrade to create another."
+    );
   }
   if (status === 403) {
     return 'You need owner or admin access in this account to create a workspace.';
@@ -571,7 +579,12 @@ async function runSourceAttempt(
     throw new Error('runCreate: the managed source requires an idempotency key');
   }
   return client.runCreateAttempt(
-    buildCreatePayload(state, creatableAccounts, idempotencyKey, userId) as unknown as ProvisionProjectInput,
+    buildCreatePayload(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId,
+    ) as unknown as ProvisionProjectInput,
   );
 }
 
@@ -625,7 +638,13 @@ export async function runCreate(
     : null;
 
   try {
-    const project = await runSourceAttempt(state, creatableAccounts, idempotencyKey, userId ?? null, client);
+    const project = await runSourceAttempt(
+      state,
+      creatableAccounts,
+      idempotencyKey,
+      userId ?? null,
+      client,
+    );
     if (usesIdempotencyKey) client.clearAttemptKey(fingerprint);
     client.primeProjectCache(project.account_id, project);
     client.invalidateProjects();

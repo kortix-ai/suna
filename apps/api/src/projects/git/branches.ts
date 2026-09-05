@@ -81,7 +81,7 @@ async function readRemoteBranchTip(
 /**
  * Hash every file's content into a git blob object (`git hash-object -w`),
  * with bounded concurrency — this used to be one subprocess at a time, which
- * dominated wall-clock time for many-file marketplace installs. Each file
+ * dominated wall-clock time for many-file installs. Each file
  * gets its own uniquely-named temp file so concurrent writes never collide,
  * and the returned array preserves input order regardless of completion
  * order (downstream index construction must stay deterministic).
@@ -433,7 +433,7 @@ export async function commitFileToBranch(
  * writes/removals into the branch tip's tree through a throwaway index,
  * `commit-tree` once, then push (creating the branch from an empty tree if it
  * doesn't exist). Used anywhere multiple files need one atomic commit — e.g.
- * an agent-driven marketplace import's change request.
+ * an agent-driven import's change request.
  */
 export async function commitMultipleFilesToBranch(
   project: GitBackedProject,

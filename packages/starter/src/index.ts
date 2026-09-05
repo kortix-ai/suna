@@ -10,8 +10,7 @@
  *
  * Editing the starter is plain file editing — shared Kortix runtime
  * files live under `templates/base/`, richer starter layers live under
- * `templates/<template>/`, optional first-party marketplace items live
- * under `templates/marketplace/`, and both the API and CLI pick them up.
+ * `templates/<template>/`, and both the API and CLI pick them up.
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
@@ -57,7 +56,6 @@ export const KORTIX_MANAGED_SKILL_NAMES = [
   'kortix-computer',
   'kortix-connectors',
   'kortix-harness-refinement',
-  'kortix-marketplace',
   'kortix-memory',
   'kortix-onboarding',
   'kortix-slack',
@@ -90,11 +88,7 @@ const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
   'templates',
   'general-knowledge-worker',
 );
-const MARKETPLACE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'marketplace');
 const MANAGED_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'managed');
-
-/** Roots that may legitimately hold nothing — see `rawFilesForRoot`. */
-const OPTIONAL_TEMPLATE_ROOTS = new Set(['marketplace-projects']);
 
 // Build artifacts and OS cruft that can appear in a working tree but must never
 // be scaffolded into a user's repo. This MUST stay in sync with the identical
@@ -114,12 +108,6 @@ const IGNORED_TEMPLATE_DIRS = new Set([
   'node_modules',
 ]);
 const IGNORED_TEMPLATE_FILES = new Set(['.DS_Store', 'Thumbs.db']);
-const MARKETPLACE_PROJECTS_TEMPLATE_DIR = join(
-  import.meta.dir,
-  '..',
-  'templates',
-  'marketplace-projects',
-);
 
 export function normalizeStarterTemplateId(value: unknown): StarterTemplateId {
   if (typeof value === 'string' && (STARTER_TEMPLATE_IDS as readonly string[]).includes(value)) {
@@ -206,44 +194,18 @@ export function getManagedSkillFiles(): StarterFile[] {
 }
 
 /**
- * Optional first-party items that are listed in the Kortix marketplace but are
- * not part of the starter floor.
- */
-export function getMarketplaceFiles(): StarterFile[] {
-  return rawFilesForRoot('marketplace', MARKETPLACE_TEMPLATE_DIR).sort((a, b) =>
-    a.path.localeCompare(b.path),
-  );
-}
-
-/**
- * Full, clonable example Kortix projects listed in the marketplace under
- * `registry:project`. Each is a subdirectory keyed by slug (e.g.
- * `marketplace-projects/support-agent-kit/...`); paths returned here are
- * still slug-prefixed — callers that turn this into registry items strip the
- * slug to get each project's own repo-relative paths. Raw (uninterpolated) —
- * `{{var}}` placeholders are resolved by the installer at clone time using
- * the real destination project's name, not this fixture's.
- */
-export function getProjectTemplateFiles(): StarterFile[] {
-  return rawFilesForRoot('marketplace-projects', MARKETPLACE_PROJECTS_TEMPLATE_DIR).sort((a, b) =>
-    a.path.localeCompare(b.path),
-  );
-}
-
-/**
  * Map of every bundled-catalog file path → its real repo-relative source path
- * (under `packages/starter/templates/`). Lets the marketplace build a "View
- * source" link for a first-party skill/agent/tool without guessing which
- * template root it came from. Precedence matches the catalog build
- * (base < general-knowledge-worker < managed < marketplace) so an overridden
- * file resolves to the root that actually wins.
+ * (under `packages/starter/templates/`). Lets a caller build a "View source"
+ * link for a first-party skill/agent/tool without guessing which template root
+ * it came from. Precedence matches the catalog build
+ * (base < general-knowledge-worker < managed) so an overridden file resolves to
+ * the root that actually wins.
  */
 export function getStarterCatalogSourceMap(): Map<string, string> {
   const roots: Array<{ name: string; dir: string }> = [
     { name: 'base', dir: BASE_TEMPLATE_DIR },
     { name: 'general-knowledge-worker', dir: GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR },
     { name: 'managed', dir: MANAGED_TEMPLATE_DIR },
-    { name: 'marketplace', dir: MARKETPLACE_TEMPLATE_DIR },
   ];
   const map = new Map<string, string>();
   for (const root of roots) {
@@ -269,11 +231,6 @@ function rawFilesForRoot(name: string, dir: string): StarterFile[] {
   } catch {
     const embedded = EMBEDDED_STARTER[name];
     if (!embedded) {
-      // An OPTIONAL root that is legitimately empty (git does not track empty
-      // directories, so retiring every item under it removes the root outright)
-      // must degrade to "no files", not take down the whole catalog build. Only
-      // a root the scaffold actually needs is worth throwing over.
-      if (OPTIONAL_TEMPLATE_ROOTS.has(name)) return [];
       throw new Error(`starter template "${name}" is unavailable on disk and not embedded`);
     }
     return embedded.files;

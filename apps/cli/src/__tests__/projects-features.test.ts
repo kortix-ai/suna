@@ -37,8 +37,8 @@ function writeConfig(apiBase: string): string {
 function catalog(overrides: Record<string, boolean | null> = {}) {
   const defs = [
     { key: 'apps', name: 'Apps', stability: 'experimental', available: true, def: false },
-    { key: 'marketplace', name: 'Marketplace', stability: 'beta', available: true, def: true },
     { key: 'monitors', name: 'Monitors', stability: 'experimental', available: false, def: false },
+    { key: 'review_center', name: 'Review Center', stability: 'beta', available: true, def: true },
   ];
   return defs.map((d) => {
     const o = overrides[d.key];
@@ -84,7 +84,7 @@ function startServer(): string {
       if (url.pathname === `/v1/projects/${PROJECT}/features` && req.method === 'PATCH') {
         const body = (await req.json()) as { feature: string; enabled: boolean | null };
         patches.push({ path: url.pathname, body });
-        if (!['apps', 'marketplace', 'monitors'].includes(body.feature)) {
+        if (!['apps', 'monitors', 'review_center'].includes(body.feature)) {
           return Response.json({ error: `Unknown feature flag '${body.feature}'` }, { status: 400 });
         }
         if (body.enabled === null) delete state[body.feature];
@@ -153,13 +153,13 @@ describe('kortix projects features', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('apps');
     expect(r.stdout).toMatch(/apps\s+off\s+default/);
-    expect(r.stdout).toMatch(/marketplace\s+on\s+default/);
+    expect(r.stdout).toMatch(/review_center\s+on\s+default/);
     expect(r.stdout).toMatch(/monitors\s+n\/a\s+unavailable/);
 
     const j = await runCli(['projects', 'features', '--project', PROJECT, '--json'], config);
     expect(j.code).toBe(0);
     const rows = JSON.parse(j.stdout) as Array<{ key: string; enabled: boolean }>;
-    expect(rows.map((x) => x.key)).toEqual(['apps', 'marketplace', 'monitors']);
+    expect(rows.map((x) => x.key)).toEqual(['apps', 'monitors', 'review_center']);
   });
 
   test('enable PATCHes /features {feature, enabled:true} and reports the effective state', async () => {
@@ -175,15 +175,15 @@ describe('kortix projects features', () => {
 
   test('disable then reset clears the override (enabled:null)', async () => {
     const config = writeConfig(startServer());
-    const d = await runCli(['projects', 'features', 'disable', 'marketplace', '--project', PROJECT], config);
+    const d = await runCli(['projects', 'features', 'disable', 'review_center', '--project', PROJECT], config);
     expect(d.code).toBe(0);
-    expect(d.stdout).toContain('marketplace disabled — effective: off');
-    const rs = await runCli(['projects', 'features', 'reset', 'marketplace', '--project', PROJECT], config);
+    expect(d.stdout).toContain('review_center disabled — effective: off');
+    const rs = await runCli(['projects', 'features', 'reset', 'review_center', '--project', PROJECT], config);
     expect(rs.code).toBe(0);
-    expect(rs.stdout).toContain('marketplace reset to default — effective: on');
+    expect(rs.stdout).toContain('review_center reset to default — effective: on');
     expect(patches.map((p) => p.body)).toEqual([
-      { feature: 'marketplace', enabled: false },
-      { feature: 'marketplace', enabled: null },
+      { feature: 'review_center', enabled: false },
+      { feature: 'review_center', enabled: null },
     ]);
   });
 

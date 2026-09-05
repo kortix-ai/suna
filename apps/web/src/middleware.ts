@@ -5,22 +5,19 @@ import {
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
   AUTH_BOUNCE_COOKIE,
   AUTH_BOUNCE_MAX_AGE,
   LAST_PROJECT_COOKIE,
-  PROJECT_LANDING_PATH,
   parseLastProjectOwner,
+  PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
   serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import {
-  resolveMiddlewareIdentity,
-  type MiddlewareUser,
-} from '@/lib/supabase/middleware-identity';
+import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -67,7 +64,7 @@ const PUBLIC_ROUTES = [
   '/legal',
   '/api/auth',
   '/share', // Shared content should be public
-  '/marketplace', // Public read-only marketplace directory; installs still require auth
+  '/marketplace', // The public template marketplace. Kept public deliberately: an unauthenticated hit should 404, not bounce through /auth and land on the same 404
   '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
   '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
@@ -178,11 +175,9 @@ export async function middleware(request: NextRequest) {
   // dynamic keys so the standalone container uses ECS runtime values instead of
   // build-time replacements. The gate fails closed when enabled without a secret.
   const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
-    | string
-    | undefined;
+    string | undefined;
   const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
-    | string
-    | undefined;
+    string | undefined;
   const authorization = request.headers.get('authorization');
   const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
   const expectedAccessCookie =

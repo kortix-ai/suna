@@ -18,7 +18,9 @@ import { useProjectPageCans } from '@/lib/use-project-can';
  * The one project-configuration entry in the sidebar:
  * ProjectCustomizeNavItem, top of the panel under New session, navigating to
  * the capability pages (Models / Connectors / Agents / Skills / Triggers /
- * Secrets / Settings). Gated, because those pages can 403.
+ * Marketplace / Secrets / Settings). Gated, because those pages can 403.
+ * Marketplace is additionally flag-gated and appears only when a project turns
+ * `marketplace` on — see `CapabilityTab.flag`.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
@@ -59,6 +61,17 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   // PROJECT_MEMBER_BASELINE (apps/api/src/iam/role-perms.ts), so every project
   // role that could open these panes in the Settings overlay still can here.
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
+  // Marketplace reuses `project.read`, the SAME leaf Models above it carries,
+  // because that is what the API gates the catalog read on
+  // (`PROJECT_ACTIONS.PROJECT_WRITE` in
+  // `apps/api/src/projects/routes/marketplace.ts`). Sharing it has a second
+  // effect: `useCapabilityTab` below walks THIS list and knows nothing about
+  // feature flags, so a distinct leaf could make the Customize row land on
+  // Marketplace for a caller whose `marketplace` flag is off — a row to a page
+  // that answers 403. Models precedes it on the same leaf, so that branch is
+  // unreachable. Keep them sharing the leaf, or teach `useCapabilityTab` the
+  // flag.
+  { key: 'marketplace', action: PROJECT_ACTIONS.PROJECT_READ },
   // Review — the inbox, on the bar since 2026-09-02 (it was a section of the
   // retired `/config` page). Same read leaf `CUSTOMIZE_SECTION_ACCESS.review`
   // gated the section on; the `review_center` flag is applied by the bar

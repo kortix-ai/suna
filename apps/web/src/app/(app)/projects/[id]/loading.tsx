@@ -37,11 +37,20 @@ export default function ProjectHomeLoading() {
           {/* Composer */}
           <div className="bg-muted-foreground/10 h-28 w-full animate-pulse rounded-xl" />
 
-          {/* Suggestion row */}
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <div className="bg-muted-foreground/10 h-8 w-32 animate-pulse rounded-md" />
-            <div className="bg-muted-foreground/10 h-8 w-40 animate-pulse rounded-md" />
-            <div className="bg-muted-foreground/10 h-8 w-28 animate-pulse rounded-md" />
+          {/* Marketplace preview: label row + compact cards */}
+          <div className="w-full space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="bg-muted-foreground/10 h-3 w-24 animate-pulse rounded-full" />
+              <div className="bg-muted-foreground/10 h-3 w-16 animate-pulse rounded-full" />
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+              <div className="bg-muted-foreground/10 h-24 animate-pulse rounded-md" />
+              <div className="bg-muted-foreground/10 h-24 animate-pulse rounded-md" />
+              <div className="bg-muted-foreground/10 h-24 animate-pulse rounded-md" />
+              <div className="bg-muted-foreground/10 h-24 animate-pulse rounded-md" />
+              <div className="bg-muted-foreground/10 h-24 animate-pulse rounded-md" />
+              <div className="bg-muted-foreground/10 h-24 rounded-md" />
+            </div>
           </div>
         </div>
       </div>

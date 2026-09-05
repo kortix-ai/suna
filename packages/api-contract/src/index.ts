@@ -51,12 +51,12 @@ export type OkResponse = z.infer<typeof OkResponseSchema>;
  */
 export const FeatureFlagMapSchema = z.object({
   agent_tunnel: z.boolean(),
-  marketplace: z.boolean(),
   connectors_api_discover: z.boolean(),
   agentmail_email: z.boolean(),
   teams: z.boolean(),
   llm_gateway: z.boolean(),
   review_center: z.boolean(),
+  marketplace: z.boolean(),
   meta_agent: z.boolean(),
   apps: z.boolean(),
   monitors: z.boolean(),

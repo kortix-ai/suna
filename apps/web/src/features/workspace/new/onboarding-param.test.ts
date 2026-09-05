@@ -21,7 +21,7 @@ describe('readOnboardingParam', () => {
   });
 
   test('ignores an unrelated param', () => {
-    expect(readOnboardingParam(new URLSearchParams('clone=item-1'))).toBeNull();
+    expect(readOnboardingParam(new URLSearchParams('source=github'))).toBeNull();
   });
 });
 

@@ -1,308 +1,223 @@
 /**
- * Global marketplace catalog (apps/api/src/marketplace/index.ts +
- * catalog.ts), mounted at /v1/marketplace — a READ-ONLY browse of the
- * installable-item catalog (skills/agents/projects/templates), distinct from
- * the per-project install engine deleted by the marketplace-as-projects
- * rewrite (docs/specs/2026-07-13-marketplace-as-projects.md). `/items*` and
- * `/marketplaces*` are fully public; `/sources` (the "Add a marketplace"
- * config) requires auth to read and admin to mutate — except a curated
- * FEATURED address, which any signed-in user may add (see the route's own
- * comment in index.ts).
+ * Marketplace — the public template catalog (`/v1/public/marketplace/templates`)
+ * and the per-project install (`/v1/projects/:projectId/marketplace/install-session`).
  *
- * Also covers the ONE surviving project-scoped marketplace route —
- * `POST /v1/projects/:projectId/marketplace/install-session`, the
- * agent-driven replacement for the deleted deterministic install engine
- * (apps/api/src/projects/routes/r10.ts). It kicks off a real session/agent
- * once past validation, so — same convention as PROJ-13's OAuth `start` in
- * projects-misc.flow.ts — we assert the request-validation boundary only,
- * never drive the full flow.
+ * A template is a public GitHub repository whose `kortix.yaml` declares agents,
+ * skills, connectors and triggers. The catalog is a static list that ships with
+ * the API, so these flows read what every deployment serves rather than what a
+ * fixture submitted — there is no submit route to exercise.
+ *
+ * Install is asserted at the validation boundary. It spawns a real session once
+ * past validation, and a session needs a cloud sandbox with a reachable callback
+ * origin — excluded locally. So a `503 KORTIX_URL_UNREACHABLE` past the gate is
+ * the pass condition, and every 4xx boundary before it is asserted exactly.
+ *
+ * Maps to spec §29.
  */
 import { flow } from '../core/flow';
 
-// A syntactically-valid but non-existent id for boundary probes.
+/** A syntactically-valid but non-existent id, for boundary probes. */
 const NOPE = '00000000-0000-4000-a000-000000000000';
-// A stable, real catalog item shipped from packages/starter/templates — part
-// of the product's own source tree, not user-generated content, so safe to
-// pin as a fixture id.
-const KNOWN_ITEM_ID = 'kortix-starter:access-policy-skill';
-const KNOWN_ITEM_FILE_TARGET = '@skills/access-policy/SKILL.md';
-// One of the curated, vetted, public, read-only FEATURED_MARKETPLACES
-// addresses (apps/api/src/marketplace/catalog.ts) — any signed-in user may
-// add one of these without admin (see POST /sources's own comment), so it's
-// the only address a non-admin OWNER can safely create+clean up for real.
-const FEATURED_ADDRESS = 'anthropics/skills';
 
-// ─── MKTP-1 — GET /v1/marketplace/items ───────────────────────────────────
-flow('MKTP-1', { domain: 'marketplace', routes: ['GET /v1/marketplace/items'] }, async (ctx) => {
-  await ctx.step('public catalog list (no auth) → 200', async () => {
-    const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/items');
-    r.status(200).body().exists('$.items').exists('$.total').exists('$.hasMore');
-  });
-  await ctx.step('paginated (limit/offset) → 200, respects limit', async () => {
-    const r = await ctx.client
-      .as(ctx.P.ANON)
-      .get('/v1/marketplace/items', { query: { limit: '2', offset: '0' } });
-    r.status(200);
-    const body = r.json();
-    if (!Array.isArray(body.items) || body.items.length > 2) {
-      throw new Error(`expected <=2 items with limit=2, got ${body.items?.length}`);
-    }
-  });
-  await ctx.step('filtered by query text → 200, matches', async () => {
-    const r = await ctx.client
-      .as(ctx.P.ANON)
-      .get('/v1/marketplace/items', { query: { query: 'access-policy' } });
-    r.status(200);
-    const body = r.json();
-    if (!Array.isArray(body.items) || !body.items.some((it: any) => it.id === KNOWN_ITEM_ID)) {
-      throw new Error(`expected "${KNOWN_ITEM_ID}" in query-filtered results`);
-    }
-  });
-});
+/** The status set a route past its gates may answer with locally. */
+const SESSION_OR_UNREACHABLE = [201, 503];
 
-// ─── MKTP-2 — GET /v1/marketplace/items/:id ───────────────────────────────
+// ─── MKTP-1 — the public catalog ─────────────────────────────────────────────
 flow(
-  'MKTP-2',
-  { domain: 'marketplace', routes: ['GET /v1/marketplace/items/:id'] },
-  async (ctx) => {
-    await ctx.step('known item → 200 real shape', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/marketplace/items/:id', { params: { id: KNOWN_ITEM_ID } });
-      r.status(200)
-        .body()
-        .has('$.id', KNOWN_ITEM_ID)
-        .exists('$.title')
-        .exists('$.files')
-        .exists('$.readme');
-    });
-    await ctx.step('unknown item → 404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/marketplace/items/:id', { params: { id: 'nope-' + NOPE } });
-      r.status(404);
-    });
-  },
-);
-
-// ─── MKTP-6 — GET /v1/marketplace/items/:id/file ──────────────────────────
-flow(
-  'MKTP-6',
-  { domain: 'marketplace', routes: ['GET /v1/marketplace/items/:id/file'] },
-  async (ctx) => {
-    await ctx.step('known item + file target → 200 content', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/marketplace/items/:id/file', {
-          params: { id: KNOWN_ITEM_ID },
-          query: { path: KNOWN_ITEM_FILE_TARGET },
-        });
-      r.status(200).body().has('$.target', KNOWN_ITEM_FILE_TARGET).exists('$.content');
-    });
-    await ctx.step('missing path query → 400 (zod validation)', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/marketplace/items/:id/file', { params: { id: KNOWN_ITEM_ID } });
-      r.status(400);
-    });
-    await ctx.step('unknown file target on a known item → 404', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get('/v1/marketplace/items/:id/file', {
-          params: { id: KNOWN_ITEM_ID },
-          query: { path: 'nope/does-not-exist.md' },
-        });
-      r.status(404);
-    });
-  },
-);
-
-// ─── MKTP-7 — GET /v1/marketplace/marketplaces ────────────────────────────
-flow(
-  'MKTP-7',
-  { domain: 'marketplace', routes: ['GET /v1/marketplace/marketplaces'] },
-  async (ctx) => {
-    await ctx.step('public list of distinct marketplaces (no auth) → 200', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/marketplaces');
-      r.status(200).body().exists('$.marketplaces');
-      const body = r.json();
-      if (
-        !Array.isArray(body.marketplaces) ||
-        !body.marketplaces.some((m: any) => m.id === 'kortix')
-      ) {
-        throw new Error('expected the built-in "kortix" marketplace in the list');
-      }
-    });
-  },
-);
-
-// ─── MKTP-8 — GET /v1/marketplace/marketplaces/featured ───────────────────
-flow(
-  'MKTP-8',
-  { domain: 'marketplace', routes: ['GET /v1/marketplace/marketplaces/featured'] },
-  async (ctx) => {
-    await ctx.step('public curated featured list (no auth) → 200', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/marketplaces/featured');
-      r.status(200).body().exists('$.featured');
-      const body = r.json();
-      if (
-        !Array.isArray(body.featured) ||
-        !body.featured.some((f: any) => f.address === FEATURED_ADDRESS)
-      ) {
-        throw new Error(`expected "${FEATURED_ADDRESS}" in the featured list`);
-      }
-    });
-  },
-);
-
-// ─── MKTP-9 — GET /v1/marketplace/sources ──────────────────────────────────
-flow('MKTP-9', { domain: 'marketplace', routes: ['GET /v1/marketplace/sources'] }, async (ctx) => {
-  await ctx.step('ANON → 401', async () => {
-    const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/sources');
-    r.status(401);
-  });
-  await ctx.step('any authenticated user (non-admin) reads sources → 200', async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get('/v1/marketplace/sources');
-    r.status(200).body().exists('$.sources');
-  });
-});
-
-// ─── MKTP-10 — POST /v1/marketplace/sources + DELETE /v1/marketplace/sources/:id ─
-// Adding an ARBITRARY source is admin-only; adding one of the curated
-// FEATURED_MARKETPLACES addresses is allowed for any signed-in user (see
-// index.ts's own comment on this exception). DELETE is unconditionally
-// admin-only regardless of address. We assert every boundary always; the
-// real create+delete round trip only runs when we hold an admin token (so
-// cleanup is guaranteed) — creating without the ability to clean up would
-// leak a real row on shared staging.
-flow(
-  'MKTP-10',
+  'MKTP-1',
   {
-    domain: 'marketplace',
-    routes: ['POST /v1/marketplace/sources', 'DELETE /v1/marketplace/sources/:id'],
+    domain: 'projects',
+    routes: ['GET /v1/public/marketplace/templates', 'GET /v1/public/marketplace/templates/:slug'],
   },
   async (ctx) => {
-    await ctx.step('POST ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .post('/v1/marketplace/sources', { address: FEATURED_ADDRESS });
-      r.status(401);
-    });
-    await ctx.step('POST non-admin OWNER, arbitrary (non-featured) address → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post('/v1/marketplace/sources', {
-          address: 'https://example.com/not-featured-registry.json',
-        });
-      r.status(403);
-    });
-    await ctx.step('DELETE ANON → 401', async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .del('/v1/marketplace/sources/:id', { params: { id: NOPE } });
-      r.status(401);
-    });
+    let first = { slug: '', title: '', repo: '' };
+
     await ctx.step(
-      'DELETE non-admin OWNER → 403 (admin-only regardless of ownership)',
+      'the catalog reads with no auth at all → 200, cached, with an ETag',
       async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .del('/v1/marketplace/sources/:id', { params: { id: NOPE } });
-        r.status(403);
+        const r = await ctx.client.as(ctx.P.ANON).get('/v1/public/marketplace/templates');
+        r.status(200).body().exists('$.templates');
+        r.headerEquals('cache-control', 'public, max-age=300, must-revalidate');
+        r.headerExists('etag');
+        const templates = r.json().templates as Array<Record<string, unknown>>;
+        if (templates.length === 0) throw new Error('the curated catalog is empty');
+        for (const template of templates) {
+          // A card is the public shape; the manifest travels to the agent through
+          // the install prompt and must never reach a browser.
+          if ('manifest' in template) throw new Error(`${template.slug} leaks its manifest`);
+          if (!/^[0-9a-f]{40}$/.test(String(template.resolved_sha))) {
+            throw new Error(`${template.slug} is not pinned to a commit`);
+          }
+        }
+        first = templates[0] as unknown as typeof first;
       },
     );
 
-    if (ctx.env.capabilities.admin) {
-      const admin = ctx.client.withBearer(ctx.env.adminToken!, 'ADMIN_TOKEN');
-      let createdId: string | undefined;
-      try {
-        await ctx.step(
-          'non-admin OWNER adds a FEATURED address → 200 real create (no admin needed)',
-          async () => {
-            const r = await ctx.client
-              .as(ctx.P.OWNER)
-              .post('/v1/marketplace/sources', { address: FEATURED_ADDRESS });
-            r.status(200).body().exists('$.source.id');
-            createdId = r.json().source.id;
-          },
-        );
-      } finally {
-        if (createdId) {
-          const id = createdId;
-          await ctx.step('admin deletes the source → 200 {ok:true}', async () => {
-            const r = await admin.del('/v1/marketplace/sources/:id', { params: { id } });
-            r.status(200).body().has('$.ok', true);
-          });
-          await ctx.step('admin deletes it again → 404 (already gone)', async () => {
-            const r = await admin.del('/v1/marketplace/sources/:id', { params: { id } });
-            r.status(404);
-          });
-        }
+    await ctx.step('the catalog revalidates → 304 on a matching ETag', async () => {
+      const r1 = await ctx.client.as(ctx.P.ANON).get('/v1/public/marketplace/templates');
+      r1.status(200);
+      const again = await ctx.client.as(ctx.P.ANON).get('/v1/public/marketplace/templates', {
+        headers: { 'if-none-match': r1.header('etag')! },
+      });
+      again.status(304);
+    });
+
+    await ctx.step('`q` narrows the catalog to templates that say the word', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/public/marketplace/templates', { query: { q: first.title.toUpperCase() } });
+      r.status(200);
+      const slugs = (r.json().templates as Array<{ slug: string }>).map((t) => t.slug);
+      if (!slugs.includes(first.slug)) throw new Error('search missed a title match');
+      const miss = await ctx.client
+        .as(ctx.P.ANON)
+        .get('/v1/public/marketplace/templates', { query: { q: 'no-such-template-zzz' } });
+      miss.status(200);
+      if ((miss.json().templates as unknown[]).length !== 0) {
+        throw new Error('a nonsense query still returned templates');
       }
-    }
+    });
+
+    await ctx.step('one template by slug → 200 with the same card', async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .get(`/v1/public/marketplace/templates/${first.slug}`);
+      r.status(200).body().has('$.template.slug', first.slug).has('$.template.repo', first.repo);
+      r.headerExists('etag');
+    });
+
+    await ctx.step('an unknown slug → 404', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/public/marketplace/templates/nope');
+      r.status(404);
+    });
   },
 );
 
-// ─── MKTP-11 — POST /v1/projects/:projectId/marketplace/install-session ───
-// Agent-driven replacement for the deleted deterministic per-project install
-// engine. Validates projectId access + body BEFORE spawning any real
-// session/agent (apps/api/src/projects/routes/r10.ts:134-163) — we assert
-// that boundary only, matching PROJ-13's convention for similarly heavy
-// routes (projects-misc.flow.ts).
+// ─── MKTP-2 — the feature gate ───────────────────────────────────────────────
 flow(
-  'MKTP-11',
+  'MKTP-2',
   { domain: 'projects', routes: ['POST /v1/projects/:projectId/marketplace/install-session'] },
   async (ctx) => {
-    const p = await ctx.fixtures.project();
+    // No `marketplace` in metadata: the flag is OFF, and the install must fail
+    // closed rather than start a session.
+    const project = await ctx.fixtures.project({ managedGit: true });
+
+    await ctx.step('the flag is off → 403 feature_disabled, not a session', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/marketplace/install-session',
+          { slug: 'sre-oncall' },
+          { params: { projectId: project.id } },
+        );
+      r.status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'marketplace');
+    });
+
+    await ctx.step('membership is checked BEFORE the flag — a stranger gets 404', async () => {
+      // Otherwise a 403 would tell a stranger whether this project has the
+      // marketplace on.
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          '/v1/projects/:projectId/marketplace/install-session',
+          { slug: 'sre-oncall' },
+          { params: { projectId: project.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);
+
+// ─── MKTP-3 — the install session ────────────────────────────────────────────
+flow(
+  'MKTP-3',
+  {
+    domain: 'projects',
+    routes: [
+      'GET /v1/public/marketplace/templates',
+      'POST /v1/projects/:projectId/marketplace/install-session',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({
+      managedGit: true,
+      metadata: { experimental: { marketplace: true } },
+    });
+    let slug = '';
+
+    await ctx.step('pick a template from the catalog', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/public/marketplace/templates');
+      r.status(200);
+      slug = (r.json().templates as Array<{ slug: string }>)[0]?.slug ?? '';
+      if (!slug) throw new Error('the curated catalog is empty');
+    });
+
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client
         .as(ctx.P.ANON)
         .post(
           '/v1/projects/:projectId/marketplace/install-session',
-          { id: KNOWN_ITEM_ID },
-          { params: { projectId: p.id } },
+          { slug },
+          { params: { projectId: project.id } },
         );
       r.status(401);
     });
+
     await ctx.step('unknown projectId → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/marketplace/install-session',
-          { id: KNOWN_ITEM_ID },
+          { slug },
           { params: { projectId: NOPE } },
         );
       r.status(404);
     });
-    await ctx.step("missing id → 400 {error: 'id is required'} (no session spawned)", async () => {
+
+    await ctx.step('missing slug → 400, no session spawned', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/marketplace/install-session',
           {},
-          { params: { projectId: p.id } },
+          { params: { projectId: project.id } },
         );
-      r.status(400).body().has('$.error', 'id is required');
+      r.status(400).body().has('$.error', 'slug is required');
     });
-    await ctx.step('unknown id → 400 (no session spawned)', async () => {
+
+    await ctx.step('unknown slug → 404, no session spawned', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
           '/v1/projects/:projectId/marketplace/install-session',
-          { id: 'nope-' + NOPE },
-          { params: { projectId: p.id } },
+          { slug: 'no-such-template' },
+          { params: { projectId: project.id } },
         );
-      r.status(400);
+      r.status(404);
     });
-    await ctx.step('NONMEMBER (no write access) → 403/404', async () => {
+
+    await ctx.step('a NONMEMBER → 403/404, never a session', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post(
           '/v1/projects/:projectId/marketplace/install-session',
-          { id: KNOWN_ITEM_ID },
-          { params: { projectId: p.id } },
+          { slug },
+          { params: { projectId: project.id } },
         );
       r.status([403, 404]);
+    });
+
+    await ctx.step('past every gate → a session, or the local sandbox limit', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/marketplace/install-session',
+          { slug },
+          { params: { projectId: project.id } },
+        );
+      r.status(SESSION_OR_UNREACHABLE);
+      if (r.statusCode === 201) r.body().exists('$.session_id');
+      else r.body().has('$.code', 'KORTIX_URL_UNREACHABLE');
     });
   },
 );

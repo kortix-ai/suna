@@ -25,12 +25,12 @@ import {
  */
 export type FeatureFlagKey =
   | 'agent_tunnel'
-  | 'marketplace'
   | 'connectors_api_discover'
   | 'agentmail_email'
   | 'teams'
   | 'llm_gateway'
   | 'review_center'
+  | 'marketplace'
   | 'meta_agent'
   | 'apps'
   | 'monitors'
@@ -45,12 +45,12 @@ export type FeatureFlagKey =
  */
 export const FEATURE_FLAG_KEYS: readonly FeatureFlagKey[] = [
   'agent_tunnel',
-  'marketplace',
   'connectors_api_discover',
   'agentmail_email',
   'teams',
   'llm_gateway',
   'review_center',
+  'marketplace',
   'meta_agent',
   'apps',
   'monitors',
@@ -315,11 +315,6 @@ export interface ProvisionProjectInput {
    *  server's own default (`apps/api/src/projects/routes/r1.ts`). */
   default_branch?: string;
   starter_template?: 'general-knowledge-worker' | 'minimal';
-  marketplace_items?: string[];
-  /** Clone a `registry:project` marketplace item instead of the blank
-   *  starter — e.g. `"kortix-projects:support-agent-kit"`. Implies
-   *  seed_starter and takes precedence over starter_template. */
-  source_item_id?: string;
   /** Optional emoji icon for the new project. Invalid values are dropped
    *  server-side; they never fail the create. */
   icon?: string;

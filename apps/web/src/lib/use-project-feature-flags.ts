@@ -24,12 +24,12 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   isLoading: boolean;
 } {
   const agentTunnel = useFeatureFlag(projectId, 'agent_tunnel');
-  const marketplace = useFeatureFlag(projectId, 'marketplace');
   const connectorsApiDiscover = useFeatureFlag(projectId, 'connectors_api_discover');
   const agentmailEmail = useFeatureFlag(projectId, 'agentmail_email');
   const teams = useFeatureFlag(projectId, 'teams');
   const llmGateway = useFeatureFlag(projectId, 'llm_gateway');
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
+  const marketplace = useFeatureFlag(projectId, 'marketplace');
   const metaAgent = useFeatureFlag(projectId, 'meta_agent');
   const apps = useFeatureFlag(projectId, 'apps');
   const monitors = useFeatureFlag(projectId, 'monitors');
@@ -40,12 +40,12 @@ export function useProjectFeatureFlags(projectId: string | null | undefined): {
   return {
     flags: {
       agent_tunnel: agentTunnel.enabled,
-      marketplace: marketplace.enabled,
       connectors_api_discover: connectorsApiDiscover.enabled,
       agentmail_email: agentmailEmail.enabled,
       teams: teams.enabled,
       llm_gateway: llmGateway.enabled,
       review_center: reviewCenter.enabled,
+      marketplace: marketplace.enabled,
       meta_agent: metaAgent.enabled,
       apps: apps.enabled,
       monitors: monitors.enabled,

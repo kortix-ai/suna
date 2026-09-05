@@ -62,12 +62,19 @@ describe('starter template agent model declarations', () => {
   test('finds the agent definition files it is supposed to guard', () => {
     const files = agentDefinitionFiles();
 
-    expect(files.length).toBeGreaterThan(50);
+    // The floor was `> 50` while `templates/marketplace/` shipped 60 use-case
+    // agent personas. That library was removed with the marketplace, so the
+    // real floor is the base template's own three agents. The guard below
+    // (every declared model resolves to a managed catalog id) is what this file
+    // is for; this assertion only proves the walk still finds them.
+    expect(files.length).toBeGreaterThanOrEqual(3);
     expect(files.some((f) => f.endsWith('templates/base/.kortix/opencode/agents/kortix.md'))).toBe(
       true,
     );
     expect(
-      files.some((f) => f.endsWith('templates/marketplace/runtime/agents/flaky-test-triage.md')),
+      files.some((f) =>
+        f.endsWith('templates/base/.kortix/opencode/agents/harness-reflector.md'),
+      ),
     ).toBe(true);
   });
 

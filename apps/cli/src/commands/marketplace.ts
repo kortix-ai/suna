@@ -1,14 +1,23 @@
 /**
- * `kortix marketplace <subcommand>` - browse the Kortix marketplace. This is
- * intentionally a discovery-only surface: no build, validate, or publish
- * commands live here, and no deterministic install/update/remove machinery
- * either — adding a marketplace item to a project is an agent import
- * (start/continue a session and ask it to bring the item in), not a CLI
- * write path.
+ * `kortix marketplace <subcommand>` — browse the template catalog and install a
+ * template into a project.
+ *
+ * A template is a public GitHub repository whose `kortix.yaml` declares agents,
+ * skills, connectors and triggers.
+ *
+ * Two things this command deliberately does NOT do:
+ *
+ *  - **It does not merge anything.** `install` starts an agent session that
+ *    reads both manifests, resolves name collisions, and opens a change
+ *    request: merging into a live project is judgment, not a file copy.
+ *  - **It does not publish, list what is installed, or uninstall.** The catalog
+ *    is curated and ships with the API. What a project installed is the change
+ *    request the install opened, and reverting it is the uninstall.
  */
 
-import { loadAuth, loadAuthForHost, type Auth } from '../api/auth.ts';
-import { clientFromAuth, type ApiClient } from '../api/client.ts';
+import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
+import type { ApiClient } from '../api/client.ts';
+import { clientFromAuth } from '../api/client.ts';
 import {
   emitJson,
   resolveProjectContext,
@@ -18,62 +27,49 @@ import {
 } from '../command-helpers.ts';
 import { C, help, status } from '../style.ts';
 
-interface CatalogItem {
-  id: string;
-  registry: string;
-  name: string;
-  type: string;
+interface MarketplaceTemplate {
+  slug: string;
   title: string;
   description: string | null;
-  categories: string[];
-  capabilities: { secrets: string[]; connectors: string[]; tools: string[]; network: string[] };
-  dependencies: string[];
-  fileCount: number;
-  external: boolean;
-  marketplaceId: string;
-  marketplaceLabel: string;
-  managedBy?: 'kortix';
-  updatePolicy?: 'kortix-managed';
-  defaultProjectInstall?: boolean;
-  defaultProjectInstallOrder?: number;
-}
-
-interface CatalogResponse {
-  items: CatalogItem[];
-  loading?: boolean;
-  pending?: string[];
+  repo: string;
+  git_ref: string | null;
+  resolved_sha: string;
+  agents: Array<{ name: string }>;
+  triggers: Array<{ slug: string; cron: string | null; enabled: boolean }>;
+  connectors: Array<{ slug: string; app: string | null }>;
+  skills: string[];
+  env_required: string[];
 }
 
 interface MarketplaceFlags {
   host?: string;
   project?: string;
   query?: string;
-  type?: string;
-  source?: string;
   json: boolean;
 }
 
 const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
-Browse the Kortix marketplace.
+Browse the template catalog and install a template. A template is a Kortix
+project — a repository whose kortix.yaml declares agents, skills, connectors and
+triggers — that you install into your own project.
 
 Subcommands:
-  search [query]       Search marketplace items.
-  list                 List marketplace items.
-  show <id|name>       Show one marketplace item.
-  install <id|name>    Start an agent session that imports the item.
+  list | ls              Browse the catalog. --query to filter.
+  show <slug>            One template: what it declares and what it needs.
+  install <slug>         Start the agent session that installs it.
 
 Options:
-  --query <text>       Search text (same as search [query]).
-  --type <type>        Filter by item type, e.g. skill.
-  --source <source>    Filter by marketplace/source, e.g. kortix.
-  --host <name>        Use a configured Kortix host.
-  --project <id>       Install into this project id (default: linked).
-  --json               Machine-readable output.
-  -h, --help           Show this help.
+  --project <id>         Target project for install (default: the linked one).
+  --host <name>          Use a configured Kortix host.
+  --query <text>         Filter the catalog. Alias: -q.
+  --json                 Machine-readable output.
+  -h, --help             Show this help.
 
-Install is agent-driven. It starts a project session that clones, reads, merges
-what fits, and opens a change request.
+Install is agent-driven: it opens a change request you review, and everything
+the template adds lands in that one change request — revert it to uninstall.
+A template installs with every trigger OFF. Turn them on one at a time with
+\`kortix triggers enable <slug>\`.
 `;
 
 function parseFlags(argv: string[]): MarketplaceFlags {
@@ -81,42 +77,12 @@ function parseFlags(argv: string[]): MarketplaceFlags {
     host: takeFlagValue(argv, ['--host']),
     project: takeFlagValue(argv, ['--project']),
     query: takeFlagValue(argv, ['--query', '-q']),
-    type: takeFlagValue(argv, ['--type']),
-    source: takeFlagValue(argv, ['--source']),
     json: takeFlagBool(argv, ['--json']),
   };
 }
 
-async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const itemId = argv[0];
-  if (!itemId || itemId.startsWith('-')) {
-    process.stderr.write(
-      `${status.err('pass an item id or name: kortix marketplace install kortix-starter:pdf')}\n`,
-    );
-    return 2;
-  }
-  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
-  if (!ctx) return 1;
-  try {
-    const result = await ctx.client.post<{ session_id: string }>(
-      `/projects/${ctx.projectId}/marketplace/install-session`,
-      { id: itemId },
-    );
-    const output = { ...result, project_id: ctx.projectId, item_id: itemId };
-    if (flags.json) emitJson(output);
-    else {
-      process.stdout.write(
-        `${status.ok(`Started install session ${C.bold}${result.session_id}${C.reset}`)}\n` +
-          `  ${C.dim}Item:${C.reset} ${itemId}\n`,
-      );
-    }
-    return 0;
-  } catch (error) {
-    return surfaceApiError(error);
-  }
-}
-
-function resolveMarketplaceClient(host?: string): { client: ApiClient; auth: Auth } | null {
+/** The client for the catalog routes, which need no project. */
+function resolveCatalogClient(host?: string): { client: ApiClient; auth: Auth } | null {
   const auth = host ? loadAuthForHost(host) : loadAuth();
   if (!auth?.token) {
     if (host) {
@@ -131,106 +97,159 @@ function resolveMarketplaceClient(host?: string): { client: ApiClient; auth: Aut
   return { client: clientFromAuth(auth), auth };
 }
 
-function queryString(flags: MarketplaceFlags, query?: string): string {
-  const params = new URLSearchParams();
-  const q = query ?? flags.query;
-  if (q) params.set('query', q);
-  if (flags.type) params.set('type', flags.type);
-  if (flags.source) params.set('source', flags.source);
-  const serialized = params.toString();
-  return serialized ? `?${serialized}` : '';
+/** First non-flag positional. */
+function positional(argv: string[]): string | undefined {
+  return argv.find((arg) => !arg.startsWith('-'));
 }
 
-async function fetchItems(flags: MarketplaceFlags, query?: string): Promise<CatalogResponse | null> {
-  const ctx = resolveMarketplaceClient(flags.host);
-  if (!ctx) return null;
+async function fetchTemplate(client: ApiClient, slug: string): Promise<MarketplaceTemplate | null> {
   try {
-    return await ctx.client.get<CatalogResponse>(`/marketplace/items${queryString(flags, query)}`);
-  } catch (err) {
-    surfaceApiError(err);
+    const res = await client.get<{ template: MarketplaceTemplate }>(
+      `/public/marketplace/templates/${encodeURIComponent(slug)}`,
+    );
+    return res.template;
+  } catch {
     return null;
   }
 }
 
-function printItems(items: CatalogItem[], flags: MarketplaceFlags): void {
-  if (flags.json) {
-    emitJson({ items });
-    return;
-  }
-  if (items.length === 0) {
-    process.stdout.write(`${status.info('No marketplace items matched.')}\n`);
-    return;
-  }
-  process.stdout.write(`\n  ${C.bold}Marketplace${C.reset} ${C.faded}- ${items.length} item${items.length === 1 ? '' : 's'}${C.reset}\n\n`);
-  for (const item of items.slice(0, 40)) {
-    const kind = item.type.replace('registry:', '');
-    const managed = item.managedBy === 'kortix' ? ` ${C.faded}[Kortix-managed]${C.reset}` : '';
-    process.stdout.write(`  ${C.cyan}${item.name}${C.reset} ${C.faded}${kind}${C.reset}${managed}\n`);
-    process.stdout.write(`    ${item.title}${item.marketplaceLabel ? C.faded + ` - ${item.marketplaceLabel}` + C.reset : ''}\n`);
-    if (item.description) process.stdout.write(`    ${C.dim}${item.description}${C.reset}\n`);
-  }
-  if (items.length > 40) process.stdout.write(`\n  ${C.dim}Showing 40 of ${items.length}. Narrow with --query.${C.reset}\n`);
-  process.stdout.write(`\n  ${C.dim}Show details:${C.reset} ${C.cyan}kortix marketplace show <name>${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import it${C.reset}\n`);
+function printSource(template: MarketplaceTemplate): string {
+  return (
+    `${template.repo}${template.git_ref ? `@${template.git_ref}` : ''}` +
+    ` ${C.faded}(${template.resolved_sha.slice(0, 7)})${C.reset}`
+  );
 }
 
-async function marketplaceSearch(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const query = argv.find((a) => !a.startsWith('-')) ?? flags.query;
-  const res = await fetchItems(flags, query);
-  if (!res) return 1;
-  printItems(res.items ?? [], flags);
-  return 0;
+// ── browsing ────────────────────────────────────────────────────────────────
+
+async function marketplaceList(argv: string[], flags: MarketplaceFlags): Promise<number> {
+  const ctx = resolveCatalogClient(flags.host);
+  if (!ctx) return 1;
+  const query = positional(argv) ?? flags.query;
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  const suffix = params.size > 0 ? `?${params}` : '';
+  try {
+    const res = await ctx.client.get<{ templates: MarketplaceTemplate[] }>(
+      `/public/marketplace/templates${suffix}`,
+    );
+    if (flags.json) {
+      emitJson(res);
+      return 0;
+    }
+    const templates = res.templates ?? [];
+    if (templates.length === 0) {
+      process.stdout.write(
+        `${status.info(query ? 'No template matched.' : 'The catalog is empty.')}\n`,
+      );
+      return 0;
+    }
+    process.stdout.write(
+      `\n  ${C.bold}Marketplace${C.reset} ${C.faded}- ${templates.length} template${templates.length === 1 ? '' : 's'}${C.reset}\n\n`,
+    );
+    for (const template of templates) {
+      process.stdout.write(`  ${C.cyan}${template.slug}${C.reset}\n`);
+      process.stdout.write(`    ${template.title} ${C.faded}- ${template.repo}${C.reset}\n`);
+      if (template.description) {
+        process.stdout.write(`    ${C.dim}${template.description}${C.reset}\n`);
+      }
+    }
+    process.stdout.write(
+      `\n  ${C.dim}Details:${C.reset} ${C.cyan}kortix marketplace show <slug>${C.reset}\n`,
+    );
+    return 0;
+  } catch (error) {
+    return surfaceApiError(error);
+  }
 }
 
 async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const raw = argv.find((a) => !a.startsWith('-'));
-  if (!raw) {
-    process.stderr.write(`${status.err('pass an item id or name: kortix marketplace show pdf')}\n`);
+  const slug = positional(argv);
+  if (!slug) {
+    process.stderr.write(`${status.err('pass a template slug: kortix marketplace show <slug>')}\n`);
     return 2;
   }
-  const ctx = resolveMarketplaceClient(flags.host);
+  const ctx = resolveCatalogClient(flags.host);
   if (!ctx) return 1;
-
-  let item: CatalogItem | null = null;
-  try {
-    item = await ctx.client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
-  } catch {
-    const searched = await fetchItems(flags, raw);
-    item =
-      searched?.items.find((i) => i.id === raw) ??
-      searched?.items.find((i) => i.name === raw) ??
-      searched?.items.find((i) => i.id.endsWith(`:${raw}`)) ??
-      (searched?.items.length === 1 ? searched.items[0] : null);
-    if (item) {
-      try {
-        item = await ctx.client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(item.id)}`);
-      } catch {
-        // The search result is still useful enough to show.
-      }
-    }
-  }
-
-  if (!item) {
-    process.stderr.write(`${status.err(`No marketplace item matches "${raw}".`)}\n`);
+  const template = await fetchTemplate(ctx.client, slug);
+  if (!template) {
+    process.stderr.write(`${status.err(`No template matches "${slug}".`)}\n`);
     return 1;
   }
   if (flags.json) {
-    emitJson(item);
+    emitJson(template);
     return 0;
   }
-
-  process.stdout.write(`\n  ${C.bold}${item.title}${C.reset} ${C.faded}(${item.type.replace('registry:', '')})${C.reset}\n`);
-  process.stdout.write(`  ${C.dim}${item.id}${C.reset}\n`);
-  if (item.description) process.stdout.write(`\n  ${item.description}\n`);
-  if (item.categories.length > 0) process.stdout.write(`\n  ${C.dim}Categories:${C.reset} ${item.categories.join(', ')}\n`);
-  if (item.dependencies.length > 0) process.stdout.write(`  ${C.dim}Pulls:${C.reset} ${item.dependencies.join(', ')}\n`);
-  const secrets = item.capabilities?.secrets ?? [];
-  const connectors = item.capabilities?.connectors ?? [];
-  if (secrets.length > 0) process.stdout.write(`  ${C.dim}Needs secrets:${C.reset} ${secrets.join(', ')}\n`);
-  if (connectors.length > 0) process.stdout.write(`  ${C.dim}Needs connectors:${C.reset} ${connectors.join(', ')}\n`);
-  if (item.managedBy === 'kortix') process.stdout.write(`  ${C.dim}Managed by:${C.reset} Kortix (${item.updatePolicy})\n`);
-  process.stdout.write(`\n  ${C.dim}Add to a project:${C.reset} ${C.dim}start a session and ask the agent to import "${item.name}"${C.reset}\n`);
+  process.stdout.write(
+    `\n  ${C.bold}${template.title}${C.reset} ${C.faded}(${template.slug})${C.reset}\n`,
+  );
+  if (template.description) process.stdout.write(`\n  ${template.description}\n`);
+  process.stdout.write(`\n  ${C.dim}Source:${C.reset}     ${printSource(template)}\n`);
+  if (template.agents.length > 0) {
+    process.stdout.write(
+      `\n  ${C.dim}Agents:${C.reset}     ${template.agents.map((a) => a.name).join(', ')}\n`,
+    );
+  }
+  if (template.skills.length > 0) {
+    process.stdout.write(`  ${C.dim}Skills:${C.reset}     ${template.skills.join(', ')}\n`);
+  }
+  if (template.triggers.length > 0) {
+    process.stdout.write(`  ${C.dim}Triggers:${C.reset}\n`);
+    for (const trigger of template.triggers) {
+      process.stdout.write(
+        `    ${trigger.slug}${trigger.cron ? ` ${C.faded}${trigger.cron}${C.reset}` : ''}\n`,
+      );
+    }
+  }
+  // The two lists that gate an install: what has to be connected, and what
+  // secrets have to exist. Printed loudly when non-empty is the point.
+  if (template.connectors.length > 0) {
+    process.stdout.write(
+      `  ${C.dim}Needs connected:${C.reset} ${template.connectors.map((c) => c.app ?? c.slug).join(', ')}\n`,
+    );
+  }
+  if (template.env_required.length > 0) {
+    process.stdout.write(`  ${C.dim}Needs env:${C.reset}  ${template.env_required.join(', ')}\n`);
+  }
+  process.stdout.write(
+    `\n  ${C.dim}Install:${C.reset} ${C.cyan}kortix marketplace install ${template.slug}${C.reset}\n`,
+  );
   return 0;
+}
+
+// ── per-project ─────────────────────────────────────────────────────────────
+
+async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
+  const slug = positional(argv);
+  if (!slug) {
+    process.stderr.write(
+      `${status.err('pass a template slug: kortix marketplace install <slug>')}\n`,
+    );
+    return 2;
+  }
+  const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+  if (!ctx) return 1;
+  try {
+    const result = await ctx.client.post<{ session_id: string }>(
+      `/projects/${ctx.projectId}/marketplace/install-session`,
+      { slug },
+    );
+    if (flags.json) {
+      emitJson({ ...result, project_id: ctx.projectId, slug });
+      return 0;
+    }
+    process.stdout.write(
+      `${status.ok(`Started install session ${C.bold}${result.session_id}${C.reset}`)}\n` +
+        `  ${C.dim}Template:${C.reset} ${slug}\n` +
+        `\n  ${C.dim}The agent merges it and opens a change request. Follow along:${C.reset}\n` +
+        `  ${C.cyan}kortix sessions logs ${result.session_id}${C.reset}\n` +
+        `\n  ${C.dim}Its triggers ship OFF. After the CR merges, turn them on:${C.reset}\n` +
+        `  ${C.cyan}kortix triggers list${C.reset}\n`,
+    );
+    return 0;
+  } catch (error) {
+    return surfaceApiError(error);
+  }
 }
 
 export async function runMarketplace(argv: string[]): Promise<number> {
@@ -241,10 +260,9 @@ export async function runMarketplace(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
+  // The root help promises `kortix <cmd> <subcommand> --help`. No subcommand
+  // here owns dedicated help text, so without this a bare `--help` falls
+  // through as a positional and the command runs instead of printing usage.
   if (rest.includes('-h') || rest.includes('--help')) {
     process.stdout.write(HELP);
     return 0;
@@ -252,12 +270,10 @@ export async function runMarketplace(argv: string[]): Promise<number> {
   const flags = parseFlags(rest);
 
   switch (sub) {
-    case 'search':
-    case 'find':
-      return marketplaceSearch(rest, flags);
     case 'list':
     case 'ls':
-      return marketplaceSearch(rest, flags);
+    case 'search':
+      return marketplaceList(rest, flags);
     case 'show':
     case 'view':
       return marketplaceShow(rest, flags);

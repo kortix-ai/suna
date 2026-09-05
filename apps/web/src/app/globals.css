@@ -1551,7 +1551,7 @@ html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {
 }
 
 /* ─── Hit area — expand interactive targets without layout shift ───────────
-   https://bazza.dev/craft/2026/hit-area */
+   https://bazza.dev/subproject/2026/hit-area */
 @utility hit-area-debug {
   position: relative;
   &::before {

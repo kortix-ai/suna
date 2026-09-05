@@ -29,10 +29,36 @@
  * 2026-08-19). The tab bar is text-only anyway (Marko, 2026-08-19: eight mixed
  * 16px glyphs in one row read as clutter); the sidebar Customize row and the
  * index cards keep their own icons in their own client files.
+ *
+ * `import type` is the ONLY import allowed for the same reason — a type
+ * annotation is erased at compile time, so `FeatureFlagKey` below adds no
+ * module-load side effect and the server-component rule above still holds.
  */
+import type { FeatureFlagKey } from '@kortix/sdk';
+
 export interface CapabilityTab {
-  key: 'agent' | 'connectors' | 'skills' | 'triggers' | 'models' | 'secrets' | 'review' | 'config';
+  key:
+    | 'agent'
+    | 'connectors'
+    | 'skills'
+    | 'triggers'
+    | 'models'
+    | 'marketplace'
+    | 'secrets'
+    | 'review'
+    | 'config';
   label: string;
+  /**
+   * When set, the tab exists only while this per-project feature flag is on.
+   * Fail-closed: loading counts as off, so an unresolved flag hides the tab
+   * rather than flashing one that 403s on click.
+   *
+   * A flag gate is NOT the same gate as the IAM leaf in `TAB_PREFERENCE`. The
+   * leaf answers "may this member see it"; the flag answers "does this project
+   * have the surface at all". Both must pass, and they fail for different
+   * reasons, so they stay two fields.
+   */
+  flag?: FeatureFlagKey;
 }
 
 /**
@@ -58,23 +84,33 @@ export interface CapabilityTab {
  * stays singular for stability, its segment is `agents`, and one agent lives
  * one level deeper, at `agentHref` (`/projects/<id>/customize/agents/<name>`).
  *
- * There is no Settings tab. `/projects/<id>/config` — the bar's trailing
- * "Settings" tab, a sub-nav over General / Sandbox templates / Review /
- * Feature flags / Upgrades — was retired on 2026-09-02 (Jay). Its
- * configuration sections live in the Settings overlay's Workspace group
- * (`settings/rail.ts`, opened with Cmd+, or from the workspace switcher), and
- * Review — an inbox, not configuration — moved up onto this bar as its own
- * tab. `settings-tabs.ts` redirects every retired `/config?section=` link.
+ * The standalone `/projects/<id>/config` page — a sub-nav over General /
+ * Sandbox templates / Review / Feature flags / Upgrades — was retired on
+ * 2026-09-02 (Jay). Its configuration sections live in the Settings overlay's
+ * Workspace group (`settings/rail.ts`, opened with Cmd+, or from the
+ * workspace switcher), and Review — an inbox, not configuration — moved up
+ * onto this bar as its own tab. The `config` KEY stayed, trailing the bar as
+ * "Settings": it is this project's own settings, distinct from the Settings
+ * overlay it redirects deep-links to (`settings-tabs.ts` handles every
+ * retired `/config?section=` link).
  *
- * Review is the one flag-gated tab (`review_center`); `visibleCapabilityTabs`
- * in `capability-tabs.tsx` hides it while the flag is off.
+ * Two tabs are flag-gated, and each says so in its own `flag:` field —
+ * Review on `review_center`, Marketplace on `marketplace`.
+ * `visibleCapabilityTabs` in `capability-tabs.tsx` hides a tab while its flag
+ * is off; that function reads the field and knows no tab key by name.
  */
 export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'agent', label: 'Agents' },
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'triggers', label: 'Triggers' },
-  { key: 'review', label: 'Review' },
+  // Marketplace installs the four tabs above it — a template delivers agents,
+  // skills, connectors and triggers in one commit — so it reads as the last of
+  // the "what this project can do" group, ahead of Review and Secrets. Not
+  // first: `CAPABILITY_TABS[0]` is the landing tab, and landing on a store
+  // would answer a question nobody asked.
+  { key: 'marketplace', label: 'Marketplace', flag: 'marketplace' },
+  { key: 'review', label: 'Review', flag: 'review_center' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },
   { key: 'config', label: 'Settings' },
@@ -102,6 +138,7 @@ export const CAPABILITY_SEGMENT: Record<CapabilityTab['key'], string> = {
   skills: 'skills',
   connectors: 'connectors',
   triggers: 'triggers',
+  marketplace: 'marketplace',
   review: 'review',
   models: 'models',
   secrets: 'secrets',

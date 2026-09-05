@@ -21,7 +21,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { assertAllowedSourceAddress } from '../marketplace/catalog';
+import { assertAllowedSourceAddress } from '../shared/allowed-source-address';
 import { safeEgressFetch } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';

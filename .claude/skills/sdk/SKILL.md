@@ -35,7 +35,7 @@ Learn this once and most questions answer themselves.
 
 1. **The Kortix platform REST API** (`backendUrl`, e.g. `http://localhost:8008/v1`).
    Owns everything *about* your work: accounts, projects, sessions, secrets,
-   billing, triggers, marketplace, audit. Lives in `src/core/rest/projects-client/`
+   billing, triggers, subprojects, audit. Lives in `src/core/rest/projects-client/`
    and `src/core/rest/platform-client/`, over `src/core/http/api-client.ts`
    (`backendApi`).
 

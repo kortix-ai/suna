@@ -12,7 +12,6 @@ import { templateSlugFromBuildSlug } from '../../snapshots/build-slug';
 import { createTemplate, deleteTemplate, getTemplateById, TemplateNotFoundError, updateTemplate } from '../../snapshots/templates';
 import { managedGithubToken } from '../git-backends';
 import { commitFile, createRepo, getFileSha } from '../github';
-import { buildProjectSeedFilesFromItem } from '../seed-files';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
 import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount, assertProjectCapability } from '../lib/access';
@@ -27,7 +26,6 @@ import { createSession } from '../session-lifecycle';
 import { resolveManifestValidateFormat } from '../lib/manifest-format';
 import { resolveConfiguredProjectProviderPin } from '../../snapshots/provider-coverage';
 import { runProviderActions } from '../../snapshots/provider-actions';
-import { getCatalogItemDetail } from '../../marketplace/catalog';
 
 function templateProviderObservation(metadata: unknown) {
   const selectedProvider = resolveConfiguredProjectProviderPin(
@@ -279,16 +277,6 @@ projectsApp.openapi(
     return c.json({ error: 'name must contain only letters, numbers, hyphens, underscores or dots' }, 400);
   }
 
-  // Resolve through the public marketplace detail gate before creating
-  // anything upstream. Hidden/support items remain internal even when a caller
-  // knows their catalog id.
-  const sourceItemId = normalizeString(body.source_item_id ?? body.sourceItemId);
-  if (sourceItemId) {
-    const sourceItem = await getCatalogItemDetail(sourceItemId);
-    if (!sourceItem || sourceItem.type !== 'registry:project') {
-      return c.json({ error: `Unknown or non-cloneable project item "${sourceItemId}"` }, 400);
-    }
-  }
   const starterTemplate = normalizeStarterTemplateId(
     body.starter_template ?? body.starterTemplate,
   );
@@ -360,15 +348,7 @@ projectsApp.openapi(
   // updates the branch tip on every write, so these must be sequential.
   // A partial starter is not a usable project.
   const [ownerLogin, repoSlug] = repo.full_name.split('/');
-  const starter = sourceItemId
-    ? (await buildProjectSeedFilesFromItem({
-        id: sourceItemId,
-        projectName,
-        repoFullName: repo.full_name,
-        extraMarketplaceItems: [],
-        now: new Date().toISOString(),
-      })).files
-    : buildStarterFiles({
+  const starter = buildStarterFiles({
     projectName,
     repoFullName: repo.full_name,
     template: starterTemplate,

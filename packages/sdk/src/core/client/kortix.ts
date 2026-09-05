@@ -1,4 +1,5 @@
 import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
+import { createKortixSession } from '../auth/session';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -17,28 +18,27 @@ import type { OpencodeClient } from '@opencode-ai/sdk/v2/client';
  * for ergonomics. Reactive data still comes from `@kortix/sdk/react` hooks.
  */
 import * as F from '../files/client';
-import { getClient, getClientForUrl } from '../runtime/client';
 import { ApiError } from '../http/api/errors';
 import { type KortixPlatformConfig, configureKortix, platformConfig } from '../http/config';
-import * as P from '../rest/projects-client';
 import * as A from '../rest/platform-client/auth';
 import type { HeadlessAuthApi } from '../rest/platform-client/auth';
-import { createKortixSession } from '../auth/session';
-import { getSessionHealth } from '../session/health';
-import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
-import { loadPreviewUrlTemplate } from '../session/preview-config';
-import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../session/preview-options';
+import * as P from '../rest/projects-client';
+import { getClient, getClientForUrl } from '../runtime/client';
 import { setCurrentRuntime } from '../session/current-runtime';
-import {
-  clearSessionRuntime,
-  getSessionRuntime,
-  type SessionRuntimeEntry,
-} from '../session/session-runtime-registry';
+import { getSessionHealth } from '../session/health';
+import { loadPreviewUrlTemplate } from '../session/preview-config';
+import { type ResolvedPreviewOptions, resolvePreviewOptions } from '../session/preview-options';
 import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 import {
-  openEventStream,
+  type SessionRuntimeEntry,
+  clearSessionRuntime,
+  getSessionRuntime,
+} from '../session/session-runtime-registry';
+import { type SubdomainUrlOptions, proxyLocalhostUrl, rewriteLocalhostUrl } from '../session/url';
+import {
   type EventStreamHandle,
   type OpenCodeEvent,
+  openEventStream,
 } from '../stream/event-stream';
 
 /** A model the agent can run, as the opencode runtime identifies it. */
@@ -376,23 +376,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const connectStatus = P.getConnectStatus;
 
   /**
-   * Public marketplace catalog browse (`/v1/marketplace/*`) — top-level and
-   * distinct from `project(id).marketplace`, which is install-scoped (commits
-   * an item onto a specific project's branch). This is read-only browsing +
-   * the authed "add a marketplace source" surface.
+   * The marketplace (`/v1/public/marketplace/templates`) — the public template
+   * catalog. Reading needs no token; installing is project-scoped
+   * (`project(id).marketplace.install`) and returns a session to open.
    */
   const marketplace = {
-    items: (options?: Parameters<typeof P.listMarketplaceCatalogItems>[0]) =>
-      P.listMarketplaceCatalogItems(options),
-    item: (id: string) => P.getMarketplaceCatalogItem(id),
-    itemFile: (id: string, path: string) => P.getMarketplaceCatalogItemFile(id, path),
-    marketplaces: () => P.listMarketplaces(),
-    featured: () => P.listFeaturedMarketplaces(),
-    sources: {
-      list: () => P.listMarketplaceSources(),
-      add: (input: Parameters<typeof P.addMarketplaceSource>[0]) => P.addMarketplaceSource(input),
-      remove: (id: string) => P.removeMarketplaceSource(id),
-    },
+    list: P.listMarketplaceTemplates,
+    get: P.getMarketplaceTemplate,
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
@@ -639,6 +629,17 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
           P.fireProjectTrigger(projectId, ...a),
         setActivation: (...a: DropFirst<Parameters<typeof P.setProjectTriggersActivation>>) =>
           P.setProjectTriggersActivation(projectId, ...a),
+      },
+
+      /**
+       * Install a marketplace template into this project. Returns a SESSION to
+       * open — the agent inside it does the merge and lands a change request;
+       * nothing is committed by this call, and reverting that change request
+       * is the uninstall. Its triggers are enabled one at a time through
+       * `triggers` once the change request merges.
+       */
+      marketplace: {
+        install: (slug: string) => P.createMarketplaceInstallSession(projectId, slug),
       },
 
       files: {
@@ -1333,7 +1334,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     sandboxShares,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
-    /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
+    /** The public template catalog (`/v1/public/marketplace/templates`). Installing is per-project. */
     marketplace,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,

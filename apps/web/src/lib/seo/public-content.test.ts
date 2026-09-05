@@ -237,8 +237,11 @@ Run the install script.
     }
   });
 
-  test('puts every public HTML and Markdown representation in the sitemap', () => {
-    const urls = new Set(sitemap().map((entry) => entry.url));
+  test('puts every public HTML and Markdown representation in the sitemap', async () => {
+    // `sitemap()` is async because it also lists the public template marketplace
+    // from the API. That read fails closed here (no API in a bun test run), so
+    // the committed records below are still the whole assertion.
+    const urls = new Set((await sitemap()).map((entry) => entry.url));
     const records = getPublicContentRecords({ includeUseCases: true });
     for (const record of records) {
       expect(urls.has(absoluteUrl(record.htmlPath))).toBe(true);

@@ -41,12 +41,20 @@
  *  - Counts: 10 skills committed into a new project repo, plus 10 platform
  *    skills injected into every session at boot (`kortix-cli` is in both lists,
  *    so 19 distinct). 2 agents ship: `kortix` and `memory-reflector`.
- *  - MARKETPLACE: ships, labelled beta, ON by default. But the deterministic
- *    installer WAS REMOVED (`apps/api/src/projects/routes/r10.ts`): "The
- *    deterministic install/lock/update/remove engine … has been removed …
- *    Adding a marketplace item to an existing project is now always an agent
- *    import." So: one click to ADD, and what happens next is an agent session
- *    that opens a change request. Never imply a lockfile-backed package install.
+ *  - THE OLD SKILLS MARKETPLACE IS GONE. Do not write copy about browsing a
+ *    registry of agents/skills/templates from this page. That whole surface —
+ *    API, CLI, `features/marketplace/*`, the OLD public `/marketplace` page —
+ *    was removed from the product. This page had a §5 "Marketplace" section
+ *    with a `/marketplace` CTA; both went with it. Its replacement is the
+ *    TEMPLATE MARKETPLACE: a curated, static list of Kortix projects (GitHub
+ *    repos) installed into a project by change request, listed under
+ *    Customize → Marketplace at `/projects/:id/customize/marketplace`, behind
+ *    the `marketplace` feature flag (OFF by default). The name `/marketplace`
+ *    was reused for a NEW public page — the curated public template catalog
+ *    (`app/(public)/(seo)/marketplace/`) — which is a real, live surface as of
+ *    2026-09-03. Do not re-add a §5 "browse the registry" section here; that
+ *    idea is retired. A section pointing at the new public catalog is fair
+ *    game, but keep the counts real — never restore the old registry numbers.
  *  - "Agents rewrite themselves" is TRUE and must always carry "human-merged".
  *    An agent cannot escalate its own grants by editing kortix.yaml, because the
  *    runtime grant is intersected with the launching user's role.
@@ -289,38 +297,6 @@ export const repo = {
       v: 'Because it is all text in one repo, you can branch your whole workforce, try a different set of grants, roll it back, or hand the lot to a new project. The configuration travels with the clone.',
     },
   ],
-} as const;
-
-export const marketplace = {
-  eyebrow: 'Marketplace',
-  title: 'Start from someone else’s work. Own it immediately.',
-  sub: 'Browse agents, skills and whole projects, add one to your project in a click, and what arrives is files in your repo — not a dependency you rent. It is labelled beta because sources and updates are still moving, and it is on for every project.',
-  steps: [
-    {
-      n: '00',
-      title: 'Find it',
-      body: 'Browse the marketplace without signing in. Kortix ships its own registry — 62 agents, 61 skills and 62 project templates — and you can switch on curated outside registries with one click. None load by default.',
-    },
-    {
-      n: '01',
-      title: 'Add it',
-      body: 'One button. It starts an agent session that reads the item’s source and merges what fits into your project’s own files, rather than dropping a package in and hoping.',
-    },
-    {
-      n: '02',
-      title: 'It wires itself up',
-      body: 'If the item needs a key or a connected app, the agent hands you a fill-in link in the same turn. You never paste a credential into a chat, and the agent never sees the value.',
-    },
-    {
-      n: '03',
-      title: 'You approve it',
-      body: 'The session opens a change request. You read exactly which files are about to join your company, and merge when you are happy. Nothing lands unreviewed.',
-    },
-  ],
-  footnote:
-    'One thing this is not: a package manager. There is no lockfile, no version pin and no automatic update — an item you add becomes your own files, exactly like code you wrote. That is a deliberate trade, and it is the one we would make again.',
-  ctaLabel: 'Browse the marketplace',
-  ctaHref: '/marketplace',
 } as const;
 
 export const closing = {

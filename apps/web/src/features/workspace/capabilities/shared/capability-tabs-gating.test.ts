@@ -32,19 +32,37 @@ const allowExcept = (...denied: string[]) =>
 const stillLoading = () =>
   Object.fromEntries(CAPABILITY_TAB_GATE_ACTIONS.map((action) => [action, { allowed: false }]));
 
+/**
+ * Flag map with every flag-gated tab's flag ON. Derived from `CAPABILITY_TABS`
+ * rather than hard-coded, so adding a gated tab does not silently start
+ * asserting that a manager cannot see it.
+ */
+const flagsOn = () =>
+  Object.fromEntries(CAPABILITY_TABS.flatMap((tab) => (tab.flag ? [[tab.flag, true]] : [])));
+
+/** Every tab that declares a flag. Empty is a legal state, so guard for it. */
+const GATED_TABS = CAPABILITY_TABS.filter((tab) => tab.flag);
+
 describe('visibleCapabilityTabs', () => {
-  test('a manager with the review flag on sees every tab', () => {
-    expect(visibleCapabilityTabs(allowExcept(), { reviewEnabled: true }).map((t) => t.key)).toEqual(
+  test('a manager with every gated flag on sees every tab', () => {
+    expect(visibleCapabilityTabs(allowExcept(), flagsOn()).map((t) => t.key)).toEqual(
       CAPABILITY_TABS.map((t) => t.key),
     );
   });
 
-  // Review is the one flag-gated tab — the `review_center` flag hides it
-  // regardless of permissions, and the flag defaults OFF (a flag is a fact the
-  // project detail holds, not a probe in flight).
+  // `review_center` hides Review regardless of permissions, and it is off for
+  // a project that has not been given the inbox — the same gate the retired
+  // config page's Review section carried, so a flag that hides the inbox hides
+  // every way in. Named explicitly rather than left to the generic gated-tab
+  // tests below: this one asserts the OTHER gated tab still renders, which is
+  // what a per-key branch in the filter would have broken.
   test('the review flag hides Review and nothing else', () => {
-    const keys = visibleCapabilityTabs(allowExcept()).map((t) => t.key);
+    const keys = visibleCapabilityTabs(allowExcept(), {
+      ...flagsOn(),
+      review_center: false,
+    }).map((t) => t.key);
     expect(keys).not.toContain('review');
+    expect(keys).toContain('marketplace');
     expect(keys).toEqual(CAPABILITY_TABS.map((t) => t.key).filter((k) => k !== 'review'));
   });
 
@@ -60,19 +78,22 @@ describe('visibleCapabilityTabs', () => {
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
-    expect(visibleCapabilityTabs(member)).toEqual([]);
+    expect(visibleCapabilityTabs(member, flagsOn())).toEqual([]);
   });
 
   test('holding every per-tab leaf does not survive a customize.read denial', () => {
-    expect(visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ))).toEqual([]);
+    expect(
+      visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ), flagsOn()),
+    ).toEqual([]);
   });
 
   // A custom role can hold the surface and still have one capability switched
   // off — that is what the per-leaf pass exists for.
   test('a custom role denied one leaf loses exactly that tab', () => {
-    const keys = visibleCapabilityTabs(allowExcept(PROJECT_ACTIONS.PROJECT_SECRET_READ)).map(
-      (t) => t.key,
-    );
+    const keys = visibleCapabilityTabs(
+      allowExcept(PROJECT_ACTIONS.PROJECT_SECRET_READ),
+      flagsOn(),
+    ).map((t) => t.key);
     expect(keys).not.toContain('secrets');
     expect(keys).toContain('connectors');
     expect(keys).toContain('models');
@@ -85,11 +106,58 @@ describe('visibleCapabilityTabs', () => {
   // which is why the source pin below requires `caps[…]?.allowed === false`
   // rather than `!caps[…]?.allowed`.
   test('an in-flight probe is a denial for this helper — the caller keeps it optimistic', () => {
-    expect(visibleCapabilityTabs(stillLoading())).toEqual([]);
+    expect(visibleCapabilityTabs(stillLoading(), flagsOn())).toEqual([]);
     expect(code(source)).toContain(
       'caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false',
     );
     expect(code(source)).toContain('caps[pref.action]?.allowed !== false');
+  });
+});
+
+// The IAM leaf answers "may this member see it". The flag answers "does this
+// project have the surface at all". Marketplace has both: `project.read` and
+// the `marketplace` flag, whose install route answers 403 `feature_disabled` when off
+// (`apps/api/src/feature-flags/registry.ts` — `enforcement: 'routes'`,
+// `platformDefault: () => false`). A tab that renders while the flag is off is
+// a tab that 403s on click.
+describe('flag-gated tabs', () => {
+  test('at least one tab is flag-gated, and Marketplace is one of them', () => {
+    expect(GATED_TABS.map((t) => `${t.key}:${t.flag}`)).toContain('marketplace:marketplace');
+  });
+
+  test('a manager with the flag OFF does not see the gated tab', () => {
+    const keys = visibleCapabilityTabs(
+      allowExcept(),
+      Object.fromEntries(GATED_TABS.map((tab) => [tab.flag, false])),
+    ).map((t) => t.key);
+    for (const tab of GATED_TABS) expect(keys).not.toContain(tab.key);
+    // Every ungated tab is untouched — the flag hides one tab, not the bar.
+    expect(keys).toEqual(CAPABILITY_TABS.filter((t) => !t.flag).map((t) => t.key));
+  });
+
+  // FAIL-CLOSED, unlike the IAM probes above. `useFeatureFlag` reports an
+  // unresolved flag as `enabled: false`, and a missing key reads `undefined`;
+  // both must hide, or the tab flashes in and then vanishes on every load of
+  // a project that does not have the surface.
+  test('an unresolved flag hides the gated tab, same as an off one', () => {
+    const keys = visibleCapabilityTabs(allowExcept(), {}).map((t) => t.key);
+    for (const tab of GATED_TABS) expect(keys).not.toContain(tab.key);
+  });
+
+  test('the flag hooks are ENUMERATED, never looped over CAPABILITY_TABS', () => {
+    const body = code(source);
+    const start = body.indexOf('export function useCapabilityTabFlags');
+    expect(start).toBeGreaterThan(-1);
+    const hook = body.slice(start, body.indexOf('\n}', start));
+    // One literal `useFeatureFlag(projectId, '<key>')` per gated tab. A `.map`
+    // or `for` here would make the hook count depend on the array's length.
+    expect((hook.match(/useFeatureFlag\(/g) ?? []).length).toBe(GATED_TABS.length);
+    for (const tab of GATED_TABS) {
+      expect(hook).toContain(`useFeatureFlag(projectId, '${tab.flag}')`);
+    }
+    expect(hook).not.toContain('CAPABILITY_TABS');
+    expect(hook).not.toContain('.map(');
+    expect(hook).not.toContain('for (');
   });
 });
 
@@ -115,9 +183,11 @@ describe('CapabilityTabs gate wiring', () => {
     expect(bar).toContain('{library.map(renderTab)}');
     expect(bar).not.toContain('CAPABILITY_TABS.filter');
     expect(bar).not.toContain('CAPABILITY_TABS.map');
-    // The flag reaches the gate from the bar itself, so a page cannot forget it.
-    expect(bar).toContain("useFeatureFlag(projectId, 'review_center')");
-    expect(bar).toContain('visibleCapabilityTabs(caps, { reviewEnabled })');
+    // The flags reach the gate from the bar itself, so a page cannot forget
+    // them — and they arrive as one resolved map, so the bar names no flag key.
+    expect(bar).toContain('useCapabilityTabFlags(projectId)');
+    expect(bar).toContain('visibleCapabilityTabs(caps, flags)');
+    expect(bar).not.toContain('useFeatureFlag(');
   });
 
   // One list of leaves for the bar, the sidebar row and the Customize index —

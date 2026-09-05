@@ -247,7 +247,6 @@ export interface Agent {
   agentpress_tools: Record<string, any>;
   is_default: boolean;
   is_public?: boolean;
-  marketplace_published_at?: string;
   download_count?: number;
   tags?: string[];
   created_at: string;

@@ -223,17 +223,34 @@ describe('queries return the rows they name', () => {
     expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  test('"project" returns the two rows that say the word, not every project-scoped row', () => {
+  // Two rows carry the word "project" as visible text — the account hub's
+  // "Projects" pane and the top-level Projects row. `proj-marketplace` carries
+  // `requiresFlag: 'marketplace'`, so only a project that HAS the surface is
+  // ever offered it, and its keyword bag names what it installs (templates),
+  // not the word "project".
+  const SAYS_PROJECT = ['nav:account-access-projects', 'nav:nav-projects'];
+
+  test('"project" returns the rows that say the word, not every project-scoped row', () => {
     // `account-access-projects` is the account hub's "Projects" pane — the
     // word is its own label, which is exactly the bar this file sets. Ten
     // `proj-*` rows used to answer this by their ids.
-    expect(hits('project').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
+    expect(hits('project').sort()).toEqual([...SAYS_PROJECT].sort());
   });
 
   test('"proj" matches nothing by id', () => {
-    // Ten `proj-*` rows used to answer this. The two that survive both carry
-    // "Projects" as visible label text.
-    expect(hits('proj').sort()).toEqual(['nav:account-access-projects', 'nav:nav-projects']);
+    // Ten `proj-*` rows used to answer this. The ones that survive carry the
+    // word as visible text — two as the label "Projects".
+    expect(hits('proj').sort()).toEqual([...SAYS_PROJECT].sort());
+  });
+
+  test('"marketplace" reaches the Marketplace tab, and only it; "templates" reaches it too', () => {
+    // "marketplace" is the name the docs (`docs/feature-flags/marketplace`),
+    // the feature flag and `kortix marketplace` all use, so it has to answer,
+    // alone. "templates" is what the tab installs, so it must answer as well —
+    // but not alone: the Sandboxes settings row legitimately says the word
+    // too (sandbox templates), and both rows are right to.
+    expect(hits('marketplace')).toEqual(['nav:proj-marketplace']);
+    expect(hits('templates')).toContain('nav:proj-marketplace');
   });
 
   test('"nav" and "pref" are not queries at all', () => {

@@ -20,20 +20,6 @@ afterEach(() => {
 const boundary = await import('./host-boundary');
 
 describe('host boundary transport', () => {
-  test('public marketplace reads accept explicit cache options', async () => {
-    responseFactory = () => Response.json({ items: [{ id: 'skill-1' }] });
-    const result = await boundary.listPublicMarketplaceItems(
-      { backendUrl: 'https://api.example.test/v1', cache: 'force-cache' },
-      { type: 'skill', limit: 48 },
-    );
-
-    expect(result.items).toHaveLength(1);
-    expect(requests[0]?.url).toBe(
-      'https://api.example.test/v1/marketplace/items?type=skill&limit=48',
-    );
-    expect(requests[0]?.init?.cache).toBe('force-cache');
-  });
-
   test('authenticated writes own bearer headers and JSON encoding', async () => {
     await boundary.submitOAuthConsent(
       { requestId: 'req-1', approved: true },

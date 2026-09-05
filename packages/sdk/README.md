@@ -185,6 +185,26 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
+### Marketplace
+
+A template is a public GitHub repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.marketplace` is the public template catalog — it needs no token — and `kortix.project(projectId).marketplace.install(slug)` starts the agent session that merges one into a project. Marketplace is a project feature flag, so the install route returns `403 feature_disabled` until a manager enables it.
+
+```ts
+const { templates } = await kortix.marketplace.list({ q: 'seo' });
+
+const { session_id } = await kortix.project(projectId).marketplace.install(templates[0].slug);
+// The template is NOT installed yet. Open that session — the agent reads both
+// manifests, merges, and opens a change request a human reviews.
+```
+
+Three things are worth knowing before you render any of it:
+
+- **Nothing records what a project has installed.** The change request the agent opens is the record — everything the template adds lands in that one commit — and reverting it is the uninstall. There is no installed list, no uninstall call and no activation call here.
+- **A template installs with every trigger off.** Enable them individually through `project(id).triggers` once the change request merges. A run belongs to the **trigger** that fired, not to the template that contributed it.
+- **The catalog is curated and static.** It ships with the API; there is no submit, upload or publish call. `MarketplaceTemplate` carries the card — `slug`, `title`, `description`, `repo`, the pinned `resolved_sha`, and the `agents`, `triggers`, `connectors`, `skills` and `env_required` it brings.
+
+React: `useMarketplaceTemplates`, `useMarketplaceTemplate`, `useMarketplaceInstall`. Full reference: `/docs/sdk/marketplace`.
+
 ### React runtime
 
 `useSession(projectId, sessionId)` opens the OpenCode REST runtime returned by

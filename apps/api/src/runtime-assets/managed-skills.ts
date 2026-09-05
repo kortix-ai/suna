@@ -18,9 +18,7 @@
  * `getManagedSkillFiles()` + `getStarterFiles({ template:
  * 'general-knowledge-worker' })` sources, same `isKortixManagedSkillName` filter
  * — so a sandbox converges on the SAME bytes the image would have baked, not a
- * superset. `getMarketplaceFiles()` is intentionally absent (see
- * skills/catalog.ts, which does include it: that surface answers "read any
- * managed skill", this one answers "what does the overlay contain").
+ * superset.
  */
 
 import { createHash } from 'node:crypto';

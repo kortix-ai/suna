@@ -382,11 +382,12 @@ describe('the registry no longer carries palette settings destinations', () => {
   });
 
   test('the removed per-tab entries are gone from every surface, not just the palette', () => {
-    // `proj-secrets`, `proj-members` and `proj-channels` are NOT in this list
-    // any more, and their absence is the point of this change. They were
-    // removed here as SETTINGS TABS (`/settings/secrets`, opened through the
-    // overlay); they came back as CAPABILITY PAGES with their own routes
-    // (`/projects/<id>/secrets`, the account Access pane, `?scope=channels`),
+    // `proj-secrets`, `proj-members`, `proj-channels` and `proj-marketplace`
+    // are NOT in this list any more, and their absence is the point of this
+    // change. They were removed here as SETTINGS TABS
+    // (`/settings/secrets`, opened through the overlay); they came back as
+    // CAPABILITY PAGES with their own routes (`/projects/<id>/secrets`, the
+    // account Access pane, `?scope=channels`, `/projects/<id>/customize/marketplace`),
     // which the derived settings list structurally cannot produce — the same
     // arrangement `proj-triggers` and the `account-*` rows use. What must stay
     // gone is a row that opens the OVERLAY on a tab that no longer exists; the
@@ -396,7 +397,6 @@ describe('the registry no longer carries palette settings destinations', () => {
     for (const id of [
       'proj-git',
       'proj-sandbox',
-      'proj-marketplace',
       'proj-llm',
       'proj-review',
       'proj-voice',
@@ -407,6 +407,24 @@ describe('the registry no longer carries palette settings destinations', () => {
     ]) {
       expect(paletteItems.find((item) => item.id === id)).toBeUndefined();
     }
+  });
+
+  // `proj-marketplace` is the id the deleted SKILLS marketplace used for its
+  // settings-overlay tab. It is reused here for the Customize → Marketplace
+  // capability page, so this case states what the row now is: a navigate row
+  // at its own route, gated on the `marketplace` flag. Without it, removing
+  // the id from the absent-list above would leave the reuse unasserted.
+  test('Marketplace is a flag-gated registry row, pointing at its own page', () => {
+    const marketplace = paletteItems.find((item) => item.id === 'proj-marketplace');
+    expect(marketplace?.kind).toBe('navigate');
+    expect(marketplace?.href).toBe('/projects/{projectId}/customize/marketplace');
+    expect(marketplace?.requiresProject).toBe(true);
+    // The one registry row that declares a flag. A project without the
+    // surface must not be offered a palette row that 403s on arrival.
+    expect(marketplace?.requiresFlag).toBe('marketplace');
+    // Not claimed by the overlay resolver — clicking it navigates, and does
+    // not reopen the settings overlay on a tab that no longer exists.
+    expect(resolveSettingsOverlayHref(marketplace!.href!).opensOverlay).toBe(false);
   });
 
   test('Triggers is a registry row, pointing at its own page', () => {

@@ -69,12 +69,6 @@ describe('fingerprintOf', () => {
     expect(a).not.toBe(b);
   });
 
-  test('changes when the template changes', () => {
-    const a = fingerprintOf({ ...INITIAL_FORM_STATE, name: 'x', templateId: 't1' });
-    const b = fingerprintOf({ ...INITIAL_FORM_STATE, name: 'x', templateId: 't2' });
-    expect(a).not.toBe(b);
-  });
-
   test('does NOT change when only the icon or default branch changes — those are refinements, not a new create', () => {
     const a = fingerprintOf({ ...INITIAL_FORM_STATE, name: 'x', defaultBranch: 'main' });
     const b = fingerprintOf({ ...INITIAL_FORM_STATE, name: 'x', defaultBranch: 'develop' });

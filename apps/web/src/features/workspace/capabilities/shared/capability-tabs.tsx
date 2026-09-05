@@ -10,7 +10,7 @@ import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggl
 import { TAB_PREFERENCE } from '@/features/workspace/project-sidebar/project-settings-nav';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan, useProjectCans } from '@/lib/use-project-can';
-import { getProjectDetail } from '@kortix/sdk';
+import { getProjectDetail, type FeatureFlagKey } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag } from '@kortix/sdk/react';
 import { useQuery } from '@tanstack/react-query';
 
@@ -36,10 +36,28 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
 ];
 
 /**
+ * The per-project feature flags the tab list reads, resolved once.
+ *
+ * ENUMERATED, never derived by looping `CAPABILITY_TABS`. `useFeatureFlag` is a
+ * hook, so a loop would make the number of hook calls depend on how many tabs
+ * carry a `flag:` — React's rule of hooks forbids exactly that. When you add a
+ * `flag:` to a tab, add its line here by hand.
+ *
+ * Both consumers of {@link visibleCapabilityTabs} that run in a component call
+ * this: the bar below and the Customize index page. The `useFeatureFlag` cache
+ * is shared, so the second caller costs no request.
+ */
+export function useCapabilityTabFlags(projectId: string): Partial<Record<FeatureFlagKey, boolean>> {
+  const marketplace = useFeatureFlag(projectId, 'marketplace');
+  const reviewCenter = useFeatureFlag(projectId, 'review_center');
+  return { marketplace: marketplace.enabled, review_center: reviewCenter.enabled };
+}
+
+/**
  * Which tabs to draw for this caller.
  *
- * Two gates, the same two the sidebar's Customize row applies, because this
- * bar IS that row's destination:
+ * Three gates, the first two shared with the sidebar's Customize row because
+ * this bar IS that row's destination:
  *
  *  1. `project.customize.read` — the whole Customize surface. It moved out of
  *     the member floor role in #6522 (`apps/api/src/iam/role-perms.ts`), so a
@@ -49,27 +67,36 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  *     openable" surface this gate exists to remove.
  *  2. Each tab's own read leaf — a custom role can hold the surface and still
  *     have one capability deactivated.
+ *  3. The tab's `flag`, when it declares one — whether the project has that
+ *     surface at all.
  *
- * Optimistic while a probe is in flight: a tab disappears only on a denial we
- * actually received, so a slow `/effective` never blanks the bar for a
- * manager mid-navigation.
+ * Gates 1 and 2 are OPTIMISTIC while a probe is in flight: a tab disappears
+ * only on a denial we actually received, so a slow `/effective` never blanks
+ * the bar for a manager mid-navigation. Gate 3 is the opposite, FAIL-CLOSED,
+ * and the asymmetry is deliberate. An unresolved IAM probe is the common case
+ * on every navigation and the tab is almost always allowed; an unresolved flag
+ * is the rare case and the surface is almost always off (`platformDefault:
+ * () => false` for every gated flag). Guessing "on" there flashes a tab whose
+ * route answers `403 feature_disabled`.
  *
- * Review is additionally flag-gated on `review_center` — the same gate the
- * retired config page's Review section carried, so a flag that hides the
- * inbox hides every way in. Flags default OFF here, unlike permissions: a
- * flag is a fact the project detail already holds, not a probe in flight.
+ * `flags` is REQUIRED, not optional with an all-on default, for the same
+ * reason: a caller that forgets to pass it must lose the gated tabs, not gain
+ * them.
+ *
+ * Gate 3 is ONE mechanism for every gated tab — the tab's own `flag:` field.
+ * Review is gated on `review_center` (the same gate the retired config page's
+ * Review section carried, so a flag that hides the inbox hides every way in)
+ * and Marketplace on `marketplace`; neither is a special case in this filter.
+ * A second, key-matching branch here would be a place for the two gates to
+ * disagree about what "off" means.
  */
-export interface CapabilityTabFlags {
-  reviewEnabled: boolean;
-}
-
 export function visibleCapabilityTabs(
   caps: Record<string, { allowed: boolean }>,
-  flags: CapabilityTabFlags = { reviewEnabled: false },
+  flags: Partial<Record<FeatureFlagKey, boolean>>,
 ): readonly CapabilityTab[] {
   if (caps[PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ]?.allowed === false) return [];
   return CAPABILITY_TABS.filter((tab) => {
-    if (tab.key === 'review' && !flags.reviewEnabled) return false;
+    if (tab.flag && flags[tab.flag] !== true) return false;
     const pref = TAB_PREFERENCE.find((t) => t.key === tab.key);
     return pref ? caps[pref.action]?.allowed !== false : true;
   });
@@ -150,13 +177,6 @@ function MembersLaunchLink({ projectId }: { projectId: string }) {
  * column; the page body below is the flex-1 scroller.
  */
 /**
- * No trailing Settings tab any more. It trailed the row on the right until
- * 2026-09-02, when `/projects/<id>/config` was retired: its sections are the
- * Settings overlay's Workspace group now, and Review took a place in the row
- * proper. `MembersLaunchLink` keeps its `ml-auto` and is the only trailing
- * element.
- */
-/**
  * The hairline between Agents and everything an agent draws on (Skills
  * through Secrets). One `TabsList` still —
  * this is a `span`, not a second list, so the underline indicator and the
@@ -185,8 +205,8 @@ export function CapabilityTabs({ projectId }: { projectId: string }) {
   // Without the indent the first tab renders under the macOS traffic lights.
   const sidebar = useOptionalSidebar();
   const caps = useProjectCans(projectId, CAPABILITY_TAB_GATE_ACTIONS);
-  const reviewEnabled = useFeatureFlag(projectId, 'review_center').enabled;
-  const tabs = visibleCapabilityTabs(caps, { reviewEnabled });
+  const flags = useCapabilityTabFlags(projectId);
+  const tabs = visibleCapabilityTabs(caps, flags);
 
   const leading = tabs.filter((tab) => !TRAILING_TABS.includes(tab.key));
   const primary = leading.filter((tab) => PRIMARY_TABS.includes(tab.key));

@@ -11,7 +11,6 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectGitConnections, projectMembers, projects } from '@kortix/db';
 
-process.env.KORTIX_DEFAULT_MARKETPLACES = '';
 process.env.MANAGED_GIT_PROVIDER = 'github';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -591,14 +590,14 @@ describe('POST /v1/projects/provision (managed git)', () => {
     expect(insertedProject).toBeNull();
   });
 
-  test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is a no-op)', async () => {
-    // The deterministic install/lock engine is gone (see
-    // docs/specs/2026-07-13-marketplace-as-projects.md) — provision seeds only
-    // the plain starter scaffold. `marketplace_items` is accepted for API
-    // back-compat but no longer installs anything at provision time; adding a
-    // marketplace item to a project is now an agent import
+  test('seeds the deterministic starter into the initial managed repo setup commit (marketplace_items is ignored)', async () => {
+    // Provision seeds only the plain starter scaffold. `marketplace_items` is
+    // still ACCEPTED so an old client is not broken by sending it, and is
+    // ignored: the deterministic install/lock engine was retired, and the
+    // marketplace that owned the catalog it named was removed from the product
+    // outright. Adding a capability to a project is an agent import
     // (POST /:projectId/marketplace/install-session), which needs the project
-    // (and a session) to already exist.
+    // and a session to already exist.
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -621,7 +620,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
 
     // No lock is ever produced — the engine that wrote it is deleted.
     expect(seedFilePaths).not.toContain('registry-lock.json');
-    // The requested marketplace skills are NOT deterministically installed —
+    // The requested items are NOT deterministically installed —
     // only the committed kortix-cli skill (part of the base minimal
     // scaffold) is present.
     expect(seedFilePaths).not.toContain('.kortix/opencode/skills/agent-browser/SKILL.md');

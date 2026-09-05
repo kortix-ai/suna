@@ -27,7 +27,7 @@ import type { Context } from 'hono';
 import { featureDisabledBody } from '../feature-flags/gate';
 import type { FeatureFlagKey } from '../feature-flags/registry';
 import { agentMayUseConnector } from '../iam/agent-scope';
-import { isAllowedSourceValidationError } from '../marketplace/catalog';
+import { isAllowedSourceValidationError } from '../shared/allowed-source-address';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
 import { canonicalConnectorAlias } from '../projects/lib/session-connector-bindings';
 import {

@@ -43,10 +43,6 @@ import { accountInvitesRouter } from './accounts/invites';
 import { adminApp } from './admin';
 import { startAppDeploymentWorker, stopAppDeploymentWorker } from './apps/deployment-worker';
 import { startAppIdleReaper, stopAppIdleReaper } from './apps/idle-reaper';
-import {
-  startPiWorkerPoolMaintenance,
-  stopPiWorkerPoolMaintenance,
-} from './platform/services/pi-worker-pool';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import { authRouter } from './auth';
@@ -75,16 +71,19 @@ import { gitProxyApp } from './git-proxy';
 import { describeEmailChain } from './lib/email/transport';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { mountLlmGateway } from './llm-gateway/wire';
-import { marketplaceApp } from './marketplace';
 import { combinedAuth, supabaseAuth } from './middleware/auth';
-import { createCorsMiddleware } from './middleware/cors';
 import { compressResponse } from './middleware/compress';
-import { upstreamTiming } from './middleware/upstream-timing';
+import { createCorsMiddleware } from './middleware/cors';
 import { isRequestDeadlineHTTPException, requestDeadline } from './middleware/request-deadline';
+import { upstreamTiming } from './middleware/upstream-timing';
 import { oauthApp } from './oauth';
 import { oauthAuthorizationServerMetadata } from './oauth/discovery';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
+import {
+  startPiWorkerPoolMaintenance,
+  stopPiWorkerPoolMaintenance,
+} from './platform/services/pi-worker-pool';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
 import {
   getTriggerSchedulerHealth,
@@ -937,7 +936,6 @@ app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
-app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // /v1/skills — the kortix-managed system skills (how Kortix itself works), served
 // straight out of @kortix/starter so the text always matches this deploy. This is
@@ -1034,6 +1032,12 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 // access — the API reads the sandbox's OpenCode daemon server-side.
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
+// Public marketplace — PUBLIC, no gate at all. The anonymous template catalog
+// behind the /marketplace SEO pages, the in-project Marketplace tab and the CLI.
+// A static list, so the response is the same for every caller by construction.
+import { publicMarketplaceApp } from './public-marketplace';
+app.route('/v1/public/marketplace', publicMarketplaceApp); // /v1/public/marketplace/templates[/:slug]
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.

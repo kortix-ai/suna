@@ -1,3 +1,4 @@
+import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 /**
  * Unified feature-flag registry.
  *
@@ -48,7 +49,6 @@
  * enforcement.
  */
 import { config } from '../config';
-import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -97,17 +97,6 @@ export interface FeatureFlagDef {
  */
 const FLAGS: readonly FeatureFlagDef[] = [
   {
-    key: 'marketplace',
-    name: 'Marketplace',
-    description:
-      'Browse and 1-click install skills from a marketplace of community & vendor registries (any SKILL.md repo). Sources, updates, and team scopes are still in flux.',
-    stability: 'beta',
-    available: () => true,
-    // On by default for every project — no longer gated behind an opt-in toggle.
-    platformDefault: () => true,
-    enforcement: 'routes',
-  },
-  {
     key: 'agent_tunnel',
     name: 'Agent Computer Tunnel',
     description:
@@ -130,7 +119,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Browse direct API, MCP, GraphQL, CLI, and Postman surfaces alongside optional Pipedream OAuth apps. The catalog and setup experience are still experimental.',
     stability: 'experimental',
     available: () => true,
-    // Explicit opt-in: Easy Connect remains the default connector marketplace.
+    // Explicit opt-in: Easy Connect remains the default connector catalog.
     platformDefault: () => false,
     enforcement: 'routes',
   },
@@ -197,6 +186,20 @@ const FLAGS: readonly FeatureFlagDef[] = [
     // env gates it. Always available; a project opts in per Settings.
     available: () => true,
     // Explicit opt-in: hidden unless a project enables it in Settings.
+    platformDefault: () => false,
+    enforcement: 'routes',
+  },
+  {
+    key: 'marketplace',
+    name: 'Marketplace',
+    description:
+      'Browse the template catalog and install a template — a GitHub repo whose kortix.yaml declares agents, skills, connectors and triggers — into this project by change request.',
+    stability: 'experimental',
+    // Pure app surface: the routes and the static catalog ship with the app, so
+    // no operator env gates it.
+    available: () => true,
+    // Explicit opt-in while the surface is new. Installing opens a change
+    // request against the project's repo, so it must never turn on by accident.
     platformDefault: () => false,
     enforcement: 'routes',
   },

@@ -15,6 +15,7 @@ export * from './git-history';
 export * from './change-requests';
 export * from './sessions';
 export * from './triggers';
+export * from './marketplace';
 export * from './session-sandbox';
 export * from './model-defaults';
 export * from './model-enablement';
@@ -37,7 +38,6 @@ export * from './public-session-shares';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
-export * from './marketplace-catalog';
 export * from './templates';
 export * from './apps';
 

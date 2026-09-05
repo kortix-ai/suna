@@ -356,11 +356,6 @@ export type {
   CheckoutSessionResult,
   PortalSessionResult,
   AutoTopupSettings,
-  // Public marketplace catalog (top-level `kortix.marketplace.*`)
-  MarketplaceCatalogItem,
-  MarketplaceItemsResponse,
-  MarketplaceEntry,
-  MarketplaceSource,
   // Auth validate helper
   AccountIdentity,
   ValidateTokenResult,

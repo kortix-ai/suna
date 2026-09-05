@@ -9,18 +9,22 @@ import {
 } from './capability-tab-routes';
 
 describe('CAPABILITY_TABS', () => {
-  test('lists agent, skills, connectors, triggers, review, models, secrets, config in that order', () => {
+  test('lists agent, skills, connectors, triggers, marketplace, review, models, secrets, config in that order', () => {
     // Agents lead the bar (Marko, 2026-09-01): an agent is the one object a
     // person is granted access to, so it is the object Customize is built
     // around. Skills — the other thing you BUILD — follows; the rest is what
-    // agents draw on. Review joined the row on 2026-09-02, when the trailing
-    // Settings tab (`config`) was retired. Models led before all of that
-    // (Jay, 2026-08-17).
+    // agents draw on. Marketplace sits right after Triggers: the four tabs
+    // before it are what a project declares, and Marketplace installs a
+    // ready-made set of exactly those four in one commit. Review joined the
+    // row on 2026-09-02, when the trailing Settings tab (`config`) was
+    // retired as a standalone page (it stayed on the bar). Models led before
+    // all of that (Jay, 2026-08-17).
     expect(CAPABILITY_TABS.map((t) => t.key)).toEqual([
       'agent',
       'skills',
       'connectors',
       'triggers',
+      'marketplace',
       'review',
       'models',
       'secrets',
@@ -34,6 +38,19 @@ describe('CAPABILITY_TABS', () => {
     expect(PRIMARY_TABS).toEqual(['agent']);
     expect(CAPABILITY_TABS.slice(0, PRIMARY_TABS.length).map((t) => t.key)).toEqual([
       ...PRIMARY_TABS,
+    ]);
+  });
+
+  // Marketplace and Review are the tabs whose surface a project can be
+  // without. Each flag lives HERE, on the tab record, rather than in the bar
+  // component, so the bar, the sidebar row and the Customize index card all
+  // read one answer. `capability-tabs-gating.test.ts` asserts what a flag
+  // does; this asserts the tabs declare them at all — and that nothing else
+  // does, so a new gate cannot appear without a decision.
+  test('Marketplace and Review are the flag-gated tabs', () => {
+    expect(CAPABILITY_TABS.filter((t) => t.flag).map((t) => [t.key, t.flag])).toEqual([
+      ['marketplace', 'marketplace'],
+      ['review', 'review_center'],
     ]);
   });
 
@@ -51,7 +68,6 @@ describe('CAPABILITY_TABS', () => {
     // this function, so none of them can drift from the param the page parses.
     expect(channelsHref('p1')).toBe('/projects/p1/customize/connectors?scope=channels');
   });
-
 
   test('the Agents tab keeps a singular key and a plural label', () => {
     // The key IS the URL segment (`/projects/<id>/agent`); pluralizing it here
@@ -77,6 +93,7 @@ describe('capabilityTabHref', () => {
     expect(capabilityTabHref('p1', 'skills')).toBe('/projects/p1/customize/skills');
     expect(capabilityTabHref('p1', 'agent')).toBe('/projects/p1/customize/agents');
     expect(capabilityTabHref('p1', 'triggers')).toBe('/projects/p1/customize/triggers');
+    expect(capabilityTabHref('p1', 'marketplace')).toBe('/projects/p1/customize/marketplace');
     expect(capabilityTabHref('p1', 'review')).toBe('/projects/p1/customize/review');
   });
 });
@@ -102,6 +119,7 @@ describe('activeCapabilityTab', () => {
     expect(activeCapabilityTab('/projects/p1/customize/connectors')).toBe('connectors');
     expect(activeCapabilityTab('/projects/p1/customize/skills')).toBe('skills');
     expect(activeCapabilityTab('/projects/p1/customize/triggers')).toBe('triggers');
+    expect(activeCapabilityTab('/projects/p1/customize/marketplace')).toBe('marketplace');
     expect(activeCapabilityTab('/projects/p1/customize/review')).toBe('review');
   });
   test('ignores a trailing slash', () => {
@@ -128,5 +146,14 @@ describe('activeCapabilityTab', () => {
     // The Settings tab's own path IS its tab; one level deeper is not.
     expect(activeCapabilityTab('/projects/p1/customize/settings')).toBe('config');
     expect(activeCapabilityTab('/projects/p1/customize/settings/general')).toBeNull();
+    // Why the Marketplace tab owns exactly one route: a page added at
+    // `/customize/marketplace/<anything>` lands here and un-highlights both the
+    // tab and the sidebar's Customize row while it is open. Keep the tab's
+    // content at `/projects/<id>/customize/marketplace` with no deeper routes.
+    expect(activeCapabilityTab('/projects/p1/customize/marketplace/seo-watch')).toBeNull();
+    // `/projects/<id>/marketplace` is not a route at all — the store lives
+    // under Customize. Pinned so a reintroduced page there cannot quietly
+    // claim a Customize tab.
+    expect(activeCapabilityTab('/projects/p1/marketplace')).toBeNull();
   });
 });

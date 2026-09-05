@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 635,
+  "count": 632,
   "routes": [
     {
       "method": "GET",
@@ -1088,38 +1088,6 @@
     },
     {
       "method": "GET",
-      "path": "/v1/marketplace/items"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/items/:id"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/items/:id/file"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/marketplaces"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/marketplaces/featured"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/marketplace/sources"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/marketplace/sources"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/marketplace/sources/:id"
-    },
-    {
-      "method": "GET",
       "path": "/v1/oauth/.well-known/oauth-authorization-server"
     },
     {
@@ -1772,6 +1740,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/git/connection"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/group-grants"
     },
     {
@@ -1797,10 +1769,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/manifest/validate"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/marketplace/install-session"
     },
     {
       "method": "DELETE",
@@ -2127,6 +2095,10 @@
       "path": "/v1/projects/:projectId/snapshots/rebuild"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/marketplace/install-session"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/triggers"
     },
@@ -2239,6 +2211,14 @@
       "path": "/v1/public/session-shares/:shareId/messages"
     },
     {
+      "method": "GET",
+      "path": "/v1/public/marketplace/templates"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/public/marketplace/templates/:slug"
+    },
+    {
       "method": "POST",
       "path": "/v1/router/chat/completions"
     },
@@ -2277,6 +2257,14 @@
     {
       "method": "HEAD",
       "path": "/v1/runtime-assets/cli"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/runtime-assets/entrypoint"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/runtime-assets/entrypoint"
     },
     {
       "method": "GET",
