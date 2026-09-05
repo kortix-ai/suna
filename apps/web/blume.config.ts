@@ -103,6 +103,35 @@ export default defineConfig({
   // llms.txt and a second MCP endpoint on the same host. See decision D2.
   // 1.5.3 correction: ai.mcp is an McpConfig object, not a boolean shorthand
   // — { enabled: false } is the 1.5.3 equivalent of `mcp: false`.
+  // Reader-facing PDF export. Blume renders it via the browser's print
+  // pipeline, so there is no server dependency and it works offline.
+  export: { pdf: true },
+
+  // Locales mirror the Kortix web app exactly (src/i18n/config.ts:
+  // ['en','de','it','zh','ja','pt','fr','es'], default 'en'), so a reader who
+  // picks a language in the product finds the same set here.
+  //
+  // Blume ships built-in UI packs for all seven non-English locales, so the
+  // chrome — search, navigation, page actions — is translated today. The docs
+  // CONTENT is English-only, and `fallbackLocale: 'en'` is what makes that a
+  // defined state rather than a set of empty pages: an untranslated page
+  // renders its English source under the localized chrome. `blume translate`
+  // fills them in later without any config change here.
+  i18n: {
+    defaultLocale: 'en',
+    fallbackLocale: 'en',
+    locales: [
+      { code: 'en', label: 'English' },
+      { code: 'de', label: 'Deutsch' },
+      { code: 'it', label: 'Italiano' },
+      { code: 'zh', label: '\u4e2d\u6587' },
+      { code: 'ja', label: '\u65e5\u672c\u8a9e' },
+      { code: 'pt', label: 'Portugu\u00eas' },
+      { code: 'fr', label: 'Fran\u00e7ais' },
+      { code: 'es', label: 'Espa\u00f1ol' },
+    ],
+  },
+
   // Source repo. Powers the header repo link (navigation.repo) and the
   // per-page "Edit this page" target. `dir` is required because this is a
   // monorepo: the Blume project root is apps/web, not the repo root.
