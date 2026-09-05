@@ -173,7 +173,10 @@ export function SessionsTabView({
           change, and the one with a browser permission attached. */}
       <section className="space-y-3">
         <SettingsSubsectionHeader
-          title="Notifications"
+          // "Browser notifications", not "Notifications": the pane itself is
+          // called Notifications now, and a section repeating the pane's name
+          // says nothing. Sounds is the other kind.
+          title="Browser notifications"
           description="Browser notifications for what happens in your sessions."
         />
         {!notificationsSupported ? (

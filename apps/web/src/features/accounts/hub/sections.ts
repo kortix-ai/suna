@@ -84,7 +84,10 @@ export const NAV_GROUPS: readonly AccountNavGroup[] = [
       // the other "how is this account configured" items, not under Access.
       { id: 'branding', label: 'Branding', icon: PaintBrushIcon },
       { id: 'git', label: 'Git', icon: GitBranchIcon },
-      { id: 'tokens', label: 'Tokens', icon: KeyIcon },
+      // "API keys" (Marko, 2026-09-03): the account's service-account keys, as
+      // opposed to a person's own keys under Preferences › Personal access
+      // keys. The id stays `tokens` — it is the `?tab=` segment.
+      { id: 'tokens', label: 'API keys', icon: KeyIcon },
     ],
   },
   {
@@ -117,10 +120,10 @@ export const PANE_META: Partial<Record<AccountSection, { title: string; descript
     description: 'Session costs and credit ledger for this account.',
   },
   tokens: {
-    title: 'Tokens',
+    title: 'API keys',
     // Machine identities only. A person's own API keys moved to their own
     // settings on 2026-08-18 (`/settings/tokens`).
-    description: 'Service account tokens for CI and automations, and the rules they follow.',
+    description: 'Service account API keys for CI and automations, and the rules they follow.',
   },
   identity: {
     title: 'Identity',
@@ -237,7 +240,7 @@ export function accountHubCrumbs(
         { label: 'Directory sync setup' },
       ];
     case 'tokens':
-      return [root, account, { label: 'Tokens', href: `${hub}?tab=tokens` }, { label: 'Token' }];
+      return [root, account, { label: 'API keys', href: `${hub}?tab=tokens` }, { label: 'Key' }];
     case 'groups':
       return [root, account, { label: sectionLabel('groups') }];
     case 'members':

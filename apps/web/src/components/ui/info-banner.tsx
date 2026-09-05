@@ -15,14 +15,21 @@ import * as React from 'react';
 export type InfoBannerIcon =
   React.ComponentType<{ className?: string }> | React.ReactElement<{ className?: string }>;
 
-const infoBannerVariants = cva('flex flex-wrap items-center gap-2 px-2.5 py-2 text-sm', {
+/**
+ * Tone is carried by a faint fill and a tinted border, never by the text.
+ * The 25% fill with a solid-tone title it replaced (Marko, 2026-09-03: "never
+ * readable on the core component") put orange type on a beige ground at
+ * ~2:1. Text is foreground on every tone; the tone reads from the edge and
+ * the icon.
+ */
+const infoBannerVariants = cva('flex flex-wrap items-center gap-2 border px-2.5 py-2 text-sm', {
   variants: {
     tone: {
-      neutral: 'border-border border',
-      info: 'bg-kortix-yellow/25',
-      success: 'bg-kortix-green/25',
-      warning: 'bg-kortix-orange/25',
-      destructive: 'bg-border border',
+      neutral: 'border-border',
+      info: 'bg-kortix-yellow/10 border-kortix-yellow/40',
+      success: 'bg-kortix-green/10 border-kortix-green/40',
+      warning: 'bg-kortix-orange/10 border-kortix-orange/40',
+      destructive: 'bg-kortix-red/10 border-kortix-red/40',
     },
   },
   defaultVariants: {
@@ -30,15 +37,15 @@ const infoBannerVariants = cva('flex flex-wrap items-center gap-2 px-2.5 py-2 te
   },
 });
 
-/** Solid tone colour for the title — matches the 25% fill, never the description. */
-const infoBannerTitleVariants = cva('w-full max-w-full', {
+/** The title is always foreground — the tone is the border and the icon. */
+const infoBannerTitleVariants = cva('text-foreground w-full max-w-full font-medium', {
   variants: {
     tone: {
-      neutral: 'text-foreground',
-      info: 'text-kortix-yellow',
-      success: 'text-kortix-green',
-      warning: 'text-kortix-orange',
-      destructive: 'text-kortix-red',
+      neutral: '',
+      info: '',
+      success: '',
+      warning: '',
+      destructive: '',
     },
   },
   defaultVariants: {
@@ -112,7 +119,7 @@ export function InfoBanner({
         <AlertTitle className={infoBannerTitleVariants({ tone: safeTone })}>{title}</AlertTitle>
       )}
       {children != null && (
-        <AlertDescription className="text-muted-foreground">{children}</AlertDescription>
+        <AlertDescription className="text-foreground/75">{children}</AlertDescription>
       )}
       {action != null && <AlertActions>{action}</AlertActions>}
     </Alert>

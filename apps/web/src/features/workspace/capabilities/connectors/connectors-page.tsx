@@ -1,8 +1,13 @@
 'use client';
 
+import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import {
+  newConfigPrompt,
+  useConfigureThread,
+} from '@/features/workspace/customize/use-configure-thread';
 import { getProjectDetail, listConnectors, type AdminConnector } from '@kortix/sdk';
 import { contract, qk, useFeatureFlag, useProjectAccountId } from '@kortix/sdk/react';
-import { MagnifyingGlassIcon, PlugIcon, PlusIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, PlugIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -16,7 +21,6 @@ import {
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
 import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Modal,
   ModalBody,
@@ -33,6 +37,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -263,6 +268,7 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
   // holds the IAM probe disabled until that lands — so Add and every write
   // affordance appeared two sequential round-trips after paint.
   const accountId = useProjectAccountId(projectId);
+  const configure = useConfigureThread(projectId);
   const canWrite =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE, { accountId }).allowed ===
     true;
@@ -608,15 +614,16 @@ export function ConnectorsPage({ projectId }: { projectId: string }) {
            full sentence for screen readers; it opens with the visible "Add",
            so the accessible name still contains the visible label. */
         canWrite && !channelsActive ? (
-          <Button
-            variant="secondary"
-            aria-label="Add a custom connector"
-            onClick={() => setPanel('custom')}
-            className="transition-transform duration-150 ease-out active:scale-[0.96]"
-          >
-            <PlusIcon className="size-4" />
-            Add
-          </Button>
+          <NewEntityMenu
+            label="New"
+            pending={configure.pending}
+            onChat={() => configure.start(newConfigPrompt('connector'))}
+            manual={{
+              label: 'Add a custom connector',
+              description: 'OpenAPI, Postman, GraphQL, MCP or HTTP.',
+              onSelect: () => setPanel('custom'),
+            }}
+          />
         ) : undefined
       }
       filters={

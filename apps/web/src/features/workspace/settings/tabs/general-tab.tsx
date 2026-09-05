@@ -630,7 +630,8 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       generalFieldsSlot={
         project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
       }
-      gitRepoSlot={<GitView projectId={projectId} />}
+      // No `gitRepoSlot`: Git repo is its own Settings section since
+      // 2026-09-03 (`project-settings-sections.ts`).
       canDelete={canDelete}
       workspaceName={project?.name}
       archiveOpen={archiveOpen}

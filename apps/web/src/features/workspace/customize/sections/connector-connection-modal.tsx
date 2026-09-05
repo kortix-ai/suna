@@ -33,6 +33,7 @@ import {
   type EasyConnectConnectionInput,
   isConnectorConnectionSlugAvailable,
   normalizeConnectorConnectionSlug,
+  proposeConnectorConnectionName,
 } from './connector-connection-form';
 import { ConnectorConnectionHeader } from './connector-connection-header';
 
@@ -196,7 +197,10 @@ export function ConnectorConnectionModal({
   onOpenChange: (open: boolean) => void;
   onSubmit: (connection: EasyConnectConnectionInput) => void;
 }) {
-  const [name, setName] = useState(initialName);
+  // The proposed name counts the project's existing connections to this app,
+  // so the second Sentry is "Sentry 2" — see `proposeConnectorConnectionName`.
+  const proposedName = proposeConnectorConnectionName(initialName, existingSlugs);
+  const [name, setName] = useState(proposedName);
   const [slug, setSlug] = useState(initialSlug);
   const [slugEdited, setSlugEdited] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -205,12 +209,12 @@ export function ConnectorConnectionModal({
 
   useEffect(() => {
     if (!open) return;
-    setName(initialName);
+    setName(proposedName);
     setSlug(initialSlug);
     setSlugEdited(false);
     setOptionsOpen(false);
     setAuthorizationStrategy('project');
-  }, [initialName, initialSlug, open]);
+  }, [proposedName, initialSlug, open]);
 
   const slugAvailable = isConnectorConnectionSlugAvailable(slug, existingSlugs);
   const slugInvalid = slug.length > 0 && !slugAvailable;

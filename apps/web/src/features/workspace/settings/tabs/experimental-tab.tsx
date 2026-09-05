@@ -2,7 +2,8 @@
 
 /**
  * The Experimental tab — one row per `experimental_features` catalog entry
- * with its stability badge, each with an on/off switch. Split off
+ * each with an on/off switch. No stability badge: Experimental / Beta /
+ * Stable labels were removed 2026-09-03 (Marko) — a flag is on or off. Split off
  * `settings-view.tsx`'s `ExperimentalCard` (Task 18's brief); the
  * sandbox-provider pin that used to render as the LAST row inside that same
  * disclosure moved to `general-tab.tsx` instead — see that file's header
@@ -54,7 +55,6 @@
 
 import { useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   InputGroupSearch,
@@ -74,7 +74,6 @@ import {
   getProject,
   updateFeatureFlag,
   type FeatureFlagKey,
-  type FeatureFlagStability,
   type FeatureFlagView,
   type ProjectDetail,
 } from '@kortix/sdk';
@@ -82,25 +81,6 @@ import { contract, invalidateProject, qk, refreshProjectProviderState } from '@k
 import { FlagIcon, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SettingsTabHeader } from '../settings-tab-header';
-
-/**
- * Every stability the API can serve, each with its own badge. Ported verbatim
- * from `main`'s `feature-flags-view.tsx` (#6279), which added the third arm:
- * `FeatureFlagStability` is `experimental | beta | stable`, and the old
- * two-way ternary rendered a `stable` flag as "Experimental" — a wrong label,
- * not a compile error.
- *
- * `beta` and `highlight` are the same token pair today; they are kept distinct
- * so the two stabilities can diverge without touching call sites.
- */
-const STABILITY_BADGE: Record<
-  FeatureFlagStability,
-  { label: string; variant: 'beta' | 'highlight' | 'outline' }
-> = {
-  experimental: { label: 'Experimental', variant: 'highlight' },
-  beta: { label: 'Beta', variant: 'beta' },
-  stable: { label: 'Stable', variant: 'outline' },
-};
 
 /**
  * The origin line under a flag: inherited platform default, or this project's
@@ -154,7 +134,6 @@ function ExperimentalFeatureRow({
   canManage: boolean;
   onToggle: (key: string, next: boolean) => void;
 }) {
-  const badge = STABILITY_BADGE[feature.stability] ?? STABILITY_BADGE.experimental;
   // The switch's accessible name, pointed at the row's VISIBLE name rather
   // than repeating the string in an `aria-label`. `main`'s
   // `feature-flags-view.tsx` used `aria-label={flag.name}`; the port dropped
@@ -174,9 +153,6 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
-          <Badge variant={badge.variant} size="sm">
-            {badge.label}
-          </Badge>
           <span className="text-muted-foreground/70 text-xs">{originLabel(feature)}</span>
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>

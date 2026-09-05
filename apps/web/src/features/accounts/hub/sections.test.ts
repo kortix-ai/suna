@@ -98,8 +98,8 @@ describe('accountHubCrumbs', () => {
     expect(accountHubCrumbs(`/accounts/${id}/tokens/tok_1`, id, 'members', 'Acme')).toEqual([
       root,
       account,
-      { label: 'Tokens', href: `/accounts/${id}?tab=tokens` },
-      { label: 'Token' },
+      { label: 'API keys', href: `/accounts/${id}?tab=tokens` },
+      { label: 'Key' },
     ]);
   });
 

@@ -79,6 +79,55 @@ describe('provider-neutral preview lifecycle', () => {
     }
   });
 
+  it('keeps a branch environment serving through the three ways it went dark', () => {
+    // pi.kortix.com, 2026-09-04: 34 GB of images and 0 bytes free took the
+    // stack down; a failed deploy then left every container in Created; and
+    // the next deploys died at checkout because the reused sandbox's pnpm
+    // store predated a dependency the branch had added. Each has its own line
+    // in the bootstrap now, and each is asserted here by the text a deploy
+    // actually runs.
+    const script = buildPreviewBootstrapScript({
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker',
+      sha: 'a'.repeat(40),
+      prNumber: 6998,
+      origin: 'https://pi.example.test',
+      runTests: false,
+    });
+    // 1. The offline install is the fast path, not the only path.
+    expect(script).toContain('pnpm install --offline --frozen-lockfile || pnpm install --frozen-lockfile');
+    // 2. Disk is reclaimed BEFORE the ~2.5 GB pull, gated on the disk being tight.
+    const prune = script.indexOf('docker image prune -af');
+    const pull = script.indexOf('pull --policy always');
+    expect(prune).toBeGreaterThan(-1);
+    expect(prune).toBeLessThan(pull);
+    expect(script).toContain('if [ "${used:-0}" -ge 70 ]; then');
+    // 3. A stack that cannot come up puts the last good image set back and
+    //    still fails the deploy — a fallback, never a pass.
+    expect(script).toContain('restore_last_good() {');
+    expect(script).toContain('cp "$STATE/last-good.env"');
+    expect(script).toContain('test "$stack_attempt" -lt 2 || restore_last_good');
+    const restoreBody = script.slice(script.indexOf('restore_last_good() {'), script.indexOf('pull --policy always'));
+    expect(restoreBody).toContain('exit 1');
+    // The copy that makes the fallback possible is taken only AFTER the
+    // health check proves this image set on this commit.
+    const health = script.indexOf('curl -fsS --max-time 10 "$HEALTH"');
+    const saved = script.indexOf('"$STATE/last-good.env"', health);
+    expect(saved).toBeGreaterThan(health);
+    // 4. The guard is installed as soon as docker is up, before configure or
+    //    stack can fail — a dead deploy still leaves a watcher behind.
+    const guard = script.indexOf('docker run -d --name kortix-preview-guard');
+    // The phase markers are written with a REAL newline inside the quotes (the
+    // template's \n), so the search string needs one too.
+    const configure = script.indexOf("printf 'configure\n' > \"$PHASE\"");
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(configure);
+    expect(script).toContain("<<'KORTIX_PREVIEW_GUARD_EOF'");
+    expect(script).toContain('-e KORTIX_PREVIEW_INSTANCE=pr-6998');
+    // Same instance dir the deploy uses; the guard's compose resolves the same files.
+    expect(script).toContain('-v /workspace/kortix-preview:/workspace/kortix-preview');
+  });
+
   it('health-checks the stack locally, never through the public name', () => {
     // The public name is served by a proxy that is only re-pointed at this
     // sandbox AFTER the deploy returns. Checking through it would deadlock the

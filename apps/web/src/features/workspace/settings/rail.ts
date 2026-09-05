@@ -1,17 +1,17 @@
 import {
-  ArrowCircleUpIcon as ArrowUpCircle,
   ChatCircleIcon as ChatCircle,
   CoinsIcon as Coins,
-  ShippingContainerIcon as Container,
   CreditCardIcon as CreditCard,
-  FlaskIcon as Flask,
   KeyIcon as Key,
   LinkIcon as Link,
   PaletteIcon as Palette,
   ShieldCheckIcon as ShieldCheck,
   SlidersHorizontalIcon as SlidersHorizontal,
-  SquaresFourIcon as SquaresFour,
   UserIcon as User,
+  ArrowCircleUpIcon as ArrowUpCircle,
+  ShippingContainerIcon as Container,
+  FlaskIcon as Flask,
+  SquaresFourIcon as SquaresFour,
 } from '@phosphor-icons/react';
 
 import type { SettingsTab } from './settings-tabs';
@@ -33,60 +33,13 @@ export function isRailItemActive(item: RailItem, tab: SettingsTab): boolean {
 
 const STATIC_GROUPS: readonly RailGroup[] = [
   /**
-   * First, above the personal groups, because it is the thing you are inside.
-   * The group disappears whole when the overlay opens without a project:
-   * none of its tabs is in `ACCOUNT_SCOPED_SETTINGS_TABS`, so
-   * `isSettingsTabAllowed` filters every row and `SettingsPanel` drops the
-   * empty group.
-   *
-   * This group IS project configuration now: `/projects/<id>/config` was
-   * retired on 2026-09-02 and every section of it that configures the
-   * project lives here. (Review, the one section that was an inbox, is a
-   * capability tab instead — `capability-tab-routes.ts`.)
+   * No Workspace group. Project configuration — General, Sandbox templates,
+   * Feature flags, Upgrades — is the Customize bar's Settings tab
+   * (`/projects/<id>/config`, `capability-tab-routes.ts`), where the rest of
+   * the project is configured. It sat here between 2026-09-02 and
+   * 2026-09-03; Marko: the overlay is for the PERSON, so it holds only what
+   * is theirs — their profile and their account.
    */
-  {
-    label: 'Workspace',
-    items: [
-      {
-        // Labelled "General", routed at `/settings/workspace` — the same
-        // label/id split `tokens` ("API keys") makes below, and for the same
-        // reason: the id is a URL segment that `general` had already spent on
-        // a redirect, while the label is what this pane has always been called.
-        tab: 'workspace',
-        label: 'General',
-        description: 'Name and icon for this workspace.',
-        icon: SquaresFour,
-      },
-      {
-        tab: 'sandbox',
-        label: 'Sandbox templates',
-        // Sandbox templates AND Snapshots — a snapshot is the build history of
-        // a sandbox template, not a separate concept, so one row shows the
-        // template's recipe and the record of each time Kortix built a
-        // machine from it.
-        description:
-          'The recipe for the machine a session runs on, and the record of every time Kortix prepared one.',
-        docsHref: '/docs/work/runtime',
-        icon: Container,
-      },
-      {
-        tab: 'feature-flags',
-        label: 'Feature flags',
-        description: 'Features you can switch on before they are generally available.',
-        icon: Flask,
-      },
-      // Last, where the old rail pinned it. Not billing: the agent-driven
-      // upgrade runner, which opens a change request against this workspace's
-      // own repo. Moved here from `/projects/<id>/config` on 2026-09-02.
-      {
-        tab: 'upgrades',
-        label: 'Upgrades',
-        description:
-          'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
-        icon: ArrowUpCircle,
-      },
-    ],
-  },
   {
     // "Personal", not "You" (Jay, 2026-09-02): the group names the scope the
     // same way "Workspace" and "Account" do.
@@ -112,20 +65,21 @@ const STATIC_GROUPS: readonly RailGroup[] = [
       },
       {
         tab: 'sessions',
-        label: 'Sessions',
+        // "Notifications" (Marko, 2026-09-03): the pane is about how a running
+        // session gets your attention, not about sessions themselves — those
+        // are the sidebar. The id stays `sessions` (it is the URL segment).
+        label: 'Notifications',
         description: 'How a running session gets your attention.',
         icon: ChatCircle,
       },
       {
         tab: 'preferences',
-        label: 'Preferences',
+        // "Language & shortcuts", not "Preferences": the overlay itself is called
+        // Preferences now (Marko, 2026-09-03), and a tab named after its own
+        // dialog says nothing.
+        label: 'Language & shortcuts',
         description: 'Language and keyboard shortcuts.',
         icon: SlidersHorizontal,
-      },
-      {
-        tab: 'connected',
-        label: 'Connected accounts',
-        icon: Link,
       },
       // Labelled "API keys", routed at `/settings/tokens`. The id has to be
       // `tokens` — it is the URL segment, and the account page already spends
@@ -135,53 +89,92 @@ const STATIC_GROUPS: readonly RailGroup[] = [
       // is one word and whose label is two.
       {
         tab: 'tokens',
-        label: 'API keys',
-        description: 'Keys that sign the CLI, a script, or a CI job in as you.',
+        // "Personal access keys" (Marko, 2026-09-03): these are API keys that
+        // act AS YOU — the CLI, a script or a CI job signed in under your
+        // identity — as opposed to the account's service-account tokens on
+        // the account page. The label says whose identity they carry.
+        label: 'Personal access keys',
+        description: 'API keys that act as you — for the CLI, a script, or a CI job.',
         icon: Key,
       },
     ],
   },
-  {
-    label: 'Account',
-    items: [
-      // Credits FIRST, plan second: reading the balance is the frequent visit
-      // and changing the plan is the rare one. The row is in `Account`, not
-      // `Personal`, because a wallet belongs to the account — on a Team plan
-      // every seat spends the same balance, and filing it under "Personal"
-      // would claim otherwise. Jay asked for a Usage tab under Personal
-      // (2026-09-03); the scope is the one thing changed, and the word "usage"
-      // still finds this row through the command palette.
-      {
-        tab: 'credits',
-        label: 'Credits',
-        description: 'What this account has left to spend, and what it spent this period.',
-        icon: Coins,
-      },
-      {
-        tab: 'plan',
-        label: 'Plan',
-        description: 'Your subscription, team seats, and billing for this account.',
-        icon: CreditCard,
-      },
-    ],
-  },
-  // The 'Agent' group is gone, and 'Developer' went with it. Every one of
-  // those rows configured a PROJECT, and the Customize bar gates on exactly the
-  // person allowed to change them — so they live on that bar, at
-  // the Customize bar. Sandbox templates, Feature flags and Upgrades came
-  // BACK on 2026-09-02, when `/projects/<id>/config` was retired — this rail
-  // is their only mount now, and `GRADUATED` in `settings-tabs.ts` carries
-  // every bookmark that still names a config section.
-  //
-  // The 'Organization' group is gone for a different reason, recorded above
-  // its own removal: those rows configured the ACCOUNT and moved to
-  // `/accounts/[id]`. `Plan` above is the one account row that came back.
+  // No Account group either (Marko, 2026-09-03): Credits and Plan describe
+  // the ORGANISATION's wallet and subscription, and every account setting
+  // lives on the account page, `/accounts/[id]`. Grouping them under a
+  // person's own settings claimed they were theirs. `/settings/credits` and
+  // `/settings/plan` redirect there through `ACCOUNT_GRADUATED`.
 ];
 
 /**
- * The rail. Three groups — `Workspace`, `Personal`, `Account` — and no
- * flag-gated rows in any. `Workspace` is filtered out entirely when the
- * overlay opens without a project.
+ * Rows that are no longer in the rail but whose PANES still render somewhere
+ * — the four project sections on the Customize bar's Settings tab
+ * (`capabilities/project-settings/`), and the two account panes an old deep
+ * link can still open. `railItemForTab` resolves these too, so each pane
+ * keeps the heading and description it always had; only the rail stopped
+ * listing them.
+ */
+export const RETIRED_RAIL_ITEMS: readonly RailItem[] = [
+  {
+    tab: 'workspace',
+    label: 'General',
+    description: 'Name and icon for this workspace.',
+    icon: SquaresFour,
+  },
+  {
+    tab: 'sandbox',
+    label: 'Sandbox templates',
+    // Sandbox templates AND Snapshots — a snapshot is the build history of
+    // a sandbox template, not a separate concept, so one row shows the
+    // template's recipe and the record of each time Kortix built a
+    // machine from it.
+    description:
+      'The recipe for the machine a session runs on, and the record of every time Kortix prepared one.',
+    docsHref: '/docs/work/runtime',
+    icon: Container,
+  },
+  {
+    tab: 'feature-flags',
+    label: 'Feature flags',
+    description: 'Features you can switch on before they are generally available.',
+    icon: Flask,
+  },
+  {
+    tab: 'upgrades',
+    label: 'Upgrades',
+    description:
+      'Changes an agent makes to this workspace. Every run opens a change request for you to review — nothing merges on its own.',
+    icon: ArrowUpCircle,
+  },
+  // Connected accounts listed the ACCOUNT's GitHub App installations — the
+  // same rows the account page's Git tab manages — under a person's own
+  // settings. Gone from the rail on 2026-09-03 (Marko); `/settings/connected`
+  // redirects to that tab through `ACCOUNT_GRADUATED`.
+  {
+    tab: 'connected',
+    label: 'Connected accounts',
+    icon: Link,
+  },
+  {
+    tab: 'credits',
+    label: 'Credits',
+    description: 'What this account has left to spend, and what it spent this period.',
+    icon: Coins,
+  },
+  {
+    tab: 'plan',
+    label: 'Plan',
+    description: 'Your subscription, team seats, and billing for this account.',
+    icon: CreditCard,
+  },
+];
+
+
+/**
+ * The rail. One group — `Personal` — and no flag-gated rows. Project
+ * configuration is the Customize bar's Settings tab; account configuration
+ * is the account page. The overlay is the person's own settings, nothing
+ * else (Marko, 2026-09-03).
  *
  * It took a `RailFlags` argument until Marketplace, Review and Voice moved to
  * the Customize bar's Settings tab with the rest of project configuration
@@ -228,5 +221,5 @@ export function railItemForTab(tab: SettingsTab): RailItem | undefined {
     const found = group.items.find((item) => item.tab === tab);
     if (found) return found;
   }
-  return undefined;
+  return RETIRED_RAIL_ITEMS.find((item) => item.tab === tab);
 }
