@@ -24,7 +24,7 @@ index 5c8740e19ce9103799fbc49456231f70bc5b022d..9b6b5172421e8948392ccb15ee514f37
 +export declare const openInChatProviders: readonly ["v0", "chatgpt", "claude", "t3", "scira", "cursor", "kortix"];
  export type OpenInChatProvider = (typeof openInChatProviders)[number];
 diff --git a/src/components/layout/PageActions.astro b/src/components/layout/PageActions.astro
-index 03f3926ddc15546f0473a1a08557255dd4b2ea31..d8c1fc3cdb9c413b1520eed108307e57bcdc484b 100644
+index 03f3926ddc15546f0473a1a08557255dd4b2ea31..936c9ce2e12e1d7fda5a45493351dcfe5e5e1da6 100644
 --- a/src/components/layout/PageActions.astro
 +++ b/src/components/layout/PageActions.astro
 @@ -53,6 +53,8 @@ const LOGOS: Record<string, string> = {
@@ -44,7 +44,23 @@ index 03f3926ddc15546f0473a1a08557255dd4b2ea31..d8c1fc3cdb9c413b1520eed108307e57
    scira: "Scira",
    t3: "T3 Chat",
    v0: "v0",
-@@ -259,6 +262,7 @@ const menuRowClass =
+@@ -78,8 +81,13 @@ const providers = (openInChat ?? openInChatProviders).map((key) => ({
+ }));
+ 
+ // The default list opens with v0 and separates it from the chat assistants;
+-// keep that separator only while a configured list preserves v0 first.
+-const chatSeparator = providers.length > 1 && providers[0]?.key === "v0";
++// keep that separator only while a configured list preserves that shape.
++// "kortix" is a Kortix addition (see patches/blume@1.5.3.patch) and plays the
++// same role — the first-party destination, set apart from the third-party
++// assistants below it — so it earns the same rule.
++const SEPARATED_FIRST = new Set(["v0", "kortix"]);
++const chatSeparator =
++  providers.length > 1 && SEPARATED_FIRST.has(providers[0]?.key ?? "");
+ 
+ // Top-level actions match the ToC links: flat, no background/padding, color
+ // shift on hover only.
+@@ -259,6 +267,7 @@ const menuRowClass =
      chatgpt: (q) => `https://chatgpt.com/?hints=search&prompt=${q}`,
      claude: (q) => `https://claude.ai/new?q=${q}`,
      cursor: (q) => `https://cursor.com/link/prompt?text=${q}`,
