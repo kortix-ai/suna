@@ -11,7 +11,8 @@
 # and `open_access` — the name FAILS CLOSED: without PI_JS_ACCESS_TOKEN the
 # Worker answers 503 unless this input is set, which deploys OPEN_ACCESS=true
 # (pi.kortix.com parity, stated out loud here rather than fallen into).
-# Secrets (repo): CLOUDFLARE_APPS_EDGE_API_TOKEN (same as pi-router),
+# Secrets — CLOUDFLARE_APPS_EDGE_API_TOKEN on the repo (same as pi-router); the
+# two below in the `pi-js` ENVIRONMENT (the job declares it):
 #   PI_JS_PREVIEW_TOKEN (the cell's exposure token — the Worker sends it to the
 #   Platinum edge as x-pt-preview-token, so the port stays private),
 #   PI_JS_ACCESS_TOKEN (the bearer the public name requires; optional only when
@@ -42,6 +43,10 @@ jobs:
   deploy:
     runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
+    # The secrets live in the `pi-js` ENVIRONMENT, not on the repo: repo-level
+    # secret writes on this repository answer HTTP 400 even for a repo admin
+    # (2026-09-05), environment-scoped ones do not.
+    environment: pi-js
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
       TARGET_ORIGIN: ${{ inputs.target_origin }}
