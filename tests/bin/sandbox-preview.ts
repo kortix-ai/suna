@@ -167,10 +167,14 @@ if (action === 'deploy') {
   // namespace. Unset — the CI shape — means kortix/*:pr-<PREVIEW_SHA>.
   const imageSha = value('PREVIEW_IMAGE_SHA') || undefined;
   const imageRepo = value('PREVIEW_IMAGE_REPO') || undefined;
+  // PREVIEW_WARM_TEMPLATE=0 skips deriving the warm (stateful) template — on a
+  // one-host Platinum its seed-baker builder VM costs more than it saves.
+  const warmTemplate = value('PREVIEW_WARM_TEMPLATE') !== '0';
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
     ...(resources ? { resources } : {}),
+    ...(warmTemplate ? {} : { warmTemplate }),
     ...(imageSha ? { imageSha } : {}),
     ...(imageRepo ? { imageRepo } : {}),
     runTests,

@@ -94,6 +94,18 @@ export interface SandboxPreviewDeploymentInput {
    * smaller Platinum passes what its host can hold.
    */
   resources?: PlatinumSandboxResources;
+  /**
+   * Derive and boot from the WARM template (default true — the CI shape, where a
+   * warm restore saves minutes on every one of many boxes). On Platinum a
+   * derived template is capture='stateful': the seed baker boots a builder VM at
+   * the template's default size, runs the warm entrypoint (dockerd + supabase
+   * start, up to 45 min) and snapshots it — once per ready host, as an internal
+   * org's sandbox the deploying org cannot see or delete, and the template
+   * cannot be deleted while that builder exists. On a one-host dev that is a
+   * standing 8 GB cost for a template one sandbox uses. `false` boots the BASE
+   * template and lets the sandbox run the same warm entrypoint itself.
+   */
+  warmTemplate?: boolean;
   /** Images built from another commit than `sha`; see buildPreviewBootstrapScript. */
   imageSha?: string;
   /** The Docker Hub namespace holding the images; see buildPreviewBootstrapScript. */
@@ -230,7 +242,14 @@ export async function deployPlatinumPreview(
         resources,
       }),
     );
-    const template = await ensureWarmTemplate(api, base, hash, resources);
+    let template = base;
+    if (input.warmTemplate === false) {
+      console.log(
+        '[platinum-ci] warm template skipped (PREVIEW_WARM_TEMPLATE=0): booting the base template; the sandbox runs the warm entrypoint itself',
+      );
+    } else {
+      template = await ensureWarmTemplate(api, base, hash, resources);
+    }
     const startedAt = Date.now();
     const created =
       reusable ??
