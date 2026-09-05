@@ -103,7 +103,16 @@ export default defineConfig({
   // llms.txt and a second MCP endpoint on the same host. See decision D2.
   // 1.5.3 correction: ai.mcp is an McpConfig object, not a boolean shorthand
   // — { enabled: false } is the 1.5.3 equivalent of `mcp: false`.
-  ai: { llmsTxt: false, mcp: { enabled: false } },
+  ai: {
+    llmsTxt: false,
+    mcp: { enabled: false },
+    // "Open in chat" providers, in display order. Blume's default is all six;
+    // v0, t3 and Scira are dropped because they are not tools this audience
+    // reaches for. `openInChatProviders` in the installed package is a closed
+    // enum (["v0","chatgpt","claude","t3","scira","cursor"]) — a Kortix entry
+    // cannot be added here, see the note in the migration report.
+    openInChat: ['chatgpt', 'claude', 'cursor'],
+  },
   seo: { sitemap: false },
 
   // The old fumadocs root meta.json carried a "---Develop---" separator
