@@ -21,6 +21,28 @@ linked, not inlined.
 
 ## Register
 
+### A test that only runs against a deployed target is a contract nobody runs before merge (2026-09-06)
+
+**When:** changing behaviour that a `tests/e2e` spec or `tests/src/flows` flow
+asserts, or writing such a test. Specs that `test.skip` without a provider
+(23-composio) or fixtures that differ by target (`createManifestProject`,
+`fixtures.project({ managedGit })`) run ONLY in `tests-release.yml` against
+staging. The v0.13.11 release gate went red on four of them while every PR
+lane had been green for a week: connector slugs became `<app>-<random>`
+(7f6b8087f3) and spec 23 still asserted `composio-search`; managed repos now
+seed the starter by default (4da295e50b), so `triggers[0]` is the starter's
+`harness-reflector` (model null) and TRG-2/TRG-3 read the wrong row; the seed
+and the trigger commit land through the mirror seconds later, so TRG-14's
+`kortix.yaml` history moved under it. **Rules.** (1) When a PR changes a
+deployed-only contract, grep `tests/e2e/specs` and `tests/src/flows` for the
+old value in the same PR. (2) A flow asserts on the row it wrote (find by
+slug), never on `[0]`. (3) A read that follows a managed-git write settles
+(two equal reads) before it is compared. (4) Before promoting, dispatch
+`tests-release.yml --ref staging -f expected_sha=<staging tip>` as a dry run;
+the gate is the first time these tests see the change. *Incident:* release
+gate red twice on 2026-09-05/06, ~2 h of release delay, no user impact.
+*Enforcer:* none yet — the dry run is manual.
+
 ### Edge middleware imports locale constants from a leaf module (2026-09-05)
 
 **When:** adding locale routing or other i18n behavior to Next.js middleware.
