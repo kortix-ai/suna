@@ -259,11 +259,32 @@ function platinumWarmEntrypoint(): string {
   ].join('\n');
 }
 
+/**
+ * The size of a CI/preview sandbox and of the template VMs that prepare it.
+ * The CI shape is 8 vCPU / 16 GB / 50 GB. A hand deploy onto a smaller
+ * Platinum (a dev host with one 32 GB node) passes what that host can hold;
+ * the template's defaults follow, because its build and warm steps run at
+ * them and a 16 GB builder does not fit where an 8 GB sandbox does.
+ */
+export interface PlatinumSandboxResources {
+  cpu: number;
+  ramMb: number;
+  diskGb: number;
+}
+
+export const DEFAULT_PLATINUM_CI_RESOURCES: PlatinumSandboxResources = {
+  cpu: 8,
+  ramMb: 16_384,
+  diskGb: 50,
+};
+
 export function buildPlatinumTemplateSpec(input: {
   lockHash: string;
   repository: string;
   cacheSha: string;
+  resources?: PlatinumSandboxResources;
 }): PlatinumTemplateSpec {
+  const resources = input.resources ?? DEFAULT_PLATINUM_CI_RESOURCES;
   const name = platinumBaseTemplateName(input.lockHash);
   const cacheCommand = [
     'set -eux',
@@ -304,14 +325,17 @@ export function buildPlatinumTemplateSpec(input: {
       { op: 'env', key: 'KORTIX_PLATINUM_CI_TEMPLATE', value: name },
     ],
     entrypoint: platinumWarmEntrypoint(),
-    default_cpu: 8,
-    default_ram_mb: 16_384,
-    default_disk_gb: 50,
+    default_cpu: resources.cpu,
+    default_ram_mb: resources.ramMb,
+    default_disk_gb: resources.diskGb,
     size_mb: 20_480,
   };
 }
 
-export function buildPlatinumWarmTemplateRequest(lockHash: string): {
+export function buildPlatinumWarmTemplateRequest(
+  lockHash: string,
+  resources: PlatinumSandboxResources = DEFAULT_PLATINUM_CI_RESOURCES,
+): {
   name: string;
   capture_condition: { cmd: string; timeoutSec: number };
   default_cpu: number;
@@ -324,9 +348,9 @@ export function buildPlatinumWarmTemplateRequest(lockHash: string): {
       cmd: WARM_READY_COMMAND,
       timeoutSec: WARM_PREPARE_TIMEOUT_MS / 1000,
     },
-    default_cpu: 8,
-    default_ram_mb: 16_384,
-    default_disk_gb: 50,
+    default_cpu: resources.cpu,
+    default_ram_mb: resources.ramMb,
+    default_disk_gb: resources.diskGb,
   };
 }
 
@@ -683,6 +707,7 @@ export async function ensureWarmTemplate(
   api: PlatinumApi,
   base: PlatinumTemplate,
   lockHash: string,
+  resources: PlatinumSandboxResources = DEFAULT_PLATINUM_CI_RESOURCES,
 ): Promise<PlatinumTemplate> {
   const name = platinumTemplateName(lockHash);
   const existing = selectReusablePlatinumTemplate(
@@ -701,7 +726,7 @@ export async function ensureWarmTemplate(
   const derived = await api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
     method: 'POST',
     headers: { 'idempotency-key': `kortix-ci-template-${name}` },
-    body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
+    body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash, resources)),
   });
   return waitForTemplate(api, derived);
 }

@@ -34,6 +34,25 @@ function positiveInteger(name: string): number {
   return result;
 }
 
+function optionalPositiveInteger(name: string): number | undefined {
+  if (!value(name)) return undefined;
+  return positiveInteger(name);
+}
+
+/**
+ * PREVIEW_SANDBOX_CPU / _RAM_MB / _DISK_GB size the sandbox and the template
+ * VMs that prepare it. Unset — the CI shape — means 8 vCPU / 16 GB / 50 GB. A
+ * hand deploy onto a smaller Platinum (a dev host) passes what it can hold;
+ * any of the three may be given, the others keep the CI value.
+ */
+function sandboxResources(): { cpu: number; ramMb: number; diskGb: number } | undefined {
+  const cpu = optionalPositiveInteger('PREVIEW_SANDBOX_CPU');
+  const ramMb = optionalPositiveInteger('PREVIEW_SANDBOX_RAM_MB');
+  const diskGb = optionalPositiveInteger('PREVIEW_SANDBOX_DISK_GB');
+  if (cpu === undefined && ramMb === undefined && diskGb === undefined) return undefined;
+  return { cpu: cpu ?? 8, ramMb: ramMb ?? 16_384, diskGb: diskGb ?? 50 };
+}
+
 function provider(): SandboxPreviewProvider {
   const selected = value('PREVIEW_SANDBOX_PROVIDER', 'auto').toLowerCase();
   if (selected === 'auto' || selected === 'platinum' || selected === 'daytona') return selected;
@@ -142,9 +161,18 @@ if (action === 'deploy') {
   // caller, never hardcoded here — a preview origin is provider-issued unless
   // an operator deliberately fronts it.
   const publicOrigin = process.env.PREVIEW_PUBLIC_ORIGIN?.trim() || undefined;
+  const resources = sandboxResources();
+  // PREVIEW_IMAGE_SHA / PREVIEW_IMAGE_REPO: images built from another commit
+  // (identical product code, different tooling) or held in another Docker Hub
+  // namespace. Unset — the CI shape — means kortix/*:pr-<PREVIEW_SHA>.
+  const imageSha = value('PREVIEW_IMAGE_SHA') || undefined;
+  const imageRepo = value('PREVIEW_IMAGE_REPO') || undefined;
   const deployment: SandboxPreviewDeploymentInput = {
     ...(branchEnv ? { branchEnv } : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
+    ...(resources ? { resources } : {}),
+    ...(imageSha ? { imageSha } : {}),
+    ...(imageRepo ? { imageRepo } : {}),
     runTests,
     repository,
     ref: value('PREVIEW_REF', sha),

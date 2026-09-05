@@ -317,6 +317,38 @@ describe('provider-neutral preview lifecycle', () => {
     expect(script).not.toContain('ecs-preview');
   });
 
+  it('tells the stack which images to pull and whether managed git may be absent', () => {
+    const base = {
+      repository: 'kortix-ai/suna',
+      ref: 'pi-worker-js',
+      sha: 'a'.repeat(40),
+      prNumber: 7117,
+      origin: 'https://pi-js.example.test',
+    };
+    // The CI shape: images from the deployed commit, in kortix/, and a gate
+    // that requires managed git.
+    const gate = buildPreviewBootstrapScript(base);
+    expect(gate).toContain(`PREVIEW_IMAGE_SHA='${'a'.repeat(40)}'`);
+    expect(gate).toContain("PREVIEW_IMAGE_REPO='kortix'");
+    expect(gate).toContain('PREVIEW_REQUIRE_MANAGED_GIT=1');
+    // A branch environment deployed by hand: images from an earlier commit with
+    // identical product code, and no gate on managed git.
+    const hand = buildPreviewBootstrapScript({
+      ...base,
+      runTests: false,
+      imageSha: 'b'.repeat(40),
+      imageRepo: 'someone',
+    });
+    expect(hand).toContain(`PREVIEW_IMAGE_SHA='${'b'.repeat(40)}'`);
+    expect(hand).toContain("PREVIEW_IMAGE_REPO='someone'");
+    expect(hand).toContain('PREVIEW_REQUIRE_MANAGED_GIT=0');
+    // The health check still proves the CHECKOUT's commit — the API reports
+    // KORTIX_COMMIT from its environment, not from the image.
+    expect(hand).toContain(`--arg sha '${'a'.repeat(40)}'`);
+    expect(() => buildPreviewBootstrapScript({ ...base, imageSha: 'nope' })).toThrow('invalid image SHA');
+    expect(() => buildPreviewBootstrapScript({ ...base, imageRepo: 'Bad Repo' })).toThrow('invalid image repo');
+  });
+
   it('repairs a reused branch sandbox when its offline package store is stale', () => {
     const script = buildPreviewBootstrapScript({
       repository: 'kortix-ai/suna',

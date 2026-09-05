@@ -102,6 +102,8 @@ describe('ephemeral self-host preview stack', () => {
       'MANAGED_GIT_GITHUB_OWNER',
       'MANAGED_GIT_GITHUB_TOKEN',
       'OPENROUTER_API_KEY',
+      'PLATINUM_API_KEY',
+      'PLATINUM_API_URL',
     ]);
     expect(() =>
       validatePreviewRuntimeSecrets({
@@ -161,6 +163,48 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain('KE2E_DATABASE_URL=postgresql://postgres:generated@127.0.0.1:15432/postgres');
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
+  });
+
+  it('a branch environment deployed by hand boots without managed git, billing, or a Daytona key — on Platinum', () => {
+    const base =
+      'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n';
+    const stack = {
+      origin: 'https://pi-js.example',
+      sha: SHA,
+      apiImage: 'api',
+      gatewayImage: 'gateway',
+      frontendImage: 'frontend',
+    };
+    // No GitHub App, no PAT, no Stripe, no Daytona: only the Platinum credential
+    // the deploy itself used. The gate (default) still refuses; a branch
+    // environment asks not to be gated and gets a stack that can boot.
+    const hand = { PLATINUM_API_KEY: 'pt_dev_key', PLATINUM_API_URL: 'https://api-dev.platinum.dev' };
+    expect(() => applyPreviewEnvironment(base, stack, hand)).toThrow('MANAGED_GIT_GITHUB_OWNER plus either');
+    const configured = applyPreviewEnvironment(base, stack, hand, { requireManagedGit: false });
+    expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=\n');
+    expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT=0');
+    // The API refuses to boot with billing on and no STRIPE_SECRET_KEY.
+    expect(configured.runtimeEnv).toContain('KORTIX_BILLING_INTERNAL_ENABLED=false');
+    expect(configured.runtimeEnv).toContain('KORTIX_PUBLIC_BILLING_ENABLED=false');
+    // Sessions follow the credential that is present.
+    expect(configured.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=platinum');
+    expect(configured.runtimeEnv).toContain('PLATINUM_API_KEY=pt_dev_key');
+    expect(configured.runtimeEnv).toContain('PLATINUM_API_URL=https://api-dev.platinum.dev');
+    expect(configured.testEnv).toContain('KE2E_CAP_DAYTONA=0');
+
+    // The CI shape is untouched: a Daytona key keeps Daytona even beside a
+    // Platinum one, and Stripe keys keep billing on.
+    const ci = applyPreviewEnvironment(base, stack, {
+      ...hand,
+      DAYTONA_API_KEY: 'dt',
+      KE2E_STRIPE_SECRET_KEY: 'sk_test',
+      KE2E_STRIPE_WEBHOOK_SECRET: 'whsec',
+      MANAGED_GIT_GITHUB_OWNER: 'o',
+      MANAGED_GIT_GITHUB_TOKEN: 't',
+    });
+    expect(ci.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=daytona');
+    expect(ci.runtimeEnv).toContain('KORTIX_BILLING_INTERNAL_ENABLED=true');
+    expect(ci.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
   });
 
   it('fails before boot when managed GitHub cannot run every target flow', () => {

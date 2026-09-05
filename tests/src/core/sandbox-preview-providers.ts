@@ -17,8 +17,10 @@ import {
   waitForSandbox as waitForDaytonaSandbox,
 } from './daytona-ci';
 import {
+  DEFAULT_PLATINUM_CI_RESOURCES,
   PlatinumApi,
   type PlatinumSandbox,
+  type PlatinumSandboxResources,
   buildPlatinumTemplateSpec,
   downloadArtifacts as downloadPlatinumArtifacts,
   ensureTemplate,
@@ -86,6 +88,16 @@ export interface SandboxPreviewDeploymentInput {
    * Unset for a PR preview, which is reached at its provider origin.
    */
   publicOrigin?: string;
+  /**
+   * The sandbox's size, and the size of the template VMs that prepare it.
+   * Default: the CI shape (8 vCPU / 16 GB / 50 GB). A hand deploy onto a
+   * smaller Platinum passes what its host can hold.
+   */
+  resources?: PlatinumSandboxResources;
+  /** Images built from another commit than `sha`; see buildPreviewBootstrapScript. */
+  imageSha?: string;
+  /** The Docker Hub namespace holding the images; see buildPreviewBootstrapScript. */
+  imageRepo?: string;
 }
 
 interface PlatinumSandboxPage {
@@ -208,15 +220,17 @@ export async function deployPlatinumPreview(
     }
     if (!identity.reuseExisting) await replaceExistingPlatinumPreview(api, input.prNumber);
     const hash = previewLockfileHash(input.lockfileHash);
+    const resources = input.resources ?? DEFAULT_PLATINUM_CI_RESOURCES;
     const base = await ensureTemplate(
       api,
       buildPlatinumTemplateSpec({
         lockHash: hash,
         repository: input.repository,
         cacheSha: input.sha,
+        resources,
       }),
     );
-    const template = await ensureWarmTemplate(api, base, hash);
+    const template = await ensureWarmTemplate(api, base, hash, resources);
     const startedAt = Date.now();
     const created =
       reusable ??
@@ -232,9 +246,9 @@ export async function deployPlatinumPreview(
             auto_stop_minutes: 0,
             auto_archive_days: identity.autoArchiveDays,
             auto_delete_days: identity.autoDeleteDays,
-            cpu: 8,
-            ram_mb: 16_384,
-            disk_gb: 50,
+            cpu: resources.cpu,
+            ram_mb: resources.ramMb,
+            disk_gb: resources.diskGb,
             expose: [{ port: 8080, public: true }],
             metadata: {
               owner: identity.owner,

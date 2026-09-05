@@ -54,12 +54,25 @@ export function buildPreviewBootstrapScript(input: {
    * has not already proved. Run it there on demand instead.
    */
   runTests?: boolean;
+  /**
+   * The commit the images were built from, when it is not `sha`. A hand deploy
+   * iterating on the tooling (tests/, .github/) reuses images from an earlier
+   * commit with identical product code instead of rebuilding three images per
+   * tooling fix. Default: `sha`.
+   */
+  imageSha?: string;
+  /** The Docker Hub namespace holding the images. Default: `kortix`. */
+  imageRepo?: string;
 }): string {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(input.repository)) {
     throw new Error(`invalid GitHub repository: ${input.repository}`);
   }
   if (!/^[a-z0-9_./-]+$/i.test(input.ref)) throw new Error(`invalid Git ref: ${input.ref}`);
   if (!/^[a-f0-9]{40}$/i.test(input.sha)) throw new Error(`invalid Git SHA: ${input.sha}`);
+  const imageSha = input.imageSha ?? input.sha;
+  if (!/^[a-f0-9]{40}$/i.test(imageSha)) throw new Error(`invalid image SHA: ${imageSha}`);
+  const imageRepo = input.imageRepo ?? 'kortix';
+  if (!/^[a-z0-9][a-z0-9._/-]*$/.test(imageRepo)) throw new Error(`invalid image repo: ${imageRepo}`);
   previewSandboxName(input.prNumber);
   const origin = new URL(input.origin);
   if (origin.protocol !== 'https:' || origin.pathname !== '/') {
@@ -163,6 +176,9 @@ PREVIEW_INSTANCE_DIR=${shellQuote(instanceDir)} \
 PREVIEW_STATE_DIR=${shellQuote(state)} \
 PREVIEW_ORIGIN=${shellQuote(origin.origin)} \
 PREVIEW_SHA=${shellQuote(input.sha)} \
+PREVIEW_IMAGE_SHA=${shellQuote(imageSha)} \
+PREVIEW_IMAGE_REPO=${shellQuote(imageRepo)} \
+PREVIEW_REQUIRE_MANAGED_GIT=${input.runTests === false ? '0' : '1'} \
 PREVIEW_SECRETS_FILE="$SECRETS" \
 bun tests/bin/preview-stack.ts
 

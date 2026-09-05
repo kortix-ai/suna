@@ -9,6 +9,13 @@ export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [
   'MANAGED_GIT_GITHUB_OWNER',
   'MANAGED_GIT_GITHUB_TOKEN',
   'OPENROUTER_API_KEY',
+  // The stack's OWN Platinum credential, for running sessions on Platinum when
+  // no Daytona key is given — a branch environment deployed by hand against
+  // Platinum DEV keeps its sessions there. Not a Daytona replacement in CI:
+  // deploy-preview.yml passes no PLATINUM_* runtime secret, so the workflow
+  // shape is unchanged.
+  'PLATINUM_API_KEY',
+  'PLATINUM_API_URL',
 ] as const;
 
 export type PreviewRuntimeSecretName = (typeof PREVIEW_RUNTIME_SECRET_ALLOWLIST)[number];
@@ -186,10 +193,22 @@ export function buildPreviewComposeOverlay(
 `;
 }
 
+export interface PreviewStackOptions {
+  /**
+   * Fail before boot when managed git is not configured. Default true: a PR
+   * preview is a GATE for target-full, and managed git is one of its flows, so
+   * it fails here rather than ten minutes in. A branch environment deployed by
+   * hand may have no GitHub App or PAT to give it — it boots without managed
+   * git (sign-up and sessions work, creating a project does not) and says so.
+   */
+  requireManagedGit?: boolean;
+}
+
 export function applyPreviewEnvironment(
   baseEnvironmentText: string,
   input: PreviewStackInput,
   rawSecrets: Record<string, string>,
+  options: PreviewStackOptions = {},
 ): { runtimeEnv: string; testEnv: string } {
   validatePreviewRuntimeSecrets(rawSecrets);
   if (!/^[0-9a-f]{40}$/.test(input.sha)) throw new Error('preview SHA must contain 40 hex characters');
@@ -224,10 +243,32 @@ export function applyPreviewEnvironment(
   const managedGitPat = Boolean(rawSecrets.MANAGED_GIT_GITHUB_TOKEN?.trim());
   const managedGitEnabled = Boolean(owner) && (managedGitApp || managedGitPat);
   if (!managedGitEnabled) {
-    throw new Error(
-      'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
+    if (options.requireManagedGit ?? true) {
+      throw new Error(
+        'preview target-full requires MANAGED_GIT_GITHUB_OWNER plus either the complete GitHub App configuration or MANAGED_GIT_GITHUB_TOKEN',
+      );
+    }
+    console.warn(
+      '[preview-stack] no managed-git configuration: booting without MANAGED_GIT_PROVIDER — project creation is unavailable until MANAGED_GIT_GITHUB_OWNER and MANAGED_GIT_GITHUB_TOKEN (or the GitHub App set) are supplied',
     );
   }
+  // Billing needs Stripe. The workflow always has the sandbox keys; a hand
+  // deploy may not, and the API REFUSES TO BOOT with billing on and no key
+  // (config.ts: "Required when KORTIX_BILLING_INTERNAL_ENABLED=true"). Billing
+  // off is the self-host posture: every model is available, nothing is metered.
+  const stripeConfigured = Boolean(
+    rawSecrets.KE2E_STRIPE_SECRET_KEY?.trim() && rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET?.trim(),
+  );
+  // The provider that runs SESSIONS. Daytona when its key is here (the CI
+  // shape); otherwise Platinum when a Platinum key is — a branch environment
+  // deployed against Platinum DEV keeps its sessions on DEV. With neither the
+  // API still boots (billing off makes a missing provider key a warning, not an
+  // error) and session creation fails with a clear message until a key lands.
+  const sandboxProvider = rawSecrets.DAYTONA_API_KEY?.trim()
+    ? 'daytona'
+    : rawSecrets.PLATINUM_API_KEY?.trim()
+      ? 'platinum'
+      : 'daytona';
 
   Object.assign(runtime, {
     API_IMAGE: input.apiImage,
@@ -254,14 +295,15 @@ export function applyPreviewEnvironment(
     KORTIX_PUBLIC_DISABLE_LANDING_PAGE: 'false',
     KORTIX_RESTRICT_ACCOUNT_CREATION: 'false',
     KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'false',
-    // Billing ON, with the Stripe SANDBOX (test-mode) keys below — the same
-    // posture as dev, so the subscribe -> entitlement -> managed-models path is
-    // exercised here rather than bypassed. An account that has not subscribed
-    // is free-tier and therefore NOT entitled to managed models, which is what
-    // makes an agent fall back to the faux provider: subscribe with a Stripe
-    // test card (or connect a BYOK key) to get real model answers.
-    KORTIX_BILLING_INTERNAL_ENABLED: 'true',
-    KORTIX_PUBLIC_BILLING_ENABLED: 'true',
+    // Billing ON when the Stripe SANDBOX (test-mode) keys below are present —
+    // the same posture as dev, so the subscribe -> entitlement -> managed-models
+    // path is exercised here rather than bypassed. An account that has not
+    // subscribed is free-tier and therefore NOT entitled to managed models,
+    // which is what makes an agent fall back to the faux provider: subscribe
+    // with a Stripe test card (or connect a BYOK key) to get real model answers.
+    // Without the keys, billing is OFF (see stripeConfigured above).
+    KORTIX_BILLING_INTERNAL_ENABLED: stripeConfigured ? 'true' : 'false',
+    KORTIX_PUBLIC_BILLING_ENABLED: stripeConfigured ? 'true' : 'false',
     KORTIX_WORKERS_ENABLED: 'false',
     SCHEDULER_ENABLED: 'false',
     KORTIX_TRIGGER_SCHEDULER_ENABLED: 'false',
@@ -272,10 +314,12 @@ export function applyPreviewEnvironment(
     SMTP_USER: 'unused',
     SMTP_PASS: 'unused',
     ENABLE_EMAIL_AUTOCONFIRM: 'false',
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+    ALLOWED_SANDBOX_PROVIDERS: sandboxProvider,
     DATABASE_URL: `postgresql://postgres:${postgresPassword}@supabase-db:5432/postgres`,
     DAYTONA_API_KEY: rawSecrets.DAYTONA_API_KEY ?? '',
-    MANAGED_GIT_PROVIDER: 'github',
+    PLATINUM_API_KEY: rawSecrets.PLATINUM_API_KEY ?? '',
+    PLATINUM_API_URL: rawSecrets.PLATINUM_API_URL ?? '',
+    MANAGED_GIT_PROVIDER: managedGitEnabled ? 'github' : '',
     MANAGED_GIT_GITHUB_OWNER: rawSecrets.MANAGED_GIT_GITHUB_OWNER ?? '',
     MANAGED_GIT_GITHUB_INSTALL_ID: rawSecrets.MANAGED_GIT_GITHUB_INSTALL_ID ?? '',
     MANAGED_GIT_GITHUB_TOKEN: rawSecrets.MANAGED_GIT_GITHUB_TOKEN ?? '',

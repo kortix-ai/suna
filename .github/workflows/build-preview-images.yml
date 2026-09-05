@@ -1,0 +1,135 @@
+# Build and publish the three preview images for the commit this workflow is
+# dispatched on — and deploy NOTHING.
+#
+# deploy-preview.yml builds these same images, but only for a pull request that
+# carries the `preview` label, and then deploys them to Platinum PROD from the
+# default branch's orchestration. A branch environment deployed BY HAND onto
+# another Platinum — `bun tests/bin/sandbox-preview.ts deploy` with
+# PLATINUM_API_URL pointing at dev — still needs
+# kortix/kortix-{api,gateway,frontend}:pr-<sha> on Docker Hub for the sandbox's
+# `compose pull`, and this is what puts them there. The recipe is
+# deploy-preview.yml's, job for job (same Dockerfiles, same build args, same
+# linux/amd64 check), so the images are the ones a label would have produced.
+#
+# Dispatch it on the branch to deploy:
+#   gh workflow run build-preview-images.yml --ref <branch>
+# then deploy with PREVIEW_SHA=<that branch head>.
+name: build-preview-images
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-preview-images-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  KORTIX_VERSION: branch-${{ github.ref_name }}
+  KORTIX_COMMIT: ${{ github.sha }}
+
+jobs:
+  api:
+    name: Build and push the API image
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: false
+          persist-credentials: false
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/api/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            SERVICE=apps/api
+            KORTIX_VERSION=${{ env.KORTIX_VERSION }}
+            KORTIX_COMMIT=${{ env.KORTIX_COMMIT }}
+          tags: kortix/kortix-api:pr-${{ github.sha }}
+
+  gateway:
+    name: Build and push the gateway image
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: false
+          persist-credentials: false
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: apps/llm-gateway/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            KORTIX_VERSION=${{ env.KORTIX_VERSION }}
+            KORTIX_COMMIT=${{ env.KORTIX_COMMIT }}
+          tags: kortix/kortix-gateway:pr-${{ github.sha }}
+
+  web:
+    name: Build and push the frontend image
+    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          submodules: false
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with: { node-version: 22 }
+      - run: corepack enable pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+      - name: Build standalone frontend
+        # The same placeholders deploy-preview.yml bakes: the stack's real
+        # values reach the image at runtime through its entrypoint.
+        run: pnpm --filter ./apps/web build
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+          NEXT_PUBLIC_BACKEND_URL: http://localhost:8008/v1
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          NEXT_PUBLIC_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ env.KORTIX_VERSION }}
+          NEXT_PUBLIC_KORTIX_COMMIT: ${{ env.KORTIX_COMMIT }}
+          NEXT_OUTPUT: standalone
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: apps/web/Dockerfile:linux/amd64
+      - uses: useblacksmith/build-push-action@v2
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: kortix/kortix-frontend:pr-${{ github.sha }}
