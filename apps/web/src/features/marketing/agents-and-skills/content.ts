@@ -45,12 +45,12 @@
  *    registry of agents/skills/templates from this page. That whole surface —
  *    API, CLI, `features/marketplace/*`, the OLD public `/marketplace` page —
  *    was removed from the product. This page had a §5 "Marketplace" section
- *    with a `/marketplace` CTA; both went with it. Its replacement is
- *    SUBPROJECTS: a Kortix project installed into another Kortix project,
- *    listed under Customize → Marketplace at
- *    `/projects/:id/customize/marketplace`, behind the `subprojects` feature
- *    flag (OFF by default). The name `/marketplace` was reused for a NEW
- *    public page — the curated public subproject catalog
+ *    with a `/marketplace` CTA; both went with it. Its replacement is the
+ *    TEMPLATE MARKETPLACE: a curated, static list of Kortix projects (GitHub
+ *    repos) installed into a project by change request, listed under
+ *    Customize → Marketplace at `/projects/:id/customize/marketplace`, behind
+ *    the `marketplace` feature flag (OFF by default). The name `/marketplace`
+ *    was reused for a NEW public page — the curated public template catalog
  *    (`app/(public)/(seo)/marketplace/`) — which is a real, live surface as of
  *    2026-09-03. Do not re-add a §5 "browse the registry" section here; that
  *    idea is retired. A section pointing at the new public catalog is fair

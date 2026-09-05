@@ -27,7 +27,7 @@ kortix.github; // GitHub App install + repo linking
 kortix.billing; // credits, subscription, tier, transactions
 kortix.sandboxShares; // public share links for a sandbox port
 kortix.connectStatus; // easy-connect (Pipedream) status
-kortix.subprojects; // the subproject catalog — publish, browse, withdraw
+kortix.marketplace; // the public template catalog — list, get
 kortix.validateToken; // pasted-API-key check
 kortix.config; // platform config in effect
 kortix.runtime(); // OpenCode REST compatibility client
@@ -183,23 +183,17 @@ project-scoped.
 | `create(input)`            | create one — `{ sandboxId, port, ttl?, label? }` |
 | `revoke(sandboxId, token)` | revoke one                                       |
 
-### Subproject catalog — `kortix.subprojects`
+### Marketplace — `kortix.marketplace`
 
-The catalog of subprojects — account-scoped, and distinct from
-`project(id).subprojects`, which is what one project has installed. A subproject comes
-from a GitHub repo or an uploaded `.zip`. See [Subprojects](/docs/sdk/subprojects).
+The public template catalog. Reading needs no token; installing is per-project
+(`project(id).marketplace`). See [Marketplace](/docs/sdk/marketplace).
 
-| method                                 | what                                                                                     |
-| -------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `list(options?)` · `get(subprojectId)` | every public subproject plus your own private ones; `options.q` filters · one subproject |
-| `submit(input)`                        | index a subproject from `owner/repo`, optionally `@branch-or-tag`                        |
-| `submitArchive(input)`                 | index a subproject from an uploaded `.zip` (`{ file, visibility? }`)                     |
-| `remove(subprojectId)`                 | withdraw from the catalog — does **not** uninstall it from any project                   |
+| method                         | what                                                                                   |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| `list(options?)` · `get(slug)` | every template; `options.q` narrows by title, description, repo or slug · one template |
 
-Both submit calls resolve to `{ subproject, warnings }`. `warnings` never blocks: the
-subproject **is** indexed. Rejections carry a machine `code` —
-`manifest_not_found`, `manifest_invalid`, `ref_not_found`, `repo_not_found`,
-`upstream_unavailable`, `invalid_archive`, `archive_refused`.
+`get` throws a `MarketplaceError` with `status: 404` for a slug that is not in
+the catalog.
 
 ### The project handle — `kortix.project(id)`
 
@@ -370,28 +364,21 @@ not a role. It decides who can open one trigger's sessions. It grants no
 permission the role verdict denies. See
 [Accounts & access](/docs/accounts#per-feature-access-settings).
 
-#### `p.subprojects` — what this project has installed
+#### `p.marketplace` — install a template
 
-Behind the `subprojects` [feature flag](/docs/feature-flags/subprojects): every
-method here answers `403` `feature_disabled` while it is off. See
-[Subprojects](/docs/sdk/subprojects).
+Behind the `marketplace` [feature flag](/docs/feature-flags/marketplace): the
+call answers `403` `feature_disabled` while it is off. See
+[Marketplace](/docs/sdk/marketplace).
 
-| method                                      | what                                                                          |
-| ------------------------------------------- | ----------------------------------------------------------------------------- |
-| `list()`                                    | the installed subprojects, read from the project's manifest — not the catalog |
-| `install(subprojectId)` · `uninstall(slug)` | start the agent session that installs · removes it                            |
-| `author(description)`                       | describe a subproject and have one built and published                        |
+| method          | what                                               |
+| --------------- | -------------------------------------------------- |
+| `install(slug)` | start the agent session that installs the template |
 
-That is the whole surface. There is no activation method and no runs method: a
-subproject has no on/off state, and a run belongs to the **trigger** that fired,
-not to the subproject that contributed it. Enable triggers one at a time through
-`p.triggers`, and read runs from there.
-
-`install`, `uninstall`, and `author` return a **session id**, not a result. Each
-opens a change request a human reviews; the project changes when that CR merges.
-
-`uninstall` keys on the manifest `slug`, not a subproject id — the slug is what
-the manifest records, and an install outlives its catalog entry.
+That is the whole surface. `install` returns a **session id**, not a result:
+the agent opens one change request a human reviews, the project changes when it
+merges, and reverting it is the uninstall. There is no installed list, no
+uninstall method and no activation method. Enable the template's triggers one at
+a time through `p.triggers` once the change request merges.
 
 #### `p.files` — repo files (read)
 

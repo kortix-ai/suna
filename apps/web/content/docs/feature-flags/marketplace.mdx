@@ -1,0 +1,81 @@
+---
+title: Marketplace
+description: Install a template — agents, skills, connectors and triggers — into a project by change request.
+---
+
+A **template** is a Kortix project you install into your own: a public GitHub
+repository whose `kortix.yaml` declares agents, skills, connectors and
+triggers. Installing one merges that declaration into the target project.
+
+Marketplace is a [feature flag](/docs/feature-flags). Its stability is
+**experimental**, and it is off by default. Turn it on per project before you
+install anything.
+
+Building on the marketplace from TypeScript? See
+[SDK → Marketplace](/docs/sdk/marketplace) for the client surface and the React
+hooks.
+
+## Turn Marketplace on
+
+Open **Settings → Feature flags** and switch **Marketplace** on for the
+project. You need `project.customize.write`.
+
+While the flag is off:
+
+- `POST /v1/projects/:id/marketplace/install-session` answers `403` with
+  `{ error, code: "feature_disabled", feature: "marketplace" }`.
+- `kortix marketplace install` prints the same sentence and exits `1`.
+- The **Marketplace** tab does not appear in the Customize tab bar.
+
+The public catalog is not gated. `/marketplace` and
+`GET /v1/public/marketplace/templates` answer for everyone, signed in or not.
+
+## The catalog
+
+The catalog is a curated, static list that ships with the API
+(`apps/api/src/marketplace/templates.ts`). Each template names a public GitHub
+repository and the exact commit its card was derived from. There is no
+submit, upload or publish step: adding a template is a change to that list.
+
+| Surface      | Where                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| Public page  | `/marketplace` and `/marketplace/<slug>`                                                   |
+| In a project | **Customize → Marketplace**                                                                |
+| API          | `GET /v1/public/marketplace/templates?q=` and `GET /v1/public/marketplace/templates/:slug` |
+| CLI          | `kortix marketplace list` and `kortix marketplace show <slug>`                             |
+
+Every card shows what the template brings — agents, skills, triggers with
+their cadence, the connectors it needs and the secrets you provide — and links
+to its source repository.
+
+## Install
+
+Installing is agent-driven. `Install` starts a session whose agent:
+
+1. reads the template's files at the pinned commit and this project's current
+   `kortix.yaml`;
+2. copies the template's agents and skills, renaming on a name collision and
+   never touching `default_agent`;
+3. merges its connectors, keeping an existing connector that may already hold
+   credentials;
+4. merges its triggers with every one **disabled**;
+5. walks you through the connectors and secrets it needs, with setup links —
+   never a pasted key;
+6. runs `kortix validate` and opens **one** change request.
+
+Nothing lands until you merge that change request. After the merge, enable the
+triggers one at a time from **Customize → Triggers**.
+
+:::info[Uninstall is a revert]
+Nothing records what a project has installed. Everything a template adds lands
+in the one change request the install opened, so reverting that commit removes
+it. There is no installed list, no uninstall button and no per-template switch.
+:::
+
+## Permissions
+
+| Action                  | Permission                |
+| ----------------------- | ------------------------- |
+| Browse the catalog      | none — public             |
+| Install into a project  | `project.write`           |
+| Turn the flag on or off | `project.customize.write` |

@@ -20,7 +20,7 @@ import { useProjectPageCans } from '@/lib/use-project-can';
  * the capability pages (Models / Connectors / Agents / Skills / Triggers /
  * Marketplace / Secrets / Settings). Gated, because those pages can 403.
  * Marketplace is additionally flag-gated and appears only when a project turns
- * `subprojects` on — see `CapabilityTab.flag`.
+ * `marketplace` on — see `CapabilityTab.flag`.
  *
  * The bottom-of-footer "Settings" row that used to sit beside it is gone
  * (Jay, 2026-08-17): it opened the same User Settings overlay a click on the
@@ -63,11 +63,11 @@ export const TAB_PREFERENCE: readonly { key: CapabilityTab['key']; action: strin
   { key: 'triggers', action: PROJECT_ACTIONS.PROJECT_TRIGGER_READ },
   // Marketplace reuses `project.read`, the SAME leaf Models above it carries,
   // because that is what the API gates the catalog read on
-  // (`requireSubprojectReadScope` -> PROJECT_ACTIONS.PROJECT_READ in
-  // `apps/api/src/projects/routes/subprojects.ts`). Sharing it has a second
+  // (`PROJECT_ACTIONS.PROJECT_WRITE` in
+  // `apps/api/src/projects/routes/marketplace.ts`). Sharing it has a second
   // effect: `useCapabilityTab` below walks THIS list and knows nothing about
   // feature flags, so a distinct leaf could make the Customize row land on
-  // Marketplace for a caller whose `subprojects` flag is off — a row to a page
+  // Marketplace for a caller whose `marketplace` flag is off — a row to a page
   // that answers 403. Models precedes it on the same leaf, so that branch is
   // unreachable. Keep them sharing the leaf, or teach `useCapabilityTab` the
   // flag.

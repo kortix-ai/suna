@@ -669,17 +669,17 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/projects/{projectId}/customize/marketplace',
     requiresProject: true,
     // Same gate the tab itself carries (`CAPABILITY_TABS` → `flag:
-    // 'subprojects'`), so the row cannot outlive the page. Without it the
+    // 'marketplace'`), so the row cannot outlive the page. Without it the
     // palette would offer a destination whose every read answers
     // `403 feature_disabled`.
-    requiresFlag: 'subprojects',
-    // "subprojects" is the noun the product uses; "marketplace" and "store"
+    requiresFlag: 'marketplace',
+    // "templates" is the noun the product uses; "marketplace" and "store"
     // are what a person types when they want to find one. Both must answer,
-    // plus the verb ("install") and what a subproject brings with it. The
+    // plus the verb ("install") and what a template brings with it. The
     // plural alone — the match is a substring, so it already answers the
     // singular, and a bag that lists both says nothing more.
     keywords:
-      'marketplace store subprojects install catalog browse open source repo template starter setup bundle',
+      'marketplace store templates install catalog browse open source repo template starter setup bundle',
   },
   {
     id: 'proj-secrets',

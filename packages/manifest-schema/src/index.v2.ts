@@ -33,8 +33,6 @@
 import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
-  SUBPROJECT_OWNED_KINDS,
-  SUBPROJECT_REPO_RE,
   HEX_COLOR_RE_V2,
   PERMISSION_ACTION_ONLY_KEYS_V2,
   PERMISSION_ACTIONS_V2,
@@ -42,13 +40,7 @@ import {
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
-import {
-  expectSubprojectRefOrAbsent,
-  expectStringOrAbsent,
-  isTable,
-  type ManifestIssue,
-  validateGrantList,
-} from './index';
+import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } from './index';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
 //
@@ -159,51 +151,6 @@ export interface AgentBlockV2 {
   skills?: GrantSetV2;
   kortix_cli?: GrantSetV2;
   workspace?: WorkspaceModeV2;
-  /** The subproject (`subprojects[].slug`) that contributed this agent. Governance, not
-   *  behavior, so it lives here rather than in the agent's own `.md`. Omitted
-   *  on every hand-authored agent. */
-  subproject?: string;
-}
-
-/** What one subproject contributed to the project, by entity kind. */
-export interface SubprojectOwnsV2 {
-  agents?: string[];
-  skills?: string[];
-  connectors?: string[];
-  triggers?: string[];
-}
-
-/**
- * One entry of the v2 `subprojects:` array — an installed subproject's identity and
- * provenance.
- *
- * A subproject is a GitHub repo whose own `kortix.yaml` declares agents, triggers
- * and connectors; installing it MERGES that declaration into this project.
- * This entry records the merge, which is what makes `git revert` a working
- * uninstall: the entry and the entities it names land in one commit.
- */
-export interface SubprojectEntryV2 {
-  slug: string;
-  /** Source repository as `owner/repo` — see `SUBPROJECT_REPO_RE`. */
-  repo: string;
-  /**
-   * The git ref the install ASKED for — a branch or tag. Absent means the
-   * repo's default branch. This is what an update re-resolves against.
-   */
-  ref?: string;
-  /**
-   * The commit sha `ref` resolved to at install. THE integrity source: a
-   * branch moves, a sha does not.
-   */
-  sha?: string;
-  /** Display-only tag (`v1.2.0`). Never the integrity source; `sha` is. */
-  version?: string;
-  title?: string;
-  installed_at?: string;
-  /** Summary of what this subproject contributed. Each named entity ALSO carries
-   *  `subproject: <slug>` on its own manifest entry, so a hand-edit of one side is
-   *  detectable against the other. */
-  owns?: SubprojectOwnsV2;
 }
 
 /** The v2 manifest shape (YAML-only). Other sections keep their v1 shape. */
@@ -218,7 +165,6 @@ export interface ManifestV2 {
   sandbox?: Record<string, unknown>;
   triggers?: Array<Record<string, unknown>>;
   connectors?: Array<Record<string, unknown>>;
-  subprojects?: SubprojectEntryV2[];
   apps?: Record<string, AppBlockV2>;
 }
 
@@ -581,8 +527,6 @@ function validateAgentBlockV2(entry: unknown, where: string, issues: ManifestIss
     }
   }
 
-  expectSubprojectRefOrAbsent(entry.subproject, `${where}.subproject`, issues);
-
   // v1's grant-set name — renamed to `secrets` in v2 (spec §2.2/§2.4).
   if (entry.env !== undefined) {
     issues.push({
@@ -726,180 +670,6 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
       '`channels` is not supported in kortix_version 2 manifests — channel↔agent routing is managed in the dashboard, and the channel connection is expressed as a connector (provider="channel").',
     severity: 'error',
   });
-}
-
-/**
- * `subprojects:` — installed subprojects, v2-only. Returns the declared subproject slugs so
- * callers can cross-validate every `subproject:` back-reference against them.
- * Dispatch: called from `index.ts`'s `validateManifestBodyV2`.
- *
- * The section is written by the install flow, not by hand, so the checks here
- * are about catching a bad merge or a hand-edit that broke the record — a
- * duplicate slug (two subprojects claiming the same identity), a `repo` that is not
- * `owner/repo` (so provenance can never be resolved), or an `owns` entry
- * naming something that is not a slug (so uninstall would silently skip it).
- */
-export function validateSubprojectsV2(node: unknown, path: string, issues: ManifestIssue[]): string[] {
-  const slugs: string[] = [];
-  if (node == null) return slugs;
-  if (!Array.isArray(node)) {
-    issues.push({
-      path,
-      message: '`subprojects` must be a list of installed-subproject entries.',
-      severity: 'error',
-    });
-    return slugs;
-  }
-  const seen = new Set<string>();
-  node.forEach((entry, i) => {
-    const where = `${path}[${i}]`;
-    if (!isTable(entry)) {
-      issues.push({ path: where, message: 'must be a table/object.', severity: 'error' });
-      return;
-    }
-
-    const slug = typeof entry.slug === 'string' ? entry.slug.trim() : '';
-    if (!slug) {
-      issues.push({ path: `${where}.slug`, message: 'slug is required.', severity: 'error' });
-    } else if (!SLUG_RE.test(slug)) {
-      issues.push({
-        path: `${where}.slug`,
-        message: `"${slug}" is not a valid slug.`,
-        severity: 'error',
-      });
-    } else if (seen.has(slug)) {
-      issues.push({
-        path: `${where}.slug`,
-        message: `duplicate slug "${slug}".`,
-        severity: 'error',
-      });
-    } else {
-      seen.add(slug);
-      slugs.push(slug);
-    }
-
-    const repo = typeof entry.repo === 'string' ? entry.repo.trim() : '';
-    if (!repo) {
-      issues.push({
-        path: `${where}.repo`,
-        message: 'repo is required — a subproject always records where it came from.',
-        severity: 'error',
-      });
-    } else if (!SUBPROJECT_REPO_RE.test(repo)) {
-      issues.push({
-        path: `${where}.repo`,
-        message: `repo must be "owner/repo" (got "${repo}").`,
-        severity: 'error',
-      });
-    }
-
-    expectStringOrAbsent(entry.ref, `${where}.ref`, issues);
-    expectStringOrAbsent(entry.sha, `${where}.sha`, issues);
-    expectStringOrAbsent(entry.version, `${where}.version`, issues);
-    expectStringOrAbsent(entry.title, `${where}.title`, issues);
-    expectStringOrAbsent(entry.installed_at, `${where}.installed_at`, issues);
-    for (const field of ['ref', 'sha', 'version', 'installed_at'] as const) {
-      if (typeof entry[field] === 'string' && !entry[field].trim()) {
-        issues.push({
-          path: `${where}.${field}`,
-          message: 'must not be empty when provided.',
-          severity: 'error',
-        });
-      }
-    }
-
-    if (entry.owns !== undefined && entry.owns !== null) {
-      const ownsWhere = `${where}.owns`;
-      if (!isTable(entry.owns)) {
-        issues.push({ path: ownsWhere, message: 'must be a table/object.', severity: 'error' });
-      } else {
-        for (const [kind, value] of Object.entries(entry.owns)) {
-          const kindWhere = `${ownsWhere}.${kind}`;
-          if (!(SUBPROJECT_OWNED_KINDS as readonly string[]).includes(kind)) {
-            issues.push({
-              path: kindWhere,
-              message: `owns may only list ${SUBPROJECT_OWNED_KINDS.join(', ')} (got "${kind}").`,
-              severity: 'error',
-            });
-            continue;
-          }
-          if (!Array.isArray(value)) {
-            issues.push({ path: kindWhere, message: 'must be a list of names.', severity: 'error' });
-            continue;
-          }
-          value.forEach((name, j) => {
-            const n = typeof name === 'string' ? name.trim() : '';
-            if (!n || !SLUG_RE.test(n)) {
-              issues.push({
-                path: `${kindWhere}[${j}]`,
-                message: 'must be a valid slug naming an entity this subproject contributed.',
-                severity: 'error',
-              });
-            }
-          });
-        }
-      }
-    }
-  });
-  return slugs;
-}
-
-/** `subprojects` in a v1 manifest — subprojects are a v2-only concept. */
-export function rejectSubprojectsV1(node: unknown, path: string, issues: ManifestIssue[]): void {
-  if (node === undefined) return;
-  issues.push({
-    path,
-    message:
-      '`subprojects` is not supported in kortix_version 1 manifests — migrate to kortix_version 2 (kortix.yaml) to install subprojects.',
-    severity: 'error',
-  });
-}
-
-/**
- * v2 cross-validation: every `subproject:` back-reference — on a trigger, a
- * connector, or an agent block — must name a subproject declared in `subprojects`.
- *
- * This is what keeps the two halves of the ownership record honest. `subprojects[]`
- * says what is installed; `subproject:` on each entity says who owns it. A
- * reference with no matching entry means a hand-edit (or a bad merge) left an
- * entity orphaned, and the subproject's run history would silently lose it.
- */
-export function validateSubprojectRefsV2(
-  parsed: Record<string, unknown>,
-  subprojectSlugs: string[],
-  issues: ManifestIssue[],
-): void {
-  const check = (value: unknown, where: string): void => {
-    if (value === undefined || value === null) return;
-    const slug = typeof value === 'string' ? value.trim() : '';
-    // Shape errors are already reported by `expectSubprojectRefOrAbsent`; only the
-    // cross-field question is ours, so a malformed value is skipped here
-    // rather than reported twice.
-    if (!slug || !SLUG_RE.test(slug)) return;
-    if (!subprojectSlugs.includes(slug)) {
-      issues.push({
-        path: where,
-        message: `subproject "${slug}" does not match any entry in \`subprojects\`.`,
-        severity: 'error',
-      });
-    }
-  };
-
-  for (const [section, node] of [
-    ['triggers', parsed.triggers],
-    ['connectors', parsed.connectors],
-  ] as const) {
-    if (!Array.isArray(node)) continue;
-    node.forEach((entry, i) => {
-      if (isTable(entry)) check(entry.subproject, `${section}[${i}].subproject`);
-    });
-  }
-
-  if (isTable(parsed.agents) && !Array.isArray(parsed.agents)) {
-    for (const [name, entry] of Object.entries(parsed.agents)) {
-      if (isTable(entry)) check(entry.subproject, `agents.${name}.subproject`);
-    }
-  }
 }
 
 /**

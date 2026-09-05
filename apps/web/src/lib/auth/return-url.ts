@@ -25,7 +25,7 @@ const LEGACY_AUTH_RETURN_PREFIXES = [
  *  - *public* pages — nothing behind them is account-scoped, so a brand-new
  *    identity renders them exactly like an old one. `/use-cases` is the live
  *    one: its CTA is what started the signup. `/marketplace` is held for the
- *    public subproject catalog and has no page yet, so a return there answers
+ *    public template marketplace, so a return there answers
  *    `404` rather than being blocked — the right failure, and the reason the
  *    prefix stays rather than being removed and re-added.
  *

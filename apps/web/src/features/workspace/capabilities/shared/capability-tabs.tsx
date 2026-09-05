@@ -48,9 +48,9 @@ export const CAPABILITY_TAB_GATE_ACTIONS: readonly string[] = [
  * is shared, so the second caller costs no request.
  */
 export function useCapabilityTabFlags(projectId: string): Partial<Record<FeatureFlagKey, boolean>> {
-  const subprojects = useFeatureFlag(projectId, 'subprojects');
+  const marketplace = useFeatureFlag(projectId, 'marketplace');
   const reviewCenter = useFeatureFlag(projectId, 'review_center');
-  return { subprojects: subprojects.enabled, review_center: reviewCenter.enabled };
+  return { marketplace: marketplace.enabled, review_center: reviewCenter.enabled };
 }
 
 /**
@@ -86,7 +86,7 @@ export function useCapabilityTabFlags(projectId: string): Partial<Record<Feature
  * Gate 3 is ONE mechanism for every gated tab — the tab's own `flag:` field.
  * Review is gated on `review_center` (the same gate the retired config page's
  * Review section carried, so a flag that hides the inbox hides every way in)
- * and Marketplace on `subprojects`; neither is a special case in this filter.
+ * and Marketplace on `marketplace`; neither is a special case in this filter.
  * A second, key-matching branch here would be a place for the two gates to
  * disagree about what "off" means.
  */

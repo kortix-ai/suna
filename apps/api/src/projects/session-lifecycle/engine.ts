@@ -2233,9 +2233,9 @@ async function postPrompt(
         // `isProjectSessionVisibleTo` — that gate is keyed on
         // `boundCredentialSessionId === null`. A trigger creates its session
         // `private` and owned by the AUTOMATION ACTOR, so every prompt a human
-        // sent into a subproject/trigger session was answered `403 Not authorized to
+        // sent into a trigger session was answered `403 Not authorized to
         // access this session`, retried 5x, and dead-lettered as
-        // `delivery outcome: pending` (local, 2026-08-31: every subproject run had an
+        // `delivery outcome: pending` (local, 2026-08-31: every trigger run had an
         // empty transcript).
         //
         // `null` cannot widen access. The sibling-narrowing verdict is

@@ -11,10 +11,8 @@ import { config } from '../../config';
 import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
-import { ensureProjectSubprojects } from '../subproject-catalog';
-import { extractSubprojects } from '../subprojects';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
-import { type GitHubAuthContext, commitFile, getFileSha } from '../github';
+import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import {
   createSession,
   drainSessionLifecycleQueue,
@@ -36,10 +34,6 @@ import {
 import { ensureProjectTriggerRuntime } from '../trigger-runtime-catalog';
 import { validateTriggerCron, validateTriggerTimezone } from '../trigger-schedule';
 import {
-  PRIVATE_TRIGGER_SESSION_ACCESS,
-  loadTriggerSessionAccessMap,
-} from '../trigger-session-access';
-import {
   GIT_TRIGGER_SESSION_MODES,
   type GitMonitorMode,
   type GitTriggerSessionMode,
@@ -57,6 +51,10 @@ import {
   triggerSpecToTomlEntry,
 } from '../triggers';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  loadTriggerSessionAccessMap,
+} from '../trigger-session-access';
 import { drainMonitorEvents } from './monitor-observer';
 import {
   type ProjectRow,
@@ -1414,8 +1412,6 @@ export async function loadTriggersForResponse(
     // must never prune rows from that possibly stale snapshot. Authoritative
     // mutation/delete paths perform the destructive reconciliation themselves.
     await ensureProjectTriggerRuntime(projectId, specs);
-    // Same read, same non-destructive rule — see ensureProjectSubprojects.
-    await ensureProjectSubprojects(projectId, extractSubprojects(manifest).specs);
   }
   const runtimeRows =
     specs.length === 0
@@ -1468,13 +1464,6 @@ export async function loadTriggersForResponse(
 export interface TriggerDraft {
   slug: string;
   name: string;
-  /**
-   * The subproject that contributed this trigger, carried through the CRUD
-   * read-modify-write so an edit never orphans it. Callers do not set this: it
-   * arrives on the merge base from `specToBody`, and only a subproject install
-   * writes it in the first place.
-   */
-  subprojectSlug: string | null;
   type: GitTriggerType;
   agent: string;
   /** Wire-form model (`provider/model`) or null for "Default" (resolve at fire time). */
@@ -1529,13 +1518,6 @@ export function parseTriggerDraft(
   // null/empty model = "Default" — leave it to the resolution chain at fire time.
   const model = normalizeString((body as any).model) ?? null;
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
-  // Carried, never authored. On a PATCH the merge base (`specToBody`) supplies
-  // the current owner, so an edit preserves it; a create sends nothing and the
-  // trigger is hand-authored. A non-slug value degrades to null rather than
-  // failing the request — the manifest gate is what rejects a malformed ref.
-  const subprojectSlugRaw = normalizeString((body as any).subproject);
-  const subprojectSlug =
-    subprojectSlugRaw && /^[a-z0-9][a-z0-9_-]{0,127}$/.test(subprojectSlugRaw) ? subprojectSlugRaw : null;
 
   const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
   if (
@@ -1596,7 +1578,6 @@ export function parseTriggerDraft(
     return {
       slug,
       name,
-      subprojectSlug,
       type: 'monitor',
       agent,
       model,
@@ -1631,7 +1612,6 @@ export function parseTriggerDraft(
       return {
         slug,
         name,
-        subprojectSlug,
         type: 'cron',
         agent,
         model,
@@ -1659,7 +1639,6 @@ export function parseTriggerDraft(
     return {
       slug,
       name,
-      subprojectSlug,
       type: 'cron',
       agent,
       model,
@@ -1688,7 +1667,6 @@ export function parseTriggerDraft(
   return {
     slug,
     name,
-    subprojectSlug,
     type: 'webhook',
     agent,
     model,
@@ -1717,7 +1695,6 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
   return {
     slug: spec.slug,
     name: spec.name,
-    subproject: spec.subprojectSlug,
     type: spec.type,
     agent: spec.agent,
     model: spec.model,
@@ -1735,7 +1712,8 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     secret_env: spec.secretEnv,
     run: spec.run,
     mode: spec.monitorMode,
-    interval: spec.intervalSeconds === null ? null : formatDurationSeconds(spec.intervalSeconds),
+    interval:
+      spec.intervalSeconds === null ? null : formatDurationSeconds(spec.intervalSeconds),
     expect_event_within:
       spec.expectEventWithinSeconds === null
         ? null
@@ -1768,7 +1746,6 @@ export function draftToSpec(
     // `kortix.yaml#triggers.<slug>`, not a hardcoded `kortix.toml#…`.
     path: `${manifestPath}#triggers.${draft.slug}`,
     name: draft.name,
-    subprojectSlug: draft.subprojectSlug,
     type: draft.type,
     agent: draft.agent,
     model: draft.model,

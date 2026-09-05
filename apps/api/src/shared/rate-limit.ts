@@ -166,7 +166,7 @@ const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
 const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
-const publicSubprojectsLimiter = new TokenBucketRateLimiter('public_subprojects');
+const publicMarketplaceLimiter = new TokenBucketRateLimiter('public_marketplace');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
@@ -380,8 +380,8 @@ export function createCheckEmailRateLimitMiddleware() {
 }
 
 /**
- * Guards the anonymous public subproject catalogue
- * (`GET /v1/public/subprojects`, `GET /v1/public/subprojects/:slug`) — the reads
+ * Guards the anonymous public marketplace catalog
+ * (`GET /v1/public/marketplace/templates[/:slug]`) — the reads
  * behind `/marketplace`, an SEO surface that search engines and scrapers hit
  * without a token.
  *
@@ -390,21 +390,21 @@ export function createCheckEmailRateLimitMiddleware() {
  * per origin, not a browser per visitor; the limiter exists for the abnormal
  * caller, which is a crawler looping `?q=` with unique terms.
  */
-export function createPublicSubprojectsRateLimitMiddleware() {
+export function createPublicMarketplaceRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
     const denied = await enforceRateLimit(
       c,
-      publicSubprojectsLimiter,
+      publicMarketplaceLimiter,
       clientIp(c),
       {
-        limit: positiveInt((config as any).KORTIX_PUBLIC_SUBPROJECTS_REQS_PER_MIN, 120),
+        limit: positiveInt((config as any).KORTIX_PUBLIC_MARKETPLACE_REQS_PER_MIN, 120),
         windowMs: 60_000,
       },
       {
         action: `RATE_LIMIT ${c.req.method} ${c.req.path}`,
-        resourceType: 'public_subprojects',
+        resourceType: 'public_marketplace',
         resourceId: null,
-        metadata: { limiter: 'public_subprojects' },
+        metadata: { limiter: 'public_marketplace' },
       },
     );
     if (denied) return denied;

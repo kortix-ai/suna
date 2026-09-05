@@ -223,8 +223,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
               <ProjectCustomizeNavItem />
               <ProjectAppsNavItem />
-              {/* Subprojects had a row here and does not any more. Installing a
-                  subproject is CONFIGURATION — it writes agents, skills,
+              {/* The marketplace had a row here and does not any more. Installing a
+                  template is CONFIGURATION — it writes agents, skills,
                   connectors and triggers into the manifest — so the store is
                   the Marketplace tab under Customize above, not a peer of it.
                   Two rows into the same surface is one row too many. */}

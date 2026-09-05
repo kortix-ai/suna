@@ -45,14 +45,6 @@ const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'source',
   'trigger_kind',
   'trigger_slug',
-  // Subproject attribution, for the same reason `trigger_slug` is server-managed: a
-  // subproject's run report is a join over sessions attributed to it, so a client
-  // able to stamp these could attribute its own session to someone else's
-  // subproject and appear in that subproject's history.
-  'subproject_slug',
-  'subproject_id',
-  'subproject_repo',
-  'subproject_sha',
   'name',
   'title_source',
 ] as const;

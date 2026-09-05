@@ -444,7 +444,7 @@ projectsApp.openapi(
     // (governance then behavior) would let a bad `.md` write fail AFTER the
     // governance write already landed, stranding kortix.yaml and the agent's
     // `.md` out of sync — commitMultipleFilesToBranch (git/branches.ts) commits
-    // every file in one tree/commit, same helper the subproject install/
+    // every file in one tree/commit, same helper the marketplace install/
     // uninstall paths use for their own atomic multi-file writes (r10.ts).
     const files = [
       { path: manifestPath, content: serializeManifest(manifest) },

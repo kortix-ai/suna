@@ -2,33 +2,32 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/marketing/button';
-import { PublicSubprojectsGrid } from '@/features/subprojects/public-subprojects-grid';
-import { loadPublicSubprojects } from '@/features/subprojects/public-subprojects-server';
+import { PublicTemplatesGrid } from '@/features/marketplace/public-templates-grid';
+import { loadPublicTemplates } from '@/features/marketplace/public-templates-server';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
 import { socialMetadata } from '@/lib/seo/metadata';
 import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
 
 const TITLE = 'Marketplace';
-const HEADLINE = 'Install a working loop, not a template';
+const HEADLINE = 'Install a working loop, not a blank project';
 const DESCRIPTION =
-  'Browse the public Kortix subproject catalogue. Each one carries the agents, skills, connectors and triggers that run one loop end to end — installed into your own repo as files you own and review.';
+  'Browse the Kortix template marketplace. Each template carries the agents, skills, connectors and triggers that run one loop end to end — installed into your own repo as files you own and review.';
 const URL = `${CANONICAL_ORIGIN}/marketplace`;
 
 /**
- * `/marketplace` — the PUBLIC subproject catalogue, and an SEO acquisition
+ * `/marketplace` — the PUBLIC template catalog, and an SEO acquisition
  * channel. It is the sibling of `/projects/[id]/customize/marketplace` with
  * two deliberate differences:
  *
- *  - No auth. The rows come from `GET /v1/public/subprojects`, which is narrowed
- *    to `visibility = 'public' AND status = 'active'` in the store's WHERE
- *    clause. An account-scoped or private subproject can never reach this page.
- *  - No installed state. Installing needs a project, a visitor here has none,
- *    and the page must not imply one. Every card links to its detail page; the
- *    detail page carries the sign-up CTA.
+ *  - No auth. The rows come from `GET /v1/public/marketplace/templates`, a
+ *    static curated list that is the same for every caller.
+ *  - No install button on the grid. Installing needs a project, a visitor here
+ *    has none, and the page must not imply one. Every card links to its detail
+ *    page; the detail page carries the sign-up CTA.
  *
  * `revalidate = 3600` matches the API's own `Cache-Control: public, max-age=300`
- * loosely on purpose: the catalogue is curated by migration, so it changes on the
- * order of weeks, and an hour-old page is never wrong enough to matter.
+ * loosely on purpose: the catalog changes when a deploy ships, so an hour-old
+ * page is never wrong enough to matter.
  */
 export const revalidate = 3600;
 
@@ -38,7 +37,6 @@ export const metadata: Metadata = {
   keywords: [
     'Kortix marketplace',
     'AI agent templates',
-    'agent subprojects',
     'ready-made AI agents',
     'AI automation templates',
     'open source AI agents',
@@ -48,7 +46,7 @@ export const metadata: Metadata = {
 };
 
 export default async function MarketplacePage() {
-  const subprojects = await loadPublicSubprojects();
+  const templates = await loadPublicTemplates();
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -63,12 +61,12 @@ export default async function MarketplacePage() {
     },
     mainEntity: {
       '@type': 'ItemList',
-      numberOfItems: subprojects.length,
-      itemListElement: subprojects.map((subproject, i) => ({
+      numberOfItems: templates.length,
+      itemListElement: templates.map((template, i) => ({
         '@type': 'ListItem',
         position: i + 1,
-        name: subproject.title,
-        url: `${URL}/${subproject.slug}`,
+        name: template.title,
+        url: `${URL}/${template.slug}`,
       })),
     },
   };
@@ -81,7 +79,7 @@ export default async function MarketplacePage() {
       />
       <div className="mx-auto max-w-7xl px-6 pb-24 sm:pb-32">
         {/* Measure capped at max-w-2xl so the deck reads as a paragraph, not as a
-            banner stretched across the full 80rem catalogue width — the same
+            banner stretched across the full 80rem catalog width — the same
             header shape `/use-cases` uses. */}
         <header className="max-w-2xl pt-32 pb-12 sm:pt-44 sm:pb-16">
           <span className="text-muted-foreground/70 font-mono text-xs tracking-wider uppercase">
@@ -98,7 +96,7 @@ export default async function MarketplacePage() {
           </Button>
         </header>
 
-        <PublicSubprojectsGrid subprojects={subprojects} />
+        <PublicTemplatesGrid templates={templates} />
       </div>
     </main>
   );

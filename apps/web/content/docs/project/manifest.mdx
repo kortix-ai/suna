@@ -105,7 +105,6 @@ triggers:
 | `opencode.config_dir`                               | no       | default `.kortix/opencode`                                                                 |
 | `triggers`                                          | no       | list of cron, webhook, and monitor triggers                                                |
 | `connectors`                                        | no       | list of connector definitions                                                              |
-| `subprojects`                                            | no       | installed subprojects. Written by the install flow, not by hand                                 |
 | `policy.default_mode`                               | no       | `allow_all` (default) or `risk`; project-wide connector approval mode                      |
 | `agents`                                            | yes      | name-to-block governance map; must not be empty                                            |
 
@@ -224,12 +223,11 @@ triggers:
 | `type`         | yes                   | —                     | `cron`, `webhook`, or `monitor` (experimental).                                                       |
 | `prompt`       | yes                   | —                     | Non-empty. Supports templating.                                                                       |
 | `name`         | no                    | slug                  | Human label.                                                                                          |
-| `agent`        | no                    | `default_agent`       | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.      |
+| `agent`        | no                    | `default_agent`       | Must name a key in `agents:`. Omit it to use `default_agent`; do not write the literal `default`.     |
 | `enabled`      | no                    | `true`                | `false` skips the entry.                                                                              |
 | `model`        | no                    | resolves at fire time | Wire form `provider/model`. Pins the fired session to that model. See [Models](/docs/project/models). |
 | `session_mode` | no                    | `fresh`               | `fresh`, `reuse`, `pinned`, or `keyed`.                                                               |
 | `session_id`   | required for `pinned` | —                     | Exact session to re-prompt.                                                                           |
-| `subproject`        | no                    | —                     | The subproject that contributed this trigger. Must name an entry in `subprojects:`. Omitted on hand-authored triggers. See [`subprojects:`](#subprojects). |
 
 Cron triggers need exactly one of `cron` (a 6-field expression) or `run_at` (a one-off ISO-8601 timestamp), plus `timezone` as an IANA name. Webhook triggers need `secret_env`, the name of a secret that uses `broker` delivery with the `connector` consumer. Monitor triggers need `run` (a repo-relative command) and `mode` (`poll` or `stream`), and reject every cron and webhook field. Full field reference, credential setup, payload templating, endpoints, and session strategy: see [Triggers](/docs/connect/triggers).
 
@@ -283,64 +281,6 @@ policies.
 
 `policy.default_mode`: a top-level key, separate from `connectors:`, that sets the project-wide connector approval mode. It takes `allow_all` (default; every unmatched tool runs) or `risk` (require approval for write and destructive unmatched calls). Set it with `kortix connectors policy set --default <risk|allow_all>` — see [CLI](/docs/cli).
 
-## `subprojects:`
-
-A list of the subprojects this project has installed. A subproject is another Kortix project — a repository whose own `kortix.yaml` declares agents, skills, connectors and triggers — merged into this one. See [Subprojects](/docs/feature-flags/subprojects) for the product, and [SDK → Subprojects](/docs/sdk/subprojects) for the client surface.
-
-**You do not write this section by hand.** The install flow writes it: an agent session reads both manifests, resolves name collisions, and opens a change request. The entry and the entities it names land in one commit, which is what makes `git revert` a working uninstall.
-
-```yaml
-subprojects:
-  - slug: seo-watch
-    repo: acme/seo-subproject
-    ref: v1.2.0
-    sha: 4f1c8a2e9b7d3056a1c4e8f0b6a92d5c7e3b1f80
-    title: SEO Watch
-    installed_at: '2026-08-30T09:14:22Z'
-    owns:
-      agents: [seo-analyst]
-      triggers: [seo-daily]
-```
-
-| Field          | Required | Notes                                                                                                    |
-| -------------- | -------- | -------------------------------------------------------------------------------------------------------- |
-| `slug`         | yes      | `[a-z0-9][a-z0-9_-]{0,127}`, unique among subprojects. The key `subproject:` back-references and the API uses.     |
-| `repo`         | yes      | Source as `owner/repo`. A subproject always records where it came from.                                       |
-| `ref`          | no       | The branch or tag the install asked for. Absent means the repo's default branch. An update re-resolves against it. |
-| `sha`          | no       | The commit `ref` resolved to at install. The integrity source — a branch moves, a sha does not.           |
-| `version`      | no       | Display-only tag (`v1.2.0`). Never the integrity source.                                                 |
-| `title`        | no       | Display name recorded at install, so it survives the catalog entry being withdrawn.                      |
-| `installed_at` | no       | ISO-8601 timestamp.                                                                                      |
-| `owns`         | no       | What this subproject contributed, by kind: `agents`, `skills`, `connectors`, `triggers`. Each a list of slugs. |
-
-`ref`, `sha`, `version`, and `installed_at` must be non-empty when present. `owns` accepts only those four kinds; any other key is a validation error.
-
-### `subproject:` back-references
-
-Ownership is recorded twice, on purpose. `subprojects[].owns` says what one subproject contributed; `subproject: <slug>` on each trigger, connector, and agent block says who owns it. The validator cross-checks them: a `subproject:` value that names no entry in `subprojects:` fails validation with `does not match any entry in subprojects`.
-
-```yaml
-subprojects:
-  - slug: seo-watch
-    repo: acme/seo-subproject
-
-triggers:
-  - slug: seo-daily
-    type: cron
-    subproject: seo-watch
-    cron: '0 0 9 * * 1-5'
-    prompt: Check yesterday's rankings.
-
-agents:
-  seo-analyst:
-    subproject: seo-watch
-    connectors: [googlesearchconsole]
-```
-
-That second half is not bookkeeping. The subproject-run report joins on the trigger's `subproject:` field, so an orphaned reference silently drops the trigger's fires out of its subproject's history.
-
-`subprojects:` is v2-only. A `kortix.toml` (v1) manifest that declares it is rejected with a message pointing at the v2 migration — see [Legacy TOML](/docs/project/legacy-toml).
-
 ## Channels
 
 v2 removes `channels:` from the schema. Channel-to-agent routing (Slack, Microsoft Teams, email, and voice today) is live operational state, not declarative config. You set it from the dashboard's Channels page or from chat commands, the same boundary that keeps credentials out of git. Connecting a channel still creates a `connectors` entry with `provider: channel` for the agent to call. See [Slack & channels](/docs/connect/slack). The v1 `[[channels]]` table is covered in [Legacy TOML](/docs/project/legacy-toml).
@@ -375,7 +315,7 @@ agents:
 | `connectors`          | `none`  | Which connector slugs this agent may call. `all` means every connector.                                                                                                                                   |
 | `connectors_required` | `none`  | Connector slugs that must resolve an active, strategy-compatible authorization before sandbox startup. Must be a subset of `connectors`. A missing authorization returns `CONNECTOR_CONNECTION_REQUIRED`. |
 | `secrets`             | `none`  | Which project secrets this agent receives as sandbox env vars. Renamed from v1's `env`.                                                                                                                   |
-| `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                            |
+| `kortix_cli`          | `none`  | Which Kortix CLI and API permissions this agent may exercise. `all` means everything the launching user's roles allow — an agent can never exceed its launcher.                                           |
 | `skills`              | `none`  | Which skills this agent may load.                                                                                                                                                                         |
 | `workspace`           | —       | Git-boundary mode: `runtime`, `read`, or `branch`. Validated against the enum; any other value is rejected.                                                                                               |
 

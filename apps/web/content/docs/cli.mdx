@@ -643,52 +643,33 @@ Pinning a provider needs `project.customize.write`.
 
 `add`/`update` options: `--name <label>`, `--cpu <n>`, `--memory <n>` (GiB), `--disk <n>` (GiB).
 
-### Subprojects
+### Marketplace
 
-A subproject is a Kortix project you install into another project: a repository whose
-`kortix.yaml` declares agents, skills, connectors and triggers. See
-[Subprojects](/docs/feature-flags/subprojects).
+A template is a Kortix project you install into your own: a public repository
+whose `kortix.yaml` declares agents, skills, connectors and triggers. See
+[Marketplace](/docs/feature-flags/marketplace).
 
-Two halves. `publish`, `list`, `show`, and `remove` are account-scoped — the
-catalog. The rest act on one project, default the linked one.
+| Command                             | Effect                                                           |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| `kortix marketplace list`           | Browse the catalog. `--query` filters. Aliases: `ls`, `search`.  |
+| `kortix marketplace show <slug>`    | One template: what it declares and what it needs. Alias: `view`. |
+| `kortix marketplace install <slug>` | Start the agent session that installs it.                        |
 
-| Command                                   | Effect                                                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `kortix subprojects publish <owner/repo>` | Index a subproject from a GitHub repo. Your whole account can see it. Aliases: `submit`.        |
-| `kortix subprojects list`                 | Browse the catalog. Aliases: `ls`, `search`.                                                    |
-| `kortix subprojects show <id-or-slug>`    | One subproject: what it declares and what it needs. Alias: `view`.                              |
-| `kortix subprojects remove <id>`          | Withdraw from the catalog. Does **not** uninstall it from any project. Aliases: `rm`, `delete`. |
-| `kortix subprojects installed`            | What the target project has installed.                                                          |
-| `kortix subprojects install <id-or-slug>` | Start the agent session that installs it.                                                       |
-| `kortix subprojects uninstall <slug>`     | Start the agent session that removes it.                                                        |
+Options on every subcommand: `--project <id>` (install only, default the linked
+project), `--host <name>`, `--query <text>` (alias `-q`), `--json`.
 
-There is no `enable`, `disable` or `runs` subcommand. A subproject has no on/off
-state and no runs of its own — see the note below.
-
-`publish` options: `--ref <branch-or-tag>` (aliases `--branch`, `--tag`) pins the
-ref; `--private` narrows the subproject to you alone. There is **no** flag that
-publishes to the global catalog: those rows are curated, and arrive by migration,
-seeder or direct insert.
-
-Options on every subcommand: `--project <id>`, `--host <name>`, `--limit <n>`,
-`--query <text>` (alias `-q`), `--json`.
-
-`--limit` defaults to 50 and the CLI caps it at 200. The server clamps `list`
-again, to 100.
-
-`install` and `uninstall` do not change the project. Each starts an agent session
-that reads both manifests, resolves name collisions, and opens a change request
-you review. A subproject installs with every trigger **off**. Enable them one at
+`install` does not change the project. It starts an agent session that reads
+both manifests, resolves name collisions, and opens a change request you
+review. Everything the template adds lands in that one change request, so
+reverting it is the uninstall — there is no `installed` or `uninstall`
+subcommand. A template installs with every trigger **off**. Enable them one at
 a time with `kortix triggers enable <slug>`, which commits to `kortix.yaml`.
-That is not the project-wide pause switch, which is `kortix triggers pause`.
 
-`kortix subprojects` never uploads an archive. Publishing from a `.zip` exists on the
-web, for a folder that is not a repo yet. A subproject that tracks a repo gets
-re-crawled when it moves; an uploaded snapshot never does.
+The catalog is curated and ships with the API; there is no `publish`.
 
-Subprojects is a per-project [feature flag](/docs/feature-flags), off by default.
-While it is off, every project-scoped subcommand prints the feature-disabled
-sentence and exits `1`.
+Marketplace is a per-project [feature flag](/docs/feature-flags), off by
+default. While it is off, `install` prints the feature-disabled sentence and
+exits `1`.
 
 ### System skills
 

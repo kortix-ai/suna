@@ -1,3 +1,4 @@
+import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 /**
  * Unified feature-flag registry.
  *
@@ -48,7 +49,6 @@
  * enforcement.
  */
 import { config } from '../config';
-import type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
 export type { FeatureFlagKey, FeatureFlagStability } from '@kortix/api-contract';
 
@@ -190,16 +190,16 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'routes',
   },
   {
-    key: 'subprojects',
-    name: 'Subprojects',
+    key: 'marketplace',
+    name: 'Marketplace',
     description:
-      'Install a subproject — a GitHub repo whose kortix.yaml declares agents, skills, connectors and triggers — into this project, and read the run history of the triggers it owns. The store, the install flow, and the run report are still being built out.',
+      'Browse the template catalog and install a template — a GitHub repo whose kortix.yaml declares agents, skills, connectors and triggers — into this project by change request.',
     stability: 'experimental',
-    // Pure app surface: the routes, the index table and the manifest section all
-    // ship with the app, so no operator env gates it.
+    // Pure app surface: the routes and the static catalog ship with the app, so
+    // no operator env gates it.
     available: () => true,
-    // Explicit opt-in while the surface is incomplete. Installing a subproject
-    // commits to the project's repo, so it must never turn on by accident.
+    // Explicit opt-in while the surface is new. Installing opens a change
+    // request against the project's repo, so it must never turn on by accident.
     platformDefault: () => false,
     enforcement: 'routes',
   },

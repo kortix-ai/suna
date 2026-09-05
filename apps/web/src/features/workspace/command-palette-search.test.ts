@@ -223,38 +223,34 @@ describe('queries return the rows they name', () => {
     expect(hits('customize')).toEqual(['nav:proj-customize']);
   });
 
-  // `proj-marketplace` answers both queries below, and it is the one case the
-  // "no row matches by id" rule cannot exclude: its curated keyword bag holds
-  // `subprojects`, the product's own name for what that page installs, and the
-  // match is a SUBSTRING — so "proj" and "project" are inside the word. That
-  // is defect A's symptom with none of its cause: the row is not reachable by
-  // its id, it is reachable by a word a person reads on it. Trimming the word
-  // would make the Marketplace tab unfindable by the only name the docs, the
-  // flag and the CLI give it. The row also carries `requiresFlag:
-  // 'subprojects'`, so only a project that HAS the surface is ever offered it.
+  // Two rows carry the word "project" as visible text — the account hub's
+  // "Projects" pane and the top-level Projects row. `proj-marketplace` carries
+  // `requiresFlag: 'marketplace'`, so only a project that HAS the surface is
+  // ever offered it, and its keyword bag names what it installs (templates),
+  // not the word "project".
   const SAYS_PROJECT = ['nav:account-access-projects', 'nav:nav-projects'];
 
   test('"project" returns the rows that say the word, not every project-scoped row', () => {
     // `account-access-projects` is the account hub's "Projects" pane — the
     // word is its own label, which is exactly the bar this file sets. Ten
     // `proj-*` rows used to answer this by their ids.
-    expect(hits('project').sort()).toEqual([...SAYS_PROJECT, 'nav:proj-marketplace'].sort());
+    expect(hits('project').sort()).toEqual([...SAYS_PROJECT].sort());
   });
 
   test('"proj" matches nothing by id', () => {
     // Ten `proj-*` rows used to answer this. The ones that survive carry the
-    // word as visible text — two as the label "Projects", one as the keyword
-    // "subprojects".
-    expect(hits('proj').sort()).toEqual([...SAYS_PROJECT, 'nav:proj-marketplace'].sort());
+    // word as visible text — two as the label "Projects".
+    expect(hits('proj').sort()).toEqual([...SAYS_PROJECT].sort());
   });
 
-  test('"subprojects" reaches the Marketplace tab, and only it', () => {
-    // The reason the two cases above accept that row. This is the name the
-    // docs (`docs/feature-flags/subprojects`), the feature flag and
-    // `kortix subprojects` all use, so it has to answer.
-    expect(hits('subprojects')).toEqual(['nav:proj-marketplace']);
-    expect(hits('subproject')).toEqual(['nav:proj-marketplace']);
+  test('"marketplace" reaches the Marketplace tab, and only it; "templates" reaches it too', () => {
+    // "marketplace" is the name the docs (`docs/feature-flags/marketplace`),
+    // the feature flag and `kortix marketplace` all use, so it has to answer,
+    // alone. "templates" is what the tab installs, so it must answer as well —
+    // but not alone: the Sandboxes settings row legitimately says the word
+    // too (sandbox templates), and both rows are right to.
     expect(hits('marketplace')).toEqual(['nav:proj-marketplace']);
+    expect(hits('templates')).toContain('nav:proj-marketplace');
   });
 
   test('"nav" and "pref" are not queries at all', () => {

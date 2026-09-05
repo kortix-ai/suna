@@ -238,7 +238,7 @@ Run the install script.
   });
 
   test('puts every public HTML and Markdown representation in the sitemap', async () => {
-    // `sitemap()` is async because it also lists the public subproject catalogue
+    // `sitemap()` is async because it also lists the public template marketplace
     // from the API. That read fails closed here (no API in a bun test run), so
     // the committed records below are still the whole assertion.
     const urls = new Set((await sitemap()).map((entry) => entry.url));

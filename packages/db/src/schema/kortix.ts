@@ -38,60 +38,6 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
 export const projectStatusEnum = kortixSchema.enum('project_status', ['active', 'archived']);
 
 /**
- * Who may see a subproject in the marketplace.
- *
- *   public   every Kortix user, in every account. NOT reachable by submission —
- *            `POST /v1/subprojects` coerces any other value to `private`, so a
- *            public row exists only because a migration, a seeder or a direct
- *            insert made it. That is deliberate: the global catalog is curated,
- *            not open.
- *   account  everyone in the submitting account. The default.
- *   private  the submitter alone (`submitted_by`), inside their own account.
- *
- * `account` and `private` are both account-bounded, so `subprojectVisibleTo`
- * checks `account_id` before either. Only `public` crosses accounts, and only
- * while `status = 'active'`.
- */
-export const subprojectVisibilityEnum = kortixSchema.enum('subproject_visibility', [
-  'public',
-  'account',
-  'private',
-]);
-
-/**
- * Index health for one subproject.
- *
- *   active       the last crawl succeeded; the store lists it.
- *   unavailable  the last crawl failed (repo gone, manifest broken). Listed to
- *                its owner with the error, never offered for install.
- *   yanked       withdrawn. Because the files live in the author's repo, a yank
- *                is advisory at the source and enforced at the index — the same
- *                stance MARKETPLACE.md takes for registry items.
- */
-export const subprojectStatusEnum = kortixSchema.enum('subproject_status', [
-  'active',
-  'unavailable',
-  'yanked',
-]);
-
-/**
- * Where a subproject's files come from.
- *
- *   github  the repo is the source of truth. Files are fetched from
- *           raw.githubusercontent.com at `resolved_sha`, so the index stores a
- *           manifest and nothing else — Kortix indexes, git hosts.
- *   upload  someone uploaded a .zip. There is no repo to fetch from, so the
- *           subproject's text files are stored on the row and EMBEDDED in the
- *           install prompt (the same shape `buildRegistryProjectInstallPrompt`
- *           already uses for a base registry item). Bounded to text under
- *           `SUBPROJECT_ZIP_LIMITS`; this is not a file host.
- */
-export const subprojectSourceKindEnum = kortixSchema.enum('subproject_source_kind', [
-  'github',
-  'upload',
-]);
-
-/**
  * DELIVERY strategy for a project secret — orthogonal to `projectSecretScopeEnum`
  * below. Where `scope` says which subsystem OWNS a row, `strategy` says how (and
  * whether) the value reaches the wire:
@@ -1270,12 +1216,6 @@ export const projectTriggerRuntime = kortixSchema.table(
     sessionId: text('session_id').references(() => projectSessions.sessionId, {
       onDelete: 'set null',
     }),
-    // The subproject that contributed this trigger, materialized from the manifest
-    // entry's `subproject:` field by `reconcileProjectTriggerRuntime`. This is the
-    // join that makes a subproject's run history one indexed query over
-    // `project_trigger_executions` instead of a git read per row. NULL for every
-    // hand-authored trigger, which is the overwhelming majority.
-    subprojectSlug: varchar('subproject_slug', { length: 128 }),
     // Materialized schedule catalog. The repo manifest remains the source of
     // truth, but the timing path reads only these indexed columns. Nullable
     // columns keep mixed-version deploys safe while existing rows are cataloged.
@@ -1304,13 +1244,6 @@ export const projectTriggerRuntime = kortixSchema.table(
     primaryKey({ columns: [table.projectId, table.slug] }),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
-    // NOTE: a partial index `idx_project_trigger_runtime_subproject`
-    // ((project_id, subproject_slug) WHERE subproject_slug IS NOT NULL) ALSO exists — it
-    // serves the run-attribution join. It is deliberately NOT declared here, for the
-    // same reason as `idx_project_sessions_account_active` below: this table
-    // already exists, so the index must be built CONCURRENTLY, and re-adding it
-    // here would make `db:generate` emit a conflicting plain `CREATE INDEX`.
-    // Manage it via migrations/20260830162046763_project_trigger_runtime_subproject_index.concurrent.ts.
   ],
 );
 
@@ -1381,7 +1314,10 @@ export const projectMonitorEvents = kortixSchema.table(
     firedAt: timestamp('fired_at', { withTimezone: true }),
   },
   (table) => [
-    check('project_monitor_events_kind_check', sql`${table.kind} IN ('event', 'lifecycle')`),
+    check(
+      'project_monitor_events_kind_check',
+      sql`${table.kind} IN ('event', 'lifecycle')`,
+    ),
     check(
       'project_monitor_events_status_check',
       sql`${table.status} IN ('pending', 'fired', 'skipped', 'suppressed', 'failed')`,
@@ -1512,174 +1448,6 @@ export const projectTriggerExecutions = kortixSchema.table(
       table.lockedUntil,
     ),
     index('idx_project_trigger_executions_project').on(table.projectId, table.createdAt),
-  ],
-);
-
-/**
- * The subproject index — the catalogue the Subprojects store renders.
- *
- * A subproject is a GitHub repo whose own `kortix.yaml` declares agents, triggers and
- * connectors. Kortix indexes that manifest; it never hosts the files. This is
- * the same index-not-host stance `packages/registry/MARKETPLACE.md` sets for
- * registry items, and the reason a row is a projection of public git state
- * rather than a source of truth: every derived column below is re-derivable by
- * re-crawling `(repo_owner, repo_name, git_ref)`.
- *
- * A subproject repo needs ONLY a `kortix.yaml` — no `registry.json`. The submit path
- * fetches the manifest, validates it with `@kortix/manifest-schema`, and derives
- * the card with the same `extractTriggers` / `extractConnectors` parsers the
- * runtime uses, so the store can never show a subproject the runtime would reject.
- */
-export const subprojects = kortixSchema.table(
-  'subprojects',
-  {
-    subprojectId: uuid('subproject_id').defaultRandom().primaryKey(),
-    /** Derived from the repo name (or the archive name); the identity a
-     *  project's manifest records. */
-    slug: varchar('slug', { length: 128 }).notNull(),
-    sourceKind: subprojectSourceKindEnum('source_kind').default('github').notNull(),
-    /** NULL for an uploaded subproject — there is no repo. */
-    repoOwner: varchar('repo_owner', { length: 255 }),
-    repoName: varchar('repo_name', { length: 255 }),
-    /** Branch or tag crawled. NULL = the repo's default branch. */
-    gitRef: varchar('git_ref', { length: 255 }),
-    /** Commit sha the cached manifest below was read at. */
-    resolvedSha: varchar('resolved_sha', { length: 64 }),
-    title: varchar('title', { length: 255 }).notNull(),
-    description: text('description'),
-    /**
-     * The parsed `kortix.yaml` at `resolved_sha`. Cached so the store, the
-     * detail view and the install-prompt builder all read one crawl instead of
-     * re-fetching from GitHub per request.
-     */
-    manifest: jsonb('manifest').default({}).$type<Record<string, unknown>>().notNull(),
-    // Derived from `manifest` at crawl time. Denormalized so the store can
-    // filter and render a card without parsing YAML per row.
-    agents: jsonb('agents').default([]).$type<unknown[]>().notNull(),
-    triggers: jsonb('triggers').default([]).$type<unknown[]>().notNull(),
-    connectors: jsonb('connectors').default([]).$type<unknown[]>().notNull(),
-    skills: jsonb('skills').default([]).$type<string[]>().notNull(),
-    envRequired: jsonb('env_required').default([]).$type<string[]>().notNull(),
-    /**
-     * For `source_kind = 'upload'`: the subproject's text files, `[{path, content}]`.
-     * Empty for a github subproject, whose files are fetched at `resolved_sha`
-     * instead. Bounded by `SUBPROJECT_ZIP_LIMITS` (1 MB, 200 files, text only) —
-     * this column exists so an upload is installable, not so Kortix becomes a
-     * file host.
-     */
-    files: jsonb('files').default([]).$type<Array<{ path: string; content: string }>>().notNull(),
-    /** The uploaded archive's original filename, for display. */
-    uploadName: varchar('upload_name', { length: 255 }),
-    /** GitHub stargazers at the last crawl. NULL when the host did not report it. */
-    stars: integer('stars'),
-    installCount: integer('install_count').default(0).notNull(),
-    visibility: subprojectVisibilityEnum('visibility').default('account').notNull(),
-    /** Submitting account. NULL for a subproject Kortix publishes itself. */
-    accountId: uuid('account_id').references(() => accounts.accountId, { onDelete: 'cascade' }),
-    /**
-     * The user who submitted it. Load-bearing for `visibility = 'private'`:
-     * that scope is "this user", not "this account", and this column is the
-     * only record of which user. NULL on a seeded or hand-inserted row, which
-     * `subprojectVisibleTo` reads as account-visible rather than invisible.
-     */
-    submittedBy: uuid('submitted_by'),
-    status: subprojectStatusEnum('status').default('active').notNull(),
-    lastCrawledAt: timestamp('last_crawled_at', { withTimezone: true }),
-    /** Why the last crawl failed. Set with `status = 'unavailable'`. */
-    lastError: text('last_error'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    // One row per crawled ref. `git_ref` is nullable ("the default branch"), and
-    // a plain unique index treats every NULL as distinct — which would let the
-    // same repo be submitted unbounded times. COALESCE collapses them; '' is
-    // safe as the sentinel because a git ref is never empty.
-    uniqueIndex('idx_subprojects_repo_ref').on(
-      table.repoOwner,
-      table.repoName,
-      sql`coalesce(${table.gitRef}, '')`,
-    ),
-    index('idx_subprojects_listing').on(table.visibility, table.status),
-    index('idx_subprojects_account').on(table.accountId),
-    index('idx_subprojects_slug').on(table.slug),
-    // NOTE: a partial unique index `idx_subprojects_upload_identity`
-    // ((account_id, slug) WHERE source_kind = 'upload') ALSO exists — it gives an
-    // uploaded subproject an identity, so re-uploading a fixed archive REPLACES the
-    // subproject instead of adding a duplicate row. `idx_subprojects_repo_ref` cannot do
-    // that job: an upload has NULL repo columns, and a btree unique treats every
-    // NULL as distinct. Declared in
-    // migrations/20260830162048440_subprojects_upload_identity_index.concurrent.ts,
-    // not here, because it must be built CONCURRENTLY on an existing table.
-  ],
-);
-
-/**
- * Which subprojects one project has installed — a projection of that project's own
- * `kortix.yaml` `subprojects:` block, reconciled by `reconcileProjectSubprojects` exactly
- * as `project_trigger_runtime` is reconciled from `triggers:`.
- *
- * The manifest is the source of truth. This table exists so "what is installed
- * here" and "whose runs are these" are indexed lookups instead of a git read,
- * and so the periodic sweep heals a hand-edited manifest or a raw git push.
- * Never write a field here that the manifest cannot express.
- */
-export const projectSubprojects = kortixSchema.table(
-  'project_subprojects',
-  {
-    projectId: uuid('project_id')
-      .notNull()
-      .references(() => projects.projectId, { onDelete: 'cascade' }),
-    /** `subprojects[].slug` from the project's manifest. */
-    slug: varchar('slug', { length: 128 }).notNull(),
-    /**
-     * The index row this was installed from. NULL when the manifest names a
-     * repo the index does not carry — a subproject installed by hand, or one whose
-     * index row was deleted. The install stays valid either way, which is why
-     * this is `set null` and not `cascade`: the project's manifest, not this
-     * row, is what makes the subproject installed.
-     */
-    subprojectId: uuid('subproject_id').references(() => subprojects.subprojectId, {
-      onDelete: 'set null',
-    }),
-    repoOwner: varchar('repo_owner', { length: 255 }).notNull(),
-    repoName: varchar('repo_name', { length: 255 }).notNull(),
-    gitRef: varchar('git_ref', { length: 255 }),
-    /** The commit sha recorded at install — what "this version" means here. */
-    resolvedSha: varchar('resolved_sha', { length: 64 }),
-    title: varchar('title', { length: 255 }).notNull(),
-    /*
-     * There is deliberately NO `enabled` column. A subproject has no on/off
-     * state: it installs with every trigger OFF, and each trigger is armed
-     * individually under `/:projectId/triggers`, which is the one surface that
-     * owns that decision. A second armed/disarmed flag here would be a mirror
-     * with no writer — and this table is a projection of the manifest, so a
-     * flag the manifest cannot express does not belong in it.
-     */
-    /**
-     * The session that performed the install, for the "how did this get here"
-     * trail. Its FK is named explicitly below — the name drizzle derives from
-     * the column path is 66 bytes, past Postgres's 63-byte identifier limit,
-     * and would be silently truncated.
-     */
-    installSessionId: text('install_session_id'),
-    /** Mirror of the manifest `owns` map — what uninstall must remove. */
-    owns: jsonb('owns').default({}).$type<Record<string, string[]>>().notNull(),
-    installedAt: timestamp('installed_at', { withTimezone: true }),
-    /** Why the last reconcile could not fully resolve this entry. */
-    lastError: text('last_error'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.projectId, table.slug] }),
-    foreignKey({
-      columns: [table.installSessionId],
-      foreignColumns: [projectSessions.sessionId],
-      name: 'project_subprojects_install_session_fk',
-    }).onDelete('set null'),
-    index('idx_project_subprojects_subproject').on(table.subprojectId),
-    index('idx_project_subprojects_install_session').on(table.installSessionId),
   ],
 );
 
@@ -2111,6 +1879,7 @@ export const sessionEnvironments = kortixSchema.table(
     index('idx_session_environments_external_id').on(table.externalId),
   ],
 );
+
 
 /**
  * Durable per-turn ledger.
@@ -2651,6 +2420,7 @@ export const sandboxes = kortixSchema.table(
     index('idx_sandboxes_status').on(table.status),
   ],
 );
+
 
 export const sandboxMembers = kortixSchema.table(
   'sandbox_members',
@@ -3810,7 +3580,9 @@ export const apps = kortixSchema.table(
      * App; the viewer's own IAM role is still the ceiling.
      * `off` — no identity is shared at all (the pre-2026-08-27 behaviour).
      */
-    viewerTokenScope: varchar('viewer_token_scope', { length: 16 }).default('identity').notNull(),
+    viewerTokenScope: varchar('viewer_token_scope', { length: 16 })
+      .default('identity')
+      .notNull(),
     monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 2 })
       .default('5.00')
       .notNull(),
@@ -3858,7 +3630,11 @@ export const appAccessGrants = kortixSchema.table(
   },
   (table) => [
     index('app_access_grants_app_idx').on(table.appId),
-    uniqueIndex('app_access_grants_unique').on(table.appId, table.principalType, table.principalId),
+    uniqueIndex('app_access_grants_unique').on(
+      table.appId,
+      table.principalType,
+      table.principalId,
+    ),
   ],
 );
 

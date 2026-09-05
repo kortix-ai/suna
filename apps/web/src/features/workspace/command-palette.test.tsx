@@ -412,7 +412,7 @@ describe('the registry no longer carries palette settings destinations', () => {
   // `proj-marketplace` is the id the deleted SKILLS marketplace used for its
   // settings-overlay tab. It is reused here for the Customize → Marketplace
   // capability page, so this case states what the row now is: a navigate row
-  // at its own route, gated on the `subprojects` flag. Without it, removing
+  // at its own route, gated on the `marketplace` flag. Without it, removing
   // the id from the absent-list above would leave the reuse unasserted.
   test('Marketplace is a flag-gated registry row, pointing at its own page', () => {
     const marketplace = paletteItems.find((item) => item.id === 'proj-marketplace');
@@ -421,7 +421,7 @@ describe('the registry no longer carries palette settings destinations', () => {
     expect(marketplace?.requiresProject).toBe(true);
     // The one registry row that declares a flag. A project without the
     // surface must not be offered a palette row that 403s on arrival.
-    expect(marketplace?.requiresFlag).toBe('subprojects');
+    expect(marketplace?.requiresFlag).toBe('marketplace');
     // Not claimed by the overlay resolver — clicking it navigates, and does
     // not reopen the settings overlay on a tab that no longer exists.
     expect(resolveSettingsOverlayHref(marketplace!.href!).opensOverlay).toBe(false);

@@ -959,7 +959,7 @@ function ProjectSubsessionRow({
 
 /** Sidebar wrapper: resolves the session (plus its pending-review count) to a
  *  display status and hands it to the shared dot. The paint table itself lives
- *  in `components/projects/session-status-dot` so the subproject run strips render
+ *  in `components/projects/session-status-dot` so the trigger run strips render
  *  the identical glyph.
  *
  *  `reviewCount > 0` is the same condition `sessionDisplayStatus` uses to

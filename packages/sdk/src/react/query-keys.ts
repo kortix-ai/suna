@@ -52,30 +52,24 @@
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
 export const qk = {
-  /** The subproject STORE — account-scoped, not per-project. */
-  subprojects: {
-    /** Invalidation prefix over every store listing, whatever it searched for. */
-    scope: () => ['kx', 'subprojects'] as const,
+  /** The marketplace template catalog — public, not per-project. */
+  marketplace: {
+    /** Invalidation prefix over every catalog listing, whatever it searched for. */
+    scope: () => ['kx', 'marketplace'] as const,
 
     /**
-     * One store listing. The search terms are part of the key because
-     * `listSubprojects({ q })` is a different SERVER request per term, not a
-     * client-side filter of one response — sharing a key would let whichever
-     * fetch resolved last overwrite what the other search's readers see.
-     * `'all'` stands in for "no search", so an absent option and an explicit
-     * `undefined` land on the same entry rather than flickering between two.
+     * One catalog listing. The search term is part of the key because
+     * `listMarketplaceTemplates({ q })` is a different SERVER request per term,
+     * not a client-side filter of one response — sharing a key would let
+     * whichever fetch resolved last overwrite what the other search's readers
+     * see. `'all'` stands in for "no search", so an absent option and an
+     * explicit `undefined` land on the same entry rather than flickering.
      */
-    list: (options?: { q?: string; limit?: number; offset?: number }) =>
-      [
-        ...qk.subprojects.scope(),
-        'list',
-        options?.q?.trim() || 'all',
-        options?.limit ?? 'default',
-        options?.offset ?? 0,
-      ] as const,
+    list: (options?: { q?: string }) =>
+      [...qk.marketplace.scope(), 'list', options?.q?.trim() || 'all'] as const,
 
-    /** One subproject's detail. */
-    detail: (subprojectId: string) => [...qk.subprojects.scope(), 'detail', subprojectId] as const,
+    /** One template's detail, by slug. */
+    detail: (slug: string) => [...qk.marketplace.scope(), 'detail', slug] as const,
   },
 
   /**
@@ -330,9 +324,6 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
-
-    /** What this project has installed, read from its own manifest. */
-    subprojects: (id: string) => [...qk.project.scope(id), 'subprojects'] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

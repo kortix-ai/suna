@@ -596,7 +596,7 @@ describe('POST /v1/projects/provision (managed git)', () => {
     // ignored: the deterministic install/lock engine was retired, and the
     // marketplace that owned the catalog it named was removed from the product
     // outright. Adding a capability to a project is an agent import
-    // (POST /:projectId/subprojects/install-session), which needs the project
+    // (POST /:projectId/marketplace/install-session), which needs the project
     // and a session to already exist.
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {

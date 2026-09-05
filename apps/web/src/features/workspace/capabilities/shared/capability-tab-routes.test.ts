@@ -49,7 +49,7 @@ describe('CAPABILITY_TABS', () => {
   // does, so a new gate cannot appear without a decision.
   test('Marketplace and Review are the flag-gated tabs', () => {
     expect(CAPABILITY_TABS.filter((t) => t.flag).map((t) => [t.key, t.flag])).toEqual([
-      ['marketplace', 'subprojects'],
+      ['marketplace', 'marketplace'],
       ['review', 'review_center'],
     ]);
   });
@@ -151,9 +151,9 @@ describe('activeCapabilityTab', () => {
     // tab and the sidebar's Customize row while it is open. Keep the tab's
     // content at `/projects/<id>/customize/marketplace` with no deeper routes.
     expect(activeCapabilityTab('/projects/p1/customize/marketplace/seo-watch')).toBeNull();
-    // `/projects/<id>/subprojects` is not a route at all any more — the store
-    // moved under Customize and the run report is gone. Pinned so a
-    // reintroduced page there cannot quietly claim a Customize tab.
-    expect(activeCapabilityTab('/projects/p1/subprojects')).toBeNull();
+    // `/projects/<id>/marketplace` is not a route at all — the store lives
+    // under Customize. Pinned so a reintroduced page there cannot quietly
+    // claim a Customize tab.
+    expect(activeCapabilityTab('/projects/p1/marketplace')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 639,
+  "count": 632,
   "routes": [
     {
       "method": "GET",
@@ -2095,20 +2095,8 @@
       "path": "/v1/projects/:projectId/snapshots/rebuild"
     },
     {
-      "method": "GET",
-      "path": "/v1/projects/:projectId/subprojects"
-    },
-    {
       "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/:slug/uninstall-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/author-session"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/subprojects/install-session"
+      "path": "/v1/projects/:projectId/marketplace/install-session"
     },
     {
       "method": "GET",
@@ -2224,11 +2212,11 @@
     },
     {
       "method": "GET",
-      "path": "/v1/public/subprojects"
+      "path": "/v1/public/marketplace/templates"
     },
     {
       "method": "GET",
-      "path": "/v1/public/subprojects/:slug"
+      "path": "/v1/public/marketplace/templates/:slug"
     },
     {
       "method": "POST",
@@ -2353,22 +2341,6 @@
     {
       "method": "GET",
       "path": "/v1/skills/:name/file"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/subprojects"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/subprojects"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/subprojects/:subprojectId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/subprojects/:subprojectId"
     },
     {
       "method": "POST",

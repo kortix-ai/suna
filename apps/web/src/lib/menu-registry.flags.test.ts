@@ -15,7 +15,7 @@ import { menuRegistry } from './menu-registry';
  */
 const ALL_FLAGS_OFF: Partial<Record<FeatureFlagKey, boolean>> = {
   review_center: false,
-  subprojects: false,
+  marketplace: false,
 };
 
 /**
@@ -52,7 +52,7 @@ describe('menu registry feature-flag gating', () => {
     // (`visibleCapabilityTabs`), so this asserts the BEHAVIOUR rather than a
     // declaration — a flag that hides the tab hides every way in. Voice has no
     // flag any more: it was removed from the product. Marketplace is a
-    // capability tab on the `subprojects` flag, so it must answer to its OWN
+    // capability tab on the `marketplace` flag, so it must answer to its OWN
     // flag and stay hidden while only `review_center` is on.
     const keysFor = (flags: Partial<Record<FeatureFlagKey, boolean>>) =>
       visibleCapabilityTabs({}, flags).map((tab) => tab.key);
@@ -64,7 +64,7 @@ describe('menu registry feature-flag gating', () => {
 
     expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).toContain('review');
     expect(keysFor({ ...ALL_FLAGS_OFF, review_center: true })).not.toContain('marketplace');
-    expect(keysFor({ ...ALL_FLAGS_OFF, subprojects: true })).toContain('marketplace');
+    expect(keysFor({ ...ALL_FLAGS_OFF, marketplace: true })).toContain('marketplace');
 
     // None of them is a settings tab any more, so the derived palette list
     // must not offer one — that would open the overlay on nothing.

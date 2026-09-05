@@ -33,7 +33,6 @@ const spec: GitTriggerSpec = {
   slug: SLUG,
   path: 'kortix.yaml#triggers.scheduler-exact-proof',
   name: 'Scheduler exact proof',
-  subprojectSlug: null,
   type: 'cron',
   agent: 'default',
   model: null,

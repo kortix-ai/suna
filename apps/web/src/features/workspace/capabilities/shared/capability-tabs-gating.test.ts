@@ -116,13 +116,13 @@ describe('visibleCapabilityTabs', () => {
 
 // The IAM leaf answers "may this member see it". The flag answers "does this
 // project have the surface at all". Marketplace has both: `project.read` and
-// the `subprojects` flag, whose routes answer 403 `feature_disabled` when off
+// the `marketplace` flag, whose install route answers 403 `feature_disabled` when off
 // (`apps/api/src/feature-flags/registry.ts` — `enforcement: 'routes'`,
 // `platformDefault: () => false`). A tab that renders while the flag is off is
 // a tab that 403s on click.
 describe('flag-gated tabs', () => {
   test('at least one tab is flag-gated, and Marketplace is one of them', () => {
-    expect(GATED_TABS.map((t) => `${t.key}:${t.flag}`)).toContain('marketplace:subprojects');
+    expect(GATED_TABS.map((t) => `${t.key}:${t.flag}`)).toContain('marketplace:marketplace');
   });
 
   test('a manager with the flag OFF does not see the gated tab', () => {

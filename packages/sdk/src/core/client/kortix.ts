@@ -376,22 +376,13 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   const connectStatus = P.getConnectStatus;
 
   /**
-   * The subproject store (`/v1/subprojects/*`) — top-level and account-scoped, distinct
-   * from `project(id).subprojects`, which is what a specific project has installed.
-   *
-   * A subproject comes from a GitHub repo or an uploaded `.zip`. Submitting indexes
-   * it; installing is project-scoped and returns a session to open.
+   * The marketplace (`/v1/public/marketplace/templates`) — the public template
+   * catalog. Reading needs no token; installing is project-scoped
+   * (`project(id).marketplace.install`) and returns a session to open.
    */
-  const subprojects = {
-    list: (options?: Parameters<typeof P.listSubprojects>[0]) => P.listSubprojects(options),
-    get: (subprojectId: string) => P.getSubproject(subprojectId),
-    /** Index a subproject from `owner/repo`, optionally `@branch-or-tag`. */
-    submit: (input: Parameters<typeof P.submitSubproject>[0]) => P.submitSubproject(input),
-    /** Index a subproject from an uploaded `.zip`. */
-    submitArchive: (input: Parameters<typeof P.submitSubprojectArchive>[0]) =>
-      P.submitSubprojectArchive(input),
-    /** Remove from the catalogue. Does NOT uninstall it from any project. */
-    remove: (subprojectId: string) => P.deleteSubproject(subprojectId),
+  const marketplace = {
+    list: P.listMarketplaceTemplates,
+    get: P.getMarketplaceTemplate,
   };
 
   /** Id-bound handle for a single project: every sub-resource, projectId pre-applied. */
@@ -641,22 +632,14 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       },
 
       /**
-       * Subprojects installed in this project. Install and uninstall return a
-       * SESSION to open — the agent inside it does the merge and lands a change
-       * request; neither call commits.
-       *
-       * There is no `setActivation` and no `runs` here. A subproject is a set of
-       * entries in the manifest, not a running thing: its triggers are enabled
-       * one at a time through `triggers`, and their runs belong to the trigger
-       * that fired, not to the subproject that contributed it.
+       * Install a marketplace template into this project. Returns a SESSION to
+       * open — the agent inside it does the merge and lands a change request;
+       * nothing is committed by this call, and reverting that change request
+       * is the uninstall. Its triggers are enabled one at a time through
+       * `triggers` once the change request merges.
        */
-      subprojects: {
-        list: () => P.listProjectSubprojects(projectId),
-        install: (subprojectId: string) =>
-          P.createSubprojectInstallSession(projectId, subprojectId),
-        uninstall: (slug: string) => P.createSubprojectUninstallSession(projectId, slug),
-        /** Describe a subproject and have one built. Returns the session to open. */
-        author: (description: string) => P.createSubprojectAuthorSession(projectId, description),
+      marketplace: {
+        install: (slug: string) => P.createMarketplaceInstallSession(projectId, slug),
       },
 
       files: {
@@ -1351,8 +1334,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     sandboxShares,
     /** Deployment-wide Pipedream/easy-connect availability flag (not project-scoped). */
     connectStatus,
-    /** The subproject store (`/v1/subprojects/*`, account-scoped). Installing is per-project. */
-    subprojects,
+    /** The public template catalog (`/v1/public/marketplace/templates`). Installing is per-project. */
+    marketplace,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

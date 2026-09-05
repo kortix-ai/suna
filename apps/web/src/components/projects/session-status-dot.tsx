@@ -12,7 +12,7 @@ import type { ReactNode } from 'react';
 
 /**
  * What this dot can paint: every session display status, plus the two states a
- * SUBPROJECT RUN has that a session does not.
+ * TRIGGER RUN has that a session does not.
  *
  * The two extras are here rather than in a second component because forking the
  * paint table is exactly how a `done` check ends up green on one screen and
@@ -104,9 +104,9 @@ const STATUS_DOT_STYLE: Record<
  * Callers holding a session resolve it with `sessionDisplayStatus`; a run passes
  * its own status, which is that union plus `retrying` and `skipped`.
  *
- * The project sidebar's session rows are the only caller today. The subproject
+ * The project sidebar's session rows are the only caller today. The trigger
  * run strips were the second; they are deleted, because runs are no longer a
- * subproject-scoped surface. `retrying` and `skipped` stay in the table for the
+ * run-scoped surface. `retrying` and `skipped` stay in the table for the
  * run-monitoring surface that replaces them.
  */
 export function SessionStatusDot({

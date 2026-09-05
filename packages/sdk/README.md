@@ -185,30 +185,25 @@ OpenCode session from reusing stale snapshot defaults. A per-call choice
 overrides a `setModel()` or `setAgent()` choice. A handle choice overrides the
 persisted session default.
 
-### Subprojects
+### Marketplace
 
-A subproject is a Kortix project you install into another project: a repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.subprojects` is the account-scoped catalog; `kortix.project(projectId).subprojects` is what one project has installed. Subprojects is a project feature flag, so project-scoped routes return `403 feature_disabled` until a manager enables it.
+A template is a public GitHub repository whose `kortix.yaml` declares agents, skills, connectors and triggers. `kortix.marketplace` is the public template catalog — it needs no token — and `kortix.project(projectId).marketplace.install(slug)` starts the agent session that merges one into a project. Marketplace is a project feature flag, so the install route returns `403 feature_disabled` until a manager enables it.
 
 ```ts
-const { subproject } = await kortix.subprojects.submit({ repo: 'acme/seo-subproject@v1.2.0' });
+const { templates } = await kortix.marketplace.list({ q: 'seo' });
 
-const installed = kortix.project(projectId).subprojects;
-const { session_id } = await installed.install(subproject.subproject_id);
-// The subproject is NOT installed yet. Open that session — the agent reads both
+const { session_id } = await kortix.project(projectId).marketplace.install(templates[0].slug);
+// The template is NOT installed yet. Open that session — the agent reads both
 // manifests, merges, and opens a change request a human reviews.
 ```
 
-`install`, `uninstall` and `author` each return a session id and change nothing themselves. `submitArchive({ file })` indexes a subproject from a `.zip` for a folder that is not a repository yet; that subproject is a snapshot and never re-crawls.
+Three things are worth knowing before you render any of it:
 
-Three shapes are worth knowing before you render any of it:
+- **Nothing records what a project has installed.** The change request the agent opens is the record — everything the template adds lands in that one commit — and reverting it is the uninstall. There is no installed list, no uninstall call and no activation call here.
+- **A template installs with every trigger off.** Enable them individually through `project(id).triggers` once the change request merges. A run belongs to the **trigger** that fired, not to the template that contributed it.
+- **The catalog is curated and static.** It ships with the API; there is no submit, upload or publish call. `MarketplaceTemplate` carries the card — `slug`, `title`, `description`, `repo`, the pinned `resolved_sha`, and the `agents`, `triggers`, `connectors`, `skills` and `env_required` it brings.
 
-- **A subproject has no on/off state and no runs of its own.** It is a set of entries in the project's manifest. There is no activation method and no runs method here: its triggers are enabled one at a time through `project(id).triggers`, and a run belongs to the **trigger** that fired, not to the subproject that contributed it. `InstalledSubproject` therefore carries no `enabled` field and no trigger counts.
-- **A subproject installs with every trigger off.** Enable them individually. A single switch over a whole subproject would be a second answer to "is this on", competing with each trigger's own `enabled` field and the project-wide pause (`project(id).triggers.setActivation`).
-- **Visibility has three values and a submission can write two.** `account` is the default, `private` is the submitter alone (compared against `submitted_by`, so an account co-member does not see it), and `public` — every Kortix user — is **not submittable**. `SubmittableSubprojectVisibility` is `Exclude<SubprojectVisibility, 'public'>`, and `POST /subprojects` answers `400 invalid_enum_value` with `options: ["account", "private"]` on both body shapes. Behind that validator the handler coerces any present non-`account` value to `private`, so a body shape added later cannot widen a subproject by skipping a validator.
-
-`subproject_slug`, `subproject_id`, `subproject_repo` and `subproject_sha` are server-managed session metadata: sending them on `POST /sessions` answers `400`, so a client cannot attribute its own session to someone else's subproject.
-
-React: `useSubprojects`, `useSubproject`, `useProjectSubprojects`. Full reference: `/docs/sdk/subprojects`.
+React: `useMarketplaceTemplates`, `useMarketplaceTemplate`, `useMarketplaceInstall`. Full reference: `/docs/sdk/marketplace`.
 
 ### React runtime
 

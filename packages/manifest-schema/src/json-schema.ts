@@ -43,8 +43,6 @@ import {
   AGENT_MODES_V2,
   AGENT_THEME_COLORS_V2,
   CHANNEL_PLATFORMS,
-  SUBPROJECT_OWNED_KINDS,
-  SUBPROJECT_REPO_RE,
   CONNECTOR_AUTH_TYPES,
   CONNECTOR_AUTHORIZATION_STRATEGIES,
   CONNECTOR_POLICY_ACTIONS,
@@ -328,52 +326,6 @@ function sandboxSchema(): JsonSchemaFragment {
   };
 }
 
-/**
- * One `subprojects:` entry — an installed subproject's identity and provenance
- * (`validateSubprojects`).
- *
- * A subproject is a GitHub repo whose own `kortix.yaml` declares agents, triggers
- * and connectors; installing it MERGES that declaration into this project.
- * This entry is the record of that merge: where it came from, at which commit,
- * and what it contributed. It is the reason `git revert` is a working
- * uninstall — the entry and the entities it names land in one commit.
- *
- * `owns` is the summary; each contributed entity ALSO carries `subproject: <slug>`
- * on its own manifest entry. Both are written so a hand-edit of one is
- * detectable against the other.
- */
-function subprojectSchema(): JsonSchemaFragment {
-  const ownedList: JsonSchemaFragment = { type: 'array', items: SLUG_SCHEMA };
-  return {
-    type: 'object',
-    required: ['slug', 'repo'],
-    properties: {
-      slug: SLUG_SCHEMA,
-      repo: { type: 'string', pattern: SUBPROJECT_REPO_RE.source },
-      /**
-       * The git ref the install ASKED for — a branch or tag. Absent means the
-       * repo's default branch. This is what an update re-resolves against.
-       */
-      ref: NON_EMPTY_STRING,
-      /**
-       * The commit sha `ref` resolved to at install. THE integrity source, and
-       * what "this version" actually means — a branch moves, a sha does not.
-       */
-      sha: NON_EMPTY_STRING,
-      /** Display-only tag (`v1.2.0`). Never the integrity source; `sha` is. */
-      version: NON_EMPTY_STRING,
-      title: { type: 'string' },
-      installed_at: NON_EMPTY_STRING,
-      owns: {
-        type: 'object',
-        properties: Object.fromEntries(SUBPROJECT_OWNED_KINDS.map((kind) => [kind, ownedList])),
-        additionalProperties: false,
-      },
-    },
-    additionalProperties: true,
-  };
-}
-
 /** One `[[triggers]]` entry — cron, webhook, or monitor (`validateTriggers`). */
 function triggerSchema(): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
@@ -384,11 +336,6 @@ function triggerSchema(): JsonSchemaFragment {
       slug: SLUG_SCHEMA,
       type: { type: 'string', enum: [...TRIGGER_TYPES] },
       name: { type: 'string' },
-      // The subproject that contributed this trigger. Materialized onto
-      // `project_trigger_runtime.subproject_slug`, which is what makes a subproject's run
-      // history one indexed query. Cross-field: must name a declared subproject (or
-      // be omitted) — dynamic, left to the imperative validator.
-      subproject: SLUG_SCHEMA,
       // Cross-field: must name a declared agent (or be omitted) — dynamic,
       // left to the imperative validator.
       agent: { type: 'string', minLength: 1 },
@@ -512,8 +459,6 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     properties: {
       slug: SLUG_SCHEMA,
       name: NON_EMPTY_STRING,
-      // The subproject that contributed this connector — see `subprojectSchema`.
-      subproject: SLUG_SCHEMA,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
       provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
       app: { type: 'string' },
@@ -633,9 +578,6 @@ function agentBlockV2Schema(): JsonSchemaFragment {
     properties: {
       enabled: { type: 'boolean' },
       sandbox: SLUG_SCHEMA,
-      // The subproject that contributed this agent — see `subprojectSchema`. Governance,
-      // not behavior, so it belongs here rather than in the agent's own `.md`.
-      subproject: SLUG_SCHEMA,
       connectors: grantSetSchema(),
       connectors_required: {
         type: 'array',
@@ -730,13 +672,6 @@ function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
     triggers: { type: 'array', items: triggerSchema() },
     connectors: { type: 'array', items: connectorSchema(connectorVersion) },
     apps: connectorVersion === 2 ? appsV2Schema() : false,
-    // Subprojects are a v2-only concept. A v1 manifest declaring one is a hard
-    // error rather than a silent no-op — the same stance `apps` takes, and the
-    // same stance v2 takes on `channels`. A `subproject:` key on a v1 trigger or
-    // connector stays structurally legal (it is just a slug) but is inert:
-    // the "must name a declared subproject" cross-check is v2-only, because v1 has
-    // no `subprojects:` section for it to resolve against.
-    subprojects: connectorVersion === 2 ? { type: 'array', items: subprojectSchema() } : false,
   };
 }
 

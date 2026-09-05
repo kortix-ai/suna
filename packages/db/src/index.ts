@@ -50,11 +50,6 @@ export {
   projectTriggerRuntime,
   projectTriggerSessionAccessGrants,
   projectTriggerExecutions,
-  // Subprojects — the store index and its per-project projection.
-  subprojectVisibilityEnum,
-  subprojectStatusEnum,
-  subprojects,
-  projectSubprojects,
   projectMonitorEvents,
   projectMonitorBoxes,
   sessionLifecycleCommands,

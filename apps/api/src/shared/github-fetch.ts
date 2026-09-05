@@ -2,7 +2,7 @@
  * A `fetch` that authenticates GitHub calls, and only GitHub calls.
  *
  * Authenticating lifts the unauthenticated 60 req/hr ceiling to 5,000/hr, which
- * is what makes crawling many subproject repos usable.
+ * is what makes reading many repositories usable.
  * Deliberately kept out of `@kortix/registry` (which stays pure) and injected as
  * a `fetchImpl` wrapper instead.
  *

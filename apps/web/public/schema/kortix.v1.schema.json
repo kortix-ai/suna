@@ -176,10 +176,6 @@
           "name": {
             "type": "string"
           },
-          "subproject": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
-          },
           "agent": {
             "type": "string",
             "minLength": 1
@@ -451,10 +447,6 @@
           "name": {
             "type": "string",
             "minLength": 1
-          },
-          "subproject": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
           },
           "provider": {
             "type": "string",
@@ -746,7 +738,6 @@
       }
     },
     "apps": false,
-    "subprojects": false,
     "agents": {
       "type": "array",
       "items": {

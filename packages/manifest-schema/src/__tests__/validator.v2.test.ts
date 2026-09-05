@@ -421,9 +421,7 @@ connectors:
 `);
     expect(valid).toBe(false);
     expect(errorPaths).toContain('connectors[0].credential');
-    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain(
-      'kortix_version 2',
-    );
+    expect(issues.find((i) => i.path === 'connectors[0].credential')?.message).toContain('kortix_version 2');
   });
 
   test('v2 accepts "shared" (the only mode) cleanly', () => {
@@ -523,9 +521,7 @@ connectors:
     app: gmail
 `);
     expect(valid).toBe(true);
-    expect(
-      issues.find((issue) => issue.path === 'connectors[0].authorization_strategy'),
-    ).toBeUndefined();
+    expect(issues.find((issue) => issue.path === 'connectors[0].authorization_strategy')).toBeUndefined();
   });
 });
 
@@ -1072,6 +1068,7 @@ connectors:
 `);
     expect(errorPaths).toContain('connectors[0].provider');
   });
+
 });
 
 // ─── validateAgentMdFrontmatter ─────────────────────────────────────────────
@@ -1184,176 +1181,5 @@ describe('validateAgentMdFrontmatter', () => {
   test('`maxSteps` is rejected with a pointer to `steps`', () => {
     const issues = frontmatterIssues({ maxSteps: 50 });
     expect(issues.find((i) => i.path === 'agents/w.md.maxSteps')?.message).toContain('steps');
-  });
-});
-
-// ─── subprojects ────────────────────────────────────────────────────────────────
-//
-// `subprojects:` is written by the install flow, not by hand, so these tests are
-// about catching a bad merge or a hand-edit that broke the ownership record:
-// the entry itself, and the `subproject:` back-references that must resolve to it.
-describe('subprojects (v2)', () => {
-  const withSubprojects = (body: string): string =>
-    `kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\n${body}`;
-
-  const INSTALLED = `
-kortix_version: 2
-default_agent: w
-subprojects:
-  - slug: seo-watch
-    repo: acme/seo-subproject
-    ref: main
-    sha: 9f3c1a7ecb4d21f0a8b3c5d7e9f1a2b3c4d5e6f7
-    version: v1.2.0
-    title: SEO watch
-    installed_at: "2026-08-30T09:14:02Z"
-    owns:
-      agents: [seo-writer]
-      skills: [seo-audit]
-      connectors: [search-console]
-      triggers: [seo-weekly]
-agents:
-  w: {}
-  seo-writer:
-    subproject: seo-watch
-    skills: [seo-audit]
-connectors:
-  - slug: search-console
-    subproject: seo-watch
-    provider: composio
-    app: google_search_console
-triggers:
-  - slug: seo-weekly
-    name: Weekly SEO sweep
-    type: cron
-    subproject: seo-watch
-    agent: seo-writer
-    enabled: false
-    cron: "0 0 9 * * 1"
-    prompt: Audit the site and open a CR with the findings.
-`;
-
-  test('a fully-populated installed subproject validates with no issues', () => {
-    const result = summarize(INSTALLED);
-    expect(result.errorPaths).toEqual([]);
-    expect(result.valid).toBe(true);
-  });
-
-  test('slug and repo are the only required fields', () => {
-    expect(
-      summarize(withSubprojects('subprojects:\n  - slug: standup\n    repo: kortix-ai/standup\n')).valid,
-    ).toBe(true);
-  });
-
-  test('a missing repo is an error — a subproject always records its provenance', () => {
-    const result = summarize(withSubprojects('subprojects:\n  - slug: standup\n'));
-    expect(result.errorPaths).toContain('subprojects[0].repo');
-    expect(result.issues.find((i) => i.path === 'subprojects[0].repo')?.message).toContain('required');
-  });
-
-  test('a repo given as a URL is rejected with the expected form', () => {
-    const result = summarize(
-      withSubprojects('subprojects:\n  - slug: standup\n    repo: https://github.com/kortix-ai/standup\n'),
-    );
-    expect(result.issues.find((i) => i.path === 'subprojects[0].repo')?.message).toContain('owner/repo');
-  });
-
-  test('two subprojects claiming the same slug is a duplicate error', () => {
-    const result = summarize(
-      withSubprojects(
-        'subprojects:\n  - slug: standup\n    repo: a/one\n  - slug: standup\n    repo: b/two\n',
-      ),
-    );
-    expect(result.issues.find((i) => i.path === 'subprojects[1].slug')?.message).toContain('duplicate');
-  });
-
-  test('subprojects authored as a map instead of a list is an error on the section', () => {
-    const result = summarize(withSubprojects('subprojects:\n  standup:\n    repo: kortix-ai/standup\n'));
-    expect(result.errorPaths).toContain('subprojects');
-  });
-
-  test('owns may only carry the four entity kinds', () => {
-    const result = summarize(
-      withSubprojects(
-        'subprojects:\n  - slug: standup\n    repo: k/s\n    owns:\n      secrets: [SLACK_TOKEN]\n',
-      ),
-    );
-    expect(result.issues.find((i) => i.path === 'subprojects[0].owns.secrets')?.message).toContain(
-      'agents, skills, connectors, triggers',
-    );
-  });
-
-  test('an owns entry that is not a slug is an error at its index', () => {
-    const result = summarize(
-      withSubprojects(
-        'subprojects:\n  - slug: standup\n    repo: k/s\n    owns:\n      triggers: ["Not A Slug"]\n',
-      ),
-    );
-    expect(result.errorPaths).toContain('subprojects[0].owns.triggers[0]');
-  });
-
-  test('an empty ref is rejected rather than treated as absent', () => {
-    const result = summarize(
-      withSubprojects('subprojects:\n  - slug: standup\n    repo: k/s\n    ref: ""\n'),
-    );
-    expect(result.errorPaths).toContain('subprojects[0].ref');
-  });
-
-  test('an empty sha is rejected too — it is the integrity source', () => {
-    const result = summarize(
-      withSubprojects('subprojects:\n  - slug: standup\n    repo: k/s\n    sha: ""\n'),
-    );
-    expect(result.errorPaths).toContain('subprojects[0].sha');
-  });
-
-  // The two halves of the ownership record must agree: `subprojects[]` says what is
-  // installed, `subproject:` on each entity says who owns it.
-  test('a trigger subproject naming an undeclared subproject is an error', () => {
-    const result = summarize(
-      withSubprojects(
-        'triggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * 1"\n    prompt: go\n    subproject: ghost\n',
-      ),
-    );
-    expect(result.issues.find((i) => i.path === 'triggers[0].subproject')?.message).toContain(
-      'does not match any entry in `subprojects`',
-    );
-  });
-
-  test('a connector subproject naming an undeclared subproject is an error', () => {
-    const result = summarize(
-      withSubprojects(
-        'connectors:\n  - slug: c\n    provider: mcp\n    url: https://mcp.example.com\n    subproject: ghost\n',
-      ),
-    );
-    expect(result.errorPaths).toContain('connectors[0].subproject');
-  });
-
-  test('an agent subproject naming an undeclared subproject is an error', () => {
-    const result = summarize(
-      'kortix_version: 2\ndefault_agent: w\nagents:\n  w:\n    subproject: ghost\n',
-    );
-    expect(result.errorPaths).toContain('agents.w.subproject');
-  });
-
-  // A malformed value is a SHAPE error, reported once — not also as an
-  // unresolved cross-reference.
-  test('a malformed subproject ref is reported once, as a shape error', () => {
-    const result = summarize(
-      withSubprojects(
-        'subprojects:\n  - slug: standup\n    repo: k/s\ntriggers:\n  - slug: t\n    type: cron\n    cron: "0 0 9 * * 1"\n    prompt: go\n    subproject: "Stand Up"\n',
-      ),
-    );
-    const subprojectIssues = result.issues.filter((i) => i.path === 'triggers[0].subproject');
-    expect(subprojectIssues).toHaveLength(1);
-    expect(subprojectIssues[0]?.message).toContain('slug of a subproject declared in `subprojects`');
-  });
-
-  test('subprojects is v2-only — a v1 manifest declaring one is rejected', () => {
-    const result = summarize(
-      'kortix_version = 1\n\n[[subprojects]]\nslug = "standup"\nrepo = "kortix-ai/standup"\n',
-      'toml',
-    );
-    expect(result.errorPaths).toContain('subprojects');
-    expect(result.issues.find((i) => i.path === 'subprojects')?.message).toContain('kortix_version 2');
   });
 });

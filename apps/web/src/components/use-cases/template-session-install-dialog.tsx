@@ -1,6 +1,6 @@
 'use client';
 
-import { createSubprojectInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
+import { createMarketplaceInstallSession, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   SignInIcon as LogIn,
@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import {
   Select,
   SelectContent,
@@ -23,18 +24,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import Loading from '@/components/ui/loading';
 import { useProjectPicker } from '@/features/projects/use-project-picker';
 import { useAuth } from '@/features/providers/auth-provider';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
 
-// A use-case slug is handed to the subproject install-session as the subproject
-// identifier. The marketplace catalog this used to resolve against
-// (`kortix-starter:<slug>`) was removed with the marketplace, and the subproject
-// index is what replaces it.
+// A use-case slug is handed to the marketplace install-session as the template
+// slug. The registry this used to resolve against (`kortix-starter:<slug>`)
+// was removed with the old skills marketplace; the static template catalog
+// (`apps/api/src/marketplace/templates.ts`) is what replaces it.
 //
-// UNVERIFIED, on purpose: no subproject with a use-case slug exists in the index
-// yet, so this install answers 404 until that catalog content is published.
+// UNVERIFIED, on purpose: no template with a use-case slug is in that catalog
+// yet, so this install answers 404 until one is added.
 // The alternative was dropping the only CTA on an indexed acquisition page.
 // Same sentinel the unified AddToProjectModal uses: "create a project inline,
 // then install into it" as one Select choice next to the existing projects.
@@ -63,10 +63,7 @@ export function TemplateSessionInstallDialog({
   const [opening, setOpening] = useState(false);
 
   const { projects, projectsQuery } = useProjectPicker({ open, enabled: !!user });
-  const activeProjects = useMemo(
-    () => projects.filter((p) => p.status === 'active'),
-    [projects],
-  );
+  const activeProjects = useMemo(() => projects.filter((p) => p.status === 'active'), [projects]);
 
   useEffect(() => {
     if (!open) return;
@@ -104,7 +101,7 @@ export function TemplateSessionInstallDialog({
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
         projectId = project.project_id;
       }
-      const { session_id } = await createSubprojectInstallSession(projectId, templateId);
+      const { session_id } = await createMarketplaceInstallSession(projectId, templateId);
       // nav-contract: prefetch-only — `session_id` comes back from the install
       // POST, and the project may be provisioned in the same click, so neither
       // half of this href exists before the click.
@@ -120,9 +117,7 @@ export function TemplateSessionInstallDialog({
   }
 
   const confirmDisabled =
-    opening ||
-    !target ||
-    (target === NEW_PROJECT && newProjectName.trim().length === 0);
+    opening || !target || (target === NEW_PROJECT && newProjectName.trim().length === 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

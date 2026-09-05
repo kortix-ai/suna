@@ -18,9 +18,9 @@ const SIDEBAR = 'src/features/workspace/project-sidebar/project-session-list.tsx
  * being protected is "there is only one of these" — which no amount of
  * rendering one of them can prove.
  *
- * The sidebar's session list is currently the ONLY consumer. The subproject run
+ * The sidebar's session list is currently the ONLY consumer. The trigger run
  * strips were the second one; they are deleted, because runs are no longer a
- * subproject-scoped surface. The table keeps its two run-only rows anyway — see
+ * run-scoped surface. The table keeps its two run-only rows anyway — see
  * the `retrying`/`skipped` test below for why that is deliberate and not dead
  * code to tidy away.
  */
@@ -38,7 +38,7 @@ describe('session status dot is the only paint table', () => {
 
   test('the two run-only states stay in this table, ready for the next run surface', () => {
     // A trigger run is `retrying` or `skipped` and a session never is. These two
-    // rows have no consumer right now — the subproject run strips that used them
+    // rows have no consumer right now — the trigger run strips that used them
     // are gone. They stay because the run-monitoring surface that replaces those
     // strips paints the same nine states, and re-deriving two of them in a new
     // file is precisely how `done` ends up green on one screen.

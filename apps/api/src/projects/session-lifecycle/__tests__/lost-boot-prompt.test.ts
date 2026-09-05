@@ -78,7 +78,7 @@ const {
   reconcileLostBootPrompts,
 } = await import('../lost-boot-prompt');
 
-/** The real shape of a stuck subproject run (ca470c15 in the incident). */
+/** The real shape of a stuck trigger run (ca470c15 in the incident). */
 function candidateRow(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'ca470c15-d7e7-482a-9dac-7e457d0ed9a2',
@@ -111,7 +111,7 @@ describe('lostBootPromptIdempotencyKey', () => {
 });
 
 describe('lostBootPromptOverrides', () => {
-  test("carries the subproject's own agent so the rerun is not the runtime default", () => {
+  test("carries the trigger's own agent so the rerun is not the runtime default", () => {
     expect(lostBootPromptOverrides('kortix-monalisa')).toEqual({ agent: 'kortix-monalisa' });
   });
 
@@ -188,7 +188,7 @@ describe('reconcileLostBootPrompts', () => {
 
   test('a deduped enqueue is not counted as a rerun and is not loud', async () => {
     // The second sweep over a session already recovered. This is what keeps a
-    // subproject from being run twice by a repeating maintenance tick.
+    // trigger from being run twice by a repeating maintenance tick.
     queryRows = [candidateRow()];
     dedupeNext = true;
 

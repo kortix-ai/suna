@@ -51,10 +51,7 @@ import {
 // `@kortix/manifest-schema` backward compatibility.
 import {
   rejectChannelsV2,
-  rejectSubprojectsV1,
   validateAgentsV2,
-  validateSubprojectRefsV2,
-  validateSubprojectsV2,
   validateDefaultAgentV2,
   validateRuntimeV2,
   validateTriggerAgentRefsV2,
@@ -99,11 +96,6 @@ export {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   type ConnectorProvider,
-  SUBPROJECT_OWNED_KINDS,
-  type SubprojectOwnedKind,
-  SUBPROJECT_REPO_RE,
-  type SubprojectRepoAddress,
-  parseSubprojectRepo,
   ENV_NAME_RE,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
@@ -153,8 +145,6 @@ export {
   type AgentBlockV2,
   type AppBlockV2,
   type AppResourcesV2,
-  type SubprojectEntryV2,
-  type SubprojectOwnsV2,
   type ManifestV2,
   resolveGrantSet,
   validatePermissionConfig,
@@ -288,7 +278,6 @@ function validateManifestBodyV1(
   validateAgents(parsed.agents, 'agents', issues, format);
   validateChannels(parsed.channels, 'channels', issues, format);
   rejectRetiredApps(parsed.apps, 'apps', issues);
-  rejectSubprojectsV1(parsed.subprojects, 'subprojects', issues);
 }
 
 /**
@@ -313,11 +302,9 @@ function validateManifestBodyV2(
   validateAppsV2(parsed.apps, 'apps', issues);
   rejectChannelsV2(parsed.channels, 'channels', issues);
   validateRuntimeV2(parsed.runtime, 'runtime', issues);
-  const subprojectSlugs = validateSubprojectsV2(parsed.subprojects, 'subprojects', issues);
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
-  validateSubprojectRefsV2(parsed, subprojectSlugs, issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -1076,7 +1063,6 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[], 
         severity: 'error',
       });
     }
-    expectSubprojectRefOrAbsent(entry.subproject, `${where}.subproject`, issues);
     // Aliases below mirror the runtime parser's input tolerance
     // (apps/api/.../triggers.ts parseTriggerEntry): `prompt`/`prompt_template`,
     // `cron`/`schedule`, `run_at`/`runAt`, `secret_env`/`secretEnv`,
@@ -1274,7 +1260,6 @@ function validateConnectors(node: unknown, path: string, issues: ManifestIssue[]
         severity: 'error',
       });
     }
-    expectSubprojectRefOrAbsent(entry.subproject, `${where}.subproject`, issues);
     // Runtime parser lowercases provider/auth.type/policy.action/platform before
     // matching — mirror that so a manifest using "MCP" or "Slack" isn't blocked.
     const provider = typeof entry.provider === 'string' ? entry.provider.trim().toLowerCase() : '';
@@ -1626,30 +1611,6 @@ export function expectStringOrAbsent(value: unknown, path: string, issues: Manif
   if (value === undefined || value === null) return;
   if (typeof value !== 'string') {
     issues.push({ path, message: 'must be a string.', severity: 'error' });
-  }
-}
-
-/**
- * A `subproject:` back-reference on a trigger / connector / agent block: the slug of
- * the subproject that contributed the entity. SHAPE only — "does it name a declared
- * subproject" is a cross-field rule, so `validateSubprojectRefsV2` owns it (and runs for
- * v2 only, since v1 has no `subprojects:` section to resolve against).
- *
- * Exported so `./index.v2.ts`'s `validateAgentBlockV2` can reuse it.
- */
-export function expectSubprojectRefOrAbsent(
-  value: unknown,
-  path: string,
-  issues: ManifestIssue[],
-): void {
-  if (value === undefined || value === null) return;
-  const slug = typeof value === 'string' ? value.trim() : '';
-  if (!slug || !SLUG_RE.test(slug)) {
-    issues.push({
-      path,
-      message: 'subproject must be the slug of a subproject declared in `subprojects`.',
-      severity: 'error',
-    });
   }
 }
 

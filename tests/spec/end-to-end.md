@@ -887,70 +887,43 @@ servable — the same fact the hostname's own DNS record already states.
 
 ---
 
-## 29. Subprojects
+## 29. Marketplace
 
-A subproject is a Kortix project you install into another project: a repository, or
-an uploaded `.zip`, whose `kortix.yaml` declares agents, skills, connectors and
-triggers. Installing one MERGES that declaration into a target project through
-an agent session that opens a change request — the route itself commits nothing.
+A template is a Kortix project you install into your own: a public GitHub
+repository whose `kortix.yaml` declares agents, skills, connectors and triggers.
+The catalog is a static, curated list that ships with the API — there is no
+submit, upload or publish route, and nothing about a template lives in the
+database. Installing one MERGES its declaration into a target project through an
+agent session that opens one change request; the route itself commits nothing,
+nothing records what a project has installed, and reverting that change request
+is the uninstall. A template's triggers are enabled one at a time under §12
+Triggers, and a run belongs to the trigger that fired.
 
-A subproject has no on/off state and no runs of its own. It is a set of entries
-in a project's manifest. Its triggers are enabled one at a time under §12
-Triggers, and a run belongs to the trigger that fired, not to the subproject
-that contributed it. So this section has no activation contract and no runs
-contract; the surface that reads
-`project_trigger_runtime.subproject_slug` is separate work.
+One boundary the flows respect, stated so nobody reads a pass as more than it
+is: the install spawns a real session past validation, and a session needs a
+cloud sandbox with a reachable callback origin, excluded locally. So that flow
+asserts every 4xx boundary exactly and accepts `201` or
+`503 KORTIX_URL_UNREACHABLE` past the gate.
 
-Two boundaries the flows respect, both stated so nobody reads a pass as more
-than it is:
+`MKTP-1` The public catalog — `GET /public/marketplace/templates` answers `200
+{templates}` with no auth at all, `Cache-Control: public, max-age=300,
+must-revalidate` and an `ETag`; a matching `If-None-Match` → `304`. Every card
+carries a 40-hex `resolved_sha` and never its manifest — the manifest travels to
+the agent through the install prompt, not to a browser. `?q=` narrows by title,
+description, repo or slug, case-insensitively, and a nonsense query is an empty
+list, not an error. `GET /public/marketplace/templates/:slug` → `200 {template}`
+for a catalog slug and `404` otherwise.
 
-- Indexing from GitHub needs a reachable public repository, which the local
-  profile excludes. The flows submit ARCHIVES instead, which exercise the same
-  crawl — manifest parse, card derivation, upsert — against bytes the flow
-  builds itself.
-- Install, uninstall and author each spawn a real session past validation, and
-  a session needs a cloud sandbox with a reachable callback origin, excluded
-  locally. So those flows assert every 4xx boundary exactly and accept
-  `201` or `503 KORTIX_URL_UNREACHABLE` past the gate.
+`MKTP-2` The feature gate — with the `marketplace` flag off a project member's
+install answers `403 {code:'feature_disabled', feature:'marketplace'}`, not a
+session. Membership is checked BEFORE the flag, so a stranger gets `404` and
+never learns whether the project has the marketplace on.
 
-`SUBPROJ-1` Catalog CRUD — `POST /subprojects` indexes an uploaded archive and derives
-the card by PARSING the manifest (its triggers and agents come back named, not
-inferred from the filename); visibility defaults to `account` and an explicit
-`private` is honored; re-uploading the
-same slug REPLACES the row rather than creating a second subproject. An archive with
-no `kortix.yaml` → `400 manifest_not_found`; an invalid manifest →
-`400 manifest_invalid` carrying `issues[].path`; a non-zip body →
-`400 invalid_archive`; a non-GitHub or path-traversal repo address → `400`. A
-private subproject is listed and readable by its owner and INVISIBLE to another
-account — `GET /subprojects/:id` answers `404`, never `403`, because a `403` would
-confirm the id exists. Only the submitting account may `DELETE` it. Asking for
-`visibility: 'public'` is COERCED to `private`, never honored and never `400`:
-a globally visible subproject is a curation decision created by migration,
-seeder or direct insert, and a rejection naming the value would confirm the
-value exists.
-
-`SUBPROJ-2` Installed list — `GET /projects/:projectId/subprojects` reads the project's
-own manifest, so it answers `200 {subprojects, errors}` with an empty list for a
-project that has installed nothing, `401` anonymous, `404` unknown project, and
-`403/404` for a non-member. Per-entry parse errors are reported in `errors`
-rather than dropping the subproject silently.
-
-`SUBPROJ-3` The feature gate — every project-scoped subproject route fails CLOSED:
-with the `subprojects` flag off a project member gets
-`403 {code:'feature_disabled', feature:'subprojects'}`, not an empty `200`.
-Membership is checked BEFORE the flag, so a stranger gets `404` and never
-learns whether the project has subprojects enabled.
-
-`SUBPROJ-4` Install, author and uninstall sessions — each validates fully before
-spawning anything. `install-session` without `subproject_id` → `400 'subproject_id is
-required'`; an unknown `subproject_id` → `404`; another account's private subproject →
-`403/404`. `author-session` with an empty or 4001-character description →
-`400`. `uninstall-session` for a subproject the project does not have → `404`. Past
-the gates each answers `201 {session_id}` where a sandbox is reachable.
-Separately, `POST /projects/:projectId/sessions` carrying
-`metadata.subproject_slug` → `400` naming the key: subproject attribution is
-server-managed, or a client could put its own session in someone else's run
-history.
+`MKTP-3` The install session — `POST /projects/:projectId/marketplace/install-session`
+validates fully before spawning anything: `401` anonymous, `404` unknown
+project, `400 'slug is required'` without a slug, `404` for a slug that is not in
+the catalog, `403/404` for a non-member. Past the gates it answers
+`201 {session_id}` where a sandbox is reachable.
 
 ## 30. Additional executable product contracts
 

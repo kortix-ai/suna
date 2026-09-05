@@ -108,19 +108,6 @@ export interface GitTriggerSpec {
   path: string;
   /** Human label; defaults to the slug when not set. */
   name: string;
-  /**
-   * The subproject (`subprojects[].slug`) that contributed this trigger, or null for a
-   * hand-authored one. Materialized onto `project_trigger_runtime.subproject_slug`
-   * so a subproject's run history is one indexed query over
-   * `project_trigger_executions` rather than a git read per row.
-   *
-   * Not validated against the `subprojects:` section here: this parser is
-   * per-entry, and `@kortix/manifest-schema`'s `validateSubprojectRefsV2` owns the
-   * cross-field check at the CR-merge gate. A dangling ref materializes as a
-   * subproject with no runs, never as a parse error that would take the whole
-   * trigger offline.
-   */
-  subprojectSlug: string | null;
   type: GitTriggerType;
   /** Agent name (default: "default"). */
   agent: string;
@@ -273,9 +260,7 @@ export function parseMonitorFields(
     if ('error' in parsed) return parsed;
     intervalSeconds = parsed.seconds;
   } else if (row.interval !== undefined && row.interval !== null) {
-    return {
-      error: 'interval is only valid on a `mode: poll` monitor — a stream runs continuously',
-    };
+    return { error: 'interval is only valid on a `mode: poll` monitor — a stream runs continuously' };
   }
 
   let expectEventWithinSeconds: number | null = null;
@@ -292,15 +277,7 @@ export function parseMonitorFields(
 
   // cron/webhook wiring on a monitor is a hard error, not a silent drop: a
   // manifest that claims a schedule the monitor runner never reads is a lie.
-  for (const key of [
-    'cron',
-    'schedule',
-    'run_at',
-    'runAt',
-    'timezone',
-    'secret_env',
-    'secretEnv',
-  ]) {
+  for (const key of ['cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv']) {
     if (row[key] !== undefined && row[key] !== null) {
       return {
         error: `${key} is not valid on a monitor trigger — monitors are driven by their \`run\` process`,
@@ -661,12 +638,6 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     type: spec.type,
     agent: spec.agent,
   };
-  // Ownership must survive a UI/CLI edit. The CRUD path is read-modify-write on
-  // the whole entry, so omitting `subproject` here would silently orphan a
-  // subproject-installed trigger the first time anyone toggled it — the subproject's run
-  // history would stop at that edit. Only emitted when set, so a hand-authored
-  // trigger's manifest entry stays byte-stable.
-  if (spec.subprojectSlug) entry.subproject = spec.subprojectSlug;
   // Only emit model when set so manifests on the "Default" path stay byte-stable.
   if (spec.model) entry.model = spec.model;
   entry.enabled = spec.enabled;
@@ -765,11 +736,6 @@ function parseTriggerEntry(
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  // A malformed `subproject:` reads as "hand-authored" rather than failing the entry
-  // — the manifest gate already rejects a non-slug value, and a trigger that
-  // fires is worth more than an ownership label. Shared by all four specs below.
-  const subprojectSlugRaw = typeof row.subproject === 'string' ? row.subproject.trim() : '';
-  const subprojectSlug = subprojectSlugRaw && SLUG_RE.test(subprojectSlugRaw) ? subprojectSlugRaw : null;
   const agent =
     typeof row.agent === 'string' && row.agent.trim()
       ? row.agent.trim()
@@ -865,7 +831,6 @@ function parseTriggerEntry(
         slug,
         path,
         name,
-        subprojectSlug,
         type: 'monitor',
         agent,
         model,
@@ -917,7 +882,6 @@ function parseTriggerEntry(
           slug,
           path,
           name,
-          subprojectSlug,
           type: 'cron',
           agent,
           model,
@@ -949,7 +913,6 @@ function parseTriggerEntry(
         slug,
         path,
         name,
-        subprojectSlug,
         type: 'cron',
         agent,
         model,
@@ -965,8 +928,8 @@ function parseTriggerEntry(
         expectEventWithinSeconds: null,
         sessionMode,
         pinnedSessionId,
-        sessionKey,
-        filter,
+          sessionKey,
+          filter,
       },
     };
   }
@@ -993,7 +956,6 @@ function parseTriggerEntry(
       slug,
       path,
       name,
-      subprojectSlug,
       type: 'webhook',
       agent,
       model,
@@ -1009,8 +971,8 @@ function parseTriggerEntry(
       expectEventWithinSeconds: null,
       sessionMode,
       pinnedSessionId,
-      sessionKey,
-      filter,
+          sessionKey,
+          filter,
     },
   };
 }

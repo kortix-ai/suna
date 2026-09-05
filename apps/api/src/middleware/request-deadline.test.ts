@@ -21,7 +21,7 @@ describe('requestDeadline exemptions', () => {
 
   test.each([
     '/v1/projects/00000000-0000-4000-a000-000000000001/registry',
-    '/v1/subprojects',
+    '/v1/public/marketplace/templates',
   ])('does not exempt bounded route %s', (path) => {
     expect(isExempt(ctx(path))).toBe(false);
   });

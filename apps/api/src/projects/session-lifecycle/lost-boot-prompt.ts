@@ -1,7 +1,7 @@
 /**
  * Recovery for a BOOT PROMPT the runtime threw away.
  *
- * A session created with `initial_prompt` (every trigger fire, every subproject run)
+ * A session created with `initial_prompt` (every trigger fire)
  * does NOT go through the prompt inbox. The API pre-creates one `delivering`
  * turn record (`initialSandboxTurnMetadata`), the sandbox daemon claims the text
  * at boot (`turn-stream kind=initial_turn_claim`) and POSTs it straight to its
@@ -12,7 +12,7 @@
  *
  * Measured on a local stack, 2026-08-31: 7 of 10 sessions in one project ended
  * this way — `session_turns` holding a single `abandoned` row, no `accepted_at`,
- * an empty transcript, and the session reaped 15 minutes later. Every subproject run
+ * an empty transcript, and the session reaped 15 minutes later. Every trigger run
  * that day produced no output. The mature path (`continue_session` through
  * `session_lifecycle_commands`) has agent-roster validation, env sync, a healing
  * retry loop, bounded attempts and a user-visible dead-letter. The boot path had
@@ -30,7 +30,7 @@
  * WHY IT IS BOUNDED IN TIME
  * A trigger run is only worth recovering while it is still the CURRENT run.
  * Past `LOST_BOOT_PROMPT_MAX_AGE_MS` the scheduled work is stale and the next
- * cron fire is the right recovery — re-running a day-old subproject would publish
+ * cron fire is the right recovery — re-running a day-old trigger fire would publish
  * last night's output as today's. The lower bound
  * (`LOST_BOOT_PROMPT_GRACE_MS`) lets the daemon's own boot retries and turn
  * adoption settle before this pass calls the prompt lost.
@@ -79,7 +79,7 @@ export interface LostBootPromptResult {
 /**
  * The recovery prompt's overrides.
  *
- * The agent is carried so the run happens under the subproject's own agent rather
+ * The agent is carried so the run happens under the trigger's own agent rather
  * than the runtime default. `deliverPrompt` validates it against the live
  * roster (`resolveDeliverableAgent`) and drops an agent the runtime does not
  * have — which the boot path never did, and is one way a boot prompt reaches a

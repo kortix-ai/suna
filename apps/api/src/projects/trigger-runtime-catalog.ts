@@ -14,7 +14,6 @@ const databaseStore: TriggerRuntimeCatalogStore = {
       .select({
         slug: projectTriggerRuntime.slug,
         sessionId: projectTriggerRuntime.sessionId,
-        subprojectSlug: projectTriggerRuntime.subprojectSlug,
         scheduleRevision: projectTriggerRuntime.scheduleRevision,
       })
       .from(projectTriggerRuntime)
@@ -39,7 +38,6 @@ const databaseStore: TriggerRuntimeCatalogStore = {
         projectId,
         slug: spec.slug,
         sessionId: spec.pinnedSessionId,
-        subprojectSlug: spec.subprojectSlug,
         triggerType: spec.type,
         enabled: spec.enabled,
         scheduleCron: spec.cron,
@@ -55,10 +53,6 @@ const databaseStore: TriggerRuntimeCatalogStore = {
         target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
         set: {
           sessionId: spec.pinnedSessionId,
-          // Re-materialized on every reconcile, so removing `subproject:` from the
-          // manifest clears the column and the subproject's run history stops
-          // claiming the trigger. Ownership can only be changed in git.
-          subprojectSlug: spec.subprojectSlug,
           triggerType: spec.type,
           enabled: spec.enabled,
           scheduleCron: spec.cron,

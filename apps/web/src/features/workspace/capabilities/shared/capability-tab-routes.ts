@@ -95,7 +95,7 @@ export interface CapabilityTab {
  * retired `/config?section=` link).
  *
  * Two tabs are flag-gated, and each says so in its own `flag:` field —
- * Review on `review_center`, Marketplace on `subprojects`.
+ * Review on `review_center`, Marketplace on `marketplace`.
  * `visibleCapabilityTabs` in `capability-tabs.tsx` hides a tab while its flag
  * is off; that function reads the field and knows no tab key by name.
  */
@@ -104,12 +104,12 @@ export const CAPABILITY_TABS: readonly CapabilityTab[] = [
   { key: 'skills', label: 'Skills' },
   { key: 'connectors', label: 'Connectors' },
   { key: 'triggers', label: 'Triggers' },
-  // Marketplace installs the four tabs above it — a subproject delivers agents,
+  // Marketplace installs the four tabs above it — a template delivers agents,
   // skills, connectors and triggers in one commit — so it reads as the last of
   // the "what this project can do" group, ahead of Review and Secrets. Not
   // first: `CAPABILITY_TABS[0]` is the landing tab, and landing on a store
   // would answer a question nobody asked.
-  { key: 'marketplace', label: 'Marketplace', flag: 'subprojects' },
+  { key: 'marketplace', label: 'Marketplace', flag: 'marketplace' },
   { key: 'review', label: 'Review', flag: 'review_center' },
   { key: 'models', label: 'Models' },
   { key: 'secrets', label: 'Secrets' },

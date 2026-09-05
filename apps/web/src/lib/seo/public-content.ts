@@ -153,7 +153,7 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     slug: 'marketplace',
     title: 'Kortix Marketplace',
     description:
-      'Browse the public Kortix subproject catalogue. Each subproject carries the agents, skills, connectors and triggers that run one loop end to end — installed into your own repo as files you own and review.',
+      'Browse the Kortix template marketplace. Each template carries the agents, skills, connectors and triggers that run one loop end to end — installed into your own repo as files you own and review.',
     htmlPath: '/marketplace',
   },
   {

@@ -35,12 +35,12 @@ function markdownEntry(pathname: string, lastModified?: string): SitemapEntry {
 }
 
 /**
- * Every public subproject's detail page — `/marketplace/<slug>`.
+ * Every public template's detail page — `/marketplace/<slug>`.
  *
- * These are the only sitemap entries that come from the DATABASE rather than
- * from a committed record, so this is the only part of the sitemap that can fail
+ * These are the only sitemap entries that come from the API rather than from a
+ * committed record, so this is the only part of the sitemap that can fail
  * because a service is down. It swallows that failure: a sitemap missing the
- * catalogue is a crawl the index page still leads to, while a throw here means
+ * catalog is a crawl the index page still leads to, while a throw here means
  * NO sitemap at all and every other URL disappears with it.
  *
  * The loader is imported dynamically, inside the try, because it carries
@@ -48,14 +48,11 @@ function markdownEntry(pathname: string, lastModified?: string): SitemapEntry {
  * graph, which is every `bun test` run of this file. The dynamic form makes that
  * the same fail-closed path as an unreachable API.
  */
-async function subprojectEntries(): Promise<SitemapEntry[]> {
+async function templateEntries(): Promise<SitemapEntry[]> {
   try {
-    const { loadPublicSubprojects } =
-      await import('@/features/subprojects/public-subprojects-server');
-    const subprojects = await loadPublicSubprojects();
-    return subprojects.map((subproject) =>
-      htmlEntry(`/marketplace/${subproject.slug}`, subproject.updated_at),
-    );
+    const { loadPublicTemplates } = await import('@/features/marketplace/public-templates-server');
+    const templates = await loadPublicTemplates();
+    return templates.map((template) => htmlEntry(`/marketplace/${template.slug}`));
   } catch {
     return [];
   }
@@ -101,7 +98,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   }
 
-  for (const entry of await subprojectEntries()) {
+  for (const entry of await templateEntries()) {
     entries.set(entry.url, entry);
   }
 
