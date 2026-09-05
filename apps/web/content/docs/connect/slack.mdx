@@ -3,8 +3,6 @@ title: Slack & channels
 description: Connect Slack to a project and control sessions from a channel.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 A channel connects a chat platform to a project. A message in a connected
 channel starts a [session](/docs/work/sessions). The agent replies in the
 same thread.
@@ -53,9 +51,7 @@ server-side when the agent sends a chat message.
 
 <Steps>
 
-<Step>
-### Start the connection
-
+<Step title="Start the connection">
 From the CLI, run:
 
 ```
@@ -71,9 +67,7 @@ From the dashboard, open the project's Channels page and connect Slack there
 instead. It uses the same install flow.
 </Step>
 
-<Step>
-### Use your own Slack app
-
+<Step title="Use your own Slack app">
 On a self-hosted deployment with no shared Slack app configured, `kortix
 channels connect` falls back to manual mode automatically. Run `kortix
 channels manifest` to print an app manifest. Create the app at
@@ -85,9 +79,7 @@ kortix channels connect --manual --bot-token xoxb-... --signing-secret ...
 ```
 </Step>
 
-<Step>
-### Check the connection
-
+<Step title="Check the connection">
 ```
 kortix channels status
 ```

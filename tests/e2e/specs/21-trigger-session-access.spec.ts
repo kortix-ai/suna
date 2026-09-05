@@ -132,10 +132,14 @@ test.describe('21 — Trigger-created session access UI', () => {
       );
       groupId = group.group_id;
 
+      // The API path is `/projects/:id/triggers`. `/customize/` is a WEB route
+      // prefix (`capabilityTabHref`) and has no API counterpart — POSTing
+      // through it answered 404 in 0ms, which reads as the trigger never
+      // being created rather than as a wrong URL.
       await api<TriggerList>(
         session.access_token,
         'POST',
-        `/projects/${projectId}/customize/triggers`,
+        `/projects/${projectId}/triggers`,
         {
           name: 'Access policy UI',
           type: 'cron',
@@ -232,7 +236,7 @@ test.describe('21 — Trigger-created session access UI', () => {
       const readback = await api<TriggerList>(
         session.access_token,
         'GET',
-        `/projects/${projectId}/customize/triggers`,
+        `/projects/${projectId}/triggers`,
       );
       expect(
         readback.triggers.find((trigger) => trigger.slug === 'access-policy-ui')?.session_access,

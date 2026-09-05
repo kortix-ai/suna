@@ -3,8 +3,6 @@ title: CLI
 description: The kortix command line, its auth model, the dev loop, and every command.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 The `kortix` command line interface (CLI) controls Kortix from a terminal — your laptop or a session sandbox. This page shows the everyday dev loop, then lists every stable command and flag.
 
 ## Install
@@ -37,9 +35,7 @@ This loop assumes the CLI is installed and you ran `kortix login`. See [Quicksta
 
 <Steps>
 
-<Step>
-### Link a repo
-
+<Step title="Link a repo">
 Start a new project, or link an existing repo folder to one.
 
 To scaffold a new project:
@@ -62,9 +58,7 @@ This command writes `.kortix/link.json` in the current directory. Kortix reads t
 
 </Step>
 
-<Step>
-### Ship your code
-
+<Step title="Ship your code">
 ```sh
 kortix ship
 ```
@@ -73,9 +67,7 @@ kortix ship
 
 </Step>
 
-<Step>
-### Run and attach to sessions
-
+<Step title="Run and attach to sessions">
 Start a session with a prompt:
 
 ```sh
@@ -123,9 +115,7 @@ kortix sessions ls
 
 </Step>
 
-<Step>
-### Review with change requests
-
+<Step title="Review with change requests">
 An agent opens a change request (CR) when its session has commits ready to merge. List, inspect, and merge them from the CLI.
 
 ```sh

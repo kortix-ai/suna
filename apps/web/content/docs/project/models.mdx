@@ -3,8 +3,6 @@ title: Models
 description: How Kortix picks a model, and how billing works for managed vs. your-own-key models.
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Kortix runs each [session](/docs/work/sessions) on a model. This page
 explains managed models vs. your own provider key (BYOK), how Kortix picks a
 model automatically, and two billing gotchas to know.
@@ -91,7 +89,7 @@ skipped automatically. A session never dies from a stale default. See the
 [manifest reference](/docs/project/manifest) for the trigger `model:`
 field.
 
-<Callout type="warn" title="Billing surprises on BYOK">
+:::warning[Billing surprises on BYOK]
 Two costs are easy to miss on a paid cloud account:
 
 - **Platform fee.** Kortix adds a 10% fee, billed as credits, on top of what
@@ -102,7 +100,7 @@ Two costs are easy to miss on a paid cloud account:
 
 If you see credit charges on a BYOK-only project, check these two causes
 before reporting a billing bug.
-</Callout>
+:::
 
 ## Per-project model enablement
 

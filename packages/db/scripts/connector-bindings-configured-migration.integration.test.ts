@@ -62,9 +62,29 @@ describe.skipIf(!dockerAvailable)(
       if (started.exitCode !== 0) throw new Error(started.stderr.toString());
       containerStarted = true;
 
-      for (let attempt = 0; attempt < 30; attempt += 1) {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
         const probe = Bun.spawnSync(
-          ['docker', 'exec', container, 'psql', '-U', 'postgres', '-d', 'testdb', '-c', 'SELECT 1'],
+          // OVER TCP (-h), never the default unix socket. The postgres image runs
+          // a TEMPORARY server during initdb that listens on the SOCKET ONLY, so
+          // a socket probe goes green while that one is up — and the real
+          // server's restart then fails the very next statement with
+          // "connection to server on socket ... No such file or directory".
+          // A TCP probe cannot see the temporary server at all, so passing it
+          // means the real one is up.
+          [
+            'docker',
+            'exec',
+            container,
+            'psql',
+            '-h',
+            '127.0.0.1',
+            '-U',
+            'postgres',
+            '-d',
+            'testdb',
+            '-c',
+            'SELECT 1',
+          ],
           { stdout: 'ignore', stderr: 'ignore' },
         );
         if (probe.exitCode === 0) {
