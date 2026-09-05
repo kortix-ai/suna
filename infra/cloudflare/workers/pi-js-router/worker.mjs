@@ -41,6 +41,8 @@
 
 /** Hop-by-hop headers must not be forwarded; `host` is set by the target URL. */
 const STRIPPED = ['host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade-insecure-requests'];
+/** Response headers that describe a body this Worker no longer passes through verbatim. */
+export const PASSTHROUGH_STRIPPED = ['content-encoding', 'content-length'];
 /**
  * Never forwarded: the caller's own credential to THIS name — but ONLY when this
  * name asked for one. In ACCESS_TOKEN mode the bearer that opened the door is
@@ -136,6 +138,18 @@ export default {
     const headers = new Headers(request.headers);
     for (const name of STRIPPED) headers.delete(name);
     for (const name of consumedHeaders(env)) headers.delete(name);
+    // ASK THE ORIGIN FOR PLAIN BYTES. This Worker rebuilds the response
+    // (`new Response(response.body, …)`), and a rebuilt body is one Cloudflare
+    // may compress on its way to the client — on top of the origin's own gzip,
+    // while `content-encoding: gzip` still says "compressed once". The client
+    // then gunzips once and reads compressed bytes: `Decompression error:
+    // ZlibError`, which is what every agent turn on pi-js.kortix.com hit
+    // (2026-09-05, sandbox pt-app.log; the turn retried three times and gave
+    // up, so a message got no answer). A plain browser GET survived it, which
+    // is why the name looked healthy. Identity upstream + no encoding headers
+    // below leaves exactly one party compressing: Cloudflare, for the client
+    // that asked.
+    headers.set('accept-encoding', 'identity');
     headers.set('x-forwarded-host', new URL(request.url).host);
     headers.set('x-forwarded-proto', 'https');
     // The Platinum edge's exposure token. Accepted as a header so it is never
@@ -150,6 +164,11 @@ export default {
           method: request.method,
           headers,
           body: request.body,
+          // A streaming request body needs this on every runtime but
+          // Cloudflare's, which ignores it. Without it the same code refuses a
+          // POST under Node/undici, so the LLM path — the only POST that
+          // matters here — could not be claimed off-platform.
+          duplex: 'half',
           redirect: 'manual',
         }),
       );
@@ -169,6 +188,11 @@ export default {
       statusText: response.statusText,
       headers: response.headers,
     });
+    // The body leaving here is what the origin sent under `accept-encoding:
+    // identity`: not encoded, and its length is Cloudflare's to state once it
+    // has chosen an encoding for the client. Carrying either header forward
+    // describes a body that no longer exists.
+    for (const name of PASSTHROUGH_STRIPPED) output.headers.delete(name);
     output.headers.set('x-kortix-environment', 'pi-js');
     return output;
   },

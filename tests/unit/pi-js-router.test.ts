@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import worker, { accessRefusal, consumedHeaders, presentedAccess, upstreamUrl } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
+import worker, { accessRefusal, consumedHeaders, presentedAccess, upstreamUrl, PASSTHROUGH_STRIPPED } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
 
 const TARGET = 'https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev';
 const workflow = readFileSync(
@@ -130,5 +130,45 @@ describe('the caller\'s Authorization header is consumed ONLY when this name ask
     expect(consumedHeaders({ ACCESS_TOKEN: 'k-secret-1' })).toContain('authorization');
     const up = await upstreamOf({ ACCESS_TOKEN: 'k-secret-1' }, { authorization: 'Bearer k-secret-1' });
     expect(up.headers.get('authorization')).toBeNull();
+  });
+});
+
+describe('exactly one party compresses — the agent\'s LLM stream is not gzipped twice', () => {
+  // The Worker rebuilds every response (`new Response(response.body, …)`), and a
+  // rebuilt body is one Cloudflare may compress on its way to the client — over
+  // the origin's own gzip, while `content-encoding: gzip` still claims one pass.
+  // The client gunzips once and reads compressed bytes: `Decompression error:
+  // ZlibError`, which every agent turn on pi-js.kortix.com hit on 2026-09-05
+  // (sandbox pt-app.log: three auto-resumes, then a message with no answer). A
+  // browser GET survived it, so the name looked healthy.
+  const roundTrip = async (originHeaders: Record<string, string>) => {
+    let seen: Request | null = null;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: Request) => {
+      seen = input;
+      return new Response('data: hi\n\n', { status: 200, headers: originHeaders });
+    }) as any;
+    let out: Response;
+    try {
+      out = await worker.fetch(
+        new Request('https://pi-js.kortix.com/v1/llm/chat', { method: 'POST', headers: { 'accept-encoding': 'gzip, br, zstd' }, body: '{}' }),
+        { TARGET_ORIGIN: TARGET, OPEN_ACCESS: 'true' },
+      );
+    } finally { globalThis.fetch = realFetch; }
+    return { upstream: seen!, out };
+  };
+
+  it('asks the origin for identity and forwards no encoding or length of its own', async () => {
+    const { upstream, out } = await roundTrip({ 'content-encoding': 'gzip', 'content-length': '123', 'content-type': 'text/event-stream' });
+    expect(upstream.headers.get('accept-encoding')).toBe('identity');
+    expect(out.headers.get('content-encoding')).toBeNull();
+    expect(out.headers.get('content-length')).toBeNull();
+    expect(out.headers.get('content-type')).toBe('text/event-stream');   // everything else still passes through
+    expect(PASSTHROUGH_STRIPPED).toEqual(['content-encoding', 'content-length']);
+  });
+
+  it('the client\'s own accept-encoding never reaches the origin — it decides nothing here', async () => {
+    const { upstream } = await roundTrip({ 'content-type': 'application/json' });
+    expect(upstream.headers.get('accept-encoding')).toBe('identity');
   });
 });
