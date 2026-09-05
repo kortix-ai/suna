@@ -931,6 +931,28 @@ describe("useSyncStore — session.error attaches to the turn that failed", () =
 });
 
 describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + message", () => {
+	test("stamps runtime activity while a streamed delta changes the visible transcript", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+
+		store.applyEvent({
+			id: "evt_live_delta",
+			type: "message.part.delta",
+			properties: {
+				messageID: "msg_asst",
+				partID: "prt_reasoning",
+				sessionID: "ses_1",
+				field: "text",
+				delta: "Still thinking",
+			},
+		} as never);
+
+		// `projectWorking` expires old status and turn observations after 45s.
+		// A delta is the runtime itself producing output, so it must refresh the
+		// activity evidence that keeps Stop and the busy indicator visible.
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBeGreaterThan(0);
+	});
+
 	test("auto-creates the assistant message + part so a delta before message.part.updated still renders", () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_user"));
@@ -973,6 +995,28 @@ describe("useSyncStore — applyEvent(message.part.delta) creates a stub part + 
 	});
 });
 
+describe("useSyncStore — streamed part activity follows resolved session identity", () => {
+	test("stamps activity when message.part.updated omits sessionID but its message identifies the session", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", assistantMessage("msg_asst"));
+
+		store.applyEvent({
+			id: "evt_part_without_session",
+			type: "message.part.updated",
+			properties: {
+				part: {
+					id: "prt_reasoning",
+					messageID: "msg_asst",
+					type: "reasoning",
+					text: "Still thinking",
+				},
+			},
+		} as never);
+
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBeGreaterThan(0);
+	});
+});
+
 // T14 — `applyPartDelta` used to be `existing + delta` with no
 // identity consulted anywhere in the pipeline, so a duplicate delivery of
 // the SAME `message.part.delta` doubled the streamed text. `eventID` is the
@@ -986,6 +1030,19 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1"); // duplicate
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hello");
+	});
+
+	test("a replayed delta does not refresh runtime activity", () => {
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hel"));
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+
+		// Move the activity stamp behind the observation window without waiting.
+		// A duplicate delivery is reconnect history, not live runtime output.
+		useSyncStore.setState({ sessionActivityAt: { ses_1: 1 } });
+		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "lo", "evt_1");
+
+		expect(useSyncStore.getState().sessionActivityAt.ses_1).toBe(1);
 	});
 
 	test("replaying an identical delta STREAM twice (a stacked second SSE connection) produces byte-identical text", () => {

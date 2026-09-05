@@ -3,18 +3,12 @@ title: Quickstart
 description: Install the CLI, run a session, and merge your first change request.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Card, Cards } from '@/components/markdown/docs-card';
-import { PathIcon, TerminalIcon } from '@/lib/icons/ssr';
-
 This page takes you from a fresh terminal to a merged change request (CR).
 Every command below is copy-pasteable.
 
 <Steps>
 
-<Step>
-### Install the CLI
-
+<Step title="Install the CLI">
 Run the install script. It downloads the `kortix` binary for your OS.
 
 ```sh
@@ -24,9 +18,7 @@ curl -fsSL https://kortix.com/install | bash
 Kortix supports macOS and Linux. There is no Windows binary yet.
 </Step>
 
-<Step>
-### Sign in
-
+<Step title="Sign in">
 ```sh
 kortix login
 ```
@@ -35,9 +27,7 @@ This opens your browser for sign-in. After you sign in, `kortix login` picks
 your account and a default [project](/docs/project) for you.
 </Step>
 
-<Step>
-### Create or clone a project
-
+<Step title="Create or clone a project">
 A new account has no projects yet, so `kortix login` has none to pick. Run
 `kortix init` with a name to create your first project. This scaffolds a
 project directory on your machine.
@@ -60,9 +50,7 @@ kortix projects clone <project-id>
 Find `<project-id>` with `kortix projects ls`.
 </Step>
 
-<Step>
-### Run a session
-
+<Step title="Run a session">
 ```sh
 kortix sessions new --prompt "Build the login page"
 ```
@@ -77,9 +65,7 @@ kortix sessions chat
 ```
 </Step>
 
-<Step>
-### Review and merge the change request
-
+<Step title="Review and merge the change request">
 When the agent finishes, it opens a change request with a summary and
 the exact diff.
 
@@ -102,14 +88,14 @@ project's default branch until you merge.
 
 ## Next steps
 
-<Cards>
-  <Card icon={<PathIcon />} title="How the pieces fit" href="/docs/work">
+<CardGroup>
+  <Card icon="route" title="How the pieces fit" href="/docs/work">
     Projects, sessions, and change requests, explained.
   </Card>
-  <Card icon={<TerminalIcon />} title="CLI command reference" href="/docs/cli">
+  <Card icon="terminal" title="CLI command reference" href="/docs/cli">
     Every command, flag, and subcommand.
   </Card>
-  <Card icon={<TerminalIcon />} title="The CLI dev loop" href="/docs/cli">
+  <Card icon="terminal" title="The CLI dev loop" href="/docs/cli">
     Link a repo, ship code, and manage sessions from your terminal.
   </Card>
-</Cards>
+</CardGroup>
