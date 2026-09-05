@@ -105,6 +105,7 @@ def compare(env: str):
 
 def check(envs) -> int:
     allow = file_only_allow()
+    used: set[str] = set()
     failed = False
     quar = {**quarantined(), **excluded()}
     for env in envs:
@@ -118,6 +119,16 @@ def check(envs) -> int:
         for k in missing: print(f"    missing in file : {k}")
         for k in differ:  print(f"    differs         : {k}")
         for k in unlisted_extra: print(f"    file-only, not in scripts/secrets-file-only.allowlist : {k}")
+        used.update(k for k in extra if k in allow)
+
+    # An entry that excused nothing is stale — the key now mirrors normally, or
+    # it is gone. Report it rather than let the exception list quietly grow into
+    # a place where a genuine drift can hide. Informational: a stale line is
+    # untidy, not unsafe, and failing on it would block work for no gain.
+    stale = sorted(set(allow) - used)
+    if stale:
+        print(f"\n  note: {len(stale)} file-only entries excused nothing this run — remove them "
+              f"if the key now mirrors into Secrets Manager: {', '.join(stale)}")
     return 1 if failed else 0
 
 

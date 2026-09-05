@@ -21,22 +21,36 @@ linked, not inlined.
 
 ## Register
 
+### Every streamed transcript mutation refreshes runtime activity (2026-09-05)
+
+**When:** adding or changing a wire event that mutates visible assistant output.
+Refresh `sessionActivityAt` after the mutation applies. Do not cover only full
+part snapshots; delta-only streams can run past the 45-second observation bound.
+Ignore replayed event IDs because history is not current activity. *Incident:*
+reasoning text kept growing while the composer changed from Stop to Send and the
+turn busy indicator disappeared. *Enforcer:* `sync-store.test.ts`.
+
+### Protocol adapters emit the target vocabulary; consumers fail active-safe (2026-09-04)
+
+**When:** adapting runtime lifecycle events into the OpenCode session protocol.
+Emit only `idle`, `busy`, or `retry`. Treat only explicit `idle` as idle when
+reading an untrusted status discriminator. *Incident:* the pi worker emitted
+`running`; the SDK converted it to `idle`, so the composer and sidebar hid their
+busy indicators while parts continued to stream. *Enforcer:*
+`session-status.test.ts` and `use-session-working.test.ts`.
+
+### A durable FIFO has one order key and advances at one boundary (2026-09-03)
+
+**When:** implementing a queue whose enqueue requests can race. Define one total
+order and reuse it for listing, admission, claims, repair, and promotion. Never
+mix client send time with database insert time. Promote the next item only after
+the current turn closes; delivery-time promotion races terminal promotion and
+loses the wake. *Incident:* queued prompts reversed after hydration, and the
+next prompt paused up to the 2-second admission backoff. *Enforcer:*
+`inbox-order.test.ts`, `integration-prompt-inbox.test.ts`, and
+`queued-continue-inbox-delivery.test.ts`.
+
 ### A read that fails is not an admin decision — health flags fail open (2026-09-02)
-
-### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
-
-**When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
-root dependency installed by its `--filter kortix --prod=false` layer. The
-production image contains both. Pin each binary's module graph to Trivy's fixed
-version, then scan the complete `linux/amd64` image.
-
-*Incident:* Deploy Dev run `33501907712`, job `99838193732`, failed on
-`CVE-2026-56854`. Caddy contained `x/crypto v0.53.0`; Supabase CLI contained
-`v0.54.0`. Both were below the fixed `v0.55.0`.
-*Enforcer:* `apps/kortix-app-runtime/build_test.go`,
-`scripts/worktree/__tests__/contract.test.ts`, and the Deploy Dev Trivy gate.
-
-### A proxied WebSocket that carries idle traffic needs a keepalive YOU send (2026-08-30)
 
 **When:** writing any code path that answers "is the platform in maintenance /
 locked down / degraded?", especially one an edge proxy polls.
@@ -60,6 +74,122 @@ of the same message. *Incident:* prod, Better Stack `Kortix Frontend`: 1,000+
 to `/maintenance` on one failed poll. Enforcement:
 `maintenance-store.test.ts` edge-gate cases, `maintenance-client.test.ts`
 "stays out of maintenance after a status request failure".
+
+### A runtime that only updates by pulling never updates a box that predates the puller (2026-09-01)
+
+**When:** designing or relying on any "the box converges on the API" mechanism
+(runtime-assets, daemon self-update). A daemon built before the pull code
+exists never pulls; restart/resume keep the VM and warm-fork keeps the disk, so
+every box from before the cutover is a fossil until the CONTROL PLANE reaches
+into it through the provider's own exec channel. Ship the push path with the
+pull path, and probe the fleet for boxes whose `/kortix/health` has no `runtime`
+block. *Incident:* OpenCode's 48-bit message-id rollover (2026-08-14) silently
+broke every pre-wrap session on OpenCode < 1.18.15; the fix (1.18.15) never
+reached July boxes — 9 prod sessions dead 19 days, 4 h 15 m zombie turns.
+*Automation:* `legacy-runtime-bootstrap.ts` scheduled from `box-reaper` (PR #7088);
+`scripts/legacy-runtime-sweep.ts --dry-run` lists what is still legacy.
+
+### Verify "converged" by what is RUNNING, not by what was installed (2026-09-01)
+
+**When:** any install-then-restart flow. The daemon memoised its OpenCode binary
+path at boot, installed 1.18.23, restarted — and kept spawning 1.17.11. The
+install log said success; `readlink /proc/<pid>/exe` said otherwise.
+*Automation:* `restart()` drops the memoised path (opencode.ts); the bootstrap
+relaunches once more after an `updated` boot pass and its health wait requires a
+FRESH daemon (`uptime_s` small), never the one just killed.
+
+||||||| 2108aa3c8a
+### Pin every bundled Go binary to the scanner's fixed dependency floor (2026-09-01)
+
+**When:** you add or update a Go binary copied into `apps/api/Dockerfile`, or a
+root dependency installed by its `--filter kortix --prod=false` layer. The
+production image contains both. Pin each binary's module graph to Trivy's fixed
+version, then scan the complete `linux/amd64` image.
+
+*Incident:* Deploy Dev run `33501907712`, job `99838193732`, failed on
+`CVE-2026-56854`. Caddy contained `x/crypto v0.53.0`; Supabase CLI contained
+`v0.54.0`. Both were below the fixed `v0.55.0`.
+*Enforcer:* `apps/kortix-app-runtime/build_test.go`,
+`scripts/worktree/__tests__/contract.test.ts`, and the Deploy Dev Trivy gate.
+
+### A proxied WebSocket that carries idle traffic needs a keepalive YOU send (2026-08-30)
+
+**When:** you proxy a WebSocket through `apps/api` (the PTY terminal, an app
+preview socket, anything on `/v1/p/.../connect`). Every hop between the API and a
+sandbox drops a connection with no bytes on it, and a terminal is idle by nature
+— a shell at its prompt emits nothing and a reader types nothing. Measured on a
+real Platinum box, the API->sandbox leg dies at **exactly 60 s** of silence.
+
+`websocket.idleTimeout: 0` on both Bun servers does NOT cover this: it governs
+neither the provider edge nor the API's own upstream client. And on a PTY you
+cannot keep the leg busy with data — an upstream byte is typed into the user's
+shell, a downstream byte is printed into their terminal. **Send a PING control
+frame on BOTH legs, well under the shortest hop timeout, and clear the interval
+on every close path** (`PREVIEW_WS_KEEPALIVE_MS`, `pingPreviewWsLegs`).
+
+**Diagnosing a WS that dies on a timer:** a browser reports every drop as `1006`
+with no detail, so instrument from a Bun client instead and run three arms on ONE
+sandbox in ONE minute — no keepalive, PING, DATA. A ping terminates at the API,
+so `PING dies / DATA survives` proves the cut is on the UPSTREAM leg; the reverse
+proves it is on the client leg. Guessing at ALB/Cloudflare timeouts from the
+outside is how this stayed unexplained.
+
+*Incident:* PR #7062. Terminals reconnected once a minute on dev, staging AND
+prod ("not connecting anymore, basically EVERY time"), rendered as
+`Reconnecting in Ns (code 1006)`. Root cause reproduced on the LOCAL stack with
+no Cloudflare and no ALB in the path, which is what ruled out the edge.
+*Enforcer:* `apps/api/src/sandbox-proxy/ws-proxy-keepalive.test.ts` pins that both
+legs are pinged, that one leg throwing does not skip the other, and that the
+interval clears the measured 60 s cut twice over. There is still NO end-to-end
+coverage of the PTY WebSocket in `tests/` — `grep -rn "kortix/pty" tests/` was
+empty before this incident, which is why a socket that died every 60 s on every
+environment shipped unnoticed.
+
+### A floor that refuses a DEBIT stops the bookkeeping, not the spending (2026-09-01)
+
+**When:** writing anything that moves money after work has been performed —
+a usage settlement, a metering debit, a post-hoc reconciliation. Two different
+questions were being answered by one function:
+
+  ADMISSION  — "may this account START work?"   strict floor, never negative
+  SETTLEMENT — "record work already DONE"       must always succeed
+
+`atomic_use_credits` refuses any debit that would go below zero. Correct for
+admission; for settlement it deletes the RECORD of spend that already happened,
+because refusing it does not un-spend the money. Compounded by
+`subscriptionBypassesWalletFloor`, which exempted any paying per-seat /
+credit-plan / paid-tier account from the floor entirely — added to fix a COPY
+bug ("Your team isn't on a plan yet" shown to a paying Team account), by
+removing metering instead of fixing the words.
+
+Measured on one 6-seat account: `grantForSeats(6)` = $150/mo included usage,
+wallet $0.00, `credit_ledger` $588.81, and the gate admitting every create /
+start / wake / prompt / gateway call. Past $0 every debit returned
+`success:false`, no ledger row was written, and "Spent this period" — which
+SUMs `credit_ledger` — silently froze while compute kept burning.
+
+**Rules.** (1) Never let a balance floor gate a settlement; overdraft instead,
+and let the NEXT admission refuse — recording the debt blocks the account
+harder than losing it did. (2) A failed settlement is unrecorded revenue: log
+it at `error` with the account, never `warn`, and never `.catch(() => {})`.
+(3) Fixing wrong COPY by widening a spend permission is never the smaller
+change. (4) Any client surface that turns a balance into a decision must read
+the state machine, not the number — `billing-gate-state.ts` had carried a
+docblock naming that exact defect ("the sidebar keyed off the raw balance")
+since PR #5141 and it shipped again anyway, because prose enforces nothing.
+
+**Diagnostic:** a wallet at exactly $0.00 on an account that plainly still
+works is this. Confirm by summing `credit_ledger` for the period against the
+account's grant: if spend exceeds the grant and the balance is pinned at zero,
+the ledger stopped recording rather than the account stopping.
+
+*Incident:* no outage; revenue under-collected and finance reporting blind for
+one billing period on every drained per-seat account. Fixed in PR #7080.
+*Enforcer:* `billing-source-rules.test.ts` (three source-level tripwires: no
+balance-to-number decisions outside the decision layer, no billing prose in
+components, the bypass stays deleted on both sides of the wire);
+`billing-state.test.ts` sweeps every Stripe status x plan class against the
+universal floor; `settle-credits.test.ts` pins the settlement contract.
 
 ### Keep lazy optional dependencies type-lazy across shared-source imports (2026-08-28)
 
@@ -3903,3 +4033,164 @@ own config; no real secret was ever written to disk in plaintext.
   limits forced fetches to one per Git refresh interval. The manual fire route
   uses this helper. Unit tests prove cached-hit, forced-refresh, and bounded-miss
   sequences.
+
+## An explicit pathspec does not isolate concurrent agents — it commits file STATE, not your hunks
+
+- **Incident (2026-08-31, `identity-boundary`):** three implementer agents ran
+  in parallel in ONE worktree on verified-disjoint file sets, each instructed to
+  commit only its own pathspec. One task's whole job was retiring a bare
+  `['accounts']` query key across ~39 call sites, and
+  `app/(app)/projects/start/page.tsx` was both on that list and owned by another
+  task. The second agent's `git commit -- <its files>` captured the first
+  agent's in-flight `useAccountsList` refactor of that shared file. HEAD stayed
+  self-consistent only because the other agent later committed the module its
+  import needed — but for three commits the branch **did not build**, and a
+  commit whose subject says "scope the suppress-auto-project check" contains an
+  unrelated key migration. Its `git log`-based reference count also came out
+  wrong (43 vs 42), because it measured a worktree another agent was mutating.
+- **Rule:** `git commit -- <path>` records that path's CURRENT CONTENT, not the
+  hunks you authored, so it is not isolation. Before running implementers in
+  parallel on one worktree, compute disjointness against **every task still
+  capable of writing — including ones not yet dispatched** — and never run a
+  task with a wide call-site surface (a key/API/rename migration) concurrently
+  with anything. Otherwise give each agent its own worktree, or serialize. What
+  saved this one was luck: both agents completed. Had the migration reported
+  BLOCKED — which its brief explicitly invited — half a cutover would have been
+  stranded inside another task's commit.
+- **Enforcement:** none. A pre-commit check that refuses when a staged path
+  carries unstaged changes from another process, or a `pnpm worktree` guard that
+  refuses a second concurrent writer, is the TODO. Until then this rule is the
+  only guard, alongside the existing `git stash` and shared-worktree entries.
+
+## A pnpm override that pins one exact version forks the dependency graph the moment its dependent moves
+
+- **Incident (2026-08-30..31, dev deploy outage):** three consecutive `main`
+  deploys (`528ad10a`, `20027210`, `9bfc0685`) failed on `Waiter ServicesStable`
+  for `kortix-dev-web`. The frontend container exited 1 at boot with
+  `Cannot find module 'next'`. Root override `"next@>=15.0.0 <16.3.0": "16.3.0"`
+  mapped `apps/whitelabel-demo`'s declared `next: 15.5.21` onto `16.3.0`. While
+  `apps/web` was itself on 16.3.0 both apps shared one resolved package. PR
+  #7067 moved `apps/web` to 16.3.3; the override kept whitelabel on 16.3.0, so
+  the lockfile resolved TWO `next` packages. The `.next/standalone` trace then
+  contained a partial 16.3.0 copy (a `dist/` without `package.json`), and the
+  Dockerfile relink loop linked `node_modules/next` to it by sort order. Dev
+  served the previous image (`95f60297`) for ~22 hours.
+- **Rule:** an override that maps a range to one exact version must move in the
+  same commit as the direct dependency it shadows. `--frozen-lockfile` cannot
+  catch the drift: it compares the lockfile against post-override specs, so the
+  divergence is green in CI and only fails at container boot.
+- **Enforcement:** `apps/web/scripts/single-next-version.test.mjs` fails the web
+  test suite whenever `pnpm-lock.yaml` resolves more than one version of
+  `next`. The override now reads `"next@>=15.0.0 <16.3.3": "16.3.3"` and
+  `apps/whitelabel-demo` declares `next: 16.3.3` explicitly.
+
+## A column declared in schema.ts but absent from the migration ledger passes every drift gate (2026-09-03)
+
+*Incident (2026-09-03, ~16:30 UTC onward, every Kortix environment).* Every
+session start failed with `The sandbox provider could not start this session.
+Try again.` Platinum answered every `POST /v1/sandboxes` that carried an
+`Idempotency-Key` with `500 {"error":"column \"expected\" does not exist"}`.
+Kortix sends that header on every create (`KORTIX_PLATINUM_CREATE_DEDUP`,
+default ON). Local, dev and prod share one Platinum org, so one Platinum
+deploy took all three down at once.
+
+Root cause in the Platinum repo: PR #759 (`f9e63339`) added `expected:
+jsonb('expected')` to `sandboxIdempotencyKeys` in `apps/api/src/db/schema.ts`
+and shipped no migration for it. The create handler does a full-row
+`db.select().from(sandboxIdempotencyKeys)`, so the first request after the prod
+deploy of `2d752cca` hit the missing column. The migrator printed `[migrate] up
+to date`, the PR drift lane passed, and the nightly DB Drift Sentinel passed:
+all three compare **migrations against the database**. None compares
+**schema.ts against migrations**, which is the only comparison that could have
+caught this.
+
+Kortix-side signature, so the next reader recognises the class in one log
+read: `[provision-timeline] deliver … total=6ms … outcome: "unreachable"` (a
+delivery that never touched the network, because `continueSession` returns
+`unreachable` on `project_sessions.status = 'failed'`), then `runtime
+unreachable after 3 attempts` dead-letters ~10.5 min later (30 s + 120 s +
+480 s ladder). A `POST /v1/sandboxes` WITHOUT the header returning 201 confirms
+the class.
+
+**The rules.**
+
+1. **A schema change lands with its migration in the same commit, and CI proves
+   the pair agree.** `drizzle-kit generate` (or `drizzle-kit check`) on the PR
+   head must emit nothing; a non-empty diff fails the lane. A migrations-vs-DB
+   comparison cannot see a column that exists only in code.
+2. **A provider outage needs a Kortix-side lever that a person can flip in one
+   place.** `KORTIX_PLATINUM_CREATE_DEDUP=0` in `apps/api/.env.local` (local)
+   or the deploy env (dev/prod) drops the header and restores session starts
+   while the provider ships its fix. Cost: create dedup is off while it is set.
+3. **Restart the local API through its supervisor, never with a bare kill.**
+   `dev-local.sh` relaunches the API only when `$TUNNEL_URL_FILE.rotated`
+   exists; a bare `pkill` ends `pnpm dev`. Env changes need the relaunch
+   because `dotenvx run` injects `.env.local` at process start.
+
+*Fix:* Platinum migration `0068_sandbox_idempotency_keys_expected.sql`
+(`ADD COLUMN IF NOT EXISTS "expected" jsonb`, expand-only) plus journal idx 68.
+*Enforcer:* none yet in Platinum — rule 1 is the CI lane to add there.
+
+## A persistent environment needs a self-healer on its own box, and a preview fix on a feature branch is inert (2026-09-04)
+
+`pi.kortix.com` — the `pi-worker` branch environment, one Platinum sandbox
+reused across every push — answered Cloudflare 502 for hours on three separate
+days, each time for a reason the deploy could not repair once it had returned:
+
+1. **Disk.** Every deploy pulls ~2.5 GB of new images and nothing pruned the
+   superseded ones. At 100% `supabase-db` crash-loops on `could not write lock
+   file "postmaster.pid": No space left on device`. Measured: 64 images, 34 GB,
+   25 GB unreferenced, 0 bytes free.
+2. **A failed deploy leaves nothing serving.** The bootstrap's retry runs
+   `compose down`, the second `up` fails the same way, the script exits, and
+   every container stays in `Created`. The hostname guard correctly refuses to
+   re-point at a dead stack — but the stack it keeps pointing at IS that box.
+3. **Checkout.** A reused sandbox keeps the rootfs of the template it came
+   from, so `pnpm install --offline` dies the day the branch adds a dependency
+   (`ERR_PNPM_NO_OFFLINE_TARBALL` on `@earendil-works/pi-agent-core`).
+
+The part that made every one of these last for hours: **fixes committed on the
+branch did nothing where it mattered.** `deploy-preview.yml` is
+`pull_request_target`, and its deploy job checks out the DEFAULT branch, so the
+BOOTSTRAP (`buildPreviewBootstrapScript`, written to the box as
+`run-kortix-preview.sh`) always comes from `main`'s `tests/`. The bootstrap
+then runs `bun tests/bin/preview-stack.ts` INSIDE the box, from the PR-head
+checkout at `/workspace/suna` — so the Caddyfile and the compose overlay come
+from the BRANCH. Two provenances, verified on the first deploy after this
+landed: the guard install and `disk before pull` (bootstrap, main) ran, while
+the generated Caddyfile still lacked `swap_tolerant` (preview-stack, branch)
+until the guard patched it 60 s later. Know which file you are changing:
+`sandbox-preview.ts` → main; `preview-stack.ts` → the branch under test, and
+main only after the branch merges main.
+
+**The rules.**
+
+1. **A change to `sandbox-preview.ts` or `deploy-preview.yml` reaches a
+   preview only from `main`; a change to `preview-stack.ts` reaches it from
+   the branch being deployed.** Land bootstrap and workflow fixes on `main`
+   first, in their own PR; put Caddyfile and overlay fixes on the branch (and
+   on `main`, or the next branch loses them).
+2. **A persistent environment carries its own watcher.** The deploy is on the
+   box for ~14 minutes a day; the environment is expected to serve for the
+   other 1,426. `tests/src/core/preview-guard.ts` runs as a container on the
+   sandbox: prunes unreferenced images when the disk passes 75%, brings the
+   stack back up when the edge stops answering and no deploy is in flight, and
+   keeps Caddy swap-tolerant. It never runs `down -v`. Installed on every
+   deploy, keyed on its own hash, so a recreated sandbox gets it too. Proven
+   by hand on pi.kortix.com before it was committed: installed at 12:41:40,
+   recovered the dead stack at 12:43:27, Caddy patched at 12:44:27.
+3. **A deploy that cannot bring the new stack up puts the last good one
+   back.** The health check saves the proven `.env` (image tags) to
+   `last-good.env`; a stack failure restores it and runs `compose up` before
+   exiting 1. The deploy still fails; the name keeps answering.
+4. **Removing the `preview` label deletes the environment and its data.**
+   That is the design (the label is the off switch), but re-adding it creates
+   an EMPTY environment: new sandbox id, fresh Postgres, no accounts, no
+   projects, no git mirrors. On 2026-09-03 10:19 the label was toggled off and
+   on; the test account and the `pi-lab` project stopped existing.
+
+*Fix:* this entry's PR — `preview-guard.ts`, the bootstrap changes, the two
+preview-parity ports. *Enforcer:* `tests/unit/preview-guard.test.ts`
+(`sh -n` on the guard, never `-v`, deploy-in-flight gate, hash-keyed install)
+and `tests/unit/sandbox-preview.test.ts` (prune before pull, fallback install,
+rollback after the health check, guard before configure).

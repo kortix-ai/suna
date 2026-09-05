@@ -59,7 +59,9 @@ describe('no UI gate branches on a role label', () => {
     ['features/workspace/customize/sections/view/git-view.tsx', 'PROJECT_WRITE'],
     ['components/projects/schedule-view.tsx', 'PROJECT_TRIGGER_UPDATE'],
     ['components/iam/access-projects-tab.tsx', 'PROJECT_MEMBERS_MANAGE'],
-    ['features/workspace/capabilities/agents/agent-detail-aside.tsx', 'PROJECT_MEMBERS_MANAGE'],
+    // The "who can use it" grants moved from the agent detail aside to the
+    // agent page's own section (Customize is agent-centric, 2026-09-01).
+    ['features/workspace/capabilities/agents/agent-people-section.tsx', 'PROJECT_MEMBERS_MANAGE'],
     ['features/workspace/customize/sections/view/secrets-view.tsx', 'PROJECT_SECRET_WRITE'],
   ];
 
@@ -85,6 +87,7 @@ describe('no UI gate branches on a role label', () => {
   test('the roster can_manage flag no longer gates a control', () => {
     for (const file of [
       'features/workspace/capabilities/agents/agent-detail-aside.tsx',
+      'features/workspace/capabilities/agents/agent-people-section.tsx',
       'features/workspace/customize/sections/view/channels-view.tsx',
       'features/workspace/customize/sections/view/secrets-view.tsx',
     ]) {

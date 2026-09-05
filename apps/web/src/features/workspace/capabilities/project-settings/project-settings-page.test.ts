@@ -10,7 +10,7 @@ import {
 } from './project-settings-page';
 
 /**
- * `/projects/[id]/config` is the SECOND host of `SettingsNav` — the context
+ * `/projects/[id]/customize/settings` is the SECOND host of `SettingsNav` — the context
  * `features/workspace/shared/settings-nav-context.tsx` was deliberately kept
  * panel-agnostic for. The panes it still mounts (General, the Sandbox/Snapshots
  * pair) speak the settings overlay's vocabulary, so the adapter's whole job is
@@ -97,9 +97,9 @@ describe('projectCapabilityNavTarget', () => {
     // out of it, because `capabilityTabHref` builds paths without a query.
     expect(projectCapabilityNavTarget('channels')).toBe('connectors');
     expect(projectCapabilityNavHref('p1', 'channels', 'connectors')).toBe(
-      '/projects/p1/connectors?scope=channels',
+      '/projects/p1/customize/connectors?scope=channels',
     );
-    expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe('/projects/p1/secrets');
+    expect(projectCapabilityNavHref('p1', 'secrets', 'secrets')).toBe('/projects/p1/customize/secrets');
   });
 
   test('anything this page owns, or the overlay owns, is not a capability target', () => {
@@ -122,13 +122,13 @@ describe('buildProjectSettingsNav', () => {
   test('navigate() to another section pushes its URL', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('feature-flags');
-    expect(pushed).toEqual(['/projects/p1/config?section=feature-flags']);
+    expect(pushed).toEqual(['/projects/p1/customize/settings?section=feature-flags']);
   });
 
   test('navigate("llm-providers") leaves this page entirely — Models is its own top-level tab now', () => {
     const { nav, pushed } = navFor('sandbox');
     nav.navigate('llm-providers');
-    expect(pushed).toEqual(['/projects/p1/models']);
+    expect(pushed).toEqual(['/projects/p1/customize/models']);
   });
 
   test('navigate("secrets") and navigate("channels") also leave this page', () => {
@@ -136,10 +136,10 @@ describe('buildProjectSettingsNav', () => {
     nav.navigate('secrets');
     nav.navigate('channels');
     expect(pushed).toEqual([
-      '/projects/p1/secrets',
+      '/projects/p1/customize/secrets',
       // Channels keeps its scope across the hop. Pushing the bare Connectors
       // route would land a person who asked for Slack on the catalogue.
-      '/projects/p1/connectors?scope=channels',
+      '/projects/p1/customize/connectors?scope=channels',
     ]);
   });
 

@@ -177,7 +177,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(state.has_active_subscription).toBe(false);
   });
 
-  test('a per-seat account on an ACTIVE subscription with a drained wallet can still run', async () => {
+  test('a per-seat account on an ACTIVE subscription with a drained wallet CANNOT run, and reports why', async () => {
+    // Was `can_run: true` while the wallet sat at $0.0099, because a paying
+    // per-seat subscription bypassed the floor. The bypass is gone. What this
+    // test now pins is that the three fields stay CONSISTENT with each other:
+    // blocked (`can_run` false), correctly diagnosed (`out_of_credits`, so the
+    // UI says "Top up"), and still recognised as a customer
+    // (`has_active_subscription` true, so nothing pitches them a subscription).
     account = creditAccount({
       billingModel: 'per_seat',
       tier: 'per_seat',
@@ -188,9 +194,24 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
 
     const state = await buildMinimalAccountState('acct-1');
 
+    expect(state.billing_state).toBe('out_of_credits');
+    expect(state.credits.can_run).toBe(false);
+    expect(state.has_active_subscription).toBe(true);
+  });
+
+  test('a per-seat account with a FUNDED wallet runs', async () => {
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '25',
+      stripeSubscriptionId: 'sub_live',
+      stripeSubscriptionStatus: 'active',
+    });
+
+    const state = await buildMinimalAccountState('acct-1');
+
     expect(state.billing_state).toBe('active');
     expect(state.credits.can_run).toBe(true);
-    expect(state.has_active_subscription).toBe(true);
   });
 
   test('a per-seat account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {

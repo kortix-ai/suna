@@ -27,6 +27,14 @@ import type { GitScope, UpstreamGit } from '../projects/git-backends';
 import type { ProjectRow } from '../projects/lib/serializers';
 import { deriveRequestContext } from '../iam/cache';
 import {
+  MAX_COMMAND_SECTION_BYTES,
+  encodeReportStatus,
+  parseReceivePackCommands,
+  wantsSideband,
+} from './receive-pack';
+import { evaluateRefUpdates, principalLabel } from './ref-policy';
+import { denialsAfterScopes } from './ref-scopes';
+import {
   FORWARD_REQUEST_HEADERS,
   STRIP_RESPONSE_HEADERS,
   extractToken,
@@ -167,7 +175,25 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
     if (auth.status === 401) return unauthorized(c, auth.message);
     return c.text(auth.message, auth.status);
   }
+  return forwardAuthorized(c, auth, scope, suffix, c.req.raw.body);
+}
 
+/**
+ * Stream an ALREADY-AUTHORIZED git request to the upstream.
+ *
+ * Split out of `forward` so the push route can sit between authorization and
+ * transmission: it reads the ref commands off the head of the body, applies the
+ * ref policy, and either refuses (without opening an upstream connection at
+ * all) or hands the reconstructed body back here untouched.
+ */
+async function forwardAuthorized(
+  c: any,
+  auth: Extract<GitProxyAuth, { ok: true }>,
+  scope: GitScope,
+  suffix: string,
+  body: ReadableStream<Uint8Array> | null,
+): Promise<Response> {
+  const projectId = auth.project.projectId;
   const upstream = await resolveProjectUpstreamMemo(auth.project, scope);
   if (!upstream || !upstream.url) {
     return c.text('No git upstream is configured for this project', 502);
@@ -204,7 +230,7 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
       res = await fetch(target, {
         method,
         headers,
-        body: c.req.raw.body,
+        body,
         redirect: 'manual',
         // @ts-ignore — Bun extensions: stream the request body, don't decompress.
         duplex: 'half',
@@ -265,6 +291,46 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
             );
           });
         }
+        // MANIFEST TRIPWIRE. A project always has a manifest
+        // (../projects/managed-repo-seed.ts). Provisioning now guarantees one
+        // at birth and `kortix ship` refuses to push without one, but a plain
+        // `git push` straight at this proxy can still land a default branch
+        // with no kortix.yaml — which produces a project with no declared
+        // agents, no skills, and manifest detection falling back to v1
+        // `kortix.toml`. That used to be discovered as an unexplained
+        // session-start failure, long after the push.
+        //
+        // This cannot REJECT the push: the proxy streams the pack straight to
+        // the upstream and only runs here on a 2xx, so the commit has already
+        // landed on GitHub. Blocking it pre-commit means staging the (thin)
+        // pack through the mirror first — tracked separately. Until then, name
+        // it at the moment it happens instead of letting it surface as a
+        // mystery two steps downstream.
+        //
+        // The mirror is already refreshed by this block, so this is one
+        // pathspec-scoped ls-tree.
+        void (async () => {
+          try {
+            const repoPath = await refreshMirror(gitProject);
+            const listed = await runGit(
+              ['ls-tree', gitProject.defaultBranch, '--', 'kortix.yaml', 'kortix.yml', 'kortix.toml'],
+              repoPath,
+            );
+            if (!listed.stdout.trim()) {
+              console.error(
+                `[git-proxy] MANIFEST MISSING after push to ${projectId}: ` +
+                  `${gitProject.defaultBranch} has no kortix.yaml. This project cannot ` +
+                  `declare agents or skills and session start will fail.`,
+              );
+            }
+          } catch (err) {
+            console.warn(
+              `[git-proxy] manifest tripwire skipped for ${projectId}:`,
+              err instanceof Error ? err.message : err,
+            );
+          }
+        })();
+
         const [compiledResult, piResult] = await Promise.allSettled([
           config.KORTIX_COMPILED_BOOT_MODE !== 'off' || piWorkerEnabled
             ? prebuildDefaultBranchArtifacts(
@@ -304,6 +370,113 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
   }
 
   return new Response(res.body, { status: res.status, headers: respHeaders });
+}
+
+// ── ref policy on push ────────────────────────────────────────────────────
+/**
+ * Read the ref commands off the head of a receive-pack body and decide whether
+ * the push may proceed.
+ *
+ * Returns a `Response` when the push is refused — a real git report-status, so
+ * the user sees `! [remote rejected] <ref> (<reason>)` and a non-zero exit
+ * rather than a transport error. Otherwise returns the body to forward: the
+ * bytes already consumed, followed by the untouched remainder of the stream.
+ * Nothing is uploaded to the upstream on a refusal.
+ */
+async function gateReceivePack(
+  c: any,
+  auth: Extract<GitProxyAuth, { ok: true }>,
+): Promise<Response | { body: ReadableStream<Uint8Array> }> {
+  // git never content-encodes a receive-pack body (it gzips upload-pack
+  // requests only, verified against git 2.39.1). If one ever arrives encoded we
+  // cannot read the commands, so we refuse instead of forwarding unexamined.
+  const encoding = c.req.header('content-encoding');
+  if (encoding) {
+    return c.text(`git proxy cannot inspect a ${encoding}-encoded push`, 400);
+  }
+  const stream: ReadableStream<Uint8Array> | null = c.req.raw.body;
+  if (!stream) return c.text('empty receive-pack request', 400);
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let buffered = 0;
+  let parsed = parseReceivePackCommands(new Uint8Array(0));
+  while (parsed.status === 'need-more') {
+    if (buffered > MAX_COMMAND_SECTION_BYTES) {
+      reader.cancel().catch(() => {});
+      return c.text('receive-pack command section is implausibly large', 400);
+    }
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    buffered += value.length;
+    parsed = parseReceivePackCommands(concatChunks(chunks, buffered));
+  }
+  if (parsed.status !== 'ok') {
+    reader.cancel().catch(() => {});
+    const reason = parsed.status === 'invalid' ? parsed.reason : 'truncated receive-pack request';
+    return c.text(reason, 400);
+  }
+
+  // Pure policy first: it needs no I/O and answers every ordinary push. Only a
+  // denial is worth an authorization check, so a session pushing its own branch
+  // and a person pushing anything both reach the upstream without one.
+  const denials = await denialsAfterScopes(
+    c,
+    auth.principal,
+    { projectId: auth.project.projectId, accountId: auth.project.accountId },
+    evaluateRefUpdates(auth.principal, { defaultBranch: auth.project.defaultBranch }, parsed.updates),
+  );
+  if (denials.length > 0) {
+    // Refuse before a single pack byte is uploaded. The client is mid-send;
+    // git handles an early response and prints our per-ref reasons, so there is
+    // no need to drain the pack we are rejecting (verified against git 2.39.1).
+    reader.cancel().catch(() => {});
+    const denied = new Map(denials.map((d) => [d.ref, d.reason]));
+    console.warn('[git-proxy] push refused', {
+      projectId: auth.project.projectId,
+      principal: principalLabel(auth.principal),
+      refs: denials.map((d) => d.ref),
+    });
+    const report = encodeReportStatus(
+      parsed.updates.map((u) => ({ ref: u.ref, reason: denied.get(u.ref) })),
+      { sideband: wantsSideband(parsed.capabilities) },
+    );
+    return new Response(report as unknown as BodyInit, {
+      status: 200,
+      headers: { 'content-type': 'application/x-git-receive-pack-result' },
+    });
+  }
+
+  // Allowed: replay what we read, then hand the rest of the stream straight
+  // through. The pack itself is never buffered.
+  const prefix = concatChunks(chunks, buffered);
+  return {
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        if (prefix.length > 0) controller.enqueue(prefix);
+      },
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      },
+      cancel(reason) {
+        reader.cancel(reason).catch(() => {});
+      },
+    }),
+  };
+}
+
+function concatChunks(chunks: Uint8Array[], total: number): Uint8Array {
+  if (chunks.length === 1) return chunks[0]!;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
 }
 
 // Ref discovery — scope is determined by the requested service.
@@ -723,6 +896,15 @@ gitProxyApp.openapi(
   async (c) => {
     const projectId = validProjectIdOrResponse(c, c.req.param('project'));
     if (projectId instanceof Response) return projectId;
-    return forward(c, projectId, 'write', '/git-receive-pack');
+    const auth = await authorize(c, projectId, 'write');
+    if (!auth.ok) {
+      if (auth.status === 401) return unauthorized(c, auth.message);
+      return c.text(auth.message, auth.status as 403 | 404);
+    }
+    // Ref policy runs HERE, between authorization and transmission — the only
+    // point where both the principal and the refs it wants to move are known.
+    const gated = await gateReceivePack(c, auth);
+    if (gated instanceof Response) return gated;
+    return forwardAuthorized(c, auth, 'write', '/git-receive-pack', gated.body);
   },
 );

@@ -3,8 +3,6 @@ title: Connectors
 description: How connectors and connections give agents scoped access to external tools.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-
 A connector links a project to an external tool or service. The agent
 calls it as a tool. Kortix brokers each call, so the sandbox never holds the
 connector credential.
@@ -98,22 +96,16 @@ explicit `always_run` policy only when a connector action must run unattended.
 ## Connect with OAuth
 
 <Steps>
-<Step>
-### Open the project's Connectors page
-
+<Step title="Open the project's Connectors page">
 Open the project. Select **Connectors**, then select the app.
 
 </Step>
-<Step>
-### Select the connection scope
-
+<Step title="Select the connection scope">
 Select **Project** for a shared project connection. Select **User** for a
 connection owned by the acting project member.
 
 </Step>
-<Step>
-### Complete authorization
-
+<Step title="Complete authorization">
 Complete the OAuth flow. Kortix stores the connected account as a connection.
 
 </Step>
@@ -267,9 +259,7 @@ https://{tenant}.sharepoint.com/.default
 ## Connect with an API key
 
 <Steps>
-<Step>
-### Declare the connector
-
+<Step title="Declare the connector">
 ```yaml
 connectors:
   - slug: stripe-read
@@ -289,16 +279,12 @@ connectors:
 `authorization_strategy` defaults to `project` when the manifest omits it.
 
 </Step>
-<Step>
-### Merge the change request
-
+<Step title="Merge the change request">
 Kortix reads the manifest from the default branch. The connector becomes
 active after the change request merges.
 
 </Step>
-<Step>
-### Add the connection
-
+<Step title="Add the connection">
 Open the connector and set its credential. Kortix stores the value
 encrypted. It does not write the value to the manifest.
 

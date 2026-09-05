@@ -605,7 +605,7 @@ function SandboxStatusBanner({
       <div className="flex items-start gap-3 px-4 py-3">
         <span
           className={cn(
-            'border-border inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm border',
+            'inline-flex size-10 shrink-0 items-center justify-center self-start rounded-sm',
             blocked ? 'bg-kortix-red/10 text-kortix-red' : 'bg-kortix-orange/10 text-kortix-orange',
           )}
         >

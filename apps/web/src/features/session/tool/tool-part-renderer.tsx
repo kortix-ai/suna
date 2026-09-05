@@ -15,6 +15,7 @@ import {
   ToolOutcomeContext,
   ToolRunningContext,
   ToolSurfaceContext,
+  TurnLiveContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolError } from '@/features/session/tool/tool-error';
@@ -123,6 +124,10 @@ function ToolPartRendererImpl({
   );
 
   const surface = useContext(ToolSurfaceContext);
+  // Read with the other hooks, ABOVE the `todoread` and thrown-error early
+  // returns — a `useContext` down beside its use site is a conditional hook,
+  // and the order would break on the first errored tool part in a turn.
+  const turnLive = useContext(TurnLiveContext);
   const fillsPanel = surface === 'panel' && (part.tool === 'show' || part.tool === 'show-user');
 
   // One verdict per part, computed once here and read by every BasicTool below
@@ -180,7 +185,18 @@ function ToolPartRendererImpl({
   const forceOpen = !!permission || !!question;
   const isLocked = !!permission || !!question;
 
+  // A call whose arguments have not arrived: `pending`, no `input`, no streamed
+  // `raw`. That shape is produced twice — once by a leftover part from a run
+  // that died, and once by every live call, for the frames between "the call
+  // exists" and "its first argument chunk landed".
+  //
+  // `turnLive` is what separates them, and nothing on the part can (see
+  // {@link TurnLiveContext}). Without it this test matched the live case too,
+  // so a `write` that had just started rendered its "the run is over" body —
+  // the frozen-looking row under a status line that was still saying
+  // "Making changes...".
   const isStalePending =
+    !turnLive &&
     part.state.status === 'pending' &&
     Object.keys(part.state.input ?? {}).length === 0 &&
     !(part.state as any).raw;

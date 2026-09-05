@@ -35,7 +35,14 @@ const allEditorSources = [...sectionSources, editorSource, primitivesSource, gra
 describe('agent environment editor', () => {
   test('loads sandbox templates and exposes the Environment field', () => {
     expect(editorSource).toContain('listProjectSandboxTemplates(projectId)');
-    expect(editorSource).toContain('options.set(initial.sandbox, initial.sandbox)');
+    // The project default is named, not just called "default": the hook hands
+    // the page `default_slug`, and the Workspace page resolves it to a name.
+    expect(editorSource).toContain('default_slug');
+    // A stale pin (a slug the project no longer declares) shows as itself
+    // instead of snapping to "Project default" and rewriting the manifest.
+    expect(accessFieldsSource).toContain('stalePin');
+    // The Environment control IS the shared sandbox menu the composer uses.
+    expect(accessFieldsSource).toContain('<SandboxTemplateMenu');
     expect(accessFieldsSource).toContain('label="Environment"');
     expect(accessFieldsSource).toContain("set('sandbox'");
     expect(accessFieldsSource).toContain('Project default');
@@ -51,7 +58,10 @@ describe('section structure — questions, not storage layers', () => {
     for (const section of [
       'BasicsSection',
       'ModelSection',
-      'AccessSection',
+      'SkillsSection',
+      'ConnectorsSection',
+      'SecretsSection',
+      'ProjectActionsSection',
       'WorkspaceSection',
       'ToolsSection',
     ]) {

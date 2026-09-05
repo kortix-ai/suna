@@ -882,6 +882,30 @@ function validateEnv(): z.infer<typeof envSchema> {
       });
   }
 
+  // ── Conditional: GitHub App configured → need its OAuth client too ─────
+  // The App's own OAuth client is what proves "this GitHub user is you" when
+  // linking an installation to an account (POST /projects/github/installations/
+  // {linkable,link} need a user token from it). Without the pair, that flow
+  // dead-ends at `?error=oauth_not_configured` — a redirect parameter in a
+  // browser, with nothing said server-side. Every environment ran that way
+  // unnoticed because these vars are read straight from process.env and so
+  // never appeared in this report. Warn, don't fail: the App still signs its
+  // own JWT and managed git keeps working without an OAuth client.
+  const githubAppConfigured = Boolean(
+    (raw as any).KORTIX_GITHUB_APP_ID || (raw as any).KORTIX_GITHUB_APP_PRIVATE_KEY,
+  );
+  if (githubAppConfigured) {
+    const clientId = (raw as any).KORTIX_GITHUB_APP_CLIENT_ID || (raw as any).GITHUB_APP_CLIENT_ID;
+    const clientSecret =
+      (raw as any).KORTIX_GITHUB_APP_CLIENT_SECRET || (raw as any).GITHUB_APP_CLIENT_SECRET;
+    const oauthHint =
+      'Set it (or complete the manifest setup flow) or GitHub account linking fails with oauth_not_configured';
+    if (!clientId)
+      issues.push({ var: 'KORTIX_GITHUB_APP_CLIENT_ID', message: oauthHint, level: 'warn' });
+    if (!clientSecret)
+      issues.push({ var: 'KORTIX_GITHUB_APP_CLIENT_SECRET', message: oauthHint, level: 'warn' });
+  }
+
   // ── Conditional: Tunnel enabled → need signing secret ──────────────────
   const tunnelEnabled =
     (raw as any).TUNNEL_ENABLED !== 'false' && (raw as any).TUNNEL_ENABLED !== false;

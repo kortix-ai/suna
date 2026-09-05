@@ -39,6 +39,29 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('reverse_proxy frontend:3000');
   });
 
+  // 2026-08-30: pi.kortix.com answered 502 through every redeploy. A branch
+  // environment is reused in place, so `compose up -d` recreates `frontend` and
+  // `kortix-api` while `preview-edge` keeps running — and for the ~10-30s the
+  // swap takes, Caddy's dial is refused and the browser gets a raw 502. The
+  // stable hostname is only as stable as its worst upstream window.
+  it('rides out a container swap instead of 502ing through a redeploy', () => {
+    const caddy = buildPreviewCaddyfile('preview.example.test');
+    // A snippet is a TOP-LEVEL form. Declared inside the site block, the
+    // adapter fails outright with `File to import not found: swap_tolerant`.
+    expect(caddy.indexOf('(swap_tolerant) {')).toBeLessThan(caddy.indexOf(':8080 {'));
+    expect(caddy).toContain('lb_try_duration 30s');
+    expect(caddy).toContain('lb_try_interval 250ms');
+    // Every upstream that a deploy recreates, not just the frontend.
+    for (const upstream of ['kortix-api:8008', 'supabase-kong:8000', 'llm-gateway:8090', 'frontend:3000']) {
+      const block = caddy.slice(caddy.indexOf(`reverse_proxy ${upstream}`));
+      expect(block.slice(0, block.indexOf('\n  }'))).toContain('import swap_tolerant');
+    }
+    // And when the budget really is exhausted, a coherent page rather than the
+    // provider's bare 502.
+    expect(caddy).toContain('handle_errors {');
+    expect(caddy).toContain('Retry-After 15');
+  });
+
   it('accepts either a GitHub App or a PAT as managed-git configuration', () => {
     const base = [
       'POSTGRES_PASSWORD=p',
@@ -77,6 +100,24 @@ describe('ephemeral self-host preview stack', () => {
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "10000"');
     expect(overlay).toContain('GOTRUE_RATE_LIMIT_EMAIL_SENT: "10000"');
     expect(overlay).not.toContain('volumes/db/data');
+  });
+
+  // 2026-09-01: a redeploy of pi.kortix.com made every `POST /sessions` answer
+  // 500 `could not read Username for 'https://github.com'`. Cause: the git
+  // mirror lives at `/tmp/kortix/git-cache` (mirror.ts `cacheRoot()`) and
+  // kortix-api had NO volumes, so recreating the container deleted it. On a
+  // real deployment that is a slow re-clone; on a preview it is DATA LOSS,
+  // because the preview App cannot create repos (403) and a seeded project's
+  // history therefore exists nowhere else. The org held none of the preview's
+  // repos, and `/tmp/kortix/git-cache` was simply gone.
+  it('keeps the git mirror across a container recreate', () => {
+    const overlay = buildPreviewComposeOverlay('/workspace/suna/tests/test-results');
+    // Mounted at the PARENT of git-cache so sibling caches survive too.
+    expect(overlay).toContain('kortix-git-cache:/tmp/kortix');
+    // A named volume needs its top-level declaration or compose refuses the file.
+    expect(overlay).toMatch(/\nvolumes:\n  kortix-git-cache:/);
+    const apiBlock = overlay.slice(overlay.indexOf('  kortix-api:'));
+    expect(apiBlock.slice(0, apiBlock.indexOf('\n\nvolumes:'))).toContain('volumes:');
   });
 
   it('rejects every runtime secret outside the explicit allowlist', () => {

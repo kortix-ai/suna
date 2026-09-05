@@ -5,73 +5,80 @@
  * finished, what changed, what needs approval, and what's waiting on a decision,
  * across web and Slack-triggered sessions.
  *
- * Built for speed: keyboard-driven (j/k, Enter, a, e, d, x, 1-3, /, ?), every
- * action is undoable, multi-select + bulk approve/dismiss, and live search.
+ * Built for speed: keyboard-driven (j/k, Enter, a, e, d, 1-3, /, ?), every
+ * action is undoable, and live search. Multi-select left the UI on 2026-09-03;
+ * the bulk plumbing (`onBulkAct`, `resolveBulkOutcome`) stays for `d`.
  * Prototype: mock data, optimistic local actions. See docs/REVIEW_CENTER_DESIGN.md.
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
+import {
+  InputGroupSearch,
+  InputGroupSearchIcon,
+  InputGroupSearchInput,
+} from '@/components/ui/input-group';
 import { Kbd } from '@/components/ui/kbd';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalBody, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { StatusBadge } from '@/components/ui/status';
-import {
-  Tabs,
-  TabsList,
-  TabsListCompact,
-  TabsTrigger,
-  TabsTriggerCompact,
-} from '@/components/ui/tabs';
+import { DiffStat } from '@/components/ui/status';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { infoToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { cn } from '@/lib/utils';
 import type { ReviewVerdict } from '@kortix/sdk';
 import {
+  ArrowUUpLeftIcon as ArrowUUpLeft,
+  CheckIcon as Check,
   CheckCircleIcon as CheckCircleSolid,
   CaretDownIcon as ChevronDown,
-  TrayIcon as InboxSolid,
-  StackIcon as Layers,
+  ClockIcon as Clock,
+  DotsThreeIcon as DotsThree,
   MagnifyingGlassIcon as Search,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { statusToVerdict } from './map';
 import { MOCK_ITEMS } from './mock-data';
 import {
   bulkSkipMessage,
-  connectorCallId,
   formatItemAge,
   isQuickDecidableApproval,
   resolveBulkOutcome,
 } from './review-actions';
-import { type ReviewActions, ReviewDetailModal } from './review-detail-modal';
-import { KIND_META, RISK_BAR, RISK_META, SOURCE_META, STATUS_META } from './review-meta';
+import { type ReviewActions, ReviewDetail } from './review-detail';
+import { KIND_META, RISK_META, STATUS_META } from './review-meta';
 import {
   bulkSetStatus,
-  countsBySegment,
   decideApprovalAction,
   filterItems,
   groupBySession,
   sessionOptions,
   setStatus,
 } from './review-reducer';
-import { type ReviewItem, type ReviewKind, type ReviewSegment, segmentForStatus } from './types';
-
-/** Calm, premium easing for the inbox's enter/exit/layout motion. */
-const EASE = [0.2, 0, 0, 1] as const;
+import {
+  type ReviewItem,
+  type ReviewKind,
+  type ReviewSegment,
+  type ReviewStatus,
+  segmentForStatus,
+} from './types';
 
 /**
  * Relative time is client-only: it depends on `Date.now()`, which differs between
@@ -82,27 +89,6 @@ function TimeAgo({ iso }: { iso: string }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   return <span className="tabular-nums">{mounted ? formatItemAge(iso) : ''}</span>;
-}
-
-/** A count that rolls when it changes — the satisfying tick as you clear the inbox. */
-function AnimatedCount({ value }: { value: number }) {
-  const reduce = useReducedMotion() ?? false;
-  if (reduce) return <span className="tabular-nums">{value}</span>;
-  return (
-    <span className="relative inline-flex min-w-[1ch] justify-center overflow-hidden tabular-nums">
-      <AnimatePresence mode="popLayout" initial={false}>
-        <m.span
-          key={value}
-          initial={{ y: -7, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 7, opacity: 0 }}
-          transition={{ duration: 0.16, ease: EASE }}
-        >
-          {value}
-        </m.span>
-      </AnimatePresence>
-    </span>
-  );
 }
 
 const SEGMENTS: { value: ReviewSegment; label: string }[] = [
@@ -126,38 +112,54 @@ const SHORTCUTS: { keys: string[]; label: string }[] = [
   { keys: ['a'], label: 'Approve / ship' },
   { keys: ['e'], label: 'Ask for changes' },
   { keys: ['d'], label: 'Dismiss' },
-  { keys: ['x'], label: 'Select (for bulk)' },
   { keys: ['1', '2', '3'], label: 'Switch lists' },
   { keys: ['/'], label: 'Search' },
   { keys: ['?'], label: 'This help' },
 ];
 
+/** Flat rows, no chrome — the row itself lifts on hover/focus/select. */
+const LIST_CLASS = 'space-y-1 py-2.5';
+
+/** One small glyph after the title says where the item landed; the row
+ *  carries no status badge. `needs_you` has no glyph — its action button is
+ *  the state. */
+const STATUS_GLYPH: Partial<Record<ReviewStatus, { icon: typeof Check; className: string }>> = {
+  approved: { icon: Check, className: 'text-kortix-green' },
+  done: { icon: Check, className: 'text-kortix-green' },
+  waiting: { icon: Clock, className: 'text-muted-foreground' },
+  changes_requested: { icon: ArrowUUpLeft, className: 'text-kortix-orange' },
+  rejected: { icon: X, className: 'text-kortix-red' },
+  dismissed: { icon: X, className: 'text-muted-foreground' },
+};
+
+function Dot() {
+  return (
+    <span aria-hidden className="text-muted-foreground">
+      •
+    </span>
+  );
+}
+
 function ItemRow({
   item,
   idx,
   focused,
-  selected,
-  showCheck,
   fresh,
-  reduce,
   quickDecidable,
   pendingDecision,
   sessionLabel,
   onOpen,
-  onToggleSelect,
   onQuickApprove,
   onQuickDeny,
-  bulkSelectable = true,
+  onAskChanges,
+  onDismiss,
+  onOpenSession,
 }: {
   item: ReviewItem;
   idx: number;
   focused: boolean;
-  selected: boolean;
-  showCheck: boolean;
   /** Arrived on the last poll, not yet seen by the user. */
   fresh: boolean;
-  /** prefers-reduced-motion: collapse enter/stagger to instant. */
-  reduce: boolean;
   /** Whether this row exposes inline decisions. Connector approvals are false. */
   quickDecidable: boolean;
   /** 'approve' | 'deny' while this row's own resolve mutation is in flight. */
@@ -167,99 +169,93 @@ function ItemRow({
    *  Omitted in the grouped view (the session already names the group). */
   sessionLabel?: string;
   onOpen: () => void;
-  onToggleSelect: () => void;
   onQuickApprove?: () => void;
   onQuickDeny?: () => void;
-  bulkSelectable?: boolean;
+  /** Row menu — the mouse path to the `e` and `d` shortcuts. */
+  onAskChanges: () => void;
+  onDismiss: () => void;
+  onOpenSession?: () => void;
 }) {
   const kind = KIND_META[item.kind];
-  const Source = SOURCE_META[item.source];
   const segment = segmentForStatus(item.status);
-  const risk = RISK_META[item.risk];
+  const pending = segment === 'needs_you';
+  const risky = item.risk === 'medium' || item.risk === 'high';
   const busy = !!pendingDecision;
-  // Left accent bar: kind tone by default; in Needs-you it escalates to the
-  // risk tone for medium/high so risky work glows at the row's edge.
-  const barClass =
-    segment === 'needs_you' && (item.risk === 'medium' || item.risk === 'high')
-      ? RISK_BAR[item.risk]
-      : kind.bar;
+  const number = item.kind === 'change' ? item.detail.number : undefined;
+  const diff = item.kind === 'change' ? item.detail.advanced : undefined;
+  const glyph = STATUS_GLYPH[item.status];
+  // Meta line: when · who · where. The session stands in for the repo; when
+  // the group already names it, the row's own summary fills the slot.
+  const where = sessionLabel ?? item.summary;
 
   return (
-    <m.li
+    <li
       data-idx={idx}
-      layout={!reduce}
-      initial={reduce ? false : { opacity: 0, y: fresh ? -6 : 0 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={
-        reduce
-          ? { duration: 0 }
-          : { duration: 0.15, ease: EASE, delay: fresh ? 0 : Math.min(idx * 0.012, 0.06) }
-      }
       className={cn(
-        'group relative flex items-center gap-3.5 py-3 pr-4 pl-5 transition-colors',
-        'before:absolute before:inset-y-0 before:left-0 before:w-[3px]',
-        barClass,
-        focused ? 'bg-primary/[0.06] ring-kortix-blue/40 ring-1 ring-inset' : 'hover:bg-muted/40',
-        selected && 'bg-primary/[0.09]',
-        fresh && 'bg-kortix-blue/[0.05]',
+        'group relative flex items-center gap-3 rounded-md px-3 py-1.5',
+        focused ? 'bg-active' : 'hover:bg-hover',
       )}
     >
-      {segment === 'needs_you' && bulkSelectable && (
-        <Checkbox
-          checked={selected}
-          onCheckedChange={onToggleSelect}
-          aria-label={`Select ${item.title}`}
-          className={cn(
-            'shrink-0 transition-opacity',
-            showCheck || selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-          )}
-        />
-      )}
-      <span
-        className={cn('flex size-9 shrink-0 items-center justify-center rounded-md', kind.tile)}
-      >
-        <kind.icon className={cn('size-5', kind.iconColor)} />
-      </span>
+      {/* The leading icon names the kind by shape and the outcome by color:
+          blue while it needs you, then green/orange/red/muted once decided —
+          the same tone as the status check beside the title. */}
+      <kind.icon
+        className={cn('size-5 shrink-0', glyph ? glyph.className : kind.iconColor)}
+        aria-label={kind.label}
+      />
 
       <button
         type="button"
         onClick={onOpen}
-        className="focus-visible:ring-kortix-blue min-w-0 flex-1 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
+        className="focus-visible:ring-ring min-w-0 flex-1 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
       >
-        <div className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5">
           <span className="text-foreground truncate text-sm font-medium">{item.title}</span>
-          {fresh && (
-            <StatusBadge tone="info" className="shrink-0">
-              New
-            </StatusBadge>
+          {number != null && (
+            <span className="text-muted-foreground shrink-0 text-sm tabular-nums">#{number}</span>
           )}
-          {/* Meta cluster, right-aligned to a stable column: risk (Needs-you),
-              source (desktop) and time (all sizes). */}
-          <span className="text-muted-foreground/70 ml-auto flex shrink-0 items-center gap-2 text-xs">
-            {segment === 'needs_you' && (
-              <StatusBadge
-                tone={risk.tone}
-                className={cn(item.risk === 'none' || item.risk === 'low' ? 'opacity-70' : '')}
-              >
-                {risk.label}
-              </StatusBadge>
-            )}
-            <Source.icon className="hidden size-3 sm:block" />
-            <TimeAgo iso={item.createdAt} />
-          </span>
-        </div>
-        <div className="text-muted-foreground mt-0.5 truncate text-xs">
-          <span className="text-muted-foreground/70 font-medium">{kind.label}</span>
-          {item.summary ? <span className="text-muted-foreground/40"> · </span> : null}
-          {item.summary}
-          {sessionLabel ? <span className="text-muted-foreground/40"> · </span> : null}
-          {sessionLabel}
-        </div>
+          {glyph && (
+            <Hint label={STATUS_META[item.status].label}>
+              <glyph.icon
+                className={cn('size-3.5 shrink-0', glyph.className)}
+                aria-label={STATUS_META[item.status].label}
+              />
+            </Hint>
+          )}
+          {fresh && (
+            <Badge variant="new" size="sm" className="shrink-0">
+              New
+            </Badge>
+          )}
+        </span>
+        <span className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+          <TimeAgo iso={item.createdAt} />
+          <Dot />
+          <span className="truncate">{item.agent}</span>
+          {where && (
+            <>
+              <Dot />
+              <span className="truncate">{where}</span>
+            </>
+          )}
+        </span>
       </button>
 
-      <div className="flex shrink-0 items-center gap-1.5">
-        {segment === 'needs_you' ? (
-          quickDecidable ? (
+      <div className="flex shrink-0 items-center gap-2">
+        {diff && (
+          <DiffStat
+            additions={diff.additions}
+            deletions={diff.deletions}
+            className="hidden text-xs sm:inline-flex"
+          />
+        )}
+        {pending && risky && (
+          <Badge variant={RISK_META[item.risk].badge} size="sm" className="hidden sm:inline-flex">
+            {RISK_META[item.risk].label}
+          </Badge>
+        )}
+        {pending &&
+          (quickDecidable ? (
             <>
               <Button size="sm" variant="ghost" disabled={busy} onClick={onQuickDeny}>
                 {pendingDecision === 'deny' ? <Loading className="size-3.5 shrink-0" /> : null}
@@ -277,14 +273,59 @@ function ItemRow({
                   action for what it does: open the full diff to decide. */}
               {item.kind === 'change' ? 'Review' : item.primaryAction}
             </Button>
-          )
-        ) : (
-          <Badge variant={STATUS_META[item.status].badge} size="sm">
-            {STATUS_META[item.status].label}
-          </Badge>
-        )}
+          ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`More actions for ${item.title}`}
+              className="text-muted-foreground"
+            >
+              <DotsThree className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem onClick={onOpen}>
+              Open
+              <DropdownMenuShortcut>↵</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            {onOpenSession && (
+              <DropdownMenuItem onClick={onOpenSession}>Open session</DropdownMenuItem>
+            )}
+            {pending && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={onAskChanges}>
+                  Ask for changes
+                  <DropdownMenuShortcut>e</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onClick={onDismiss}>
+                  Dismiss
+                  <DropdownMenuShortcut>d</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-    </m.li>
+    </li>
+  );
+}
+
+function ListSkeleton({ rows = 5 }: { rows?: number }) {
+  return (
+    <ul className={LIST_CLASS}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 px-3 py-1.5">
+          <Skeleton className="size-5 shrink-0 rounded-sm" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <Skeleton className="h-3.5 w-2/3 rounded-sm" />
+            <Skeleton className="h-3 w-1/3 rounded-sm" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -324,6 +365,7 @@ export function ReviewCenter({
   onRefresh,
   isLoading,
   isFetching,
+  isFetched,
   isError,
   sessionLabels,
 }: {
@@ -344,6 +386,9 @@ export function ReviewCenter({
   isLoading?: boolean;
   /** A background poll is in flight — drives the "Live" refreshing affordance. */
   isFetching?: boolean;
+  /** The list has been fetched at least once — until then a `?id=` in the URL
+   *  holds a skeleton rather than flashing the inbox. */
+  isFetched?: boolean;
   /** The initial/only load failed — show a retry state instead of an empty
    *  inbox (an empty list and a failed fetch must never look the same). */
   isError?: boolean;
@@ -351,7 +396,6 @@ export function ReviewCenter({
   sessionLabels?: Record<string, string>;
 } = {}) {
   const connected = !!onAct;
-  const reduce = useReducedMotion() ?? false;
   const [items, setItems] = useState<ReviewItem[]>(initialItems ?? (connected ? [] : MOCK_ITEMS));
   const [segment, setSegment] = useState<ReviewSegment>('needs_you');
   const [kindFilter, setKindFilter] = useState<ReviewKind | 'all'>('all');
@@ -360,8 +404,12 @@ export function ReviewCenter({
   // a session's reviews + approvals sit together. Both operate on `sessionId`.
   const [sessionFilter, setSessionFilter] = useState<string | 'all'>('all');
   const [grouped, setGrouped] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // The open review lives in the URL (`?id=<review item id>`), not in state,
+  // so a refresh or a shared link lands on the same page.
+  const search = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const idParam = search?.get('id') ?? null;
   const [focusedIdx, setFocusedIdx] = useState(0);
   // Only show the focused-row highlight while the user is actually navigating by
   // keyboard — otherwise the first row looks arbitrarily tinted on load.
@@ -384,8 +432,31 @@ export function ReviewCenter({
   // either the flat <ul> or the grouped <div>, so it's typed to the common base.
   const listRef = useRef<HTMLElement | null>(null);
 
+  // Matched against the server list when connected: `items` (the optimistic
+  // state copy) is reconciled from `initialItems` in an effect, so it lags the
+  // server list by one commit — long enough for a fresh page load to see "no
+  // match" once and flash the inbox before the review page.
+  const sourceItems = initialItems ?? items;
+  const selectedId = useMemo(
+    () => (idParam && sourceItems.some((i) => i.id === idParam) ? idParam : null),
+    [sourceItems, idParam],
+  );
+  const listLoaded = !connected || isFetched === true;
+  const setSelectedId = useCallback(
+    (id: string | null) => {
+      const params = new URLSearchParams(search?.toString() ?? '');
+      if (id) params.set('id', id);
+      else params.delete('id');
+      const suffix = params.toString();
+      const href = suffix ? `${pathname}?${suffix}` : pathname;
+      // Opening pushes so the browser's Back returns to the inbox; closing
+      // replaces so Back never lands on the page you just left.
+      if (id) router.push(href, { scroll: false });
+      else router.replace(href, { scroll: false });
+    },
+    [pathname, router, search],
+  );
   const labelFor = useMemo(() => (id: string) => sessionLabels?.[id], [sessionLabels]);
-  const counts = useMemo(() => countsBySegment(items), [items]);
   const visible = useMemo(
     () => filterItems(items, segment, kindFilter, query, sessionFilter),
     [items, segment, kindFilter, query, sessionFilter],
@@ -609,7 +680,6 @@ export function ReviewCenter({
           () => onBulkAct(outcome.act, 'dismiss'),
         );
       }
-      setSelectedIds(new Set());
       return;
     }
     apply(
@@ -618,50 +688,6 @@ export function ReviewCenter({
       'info',
       onBulkAct ? () => onBulkAct(ids, 'dismiss') : undefined,
     );
-    setSelectedIds(new Set());
-  };
-
-  const approveIds = (ids: string[]) => {
-    if (ids.length === 0) return;
-    if (connected && onBulkAct) {
-      const outcome = connectedBulkOutcome(ids, 'approve');
-      const skipped = bulkSkipMessage(outcome);
-      if (skipped) infoToast(skipped);
-      if (outcome.act.length > 0) {
-        apply(
-          bulkSetStatus(items, outcome.act, 'approved'),
-          `Approved ${outcome.act.length}`,
-          'success',
-          () => onBulkAct(outcome.act, 'approve'),
-        );
-      }
-      setSelectedIds(new Set());
-      return;
-    }
-    const itemIds = new Set(items.map((x) => x.id));
-    let next = items;
-    for (const id of ids) {
-      if (!itemIds.has(id)) continue;
-      next = setStatus(next, id, 'approved');
-    }
-    apply(
-      next,
-      `Approved ${ids.length}`,
-      'success',
-      onBulkAct ? () => onBulkAct(ids, 'approve') : undefined,
-    );
-    setSelectedIds(new Set());
-  };
-
-  const toggleSelect = (id: string) => {
-    const item = items.find((candidate) => candidate.id === id);
-    if (item?.kind === 'approval' || (connected && connectorCallId(id))) return;
-    setSelectedIds((prev) => {
-      const n = new Set(prev);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
   };
 
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
@@ -694,10 +720,10 @@ export function ReviewCenter({
       if (e.key === 'Escape') {
         if (helpOpen) return setHelpOpen(false);
         if (typing) return (el as HTMLElement).blur();
-        if (selectedIds.size) return setSelectedIds(new Set());
+        if (selectedId) return setSelectedId(null);
         return;
       }
-      if (helpOpen || selectedId) return; // a dialog owns the keyboard
+      if (helpOpen || selectedId) return; // help or a review page owns the keyboard
       if (typing) return; // don't hijack search typing
 
       if (e.key === '/') {
@@ -728,170 +754,152 @@ export function ReviewCenter({
         if (cur) quickAskChanges(cur);
       } else if (e.key === 'd') {
         if (cur) dismissIds([cur.id]);
-      } else if (e.key === 'x') {
-        if (cur) {
-          toggleSelect(cur.id);
-          setFocusedIdx((i) => Math.min(visible.length - 1, i + 1));
-        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  const selected = items.find((i) => i.id === selectedId) ?? null;
-  const selectionCount = selectedIds.size;
+  // Prefer the optimistic copy (it carries the status you just set); fall
+  // back to the server row for the one commit before the copy catches up.
+  const selected = selectedId
+    ? (items.find((i) => i.id === selectedId) ??
+      sourceItems.find((i) => i.id === selectedId) ??
+      null)
+    : null;
+
+  const renderRow = (item: ReviewItem, idx: number, inGroup: boolean) => (
+    <ItemRow
+      key={item.id}
+      item={item}
+      idx={idx}
+      focused={kbNav && idx === focusedIdx}
+      fresh={freshIds.has(item.id)}
+      quickDecidable={connected && isQuickDecidableApproval(item)}
+      pendingDecision={pendingId === item.id ? pendingDecision : null}
+      sessionLabel={!inGroup && item.sessionId ? labelFor(item.sessionId) : undefined}
+      onOpen={() => setSelectedId(item.id)}
+      onQuickApprove={() => quickDecide(item, 'approve')}
+      onQuickDeny={() => quickDecide(item, 'deny')}
+      onAskChanges={() => quickAskChanges(item)}
+      onDismiss={() => dismissIds([item.id])}
+      onOpenSession={
+        item.sessionId && onOpenSession ? () => onOpenSession(item.sessionId!) : undefined
+      }
+    />
+  );
+
+  const listProps = {
+    ref: (el: HTMLElement | null) => {
+      listRef.current = el;
+    },
+    onPointerMove: () => {
+      setKbNav((k) => (k ? false : k));
+      markSeen();
+    },
+  };
+
+  const shortcutsButton = (
+    <button
+      type="button"
+      onClick={() => setHelpOpen(true)}
+      className="text-muted-foreground hover:text-foreground duration-fast hidden items-center gap-1.5 text-xs transition-colors sm:flex"
+    >
+      <Kbd>?</Kbd>
+      Shortcuts
+    </button>
+  );
+
+  // A `?id=` we cannot resolve yet: hold the row skeleton until the list has
+  // fetched once, so a refresh never flashes the inbox on the way to the page.
+  if (idParam && !selected && !listLoaded && !isError) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="w-full p-4">
+            <ListSkeleton />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // The review page replaces the inbox in place — same scroll container, no
+  // modal. Escape and "Back to inbox" return to the list.
+  if (selected) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ReviewDetail item={selected} actions={actions} onBack={() => setSelectedId(null)} />
+        </div>
+        <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl px-4 pb-28">
-          {/* Header — dropped when embedded in the customize panel (the rail
-              already names the section); the standalone prototype keeps it. */}
-          {!connected && (
-            <header className="flex flex-col gap-2 pt-10 sm:flex-row sm:items-start sm:justify-between lg:pt-16">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="bg-kortix-base/15 flex size-7 items-center justify-center rounded-sm">
-                    <InboxSolid weight="fill" className="text-kortix-base size-4" />
-                  </span>
-                  <h1 className="text-foreground text-xl font-medium tracking-tight text-balance">
-                    Review Center
-                  </h1>
-                  {!connected && (
-                    <Badge variant="beta" size="xs">
-                      Prototype
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-muted-foreground text-sm text-balance">
-                  Everything that needs your eyes — changes, approvals, outputs and questions, from
-                  the web and Slack.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHelpOpen(true)}
-                className="text-muted-foreground hover:text-foreground hidden items-center gap-1.5 text-xs transition-colors sm:flex"
-              >
-                <Kbd>?</Kbd>
-                shortcuts
-              </button>
-            </header>
-          )}
+        <div className="w-full px-4">
+          {/* One control row: what list you're in, then how to narrow it. */}
+          <div className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs
+              value={segment}
+              onValueChange={(v) => {
+                setSegment(v as ReviewSegment);
+                markSeen();
+              }}
+              className="min-w-0"
+            >
+              <TabsList className="flex w-full items-center justify-start">
+                {SEGMENTS.map((s) => (
+                  <TabsTrigger key={s.value} value={s.value} size="sm">
+                    {s.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
 
-          {/* Sticky controls */}
-          <div
-            className={cn(
-              'bg-background/95 sticky top-0 z-10 space-y-3 backdrop-blur',
-              connected ? 'pt-6 pb-3' : 'py-4',
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <Tabs
-                value={segment}
-                onValueChange={(v) => {
-                  setSegment(v as ReviewSegment);
-                  markSeen();
-                }}
-                className="min-w-0 flex-1"
-              >
-                <TabsList type="underline" className="flex w-full items-center justify-start">
-                  {SEGMENTS.map((s) => (
-                    <TabsTrigger key={s.value} value={s.value} className="w-fit flex-none gap-1.5">
-                      {s.label}
-                      {counts[s.value] > 0 && (
-                        <Badge
-                          variant={
-                            s.value === 'needs_you' && freshIds.size > 0 ? 'new' : 'secondary'
-                          }
-                          size="xs"
-                        >
-                          <AnimatedCount value={counts[s.value]} />
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-              {connected && (
-                <Hint label={isFetching ? 'Refreshing…' : 'Auto-updating — click to refresh now'}>
-                  <button
-                    type="button"
-                    onClick={onRefresh}
-                    disabled={!onRefresh || isFetching}
-                    className="text-muted-foreground/70 hover:text-foreground disabled:hover:text-muted-foreground/70 hidden shrink-0 items-center gap-1.5 text-xs transition-colors sm:flex"
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant={kindFilter === 'all' ? 'outline' : 'secondary'}>
+                    {kindFilter === 'all'
+                      ? 'All types'
+                      : KIND_FILTERS.find((f) => f.value === kindFilter)?.label}
+                    <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuLabel>Type</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={kindFilter}
+                    onValueChange={(v) => setKindFilter(v as ReviewKind | 'all')}
                   >
-                    <span
-                      className={cn(
-                        'bg-kortix-green size-1.5 rounded-full',
-                        isFetching && !reduce && 'animate-pulse',
-                      )}
-                    />
-                    Live
-                  </button>
-                </Hint>
-              )}
-            </div>
+                    {KIND_FILTERS.map((f) => (
+                      <DropdownMenuRadioItem key={f.value} value={f.value} side="left">
+                        {f.label}
+                        {(kindCounts[f.value] ?? 0) > 0 && (
+                          <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
+                            {kindCounts[f.value]}
+                          </Badge>
+                        )}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Tabs
-                value={kindFilter}
-                onValueChange={(v) => setKindFilter(v as ReviewKind | 'all')}
-              >
-                <TabsListCompact>
-                  {KIND_FILTERS.map((f) => (
-                    <TabsTriggerCompact key={f.value} value={f.value}>
-                      {f.label}
-                      {(kindCounts[f.value] ?? 0) > 0 && (
-                        <span className="ml-1 tabular-nums opacity-60">
-                          <AnimatedCount value={kindCounts[f.value] ?? 0} />
-                        </span>
-                      )}
-                    </TabsTriggerCompact>
-                  ))}
-                </TabsListCompact>
-              </Tabs>
-
-              <div className="relative sm:w-56">
-                <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
-                <Input
-                  id="review-search"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value);
-                    setFocusedIdx(0);
-                  }}
-                  placeholder="Search"
-                  className="h-8 pl-8 text-sm"
-                />
-                {!query && <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>}
-              </div>
-            </div>
-
-            {/* Per-session view: filter to one session, and/or group by session so
-                a session's reviews + approvals sit together. Only shown once the
-                current segment actually has session-linked items. */}
-            {sessionOpts.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={grouped ? 'secondary' : 'outline'}
-                  className="h-8 gap-1.5"
-                  onClick={() => setGrouped((g) => !g)}
-                  aria-pressed={grouped}
-                >
-                  <Layers className="size-3.5" />
-                  Group by session
-                </Button>
+              {/* Per-session view: filter to one session, and/or group by session
+                  so a session's reviews + approvals sit together. Only shown once
+                  the current segment actually has session-linked items. */}
+              {sessionOpts.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       type="button"
-                      size="sm"
-                      variant={sessionFilter === 'all' ? 'outline' : 'secondary'}
-                      className="h-8 max-w-[16rem] gap-1.5"
+                      variant={sessionFilter === 'all' && !grouped ? 'outline' : 'secondary'}
+                      className="max-w-64"
                     >
                       <span className="truncate">
                         {sessionFilter === 'all'
@@ -899,219 +907,137 @@ export function ReviewCenter({
                           : (sessionOpts.find((s) => s.sessionId === sessionFilter)?.label ??
                             'Session')}
                       </span>
-                      <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+                      <ChevronDown className="text-muted-foreground size-3.5 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="max-h-72 w-64 overflow-y-auto">
-                    <DropdownMenuItem onClick={() => setSessionFilter('all')}>
-                      All sessions
-                      <Badge variant="secondary" size="xs" className="ml-auto">
-                        {filterItems(items, segment, kindFilter, query, 'all').length}
-                      </Badge>
-                    </DropdownMenuItem>
-                    {sessionOpts.map((s) => (
-                      <DropdownMenuItem
-                        key={s.sessionId}
-                        onClick={() => setSessionFilter(s.sessionId)}
-                      >
-                        <span className="truncate">{s.label}</span>
-                        <Badge variant="secondary" size="xs" className="ml-auto shrink-0">
-                          {filterItems(items, segment, kindFilter, query, s.sessionId).length}
+                  <DropdownMenuContent align="end" className="max-h-72 w-64 overflow-y-auto">
+                    <DropdownMenuLabel>Session</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup value={sessionFilter} onValueChange={setSessionFilter}>
+                      <DropdownMenuRadioItem value="all" side="left">
+                        All sessions
+                        <Badge variant="secondary" size="xs" className="ml-auto tabular-nums">
+                          {filterItems(items, segment, kindFilter, query, 'all').length}
                         </Badge>
-                      </DropdownMenuItem>
-                    ))}
+                      </DropdownMenuRadioItem>
+                      {sessionOpts.map((s) => (
+                        <DropdownMenuRadioItem key={s.sessionId} value={s.sessionId} side="left">
+                          <span className="truncate">{s.label}</span>
+                          <Badge
+                            variant="secondary"
+                            size="xs"
+                            className="ml-auto shrink-0 tabular-nums"
+                          >
+                            {filterItems(items, segment, kindFilter, query, s.sessionId).length}
+                          </Badge>
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                    <DropdownMenuSeparator />
+                    {/* `pl-8` lines this label up with the radio rows above: their
+                        check is inline (px-2.5 + size-3.5 + gap-2), this one is
+                        absolute at left-2.5, so the text needs the same start. */}
+                    <DropdownMenuCheckboxItem
+                      checked={grouped}
+                      onCheckedChange={setGrouped}
+                      className="pl-8"
+                    >
+                      Group by session
+                    </DropdownMenuCheckboxItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              </div>
-            )}
+              )}
 
+              <InputGroupSearch className="sm:w-56">
+                <InputGroupSearchIcon>
+                  <Search />
+                </InputGroupSearchIcon>
+                <InputGroupSearchInput
+                  id="review-search"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setFocusedIdx(0);
+                  }}
+                  placeholder="Search"
+                  variant="popover"
+                  size="sm"
+                />
+                {!query && <Kbd className="absolute top-1/2 right-2 -translate-y-1/2">/</Kbd>}
+              </InputGroupSearch>
+            </div>
           </div>
 
           {/* List */}
           {isError && items.length === 0 ? (
-            <div className="pt-6">
-              <ErrorState
-                size="sm"
-                title="Couldn't load the review inbox"
-                description="Check your connection and try again."
-                action={
-                  <Button variant="outline" size="sm" onClick={onRefresh} disabled={isFetching}>
-                    {isFetching ? <Loading className="size-3.5 shrink-0" /> : null}
-                    Retry
-                  </Button>
-                }
-              />
-            </div>
+            <ErrorState
+              size="sm"
+              title="Couldn't load the review inbox"
+              description="Check your connection and try again."
+              action={
+                <Button variant="outline" size="sm" onClick={onRefresh} disabled={isFetching}>
+                  {isFetching ? <Loading className="size-3.5 shrink-0" /> : null}
+                  Retry
+                </Button>
+              }
+            />
           ) : isLoading && items.length === 0 ? (
-            <ul className="space-y-2">
-              {['a', 'b', 'c', 'd'].map((k) => (
-                <li key={k}>
-                  <Skeleton className="h-[58px] w-full rounded-md" />
-                </li>
-              ))}
-            </ul>
+            <ListSkeleton />
           ) : visible.length === 0 ? (
-            <m.div
-              key={`empty-${segment}-${query ? 'q' : ''}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, ease: EASE }}
-              className="pt-6"
-            >
-              <EmptyState
-                icon={CheckCircleSolid}
-                size="sm"
-                title={
-                  query
-                    ? 'No matches'
-                    : segment === 'needs_you'
-                      ? "You're all caught up"
-                      : 'Nothing here'
-                }
-                description={
-                  query
-                    ? 'Try a different search.'
-                    : segment === 'needs_you'
-                      ? 'When an agent needs a decision, an approval, or eyes on something it finished, it shows up here.'
-                      : segment === 'waiting'
-                        ? 'Items you’ve acted on that the agent is still working through will appear here.'
-                        : 'Approved, rejected and finished items land here.'
-                }
-              />
-            </m.div>
+            <EmptyState
+              icon={CheckCircleSolid}
+              size="sm"
+              title={
+                query
+                  ? 'No matches'
+                  : segment === 'needs_you'
+                    ? "You're all caught up"
+                    : 'Nothing here'
+              }
+              description={
+                query
+                  ? 'Try a different search.'
+                  : segment === 'needs_you'
+                    ? 'When an agent needs a decision, an approval, or eyes on something it finished, it shows up here.'
+                    : segment === 'waiting'
+                      ? 'Items you’ve acted on that the agent is still working through will appear here.'
+                      : 'Approved, rejected and finished items land here.'
+              }
+            />
           ) : grouped ? (
-            <div
-              ref={(el) => {
-                listRef.current = el;
-              }}
-              onPointerMove={() => {
-                setKbNav((k) => (k ? false : k));
-                markSeen();
-              }}
-              className="space-y-4"
-            >
+            <div {...listProps} className="space-y-5">
               {groups.map((g) => (
-                <div key={g.sessionId ?? '__none__'}>
-                  <div className="mb-1.5 flex items-center gap-2 px-1">
-                    <span className="text-foreground truncate text-xs font-semibold">
-                      {g.label}
-                    </span>
-                    <Badge variant="secondary" size="xs">
+                <section key={g.sessionId ?? '__none__'} className="space-y-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <h2 className="text-foreground truncate text-xs font-medium">{g.label}</h2>
+                    <Badge variant="secondary" size="xs" className="tabular-nums">
                       {g.items.length}
                     </Badge>
                     {g.sessionId && onOpenSession && (
                       <button
                         type="button"
-                        className="text-muted-foreground hover:text-foreground ml-auto shrink-0 text-[11px] underline-offset-2 hover:underline"
+                        className="text-muted-foreground hover:text-foreground duration-fast ml-auto shrink-0 text-xs transition-colors"
                         onClick={() => onOpenSession(g.sessionId!)}
                       >
                         Open session
                       </button>
                     )}
                   </div>
-                  <ul className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border">
-                    {g.items.map((item) => {
-                      const idx = visibleIndexById.get(item.id) ?? 0;
-                      return (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          idx={idx}
-                          focused={kbNav && idx === focusedIdx}
-                          selected={selectedIds.has(item.id)}
-                          showCheck={selectionCount > 0}
-                          fresh={freshIds.has(item.id)}
-                          reduce={reduce}
-                          quickDecidable={connected && isQuickDecidableApproval(item)}
-                          pendingDecision={pendingId === item.id ? pendingDecision : null}
-                          bulkSelectable={
-                            item.kind !== 'approval' &&
-                            (!connected || connectorCallId(item.id) === null)
-                          }
-                          onOpen={() => setSelectedId(item.id)}
-                          onToggleSelect={() => toggleSelect(item.id)}
-                          onQuickApprove={() => quickDecide(item, 'approve')}
-                          onQuickDeny={() => quickDecide(item, 'deny')}
-                        />
-                      );
-                    })}
+                  <ul className={LIST_CLASS}>
+                    {g.items.map((item) =>
+                      renderRow(item, visibleIndexById.get(item.id) ?? 0, true),
+                    )}
                   </ul>
-                </div>
+                </section>
               ))}
             </div>
           ) : (
-            <ul
-              ref={(el) => {
-                listRef.current = el;
-              }}
-              onPointerMove={() => {
-                setKbNav((k) => (k ? false : k));
-                markSeen();
-              }}
-              className="bg-popover divide-border/60 divide-y overflow-hidden rounded-lg border"
-            >
-              {visible.map((item, idx) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  idx={idx}
-                  focused={kbNav && idx === focusedIdx}
-                  selected={selectedIds.has(item.id)}
-                  showCheck={selectionCount > 0}
-                  fresh={freshIds.has(item.id)}
-                  reduce={reduce}
-                  quickDecidable={connected && isQuickDecidableApproval(item)}
-                  pendingDecision={pendingId === item.id ? pendingDecision : null}
-                  bulkSelectable={
-                    item.kind !== 'approval' && (!connected || connectorCallId(item.id) === null)
-                  }
-                  sessionLabel={item.sessionId ? labelFor(item.sessionId) : undefined}
-                  onOpen={() => setSelectedId(item.id)}
-                  onToggleSelect={() => toggleSelect(item.id)}
-                  onQuickApprove={() => quickDecide(item, 'approve')}
-                  onQuickDeny={() => quickDecide(item, 'deny')}
-                />
-              ))}
+            <ul {...listProps} className={LIST_CLASS}>
+              {visible.map((item, idx) => renderRow(item, idx, false))}
             </ul>
           )}
         </div>
       </div>
 
-      {/* Floating multi-select action bar */}
-      <AnimatePresence>
-        {selectionCount > 0 && (
-          <m.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
-            transition={{ duration: 0.2, ease: EASE }}
-            className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-4"
-          >
-            <div className="bg-popover pointer-events-auto flex items-center gap-2 rounded-full border px-2 py-2 shadow-lg">
-              <span className="text-foreground flex items-center gap-1 px-2 text-sm font-medium">
-                <AnimatedCount value={selectionCount} /> selected
-              </span>
-              <Button size="sm" onClick={() => approveIds([...selectedIds])}>
-                Approve
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => dismissIds([...selectedIds])}>
-                Dismiss
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Clear selection"
-                className="size-8"
-                onClick={() => setSelectedIds(new Set())}
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          </m.div>
-        )}
-      </AnimatePresence>
-
-      <ReviewDetailModal item={selected} actions={actions} onClose={() => setSelectedId(null)} />
       <KeyboardHelp open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   );

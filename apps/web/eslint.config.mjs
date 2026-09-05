@@ -88,21 +88,23 @@ const eslintConfig = [
               message: 'apps/web imports must use runtime-neutral @kortix/sdk surfaces.',
             },
             {
-              group: [
-                '@kortix/sdk/projects-client',
-                '@kortix/sdk/platform-client',
-                '@kortix/sdk/files',
-                '@kortix/sdk/session',
-                '@kortix/sdk/session/url',
-                '@kortix/sdk/opencode-client',
-                '@kortix/sdk/opencode-errors',
-                '@kortix/sdk/event-stream',
-                '@kortix/sdk/server-store',
-                '@kortix/sdk/sync-store',
-                '@kortix/sdk/sandbox-connection-store',
-                '@kortix/sdk/opencode-pending-store',
-                '@kortix/sdk/internal/*',
-              ],
+              // Allowlist, not denylist: everything under `@kortix/sdk/` is
+              // forbidden except the canonical entry points. The SDK keeps ~20
+              // @deprecated subpath aliases alive for external consumers; none
+              // of them are for us. This replaced a denylist of 13 named
+              // subpaths, which had grown exactly the hole a denylist always
+              // grows — `@kortix/sdk/idb-sync-cache` was never added to it.
+              //
+              // These patterns use gitignore semantics, so `@kortix/sdk/*`
+              // also excludes the `internal/` DIRECTORY, and gitignore cannot
+              // re-include a path under an excluded directory. There is
+              // therefore no pattern that allows `@kortix/sdk/internal/
+              // idb-sync-cache` while banning its four zustand neighbours.
+              // The one deliberate exception carries an inline disable at its
+              // single call site (`lib/utils/reset-client-state.ts`) instead,
+              // where it is visible in review. Mirrors CANONICAL_SDK_ENTRIES
+              // in scripts/sdk-boundary.mjs — keep the two in sync.
+              group: ['@kortix/sdk/*', '!@kortix/sdk/react', '!@kortix/sdk/server'],
               message: 'Use the canonical @kortix/sdk or @kortix/sdk/react entry point.',
             },
             {
@@ -168,9 +170,24 @@ const eslintConfig = [
           //
           // The pattern matches the whole family rather than an allowlist,
           // so a NEW literal (`['project-widgets', id]`) is caught too.
+          //
+          // `accounts` joined the family for a DIFFERENT reason from the
+          // project literals, and a stronger one. `['accounts']` carried no
+          // signed-in user, so one document that saw two users held ONE cache
+          // entry for both — and `/new` resolves its create target out of
+          // that list, so a leftover single-account list belonging to the
+          // previous user made `POST /projects/provision` go out with a
+          // foreign `account_id` under the new user's JWT (403). The list
+          // CONTENTS cannot tell that apart from a legitimate invited admin;
+          // only `qk.accounts.list(userId)` can. This rule is what keeps that
+          // fix from being undone by the next person who types the obvious
+          // four-line `useQuery`.
+          //
+          // Singular `account` is deliberately NOT matched: `['account', id]`
+          // is a different, still-live family already scoped by account id.
           selector:
             "Property[key.name='queryKey'] > ArrayExpression > " +
-            "Literal:first-child[value=/^projects?(-[a-z-]+)?$/]",
+            "Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -186,7 +203,7 @@ const eslintConfig = [
           // selectors below.
           selector:
             "Property[key.name='queryKey'] > TSAsExpression > ArrayExpression > " +
-            "Literal:first-child[value=/^projects?(-[a-z-]+)?$/]",
+            "Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -227,7 +244,7 @@ const eslintConfig = [
           // Covers every TanStack QueryClient method whose first positional
           // argument is (or can be) a query key.
           selector:
-            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > ArrayExpression:first-child > Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$|^kx$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },
@@ -238,7 +255,7 @@ const eslintConfig = [
           // and its first-argument ArrayExpression instead of between a
           // Property and its value.
           selector:
-            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > TSAsExpression:first-child > ArrayExpression > Literal:first-child[value=/^projects?(-[a-z-]+)?$|^kx$/]",
+            "CallExpression[callee.property.name=/^(set|get)Quer(y|ies)Data$|^(remove|cancel|refetch|invalidate)Queries$/] > TSAsExpression:first-child > ArrayExpression > Literal:first-child[value=/^(projects?|accounts)(-[a-z-]+)?$|^kx$/]",
           message:
             'Query keys come from `qk` in @kortix/sdk/react. Never hand-type an entity key.',
         },

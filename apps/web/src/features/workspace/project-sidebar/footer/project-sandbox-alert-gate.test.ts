@@ -33,32 +33,54 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     expect(code).toContain(
       'const canRecover = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed !== false;',
     );
-    // All three "Details" controls sit behind the details gate. They are
-    // prefetching anchors, not buttons: this alert only shows when the project
-    // is already unhealthy, which is the worst moment to risk the full page
-    // reload a cold `router.push` can degrade into
+    // The one "Details" sits behind the details gate. It is a prefetching
+    // anchor, not a button handler: this alert only shows when the project is
+    // already unhealthy, which is the worst moment to risk the full page reload
+    // a cold `router.push` can degrade into
     // (fetch-server-response.js:148/177/181).
-    const details = (code.match(/<Link href=\{sandboxSectionHref\} prefetch>/g) ?? []).length;
-    expect(details).toBe(3);
     expect(code).not.toContain('onClick={openSandboxSection}');
-    expect((code.match(/canOpenDetails/g) ?? []).length).toBeGreaterThanOrEqual(4);
-    expect(code).toContain('{canFixWithAgent && canRecover && (');
-    expect(code).toContain('{canRecover ? (');
+    expect(code).toContain('const detailsButton = canOpenDetails ? (');
+    // Recovery gates on project.write and never renders while building.
+    expect(code).toContain("severity !== 'building' && canRecover");
+    expect(code).toContain('fix: canFixWithAgent,');
   });
 
-  test('the whole action tray disappears when both gates close', () => {
-    // Otherwise a member gets an empty bordered tray under the message.
-    expect(code).toContain('{!canOpenDetails && !canRecover ? null : (');
+  test('exactly one "Details" exists, and it looks like a control', () => {
+    // It used to render up to three times in one card — under the message, in
+    // the failure row, and again in the tray — so a failing card showed the
+    // same word twice pointing at the same route. There is now ONE link site.
+    expect((code.match(/<Link href=\{sandboxSectionHref\} prefetch>/g) ?? []).length).toBe(1);
+    // And it is a Button, not body-coloured text. Styled `text-muted-foreground
+    // text-xs p-0` it was character-for-character the copy beside it, and sat
+    // above the title row reading as a stranded caption.
+    expect(code).toContain('<Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>');
+    expect(code).not.toContain('DETAILS_LINK');
   });
 
-  // The failure text, the category badge and the timestamp carry no gate:
-  // they are the answer to "why can't I start a session?".
+  test('the whole action tray disappears when there is nothing to offer', () => {
+    // Otherwise a member gets an empty bordered tray under the message. With
+    // both gates shut `recovery` is null and `detailsButton` is null, so
+    // `hasTray` is false and the tray — divider included — is gone.
+    expect(code).toContain('const hasTray = Boolean(recovery) || Boolean(detailsButton);');
+    expect(code).toContain('{hasTray ? (');
+  });
+
   test('the explanatory copy stays ungated', () => {
-    const body = code.slice(code.indexOf('function SandboxAlertContent'));
-    const message = body.slice(body.indexOf('describeSandboxSeverity(severity, status)'));
-    expect(message.indexOf('canOpenDetails')).toBeGreaterThan(-1);
-    expect(code).toContain('{describeSandboxSeverity(severity, status)}');
+    // The sentence renders unconditionally inside the body — no gate in front
+    // of it, in any form.
+    expect(code).toContain(
+      '<SidebarAlertText>{describeSandboxSeverity(severity, status)}</SidebarAlertText>',
+    );
     expect(code).not.toContain('canRecover && describeSandboxSeverity');
+    expect(code).not.toContain('canOpenDetails && describeSandboxSeverity');
+    // The failure detail — category, timestamp, stack trace — is the answer to
+    // "why can't I start a session?", so it carries no gate either.
+    expect(code).toContain('{failure && (');
+    expect(code).not.toContain('{failure && canOpenDetails');
+    expect(code).not.toContain('{failure && canRecover');
+    // The copy itself is unchanged from main — this redesign moved pixels, not
+    // the sentences a member reads to understand why sessions are refused.
+    expect(code).toContain('New sessions can’t start until this image builds.');
   });
 
   // Hide, never disable — a control that only tells you "forbidden" after the
