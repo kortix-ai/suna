@@ -32,12 +32,13 @@ const SEARCH_MIN_ITEMS = 7;
  * Where a session from this composer starts: the whole project, or one of
  * its subprojects.
  *
- * Sits right after the agent picker and wears the SAME trigger — ghost, `sm`,
- * `rounded-lg`, label plus caret — so the bar reads as one row of sibling
- * choices ("Agent · Marketing · Model"), not a control of its own kind. The
- * list mirrors the sidebar's `Subprojects` group: the same rows, the same
- * folder glyph, and `New subproject` at the foot for anyone who may create
- * one (the modal navigates to the new page, which preselects itself here).
+ * Lives in the tray under the chat card (`Composer.traySlot`) as a pill that
+ * STATES the current target — "Whole project", or the subproject's name —
+ * and opens downward, the way Claude's "Project or folder" strip does (user,
+ * 2026-09-05). The list mirrors the sidebar's `Subprojects` group: the same
+ * rows, the same folder glyph, and `New subproject` at the foot for anyone
+ * who may create one (the modal navigates to the new page, which preselects
+ * itself here).
  */
 export function SubprojectSelector({
   projectId,
@@ -117,13 +118,17 @@ export function SubprojectSelector({
         <CommandPopoverTrigger>
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             aria-label="Select subproject"
-            className="text-foreground/70 rounded-lg"
+            className="bg-background rounded-lg"
           >
-            <FolderSimpleIcon className="size-3.5 shrink-0" />
-            <span className="max-w-[7rem] truncate">{current?.name ?? 'Subproject'}</span>
+            {current ? (
+              <FolderSimpleIcon className="size-3.5 shrink-0" />
+            ) : (
+              <SquaresFourIcon className="size-3.5 shrink-0" />
+            )}
+            <span className="max-w-[12rem] truncate">{current?.name ?? 'Whole project'}</span>
             <CaretDownIcon
               className={cn(
                 'size-3 transition-transform duration-200 ease-out',
@@ -134,10 +139,10 @@ export function SubprojectSelector({
         </CommandPopoverTrigger>
 
         <CommandPopoverContent
-          side="top"
+          side="bottom"
           align="start"
           sideOffset={8}
-          className="w-[min(300px,calc(100vw-1.5rem))]"
+          className="w-[min(360px,calc(100vw-1.5rem))]"
         >
           {/* Mounted either way, hidden below the threshold: cmdk's arrow keys
               live on this input — see the same note in `AgentSelector`. */}

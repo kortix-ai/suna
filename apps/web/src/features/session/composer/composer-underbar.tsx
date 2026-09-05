@@ -68,12 +68,6 @@ export interface ComposerUnderbarProps {
    */
   variant?: 'row' | 'inline';
   toolbarSlot?: React.ReactNode;
-  /**
-   * Rendered right after the agent picker: a sibling choice about the message
-   * (Project Home's subproject picker), so it belongs on this side of the
-   * row with what you BRING, not on the right with what it costs.
-   */
-  underbarSlot?: React.ReactNode;
 }
 
 export function ComposerUnderbar({
@@ -89,7 +83,6 @@ export function ComposerUnderbar({
   onContextClick,
   variant = 'row',
   toolbarSlot,
-  underbarSlot,
 }: ComposerUnderbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 
@@ -162,7 +155,6 @@ export function ComposerUnderbar({
           triggerLabelClassName="max-w-[7rem]"
           unavailableHint={noAccessibleAgents ? NO_AGENT_ACCESS_MESSAGE : undefined}
         />
-        {underbarSlot}
       </div>
 
       <div className="flex items-center gap-1">

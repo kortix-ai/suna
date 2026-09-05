@@ -250,13 +250,13 @@ test.describe('27 — Subprojects', () => {
       await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
       await dismissOnboarding(page);
       const homePicker = page.getByRole('button', { name: 'Select subproject', exact: true });
-      await expect(homePicker).toContainText('Subproject');
+      await expect(homePicker).toContainText('Whole project');
       await homePicker.click();
       await page.getByRole('option', { name: /^Marketing/ }).click();
       await expect(homePicker).toContainText('Marketing');
       await homePicker.click();
       await page.getByRole('option', { name: /^Whole project/ }).click();
-      await expect(homePicker).toContainText('Subproject');
+      await expect(homePicker).toContainText('Whole project');
 
       expect(pageErrors).toEqual([]);
     } finally {

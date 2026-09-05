@@ -312,10 +312,11 @@ export function ProjectHome({
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
-            // Beside the agent picker: where the session starts. Absent until
-            // the project has a subproject to offer — a picker over nothing is
-            // a control that can only say "Whole project".
-            underbarSlot={
+            // The tray under the card: where the session starts (user,
+            // 2026-09-05 — "under the main chat box, like Claude's project or
+            // folder strip"). Absent until the project has a subproject to
+            // offer — a picker over nothing can only say "Whole project".
+            traySlot={
               subprojects.length > 0 ? (
                 <SubprojectSelector
                   projectId={projectId}

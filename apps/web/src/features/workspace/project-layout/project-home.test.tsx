@@ -51,11 +51,11 @@ describe('ProjectHome access-requests bell', () => {
 
 describe('ProjectHome subproject picker', () => {
   // The composer, not the page, decides where a session starts: the picker
-  // sits beside the agent picker (the underbar slot), a subproject page
+  // sits in the tray under the card (the tray slot), a subproject page
   // preselects itself, and the send carries the pick plus that subproject's
   // own default agent — `use-project-home-send.ts` reads both from options.
-  test('mounts the picker beside the agent picker and sends its choice', () => {
-    expect(source).toContain('underbarSlot={');
+  test('mounts the picker in the tray under the card and sends its choice', () => {
+    expect(source).toContain('traySlot={');
     expect(source).toContain('<SubprojectSelector');
     const send = code.slice(
       code.indexOf('const handleSend = useCallback('),
