@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && node scripts/generate-fumadocs-source.mjs && (trap 'kill 0' EXIT INT TERM; npx blume dev --port 13401 & KORTIX_BLUME_DEV_TARGET=http://localhost:13401 NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --port ${WEB_PORT:-3000})",
+    "dev": "node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- next dev --port ${WEB_PORT:-3000}",
     "dev:staging-env": "node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS='--max-http-header-size=32768' dotenvx run --overload -f .env.staging -- next dev --port ${WEB_PORT:-3000}",
     "build": "node scripts/validate-production-supabase-env.mjs && node scripts/copy-viewer-wasm.mjs && node scripts/copy-emojibase-data.mjs && node scripts/generate-fumadocs-source.mjs && NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=6144}\" next build",
     "start": "next start",
+    "docs:build": "node -e \"import('./scripts/blume-docs.mjs').then(m => m.buildBlumeDocs())\"",
     "lint": "eslint .",
     "catalog:enrich": "bun scripts/enrich-llm-catalog-capabilities.ts",
     "wallpapers:generate": "node scripts/generate-wallpapers.mjs",

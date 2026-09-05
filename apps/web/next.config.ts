@@ -118,7 +118,14 @@ if (missingEmojibaseOutputs.length > 0) {
 // a Function"), so the default export below is that function form and this
 // runs from inside it, gated on the real `phase` parameter.
 function ensureBlumeDocsBuilt(phase: string) {
-  if (phase !== PHASE_PRODUCTION_BUILD) return;
+  // Runs for BOTH `next build` and `next dev`. /docs is served by THIS app out
+  // of public/docs/ in every environment — there is deliberately no second
+  // server. buildBlumeDocs() no-ops when public/docs/ is already newer than
+  // content/docs/ and blume.config.ts, so a warm `next dev` pays nothing; a
+  // cold one pays a single ~6s Astro build instead of serving a 404.
+  // Editing a doc while `next dev` is running does NOT hot-reload: run
+  // `pnpm docs:build` (or restart) to refresh public/docs/.
+  const isBuild = phase === PHASE_PRODUCTION_BUILD;
   let blumeDocsError: unknown = null;
   try {
     buildBlumeDocs();
@@ -129,12 +136,15 @@ function ensureBlumeDocsBuilt(phase: string) {
     (output) => !fs.existsSync(output),
   );
   if (missingBlumeDocsOutputs.length > 0) {
-    throw new Error(
+    const message =
       `[next.config.ts] scripts/blume-docs.mjs failed to produce the docs site: ` +
         `${missingBlumeDocsOutputs.join(', ')}` +
         (blumeDocsError ? ` (${(blumeDocsError as Error).message})` : '') +
-        `. Run \`npx blume build\` in apps/web to diagnose.`,
-    );
+        `. Run \`npx blume build\` in apps/web to diagnose.`;
+    // Fatal for a release build; in dev only /docs is affected, so warn and let
+    // the rest of the app come up rather than blocking every other route.
+    if (isBuild) throw new Error(message);
+    console.warn(message);
   }
 }
 
@@ -565,22 +575,6 @@ const nextConfig = (): NextConfig => ({
         source: '/ingest/flags',
         destination: 'https://eu.i.posthog.com/flags',
       },
-      // Docs hot reload. When `blume dev` is running (pnpm dev sets this), proxy
-      // /docs to it instead of serving the static public/docs/ build. Env-gated
-      // exactly like the Supabase proxy above: unset means the rule is not emitted
-      // at all, so production and anyone not running `blume dev` are untouched.
-      ...(process.env.KORTIX_BLUME_DEV_TARGET
-        ? [
-            {
-              source: '/docs',
-              destination: `${process.env.KORTIX_BLUME_DEV_TARGET}/docs`,
-            },
-            {
-              source: '/docs/:path*',
-              destination: `${process.env.KORTIX_BLUME_DEV_TARGET}/docs/:path*`,
-            },
-          ]
-        : []),
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,
       // so map them explicitly. These are afterFiles rules (a flat array is), so an
