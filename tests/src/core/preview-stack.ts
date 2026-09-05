@@ -328,6 +328,16 @@ export function applyPreviewEnvironment(
       rawSecrets.KORTIX_GITHUB_APP_PRIVATE_KEY?.replace(/\r?\n/g, '\\n') ?? '',
     KORTIX_GITHUB_APP_SLUG: rawSecrets.KORTIX_GITHUB_APP_SLUG ?? '',
     OPENROUTER_API_KEY: rawSecrets.OPENROUTER_API_KEY ?? '',
+    // A KEY IS AN ANSWER OR IT IS NOTHING. KORTIX_MANAGED_PROVIDER_ENABLED is
+    // unset by default and then follows billing, which is off on a preview
+    // without Stripe — so the managed lineup (every kortix/… model, including
+    // the deployment default) resolved to
+    // "model_disabled_on_deployment: requires Kortix's managed provider" and
+    // EVERY agent turn died there: three auto-resumes, then an empty assistant
+    // message (pi-js.kortix.com, 2026-09-05). An OpenRouter key is exactly the
+    // transport managedCandidates() needs, so a preview that has one serves the
+    // managed lineup through it; a preview without one keeps the old behaviour.
+    KORTIX_MANAGED_PROVIDER_ENABLED: rawSecrets.OPENROUTER_API_KEY ? 'true' : 'false',
     STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
   });

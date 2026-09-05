@@ -156,6 +156,13 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
     expect(configured.runtimeEnv).toContain('MANAGED_GIT_PROVIDER=github');
     expect(configured.runtimeEnv).toContain('KORTIX_GITHUB_APP_PRIVATE_KEY=line-one\\nline-two');
+    // An OpenRouter key is the transport the managed lineup needs, so a preview
+    // that has one serves it. Unset, KORTIX_MANAGED_PROVIDER_ENABLED follows
+    // billing — off on a preview without Stripe — and every kortix/… model
+    // (the deployment default included) answers
+    // "model_disabled_on_deployment", which is every agent turn dying with an
+    // empty assistant message (pi-js.kortix.com, 2026-09-05).
+    expect(configured.runtimeEnv).toContain('KORTIX_MANAGED_PROVIDER_ENABLED=true');
     expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
     expect(configured.testEnv).toContain(`KE2E_PREVIEW_AUTHORIZATION=approved:${SHA}`);
@@ -185,6 +192,10 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT=0');
     // The API refuses to boot with billing on and no STRIPE_SECRET_KEY.
     expect(configured.runtimeEnv).toContain('KORTIX_BILLING_INTERNAL_ENABLED=false');
+    // …and with no OpenRouter key the managed provider stays off: nothing here
+    // can serve those models, and claiming otherwise would trade one wrong
+    // error for a worse one.
+    expect(configured.runtimeEnv).toContain('KORTIX_MANAGED_PROVIDER_ENABLED=false');
     expect(configured.runtimeEnv).toContain('KORTIX_PUBLIC_BILLING_ENABLED=false');
     // Sessions follow the credential that is present.
     expect(configured.runtimeEnv).toContain('ALLOWED_SANDBOX_PROVIDERS=platinum');
