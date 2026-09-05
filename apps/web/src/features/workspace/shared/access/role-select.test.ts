@@ -102,9 +102,9 @@ describe('built-in role lists', () => {
   });
 
   test('labels come from the descriptors', () => {
-    expect(builtinRoleLabel('account', 'owner')).toBe('Owner');
-    expect(builtinRoleLabel('project', 'manager')).toBe('Manager');
-    expect(builtinRoleLabel('project', 'member')).toBe('Member');
+    expect(builtinRoleLabel('account', 'owner')).toBe('Account owner');
+    expect(builtinRoleLabel('project', 'manager')).toBe('Project admin');
+    expect(builtinRoleLabel('project', 'member')).toBe('Project member');
   });
 });
 
@@ -129,7 +129,7 @@ describe('roleValueLabel', () => {
   const roles = [role({ role_id: 'r_proj', name: 'Support' })];
 
   test('built-in → display name', () => {
-    expect(roleValueLabel('project', builtinRole('manager'), roles)).toBe('Manager');
+    expect(roleValueLabel('project', builtinRole('manager'), roles)).toBe('Project admin');
   });
 
   test('custom → the role name', () => {

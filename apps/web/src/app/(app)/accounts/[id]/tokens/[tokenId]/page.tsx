@@ -2,9 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CaretLeftIcon as ChevronLeft, KeyIcon as KeyRound } from '@phosphor-icons/react';
+import { KeyIcon as KeyRound } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMemo } from 'react';
 
@@ -14,6 +13,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AccountPane } from '@/features/accounts/hub/account-pane';
 import { useAuth } from '@/features/providers/auth-provider';
 import { usePermission } from '@/lib/use-permission';
 import { listAccountTokens } from '@kortix/sdk';
@@ -64,16 +64,8 @@ export default function TokenDetailPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5 pb-10">
+    <AccountPane back={{ href: `/accounts/${accountId}?tab=tokens`, label: 'Back to tokens' }}>
       <div className="space-y-5">
-        <Link
-          href={`/accounts/${accountId}`}
-          className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-sm transition-colors"
-        >
-          <ChevronLeft className="size-4" />
-          Account
-        </Link>
-
         <div className="flex min-w-0 items-center gap-3.5">
           <EntityAvatar icon={KeyRound} size="lg" />
           <div className="min-w-0 space-y-0.5">
@@ -112,6 +104,6 @@ export default function TokenDetailPage() {
           {tI18nHardcoded.raw('autoAppAppAccountsIdTokensTokenIdPageJsxTextTokensf8e918bc')}
         </InfoBanner>
       ) : null}
-    </div>
+    </AccountPane>
   );
 }

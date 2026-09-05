@@ -38,8 +38,37 @@ let cachedToken: string | null = null;
 let cachedAt = 0;
 let bootstrapToken: string | null = null;
 
+/**
+ * Monotonic generation counter for the token cache. Bumped by every
+ * AUTHORITATIVE write to the cache — `setCachedAuthToken` and
+ * `setBootstrapAuthToken`, which run at every identity boundary (sign-in,
+ * sign-out, token refresh, 401 recovery).
+ *
+ * `getSupabaseAccessToken()` captures the epoch before starting a fetch and
+ * checks it again after that fetch resolves. If the epoch moved in between,
+ * an authoritative write already happened while this fetch was in flight, so
+ * its result is discarded rather than committed: a fetch started against one
+ * identity must never land its answer on top of whatever replaced it.
+ */
+let authEpoch = 0;
+
 // ── Inflight deduplication ──
 let inflight: Promise<string | null> | null = null;
+/** The epoch that was current when `inflight` was started. Captured once, by
+ *  whichever caller starts the fetch, and read by every caller that dedupes
+ *  onto it (see `getSupabaseAccessToken`) — a piggybacker must run the same
+ *  epoch check as the caller that started the fetch, not skip it. */
+let inflightEpoch = 0;
+
+/**
+ * Test-only seam for the real Supabase fetch (`fetchToken`, defined below).
+ * Production code always leaves this pointed at the real implementation —
+ * only `__setFetchTokenForTests` ever reassigns it, so a test can resolve or
+ * reject a fetch on its own schedule to exercise the race above without
+ * mocking `@/lib/supabase/client` (a process-wide `mock.module` in this repo
+ * — see `sign-out-sequence.test.ts`'s doc comment for why DI is preferred).
+ */
+let fetchTokenImpl: () => Promise<string | null> = () => fetchToken();
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -64,17 +93,50 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
 		return cachedToken;
 	}
 
-	// Deduplicate: if another call is already fetching, piggyback on it
-	if (inflight) return inflight;
+	// Deduplicate: if another call is already fetching, piggyback on the
+	// SAME promise. CRITICAL: piggybacking is the NORMAL case here, not an
+	// edge case (see the dedup note in the module doc comment — "5+
+	// parallel Supabase auth roundtrips" collapsed to one). The old code
+	// returned the raw in-flight promise directly to a piggybacker
+	// (`if (inflight) return inflight;`), which bypassed the epoch check
+	// below entirely for every caller except whichever one happened to
+	// start the fetch: a piggybacker awaiting that raw promise got the
+	// stale token STRING even when an invalidation landed while it waited.
+	// Every caller — starter and piggybacker alike — now runs the same
+	// epoch check against the SAME captured `inflightEpoch`.
+	if (!inflight) {
+		// Captured BEFORE the fetch starts: if an authoritative write
+		// (setCachedAuthToken / setBootstrapAuthToken) lands while this
+		// fetch is still in flight, the epoch below will have moved by the
+		// time it resolves, and this call's result is stale relative to
+		// whatever that write established.
+		inflightEpoch = authEpoch;
+		inflight = fetchTokenImpl();
+	}
+	const epochAtStart = inflightEpoch;
+	const pending = inflight;
 
-	inflight = fetchToken();
 	try {
-		const token = await inflight;
+		const token = await pending;
+		if (authEpoch !== epochAtStart) {
+			// Invalidated (or reseeded) mid-flight. This result's provenance
+			// can't be trusted against whichever identity is current now —
+			// never commit it to the cache, and never hand it back either.
+			// Applies to EVERY caller waiting on this fetch, not just the
+			// one that started it.
+			return null;
+		}
 		cachedToken = token;
 		cachedAt = Date.now();
 		return token;
 	} finally {
-		inflight = null;
+		// Guarded, not unconditional: if a LATER caller already started a
+		// NEW fetch (its own `if (!inflight)` branch, after an
+		// invalidation) while this one was still resolving, clearing
+		// `inflight` unconditionally here would clobber that newer
+		// in-flight promise and make the next caller after THIS one start
+		// a redundant third fetch instead of joining the newer one.
+		if (inflight === pending) inflight = null;
 	}
 }
 
@@ -114,10 +176,21 @@ export function invalidateTokenCache(): void {
 
 /**
  * Sync the resolved auth token cache without affecting bootstrap mode.
+ *
+ * Bumps `authEpoch` unconditionally — this is an authoritative write, so any
+ * fetch already in flight was started against the PREVIOUS identity state.
+ * On a clear (`token === null`) that fetch's eventual result must not even be
+ * handed to whoever is piggybacking on it, so `inflight` is dropped too: the
+ * next caller starts its own fetch under the new epoch instead of inheriting
+ * a promise that predates this invalidation.
  */
 export function setCachedAuthToken(token: string | null): void {
+	authEpoch++;
 	cachedToken = token;
 	cachedAt = token ? Date.now() : 0;
+	if (!token) {
+		inflight = null;
+	}
 }
 
 /**
@@ -125,10 +198,36 @@ export function setCachedAuthToken(token: string | null): void {
  * before the browser Supabase client has established local session state.
  */
 export function setBootstrapAuthToken(token: string | null): void {
+	authEpoch++;
 	bootstrapToken = token;
 	if (token) {
 		setCachedAuthToken(token);
 	}
+}
+
+/**
+ * Test-only: point `fetchTokenImpl` at a caller-supplied stand-in, or restore
+ * the real `fetchToken` when called with no argument / `undefined`. See the
+ * doc comment on `fetchTokenImpl` for why this exists instead of a
+ * `mock.module('@/lib/supabase/client', ...)`.
+ */
+export function __setFetchTokenForTests(impl?: () => Promise<string | null>): void {
+	fetchTokenImpl = impl ?? (() => fetchToken());
+}
+
+/**
+ * Test-only: reset every module-level cache field to its startup value.
+ * Module state here is never cleared in production — the tab just reloads —
+ * so each test that exercises the cache needs a clean slate.
+ */
+export function __resetAuthTokenCacheForTests(): void {
+	cachedToken = null;
+	cachedAt = 0;
+	bootstrapToken = null;
+	authEpoch = 0;
+	inflight = null;
+	inflightEpoch = 0;
+	fetchTokenImpl = () => fetchToken();
 }
 
 /**

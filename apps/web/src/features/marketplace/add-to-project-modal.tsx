@@ -39,6 +39,7 @@ import {
   isAccountGitAdmin,
 } from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
@@ -93,12 +94,7 @@ export function AddToProjectModal({
   // Pre-check managed git the same way the New Project modal does — self-host
   // with nothing configured should route to Git settings instead of letting
   // the "new project" target hit the provision 503 first.
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-    enabled: open && target === NEW_PROJECT,
-  });
+  const accountsQuery = useAccountsList({ enabled: open && target === NEW_PROJECT });
   // No `personal_account` flag on this API — the bootstrapped personal
   // account is the one where the caller is the primary owner. Mirrors the
   // resolution in `onConfirm` below.

@@ -5,6 +5,33 @@ import ts from 'typescript';
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 
+/**
+ * The only `@kortix/sdk` entry points apps/web production code may import.
+ *
+ *  - `@kortix/sdk`         — the canonical root barrel. Everything
+ *                            framework-free lives here; every legacy subpath
+ *                            is only an alias for a slice of it (asserted by
+ *                            `packages/sdk/src/root-canonical.test.ts`).
+ *  - `@kortix/sdk/react`   — hooks and providers. React is an optional peer
+ *                            dependency, so it cannot live at the root.
+ *  - `@kortix/sdk/server`  — Node-only (`node:async_hooks`) per-request config
+ *                            isolation, for route handlers and RSC.
+ *  - `@kortix/sdk/internal/idb-sync-cache` — the ONE internal module apps/web
+ *                            legitimately needs: sign-out must clear the
+ *                            per-user cached session transcripts out of
+ *                            IndexedDB, and that cache is browser-only, so it
+ *                            cannot be re-exported from the isomorphic root.
+ *                            The four zustand stores next to it stay
+ *                            forbidden — apps/web production code uses none of
+ *                            them, and it should stay that way.
+ */
+const CANONICAL_SDK_ENTRIES = new Set([
+  '@kortix/sdk',
+  '@kortix/sdk/react',
+  '@kortix/sdk/server',
+  '@kortix/sdk/internal/idb-sync-cache',
+]);
+
 const FORBIDDEN_IMPORTS = [
   {
     kind: 'opencode-import',
@@ -15,21 +42,25 @@ const FORBIDDEN_IMPORTS = [
     match: (source) => source === '@opencode-ai/sdk' || source.startsWith('@opencode-ai/sdk/'),
   },
   {
-    kind: 'deprecated-sdk-runtime',
-    match: (source) =>
-      source.startsWith('@kortix/sdk/internal/') ||
-      source === '@kortix/sdk/projects-client' ||
-      source === '@kortix/sdk/platform-client' ||
-      source === '@kortix/sdk/files' ||
-      source === '@kortix/sdk/session' ||
-      source === '@kortix/sdk/session/url' ||
-      source === '@kortix/sdk/opencode-client' ||
-      source === '@kortix/sdk/opencode-errors' ||
-      source === '@kortix/sdk/event-stream' ||
-      source === '@kortix/sdk/server-store' ||
-      source === '@kortix/sdk/sync-store' ||
-      source === '@kortix/sdk/sandbox-connection-store' ||
-      source === '@kortix/sdk/opencode-pending-store',
+    kind: 'non-canonical-sdk-entry',
+    /**
+     * An ALLOWLIST, not a denylist. `@kortix/sdk` publishes ~27 subpaths; all
+     * but a handful are `@deprecated` aliases kept alive for external
+     * consumers until the next major. apps/web is not one of those consumers,
+     * so it uses the canonical entry points only.
+     *
+     * This was a denylist naming 13 specific subpaths, and it had exactly the
+     * hole a denylist always grows: `@kortix/sdk/idb-sync-cache` was never
+     * added, so a production dependency on the SDK's IndexedDB internals sat
+     * unnoticed in `lib/utils/reset-client-state.ts`. Inverting the rule
+     * closes that class of gap permanently — a subpath added to the SDK
+     * tomorrow is forbidden here by default, and allowing it becomes a
+     * deliberate edit to this list.
+     */
+    match: (source) => {
+      if (source !== '@kortix/sdk' && !source.startsWith('@kortix/sdk/')) return false;
+      return !CANONICAL_SDK_ENTRIES.has(source);
+    },
   },
   {
     kind: 'host-runtime-module',

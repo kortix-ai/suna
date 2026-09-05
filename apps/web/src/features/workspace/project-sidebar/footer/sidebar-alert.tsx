@@ -106,22 +106,41 @@ export function SidebarAlert({
         onOpenChange={onOpenChange}
         className={cn('group w-full overflow-hidden rounded-md', open && 'bg-primary/[0.06]')}
       >
+        <DisclosureContent>{children}</DisclosureContent>
         <DisclosureTrigger>
-          <SidebarMenuButton className={cn(ROW_CLASS, TONE_TEXT[tone])}>
+          {/* The card expands UPWARD — content mounts above this row — so when
+              it is open the trigger is the card's bottom band and needs the
+              same hairline the action tray uses at its top. Closed, there is
+              nothing above it to separate from, so the border would be a rule
+              floating under a plain sidebar row. */}
+          <SidebarMenuButton
+            className={cn(
+              ROW_CLASS,
+              TONE_TEXT[tone],
+              open && 'border-border/60 rounded-t-none border-t',
+            )}
+          >
             {icon}
             <span className="truncate">{label}</span>
             <CaretDownIcon className="ml-auto size-3.5 shrink-0 opacity-50 transition-transform duration-200 ease-out group-data-[state=open]:rotate-180" />
           </SidebarMenuButton>
         </DisclosureTrigger>
-        <DisclosureContent>{children}</DisclosureContent>
       </Disclosure>
     </SidebarMenuItem>
   );
 }
 
 /**
- * The explanation. `px-2` matches the trigger's own gutter, so the sentence
- * starts on the same left edge as the label above it.
+ * The explanation.
+ *
+ * `px-2` matches the gutter of the trigger and the action tray, so every text
+ * element in the card shares ONE left edge — the thing that made the old card
+ * read as ragged was four of them (message at 8px, a bullet at 8px, its label
+ * at 20px, and the error block's own text at 16px).
+ *
+ * `py-2.5` is symmetric on purpose. This body renders ABOVE its trigger, so it
+ * owns the card's top edge, and `pt-0.5` put 2px of air above the first line
+ * against 8px at the sides.
  */
 export function SidebarAlertBody({
   children,
@@ -130,7 +149,7 @@ export function SidebarAlertBody({
   children: ReactNode;
   className?: string;
 }) {
-  return <div className={cn('px-2 pt-0.5 pb-3', className)}>{children}</div>;
+  return <div className={cn('px-2 py-2.5', className)}>{children}</div>;
 }
 
 /** Body prose. One size, one colour, wherever an alert explains itself. */
@@ -143,6 +162,16 @@ export function SidebarAlertText({ children }: { children: ReactNode }) {
  * the seam is the pause between "here is what happened" and "here is what you
  * can do about it".
  */
-export function SidebarAlertActions({ children }: { children: ReactNode }) {
-  return <div className="border-border/60 flex flex-col gap-1.5 border-t p-2">{children}</div>;
+export function SidebarAlertActions({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={cn('border-border/60 flex flex-col gap-2 border-t p-2', className)}>
+      {children}
+    </div>
+  );
 }

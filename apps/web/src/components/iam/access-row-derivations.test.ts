@@ -74,6 +74,9 @@ describe('accessVia', () => {
 describe('agentsMetaPart', () => {
   test('no resource grants means every agent in the project', () => {
     expect(agentsMetaPart(0, 5)).toBe('Agents: all');
+    // A member with no grant rows can use NO agent — agents are closed by
+    // default and only the manager tier bypasses that.
+    expect(agentsMetaPart(0, 5, false)).toBe('Agents: none');
   });
 
   test('a subset reads as a fraction of the project roster', () => {

@@ -3,6 +3,7 @@
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -159,6 +160,15 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
     },
   ),
 );
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+// This is THE store that motivated the registry: a static import here from
+// `reset-client-state.ts` (reachable from every route via `AuthProvider`) drags
+// in `kortix-computer-store.ts` → `@/features/files` → … → the shiki-backed
+// markdown code renderer, which `connectors-page.chunk.test.ts` asserts is NOT
+// in that route's initial chunk.
+registerPersistedStore('kortix-session-browser', () => resetPersistedStore(useSessionBrowserStore));
 
 /** Canonical tab id for a session's internal-browser tab in `useTabStore`. */
 export function sessionPreviewTabId(sessionId: string): string {

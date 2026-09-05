@@ -1,3 +1,5 @@
+import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
+import type { PromptOverridesWire } from '../session-lifecycle/store';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import type { TriggerList } from '@kortix/api-contract';
@@ -880,6 +882,22 @@ export async function findKeyedTriggerSession(
  * a missing/failed/deleted session must keep falling through to the create
  * path exactly like the old direct call's 'no-session'/'failed' outcomes.
  */
+/**
+ * A trigger's `model` is a wire ref (`codex/gpt-5.6-luna`, `kortix/glm-5.2`).
+ * A FRESH session bakes it into the session (`opencode_model`); a re-prompted
+ * session must carry it on the prompt itself, or the prompt silently runs on
+ * whatever default the session was created with — on prod that was a July
+ * session pinned to a managed model the account can no longer use.
+ */
+export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
+  const trimmed = (model ?? '').trim();
+  if (!trimmed) return undefined;
+  const ref = toOpencodeModelRef(trimmed);
+  const slash = ref.indexOf('/');
+  if (slash <= 0 || slash === ref.length - 1) return undefined;
+  return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
+}
+
 async function enqueueTriggerPrompt(input: {
   project: ProjectRow;
   sessionId: string;
@@ -888,6 +906,8 @@ async function enqueueTriggerPrompt(input: {
   source: TriggerFireSource;
   triggerSlug: string;
   idempotencyKey?: string | null;
+  /** The trigger's configured model; carried on the prompt for a re-prompted session. */
+  model?: string | null;
 }): Promise<'queued' | 'no-session' | 'failed'> {
   const [session] = await db
     .select({ status: projectSessions.status, metadata: projectSessions.metadata })
@@ -910,6 +930,7 @@ async function enqueueTriggerPrompt(input: {
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
+    overrides: triggerModelOverride(input.model),
   });
   // Fast path only — the scheduler's 60s drain tick is the delivery guarantee.
   drainSessionLifecycleQueue({ limit: 1 }).catch(() => {});
@@ -960,6 +981,7 @@ export async function fireGitTrigger(input: {
       text: renderedPrompt,
       source,
       triggerSlug: spec.slug,
+      model: spec.model,
       idempotencyKey: input.idempotencyKey ?? null,
     });
     if (outcome === 'queued') {
@@ -995,6 +1017,7 @@ export async function fireGitTrigger(input: {
         text: renderedPrompt,
         source,
         triggerSlug: spec.slug,
+      model: spec.model,
         idempotencyKey: input.idempotencyKey ?? null,
       });
       if (outcome === 'queued') {
@@ -1019,6 +1042,7 @@ export async function fireGitTrigger(input: {
         text: renderedPrompt,
         source,
         triggerSlug: spec.slug,
+      model: spec.model,
         idempotencyKey: input.idempotencyKey ?? null,
       });
       if (outcome === 'queued') {

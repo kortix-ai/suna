@@ -2,10 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const modalSource = readFileSync(
-  join(import.meta.dir, 'schedule-create-modal.tsx'),
-  'utf8',
-);
+const modalSource = readFileSync(join(import.meta.dir, 'schedule-create-modal.tsx'), 'utf8');
 
 /**
  * Comments stripped, same convention as `new-workspace-errors.test.ts`.

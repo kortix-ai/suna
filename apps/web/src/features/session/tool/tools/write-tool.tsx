@@ -13,6 +13,7 @@ import {
   ToolOutputFallback,
   ToolRunningContext,
 } from '@/features/session/tool/shared/infrastructure';
+import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -72,6 +73,19 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
+  /**
+   * `Write` was the registry key, not a word anyone says. Every other surface in
+   * this feature already reports this call as `Writing app.py` / `Wrote app.py`
+   * — `step-label.ts`, `activity-file-chips.tsx`, the panel's `narration.ts` —
+   * and the trigger was the last one still printing the machine name, frozen in
+   * a tense that matched neither a running call nor a finished one.
+   *
+   * Past tense once the turn is over is the load-bearing half: a restored
+   * transcript is entirely settled calls, and a row reading `Write` there says
+   * nothing about whether it ever did.
+   */
+  const title = fileVerb('write', filePhase(running, isError));
+
   // Field selector, not the whole store: destructuring the store subscribes this
   // row to every field in it, so opening one file preview re-rendered every write
   // row on screen.
@@ -84,7 +98,7 @@ export function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
     <BasicTool
       icon={<PencilSimpleIcon className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Write',
+        title,
         subtitle: filename || undefined,
         // No stat on a failed call: the numbers would describe a file that
         // did not land.

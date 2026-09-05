@@ -2,6 +2,8 @@ import { projectSessions, sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDeliveryFailed } from '../trigger-execution-store';
+import { inboxOrderBy, inboxSentAtSql, inboxWireIdSql } from './inbox-order';
 import type {
   CreateSessionCommand,
   QueuedCreateSessionPayload,
@@ -328,10 +330,10 @@ export async function requeueForAdmission(
 /**
  * Make the session's NEXT queued inbox row due now.
  *
- * Called the instant a delivery lands (forwarded or delivered). Without it the
- * next row waited out whatever `requeueForAdmission` backoff it had accrued
- * while its sibling was in flight — visible dead air between two messages the
- * user typed one after the other. Only rows the admission gate put back
+ * Called after the terminal relay or reaper proves the current turn ended.
+ * Without it the next row waits out whatever `requeueForAdmission` backoff it
+ * accrued while its sibling was active — visible dead air between two messages
+ * the user typed one after the other. Only rows the admission gate put back
  * (`admission_reason` set) or plain queued rows; never a HELD row (Stop parked
  * it) and never a row whose `available_at` is a deliberate future schedule
  * without a refusal marker. Returns the promoted row's idempotency key so the
@@ -353,7 +355,7 @@ export async function promoteNextInboxRow(sessionId: string): Promise<string | n
         sql`(${sessionLifecycleCommands.result} ? 'admission_reason' OR ${sessionLifecycleCommands.availableAt} <= now())`,
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.createdAt))
+    .orderBy(...inboxOrderBy())
     .limit(1);
   if (!next) return null;
   await db
@@ -648,6 +650,20 @@ export async function markCommandFailed(
       });
     }
   }
+
+  // Surface the failure on the trigger runtime row too. markCommandFailed parks
+  // the session (above) so the next reuse fire self-heals, but until now it left
+  // `projectTriggerRuntime.last_status` frozen at "queued" — the triggers API/UI
+  // never showed the dead-letter, so the operator's queue-age alarm was the only
+  // (and a misleading) signal. Flip it to "failed" with the error.
+  if (typeof payload.triggerSlug === 'string') {
+    await markTriggerRuntimeDeliveryFailed({
+      projectId: row.projectId,
+      slug: payload.triggerSlug,
+      when: new Date(),
+      error,
+    }).catch(() => {});
+  }
 }
 
 /**
@@ -867,7 +883,12 @@ export async function claimDueLifecycleCommands(input: {
         lte(sessionLifecycleCommands.availableAt, input.availableBefore ?? now),
       ),
     )
-    .orderBy(asc(sessionLifecycleCommands.availableAt), asc(sessionLifecycleCommands.createdAt))
+    .orderBy(
+      asc(sessionLifecycleCommands.availableAt),
+      asc(inboxSentAtSql),
+      asc(inboxWireIdSql),
+      asc(sessionLifecycleCommands.commandId),
+    )
     .limit(input.limit);
 
   const claimed: SessionLifecycleCommandRow[] = [];

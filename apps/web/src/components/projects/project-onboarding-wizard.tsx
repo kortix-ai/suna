@@ -370,6 +370,7 @@ export function ProjectOnboardingWizard({
                     {stepId === 'plan' && <PlanStep projectId={projectId} onContinue={next} />}
                     {stepId === 'done' && (
                       <DoneStep
+                        projectId={projectId}
                         domain={domain}
                         connectedCount={connectorSlugs.length}
                         showFounderCall={showFounderStep}
