@@ -2,10 +2,42 @@
 // Worker's two guards are claimed here: the upstream origin can never be moved
 // by the incoming path, and the name fails closed without an access policy.
 // Both were findings on #7125 (Strix: CWE-918, CWE-306).
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { accessRefusal, presentedAccess, upstreamUrl } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
 
 const TARGET = 'https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev';
+const workflow = readFileSync(
+  resolve(import.meta.dirname, '../../.github/workflows/deploy-pi-js-router.yml'),
+  'utf8',
+);
+
+describe('deploy-pi-js-router.yml — the name fronts the bare cell OR a full Kortix branch environment', () => {
+  it('offers target_kind=cell|stack and defaults to the cell', () => {
+    expect(workflow).toMatch(/target_kind:\n\s+description:/);
+    expect(workflow).toMatch(/options:\n\s+- cell\n\s+- stack/);
+    expect(workflow).toContain("TARGET_KIND: ${{ inputs.target_kind || 'cell' }}");
+  });
+
+  it('a stack is a Platinum branch-environment origin, proven by /v1/health, run open, with no exposure token stored', () => {
+    // deploy-preview.yml exposes the sandbox's 8080 public on Platinum PROD
+    // (`8080-<sandbox>.eu-west.sbx.platinum.dev`) and the stack has its own auth.
+    expect(workflow).toContain('https://8080-*.sbx.platinum.dev|https://8080-*.sbx.platinum.dev/');
+    expect(workflow).toContain(`"\${TARGET_ORIGIN%/}/v1/health"`);
+    expect(workflow).toContain("jq -e '.status == \"ok\"'");
+    expect(workflow).toContain('target_kind=stack requires open_access=true');
+    // The DEV cell's exposure token must not ride along to a PROD stack.
+    expect(workflow).toMatch(/if \[ "\$TARGET_KIND" = stack \]; then\n\s+#[^\n]*\n\s+#[^\n]*\n\s+npx --yes wrangler@4 secret delete PT_PREVIEW_TOKEN --force/);
+  });
+
+  it('a cell still needs its DEV origin, the exposure token, and an access policy', () => {
+    expect(workflow).toContain('https://8080-*.sbx-dev.platinum.dev|https://8080-*.sbx-dev.platinum.dev/) ;;');
+    expect(workflow).toContain('PI_JS_PREVIEW_TOKEN is not set');
+    expect(workflow).toContain('PI_JS_ACCESS_TOKEN is not set and open_access was not chosen');
+    expect(workflow).toContain('-H "x-pt-preview-token: $PT_PREVIEW_TOKEN" "${TARGET_ORIGIN%/}/health"');
+  });
+});
 
 describe('upstreamUrl — the origin is always the configured target', () => {
   it('copies path and query onto the target origin', () => {

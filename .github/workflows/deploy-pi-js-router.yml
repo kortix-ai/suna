@@ -1,13 +1,32 @@
-# Point pi-js.kortix.com at a Platinum cell.
+# Point pi-js.kortix.com at a Platinum target.
 #
-# The JS pi agent (apps/pi-worker-js) runs as a Platinum Worker cell on Platinum
-# DEV; infra/cloudflare/workers/pi-js-router is the Cloudflare Worker that gives
-# it the stable name. Run this once to create the name, and again whenever the
-# cell is recreated (its origin is derived from the sandbox id — stop/start keeps
-# it, delete + recreate changes it).
+# infra/cloudflare/workers/pi-js-router is the Cloudflare Worker that gives the
+# name to ONE of two targets, chosen by `target_kind`:
 #
-# Inputs: the cell's exposure origin, e.g.
-#   https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev
+#   cell   the bare JS pi agent (apps/pi-worker-js) as a Platinum Worker cell on
+#          Platinum DEV. Its exposure is PRIVATE (the Worker injects the token)
+#          and it has no auth of its own, so the name fails closed unless
+#          `open_access` is chosen.
+#   stack  a full Kortix branch environment — API + web + Supabase, the thing
+#          pi.kortix.com is — deployed by deploy-preview.yml for the branch whose
+#          PREVIEW_PUBLIC_ORIGINS entry is `pi-worker-js=https://pi-js.kortix.com`.
+#          That workflow exposes the sandbox's 8080 PUBLIC and the stack
+#          authenticates its own users, so the name runs OPEN (a browser cannot
+#          present a Worker bearer) and NO exposure token is stored or sent.
+#
+# Run it once to create the name, and again whenever the target is recreated: an
+# origin is derived from the sandbox id — stop/start keeps it, delete + recreate
+# changes it. A branch environment REUSES its sandbox across deploys
+# (previewSandboxIdentity in tests/src/core), so its origin holds still and this
+# is not a per-deploy step. deploy-preview.yml re-points a name itself only when
+# the PREVIEW_PUBLIC_ORIGINS entry names a worker, and that path publishes
+# TARGET_ORIGIN alone — it would drop OPEN_ACCESS and shut the name — so the
+# pi-js entry names none until the Worker's wrangler.toml defaults OPEN_ACCESS.
+#
+# Inputs: the target's exposure origin, e.g.
+#   cell   https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev
+#   stack  https://8080-<sandbox>.eu-west.sbx.platinum.dev  (Platinum PROD, where
+#          deploy-preview.yml's PLATINUM_API_URL points)
 # and `open_access` — the name FAILS CLOSED: without PI_JS_ACCESS_TOKEN the
 # Worker answers 503 unless this input is set, which deploys OPEN_ACCESS=true
 # (pi.kortix.com parity, stated out loud here rather than fallen into).
@@ -26,9 +45,17 @@ on:
   workflow_dispatch:
     inputs:
       target_origin:
-        description: "the pi-js cell's exposure origin (https://8080-<cell>.eu-west.sbx-dev.platinum.dev)"
+        description: "the target's exposure origin — cell: https://8080-<cell>.eu-west.sbx-dev.platinum.dev; stack: https://8080-<sandbox>.eu-west.sbx.platinum.dev"
         required: true
         type: string
+      target_kind:
+        description: "cell = the bare JS agent on Platinum DEV (private exposure, token injected); stack = a full Kortix branch environment (public exposure, its own auth — pi.kortix.com parity)"
+        required: false
+        default: cell
+        type: choice
+        options:
+          - cell
+          - stack
       open_access:
         description: "run the name OPEN (no bearer) — pi.kortix.com parity; the JS agent has no auth of its own"
         required: false
@@ -50,35 +77,62 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
       TARGET_ORIGIN: ${{ inputs.target_origin }}
+      TARGET_KIND: ${{ inputs.target_kind || 'cell' }}
       OPEN_ACCESS: ${{ inputs.open_access && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: The target must be a Platinum DEV cell origin and must answer /health; the name must have an access policy
+      - name: The target must be a Platinum origin of its kind and answer its health route; the name must have an access policy
         env:
           PT_PREVIEW_TOKEN: ${{ secrets.PI_JS_PREVIEW_TOKEN }}
           ACCESS_TOKEN: ${{ secrets.PI_JS_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          case "$TARGET_ORIGIN" in
-            https://8080-*.sbx-dev.platinum.dev|https://8080-*.sbx-dev.platinum.dev/) ;;
-            *) echo "::error::target_origin must look like https://8080-<cell>[.<region>].sbx-dev.platinum.dev — got '$TARGET_ORIGIN'"; exit 1 ;;
+          case "$TARGET_KIND" in
+            cell)
+              case "$TARGET_ORIGIN" in
+                https://8080-*.sbx-dev.platinum.dev|https://8080-*.sbx-dev.platinum.dev/) ;;
+                *) echo "::error::target_kind=cell: target_origin must look like https://8080-<cell>[.<region>].sbx-dev.platinum.dev — got '$TARGET_ORIGIN'"; exit 1 ;;
+              esac
+              [ -n "${PT_PREVIEW_TOKEN:-}" ] || { echo "::error::PI_JS_PREVIEW_TOKEN is not set — the cell's port is private and the Worker cannot reach it without the token"; exit 1; }
+              if [ -z "${ACCESS_TOKEN:-}" ] && [ "$OPEN_ACCESS" != "true" ]; then
+                echo "::error::PI_JS_ACCESS_TOKEN is not set and open_access was not chosen — refusing to deploy a name that would answer 503; set the secret, or re-run with open_access=true to run it open on purpose"
+                exit 1
+              fi
+              ;;
+            stack)
+              # A branch environment's 8080 is exposed PUBLIC by deploy-preview.yml
+              # (sandbox-preview-providers.ts: `expose: [{ port: 8080, public: true }]`)
+              # on Platinum PROD — the edge pi.kortix.com's sandbox is on. sbx-dev
+              # is accepted too, for the day deploy-preview targets dev.
+              case "$TARGET_ORIGIN" in
+                https://8080-*.sbx.platinum.dev|https://8080-*.sbx.platinum.dev/|https://8080-*.sbx-dev.platinum.dev|https://8080-*.sbx-dev.platinum.dev/) ;;
+                *) echo "::error::target_kind=stack: target_origin must look like https://8080-<sandbox>[.<region>].sbx.platinum.dev — got '$TARGET_ORIGIN'"; exit 1 ;;
+              esac
+              # The stack authenticates its own users (Supabase). A browser cannot
+              # present the Worker's bearer, so a gated name would only break the
+              # UI while protecting nothing the stack does not already protect.
+              [ "$OPEN_ACCESS" = "true" ] || { echo "::error::target_kind=stack requires open_access=true — the Kortix stack has its own auth, and the Worker's bearer would only lock the browser out"; exit 1; }
+              ;;
+            *) echo "::error::target_kind must be cell or stack — got '$TARGET_KIND'"; exit 1 ;;
           esac
-          [ -n "${PT_PREVIEW_TOKEN:-}" ] || { echo "::error::PI_JS_PREVIEW_TOKEN is not set — the cell's port is private and the Worker cannot reach it without the token"; exit 1; }
-          if [ -z "${ACCESS_TOKEN:-}" ] && [ "$OPEN_ACCESS" != "true" ]; then
-            echo "::error::PI_JS_ACCESS_TOKEN is not set and open_access was not chosen — refusing to deploy a name that would answer 503; set the secret, or re-run with open_access=true to run it open on purpose"
-            exit 1
-          fi
           ok=
           for _ in $(seq 1 12); do
-            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -H "x-pt-preview-token: $PT_PREVIEW_TOKEN" "${TARGET_ORIGIN%/}/health" || true)"
-            if [ "$code" = "200" ]; then ok=1; break; fi
-            echo "health → $code (a stopped cell cold-boots in ~4 s; waiting)"
+            if [ "$TARGET_KIND" = stack ]; then
+              # The proof deploy-preview.yml demands before it re-points
+              # pi.kortix.com: the API answering, not merely the sandbox existing.
+              if curl -fsS --max-time 15 "${TARGET_ORIGIN%/}/v1/health" 2>/dev/null | jq -e '.status == "ok"' >/dev/null 2>&1; then ok=1; break; fi
+              echo "/v1/health → not ok yet (waiting)"
+            else
+              code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -H "x-pt-preview-token: $PT_PREVIEW_TOKEN" "${TARGET_ORIGIN%/}/health" || true)"
+              if [ "$code" = "200" ]; then ok=1; break; fi
+              echo "health → $code (a stopped cell cold-boots in ~4 s; waiting)"
+            fi
             sleep 5
           done
-          [ -n "$ok" ] || { echo "::error::${TARGET_ORIGIN} does not answer /health with the token — leaving pi-js.kortix.com on its previous target"; exit 1; }
+          [ -n "$ok" ] || { echo "::error::${TARGET_ORIGIN} does not answer its health route — leaving pi-js.kortix.com on its previous target"; exit 1; }
       - name: Publish the Worker with the new target and access policy
         working-directory: infra/cloudflare/workers/pi-js-router
         run: npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${TARGET_ORIGIN%/}" --var "OPEN_ACCESS:${OPEN_ACCESS}"
@@ -89,7 +143,14 @@ jobs:
           ACCESS_TOKEN: ${{ secrets.PI_JS_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          printf '%s' "$PT_PREVIEW_TOKEN" | npx --yes wrangler@4 secret put PT_PREVIEW_TOKEN
+          if [ "$TARGET_KIND" = stack ]; then
+            # A public exposure needs no token, and the DEV cell's exposure token
+            # must not ride along on every request to a PROD stack.
+            npx --yes wrangler@4 secret delete PT_PREVIEW_TOKEN --force >/dev/null 2>&1 || true
+            echo "target is a Kortix stack: no exposure token is stored on the Worker"
+          else
+            printf '%s' "$PT_PREVIEW_TOKEN" | npx --yes wrangler@4 secret put PT_PREVIEW_TOKEN
+          fi
           if [ "$OPEN_ACCESS" = "true" ]; then
             # The operator chose an open name: a bearer left on the Worker from
             # an earlier gated deploy must not stay stored beside it.
@@ -102,10 +163,12 @@ jobs:
       - name: Read the name back
         run: |
           set -euo pipefail
+          route=/health
+          [ "$TARGET_KIND" != stack ] || route=/v1/health
           for _ in $(seq 1 12); do
-            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://pi-js.kortix.com/health || true)"
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://pi-js.kortix.com${route}" || true)"
             case "$code" in
-              200) echo "pi-js.kortix.com → 200 (open)"; exit 0 ;;
+              200) echo "pi-js.kortix.com${route} → 200 (open, target_kind=${TARGET_KIND})"; exit 0 ;;
               401) echo "pi-js.kortix.com → 401 (gated by PI_JS_ACCESS_TOKEN)"; exit 0 ;;
               503) echo "::error::pi-js.kortix.com → 503 — the Worker has no access policy (ACCESS_TOKEN secret missing and OPEN_ACCESS not true)"; exit 1 ;;
             esac

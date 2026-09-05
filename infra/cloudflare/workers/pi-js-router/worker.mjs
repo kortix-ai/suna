@@ -23,6 +23,12 @@
  *      (consumed here, never forwarded); with neither the Worker answers 503,
  *      not an open door a cleared secret can fall into (Strix on #7125, CWE-306).
  *
+ * The same Worker fronts a full Kortix branch environment when the deploy says
+ * so (deploy-pi-js-router.yml `target_kind=stack`): that sandbox's 8080 is
+ * exposed PUBLIC and the stack authenticates its own users, so the deploy
+ * stores no PT_PREVIEW_TOKEN (nothing is injected) and sets OPEN_ACCESS=true —
+ * pi-router's posture. No code path below changes; only what is stored does.
+ *
  * The upstream URL is built from the TARGET origin and then given the incoming
  * path and query — never by resolving the incoming path against the origin. A
  * path that starts with `//` is a scheme-relative reference, and
