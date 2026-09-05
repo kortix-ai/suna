@@ -148,7 +148,10 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
                   asChild
                   isActive={isActive}
                   tooltip={subproject.name}
-                  className="text-sidebar-foreground"
+                  // `px-2`, not the menu button's `px-3`: the group header above and
+                  // the session rows below both sit at `px-2`, so the folder's 16px
+                  // box starts on the same line as the "Subprojects" text.
+                  className="text-sidebar-foreground px-2"
                 >
                   <HoverPrefetchLink href={href}>
                     <span className="shrink-0">
@@ -159,6 +162,9 @@ export function SubprojectsSidebarGroup({ projectId }: { projectId: string }) {
                 </SidebarMenuButton>
                 {sessions.length > 0 ? (
                   <SidebarMenuAction
+                    // 10px from the edge + a 20px box centres the caret under the
+                    // header's `+` (a 24px `icon-xs` button inside `px-2`).
+                    className="right-2.5"
                     showOnHover={!open}
                     aria-label={open ? `Collapse ${subproject.name}` : `Expand ${subproject.name}`}
                     aria-expanded={open}
