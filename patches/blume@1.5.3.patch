@@ -1,7 +1,16 @@
 diff --git a/dist/cli/index.js b/dist/cli/index.js
-index 86b5ac91369bd68964575d1cb60014408df27166..8841c8c5880beeee91e474dbf4bd42e9ebef049d 100755
+index 86b5ac91369bd68964575d1cb60014408df27166..fe93e05b7ed2c45971131d7aa3d41c98585d6d32 100755
 --- a/dist/cli/index.js
 +++ b/dist/cli/index.js
+@@ -3958,7 +3958,7 @@ ${userConfigSetup}export default defineConfig({
+   root: ${JSON.stringify(context.outDir)},
+   srcDir: ${JSON.stringify(`${context.outDir}/src`)},
+   outDir: ${JSON.stringify(astroOutDir(context))},
+-  publicDir: ${JSON.stringify(`${context.root}/public`)},
++  publicDir: ${JSON.stringify(`${context.root}/blume-public`)},
+   output: ${JSON.stringify(deployment.output)},${adapterOption}${sessionOption}${siteOption}${baseOption}${imageOption}${redirectsOption}${i18nOption}${fontsOption}
+   integrations: [${integrations.join(", ")}${userIntegrationSpread}],
+   markdown: {
 @@ -9652,7 +9652,8 @@ var openInChatProviders = [
    "claude",
    "t3",

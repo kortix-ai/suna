@@ -67,7 +67,32 @@ export default defineConfig({
   // Content stays where it has always been. src/lib/seo/public-content.ts
   // reads these same files off disk for /llms.txt, /markdown/docs/*.md and
   // /mcp, so moving them would break four public surfaces at once.
-  content: { root: 'content/docs' },
+  content: {
+    root: 'content/docs',
+    // The changelog is not authored content: it is materialised from this
+    // repo's GitHub Releases, the same source kortix.com/changelog reads. The
+    // flags reproduce that page's filter — it takes per_page=100 and keeps
+    // only `!r.draft`, and the dev-latest / desktop-dev-latest tags it
+    // excludes are prereleases.
+    //
+    // Unlike that page (revalidate = 3600), this is a static build: entries
+    // are a snapshot taken at build time, not an hourly refresh.
+    sources: [
+      // Declaring `sources` REPLACES the implicit filesystem source that
+      // `root` desugars to, so the docs pages have to be listed explicitly —
+      // leaving this out silently built the changelog and zero doc pages.
+      { type: 'filesystem', root: 'content/docs' },
+      {
+        type: 'github-releases',
+        owner: 'kortix-ai',
+        repo: 'suna',
+        prefix: 'changelog',
+        limit: 100,
+        drafts: false,
+        prereleases: false,
+      },
+    ],
+  },
 
   // The whole Blume site is served under /docs by the Next app, which maps
   // clean URLs onto public/docs/ with two afterFiles rewrites. `base`
@@ -183,6 +208,7 @@ export default defineConfig({
         path: '/api-reference',
         href: 'https://api.kortix.com/v1/docs',
       },
+      { label: 'Changelog', path: '/changelog' },
     ],
     sidebar: {
       items: [
