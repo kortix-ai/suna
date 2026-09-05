@@ -3,6 +3,8 @@
  * Helper functions for file handling and conversion
  */
 
+import { log } from '@/lib/logger';
+
 /**
  * Normalize and sanitize filename for Unix compatibility
  * - Normalizes to NFC (Normalized Form Canonical Composition)
@@ -75,7 +77,7 @@ export function normalizeFilenameToNFC(filename: string): string {
     
     return normalized;
   } catch (error) {
-    console.warn('Failed to normalize filename:', filename, error);
+    log.warn('Failed to normalize filename:', filename, error);
     return filename.replace(/[^a-zA-Z0-9._-]/g, '_'); // Fallback: keep only safe chars
   }
 }

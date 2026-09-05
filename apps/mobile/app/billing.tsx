@@ -13,7 +13,7 @@ export default function BillingScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/home');
+      router.replace('/projects');
     }
   };
 

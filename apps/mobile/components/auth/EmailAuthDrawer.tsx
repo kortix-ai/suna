@@ -45,7 +45,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
   const [email, setEmail] = React.useState('');
   const [acceptedTerms, setAcceptedTerms] = React.useState(false);
   const [isInputFocused, setIsInputFocused] = React.useState(false);
-  const emailInputRef = React.useRef<TextInput | null>(null);
 
   const isDark = colorScheme === 'dark';
 
@@ -54,9 +53,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
     open: () => {
       bottomSheetRef.current?.present();
       setIsInputFocused(true);
-      setTimeout(() => {
-        emailInputRef.current?.focus();
-      }, 400);
     },
     close: () => {
       bottomSheetRef.current?.dismiss();
@@ -101,7 +97,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
       setEmailSent(true);
       setIsInputFocused(false);
       Keyboard.dismiss();
-      emailInputRef.current?.blur();
     } else {
       toast.error(result.error?.message || t('auth.magicLinkFailed'));
     }
@@ -263,7 +258,6 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                 </View>
 
                 <Input
-                  ref={emailInputRef}
                   value={email}
                   onChangeText={(text) => setEmail(text.trim().toLowerCase())}
                   onFocus={() => setIsInputFocused(true)}
@@ -278,8 +272,8 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                   keyboardType="email-address"
                   returnKeyType="go"
                   onSubmitEditing={handleSendMagicLink}
-                  size="lg"
-                  wrapperClassName="bg-muted/10 dark:bg-muted/30"
+                  autoFocus
+                  className="h-14 bg-muted/10 dark:bg-muted/30"
                 />
 
                 <View className="flex-row items-start">
