@@ -1,16 +1,16 @@
+import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
+import {
+  visibleCapabilityTabs,
+  type CapabilityTabFlags,
+} from '@/features/workspace/capabilities/shared/capability-tabs';
+import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
+import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
-import { CAPABILITY_TABS } from '@/features/workspace/capabilities/shared/capability-tab-routes';
-import {
-  projectSettingsSections,
-  type ProjectSettingsSectionFlags,
-} from '@/features/workspace/capabilities/project-settings/project-settings-sections';
-import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { menuRegistry } from './menu-registry';
 
-const ALL_FLAGS_OFF: ProjectSettingsSectionFlags = {
+const ALL_FLAGS_OFF: CapabilityTabFlags = {
   reviewEnabled: false,
 };
 
@@ -44,15 +44,12 @@ describe('menu registry feature-flag gating', () => {
   });
 
   test('Review Center is reachable behind its flag and removed features stay absent', () => {
-    // These were `proj-review` / `proj-voice` / `proj-marketplace` registry
-    // entries carrying their own `requiresFlag`. Review and Voice's
-    // "reachable" and "behind the flag" halves come from the sub-nav of
-    // `/projects/<id>/config` now, so this asserts the BEHAVIOUR rather than
-    // the removed declarations — same contract, one source: a flag that hides
-    // the section hides every way in. Marketplace has no flag any more: it
-    // was removed from the product outright, not relocated.
-    const keysFor = (flags: ProjectSettingsSectionFlags) =>
-      projectSettingsSections(flags).map((section) => section.key);
+    // Review is a capability tab since 2026-09-02, gated by the bar itself
+    // (`visibleCapabilityTabs`), so this asserts the BEHAVIOUR rather than a
+    // declaration — a flag that hides the tab hides every way in. Voice and
+    // Marketplace have no flag any more: both were removed from the product.
+    const keysFor = (flags: CapabilityTabFlags) =>
+      visibleCapabilityTabs({}, flags).map((tab) => tab.key);
 
     const off = keysFor(ALL_FLAGS_OFF);
     expect(off).not.toContain('review');

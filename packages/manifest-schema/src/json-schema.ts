@@ -48,6 +48,7 @@ import {
   CONNECTOR_POLICY_ACTIONS,
   CONNECTOR_PROVIDERS,
   ENV_NAME_RE,
+  DEPRECATED_KORTIX_CLI_ALIASES,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   HEX_COLOR_RE_V2,
   LEGACY_SANDBOX_KEYS,
@@ -119,9 +120,14 @@ function grantSetSchema(itemSchema: JsonSchemaFragment = NON_EMPTY_STRING): Json
  * is the live grantable catalog ONLY. Both always accept the `"*"` wildcard.
  */
 function kortixCliEnum(version: 1 | 2): readonly string[] {
+  // The renamed aliases are in BOTH enums: the validator accepts them (they
+  // still resolve), so an editor must not red-squiggle a file that passes
+  // `kortix validate`. They are absent from the grantable catalog, so nothing
+  // presents them as a live choice.
+  const renamed = Object.keys(DEPRECATED_KORTIX_CLI_ALIASES);
   return version === 2
-    ? [...GRANTABLE_KORTIX_CLI_ACTIONS, '*']
-    : [...GRANTABLE_KORTIX_CLI_ACTIONS, ...LEGACY_TOLERATED_KORTIX_CLI_ACTIONS, '*'];
+    ? [...GRANTABLE_KORTIX_CLI_ACTIONS, ...renamed, '*']
+    : [...GRANTABLE_KORTIX_CLI_ACTIONS, ...renamed, ...LEGACY_TOLERATED_KORTIX_CLI_ACTIONS, '*'];
 }
 
 function kortixCliGrantSetSchema(version: 1 | 2): JsonSchemaFragment {

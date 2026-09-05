@@ -82,7 +82,7 @@ const AREA_COPY: Record<string, { label: string; hint?: string; note?: string }>
   account: { label: 'Account', hint: 'Account name, settings, and deleting the account.' },
   groups: { label: 'Groups', hint: 'Groups and who belongs to them.' },
   roles: { label: 'Roles', hint: 'Custom roles and the assignments that hand them out.' },
-  tokens: { label: 'Tokens', hint: 'API keys and personal access tokens.' },
+  tokens: { label: 'API keys', hint: 'Service-account API keys and personal access keys.' },
   projects: { label: 'Projects', hint: 'Creating a brand-new project in this account.' },
   billing: { label: 'Billing', hint: 'Plan, invoices and payment method.' },
   audit: { label: 'Audit', hint: 'The account audit log.' },

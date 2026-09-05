@@ -1,106 +1,9 @@
 @import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
-@import 'fumadocs-ui/css/preset.css';
 @import 'tw-animate-css';
 @plugin 'tailwind-scrollbar';
 @plugin 'tailwind-scrollbar-hide';
 
 @source "../node_modules/streamdown/dist/*.js";
-@source "../node_modules/fumadocs-ui/dist/**/*.js";
-
-/* ─── Fumadocs → Kortix brand overrides ─── */
-/* fd-* tokens inherit the app's semantic tokens so light/dark stay in parity
-   automatically and color has a single source of truth. `--color-fd-card`
-   deliberately maps to --popover: fumadocs cards and code-block chrome sit on
-   the flat elevated surface, not the washed-gray --card token. The `.dark`
-   selector is required so these win over the `.dark` block that ships in
-   fumadocs-ui/css/neutral.css. */
-:root,
-.dark {
-  --color-fd-background: var(--background);
-  --color-fd-foreground: var(--foreground);
-  --color-fd-muted: var(--muted);
-  --color-fd-muted-foreground: var(--muted-foreground);
-  --color-fd-popover: var(--popover);
-  --color-fd-popover-foreground: var(--popover-foreground);
-  --color-fd-card: var(--popover);
-  --color-fd-card-foreground: var(--popover-foreground);
-  --color-fd-border: var(--border);
-  --color-fd-primary: var(--primary);
-  --color-fd-primary-foreground: var(--primary-foreground);
-  --color-fd-secondary: var(--secondary);
-  --color-fd-secondary-foreground: var(--secondary-foreground);
-  --color-fd-accent: var(--accent);
-  --color-fd-accent-foreground: var(--accent-foreground);
-  --color-fd-ring: var(--ring);
-}
-
-/* Docs use the app's own hairline --border, with no scoped step.
-   `#nd-docs-layout` used to darken it (`oklch(0.86 0 0)` light, a lighter
-   `oklch(0.34 0.006 286.033)` dark) on the argument that the default read too
-   faint on callouts, tables and code chrome. In practice it read as heavy: the
-   docs draw far more borders per screen than an app view, so a step that is
-   right on one card compounds across a page of them. The fd-* mapping above
-   already carries --border through to fumadocs, so removing the override is
-   all that is needed — one hairline, one value, everywhere. */
-
-/* Inline code in a SEARCH RESULT is the same chip as inline code anywhere else.
-
-   Fumadocs renders each result's content as markdown and hands inline code its
-   own look — `border rounded-md px-px bg-fd-secondary text-fd-secondary-
-   foreground`, hardcoded in `mdComponents` inside
-   `fumadocs-ui/dist/components/dialog/search.js`. Against the app's chip that
-   is a different radius, a different inset and a filled surface, so the same
-   `agents:` reads as one thing on the page and another in the palette that
-   found it.
-
-   CSS rather than the dialog's `renderMarkdown` hook: overriding that means
-   supplying the whole component map, and the rest of it — the `mark` that
-   paints the matched term, the `a`-as-span, the custom-element chip — is
-   package-internal and unexported. Restyling one element beats re-declaring
-   five and drifting on the next release.
-
-   The values mirror `INLINE_CODE` (`components/markdown/code/inline-chip.tsx`).
-   They are restated because the element is built inside the package and there
-   is nowhere to hand it a class; change one, change the other. `color` is
-   inherited on purpose — a selected row paints itself `fd-accent-foreground`,
-   and a pinned colour would fight it.
-
-   `button[aria-selected]` is the result row: every item in the list is that
-   button (`SearchDialogListItem`), and it is what the pointer highlights. */
-[role='dialog'] button[aria-selected] code {
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: transparent;
-  padding: 0 0.25em;
-  font-size: 0.8rem;
-  color: inherit;
-}
-
-/* Inline code in a TOC entry is code, not a button.
-
-   Fumadocs puts `prose` on every TOC LINK
-   (`fumadocs-ui/dist/components/toc/default.js`), so a heading's inline code
-   lands under the preset's own `.prose :where(code)` rule: a filled
-   `--color-fd-muted` chip with a hardcoded 13px size and 3px of padding on
-   every side. In a 14px column of muted links that reads as a pressable
-   control, and it is the only filled surface in the whole aside.
-
-   The body is unaffected — `docsMdxComponents.code` gives it the app's
-   `INLINE_CODE` class, and a utility class (0,1,0) plus later source order
-   beats the preset. A TOC item's `<code>` comes from the heading AST with no
-   class at all, so CSS is the only place to reach it.
-
-   `a.prose` rather than `#nd-toc`: `prose` on an ANCHOR is what causes this,
-   and it is what the popover TOC on narrow viewports carries too. If fumadocs
-   ever drops that class the bug goes with it and this rule becomes a no-op.
-   Fill and metrics only — the border and the inherited link colour are the
-   preset's, so the entry still takes its active and hover states. */
-a.prose code {
-  background: transparent;
-  padding: 0 0.25em;
-  font-size: 0.9em;
-}
 
 /* Legacy --sidebar-* values used by the app's own sidebar components. The
    canonical app token blocks further down redeclare these; kept here verbatim
@@ -126,107 +29,12 @@ a.prose code {
   --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }
 
-/* ─── Docs polish layer ─── */
-/* Everything below is scoped to the fumadocs layout ids (#nd-*) so the rest
-   of the app is untouched. Quiet, flat, better-auth-grade surfaces. */
-
-/* Sidebar: one flat surface with the page, split by a hairline. */
-#nd-sidebar {
-  background-color: var(--background);
-  border-color: var(--border);
-}
-
-/* Nav rows: compact (~30px), quiet, rounded-md. Covers page links and folder
-   triggers — both carry the shared ps-(--sidebar-item-offset) item class.
-   padding-inline-start is left alone: it drives nested indentation. */
-#nd-sidebar a[data-active],
-#nd-sidebar button[class*='ps-(--sidebar-item-offset)'] {
-  border-radius: 6px;
-  padding-block: 5px;
-  color: var(--muted-foreground);
-}
-#nd-sidebar a[data-active]:hover,
-#nd-sidebar button[class*='ps-(--sidebar-item-offset)']:hover {
-  background-color: var(--accent);
-  color: var(--foreground);
-}
-/* Active page: foreground + primary tint (Kortix law: active = primary 5-8%). */
-#nd-sidebar a[data-active='true'] {
-  background-color: color-mix(in oklab, var(--primary) 6%, transparent);
-  color: var(--foreground);
-  font-weight: 500;
-}
-#nd-sidebar a[data-active='true']:hover {
-  background-color: color-mix(in oklab, var(--primary) 8%, transparent);
-}
-
-/* Section separator labels (Learn / Reference / SDK / Contribute): quiet.
-   Size is owned by DocsSidebarSeparator (docs-controls.tsx) — its text-sm
-   reaches both this desktop aside and the mobile drawer, so no font-size
-   here or the id specificity would override it on desktop only. */
-#nd-sidebar p[class*='ps-(--sidebar-item-offset)'] {
-  margin-top: 1.5rem;
-  font-weight: 500;
-  color: var(--muted-foreground);
-}
-
-/* Prose rhythm: tighten the page title only; body sizes stay stock. */
-#nd-page h1 {
-  letter-spacing: -0.02em;
-}
-
-/* TOC-less pages (e.g. /docs): the article otherwise stretches past 1100px.
-   Cap it at a readable column; `md:mx-auto` on the article keeps it centered.
-   Pages with a TOC already sit under ~868px, so this is a no-op there.
-   padding-bottom: the stock article has none (pt-8 only) and our custom
-   prev/next footer replaces the built-in one that used to provide end space,
-   so without this the cards sit flush against the viewport bottom. */
-#nd-page article {
-  max-width: 56rem;
-  padding-bottom: 2rem;
-}
-
-/* Sidebar search shortcut: collapse the two bordered ⌘ / K chips into one
-   quiet "⌘K" hint. Scoped to the sidebar search toggle (data-search-full)
-   so prose <kbd> styling is untouched. */
-#nd-sidebar button[data-search-full] div:has(> kbd) {
-  gap: 0;
-}
-#nd-sidebar button[data-search-full] kbd {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
-/* TOC rail ("On this page"): keep fumadocs' stock code chips but slim them —
-   the prose default pads 3px on every side, which makes each chip tall and
-   opens the rows up. Only the vertical padding drops; horizontal padding,
-   border, background and mono size stay stock. Covers the desktop rail
-   (#nd-toc) and the mobile popover (#nd-tocnav). */
-#nd-toc a code,
-#nd-tocnav a code {
-  padding-block: 1px;
-}
-
-/* Fumadocs cards + tab/code containers: rounded-md family, never rounded-xl. */
-#nd-page a[class*='bg-fd-card'],
-#nd-page div[class*='bg-fd-card'] {
-  border-radius: 8px;
-  border-color: var(--border);
-}
-/* Linked cards: colors-only hover onto the flat accent surface. */
-#nd-page a[class*='bg-fd-card']:hover {
-  background-color: var(--accent);
-}
-
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-pane: var(--pane);
+  --color-surface: var(--surface);
   --color-foreground: var(--foreground);
   --color-foreground-strong: var(--foreground-strong);
   --color-foreground-weak: var(--foreground-weak);
@@ -701,6 +509,7 @@ a.prose code {
  *   role           dark        light
  *   canvas         #090909     #ffffff
  *   base           #0c0c0c     #ffffff
+ *   surface        #141414     #fcfcfc
  *   surface-1      #141414     #f4f4f4
  *   surface-2      #1c1c1c     #ececec
  *   ink            #ffffff     #000000
@@ -712,6 +521,7 @@ a.prose code {
 :root {
   --background: oklch(1 0 0); /* canvas */
   --pane: oklch(1 0 0); /* #ffffff */
+  --surface: oklch(0.9911 0 0); /* surface #fcfcfc — full-bleed shell pane */
   --foreground: oklch(0 0 0); /* ink */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
   --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
@@ -790,12 +600,17 @@ a.prose code {
   --liquid-glass-shadow:
     0 20px 48px -16px oklch(0 0 0 / 0.65), inset 0 1.5px 0 oklch(1 0 0 / 0.35),
     inset 0 -1px 0 oklch(1 0 0 / 0.08);
-  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.28), transparent 55%);
+  --liquid-glass-highlight: radial-gradient(
+    circle at 30% 20%,
+    oklch(1 0 0 / 0.28),
+    transparent 55%
+  );
 }
 
 .dark {
   --background: oklch(15% 0 0); /* canvas #090909 */
   --pane: oklch(0.1543 0 0); /* #0c0c0c */
+  --surface: oklch(0.1913 0 0); /* surface #141414 — full-bleed shell pane */
   --foreground: oklch(1 0 0); /* ink #ffffff */
   --foreground-strong: var(--foreground); /* ink — alias for title-weight text */
   --foreground-weak: var(--muted-foreground); /* ink-muted — alias for description-weight text */
@@ -846,7 +661,11 @@ a.prose code {
   --liquid-glass-bg: color-mix(in oklch, var(--secondary) 38%, transparent);
   --liquid-glass-bg-hover: color-mix(in oklch, var(--secondary) 52%, transparent);
   --liquid-glass-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.1);
-  --liquid-glass-highlight: radial-gradient(circle at 30% 20%, oklch(1 0 0 / 0.12), transparent 55%);
+  --liquid-glass-highlight: radial-gradient(
+    circle at 30% 20%,
+    oklch(1 0 0 / 0.12),
+    transparent 55%
+  );
 }
 
 @layer base {

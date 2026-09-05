@@ -3,9 +3,6 @@ title: Legacy kortix.toml
 description: Support status and the migration path from v1 kortix.toml to v2 kortix.yaml.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Callout } from 'fumadocs-ui/components/callout';
-
 This page covers the v1 manifest (`kortix.toml`, `kortix_version: 1`). For the current manifest, see [Manifest reference](/docs/project/manifest).
 
 ## Support status
@@ -59,8 +56,8 @@ Check the result with `kortix validate --file kortix.yaml`. Fetch the full v2 sc
 | `[sandbox]` (singular, image keys directly on it) | `sandbox.templates` (list) | Move each image into a template entry. |
 | `[[sandboxes]]` | `sandbox.templates` | Renamed. |
 
-<Callout type="warn" title="Secrets default to none in v2">
+:::warning[Secrets default to none in v2]
   In v1, an agent with no `env` field gets every project secret by default. In v2, an agent with no `secrets` field gets none. When you migrate, list every secret each agent needs — an agent that silently loses a secret can fail mid-task.
-</Callout>
+:::
 
 A few `kortix_cli` actions are legacy-tolerated in v1 (`project.session.exec`, `project.gateway.routing.edit`, `project.schedule.read`, `project.schedule.write`, `project.webhook.read`, `project.webhook.write`, `channel.read`, `channel.connect`, `channel.send`, `channel.disconnect`) — the platform warns but allows them. The same actions are a hard error in v2. Remove them from any agent's `kortix_cli` grant before you migrate.

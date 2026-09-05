@@ -30,3 +30,30 @@ describe('validateCallback', () => {
     expect(validateCallback('http://0.0.0.0:8712/callback').ok).toBe(false);
   });
 });
+
+describe('loopback subdomains — the Cloudflare WAF workaround', () => {
+  // The WAF in front of every non-prod origin 403s a query string carrying a
+  // bare 127.0.0.1 or localhost host, so those two were rejected at the edge
+  // and `kortix login` could not complete against dev/staging at all.
+  // Measured 2026-09-01 on dev.kortix.com: 127.0.0.1 -> 403, localhost -> 403,
+  // cli.localhost -> 401 (past the WAF).
+  test('accepts the *.localhost subdomain the CLI now sends', () => {
+    expect(validateCallback('http://cli.localhost:64169/callback').ok).toBe(true);
+  });
+
+  test('still accepts the two historical forms, so an older CLI keeps working', () => {
+    expect(validateCallback('http://127.0.0.1:64169/callback').ok).toBe(true);
+    expect(validateCallback('http://localhost:64169/callback').ok).toBe(true);
+  });
+
+  test('refuses a host that merely CONTAINS localhost', () => {
+    // `localhost.evil.com` and `notlocalhost` are ordinary internet names.
+    expect(validateCallback('http://localhost.evil.com:80/callback').ok).toBe(false);
+    expect(validateCallback('http://notlocalhost:64169/callback').ok).toBe(false);
+    expect(validateCallback('http://evil.com/?x=.localhost').ok).toBe(false);
+  });
+
+  test('refuses a bare .localhost with no label', () => {
+    expect(validateCallback('http://.localhost:64169/callback').ok).toBe(false);
+  });
+});

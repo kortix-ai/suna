@@ -174,6 +174,7 @@ import {
 } from '@phosphor-icons/react';
 
 import { CardSection } from './card-section';
+import { ConfettiSection } from './confetti-section';
 import { IconsSection } from './icons-section';
 
 // Filtered once at module load — the catalog is a static constant, so the
@@ -643,6 +644,7 @@ const TOC_SECTIONS = [
   { id: 'anti-patterns', label: 'Anti-Patterns' },
   { id: 'usage', label: 'Usage' },
   { id: 'icons', label: 'Icons' },
+  { id: 'confetti', label: 'Confetti' },
 ] as const;
 
 /* All section IDs flattened for intersection observer */
@@ -4172,6 +4174,14 @@ export default function BrandPage() {
                 summary="Phosphor only, one app-wide weight. Compare all six here."
               >
                 <IconsSection />
+              </CollapsibleSection>
+
+              <CollapsibleSection
+                id="confetti"
+                label="Confetti"
+                summary="The one celebration in the product, made of the workspace's own icon."
+              >
+                <ConfettiSection />
               </CollapsibleSection>
             </Accordion>
           </div>

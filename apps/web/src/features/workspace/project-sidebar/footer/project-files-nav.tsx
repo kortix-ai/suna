@@ -58,7 +58,7 @@ export function ProjectFilesNavItem() {
         asChild
         isActive={isActive}
         tooltip="Files"
-        className="flex items-center gap-2 text-sm! font-medium [&_svg]:size-4!"
+        className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
           <FoldersIcon />

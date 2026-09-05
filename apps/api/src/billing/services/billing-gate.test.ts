@@ -132,7 +132,10 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
     expect(result.ok).toBe(true);
   });
 
-  test('per-seat account on an ACTIVE subscription with a drained wallet is admitted (not wallet-gated)', async () => {
+  test('per-seat account on an ACTIVE subscription with a drained wallet is REFUSED (the floor is universal)', async () => {
+    // Was: admitted with no hold, because a paying per-seat subscription
+    // bypassed the wallet floor. That is the exact shape that spent $588.81
+    // against a $150 seat grant on a $0 wallet. It now 402s like anyone else.
     billingEnabled = true;
     account = creditAccount({
       billingModel: 'per_seat',
@@ -142,8 +145,14 @@ describe('checkBillingActive — real reason per gate (ERROR-TAXONOMY finding #4
       stripeSubscriptionStatus: 'active',
     });
     const result = await checkBillingActive('acct-1');
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.holdUsd).toBeUndefined();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.billingState).toBe('out_of_credits');
+      expect(result.reason).toBe('insufficient_credits');
+      // Still recognised as a paying customer, so the client says "Top up".
+      expect(result.hasSubscription).toBe(true);
+      expect(result.billingModel).toBe('per_seat');
+    }
   });
 });
 
@@ -303,7 +312,10 @@ describe('assertBillingActive / BillingGateError — the reason survives the thr
 });
 
 describe('the wallet floor applies to every subscription that is not paying', () => {
-  test('an ACTIVE per-seat subscription takes NO admission hold — it is not wallet-gated', async () => {
+  test('an ACTIVE per-seat subscription IS wallet-gated: the hold is attempted and refused at $0', async () => {
+    // The inversion at the heart of this change. There is no longer any account
+    // for which the admission hold is skipped, so there is no longer any account
+    // whose spend can go unrecorded.
     billingEnabled = true;
     holdCalls.length = 0;
     account = creditAccount({
@@ -314,8 +326,24 @@ describe('the wallet floor applies to every subscription that is not paying', ()
       stripeSubscriptionStatus: 'active',
     });
     const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.billingState).toBe('out_of_credits');
+  });
+
+  test('an ACTIVE per-seat subscription WITH credit takes the hold like everyone else', async () => {
+    billingEnabled = true;
+    holdCalls.length = 0;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '25',
+      stripeSubscriptionId: 'sub_live',
+      stripeSubscriptionStatus: 'active',
+    });
+    const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(true);
-    expect(holdCalls).toEqual([]);
+    if (result.ok) expect(result.holdUsd).toBe(0.01);
+    expect(holdCalls.length).toBe(1);
   });
 
   test('a PAST_DUE per-seat account with credit is admitted but METERED — the hold is taken', async () => {
@@ -370,7 +398,12 @@ describe('the wallet floor applies to every subscription that is not paying', ()
     if (!result.ok) expect(result.billingState).toBe('payment_failed');
   });
 
-  test('a TRIALING per-seat account still bypasses the floor', async () => {
+  test('CONSEQUENCE: a TRIALING per-seat account with an UNFUNDED wallet is now refused', async () => {
+    // Deliberate. `trialing` used to bypass the floor outright. A Stripe-native
+    // trial produces no `invoice.paid`, and the seat grant is driven by
+    // `invoice.paid`, so such a trial has no wallet and now blocks.
+    // Admin-issued trials are unaffected: trial-admin.ts grants credits as an
+    // explicit, audited part of issuing the trial.
     billingEnabled = true;
     holdCalls.length = 0;
     account = creditAccount({
@@ -381,8 +414,22 @@ describe('the wallet floor applies to every subscription that is not paying', ()
       stripeSubscriptionStatus: 'trialing',
     });
     const result = await checkBillingActive('acct-1');
+    expect(result.ok).toBe(false);
+  });
+
+  test('a FUNDED trial runs and is metered', async () => {
+    billingEnabled = true;
+    holdCalls.length = 0;
+    account = creditAccount({
+      billingModel: 'per_seat',
+      tier: 'per_seat',
+      balance: '25',
+      stripeSubscriptionId: 'sub_trial',
+      stripeSubscriptionStatus: 'trialing',
+    });
+    const result = await checkBillingActive('acct-1');
     expect(result.ok).toBe(true);
-    expect(holdCalls).toEqual([]);
+    expect(holdCalls.length).toBe(1);
   });
 
   test('the 402 for a past_due account tells the client to fix payment, not to subscribe', async () => {

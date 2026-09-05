@@ -1,8 +1,11 @@
-import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  SessionConnectingBanner,
+  SessionStartingLoader,
+} from '@/features/session/session-starting-loader';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
-import { SessionConnectingBanner, SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 const NOTE = 'Still waking — restarting the runtime (attempt 3)';
 
@@ -28,16 +31,29 @@ describe('escalation note reaches the pixels', () => {
     expect(html).not.toContain('Still waking');
   });
 
-  test('the compact loader headline becomes the note', () => {
+  test('the loader shows the ladder note instead of the phase label', () => {
     const html = render(<SessionStartingLoader stage="starting" delayMs={0} note={NOTE} />);
     expect(html).toContain(NOTE);
   });
 
-  test('the stepper hint carries the note instead of the generic reassurance', () => {
+  test('the legacy variant input renders the same ladder note', () => {
     const html = render(
       <SessionStartingLoader stage="starting" delayMs={0} variant="stepper" note={NOTE} />,
     );
     expect(html).toContain(NOTE);
+    expect(html).not.toContain('This usually takes a few seconds.');
+  });
+});
+
+describe('session starting loader treatment', () => {
+  test('renders quiet progress without prototype or legacy motion', () => {
+    const html = render(<SessionStartingLoader stage="starting" delayMs={0} variant="stepper" />);
+
+    expect(html).toContain('Starting your session');
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuetext="Step 2 of 4: Loading your workspace"');
+    expect(html).not.toContain('data-uidotsh-pick');
+    expect(html).not.toContain('animate-pulse');
     expect(html).not.toContain('This usually takes a few seconds.');
   });
 });

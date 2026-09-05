@@ -10,6 +10,7 @@ import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   buildSettingsPanelSettingsNav,
   isSettingsTabAllowed,
+  probeAdmits,
   SettingsPanelShell,
   type SettingsPanelShellProps,
   type SettingsTabAllowedParams,
@@ -31,7 +32,7 @@ import type { RailItem } from './type';
  *
  * **The overlay is three tabs now.** Twenty-one rows left it: eight
  * account-scoped ones for `/accounts/[id]`, and thirteen project-scoped ones
- * for the Customize bar's Settings tab, `/projects/[id]/config`. What remains
+ * for the Customize bar's Settings tab, `/projects/[id]/customize/settings`. What remains
  * is Profile, Preferences and Connected accounts — the tabs that belong to the
  * signed-in PERSON. Every assertion below is derived from `railGroups()` or
  * `SETTINGS_TABS` rather than hard-coded counts, so the next arrival or
@@ -59,6 +60,10 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     tab: NO_TAB,
     onTabChange: () => {},
     isMobile: false,
+    // Undefined by default, matching the overlay opened outside a project. The
+    // `workspace` pane is the only one that reads it, and the gating suite
+    // below supplies one where it needs the pane to mount.
+    projectId: undefined,
     accountId: undefined,
     groups: allGroups,
     allItems,
@@ -92,7 +97,7 @@ describe('SettingsPanelShell — desktop rail', () => {
   test('renders one TabsList per rail group — Radix cannot mix a group Label into one shared list', () => {
     const html = render();
     // One list per group, and no pinned extra: the Upgrades footer went to
-    // `/projects/[id]/config` with the rest of project configuration.
+    // `/projects/[id]/customize/settings` with the rest of project configuration.
     expect((html.match(/role="tablist"/g) ?? []).length).toBe(allGroups.length);
   });
 
@@ -106,18 +111,37 @@ describe('SettingsPanelShell — desktop rail', () => {
    * observable against today's rail.
    */
   describe('group headings', () => {
+    // Explicitly ONE group, not `allGroups` — the production rail carries two
+    // now (`Workspace` + `You`), and the behaviour under test is the shell's
+    // `groups.length > 1` rule, not today's rail contents. Taking the first
+    // group keeps this pinned on the rule even as the rail changes.
     test('one group renders no heading', () => {
-      const html = render();
-      expect(allGroups.length).toBe(1);
-      expect(html).not.toContain(`>${allGroups[0].label}<`);
+      const oneGroup = [allGroups[0]];
+      const html = render({ groups: oneGroup });
+      expect(html).not.toContain(`>${oneGroup[0].label}<`);
     });
 
+    // The production rail is ONE group (Personal) since 2026-09-03, so the
+    // second group is synthesised here to keep the rule itself pinned.
     test('a second group brings every heading back', () => {
-      const twoGroups = [...allGroups, { label: 'Workspace', items: allGroups[0].items }];
+      const twoGroups = [allGroups[0], { label: 'More', items: [] }];
       const html = render({ groups: twoGroups });
       for (const group of twoGroups) {
         expect(html).toContain(`>${group.label}<`);
       }
+    });
+
+    // The Organizations block counts as a second group for the rule: with it
+    // on screen, "Personal" has to be labelled or the two lists run together.
+    test('the organizations block brings the Personal heading back', () => {
+      const html = render({
+        groups: [allGroups[0]],
+        organizations: [{ account_id: 'acc-1', name: 'Mirkos Org', account_role: 'owner' }],
+      });
+      expect(html).toContain(`>${allGroups[0].label}<`);
+      expect(html).toContain('>Organizations<');
+      expect(html).toContain('Mirkos Org');
+      expect(html).toContain('href="/accounts/acc-1"');
     });
   });
 
@@ -138,15 +162,26 @@ describe('SettingsPanelShell — desktop rail', () => {
     expect(html).not.toContain('No settings match');
   });
 
-  test('the desktop rail closes the dialog with an icon button, not a Back to workspace row', () => {
+  /**
+   * The rail's exit is the `Back to app` row the account settings sidebar
+   * leads with (`accounts/hub/account-settings-sidebar.tsx`), so the overlay
+   * and `/accounts/**` read as one surface. It is a `ModalClose`: the app is
+   * what the dialog was covering.
+   */
+  test('the desktop rail leads with a Back to app row that closes the dialog', () => {
     const html = render();
+    expect(html).toContain('Back to app');
     expect(html).not.toContain('Back to workspace');
-    expect(html).toContain('aria-label="Close"');
+  });
+
+  test('the desktop content column carries a Settings breadcrumb bar', () => {
+    expect(render()).toContain('aria-label="breadcrumb"');
+    expect(render({ isMobile: true })).not.toContain('aria-label="breadcrumb"');
   });
 });
 
 /**
- * The dialog frame: compact and centred, not a full-screen mode.
+ * The dialog frame: full screen.
  *
  * `SettingsPanelView` renders through `ModalContent` -> `DialogPrimitive.Portal`,
  * which never mounts under `renderToStaticMarkup` (see this file's header), so
@@ -154,40 +189,35 @@ describe('SettingsPanelShell — desktop rail', () => {
  * against the source — the same technique `settings-panel-a11y.test.ts` uses
  * for `activationMode`.
  *
- * The overlay was `h-dvh w-screen max-w-none` with every rounding and border
- * stripped: a whole-app mode for what is a profile, a preference, and a list
- * of linked identities. Jay's call, restoring the shape the standalone user
- * settings modal had before the unification commit (`089acb9eb5`), was
- * `lg:max-w-4xl` over a fixed height.
+ * It is the account settings shell as an edge-to-edge overlay (Jay,
+ * 2026-09-02): `side="fullscreen"` plus the important-marked overrides the
+ * Apps modal uses, because `ModalContent` appends `rounded-xl` AFTER
+ * `className` and `ModalVariants` centres and caps the dialog at `lg:` — a
+ * plain `rounded-none` or `max-w-none` loses to both.
  */
 describe('SettingsPanelView — the dialog frame', () => {
   const SOURCE = readFileSync(join(import.meta.dir, 'settings-panel.tsx'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-  test('is capped at max-w-4xl, like the modal it is modelled on', () => {
-    expect(SOURCE).toContain('lg:max-w-4xl');
+  test('takes the fullscreen side', () => {
+    expect(SOURCE).toContain('side="fullscreen"');
   });
 
-  test('takes a fixed height that stays inside a short viewport', () => {
-    expect(SOURCE).toContain('lg:h-[min(660px,85dvh)]');
-  });
-
-  test('never goes back to the full-screen shape', () => {
-    for (const fullscreen of [
-      'h-dvh',
-      'w-screen',
-      'max-w-none',
-      'rounded-none',
-      'min-h-dvh',
-      'shadow-none',
-    ]) {
-      expect(SOURCE).not.toContain(fullscreen);
+  test('fills the viewport with important-marked overrides, not plain classes the modal chrome outranks', () => {
+    for (const cls of ['inset-0!', 'h-dvh!', 'max-w-none!', 'rounded-none!', 'border-0!']) {
+      expect(SOURCE).toContain(cls);
     }
   });
 
-  test('the desktop rail is one narrow column beside the content, not a 250px sidebar', () => {
-    expect(SOURCE).toContain('grid-cols-[13rem_1fr]');
+  test('never goes back to a capped, centred dialog', () => {
+    for (const capped of ['lg:max-w-4xl', 'lg:max-w-6xl', 'lg:h-[min(']) {
+      expect(SOURCE).not.toContain(capped);
+    }
+  });
+
+  test("the desktop rail is the account shell's sidebar column, from the shell's one constant", () => {
+    expect(SOURCE).toContain('SETTINGS_SIDEBAR_WIDTH_PX');
     expect(SOURCE).not.toContain('grid-cols-[250px_1fr]');
   });
 });
@@ -257,7 +287,7 @@ describe('SettingsPanelShell — pane wiring', () => {
  * future Radix upgrade changes that internal.
  *
  * The thirteen project-scoped cases that used to sit here moved with their
- * tabs to `/projects/[id]/config`; the eight account-scoped ones moved to
+ * tabs to `/projects/[id]/customize/settings`; the eight account-scoped ones moved to
  * `/accounts/[id]`. Neither set is asserted here any more, because neither
  * mounts here any more.
  */
@@ -266,31 +296,78 @@ describe('SettingsPanelShell — real tab content gating', () => {
     expect(() => render()).not.toThrow();
   });
 
-  test('every surviving tab mounts a real view when it is the active one', () => {
-    for (const tab of SETTINGS_TABS) {
-      expect(() => render({ tab, accountId: 'a1' })).toThrow();
+  /**
+   * Appearance and Sessions read Zustand stores and `next-themes`, neither of
+   * which throws without a provider, so the throw signal cannot prove they
+   * mounted. For those two the proof is the pane heading: present when the
+   * tab is active, absent otherwise (`RailTriggerBody` renders the label too,
+   * so the heading is matched as the `h2` `SettingsTabHeader` emits).
+   */
+  const STORE_ONLY_TABS = ['appearance', 'sessions'] as const;
+  const QUERY_BACKED_TABS = SETTINGS_TABS.filter(
+    (tab) => !(STORE_ONLY_TABS as readonly string[]).includes(tab),
+  );
+
+  test('every query-backed tab mounts a real view when it is the active one', () => {
+    for (const tab of QUERY_BACKED_TABS) {
+      expect(() => render({ tab, projectId: 'p1', accountId: 'a1' })).toThrow();
     }
   });
 
-  test('each one mounts with no account id either — all three resolve their own scope', () => {
-    for (const tab of SETTINGS_TABS) {
-      expect(() => render({ tab, accountId: undefined })).toThrow();
+  test('each one mounts with no account id either — every pane resolves its own scope', () => {
+    for (const tab of QUERY_BACKED_TABS) {
+      expect(() => render({ tab, projectId: 'p1', accountId: undefined })).toThrow();
+    }
+  });
+
+  test('the store-backed tabs mount their pane heading only while active', () => {
+    for (const tab of STORE_ONLY_TABS) {
+      const label = allItems.find((item) => item.tab === tab)?.label ?? '';
+      expect(label).not.toBe('');
+      const heading = new RegExp(`<h2[^>]*>${label}</h2>`);
+      expect(render({ tab, projectId: 'p1' })).toMatch(heading);
+      expect(render()).not.toMatch(heading);
     }
   });
 
   /**
-   * The shell cannot hand a pane a project id, because it does not have one.
+   * The `workspace` pane's belt-and-braces guard, exercised.
    *
-   * This is the structural half of "all three tabs are user-scoped": the old
-   * assertion passed `projectId: undefined` and proved the panes tolerate its
-   * absence. They cannot receive it at all now — the ChatGPT row that was the
-   * single consumer is gone (`tabs/connected-tab.tsx`), so the prop went with
-   * it. Excess-property checking would fail the type-check if it came back
-   * silently, and this pins the runtime shape too.
+   * `GeneralTab` cannot run without a project id, and the rail already filters
+   * its row out whenever there is none (`ACCOUNT_SCOPED_SETTINGS_TABS`). This
+   * pins the second line of defence: given the row anyway, the pane renders its
+   * own label instead of mounting `GeneralTab` against an empty id.
+   *
+   * It is the exact inverse of the two loops above — same tab, same absence of
+   * a `QueryClientProvider`, opposite outcome — so it cannot pass vacuously.
    */
-  test('`projectId` is not part of the shell contract', () => {
+  test('the project panes are not offered by this overlay any more', () => {
+    // They are the Customize bar's Settings tab since 2026-09-03; the ids
+    // stay in the type so their panes keep compiling, but no rail row or
+    // route opens them here.
+    for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
+      expect(SETTINGS_TABS).not.toContain(tab);
+    }
+  });
+
+  /**
+   * `projectId` is back in the shell contract, for ONE pane.
+   *
+   * It was removed on 2026-08-17 with the last pane that read it (the Connected
+   * tab's project-scoped ChatGPT row) and this test asserted its absence. The
+   * `workspace` pane restored the need on 2026-09-01: `GeneralTab` reads and
+   * writes the project, so the id has to reach it.
+   *
+   * Asserted as a declared, optional-valued prop rather than merely "the type
+   * compiles": a shell that silently dropped the prop while keeping it in the
+   * type would still typecheck, and the workspace pane would then render its
+   * fallback label forever with nothing failing.
+   */
+  test('`projectId` is part of the shell contract, and may be undefined', () => {
     const props: SettingsPanelShellProps = baseProps();
-    expect('projectId' in props).toBe(false);
+    expect('projectId' in props).toBe(true);
+    expect(props.projectId).toBeUndefined();
+    expect(baseProps({ projectId: 'p1' }).projectId).toBe('p1');
   });
 });
 
@@ -341,7 +418,7 @@ describe('SettingsPanelShell — mobile', () => {
  * rather than mocking it.
  *
  * The overlay is one of TWO hosts of that context now. The other is
- * `/projects/[id]/config`, whose adapter (`buildProjectSettingsNav`) is
+ * `/projects/[id]/customize/settings`, whose adapter (`buildProjectSettingsNav`) is
  * covered in `capabilities/project-settings/project-settings-page.test.ts`.
  */
 describe('buildSettingsPanelSettingsNav', () => {
@@ -402,37 +479,81 @@ describe('buildSettingsPanelSettingsNav', () => {
  *
  * `SettingsPanel` has two mounts: `ProjectShell` (with a `projectId`) and
  * `app/(app)/settings*` (without one). `isSettingsTabAllowed` decides which
- * rows the rail may show on each. Every tab left in the overlay is
- * user-scoped, so the gate currently admits all of them on both mounts — the
- * point of these cases is that the RULE still holds, derived from
- * `SETTINGS_TABS`, so a project-scoped tab added later is covered without
- * anyone remembering to extend this file.
- *
- * The per-tab IAM gate that used to sit beside it went with the tabs it
- * gated: the project-scoped ones are gated by `/projects/[id]/config` over
- * the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves, the account-scoped
- * ones by `/accounts/[id]`.
+ * rows the rail may show on each, and — for the two Workspace rows that
+ * mount config-page panes — whether the caller's project capabilities admit
+ * the row, over the identical `CUSTOMIZE_SECTION_GATE_ACTIONS` leaves
+ * `/projects/[id]/customize/settings` reads.
  */
 describe('isSettingsTabAllowed — project scope (JAY-547)', () => {
   function paramsFor(overrides: Partial<SettingsTabAllowedParams> = {}): SettingsTabAllowedParams {
     return { hasProject: false, ...overrides };
   }
 
-  test('with no project, exactly the account-scoped tabs are allowed', () => {
+  test('with no project, every live tab is allowed — all of them are personal', () => {
     const allowed = SETTINGS_TABS.filter((tab) => isSettingsTabAllowed(tab, paramsFor()));
-    expect([...allowed].sort()).toEqual([...ACCOUNT_SCOPED_SETTINGS_TABS].sort());
+    expect([...allowed].sort()).toEqual([...SETTINGS_TABS].sort());
+    for (const tab of SETTINGS_TABS) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
   });
 
-  test('every tab left in the overlay is account-scoped, so none is hidden by the scope gate', () => {
+  // The three project-scoped tabs, and the gate is what hides them — and
+  // with them the whole `Workspace` rail group — on `/settings` and under
+  // `/accounts/**`, where there is no project to name. Asserted as an exact
+  // list so a fourth project-scoped tab cannot be added without a decision.
+  test('no live tab is project-scoped; the retired project ids still gate on a project', () => {
     const projectScoped = SETTINGS_TABS.filter(
       (tab) => !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab),
     );
     expect(projectScoped).toEqual([]);
+    // The panes still exist behind the type, and the gate still refuses them
+    // without a project, so a stray `openSettings('sandbox')` on `/accounts`
+    // cannot mount a project pane with nothing to point it at.
+    for (const tab of ['workspace', 'sandbox', 'feature-flags', 'upgrades'] as const) {
+      expect(isSettingsTabAllowed(tab, paramsFor())).toBe(false);
+    }
   });
 
-  test('with a project, the scope gate changes nothing — every tab is judged on its own gates', () => {
+  /**
+   * Sandbox templates and Feature flags gate on the same IAM read leaf the
+   * config page gates them on (`isCustomizeSectionVisible`). No capability
+   * answer yet — the probe in flight, or a caller that passed none — hides
+   * the row rather than showing a pane the API would refuse.
+   */
+  test('the IAM-gated workspace tabs follow the project capability answer', () => {
+    const allow = () => true;
+    const deny = () => false;
+    for (const tab of ['sandbox', 'feature-flags', 'upgrades'] as const) {
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(false);
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: deny }))).toBe(
+        false,
+      );
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: allow }))).toBe(
+        true,
+      );
+      // A capability grant never overrides the scope rule.
+      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: false, canProject: allow }))).toBe(
+        false,
+      );
+    }
+  });
+
+  /**
+   * The probe answer the container feeds the gate. Fail-open while loading
+   * is load-bearing: an in-flight probe reads `allowed: false`, and the
+   * panel bounces an active tab that is not in the rail — so `=== true`
+   * sent every `/settings/sandbox` deep link to Profile in CI.
+   */
+  test('an in-flight probe admits the row; only a received denial hides it', () => {
+    expect(probeAdmits(undefined)).toBe(true);
+    expect(probeAdmits({ allowed: false, isLoading: true })).toBe(true);
+    expect(probeAdmits({ allowed: true, isLoading: false })).toBe(true);
+    expect(probeAdmits({ allowed: false, isLoading: false })).toBe(false);
+  });
+
+  test('with a project and every capability, the scope gate admits every tab', () => {
     for (const tab of SETTINGS_TABS) {
-      expect(isSettingsTabAllowed(tab, paramsFor({ hasProject: true }))).toBe(true);
+      expect(
+        isSettingsTabAllowed(tab, paramsFor({ hasProject: true, canProject: () => true })),
+      ).toBe(true);
     }
   });
 

@@ -64,8 +64,6 @@ export const STATIC_PUBLIC_ROUTES = [
   '/docs',
   '/download',
   '/enterprise',
-  '/help',
-  '/help/credits',
   '/connectors',
   '/legal',
   '/marketplace',
@@ -167,21 +165,6 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
   },
   {
     kind: 'marketing',
-    slug: 'help',
-    title: 'Kortix Help Center',
-    description: 'Guides for billing, credits, and everyday Kortix questions.',
-    htmlPath: '/help',
-  },
-  {
-    kind: 'marketing',
-    slug: 'help/credits',
-    title: 'Kortix credits explained',
-    description:
-      'What credits are, how Kortix sessions consume them, and how to manage your balance and subscription.',
-    htmlPath: '/help/credits',
-  },
-  {
-    kind: 'marketing',
     slug: 'enterprise',
     title: 'Kortix Enterprise',
     description: PRICING_PLANS.find((plan) => plan.id === 'enterprise')?.note,
@@ -200,7 +183,8 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
     kind: 'marketing',
     slug: 'support',
     title: 'Kortix support',
-    description: 'Support resources and contact information for Kortix.',
+    description:
+      'Reach Kortix support by email or Discord, read the answers to the questions people ask most, and find the account deletion steps.',
     htmlPath: '/support',
   },
   // The product pages. Each one's layout.tsx reads its title/description back
@@ -402,8 +386,14 @@ function closesTag(text: string): boolean {
   return text.replace(/\{[^{}]*\}/g, '').includes('>');
 }
 
-const MDX_WRAPPER_TAGS = new Set(['Cards', 'KeyFacts', 'StatGrid', 'Steps']);
+const MDX_WRAPPER_TAGS = new Set(['Cards', 'CardGroup', 'KeyFacts', 'StatGrid', 'Steps']);
 const MDX_BLOCK_TAGS = new Set(['Callout', 'Card', 'Fact', 'Step']);
+
+// `:::warning[Title]` opens a container directive; a bare `:::` closes it.
+// Agent-facing markdown has no directive syntax, so both render as a
+// blockquote, the same shape <Callout> already produced.
+const DIRECTIVE_OPEN = /^\s*:::([a-z]+)(?:\[(.*)\])?\s*$/;
+const DIRECTIVE_CLOSE = /^\s*:::\s*$/;
 
 type MdxRenderContext = { tag: string; quote?: boolean };
 
@@ -539,6 +529,24 @@ export function renderPlainMarkdownFromMdx(source: string): string {
       /^\s*export\s+(?:default\s+)?(?:const|let|var|function|type|interface|\{)\b/.test(line)
     ) {
       skippingModule = !/;\s*$/.test(line.trim());
+      continue;
+    }
+
+    const directiveClose = stack.length && stack[stack.length - 1].tag === 'directive';
+    if (directiveClose && DIRECTIVE_CLOSE.test(line)) {
+      stack.pop();
+      rendered.push('');
+      continue;
+    }
+
+    const directiveOpen = DIRECTIVE_OPEN.exec(line);
+    if (directiveOpen) {
+      const [, , title] = directiveOpen;
+      stack.push({ tag: 'directive', quote: true });
+      if (title) {
+        rendered.push(`> **${title}**`);
+        rendered.push('>');
+      }
       continue;
     }
 

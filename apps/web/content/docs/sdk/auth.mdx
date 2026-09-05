@@ -54,13 +54,13 @@ directly. An agent's identity is a service account, which is how you assign a
 role to an agent. See
 [Accounts & access](/docs/accounts#one-access-model).
 
-<Callout type="warn">
+:::warning
   A new service account has no assignments and therefore no project access. If
   you point `getToken` at one before you assign it a role, every call returns
   `403 "You do not have access to this project"`. Assign it a project role
   first, or use a personal access token for the SDK, the CLI, and demos
   instead.
-</Callout>
+:::
 
 ## OAuth access tokens (Sign in with Kortix)
 

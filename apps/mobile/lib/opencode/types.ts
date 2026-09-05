@@ -278,7 +278,7 @@ export interface Turn {
   assistantMessages: MessageWithParts[];
 }
 
-export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk/turns';
+export type { Diagnostic, RetryInfo, ToolInfo, TurnCostInfo } from '@kortix/sdk';
 
 export const PERMISSION_LABELS: Record<string, string> = {
   bash: 'Run command',
