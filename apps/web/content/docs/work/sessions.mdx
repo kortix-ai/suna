@@ -41,11 +41,11 @@ normal idle grace. This setting does not change active-turn protection.
 
 ## What stop and delete keep
 
-<Callout type="warn" title="Deletion is permanent">
+:::warning[Deletion is permanent]
 Deleting a session destroys its sandbox for good. Kortix keeps the session
 record and the git branch, so you can still recover pushed work. Anything not
 pushed is gone.
-</Callout>
+:::
 
 Stop and resume keep the sandbox's identity and filesystem. Delete destroys
 the sandbox. Git is the only durable record: work the agent commits and
@@ -79,12 +79,12 @@ under the trigger agent's identity. Project managers govern those. Set the
 policy for all of them on the trigger itself, under **Session access** on the
 trigger — saving there also updates the sessions that trigger already created.
 
-<Callout type="warn" title="A session keeps its owner">
+:::warning[A session keeps its owner]
 Removing someone from the account does not move their sessions to anyone else.
 Their access policy freezes as it was. A project manager can still stop or
 delete those sessions — deleting is the way to revoke a session nobody owns any
 more.
-</Callout>
+:::
 
 ## Sharing a preview
 
