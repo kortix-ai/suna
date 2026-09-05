@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { accessRefusal, presentedAccess, upstreamUrl } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
+import worker, { accessRefusal, consumedHeaders, presentedAccess, upstreamUrl } from '../../infra/cloudflare/workers/pi-js-router/worker.mjs';
 
 const TARGET = 'https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev';
 const workflow = readFileSync(
@@ -97,5 +97,38 @@ describe('accessRefusal — the name fails closed', () => {
     expect(presentedAccess(new Headers({ authorization: 'bearer  abc ' }))).toBe('abc');
     expect(presentedAccess(new Headers({ 'x-kortix-access': ' xyz' }))).toBe('xyz');
     expect(presentedAccess(new Headers({ authorization: 'Basic zzz' }))).toBe('');
+  });
+});
+
+describe('the caller\'s Authorization header is consumed ONLY when this name asked for it', () => {
+  // With OPEN_ACCESS=true the Worker asked for nothing, so an Authorization
+  // header belongs to the origin: the Kortix stack behind pi-js.kortix.com
+  // authenticates its own users with a Supabase JWT in that header. Deleting it
+  // unconditionally made every signed-in call answer the API's "Missing or
+  // invalid Authorization header" (2026-09-05: the owner could not sign in with
+  // email). Claimed at the fetch handler itself, with the upstream fetch
+  // captured, not only at the helper.
+  const upstreamOf = async (env: Record<string, string>, headers: Record<string, string>) => {
+    let seen: Request | null = null;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: Request) => { seen = input; return new Response('ok', { status: 200 }); }) as any;
+    try {
+      await worker.fetch(new Request('https://pi-js.kortix.com/api/agents', { headers }), { TARGET_ORIGIN: TARGET, ...env });
+    } finally { globalThis.fetch = realFetch; }
+    return seen!;
+  };
+
+  it('OPEN_ACCESS=true forwards the caller\'s bearer to the origin untouched — the stack authenticates its own users', async () => {
+    expect(consumedHeaders({ OPEN_ACCESS: 'true' })).not.toContain('authorization');
+    const up = await upstreamOf({ OPEN_ACCESS: 'true' }, { authorization: 'Bearer supabase-jwt', 'x-kortix-access': 'nope' });
+    expect(up.headers.get('authorization')).toBe('Bearer supabase-jwt');
+    expect(up.headers.get('x-kortix-access')).toBeNull();   // this Worker's own header never means anything upstream
+    expect(up.url.startsWith(TARGET)).toBe(true);
+  });
+
+  it('ACCESS_TOKEN mode consumes the bearer that opened the door — the origin never sees this name\'s credential', async () => {
+    expect(consumedHeaders({ ACCESS_TOKEN: 'k-secret-1' })).toContain('authorization');
+    const up = await upstreamOf({ ACCESS_TOKEN: 'k-secret-1' }, { authorization: 'Bearer k-secret-1' });
+    expect(up.headers.get('authorization')).toBeNull();
   });
 });

@@ -41,8 +41,22 @@
 
 /** Hop-by-hop headers must not be forwarded; `host` is set by the target URL. */
 const STRIPPED = ['host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade-insecure-requests'];
-/** Never forwarded: the caller's own credential to THIS name. */
-const CONSUMED = ['authorization', 'x-kortix-access'];
+/**
+ * Never forwarded: the caller's own credential to THIS name — but ONLY when this
+ * name asked for one. In ACCESS_TOKEN mode the bearer that opened the door is
+ * consumed here. With OPEN_ACCESS=true nothing was asked for, so an
+ * Authorization header belongs to the ORIGIN: the Kortix stack behind
+ * pi-js.kortix.com authenticates its own users with a Supabase JWT in exactly
+ * that header, and deleting it unconditionally turned every signed-in call into
+ * the API's "Missing or invalid Authorization header" (2026-09-05, the owner
+ * could not sign in with email). `x-kortix-access` is this Worker's own header
+ * and is never meaningful upstream, so it is always dropped.
+ */
+const ALWAYS_CONSUMED = ['x-kortix-access'];
+export function consumedHeaders(env) {
+  const openAccess = (env.OPEN_ACCESS || '').trim() === 'true';
+  return openAccess ? ALWAYS_CONSUMED : [...ALWAYS_CONSUMED, 'authorization'];
+}
 
 /** Constant-time-ish comparison; both sides are short ASCII secrets. */
 function sameSecret(a, b) {
@@ -121,7 +135,7 @@ export default {
 
     const headers = new Headers(request.headers);
     for (const name of STRIPPED) headers.delete(name);
-    for (const name of CONSUMED) headers.delete(name);
+    for (const name of consumedHeaders(env)) headers.delete(name);
     headers.set('x-forwarded-host', new URL(request.url).host);
     headers.set('x-forwarded-proto', 'https');
     // The Platinum edge's exposure token. Accepted as a header so it is never
