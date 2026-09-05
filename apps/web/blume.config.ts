@@ -72,7 +72,16 @@ export default defineConfig({
   // The whole Blume site is served under /docs by the Next app, which maps
   // clean URLs onto public/docs/ with two afterFiles rewrites. `base`
   // rewrites internal links and asset hrefs to match.
-  deployment: { base: '/docs' },
+  deployment: {
+    base: '/docs',
+    // Canonical URLs and OG image URLs need an absolute origin; without it
+    // `blume audit` reports the site as non-indexable. Always the production
+    // origin, including in dev builds — a canonical is meant to point at the
+    // canonical home, not at whichever host rendered the page.
+    // seo.sitemap stays false: the Next app owns /sitemap.xml for the whole
+    // domain, so setting `site` must not hand that surface to Blume.
+    site: 'https://kortix.com',
+  },
 
   // Stock theme, deliberately. A Kortix skin is a separate follow-up; see
   // decision D3 in the spec. The accent is NOT set here: it is bound to the

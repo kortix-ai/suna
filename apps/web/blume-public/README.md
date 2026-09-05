@@ -13,3 +13,7 @@ docs site actually serves get copied.
 Keep this directory tiny. Anything added here ships inside `public/docs/`.
 The logo files are here because `deployment.base` rewrites the configured logo
 path to `/docs/…`, so they must resolve under the docs base, not the app root.
+
+`favicon.svg` is here for the same reason: Blume emits
+`<link rel="icon" href="/docs/favicon.svg">`, which resolves under the docs
+base, so the app's own /favicon.svg is not reachable from these pages.
