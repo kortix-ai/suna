@@ -21,6 +21,36 @@ linked, not inlined.
 
 ## Register
 
+### An identity write that ESTABLISHES a session is the answer for a fetch it overtakes; only a CLEAR is a boundary (2026-09-05)
+
+**When:** guarding a cached credential with a generation/epoch counter, or
+adding any "discard the in-flight result" rule to a token cache.
+`#7065` (2026-08-31) made `getSupabaseAccessToken()` return `null` whenever
+`authEpoch` moved while its fetch was in flight. EVERY authoritative write
+moved it, including `AuthProvider`'s own `setCachedAuthToken(session.access_token)`
+at hydration. The SDK request path asks for the token exactly once with no
+retry (`withTokenRetry` defaults to one attempt), so any request whose token
+fetch was still in flight when hydration wrote got `null`, the SDK answered a
+synthetic `AuthError` without sending the request, and the project boundary
+mapped the status-less error to its terminal screen: **"This project didn't
+load. The request failed before we could check your access."** Sibling
+queries (sessions sidebar) stayed on skeletons for the same reason. Which
+call resolved first was a lock-order coin flip inside supabase-js, so it was
+"some loads", not all. **Rules.** (1) A cache write that establishes an
+identity with no clear since the fetch began hands that identity to the
+waiting caller; only a clear (`setCachedAuthToken(null)`: sign-out, 401,
+stale session) is a boundary that answers `null` — track the clear's epoch
+separately (`lastClearEpoch`). (2) Before making a token getter return
+`null` on any path, read the callers: a getter with a no-retry consumer
+turns every `null` into a failed request. (3) A boundary that renders a
+TERMINAL screen for a status-less error must be reproduced by watching the
+network tab: the signature here was the error screen with NO request to the
+route it names. *Incident:* dev only, 2026-08-31 → 2026-09-05; staging and
+prod never carried #7065. Fixed in PR #7120.
+*Enforcer:* `apps/web/src/lib/auth-token.test.ts` — three hydration-race
+cases plus "clear → new token, both mid-flight: still null".
+
+
 ### A read that fails is not an admin decision — health flags fail open (2026-09-02)
 
 **When:** writing any code path that answers "is the platform in maintenance /
