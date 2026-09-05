@@ -33,7 +33,12 @@ api() { local t=60; case "${1:-}" in ""|*[!0-9]*) ;; *) t=$1; shift;; esac; curl
 mc() { docker run --rm --entrypoint sh quay.io/minio/mc -c "mc alias set d $EP $PT_S3_ACCESS_KEY $PT_S3_SECRET_KEY >/dev/null 2>&1; $1" 2>/dev/null; }
 
 echo "== 1. the gate and the template =="
-G=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API/v1/sandboxes" "${H[@]}" -d '{"template":"pt-celld","runtime":"cell","name":"gate-probe","ram_mb":4096,"cpu":2}')
+# The gate probe is a REAL create: when the runtime is enabled it boots a cell,
+# and until 2026-09-05 that cell was never deleted (one 4 GB 'gate-probe' left
+# running on dev per run). Its id joins the cleanup, and the last claim below
+# checks that nothing by that name survives the suite.
+G=$(curl -s -o /tmp/cell-dev-gate.json -w '%{http_code}' -X POST "$API/v1/sandboxes" "${H[@]}" -d '{"template":"pt-celld","runtime":"cell","name":"gate-probe","ram_mb":4096,"cpu":2}')
+GATE=$(python3 -c 'import json; print(json.load(open("/tmp/cell-dev-gate.json")).get("id",""))' 2>/dev/null)
 [ "$G" != "501" ] && pass "the cell runtime is enabled on dev (create is not 501)" || { fail "runtime 'cell' is gated off on dev (501)"; exit 1; }
 TPL=$(api "$API/v1/templates" | python3 -c 'import json,sys; d=json.load(sys.stdin); l=d if isinstance(d,list) else d.get("templates",d.get("items",[])); print(next((t["id"] for t in l if t.get("name")=="pt-celld" and t.get("state","ready")=="ready"),""))')
 if [ -z "$TPL" ]; then
@@ -47,7 +52,7 @@ WS=$(api -X POST "$API/v1/sandboxes?wait_for_state=running" -d '{"template":"pt-
 [ -n "$WS" ] && pass "workspace sandbox: $WS" || { fail "workspace create failed"; exit 1; }
 CELL=""
 cleanup() {
-  for s in $CELL $WS; do [ -n "$s" ] && printf '  cleanup: %s → %s\n' "$s" "$(curl -s -m 60 -o /dev/null -w '%{http_code}' -X DELETE "$API/v1/sandboxes/$s" "${H[@]}")"; done
+  for s in $CELL $WS $GATE; do [ -n "$s" ] && printf '  cleanup: %s → %s\n' "$s" "$(curl -s -m 60 -o /dev/null -w '%{http_code}' -X DELETE "$API/v1/sandboxes/$s" "${H[@]}")"; done
 }
 trap cleanup EXIT
 BODY=$(python3 - "$API" "$TOK" "$WS" "$WORKER" <<'PY'
@@ -76,6 +81,10 @@ api -X POST "$API/v1/sandboxes/$CELL/stop" >/dev/null; sleep 3; api 120 -X POST 
 P=$(mc "mc cat d/$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER/deploy/current.json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))')
 [ "$P" = "$D" ] && pass "the worker folder's deploy/current.json points at $D — the version this cell boots" || fail "pointer is '$P', deployed $D"
 trap - EXIT; cleanup
-EXPECTED_PASSES=9
+# NOTHING SURVIVES THE SUITE. The gate probe leaked a running 4 GB cell on every
+# run until 2026-09-05; a deleted sandbox leaves the list within seconds.
+for i in $(seq 1 12); do LEFT=$(curl -s -m 30 "$API/v1/sandboxes?limit=100" "${H[@]}" | python3 -c 'import json,sys; xs=json.load(sys.stdin); print(sum(1 for x in xs if (x.get("name") or "")=="gate-probe" and x.get("state")!="archived"))' 2>/dev/null); [ "$LEFT" = "0" ] && break; sleep 2; done
+[ "$LEFT" = "0" ] && pass "no gate-probe cell survives the suite (the gate's own create is cleaned up)" || fail "$LEFT gate-probe cell(s) left running on dev — the gate probe leaked"
+EXPECTED_PASSES=10
 if [ "$FAIL" -eq 0 ] && [ "$PASS" -ne "$EXPECTED_PASSES" ]; then printf '  \033[31mINCOMPLETE\033[0m %s claims ran, expected %s\n' "$PASS" "$EXPECTED_PASSES"; exit 1; fi
 printf '\n  the worker in a real cell on dev: %s passed, %s failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]
