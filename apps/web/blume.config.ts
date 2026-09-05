@@ -103,6 +103,15 @@ export default defineConfig({
   // llms.txt and a second MCP endpoint on the same host. See decision D2.
   // 1.5.3 correction: ai.mcp is an McpConfig object, not a boolean shorthand
   // — { enabled: false } is the 1.5.3 equivalent of `mcp: false`.
+  // Source repo. Powers the header repo link (navigation.repo) and the
+  // per-page "Edit this page" target. `dir` is required because this is a
+  // monorepo: the Blume project root is apps/web, not the repo root.
+  github: {
+    owner: 'kortix-ai',
+    repo: 'suna',
+    dir: 'apps/web',
+  },
+
   ai: {
     llmsTxt: false,
     mcp: { enabled: false },
@@ -153,6 +162,8 @@ export default defineConfig({
   // meta.ts module — this file adds only the one thing meta.ts cannot
   // express: which ids sit under "Develop", and the external link.
   navigation: {
+    // GitHub link in the header, after the search.
+    repo: true,
     sidebar: {
       items: [
         ...rootPages.filter((id) => !developIds.has(id)).map(toSidebarItem),
