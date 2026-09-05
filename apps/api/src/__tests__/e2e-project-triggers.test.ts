@@ -1509,6 +1509,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     sessionRows.push({
       sessionId: 'sess-reuse',
       accountId: ACCOUNT_ID,
+      subproject: null,
       projectId: PROJECT_ID,
       branchName: 'main',
       baseRef: 'main',
