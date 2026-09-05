@@ -194,7 +194,7 @@ universal floor; `settle-credits.test.ts` pins the settlement contract.
 ### Reach for a leaf, not the module that happens to hold the helper (2026-08-30)
 
 **When:** you need one small function that currently lives inside a large module
-in `apps/api`. Import the module and you import its whole graph. `subproject-index.ts`
+in `apps/api`. Import the module and you import its whole graph. A craft-index module
 needed `githubLoaderOptions` — a ~40-line token-attaching fetch wrapper — and
 imported it from `marketplace/catalog.ts` (2,200 lines, full config/db graph).
 That one edge, reached from `projects/index.ts`, took the API suite from
@@ -215,7 +215,7 @@ two homes.
 failures, with the errors reading as broken mocks in files you never touched, is
 an import edge — not your logic. Bisect it by stubbing the new import inline and
 re-running; the before/after counts name the cause in one step.
-*Near-miss:* caught pre-merge while building the subproject install routes. Third
+*Near-miss:* caught pre-merge while building the marketplace install routes. Third
 instance of this class in the register, and the first where the fix was to
 relocate the helper rather than to defer the import.
 *Enforcer:* still none. The entry below already calls for a lint on `mock.module`
