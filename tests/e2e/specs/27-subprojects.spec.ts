@@ -186,6 +186,11 @@ test.describe('27 — Subprojects', () => {
         )
         .toBe(instructions);
 
+      // The sheet is modal: close it so the composer underneath is reachable,
+      // the same way a person would before typing.
+      await page.getByRole('button', { name: 'Close', exact: true }).click();
+      await expect(page.getByRole('dialog', { name: 'Marketing', exact: true })).toBeHidden();
+
       // ── 4. A send carries `subproject` in the create body ─────────────
       // Session CREATE cannot boot in the local profile (no sandbox provider),
       // so the assertion is the outgoing request — the page's own contract.
