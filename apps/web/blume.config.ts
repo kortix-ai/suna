@@ -86,8 +86,14 @@ export default defineConfig({
     // 1.5.3 correction: light/dark/alt live under `image`, not top-level
     // `logo` — see task-4-report.md for the config-key corrections log.
     image: {
+      // BOTH are symbol-only, the same 30x25 mark in black and white.
+      // Blume renders the logo image and then a <span> with the site title
+      // beside it, so the dark slot must NOT hold a full logomark: it used to
+      // point at kortix-logomark-white.svg (708x142), which already contains
+      // the wordmark, and dark mode printed "Kortix" twice while light was
+      // correct. Keep both slots symbol-only.
       light: '/kortix-symbol.svg',
-      dark: '/kortix-logomark-white.svg',
+      dark: '/kortix-symbol-white.svg',
       alt: 'Kortix',
     },
   },
