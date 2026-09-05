@@ -1,3 +1,4 @@
 node_modules/
 dist/
 auth.json
+test/__pycache__/

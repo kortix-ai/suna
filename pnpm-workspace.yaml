@@ -1,5 +1,11 @@
 packages:
   - 'apps/*'
+  # The JS pi agent ("pi in a cell") is a standalone bun/npm app deployed to
+  # Platinum cells by its own celldctl; it is not part of the pnpm build. Left in
+  # the workspace, `pnpm install --frozen-lockfile` refused every image build on
+  # this branch (ERR_PNPM_OUTDATED_LOCKFILE: lockfile not up to date with
+  # apps/pi-worker-js/package.json — deploy-preview run 33985735555).
+  - '!apps/pi-worker-js'
   - 'packages/*'
   - 'tests'
 
