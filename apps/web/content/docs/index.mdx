@@ -10,7 +10,7 @@ Each agent works inside your own git repo. A session runs an agent in an
 isolated sandbox, on its own branch. When the work is ready, the agent opens
 a change request. You review it and merge it to the default branch.
 
-```
+```text title="Kortix project structure"
 project (git repo + kortix.yaml)
    └─ session ──> isolated sandbox on branch "<uuid>"
                      └─ agent commits + pushes
