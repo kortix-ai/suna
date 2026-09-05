@@ -90,11 +90,14 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "$PT_PREVIEW_TOKEN" | npx --yes wrangler@4 secret put PT_PREVIEW_TOKEN
-          if [ -n "${ACCESS_TOKEN:-}" ]; then
+          if [ "$OPEN_ACCESS" = "true" ]; then
+            # The operator chose an open name: a bearer left on the Worker from
+            # an earlier gated deploy must not stay stored beside it.
+            npx --yes wrangler@4 secret delete ACCESS_TOKEN --force >/dev/null 2>&1 || true
+            echo "::warning::pi-js.kortix.com is OPEN (open_access=true) — the JS agent has no auth of its own"
+          elif [ -n "${ACCESS_TOKEN:-}" ]; then
             printf '%s' "$ACCESS_TOKEN" | npx --yes wrangler@4 secret put ACCESS_TOKEN
             echo "pi-js.kortix.com requires a bearer (PI_JS_ACCESS_TOKEN is set)"
-          else
-            echo "::warning::pi-js.kortix.com is OPEN (open_access=true, no PI_JS_ACCESS_TOKEN) — the JS agent has no auth of its own"
           fi
       - name: Read the name back
         run: |

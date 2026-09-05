@@ -54,8 +54,11 @@ describe('accessRefusal — the name fails closed', () => {
     expect(wrong?.status).toBe(401);
     expect(wrong?.headers.get('www-authenticate')).toContain('Bearer');
     expect(accessRefusal(req(), env)?.status).toBe(401);
-    // OPEN_ACCESS does not weaken a configured token.
-    expect(accessRefusal(req(), { ...env, OPEN_ACCESS: 'true' })?.status).toBe(401);
+    // OPEN_ACCESS=true is the operator's explicit deploy-time choice and wins
+    // over a bearer still stored — the owner opened the name and a stale
+    // ACCESS_TOKEN kept answering 401 (2026-09-05).
+    expect(accessRefusal(req(), { ...env, OPEN_ACCESS: 'true' })).toBeNull();
+    expect(accessRefusal(req(), { ...env, OPEN_ACCESS: 'yes' })?.status).toBe(401);
   });
 
   it('presentedAccess reads the bearer first, then x-kortix-access, trimmed', () => {

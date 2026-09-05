@@ -15,12 +15,13 @@
  *   1. The cell's port is NOT public on the Platinum edge. The edge wants the
  *      exposure token (`?t=` or `x-pt-preview-token`); this Worker injects it
  *      from the PT_PREVIEW_TOKEN secret, so the token never reaches a browser.
- *   2. The name FAILS CLOSED. With ACCESS_TOKEN set, every request must carry
+ *   2. The name FAILS CLOSED unless the deploy says otherwise. OPEN_ACCESS=true
+ *      (a plain var, visible in the deploy command) opens it — pi.kortix.com
+ *      parity, chosen by the operator; the workflow also deletes any stored
+ *      bearer. Otherwise ACCESS_TOKEN must be set and every request must carry
  *      `Authorization: Bearer <ACCESS_TOKEN>` or `x-kortix-access: <ACCESS_TOKEN>`
- *      (consumed here, never forwarded). With no ACCESS_TOKEN the Worker answers
- *      503 — unless the operator deployed with the plain var OPEN_ACCESS=true,
- *      which is pi.kortix.com parity stated out loud in the deploy, not a
- *      default a cleared secret can fall into (Strix review of #7125, CWE-306).
+ *      (consumed here, never forwarded); with neither the Worker answers 503,
+ *      not an open door a cleared secret can fall into (Strix on #7125, CWE-306).
  *
  * The upstream URL is built from the TARGET origin and then given the incoming
  * path and query — never by resolving the incoming path against the origin. A
@@ -78,8 +79,13 @@ export function presentedAccess(headers) {
 export function accessRefusal(request, env) {
   const required = (env.ACCESS_TOKEN || '').trim();
   const openAccess = (env.OPEN_ACCESS || '').trim() === 'true';
+  // OPEN_ACCESS=true is the operator's explicit, visible choice at deploy time
+  // (a plain var in the deploy command) and wins even over a bearer that is
+  // still stored: the owner opened the name on 2026-09-05 and the stored
+  // bearer kept answering 401. Deleting the secret is the workflow's job; the
+  // Worker must not keep a door shut that the deploy said to open.
+  if (openAccess) return null;
   if (!required) {
-    if (openAccess) return null;
     return Response.json(
       { error: 'pi-js.kortix.com is not configured: set the ACCESS_TOKEN secret, or deploy with OPEN_ACCESS=true to run it open' },
       { status: 503, headers: { 'retry-after': '60' } },
