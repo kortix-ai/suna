@@ -109,16 +109,32 @@ HOLD=$(cat /tmp/evict-hold.json)
 echo "== 4. what the watcher saw across it =="
 # The honest question, either answer being a real result: does the socket
 # survive the isolate being torn down and rebuilt?
-if echo "$HOLD" | grep -qE '"events":\[[^]]*turn'; then
-  pass "HIBERNATION HELD: the same socket received turn events after its cell was rebuilt"
+# PINNED TO WHAT THIS celld DOES. The outcome is a property of the runtime, so
+# the suite states which outcomes it accepts — CELLD_SOCKET_AFTER_EVICTION, a
+# |-separated set of orphaned | held | closed — and FAILS on any other. The
+# default is what pt-celld:0.3.0 MEASURES: intermittent between held and
+# orphaned (2026-09-05: pinning "orphaned" alone failed on its first run, the
+# socket had received turn events), never closed. Until 2026-09-05 every branch
+# below passed, so a celld that began closing sockets would have gone
+# unnoticed, and so would a probe that never connected at all.
+EXPECT_SOCK="${CELLD_SOCKET_AFTER_EVICTION:-orphaned|held}"
+accepts() { case "|$EXPECT_SOCK|" in *"|$1|"*) return 0 ;; *) return 1 ;; esac; }
+CLOSE_CODE=$(echo "$HOLD" | sed -n 's/.*"closeCode":\([0-9]*\).*/\1/p')
+if ! echo "$HOLD" | grep -q '"opened":true'; then
+  fail "the held socket never opened — nothing about the eviction was measured: $HOLD"
+elif echo "$HOLD" | grep -qE '"events":\[[^]]*turn'; then
+  if accepts held; then pass "HIBERNATION HELD: the same socket received turn events after its cell was rebuilt"
+  else fail "celld CHANGED: the pre-eviction socket received turn events (expected: $EXPECT_SOCK) — re-measure 4c and re-pin CELLD_SOCKET_AFTER_EVICTION"; fi
 elif echo "$HOLD" | grep -q '"closed":true'; then
-  pass "the socket closed on eviction (code $(echo "$HOLD" | sed -n 's/.*"closeCode":\([0-9]*\).*/\1/p')) — a client reconnects on close"
+  if accepts closed; then pass "the socket closed on eviction (code $CLOSE_CODE) — a client reconnects on close"
+  else fail "celld CHANGED: the pre-eviction socket was closed (code $CLOSE_CODE; expected: $EXPECT_SOCK) — re-measure 4c and re-pin CELLD_SOCKET_AFTER_EVICTION"; fi
 else
   # MEASURED on celld 0.3.0: the socket stays open and the rebuilt cell has no
   # handle to it (getWebSockets() goes 1 -> 0). That is worse than a close,
   # because nothing tells the client to reconnect. So the claim is not that the
   # socket survives — it does not — but that a client can FIND OUT.
-  pass "the socket is orphaned by eviction, not closed — celld 0.3.0 does not restore it"
+  if accepts orphaned; then pass "the socket is orphaned by eviction, not closed — celld 0.3.0 did not restore it this run (accepted: $EXPECT_SOCK)"
+  else fail "celld CHANGED: the pre-eviction socket is orphaned, neither served nor closed (expected: $EXPECT_SOCK) — re-pin CELLD_SOCKET_AFTER_EVICTION"; fi
   # CORRECTED, 2026-09-03. This was claimed as a finding — "celld delivers an
   # inbound message on a hibernated socket even though getWebSockets() does not
   # list it, so the socket is half-connected rather than orphaned" — on a single
