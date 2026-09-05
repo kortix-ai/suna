@@ -62,7 +62,9 @@ function dockerEnv() {
     // The one that cost an afternoon. See agent.config.json cell._node.
     "-e", `CELLD_NODE=${CFG.cell.node}`,
     // 80% of the container cap: shed before the cgroup kills us.
-    "-e", `CELLD_MAX_RSS_MB=${Math.floor((CFG.cell.memory_mb ?? 2048) * 0.8)}`,
+    // Overridable so a test can prove the cap SHEDS (rss-shed.sh): the platform
+    // template pins CELLD_MAX_RSS_MB=3072 for a 4 GB cell on the strength of it.
+    "-e", `CELLD_MAX_RSS_MB=${process.env.CELLD_MAX_RSS_MB ?? Math.floor((CFG.cell.memory_mb ?? 2048) * 0.8)}`,
     // Idle eviction is DISABLED by default in celld, so nothing ever hibernates
     // unless asked. A test that wants to prove a socket survives eviction has to
     // cause one.
