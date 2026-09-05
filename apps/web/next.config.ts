@@ -450,20 +450,18 @@ const nextConfig = (): NextConfig => ({
         destination: '/presentations/platform',
         permanent: false,
       },
-      // Canonical self-host doc lives at /docs/self-hosting (fumadocs derives
-      // the slug from content/docs/self-hosting.mdx). The CLI, README, and
-      // most people say "self-host" (no -ing) out loud and in links, which
-      // 404'd here before this redirect existed. Keep this even if the CLI
-      // copy changes — it's cheap insurance against the shorter form living
-      // on in bookmarks, chat history, and muscle memory.
+      // The canonical self-host doc is content/docs/host/index.mdx, served at
+      // /docs/host. These two aliases previously pointed at
+      // /docs/guides/self-hosting, a path that has never existed, so both
+      // 404'd. The CLI, README and external links still use the old spellings.
       {
         source: '/docs/self-hosting',
-        destination: '/docs/guides/self-hosting',
+        destination: '/docs/host',
         permanent: true,
       },
       {
         source: '/docs/self-host',
-        destination: '/docs/guides/self-hosting',
+        destination: '/docs/host',
         permanent: true,
       },
       // The help centre was a second support surface: it wore the app sidebar
@@ -567,6 +565,22 @@ const nextConfig = (): NextConfig => ({
         source: '/ingest/flags',
         destination: 'https://eu.i.posthog.com/flags',
       },
+      // Docs hot reload. When `blume dev` is running (pnpm dev sets this), proxy
+      // /docs to it instead of serving the static public/docs/ build. Env-gated
+      // exactly like the Supabase proxy above: unset means the rule is not emitted
+      // at all, so production and anyone not running `blume dev` are untouched.
+      ...(process.env.KORTIX_BLUME_DEV_TARGET
+        ? [
+            {
+              source: '/docs',
+              destination: `${process.env.KORTIX_BLUME_DEV_TARGET}/docs`,
+            },
+            {
+              source: '/docs/:path*',
+              destination: `${process.env.KORTIX_BLUME_DEV_TARGET}/docs/:path*`,
+            },
+          ]
+        : []),
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,
       // so map them explicitly. These are afterFiles rules (a flat array is), so an

@@ -141,11 +141,9 @@ describe('public SEO/AEO content coverage', () => {
 title: Sample
 ---
 
-import { Callout } from 'fumadocs-ui/components/callout';
-
-<Callout type="warn" title="Keep this warning">
-  Do not drop this meaningful content.
-</Callout>
+:::warning[Keep this warning]
+Do not drop this meaningful content.
+:::
 
 <Figure caption="A truthful diagram" aspect="16/9" />
 
