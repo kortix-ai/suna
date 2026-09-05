@@ -656,9 +656,17 @@ jobs:
           { [ "$cookie_status" = 200 ] || [ "$cookie_status" = 307 ] || [ "$cookie_status" = 308 ]; } || {
             echo "::error::staging ECS frontend shared-cookie status=$cookie_status"; exit 1;
           }
-          grep -E $'^(#HttpOnly_)?\\.kortix\\.com\t' "$cookie_jar" >/dev/null || {
-            echo "::error::staging ECS frontend did not set the parent-domain access cookie"; exit 1;
+          # The access cookie is HOST-ONLY since #7065: the old Domain=.kortix.com
+          # cookie reached every subdomain (staging, prod, api.kortix.com) no
+          # matter which environment authorized it. curl writes a host-only
+          # cookie under the exact issuing host, so assert that row and refuse a
+          # Domain-scoped one — a `.kortix.com` row here means #7065 regressed.
+          awk -F'\t' -v h="$ECS_WEB_HOST" '$1 == h || $1 == "#HttpOnly_" h { found = 1 } END { exit !found }' "$cookie_jar" || {
+            echo "::error::staging ECS frontend did not set a host-only access cookie for ${ECS_WEB_HOST}"; exit 1;
           }
+          if awk -F'\t' '$1 == ".kortix.com" || $1 == "#HttpOnly_.kortix.com" { found = 1 } END { exit !found }' "$cookie_jar"; then
+            echo "::error::staging ECS frontend set a Domain-scoped .kortix.com access cookie (#7065 made it host-only)"; exit 1;
+          fi
           ecs_health="$(curl -fsS --max-time 20 "$ecs/api/health")"
           [ "$(jq -r '.commit // empty' <<<"$ecs_health")" = "$EXPECTED_COMMIT" ] || {
             echo "::error::staging ECS frontend commit mismatch"; exit 1;
@@ -681,7 +689,7 @@ jobs:
           {
             echo "### Staging verified"
             echo "- API: https://${PUBLIC_API_HOST}/v1/health reports staging ${EXPECTED_VERSION}"
-            echo "- ECS web: https://${ECS_WEB_HOST} reports ${EXPECTED_COMMIT} and accepts the shared test cookie"
+            echo "- ECS web: https://${ECS_WEB_HOST} reports ${EXPECTED_COMMIT} and accepts its host-only test cookie"
             echo "- Vercel web: https://${WEB_HOST} serves staging runtime config"
             echo "- GitOps: API ALB via ECS Fargate"
           } >> "$GITHUB_STEP_SUMMARY"
