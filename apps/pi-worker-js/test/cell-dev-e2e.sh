@@ -33,16 +33,16 @@ api() { local t=60; case "${1:-}" in ""|*[!0-9]*) ;; *) t=$1; shift;; esac; curl
 mc() { docker run --rm --entrypoint sh quay.io/minio/mc -c "mc alias set d $EP $PT_S3_ACCESS_KEY $PT_S3_SECRET_KEY >/dev/null 2>&1; $1" 2>/dev/null; }
 
 echo "== 1. the gate and the template =="
-# The gate probe is a REAL create — WITH a worker, because Platinum refuses a
-# worker-less cell as malformed (400 worker_required, 2026-09-05): without one
-# the probe would prove "not 501" by being refused for a different reason.
-# When the runtime is enabled it boots a cell,
-# and until 2026-09-05 that cell was never deleted (one 4 GB 'gate-probe' left
-# running on dev per run). Its id joins the cleanup, and the last claim below
-# checks that nothing by that name survives the suite.
-G=$(curl -s -o /tmp/cell-dev-gate.json -w '%{http_code}' -X POST "$API/v1/sandboxes" "${H[@]}" -d '{"template":"pt-celld","runtime":"cell","worker":"gate-probe","name":"gate-probe","ram_mb":4096,"cpu":2}')
-GATE=$(python3 -c 'import json; print(json.load(open("/tmp/cell-dev-gate.json")).get("id",""))' 2>/dev/null)
-[ "$G" != "501" ] && pass "the cell runtime is enabled on dev (create is not 501)" || { fail "runtime 'cell' is gated off on dev (501)"; exit 1; }
+# NO SEPARATE GATE PROBE. pt-celld's template minimum is 4096 MB / 2 vCPU
+# (dev answers 400 below it), so a probe cell costs exactly as much as the real
+# cell — and until 2026-09-05 it lived until the EXIT cleanup, so the real cell
+# was placed with the probe still counted: on the one ready dev host
+# (31928 MB × 0.8 admit line = 25542 MB) with 18432 MB allocated to other
+# sandboxes, 18432 + 4096 (probe) + 512 (workspace) + 4096 (cell) = 27136
+# > 25542 → "no capacity" (sweeps 56, 58, 60, 61), while the same create alone
+# placed fine. The suite was refusing itself. The real cell create below IS the
+# gate: a 501 there says the runtime is off, and the failure prints the body.
+GATE=""
 TPL=$(api "$API/v1/templates" | python3 -c 'import json,sys; d=json.load(sys.stdin); l=d if isinstance(d,list) else d.get("templates",d.get("items",[])); print(next((t["id"] for t in l if t.get("name")=="pt-celld" and t.get("state","ready")=="ready"),""))')
 if [ -z "$TPL" ]; then
   TPL=$(python3 -c 'import json; s=json.load(open("../pt-celld.spec.json")); s.setdefault("name","pt-celld"); print(json.dumps(s))' | api -X POST "$API/v1/templates/from-spec" -d @- | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')
@@ -77,7 +77,7 @@ WF=$(api "$API/v1/sandboxes?worker=$WORKER" | python3 -c '
 import json,sys; d=json.load(sys.stdin); l=d if isinstance(d,list) else d.get("sandboxes",d.get("items",[]))
 ids=[s["id"] for s in l]; others=[s["id"] for s in l if s.get("worker")!=sys.argv[1]]
 print(("in" if sys.argv[2] in ids else "missing")+" "+("clean" if not others else "foreign:"+",".join(others))+" "+("gatein" if sys.argv[3] and sys.argv[3] in ids else "gateout")+" n="+str(len(ids)))' "$WORKER" "$CELL" "${GATE:-}")
-case "$WF" in "in clean gateout"*) pass "?worker=$WORKER contains this cell, only $WORKER cells, and not the gate probe's ($WF)" ;; *) fail "?worker= filter: $WF" ;; esac
+case "$WF" in "in clean gateout"*) pass "?worker=$WORKER contains this cell and only $WORKER cells ($WF)" ;; *) fail "?worker= filter: $WF" ;; esac
 
 echo "== 3. the cell's own writes land in ITS folder =="
 sleep 8
@@ -93,8 +93,8 @@ P=$(mc "mc cat d/$PT_S3_BUCKET/orgs/$ORG/workers/$WORKER/deploy/current.json" | 
 trap - EXIT; cleanup
 # NOTHING SURVIVES THE SUITE. The gate probe leaked a running 4 GB cell on every
 # run until 2026-09-05; a deleted sandbox leaves the list within seconds.
-for i in $(seq 1 12); do LEFT=$(curl -s -m 30 "$API/v1/sandboxes?limit=100" "${H[@]}" | python3 -c 'import json,sys; xs=json.load(sys.stdin); print(sum(1 for x in xs if (x.get("name") or "")=="gate-probe" and x.get("state")!="archived"))' 2>/dev/null); [ "$LEFT" = "0" ] && break; sleep 2; done
-[ "$LEFT" = "0" ] && pass "no gate-probe cell survives the suite (the gate's own create is cleaned up)" || fail "$LEFT gate-probe cell(s) left running on dev — the gate probe leaked"
-EXPECTED_PASSES=10
+for i in $(seq 1 12); do LEFT=$(curl -s -m 30 "$API/v1/sandboxes?limit=100" "${H[@]}" | python3 -c 'import json,sys; xs=json.load(sys.stdin); print(sum(1 for x in xs if (x.get("name") or "") in ("cell-dev-e2e","cell-dev-workspace") and x.get("state")!="archived"))' 2>/dev/null); [ "$LEFT" = "0" ] && break; sleep 2; done
+[ "$LEFT" = "0" ] && pass "no cell-dev sandbox survives the suite (its cell and workspace are cleaned up)" || fail "$LEFT cell-dev sandbox(es) left running on dev — the EXIT cleanup did not delete them"
+EXPECTED_PASSES=9   # was 10 with the separate gate-probe claim; this guard caught its removal ("INCOMPLETE 9 claims ran, expected 10", 2026-09-05)
 if [ "$FAIL" -eq 0 ] && [ "$PASS" -ne "$EXPECTED_PASSES" ]; then printf '  \033[31mINCOMPLETE\033[0m %s claims ran, expected %s\n' "$PASS" "$EXPECTED_PASSES"; exit 1; fi
 printf '\n  the worker in a real cell on dev: %s passed, %s failed\n' "$PASS" "$FAIL"; [ "$FAIL" -eq 0 ]
