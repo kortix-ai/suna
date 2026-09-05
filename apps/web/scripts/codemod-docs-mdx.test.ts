@@ -88,7 +88,7 @@ describe('convertCards', () => {
       'AlarmIcon', 'UsersIcon', 'ShareNetworkIcon', 'ScrollIcon', 'RocketIcon',
       'GitPullRequestIcon', 'FlagIcon', 'FileTextIcon', 'CpuIcon', 'CodeIcon',
       'CloudIcon', 'ClipboardTextIcon', 'BrowserIcon', 'BookOpenIcon', 'AtomIcon',
-    ]) {
+    ] as (keyof typeof PHOSPHOR_TO_LUCIDE)[]) {
       expect(PHOSPHOR_TO_LUCIDE[phosphor]).toBeTruthy();
     }
   });
