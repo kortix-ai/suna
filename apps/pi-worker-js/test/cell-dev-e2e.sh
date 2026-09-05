@@ -33,11 +33,14 @@ api() { local t=60; case "${1:-}" in ""|*[!0-9]*) ;; *) t=$1; shift;; esac; curl
 mc() { docker run --rm --entrypoint sh quay.io/minio/mc -c "mc alias set d $EP $PT_S3_ACCESS_KEY $PT_S3_SECRET_KEY >/dev/null 2>&1; $1" 2>/dev/null; }
 
 echo "== 1. the gate and the template =="
-# The gate probe is a REAL create: when the runtime is enabled it boots a cell,
+# The gate probe is a REAL create — WITH a worker, because Platinum refuses a
+# worker-less cell as malformed (400 worker_required, 2026-09-05): without one
+# the probe would prove "not 501" by being refused for a different reason.
+# When the runtime is enabled it boots a cell,
 # and until 2026-09-05 that cell was never deleted (one 4 GB 'gate-probe' left
 # running on dev per run). Its id joins the cleanup, and the last claim below
 # checks that nothing by that name survives the suite.
-G=$(curl -s -o /tmp/cell-dev-gate.json -w '%{http_code}' -X POST "$API/v1/sandboxes" "${H[@]}" -d '{"template":"pt-celld","runtime":"cell","name":"gate-probe","ram_mb":4096,"cpu":2}')
+G=$(curl -s -o /tmp/cell-dev-gate.json -w '%{http_code}' -X POST "$API/v1/sandboxes" "${H[@]}" -d '{"template":"pt-celld","runtime":"cell","worker":"gate-probe","name":"gate-probe","ram_mb":4096,"cpu":2}')
 GATE=$(python3 -c 'import json; print(json.load(open("/tmp/cell-dev-gate.json")).get("id",""))' 2>/dev/null)
 [ "$G" != "501" ] && pass "the cell runtime is enabled on dev (create is not 501)" || { fail "runtime 'cell' is gated off on dev (501)"; exit 1; }
 TPL=$(api "$API/v1/templates" | python3 -c 'import json,sys; d=json.load(sys.stdin); l=d if isinstance(d,list) else d.get("templates",d.get("items",[])); print(next((t["id"] for t in l if t.get("name")=="pt-celld" and t.get("state","ready")=="ready"),""))')
