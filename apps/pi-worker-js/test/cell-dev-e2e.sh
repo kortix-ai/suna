@@ -69,8 +69,15 @@ R=$(api 300 -X POST "$API/v1/sandboxes?wait_for_state=running&wait_timeout_ms=24
 [ -n "$CELL" ] && pass "cell created with worker=$WORKER: $CELL" || { fail "cell create: ${R:0:200}"; exit 1; }
 ROW=$(api "$API/v1/sandboxes/$CELL"); ORG=$(echo "$ROW" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("orgId",""))'); RW=$(echo "$ROW" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("worker"))')
 [ "$RW" = "$WORKER" ] && pass "the sandbox row carries worker=$WORKER" || fail "the row's worker is '$RW'"
-[ "$(api "$API/v1/sandboxes?worker=$WORKER" | python3 -c 'import json,sys; d=json.load(sys.stdin); l=d if isinstance(d,list) else d.get("sandboxes",d.get("items",[])); print(",".join(sorted(s["id"] for s in l)))')" = "$CELL" ] \
-  && pass "?worker=$WORKER lists exactly this cell" || fail "?worker= filter did not return exactly the cell"
+# The filter must CONTAIN this cell, return only cells of THIS worker, and not
+# the gate probe (another worker in the same org). Not "exactly one": any other
+# pi-agent cell in the org — a parallel probe, a colleague's run — is a correct
+# answer, and on 2026-09-05 12:48 one made this claim fail for no bug at all.
+WF=$(api "$API/v1/sandboxes?worker=$WORKER" | python3 -c '
+import json,sys; d=json.load(sys.stdin); l=d if isinstance(d,list) else d.get("sandboxes",d.get("items",[]))
+ids=[s["id"] for s in l]; others=[s["id"] for s in l if s.get("worker")!=sys.argv[1]]
+print(("in" if sys.argv[2] in ids else "missing")+" "+("clean" if not others else "foreign:"+",".join(others))+" "+("gatein" if sys.argv[3] and sys.argv[3] in ids else "gateout")+" n="+str(len(ids)))' "$WORKER" "$CELL" "${GATE:-}")
+case "$WF" in "in clean gateout"*) pass "?worker=$WORKER contains this cell, only $WORKER cells, and not the gate probe's ($WF)" ;; *) fail "?worker= filter: $WF" ;; esac
 
 echo "== 3. the cell's own writes land in ITS folder =="
 sleep 8
