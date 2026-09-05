@@ -179,9 +179,14 @@ export default defineConfig({
     tabs: [
       { label: 'Docs', path: '/' },
       {
+        // The URL sits in `path`, not `href`. Blume validates every tab whose
+        // path starts with "/" against the page tree and warns when nothing
+        // matches — `/api-reference` is not a page here, so it warned on every
+        // build. nav-diagnostics skips non-"/" paths outright, which is the
+        // supported way to point a tab off-site. `href` would be redundant:
+        // Header.astro renders `tab.href ?? tab.path`.
         label: 'API reference',
-        path: '/api-reference',
-        href: 'https://api.kortix.com/v1/docs',
+        path: 'https://api.kortix.com/v1/docs',
       },
     ],
     sidebar: {
