@@ -12,7 +12,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=84
+// EXPECTED_PASSES=86
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -181,6 +181,29 @@ check("the credential is empty under the pin",
 check("a pinned run still cannot leak a secret",
   Object.entries(vars()).filter(([k, v]) => SECRETISH.test(k) && !ALLOWED.has(k) && v).length === 0);
 delete process.env.PT_AGENT_SCRIPTED;
+
+// ── the sync is a scratch write: the checkout stays clean ───────────────────
+// A child celldctl syncs the vars and exits. The file currently holds the
+// pinned "" from the block above and the child resolves the configured
+// provider, so it WRITES a different file while it runs — and the bytes it
+// found must be the bytes it leaves. Before this, every `up`/`deploy` left the
+// checkout dirty and the owner reverted wrangler.json by hand after each sweep.
+{
+  const { execFileSync } = await import("node:child_process");
+  const before = readFileSync(WRANGLER, "utf8");
+  const childEnv = { ...process.env }; delete childEnv.PT_AGENT_SCRIPTED;
+  const ctlHref = new URL("../celldctl.mjs", import.meta.url).href;
+  const code = `import { syncWorkerVars } from ${JSON.stringify(ctlHref)};
+import { readFileSync } from "node:fs";
+const s = syncWorkerVars();
+console.log(JSON.stringify({ s, provider: JSON.parse(readFileSync(${JSON.stringify(WRANGLER)}, "utf8")).vars.MODEL_PROVIDER }));`;
+  const out = execFileSync(process.execPath, ["--input-type=module", "-e", code], { cwd: `${HERE}..`, env: childEnv, encoding: "utf8" });
+  const mid = JSON.parse(out.trim().split("\n").pop());
+  check("a child celldctl wrote a DIFFERENT config while it ran (so the next claim can fail)",
+    mid.provider !== JSON.parse(before).vars.MODEL_PROVIDER, JSON.stringify(mid));
+  check("…and put the committed wrangler.json back byte-for-byte at exit — a sweep leaves the checkout clean",
+    readFileSync(WRANGLER, "utf8") === before, "wrangler.json differs after the child exited");
+}
 
 // ── the celld invocation ────────────────────────────────────────────────────
 const args = celldArgs().join(" ");

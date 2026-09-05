@@ -120,9 +120,22 @@ function requireLocal() {
 // The model settings live in agent.config.json, but celld reads wrangler.json.
 // Syncing them here means there is still exactly ONE place to edit, and no way
 // for the two files to disagree about which model a cell will call.
+// The committed wrangler.json is put back when the process exits. celld and
+// the bundler read the synced file WHILE this process runs (deploy is
+// synchronous), so the sync can be a scratch write: before this, every
+// `celldctl up` / `deploy` left the checkout dirty with the resolved model
+// vars — MODEL_PROVIDER flipped between "" and the configured provider
+// depending on PT_AGENT_SCRIPTED — and the owner had to revert it by hand
+// after each sweep (2026-09-05). celldctl-logic claims the restore.
+let committedWorkerConfig = null;
 function syncWorkerVars() {
   const wpath = new URL("./wrangler.json", import.meta.url);
-  const w = JSON.parse(readFileSync(wpath, "utf8"));
+  const original = readFileSync(wpath, "utf8");
+  if (committedWorkerConfig === null) {
+    committedWorkerConfig = original;
+    process.on("exit", () => { try { writeFileSync(wpath, committedWorkerConfig); } catch { /* nothing left to restore */ } });
+  }
+  const w = JSON.parse(original);
   const m = CFG.model ?? {};
   w.vars = { ...w.vars };
   // Belt and braces: anything secret that ever lands here would be uploaded.
