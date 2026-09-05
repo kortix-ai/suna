@@ -29,6 +29,16 @@
       "op": "env",
       "key": "CELLD_NOFILE",
       "value": "8192"
+    },
+    {
+      "op": "env",
+      "key": "CELLD_IDLE_EVICT_S",
+      "value": "300"
+    },
+    {
+      "op": "env",
+      "key": "CELLD_MAX_RSS_MB",
+      "value": "3072"
     }
   ],
   "entrypoint": "/usr/local/bin/celld-boot",
