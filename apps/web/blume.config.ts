@@ -195,18 +195,28 @@ export default defineConfig({
   navigation: {
     // GitHub link in the header, after the search.
     repo: true,
+    // Header tabs render immediately after the logo, before the spacer that
+    // pushes search and the repo link right (Header.astro) — so this is the
+    // extreme-left cluster. `path` is what scopes the sidebar and marks the
+    // active tab; `href` overrides where a tab actually sends the reader, which
+    // is how a tab can point off-site.
+    tabs: [
+      { label: 'Docs', path: '/' },
+      {
+        label: 'API reference',
+        path: '/api-reference',
+        href: 'https://api.kortix.com/v1/docs',
+      },
+    ],
     sidebar: {
       items: [
         ...rootPages.filter((id) => !developIds.has(id)).map(toSidebarItem),
         {
           label: 'Develop',
-          items: [
-            ...rootPages.filter((id) => developIds.has(id)).map(toSidebarItem),
-            {
-              label: 'API reference',
-              href: 'https://api.kortix.com/v1/docs',
-            },
-          ],
+          // The API reference used to sit here as a sidebar link. It is a
+          // header tab now, so listing it twice would be two routes to the
+          // same off-site page from one screen.
+          items: rootPages.filter((id) => developIds.has(id)).map(toSidebarItem),
         },
       ],
     },
