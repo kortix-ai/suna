@@ -1,0 +1,91 @@
+# Point pi-js.kortix.com at a Platinum cell.
+#
+# The JS pi agent (apps/pi-worker-js) runs as a Platinum Worker cell on Platinum
+# DEV; infra/cloudflare/workers/pi-js-router is the Cloudflare Worker that gives
+# it the stable name. Run this once to create the name, and again whenever the
+# cell is recreated (its origin is derived from the sandbox id — stop/start keeps
+# it, delete + recreate changes it).
+#
+# Inputs: the cell's exposure origin, e.g.
+#   https://8080-01m1s178mtjdff5gst7jqvc735.eu-west.sbx-dev.platinum.dev
+# Secrets (repo): CLOUDFLARE_APPS_EDGE_API_TOKEN (same as pi-router),
+#   PI_JS_PREVIEW_TOKEN (the cell's exposure token — the Worker sends it to the
+#   Platinum edge as x-pt-preview-token, so the port stays private),
+#   PI_JS_ACCESS_TOKEN (optional — when set, the public name requires it as a
+#   bearer; when absent the name is open, as pi.kortix.com is).
+#
+# Deliberately gated on the target serving /health: re-pointing the name at a
+# dead cell is how pi.kortix.com went dark on 2026-08-29 (see deploy-preview.yml).
+name: deploy-pi-js-router
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_origin:
+        description: "the pi-js cell's exposure origin (https://8080-<cell>.eu-west.sbx-dev.platinum.dev)"
+        required: true
+        type: string
+
+concurrency:
+  group: pi-js-router
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_APPS_EDGE_API_TOKEN }}
+      TARGET_ORIGIN: ${{ inputs.target_origin }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: The target must be a Platinum DEV cell origin and must answer /health
+        env:
+          PT_PREVIEW_TOKEN: ${{ secrets.PI_JS_PREVIEW_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "$TARGET_ORIGIN" in
+            https://8080-*.sbx-dev.platinum.dev|https://8080-*.sbx-dev.platinum.dev/) ;;
+            *) echo "::error::target_origin must look like https://8080-<cell>[.<region>].sbx-dev.platinum.dev — got '$TARGET_ORIGIN'"; exit 1 ;;
+          esac
+          [ -n "${PT_PREVIEW_TOKEN:-}" ] || { echo "::error::PI_JS_PREVIEW_TOKEN is not set — the cell's port is private and the Worker cannot reach it without the token"; exit 1; }
+          ok=
+          for _ in $(seq 1 12); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -H "x-pt-preview-token: $PT_PREVIEW_TOKEN" "${TARGET_ORIGIN%/}/health" || true)"
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            echo "health → $code (a stopped cell cold-boots in ~4 s; waiting)"
+            sleep 5
+          done
+          [ -n "$ok" ] || { echo "::error::${TARGET_ORIGIN} does not answer /health with the token — leaving pi-js.kortix.com on its previous target"; exit 1; }
+      - name: Publish the Worker with the new target
+        working-directory: infra/cloudflare/workers/pi-js-router
+        run: npx --yes wrangler@4 deploy --var "TARGET_ORIGIN:${TARGET_ORIGIN%/}"
+      - name: Store the Worker's secrets
+        working-directory: infra/cloudflare/workers/pi-js-router
+        env:
+          PT_PREVIEW_TOKEN: ${{ secrets.PI_JS_PREVIEW_TOKEN }}
+          ACCESS_TOKEN: ${{ secrets.PI_JS_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PT_PREVIEW_TOKEN" | npx --yes wrangler@4 secret put PT_PREVIEW_TOKEN
+          if [ -n "${ACCESS_TOKEN:-}" ]; then
+            printf '%s' "$ACCESS_TOKEN" | npx --yes wrangler@4 secret put ACCESS_TOKEN
+            echo "pi-js.kortix.com requires a bearer (PI_JS_ACCESS_TOKEN is set)"
+          else
+            echo "::notice::PI_JS_ACCESS_TOKEN is not set — pi-js.kortix.com is OPEN (pi.kortix.com parity); the JS agent has no auth of its own"
+          fi
+      - name: Read the name back
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 12); do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://pi-js.kortix.com/health || true)"
+            case "$code" in
+              200) echo "pi-js.kortix.com → 200 (open)"; exit 0 ;;
+              401) echo "pi-js.kortix.com → 401 (gated by PI_JS_ACCESS_TOKEN)"; exit 0 ;;
+            esac
+            echo "pi-js.kortix.com → $code (custom domain / cert may still be provisioning)"; sleep 10
+          done
+          echo "::warning::pi-js.kortix.com did not answer 200/401 within 2 minutes — Cloudflare may still be issuing the certificate; check again shortly"
