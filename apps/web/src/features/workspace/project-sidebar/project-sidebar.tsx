@@ -14,6 +14,7 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { SubprojectsSidebarGroup } from '@/features/subprojects/subprojects-sidebar-group';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { ProjectAppsNavItem } from '@/features/workspace/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/workspace/project-sidebar/footer/project-change-requests-nav';
@@ -226,8 +227,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             </SidebarMenu>
           </SidebarGroup>
 
+          {/* Between the nav group and the sessions: a subproject is a
+              container FOR sessions, so it sits directly above the list it
+              partitions. It renders nothing at all for a member with no
+              subprojects and no `project.customize.write`. */}
+          <SubprojectsSidebarGroup projectId={projectId} />
+
           <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
-            <ProjectSessionList projectId={projectId} />
+            <ProjectSessionList projectId={projectId} unfiledOnly />
           </SidebarGroup>
 
           <SidebarGroup className="mt-auto">

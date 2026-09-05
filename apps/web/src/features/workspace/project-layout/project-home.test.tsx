@@ -48,3 +48,26 @@ describe('ProjectHome access-requests bell', () => {
     expect(query).toContain('enabled: canManageMembers');
   });
 });
+
+describe('ProjectHome subproject picker', () => {
+  // The composer, not the page, decides where a session starts: the picker
+  // sits in the tray under the card (the tray slot), a subproject page
+  // preselects itself, and the send carries the pick plus that subproject's
+  // own default agent — `use-project-home-send.ts` reads both from options.
+  test('mounts the picker in the tray under the card and sends its choice', () => {
+    expect(source).toContain('traySlot={');
+    expect(source).toContain('<SubprojectSelector');
+    const send = code.slice(
+      code.indexOf('const handleSend = useCallback('),
+      code.indexOf('const pendingPrefill'),
+    );
+    expect(send).toContain('subproject: activeSubproject');
+    expect(send).toContain('subproject_agent: activeSubprojectAgent');
+  });
+
+  test('the page-level subproject is the default, and a pick is scoped to that page', () => {
+    expect(code).toContain(
+      'subprojectPick?.page === pageSubproject ? subprojectPick.slug : pageSubproject',
+    );
+  });
+});

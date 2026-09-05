@@ -209,6 +209,7 @@ await p.llmCatalog();
 | --- | --- |
 | `get` · `detail` · `update` · `archive` | read · full detail · update · archive |
 | `llmCatalog` · `modelPicker` · `sandboxHealth` | model and sandbox-build reads |
+| `subprojects` | named containers inside the project — see `p.subprojects` below |
 | `onboardingComplete` | mark project onboarding done |
 | `validateManifest(raw)` | validate a `kortix.yaml` (or legacy `kortix.toml`) manifest server-side |
 | `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
@@ -329,6 +330,36 @@ stay encrypted and resolve per request.
 | --- | --- |
 | `list()` · `set(policies)` | the project's policies · replace the set |
 
+#### `p.subprojects` — named containers inside a project
+
+A subproject groups sessions, gives the agent standing instructions and reference files, owns scheduled work, and is granted to members or groups like an agent. The repo manifest (`kortix.yaml` → `subprojects.<slug>`) is the source of truth, so every write below commits to the repo.
+
+| method | what |
+| --- | --- |
+| `list()` | `{ subprojects, errors }` — the ones the caller can access, sorted by slug |
+| `get(slug)` | one subproject (`404` when undeclared or inaccessible) |
+| `create(input)` | declare one — commits `kortix.yaml` |
+| `update(slug, input)` | partial merge (`null` clears a field; the slug is immutable) |
+| `remove(slug)` | delete the block and strip `subproject:` from its triggers |
+| `addContext(slug, { path, content })` | commit a text file and append it to `context` |
+| `removeContext(slug, path)` | drop the `context` entry (the repo file stays) |
+
+`create(input)` takes `{ name, slug?, description?, instructions?, context?, agent?, sessions? }`. `name` is required; `slug` defaults to `slugify(name)`. `instructions` is inline markdown. `context` entries are repo-relative paths (a file, or a `dir/`). `agent` is a default, not a binding — granting a subproject does not grant its agent. `sessions` is `'private'` (default) or `'shared'`; `'shared'` makes every session in the subproject readable by everyone granted it, with lifecycle rights unchanged.
+
+Sessions carry the slug at create time and never move between subprojects:
+
+```ts
+await p.sessions.create({ subproject: "marketing" });
+await p.sessions.list({ subproject: "marketing" });
+await p.sessions.list({ subproject: "" });   // the sessions with NO subproject
+```
+
+A subproject is a closed object: a member with no grant row sees none, and `sessions.create({ subproject })` returns `403 subproject_not_accessible`. Grant one through the generic resource-grant surface:
+
+```ts
+await p.access.resourceGrants.create({ resourceType: "subproject", resourceId: "marketing", principalType: "member", principalId: userId });
+```
+
 #### `p.triggers` — cron and webhook automations
 
 A trigger starts an agent action on a schedule or an inbound webhook. See
@@ -420,7 +451,9 @@ The session handle is the heart of the runtime — see
 `create(input)` accepts `connector_bindings` keyed by connector-connection slug.
 Each value names a `connection_id`. It also accepts `secrets` for
 backend-origin secret narrowing and `require_connectors` for mandatory
-connectors.
+connectors. `subproject` joins the session to a declared subproject at create
+time (`400` when undeclared, `403 subproject_not_accessible` when the caller
+holds no grant) — see `p.subprojects` above.
 
 #### `p.approvals` — the connector approval inbox
 

@@ -24,6 +24,7 @@ function row(
     sandboxUrl: null,
     opencodeSessionId: null,
     agentName: 'default',
+    subproject: null,
     status: 'running',
     error: null,
     createdBy: VIEWER_ID,
@@ -429,5 +430,135 @@ describe('runtime status map tolerates a superset', () => {
 
     expect(selected.items).toHaveLength(1);
     expect(selected.items[0]!.runtimeStatus).toBeNull();
+  });
+});
+
+/**
+ * Subprojects are IAM objects, closed by default. A session inside one is not
+ * "hidden but listed" — it is not a row at all for a viewer without the grant,
+ * in BOTH scopes, including for a project manager who was scoped out. The
+ * opposite direction is `sessions: shared`, where the subproject grant IS the
+ * read right for every session in it. See lib/subproject-access.ts.
+ */
+describe('selectSessionRowsForViewer — subprojects', () => {
+  const base = {
+    scope: 'visible' as const,
+    canManageProject: false,
+    subject,
+    grantsBySession: new Map(),
+    callerSessionId: null,
+    boundCredentialSessionId: null,
+    runtimeStatusBySession: new Map(),
+  };
+
+  const plain = row('plain');
+  const mine = row('mine-in-marketing', { subproject: 'marketing' });
+  const theirs = row('theirs-in-marketing', { createdBy: OTHER_ID, subproject: 'marketing' });
+  const research = row('in-research', { subproject: 'research' });
+
+  test('a row in an ungranted subproject is dropped, plain rows survive', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSubprojects: new Set(['marketing']),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain', 'mine-in-marketing']);
+  });
+
+  test('the drop applies to the manager `project` scope too', () => {
+    // Both rows are project-visible, so the ONLY thing separating them is the
+    // subproject grant — a manager scoped out of `research` loses that row.
+    const openMarketing = row('open-marketing', {
+      createdBy: OTHER_ID,
+      visibility: 'project',
+      subproject: 'marketing',
+    });
+    const openResearch = row('open-research', {
+      createdBy: OTHER_ID,
+      visibility: 'project',
+      subproject: 'research',
+    });
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      scope: 'project',
+      canManageProject: true,
+      rows: [plain, openMarketing, openResearch],
+      accessibleSubprojects: new Set(['marketing']),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'plain',
+      'open-marketing',
+    ]);
+  });
+
+  test('omitting the accessible set drops every subproject row — fail closed', () => {
+    const selected = selectSessionRowsForViewer({ ...base, rows: [plain, mine, research] });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain']);
+  });
+
+  test('`sessions: private` keeps another owner’s session unreadable', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [theirs],
+      accessibleSubprojects: new Set(['marketing']),
+    });
+    // Listed as a row for the grantee, but not accessible — the ordinary
+    // per-session model is untouched, so the `visible` scope filters it out.
+    expect(selected.items).toEqual([]);
+  });
+
+  test('`sessions: shared` opens every session in the subproject to a grantee', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [theirs],
+      accessibleSubprojects: new Set(['marketing']),
+      sharedSubprojects: new Set(['marketing']),
+    });
+    expect(selected.items.map((item) => [item.row.sessionId, item.canAccess])).toEqual([
+      ['theirs-in-marketing', true],
+    ]);
+  });
+
+  test('`sessions: shared` never widens a subproject the viewer was not granted', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [theirs],
+      accessibleSubprojects: new Set(),
+      sharedSubprojects: new Set(['marketing']),
+    });
+    expect(selected.items).toEqual([]);
+  });
+
+  test('?subproject=<slug> narrows to one subproject', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSubprojects: new Set(['marketing', 'research']),
+      subprojectFilter: 'research',
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['in-research']);
+  });
+
+  test('?subproject= (empty) narrows to the sessions in none', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSubprojects: new Set(['marketing', 'research']),
+      subprojectFilter: '',
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual(['plain']);
+  });
+
+  test('no filter parameter lists every accessible row', () => {
+    const selected = selectSessionRowsForViewer({
+      ...base,
+      rows: [plain, mine, research],
+      accessibleSubprojects: new Set(['marketing', 'research']),
+    });
+    expect(selected.items.map((item) => item.row.sessionId)).toEqual([
+      'plain',
+      'mine-in-marketing',
+      'in-research',
+    ]);
   });
 });

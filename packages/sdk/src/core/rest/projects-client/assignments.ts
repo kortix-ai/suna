@@ -24,7 +24,7 @@ export type AssignmentPrincipalType = 'user' | 'group' | 'service_account' | 'pe
 export type AssignmentScopeType = 'account' | 'project';
 
 /** An assignment may narrow further to a single object inside its scope. */
-export type AssignmentObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger';
+export type AssignmentObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'subproject';
 
 /** Where the row came from. `manual` is a human write; `scim`/`sso` are
  *  directory sync; `invite` is a bootstrap grant; `system` is seeded. */

@@ -54,6 +54,9 @@ export interface ProjectTrigger {
   name: string;
   type: ProjectTriggerType;
   agent: string;
+  /** The `subprojects.<slug>` this trigger belongs to, or null. Sessions it
+   *  fires are created inside that subproject. Optional for older APIs. */
+  subproject?: string | null;
   /** Wire-form model (`provider/model`) pinned to this trigger's runs, or
    *  null to resolve the default chain (agent → project → account →
    *  platform) at fire time. */
@@ -138,6 +141,8 @@ export interface CreateProjectTriggerInput {
   slug?: string;
   type: ProjectTriggerType;
   prompt_template: string;
+  /** Declared `subprojects.<slug>` the fired sessions land in. */
+  subproject?: string | null;
   /** Defaults to 'default'. */
   agent?: string;
   /** Wire-form model (`provider/model`). Omit or pass null to resolve the
@@ -187,6 +192,8 @@ export interface UpdateProjectTriggerInput {
   name?: string;
   prompt_template?: string;
   agent?: string;
+  /** null clears the subproject. */
+  subproject?: string | null;
   /** Wire-form model (`provider/model`). null resets to the default chain. */
   model?: string | null;
   enabled?: boolean;

@@ -231,12 +231,12 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions ls` | All sessions on the project. `--json` for machine-readable output. |
+| `kortix sessions ls [--subproject <slug>]` | All sessions on the project. `--subproject <slug>` narrows to one subproject; `--subproject ""` narrows to sessions with none. `--json` for machine-readable output. |
 | `kortix sessions status [--all] [--json]` | **Mission control** — every session + what each agent is doing *right now* (live: current tool / thinking / idle + last activity). Built for when many run in parallel. Aliases: `overview`, `ps`. |
 | `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
 | `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
 | `kortix sessions chat [<id>]` | Talk to a session's agent. `--prompt "<text>"` = one-shot (prints the reply and exits); add `--json` to get that reply as JSON (a synchronous subagent call); no flag = REPL. No id → picks/asks which running session. `--new` starts a fresh one. |
-| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. `--with-file <local path>` (repeatable) uploads each file to `/workspace/incoming/<name>` **before** the prompt is delivered, and appends a manifest of the paths to the prompt. |
+| `kortix sessions new [--prompt "<text>"] [--subproject <slug>] [--wait] [--json]` | Start a new session. `--subproject <slug>` groups it under a declared subproject (default: inherits `$KORTIX_SUBPROJECT` when running inside one — pass `--subproject ""` to opt OUT). `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. `--with-file <local path>` (repeatable) uploads each file to `/workspace/incoming/<name>` **before** the prompt is delivered, and appends a manifest of the paths to the prompt. |
 | `kortix sessions wait-for <id> [--timeout <s>]` | Block until the session's agent finishes its current work — never poll with sleeps. Exit `0` = done, `3` = blocked on a permission/question ask (answer via `sessions pending`), `124` = still working at the timeout (default 300s). Alias: `wait`. |
 | `kortix sessions cp <src> <dst> [-r]` | Copy files between your machine/sandbox and a session's sandbox, or directly between two sessions' sandboxes. Refs are scp-style: `<session-id>:<path>` is remote, plain is local; paths resolve under `/workspace` unless absolute. Overwrites the exact destination path; `-r` for directories. Wakes stopped sandboxes on demand. |
 | `kortix sessions restart <id>` | Re-provision a session in place. |
@@ -307,9 +307,65 @@ the same state.
 | --- | --- |
 | `kortix triggers ls` | List triggers + runtime state (`last_fired_at`). |
 | `kortix triggers info <slug>` | Show one trigger in full. |
+| `kortix triggers add <slug> --type cron\|webhook\|monitor --prompt "<text>" [--subproject <slug>] [--apply] […]` | Append a `[[triggers]]` block. `--apply` commits to the cloud project now instead of writing locally. |
+| `kortix triggers set <slug> [--subproject <slug>] […]` | Change a LIVE trigger. Only the flags you pass are written; `--subproject ""` clears it. Always applies now. |
 | `kortix triggers fire <slug>` | Manually fire a trigger now. |
 | `kortix triggers enable <slug>` | Set `enabled = true`. |
 | `kortix triggers disable <slug>` | Set `enabled = false`. |
+
+`--subproject <slug>` (on `add`/`set`) scopes the fired session to a declared
+subproject — must name a key in `subprojects:`; see **Subprojects** below.
+
+### Subprojects
+
+A subproject groups sessions under a named effort, with its own standing
+instructions, reference files, default agent, and scheduled work. The
+manifest (`kortix.yaml` `subprojects.<slug>`) is the source of truth — every
+write below commits to it. Real `kortix subprojects --help` output:
+
+```
+Usage: kortix subprojects <subcommand> [options]
+
+Subcommands:
+  ls [--json]                     List subprojects you can see.
+  show <slug> [--json]            Show one subproject in full.
+  create <name> [options]         Declare a new subproject.
+  update <slug> [options]         Change fields on an existing subproject.
+  rm <slug> [--yes]               Delete a subproject. Sessions keep their
+                                  history but lose the grouping; scheduled
+                                  triggers naming it are un-scoped, not deleted.
+  context add <slug> <file> [--as name]
+                                  Upload a local file as subproject context.
+  context rm <slug> <path>        Drop one context entry (never deletes the repo file).
+  grant <slug> (--member <id|email> | --group <id>) [--expires YYYY-MM-DD]
+                                  Let a member or group use this subproject.
+  revoke <slug> (--member <id|email> | --group <id>)
+                                  Remove that grant.
+
+Create/update options:
+  --slug <s>            Explicit slug (create only; defaults to slugify(name)).
+  --name <text>          Display name (update only — create <name> is positional).
+  --description <text>
+  --agent <name>         Default agent for sessions started in it.
+  --instructions-file <f|->
+                         Inline standing instructions from a file, or stdin (-).
+  --context <path>       Repo-relative context path. Repeatable. On update
+                         this REPLACES the whole context[] list.
+  --sessions private|shared
+                         private (default): a session is visible to its
+                         creator only. shared: every session in it is visible
+                         to everyone granted the subproject.
+
+On update, an empty value (--description=, --agent=, --instructions-file=)
+clears that field. name cannot be cleared.
+
+Create/update/rm/grant/revoke need project.customize.write.
+```
+
+`kortix subprojects create "<name>" --json` prints the created object
+(capture `.slug`). `grant`/`revoke` are sugar over the generic
+`POST|DELETE /projects/:id/resource-grants {resource_type:'subproject',...}`
+surface — the same one that grants agents.
 
 ### Channels (Slack)
 

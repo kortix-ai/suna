@@ -163,6 +163,7 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+import { extractSubprojects } from '../subprojects';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 import {
   abandonSandboxTurn,
@@ -197,7 +198,29 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  'subproject',
 ] as const;
+
+/**
+ * A trigger's `subproject` must name a DECLARED subproject in the same
+ * manifest, or `validateTriggerSubprojectRefsV2` rejects the whole file on the
+ * next `kortix validate` / CR-merge gate. Checked against the manifest already
+ * in hand inside the mutation, so no extra read. Returns the 400 to return, or
+ * null when there is nothing to complain about.
+ */
+function undeclaredSubproject(
+  manifest: ParsedManifest,
+  slug: string | null,
+): { ok: false; error: string; status: number; code: string } | null {
+  if (!slug) return null;
+  if (extractSubprojects(manifest).specs.some((s) => s.slug === slug)) return null;
+  return {
+    ok: false,
+    error: `Subproject "${slug}" is not declared in this project's manifest`,
+    status: 400,
+    code: 'SUBPROJECT_NOT_DECLARED',
+  };
+}
 
 interface SlackAuthTest {
   ok: boolean;
@@ -1266,6 +1289,8 @@ projectsApp.openapi(
             status: 409,
           };
         }
+        const undeclared = undeclaredSubproject(manifest, draft.subproject);
+        if (undeclared) return undeclared;
         const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
         manifest.raw = next.raw;
         committedManifest = manifest;
@@ -1273,7 +1298,10 @@ projectsApp.openapi(
       },
     );
     if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 409 | 502);
+      return c.json(
+        { error: result.error, ...(result.code ? { code: result.code } : {}) },
+        result.status as 400 | 409 | 502,
+      );
     }
     if (!committedManifest) throw new Error('trigger create completed without a manifest');
     await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
@@ -1432,6 +1460,9 @@ projectsApp.openapi(
           }
         }
         effectivePinnedSessionId = draft.pinnedSessionId;
+
+        const undeclared = undeclaredSubproject(manifest, draft.subproject);
+        if (undeclared) return undeclared;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {

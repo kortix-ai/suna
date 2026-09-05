@@ -229,9 +229,19 @@ export const qk = {
      * applies to the `'kx'` root (see the top doc comment): make the
      * collision unrepresentable, don't rely on another package's validation
      * staying strict.
+     *
+     * `subproject` is a third, OPTIONAL segment. `listProjectSessions(id,
+     * { subproject })` is a different server request, not a client-side filter
+     * of the unfiltered response, so it needs its own slot for the same reason
+     * `scope` does. It is appended only when passed, which keeps every key
+     * written before subprojects existed byte-identical — no cache entry moves
+     * and no in-flight query is orphaned by the addition. `''` is a real
+     * filter value ("the sessions with no subproject") and gets its own key.
      */
-    sessions: (id: string, scope: 'visible' | 'project' = 'visible') =>
-      [...qk.project.sessionsScope(id), 'list', scope] as const,
+    sessions: (id: string, scope: 'visible' | 'project' = 'visible', subproject?: string) =>
+      subproject === undefined
+        ? ([...qk.project.sessionsScope(id), 'list', scope] as const)
+        : ([...qk.project.sessionsScope(id), 'list', scope, subproject] as const),
 
     /**
      * One session, by id. Nests directly under the scope-LESS
@@ -305,6 +315,17 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+    /** `listProjectSubprojects` — `GET /projects/:id/subprojects`, the
+     *  manifest-defined containers the caller can access. A plain sibling of
+     *  `triggers`/`secrets` under `scope(id)`. */
+    subprojects: (id: string) => [...qk.project.scope(id), 'subprojects'] as const,
+    /** `getProjectSubproject(id, slug)` — one subproject. Nests under the
+     *  listing (unlike `session` under `sessions`, there is no second list
+     *  scope that could claim ownership of it), so a create/rename/delete
+     *  invalidates the list and every detail entry with one prefix. */
+    subproject: (id: string, slug: string) =>
+      [...qk.project.subprojects(id), slug] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

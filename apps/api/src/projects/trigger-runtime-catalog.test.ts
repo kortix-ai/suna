@@ -28,6 +28,7 @@ function trigger(slug: string, pinnedSessionId: string | null = null): GitTrigge
     pinnedSessionId,
     sessionKey: null,
     filter: null,
+    subproject: null,
   };
 }
 

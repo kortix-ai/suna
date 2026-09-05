@@ -142,6 +142,8 @@ export interface ProjectSession {
   status: 'queued' | 'branching' | 'provisioning' | 'running' | 'stopped' | 'failed' | 'completed';
   error: string | null;
   metadata: Record<string, unknown>;
+  /** The subproject this session was started in, if any. */
+  subproject?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -176,6 +178,8 @@ export interface ProjectTrigger {
   session_mode: 'fresh' | 'reuse';
   last_fired_at: string | null;
   webhook_url: string | null;
+  /** The subproject a fired session inherits, if this trigger names one. */
+  subproject?: string | null;
 }
 
 export interface ProjectTriggersResponse {

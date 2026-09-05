@@ -98,6 +98,15 @@ export type NewProjectSessionOpts = {
     connector_bindings?: SessionConnectorBindingsInput;
     inherit_unbound?: boolean;
     require_connectors?: string[];
+    /**
+     * Start the session inside this declared subproject. A warm session is
+     * NEVER adopted for one (spec §5.6): a warm session was created seconds
+     * ago with no subproject, and the column is set at birth — adopting one
+     * would file the session under nothing while the composer said otherwise.
+     * The server refuses a warm claim carrying `subproject` for the same
+     * reason, so this is the client half of one rule, not a second one.
+     */
+    subproject?: string;
   };
 };
 
@@ -194,11 +203,15 @@ export function useNewProjectSession(projectId: string | undefined) {
       // null whenever there is nothing suitable, so the create path below stays
       // the authority on billing, the session cap and connector requirements.
       const takeOrCreateSession = async () => {
-        const warm = takeWarmSessionEntry(projectId, {
-          create: opts?.create,
-          // Replenish after /start, not beside the claim and /start requests.
-          replenish: false,
-        });
+        // A subproject start never adopts a warm session — see the field's own
+        // comment on `NewProjectSessionOpts.create.subproject`.
+        const warm = opts?.create?.subproject
+          ? null
+          : takeWarmSessionEntry(projectId, {
+              create: opts?.create,
+              // Replenish after /start, not beside the claim and /start requests.
+              replenish: false,
+            });
         if (warm) {
           // The first prompt is a DURABLE inbox row, never a client-side
           // replay (the start stash carries picks only — see the producers).

@@ -52,16 +52,33 @@ import {
  * `EntityAvatar` does). #7079 had gated letter-only workspaces out; Marko put
  * the press back for all of them on 2026-09-03.
  */
+export interface ProjectHomeHero {
+  /** The name the greeting sentence is built around, in place of the project's. */
+  name: string;
+  /** One muted line under the heading. */
+  description?: string | null;
+}
+
 export function ProjectHomeWelcomeBody({
   projectId,
   composer,
   onPickSuggestion,
+  hero,
+  below,
 }: {
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
   composer?: ReactNode;
   /** When provided, starter-prompt chips render directly below the composer. */
   onPickSuggestion?: (text: string) => void;
+  /**
+   * A surface that is not the project itself (a subproject) wears the SAME
+   * greeting with its own name in the slot — the shape stays recognisable,
+   * only the noun changes. No confetti: the pressable name is the project's.
+   */
+  hero?: ProjectHomeHero;
+  /** Rendered under the ask group, in the column's `gap-10` rhythm. */
+  below?: ReactNode;
 }) {
   // One source for the project name — see `useProjectName`'s doc comment.
   const name = useProjectName(projectId) ?? '';
@@ -83,7 +100,7 @@ export function ProjectHomeWelcomeBody({
   // while the rest is muted, so the fallback has to read as a NAME in that
   // slot — "this project" is a description wearing a name's highlight, and it
   // stretches the line for a case where we know the least.
-  const displayName = name.trim() || 'it';
+  const displayName = hero ? hero.name.trim() || 'it' : name.trim() || 'it';
   // Variant 0 on the server and through hydration; the stored visit count
   // picks the real one before first paint. See `home-greeting.ts`.
   const [greeting, setGreeting] = useState(HOME_GREETINGS[0]);
@@ -152,6 +169,9 @@ export function ProjectHomeWelcomeBody({
                 noise on every load for a control nobody needs to find. The
                 pointer cursor and the tooltip are the whole invitation.
               */}
+            {hero ? (
+              <span className="text-foreground">{displayName}</span>
+            ) : (
             <button
               type="button"
               title="Throw some confetti"
@@ -173,6 +193,7 @@ export function ProjectHomeWelcomeBody({
             >
               {displayName}
             </button>
+            )}
             {spaceBefore(greeting.after) ? ' ' : ''}
             {greeting.after}
           </h1>
@@ -191,8 +212,16 @@ export function ProjectHomeWelcomeBody({
             />
           ) : null}
 
+          {hero?.description ? (
+            <p className="text-muted-foreground w-full px-4 text-base text-pretty">
+              {hero.description}
+            </p>
+          ) : null}
+
           {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
         </div>
+
+        {below}
 
         {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
             have the chat input there & that's it"). The "Get started" setup

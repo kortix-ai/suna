@@ -520,6 +520,43 @@ instantly, with no `kortix.yaml` commit; `default` and `config` commit to
 `kortix.yaml` on the project's default branch. `scope` needs
 `project.agent.write`; `default` and `config` need `project.customize.write`.
 
+### Subprojects
+
+A subproject groups sessions under a named effort inside the project — its own
+standing instructions, reference files, default agent, and scheduled work. The
+manifest (`kortix.yaml` `subprojects.<slug>`) is the source of truth; every
+write below commits to it. See [Subprojects](/docs/project/manifest#subprojects).
+
+| Command | Effect |
+| --- | --- |
+| `kortix subprojects ls [--json]` | List the subprojects you can see. |
+| `kortix subprojects show <slug> [--json]` | Show one subproject in full. |
+| `kortix subprojects create <name> [--slug <s>] [--description <text>] [--agent <name>] [--instructions-file <f\|->] [--context <path>...] [--sessions private\|shared]` | Declare a new subproject. |
+| `kortix subprojects update <slug> [--name <text>] [--description <text>] [--agent <name>] [--instructions-file <f\|->] [--context <path>...] [--sessions private\|shared]` | Change fields on an existing subproject. |
+| `kortix subprojects rm <slug> [--yes]` | Delete a subproject. Sessions keep their history but lose the grouping; triggers naming it are un-scoped, not deleted. Prompts for confirmation on a TTY without `--yes`; exits `2` without one on a non-interactive terminal. |
+| `kortix subprojects context add <slug> <file> [--as <name>]` | Upload a local file as context; commits it under `.kortix/subprojects/<slug>/`. |
+| `kortix subprojects context rm <slug> <path>` | Drop one context entry. Never deletes the repo file. |
+| `kortix subprojects grant <slug> (--member <id\|email> \| --group <id>) [--expires YYYY-MM-DD]` | Let a member or group use this subproject. |
+| `kortix subprojects revoke <slug> (--member <id\|email> \| --group <id>)` | Remove that grant. |
+
+On `update`, an explicit empty value (`--description=`, `--agent=`,
+`--instructions-file=`) clears that field; `name` cannot be cleared.
+`--context` on `update` REPLACES the whole `context[]` list, not merges into
+it. `--sessions shared` makes every session in the subproject visible to
+everyone granted it, regardless of who started it; `private` (default) keeps
+the ordinary per-session visibility rule. `grant`/`revoke` write the same
+`resource_type: 'subproject'` row `kortix grants` and the dashboard's access
+dialog use — `--member` accepts an email and resolves it against the project's
+access list. Create/update/rm/grant/revoke need `project.customize.write`.
+
+Sessions and triggers can be scoped to a subproject:
+
+| Command | Effect |
+| --- | --- |
+| `kortix sessions new --subproject <slug>` | Start a session inside a subproject. Inside a sandbox, defaults to `$KORTIX_SUBPROJECT` (the coordinator session's own subproject) when the flag is omitted. |
+| `kortix sessions ls --subproject <slug>` | List only that subproject's sessions. `--subproject=` (empty) lists sessions with no subproject. |
+| `kortix triggers add <slug> --apply --subproject <slug>` / `kortix triggers set <slug> --subproject <slug>` | Scope a live trigger's fired sessions to a subproject. `--subproject=` clears it. |
+
 ### Models
 
 Which models the project offers, and which one it starts with. Same surface as

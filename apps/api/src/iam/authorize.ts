@@ -698,7 +698,7 @@ export function customRoleAllows(
  * a constant here because the memo's caching rule must not itself depend on a
  * DB read; `unscopedDefaultFor` stays the source of truth for the VERDICT.
  */
-const CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent']);
+const CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'subproject']);
 
 interface ObjectGrantPrincipal {
   principalType: string;

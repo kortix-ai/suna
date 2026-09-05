@@ -96,6 +96,9 @@ describe('diffAccessDraft — Save fires ONLY changed fields', () => {
       agentsAdded: [],
       agentsRemoved: [],
       agentsChanged: false,
+      subprojectsAdded: [],
+      subprojectsRemoved: [],
+      subprojectsChanged: false,
       dirty: false,
     });
   });
@@ -359,5 +362,91 @@ describe('the dialog writes assignments, not policies', () => {
     expect(dialogSource).toContain(
       "const expirySupported = scope.kind !== 'group' && mode.kind !== 'bulk-group';",
     );
+  });
+});
+
+describe('diffAccessDraft — subprojects diff by the SAME rules as agents', () => {
+  const current: AccessDialogCurrent = {
+    role: builtinRole('member'),
+    agentIds: ['agent-a'],
+    subprojectIds: ['marketing'],
+    expiresAt: null,
+  };
+  const unchanged = {
+    role: builtinRole('member'),
+    agents: { mode: 'subset' as const, ids: ['agent-a'] },
+    expiresAt: '',
+  };
+
+  test('an omitted subproject selection touches nothing when none are held', () => {
+    // Every caller that does not edit subprojects (account scope, the older
+    // tests above) must keep diffing to exactly what it always did.
+    const diff = diffAccessDraft(
+      { role: builtinRole('member'), agentIds: ['agent-a'], expiresAt: null },
+      unchanged,
+    );
+    expect(diff.subprojectsAdded).toEqual([]);
+    expect(diff.subprojectsRemoved).toEqual([]);
+    expect(diff.subprojectsChanged).toBe(false);
+    expect(diff.dirty).toBe(false);
+  });
+
+  test('adding one subproject is dirty on its own, with the role untouched', () => {
+    const diff = diffAccessDraft(current, {
+      ...unchanged,
+      subprojects: { mode: 'subset', ids: ['marketing', 'research'] },
+    });
+    expect(diff.subprojectsAdded).toEqual(['research']);
+    expect(diff.subprojectsRemoved).toEqual([]);
+    expect(diff.subprojectsChanged).toBe(true);
+    expect(diff.roleChanged).toBe(false);
+    expect(diff.agentsChanged).toBe(false);
+    expect(diff.dirty).toBe(true);
+  });
+
+  test('switching back to "all" removes every subproject grant that exists', () => {
+    const diff = diffAccessDraft(current, { ...unchanged, subprojects: ALL_AGENTS });
+    expect(diff.subprojectsRemoved).toEqual(['marketing']);
+    expect(diff.subprojectsAdded).toEqual([]);
+    expect(diff.dirty).toBe(true);
+  });
+
+  test('the same subset is not a change', () => {
+    const diff = diffAccessDraft(current, {
+      ...unchanged,
+      subprojects: { mode: 'subset', ids: ['marketing'] },
+    });
+    expect(diff.subprojectsChanged).toBe(false);
+    expect(diff.dirty).toBe(false);
+  });
+
+  test('agents and subprojects move independently in one save', () => {
+    const diff = diffAccessDraft(current, {
+      role: builtinRole('member'),
+      agents: { mode: 'subset', ids: ['agent-b'] },
+      subprojects: { mode: 'subset', ids: ['research'] },
+      expiresAt: '',
+    });
+    expect(diff.agentsAdded).toEqual(['agent-b']);
+    expect(diff.agentsRemoved).toEqual(['agent-a']);
+    expect(diff.subprojectsAdded).toEqual(['research']);
+    expect(diff.subprojectsRemoved).toEqual(['marketing']);
+  });
+});
+
+describe('agentSelectionFromCurrent seeds a subproject picker too', () => {
+  test('the initialSubprojectIds seed is the same subset shape agents use', () => {
+    // `initialDraftState` builds `{mode:'subset', ids:[...]}` from the prop and
+    // `agentSelectionFromCurrent` from `current.subprojectIds`; both feed the
+    // one `diffAgentGrants`, which is what makes the two object types behave
+    // identically without a second code path.
+    expect(agentSelectionFromCurrent(['marketing'])).toEqual({
+      mode: 'subset',
+      ids: ['marketing'],
+    });
+    expect(diffAgentGrants('all', agentSelectionFromCurrent(['marketing']))).toEqual({
+      add: ['marketing'],
+      remove: [],
+    });
   });
 });

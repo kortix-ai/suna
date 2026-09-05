@@ -40,6 +40,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  useProjectSubprojects,
+  withTriggerSubproject,
+} from '@/features/subprojects/subprojects-data';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { cn } from '@/lib/utils';
 import { createProjectTrigger, listProjectSessions, upsertProjectSecret } from '@kortix/sdk';
@@ -82,6 +93,10 @@ import {
 
 type Step = 'type' | 'what' | 'how';
 
+/** Sentinel for "no subproject" — `''` is not a legal Radix item value, and
+ *  the wire value for it is `null`, not the empty string. */
+const NO_SUBPROJECT = '__none__';
+
 /** A random signing key, hex-encoded. */
 function generateSigningKey(): string {
   if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
@@ -118,6 +133,7 @@ export function ScheduleCreateModal({
   onOpenChange,
   onCreated,
   initialAgent = null,
+  initialSubproject = null,
 }: {
   projectId: string;
   open: boolean;
@@ -127,6 +143,10 @@ export function ScheduleCreateModal({
    *  this modal for "its" triggers, so the picker lands on that agent rather
    *  than asking a question the page already answered. Still changeable. */
   initialAgent?: string | null;
+  /** Pre-selects the subproject the trigger is filed under — the subproject
+   *  page opens this modal for "its" scheduled work, same reasoning as
+   *  `initialAgent`. */
+  initialSubproject?: string | null;
 }) {
   const [kind, setKind] = useState<TriggerKind | null>(null);
   const copy = kind ? KIND_COPY[kind] : null;
@@ -136,6 +156,7 @@ export function ScheduleCreateModal({
   const [name, setName] = useState('');
   const [instruction, setInstruction] = useState('');
   const [agentName, setAgentName] = useState<string | null>(initialAgent);
+  const [subproject, setSubproject] = useState<string>(initialSubproject ?? NO_SUBPROJECT);
   const [model, setModel] = useState<ModelKey | null>(null);
 
   const [cron, setCron] = useState('0 0 9 * * *');
@@ -160,6 +181,10 @@ export function ScheduleCreateModal({
   const [error, setError] = useState<string | null>(null);
 
   const agents = useVisibleAgents({ projectId });
+  // Only the subprojects this caller is granted come back, so the picker can
+  // never offer one the trigger POST would then reject.
+  const subprojectsQuery = useProjectSubprojects(projectId, open);
+  const subprojects = subprojectsQuery.data?.subprojects ?? [];
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
   const sessions = useQuery({
@@ -180,6 +205,7 @@ export function ScheduleCreateModal({
     // agent page's `initialAgent` away before the modal was ever opened — every
     // trigger created from an agent page landed on `default`.
     setAgentName(initialAgent);
+    setSubproject(initialSubproject ?? NO_SUBPROJECT);
     setModel(null);
     setCron('0 0 9 * * *');
     setRunAt(null);
@@ -194,7 +220,7 @@ export function ScheduleCreateModal({
     setStartActive(true);
     setSessionAccess({ mode: 'private', memberIds: [], groupIds: [] });
     setError(null);
-  }, [open, initialAgent]);
+  }, [open, initialAgent, initialSubproject]);
 
   /** First-step problems, in the order a person would hit them. */
   function checkWhat(): string | null {
@@ -251,25 +277,34 @@ export function ScheduleCreateModal({
 
       const filter = rowsToConditions(conditions);
 
-      return createProjectTrigger(projectId, {
-        name: trimmedName,
-        slug,
-        type: triggerKind,
-        prompt_template: instruction.trim(),
-        enabled: startActive,
-        ...(agentName ? { agent: agentName } : {}),
-        ...(model ? { model: modelKeyToWire(model) } : {}),
-        session_access: sessionAccess,
-        ...(mode !== 'fresh' ? { session_mode: mode } : {}),
-        ...(mode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
-        ...(mode === 'keyed' ? { session_key: sessionKey.trim() } : {}),
-        ...(!isCron && filter ? { filter } : {}),
-        ...(isCron
-          ? runAt
-            ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
-            : { cron: cron.trim(), timezone: timezone.trim() || 'UTC' }
-          : { secret_env: secretEnv }),
-      });
+      // `withTriggerSubproject` is the SDK gap, not a raw body: the API takes
+      // `subproject` on POST /triggers but the published input type does not
+      // declare it yet. See `features/subprojects/subprojects-data.ts`.
+      return createProjectTrigger(
+        projectId,
+        withTriggerSubproject(
+          {
+            name: trimmedName,
+            slug,
+            type: triggerKind,
+            prompt_template: instruction.trim(),
+            enabled: startActive,
+            ...(agentName ? { agent: agentName } : {}),
+            ...(model ? { model: modelKeyToWire(model) } : {}),
+            session_access: sessionAccess,
+            ...(mode !== 'fresh' ? { session_mode: mode } : {}),
+            ...(mode === 'pinned' && pinnedSessionId ? { session_id: pinnedSessionId } : {}),
+            ...(mode === 'keyed' ? { session_key: sessionKey.trim() } : {}),
+            ...(!isCron && filter ? { filter } : {}),
+            ...(isCron
+              ? runAt
+                ? { run_at: runAt, timezone: timezone.trim() || 'UTC' }
+                : { cron: cron.trim(), timezone: timezone.trim() || 'UTC' }
+              : { secret_env: secretEnv }),
+          },
+          subproject === NO_SUBPROJECT ? null : subproject,
+        ),
+      );
     },
     onSuccess: (listing) => {
       const created = listing.triggers
@@ -394,6 +429,27 @@ export function ScheduleCreateModal({
                   />
                 </div>
               </Field>
+
+              {subprojects.length > 0 ? (
+                <Field
+                  label="Subproject"
+                  hint="Files this trigger and every session it starts under one subproject."
+                >
+                  <Select value={subproject} onValueChange={setSubproject}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_SUBPROJECT}>None</SelectItem>
+                      {subprojects.map((option) => (
+                        <SelectItem key={option.slug} value={option.slug}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
 
               <Field label="Model" hint="Leave this alone to use the agent's usual model.">
                 <div className="bg-popover flex w-full items-center rounded-md border px-2 py-1.5">

@@ -314,6 +314,10 @@ export async function latestAgentConfigEtag(input: {
           .select({
             agentName: projectSessions.agentName,
             metadata: projectSessions.metadata,
+            // The etag must be computed over the config this session would
+            // actually boot with, subproject `instructions` included — else a
+            // subproject session reads as permanently stale.
+            subproject: projectSessions.subproject,
           })
           .from(projectSessions)
           .where(eq(projectSessions.sessionId, input.sessionId))
@@ -334,8 +338,12 @@ export async function latestAgentConfigEtag(input: {
   const compiled = await (
     !workspaceModeAllowsFullRepository(workspaceModeFromSessionMetadata(session?.metadata)) &&
     session?.agentName
-      ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef)
-      : resolveCompiledAgentConfigForSession(gitProject, input.baseRef)
+      ? resolveSelectedAgentConfigForSession(gitProject, session.agentName, input.baseRef, {
+          subproject: session?.subproject ?? null,
+        })
+      : resolveCompiledAgentConfigForSession(gitProject, input.baseRef, {
+          subproject: session?.subproject ?? null,
+        })
   ).catch(() => null);
   return agentConfigEtag(compiled);
 }

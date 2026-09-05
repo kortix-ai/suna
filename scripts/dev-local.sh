@@ -209,7 +209,12 @@ start_tunnel_watchdog() {
       fi
       echo "[dev] ⚠️  tunnel ${url:-<none>} DEAD/MISSING (cloudflared $(pgrep -fc 'cloudflared tunnel' 2>/dev/null || echo 0) procs) — (re)establishing + restarting API..."
       [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
-      pkill -f 'cloudflared tunnel --no-autoupdate' 2>/dev/null || true
+      # THIS stack's tunnel only — matched on its own `--url`. A bare
+      # `cloudflared tunnel --no-autoupdate` pattern killed every worktree's
+      # tunnel on the machine (2026-09-04), and the rotation below then killed
+      # every worktree's API too, so one primary `pnpm dev` with a dead tunnel
+      # took down every other stack once a minute.
+      pkill -f -- "cloudflared tunnel .*--url http://localhost:${PORT:-8008}\$" 2>/dev/null || true
       TUNNEL_LOG="$(mktemp -t kortix-tunnel.XXXXXX)"
       cloudflared tunnel --no-autoupdate --url "http://localhost:${PORT:-8008}" >"$TUNNEL_LOG" 2>&1 &
       TUNNEL_PID=$!
@@ -233,7 +238,14 @@ start_tunnel_watchdog() {
       # full command line and exits 1 silently, so rotation printed
       # "API restarting" while restarting nothing — every sandbox created
       # after a rotation got a dead KORTIX_URL callback.
-      pkill -f -- '--hot src/index.ts' 2>/dev/null || true
+      #
+      # By PORT, not by pattern: `--hot src/index.ts` is every Kortix API on
+      # the machine, including every worktree's (`pnpm worktree start` runs the
+      # identical command on its own port). Killing this stack's listener is
+      # what restarts THIS API with the new URL; the others are not ours.
+      for pid in $(lsof -tiTCP:"${PORT:-8008}" -sTCP:LISTEN 2>/dev/null || true); do
+        kill "$pid" 2>/dev/null || true
+      done
     done
   ) &
   WATCHDOG_PID=$!

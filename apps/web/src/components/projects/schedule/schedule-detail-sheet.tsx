@@ -44,6 +44,18 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  triggerSubproject,
+  useProjectSubprojects,
+  withTriggerSubproject,
+} from '@/features/subprojects/subprojects-data';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
 import { storedModelRefToKey } from '@/lib/llm-gateway';
@@ -731,6 +743,10 @@ function ConditionsPanel({
 
 /* ─── Which agent ───────────────────────────────────────────────────────── */
 
+/** Sentinel for "no subproject" — `''` is not a legal Radix item value, and
+ *  the wire value that CLEARS the back-reference is `null`. */
+const NO_SUBPROJECT = '__none__';
+
 function AgentPanel({
   projectId,
   trigger,
@@ -762,6 +778,28 @@ function AgentPanel({
     onError: (e: Error) => errorToast(e.message || 'Could not update the agent'),
   });
 
+  // Only the subprojects this caller is granted, so the picker can never
+  // offer one the trigger PATCH would reject.
+  const subprojectsQuery = useProjectSubprojects(projectId);
+  const subprojects = subprojectsQuery.data?.subprojects ?? [];
+  const currentSubproject = triggerSubproject(trigger) ?? NO_SUBPROJECT;
+
+  const saveSubproject = useMutation({
+    // `withTriggerSubproject` is the SDK gap, not a raw body — see
+    // `features/subprojects/subprojects-data.ts`.
+    mutationFn: (next: string) =>
+      updateProjectTrigger(
+        projectId,
+        trigger.slug,
+        withTriggerSubproject({}, next === NO_SUBPROJECT ? null : next),
+      ),
+    onSuccess: () => {
+      successToast('Subproject updated');
+      onMutated();
+    },
+    onError: (e: Error) => errorToast(e.message || 'Could not update the subproject'),
+  });
+
   const saveModel = useMutation({
     mutationFn: (model: ModelKey | null) =>
       updateProjectTrigger(projectId, trigger.slug, {
@@ -781,6 +819,9 @@ function AgentPanel({
           rows={[
             { label: 'Agent', value: trigger.agent },
             { label: 'Model', value: trigger.model ?? "The agent's usual model" },
+            ...(triggerSubproject(trigger)
+              ? [{ label: 'Subproject', value: triggerSubproject(trigger)! }]
+              : []),
           ]}
         />
       </PanelSection>
@@ -806,6 +847,29 @@ function AgentPanel({
           />
         </div>
       </div>
+
+      {subprojects.length > 0 ? (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Subproject</Label>
+          <Select
+            value={currentSubproject}
+            onValueChange={(next) => saveSubproject.mutate(next)}
+            disabled={saveSubproject.isPending}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="None" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_SUBPROJECT}>None</SelectItem>
+              {subprojects.map((option) => (
+                <SelectItem key={option.slug} value={option.slug}>
+                  {option.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">

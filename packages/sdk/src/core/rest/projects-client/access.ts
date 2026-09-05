@@ -289,7 +289,7 @@ export async function detachGroupFromProject(projectId: string, groupId: string)
 
 // ─── Per-resource (agent/skill/secret) scoping ──────────────────────────────
 
-export type ResourceGrantType = 'agent' | 'skill' | 'secret';
+export type ResourceGrantType = 'agent' | 'skill' | 'secret' | 'subproject';
 
 /** A grantable resource (agent name / skill slug) discovered from the repo. */
 export interface ProjectResourceItem {
@@ -332,6 +332,10 @@ export interface ProjectResourceGrantsResponse {
      *  access gate is the agent-side `secrets` grant) — never populated, kept
      *  optional for older API responses. */
     secrets?: ProjectResourceItem[];
+    /** The declared subprojects, keyed by slug — the second closed object type
+     *  (a member with zero grant rows sees zero subprojects). Optional, so an
+     *  older API response still typechecks. */
+    subprojects?: ProjectResourceItem[];
   };
   grants: ProjectResourceGrant[];
 }

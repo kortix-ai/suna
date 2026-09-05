@@ -38,6 +38,7 @@ import './routes/session-stream';
 import './routes/project-audit';
 import './routes/approvals';
 import './routes/resource-grants';
+import './routes/subprojects';
 import './routes/session-scope';
 import './routes/session-config';
 import './routes/public-shares';

@@ -59,6 +59,8 @@ Add options:
                            Trigger type (default cron).
   --prompt <text>          Initial prompt for the spawned session (required).
   --agent <name>           Logical agent to run (default: project default_agent).
+  --subproject <slug>      Scope the fired session to a subproject (must be
+                           declared). \`--subproject=\` clears it.
   --cron <expr>            6-field cron (cron type). e.g. "0 0 9 * * 1-5".
   --run-at <iso>           Run ONCE at this instant instead of on a cron.
   --timezone <tz>          Timezone for cron/run-at (default UTC).
@@ -81,7 +83,7 @@ Live-only options (--apply on \`add\`, and every \`set\`):
                            every one must match. e.g. --filter body.type=push
 
 Set options: every live-only option above, plus --name, --prompt, --cron,
---run-at, --timezone, --secret-env, --agent, and --enabled true|false.
+--run-at, --timezone, --secret-env, --agent, --subproject, and --enabled true|false.
 \`--cron\` and \`--run-at\` are exclusive — setting one clears the other. Monitor
 fields (--run/--mode/--interval/--expect-event-within) are add-only.
 
@@ -144,6 +146,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
     tf.type = takeFlagValue(rest, ['--type']);
     tf.prompt = takeFlagValue(rest, ['--prompt']);
     tf.agent = takeFlagValue(rest, ['--agent']);
+    tf.subproject = takeFlagValue(rest, ['--subproject']);
     tf.cron = takeFlagValue(rest, ['--cron']);
     tf.timezone = takeFlagValue(rest, ['--timezone']);
     tf.secretEnv = takeFlagValue(rest, ['--secret-env']);
@@ -538,6 +541,7 @@ async function triggersAddLive(
     prompt_template: tf.prompt,
     enabled: !disabled,
     ...(tf.agent ? { agent: tf.agent } : {}),
+    ...(tf.subproject !== undefined ? { subproject: tf.subproject || null } : {}),
     ...(tf.model ? { model: tf.model } : {}),
     ...sessionFields(tf),
     ...(access ? { session_access: access } : {}),
@@ -623,6 +627,7 @@ async function triggersSetLive(
     ...(tf.name ? { name: tf.name } : {}),
     ...(tf.prompt ? { prompt_template: tf.prompt } : {}),
     ...(tf.agent ? { agent: tf.agent } : {}),
+    ...(tf.subproject !== undefined ? { subproject: tf.subproject || null } : {}),
     ...(tf.model ? { model: tf.model } : {}),
     ...(tf.secretEnv ? { secret_env: tf.secretEnv } : {}),
     ...(enabled === undefined ? {} : { enabled }),

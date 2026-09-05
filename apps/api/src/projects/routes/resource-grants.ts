@@ -78,7 +78,10 @@ projectsApp.openapi(
         declares?: { secrets: string[] | 'all'; connectors: string[] | 'all' };
       }[];
       skills: { id: string; name: string }[];
-    } = { agents: [], skills: [] };
+      // Manifest subprojects — the second closed-by-default object type. Same
+      // grant shape as an agent: id is the slug.
+      subprojects: { id: string; name: string; description: string | null }[];
+    } = { agents: [], skills: [], subprojects: [] };
     let configLoaded = false;
     try {
       const config = await loadConfigWithFiles(loaded.row);
@@ -92,6 +95,7 @@ projectsApp.openapi(
         },
       }));
       resources.skills = fromConfig.skills;
+      resources.subprojects = fromConfig.subprojects;
       configLoaded = true;
     } catch (err) {
       console.warn('[resource-grants] config load failed', {
@@ -107,13 +111,16 @@ projectsApp.openapi(
     // must not mass-flag).
     const liveAgentIds = new Set(resources.agents.map((r) => r.id));
     const liveSkillIds = new Set(resources.skills.map((r) => r.id));
+    const liveSubprojectIds = new Set(resources.subprojects.map((r) => r.id));
     const isOrphan = (type: string, id: string) => {
       if (!configLoaded) return false;
       return type === 'agent'
         ? !liveAgentIds.has(id)
         : type === 'skill'
           ? !liveSkillIds.has(id)
-          : false;
+          : type === 'subproject'
+            ? !liveSubprojectIds.has(id)
+            : false;
     };
 
     // Agents/skills come from iam_resource_grants. SECRETS no longer have a
@@ -207,7 +214,7 @@ projectsApp.openapi(
     // Pre-existing skill/secret rows still read/list/revoke fine (see
     // resource-grants.ts's RESOURCE_GRANT_TYPES doc comment).
     if (!resourceType || !isCreatableResourceType(resourceType)) {
-      return c.json({ error: 'resource_type must be agent' }, 400);
+      return c.json({ error: 'resource_type must be agent or subproject' }, 400);
     }
     if (!resourceId) return c.json({ error: 'resource_id is required' }, 400);
     if (principalType !== 'member' && principalType !== 'group') {

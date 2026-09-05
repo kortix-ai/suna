@@ -567,6 +567,23 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
         },
       },
 
+      /** Named containers inside the project — the manifest is the source of
+       *  truth; writes commit `kortix.yaml`. Grant one with
+       *  `access.resourceGrants.create({ resourceType: 'subproject' })`. */
+      subprojects: {
+        list: () => P.listProjectSubprojects(projectId),
+        get: (slug: string) => P.getProjectSubproject(projectId, slug),
+        create: (input: Parameters<typeof P.createProjectSubproject>[1]) =>
+          P.createProjectSubproject(projectId, input),
+        update: (...a: DropFirst<Parameters<typeof P.updateProjectSubproject>>) =>
+          P.updateProjectSubproject(projectId, ...a),
+        remove: (slug: string) => P.deleteProjectSubproject(projectId, slug),
+        addContext: (...a: DropFirst<Parameters<typeof P.addProjectSubprojectContext>>) =>
+          P.addProjectSubprojectContext(projectId, ...a),
+        removeContext: (...a: DropFirst<Parameters<typeof P.removeProjectSubprojectContext>>) =>
+          P.removeProjectSubprojectContext(projectId, ...a),
+      },
+
       connectors: {
         ...connectorDataPlane(projectId),
         list: () => P.listConnectors(projectId),

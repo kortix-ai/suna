@@ -246,6 +246,12 @@ export interface SessionChatInputProps {
 
   toolbarSlot?: React.ReactNode;
   /**
+   * A tray hanging off the card's bottom edge — the same overlap
+   * `ModelConnectionBar` uses, and the bar follows it. Project Home's
+   * subproject picker lives here.
+   */
+  traySlot?: React.ReactNode;
+  /**
    * Where the under-row's controls live — attach, the agent picker and the
    * context ring.
    *
@@ -434,6 +440,7 @@ function ComposerImpl({
   onCompactClick,
   inputSlot,
   toolbarSlot,
+  traySlot,
   underbarPlacement = 'below',
   slashMenuPlacement = 'above',
   cardClassName,
@@ -1639,9 +1646,24 @@ function ComposerImpl({
       </div>
 
       {/*
+        A tray hanging off the card's bottom edge, the way `ModelConnectionBar`
+        does right after it: `z-0 -mt-4` slides it behind the `isolate z-10`
+        card, `pt-4` cancels the overlap, and the card's own bottom border is
+        the seam. Static — it is either there or not, never animated in.
+      */}
+      {traySlot ? (
+        <div className="relative z-0 -mt-4">
+          <div className="border-border bg-muted rounded-b-xl border border-t-0 pt-4">
+            <div className="flex items-center gap-1 px-2 py-1.5">{traySlot}</div>
+          </div>
+        </div>
+      ) : null}
+
+      {/*
         Directly under the card, and BEFORE the underbar — the bar is a tray
         that hangs off the card's bottom edge (see `ModelConnectionBar` for the
-        overlap), so it has to be the card's next sibling. Below the underbar it
+        overlap), so it has to follow the card, or the tray hanging off it,
+        directly. Below the underbar it
         was a third detached box under a second detached box.
 
         The card is `isolate z-10` and this is `z-0`, so the card paints over

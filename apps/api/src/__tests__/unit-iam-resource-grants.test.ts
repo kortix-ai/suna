@@ -69,22 +69,24 @@ describe('objectUsable — an unscoped object at manager tier', () => {
 });
 
 describe('resource type guard', () => {
-  test('agent, skill + secret remain valid resource types (READ/REVOKE back-compat)', () => {
+  test('agent, skill, secret + subproject are valid resource types (READ/REVOKE back-compat)', () => {
     // skill/secret stay in the union so pre-existing grant rows of those types
     // still read, list, and revoke — the CREATE restriction is separate (below).
-    expect(RESOURCE_GRANT_TYPES).toEqual(['agent', 'skill', 'secret']);
+    expect(RESOURCE_GRANT_TYPES).toEqual(['agent', 'skill', 'secret', 'subproject']);
     expect(isResourceType('agent')).toBe(true);
     expect(isResourceType('skill')).toBe(true);
     expect(isResourceType('secret')).toBe(true);
+    expect(isResourceType('subproject')).toBe(true);
     expect(isResourceType('connector')).toBe(false);
     expect(isResourceType('')).toBe(false);
   });
 });
 
-describe('creatable resource type guard — AGENT-ONLY new grants', () => {
-  test('only agent is creatable; skill/secret are NOT (governed by editor role + agent inheritance)', () => {
-    expect(CREATABLE_RESOURCE_GRANT_TYPES).toEqual(['agent']);
+describe('creatable resource type guard — the two closed-by-default object types', () => {
+  test('agent + subproject are creatable; skill/secret are NOT (governed by editor role + agent inheritance)', () => {
+    expect(CREATABLE_RESOURCE_GRANT_TYPES).toEqual(['agent', 'subproject']);
     expect(isCreatableResourceType('agent')).toBe(true);
+    expect(isCreatableResourceType('subproject')).toBe(true);
     // skill/secret are valid to READ but NOT to CREATE a new member-scoped grant.
     expect(isCreatableResourceType('skill')).toBe(false);
     expect(isCreatableResourceType('secret')).toBe(false);

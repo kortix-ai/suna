@@ -80,6 +80,35 @@ test('listProjectSessions requests the manager-only project inventory scope', as
   expect(last().method).toBe('GET');
 });
 
+test('listProjectSessions filters to one subproject', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { subproject: 'marketing' });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions?subproject=marketing');
+});
+
+test('listProjectSessions sends an EMPTY subproject to mean "no subproject"', async () => {
+  // `''` is a real filter — rows carrying no subproject — and must not be
+  // dropped as falsy the way `scope: 'visible'` is dropped as the default.
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { subproject: '' });
+  expect(last().url).toBe('http://test.local/projects/P1/sessions?subproject=');
+});
+
+test('listProjectSessions combines scope and subproject', async () => {
+  nextResponse = { status: 200, body: [] };
+  await listProjectSessions('P1', { scope: 'project', subproject: 'marketing' });
+  expect(last().url).toBe(
+    'http://test.local/projects/P1/sessions?scope=project&subproject=marketing',
+  );
+});
+
+test('createProjectSession forwards the subproject in the body', async () => {
+  nextResponse = { status: 200, body: { session_id: 'S1', subproject: 'marketing' } };
+  const session = await createProjectSession('P1', { subproject: 'marketing' });
+  expect(last().body).toEqual({ subproject: 'marketing' });
+  expect(session.subproject).toBe('marketing');
+});
+
 test('listProjectSessions keeps can_manage_sharing and can_manage_lifecycle apart', async () => {
   // Two different verdicts. `can_manage_sharing` answers "may I change who can
   // open this session" — the owner's call. `can_manage_lifecycle` answers "may

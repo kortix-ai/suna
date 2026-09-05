@@ -194,6 +194,48 @@
         "additionalProperties": false
       }
     },
+    "subprojects": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "context": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "pattern": "^/|(^|/)\\.\\.($|/)"
+              }
+            }
+          },
+          "agent": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sessions": {
+            "type": "string",
+            "enum": [
+              "private",
+              "shared"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
     "project": {
       "type": "object",
       "properties": {
@@ -364,6 +406,10 @@
             "minLength": 1
           },
           "agent_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "subproject": {
             "type": "string",
             "minLength": 1
           },

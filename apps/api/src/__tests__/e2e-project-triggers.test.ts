@@ -471,6 +471,7 @@ const triggerDbMock: any = {
               sandboxUrl: null,
               opencodeSessionId: null,
               agentName: values.agentName ?? 'default',
+              subproject: values.subproject ?? null,
               status: values.status ?? 'provisioning',
               error: null,
               createdBy: values.createdBy ?? null,
@@ -1508,6 +1509,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     sessionRows.push({
       sessionId: 'sess-reuse',
       accountId: ACCOUNT_ID,
+      subproject: null,
       projectId: PROJECT_ID,
       branchName: 'main',
       baseRef: 'main',

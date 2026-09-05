@@ -340,6 +340,9 @@ function triggerSchema(): JsonSchemaFragment {
       // left to the imperative validator.
       agent: { type: 'string', minLength: 1 },
       agent_name: { type: 'string', minLength: 1 },
+      // Cross-field: must name a declared `subprojects.<slug>` — dynamic, left
+      // to the imperative validator (`validateTriggerSubprojectRefsV2`).
+      subproject: { type: 'string', minLength: 1 },
       enabled: enabledValueSchema(),
       session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
       session_key: { type: 'string' },
@@ -659,6 +662,32 @@ function appsV2Schema(): JsonSchemaFragment {
   };
 }
 
+/** `subprojects.<slug>` (v2) — a project inside the project: standing
+ *  instructions, context paths, a default agent. `agent` is cross-field
+ *  (must name a declared agent) and left to the imperative validator. */
+function subprojectBlockV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    properties: {
+      name: { type: 'string' },
+      description: { type: 'string' },
+      instructions: { type: 'string' },
+      context: { type: 'array', items: relativePathSchema() },
+      agent: { type: 'string', minLength: 1 },
+      sessions: { type: 'string', enum: ['private', 'shared'] },
+    },
+    additionalProperties: false,
+  };
+}
+
+function subprojectsV2Schema(): JsonSchemaFragment {
+  return {
+    type: 'object',
+    propertyNames: { pattern: SLUG_RE.source },
+    additionalProperties: subprojectBlockV2Schema(),
+  };
+}
+
 /** Sections shared byte-for-byte between v1 and v2 (spec §2.7: "every v1
  *  top-level section keeps its v1 shape" except `agents`/`channels`). */
 function sharedSectionProperties(connectorVersion: 1 | 2): JsonSchemaFragment {
@@ -726,6 +755,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: agentBlockV2Schema(),
       },
+      subprojects: subprojectsV2Schema(),
       ...sharedSectionProperties(2),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,

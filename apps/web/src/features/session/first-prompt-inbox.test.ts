@@ -22,7 +22,12 @@ function read(relative: string): string {
 }
 
 const shell = read('./instant-session-shell.tsx');
-const projectHome = read('../../app/(app)/projects/[id]/page.tsx');
+// The composer send moved out of the page and into a hook when the subproject
+// page grew a SECOND `ProjectHome` (2026-09-04): both surfaces now share one
+// producer, so this tripwire follows it there and covers both at once.
+const projectHomeSend = read('../workspace/project-layout/use-project-home-send.ts');
+const projectHomePage = read('../../app/(app)/projects/[id]/page.tsx');
+const subprojectPage = read('../subprojects/subproject-page.tsx');
 const sessionPage = read('../../app/(app)/projects/[id]/sessions/[sessionId]/page.tsx');
 const configureThread = read('../workspace/customize/use-configure-thread.ts');
 const runUpgrade = read('../workspace/customize/migrate-to-v2/use-run-upgrade.ts');
@@ -36,12 +41,30 @@ describe('every first-prompt producer writes a durable row, not a prompt stash',
   });
 
   test('project home hands the prompt (and its attachments) to the create', () => {
-    expect(projectHome).toContain('pending_prompt: {');
-    expect(projectHome).toContain('attachedFilesToDataUrlParts(files)');
+    expect(projectHomeSend).toContain('pending_prompt: {');
+    expect(projectHomeSend).toContain('attachedFilesToDataUrlParts(files)');
     // The navigate stash is picks-only.
-    expect(projectHome).toContain("prompt: ''");
-    expect(projectHome).not.toContain('prompt: text');
-    expect(projectHome).not.toContain('setPendingFiles');
+    expect(projectHomeSend).toContain("prompt: ''");
+    expect(projectHomeSend).not.toContain('prompt: text');
+    expect(projectHomeSend).not.toContain('setPendingFiles');
+  });
+
+  test('BOTH ProjectHome surfaces route their send through that one producer', () => {
+    // The point of the extraction: a second composer must not be able to grow
+    // its own send path and quietly go back to stashing the prompt.
+    for (const [name, source] of [
+      ['project index page', projectHomePage],
+      ['subproject page', subprojectPage],
+    ] as const) {
+      expect({ name, usesSharedSend: source.includes('useProjectHomeSend(') }).toEqual({
+        name,
+        usesSharedSend: true,
+      });
+      expect({ name, writesItsOwnStash: source.includes('writeStartStash(') }).toEqual({
+        name,
+        writesItsOwnStash: false,
+      });
+    }
   });
 
   test('configure-thread and run-upgrade hand their prompt to the create', () => {
