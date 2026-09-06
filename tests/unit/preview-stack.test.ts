@@ -163,6 +163,11 @@ describe('ephemeral self-host preview stack', () => {
     // "model_disabled_on_deployment", which is every agent turn dying with an
     // empty assistant message (pi-js.kortix.com, 2026-09-05).
     expect(configured.runtimeEnv).toContain('KORTIX_MANAGED_PROVIDER_ENABLED=true');
+    // A preview boots a fresh microVM per session and then waits inside it;
+    // both accelerators are additive with a cold-path fallback, so a preview
+    // runs with them on and shows their effect.
+    expect(configured.runtimeEnv).toContain('KORTIX_PI_WORKER_POOL_TARGET=2');
+    expect(configured.runtimeEnv).toContain('KORTIX_FAST_COLD_BOOT_ENABLED=true');
     expect(configured.runtimeEnv).not.toContain('E2E_AGENTMAIL_API_KEY');
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
     expect(configured.testEnv).toContain(`KE2E_PREVIEW_AUTHORIZATION=approved:${SHA}`);

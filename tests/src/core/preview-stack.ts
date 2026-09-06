@@ -338,6 +338,18 @@ export function applyPreviewEnvironment(
     // transport managedCandidates() needs, so a preview that has one serves the
     // managed lineup through it; a preview without one keeps the old behaviour.
     KORTIX_MANAGED_PROVIDER_ENABLED: rawSecrets.OPENROUTER_API_KEY ? 'true' : 'false',
+    // COLD BOOT IS THE PRODUCT HERE. A session on a preview boots a fresh
+    // microVM and then waits ~10 s inside it for the daemon, OpenCode, the
+    // checkout and the skills overlay; measured on pi-js.kortix.com
+    // 2026-09-06: create → ready 11-12 s, first token 18 s. Both accelerators
+    // below are additive and fall back to the ordinary cold path on any
+    // failure, and a preview is exactly where their effect should be visible.
+    //   • the parked pi-worker pool: a session CLAIMS a booted box instead of
+    //     creating one (~4 s of the cold path, per its own config note);
+    //   • fast cold boot: Platinum rootfs materialization + the native
+    //     OpenCode binary prefetch, keeping the standard image and every tool.
+    KORTIX_PI_WORKER_POOL_TARGET: '2',
+    KORTIX_FAST_COLD_BOOT_ENABLED: 'true',
     STRIPE_SECRET_KEY: rawSecrets.KE2E_STRIPE_SECRET_KEY ?? '',
     STRIPE_WEBHOOK_SECRET: rawSecrets.KE2E_STRIPE_WEBHOOK_SECRET ?? '',
   });
