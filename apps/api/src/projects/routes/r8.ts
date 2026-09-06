@@ -131,8 +131,11 @@ projectsApp.openapi(
     // Independent of billing/provisioning below: it is a metadata fact about
     // this row, not a spend, so it lands even if the billing gate rejects the
     // resume that follows.
-    const warmHit = isWarmProjectSession(visible.row.metadata);
-    if (warmHit) {
+    // The literal gate is pinned by r8-warm-adopt.test.ts; `warmHit` only feeds
+    // the session_started analytics property below.
+    let warmHit = false;
+    if (isWarmProjectSession(visible.row.metadata)) {
+      warmHit = true;
       await dropWarmSessionMarkerOnAdopt(sessionId);
       stl.mark('warm-adopted');
     }
