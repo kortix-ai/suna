@@ -388,3 +388,45 @@ test.describe.serial('27 — PostHog product analytics', { tag: '@quarantine' },
     );
   });
 });
+
+// No sandbox needed: only the web server and the PostHog key.
+test.describe('27 — PostHog consent', { tag: '@quarantine' }, () => {
+  test.skip(!enabled, 'Set E2E_ENABLE_POSTHOG_SMOKE=1 for the real PostHog flow.');
+
+  test('anonymous visitors are captured only after CookieYes "analytics" consent', async ({ browser }) => {
+    const cky = (fields: string) => ({
+      name: 'cookieyes-consent',
+      value: `consentid:e2e,${fields}`,
+      url: process.env.E2E_BASE_URL || 'http://localhost:3000',
+    });
+    const visit = async (cookie?: ReturnType<typeof cky>) => {
+      const context = await browser.newContext({
+        userAgent:
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
+      });
+      if (cookie) await context.addCookies([cookie]);
+      const page = await context.newPage();
+      await hideAutomation(page);
+      const captures: string[] = [];
+      page.on('request', (request) => {
+        const url = new URL(request.url());
+        if (request.method() === 'POST' && url.pathname.startsWith('/ingest/') && !url.pathname.startsWith('/ingest/flags')) {
+          captures.push(...decodeCaptureBody(request).map((e) => e.event));
+        }
+      });
+      await page.goto('/', { waitUntil: 'load' });
+      await page.waitForTimeout(6_000);
+      await context.close();
+      return captures;
+    };
+
+    // No decision yet: nothing leaves the browser.
+    expect(await visit()).toEqual([]);
+    // Reject All: still nothing.
+    expect(await visit(cky('consent:no,action:yes,necessary:yes,functional:no,analytics:no,advertisement:no'))).toEqual([]);
+    // Accept All: the pageview goes out.
+    expect(
+      await visit(cky('consent:yes,action:yes,necessary:yes,functional:yes,analytics:yes,advertisement:yes')),
+    ).toContain('$pageview');
+  });
+});

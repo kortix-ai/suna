@@ -2,6 +2,7 @@ import './sentry.client.config';
 import * as Sentry from '@sentry/nextjs';
 import posthog from 'posthog-js';
 import { getEnv } from '@/lib/env-config';
+import { captureAllowedNow } from '@/lib/analytics/posthog-consent';
 import { posthogApiHost, posthogHosts } from './scripts/posthog-hosts.mjs';
 
 // Instrument client-side navigations for performance tracing
@@ -22,6 +23,11 @@ try {
       capture_exceptions: false, // Sentry → Better Stack owns errors
       person_profiles: 'identified_only',
       persistence: 'localStorage', // no cookie, keeps request headers small
+      // Consent, decided synchronously so the first pageview is not lost:
+      // anonymous visitors need CookieYes "analytics" consent, an explicit
+      // rejection wins even when signed in, signed-in users are captured
+      // otherwise. posthog-identify.tsx re-decides on consent and auth changes.
+      opt_out_capturing_by_default: !captureAllowedNow(document.cookie),
       disable_session_recording: true, // the project default is ON; flip once the replay scope is decided
       session_recording: { maskAllInputs: true, maskTextSelector: '*' }, // sessions show customer code and files
     });
