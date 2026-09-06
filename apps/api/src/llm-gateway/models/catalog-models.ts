@@ -103,6 +103,25 @@ function servedLimit(limit?: { context?: number; input?: number; output?: number
   };
 }
 
+
+/**
+ * The input/output modalities served for a CURATED model, reconciled with its
+ * curated `vision` flag. `attachment` and `modalities.input` describe one
+ * capability and opencode believes the second one, so they must never disagree.
+ */
+export function modalitiesFor(
+  vision: boolean,
+  fromCatalog: { input?: string[]; output?: string[] } | undefined,
+): { input: string[]; output: string[] } {
+  const input = [...(fromCatalog?.input ?? [])];
+  if (!input.includes('text')) input.unshift('text');
+  const withImage = input.includes('image') ? input : [...input, 'image'];
+  return {
+    input: vision ? withImage : input.filter((m) => m !== 'image'),
+    output: fromCatalog?.output?.length ? [...fromCatalog.output] : ['text'],
+  };
+}
+
 // Capability flags for a served model. models.dev is the single source of truth:
 // an enriched catalog entry (capabilities present) is used verbatim; a model
 // models.dev doesn't carry falls back to permissive legacy defaults so it isn't
@@ -230,6 +249,16 @@ export function managedModels(): Record<string, GatewayModel> {
       ...(caps ?? {}),
       // Curated fields always win over the models.dev record.
       attachment: m.vision,
+      // …AND THE MODALITIES HAVE TO AGREE WITH THEM. opencode does not read
+      // `attachment` when it decides whether a prompt may carry an image — it
+      // reads `modalities.input`. models.dev carries no modalities for some
+      // curated slugs (glm-5.3-flash resolved to `input: []`), so the served
+      // model claimed attachment:true and image input nowhere, and every image
+      // prompt died in the agent with "this model does not support image
+      // input" BEFORE any request left the sandbox (pi-js.kortix.com,
+      // 2026-09-06). A curated vision model advertises image input; a
+      // non-vision one never does, whatever models.dev says.
+      modalities: modalitiesFor(m.vision, caps?.modalities),
       limit: m.limit,
       ...(cost ? { cost } : {}),
     };

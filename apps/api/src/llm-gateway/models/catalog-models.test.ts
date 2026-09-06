@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { catalogModelForWireModel, gatewayModelCatalog } from './catalog-models';
+import { catalogModelForWireModel, gatewayModelCatalog, modalitiesFor } from './catalog-models';
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
@@ -268,5 +268,40 @@ describe('catalogModelForWireModel — generation-controls capability lookup', (
 
   test('returns undefined for a completely unknown wire model', () => {
     expect(catalogModelForWireModel('nonexistent-provider/nonexistent-model')).toBeUndefined();
+  });
+});
+
+describe('a vision model advertises image input — attachment and modalities cannot disagree', () => {
+  // opencode does not read `attachment` when it decides whether a prompt may
+  // carry an image; it reads `modalities.input`. models.dev carries no
+  // modalities for some curated slugs — glm-5.3-flash resolved to `input: []`
+  // — so the served model claimed attachment:true and image input nowhere, and
+  // every image prompt died inside the agent with "this model does not support
+  // image input" before a request ever left the sandbox (pi-js.kortix.com,
+  // 2026-09-06). Kortix picks the model from the account's entitlement, so the
+  // fix has to hold for whichever one it picks, not for one hand-chosen id.
+  test('every served vision model lists image input; no non-vision model does', () => {
+    const served = gatewayModelCatalog(undefined, { managedOnly: true } as never);
+    const entries = Object.entries(served);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [id, m] of entries) {
+      const input = (m as { modalities?: { input?: string[] } }).modalities?.input ?? [];
+      expect(input, `${id} must always accept text`).toContain('text');
+      if ((m as { attachment?: boolean }).attachment) {
+        expect(input, `${id} is attachment-capable, so it must advertise image input`).toContain('image');
+      } else {
+        expect(input, `${id} is not attachment-capable and must not advertise image input`).not.toContain('image');
+      }
+    }
+  });
+
+  test('modalitiesFor reconciles the curated flag with whatever models.dev carried', () => {
+    expect(modalitiesFor(true, undefined)).toEqual({ input: ['text', 'image'], output: ['text'] });
+    expect(modalitiesFor(true, { input: [], output: [] })).toEqual({ input: ['text', 'image'], output: ['text'] });
+    expect(modalitiesFor(true, { input: ['text', 'pdf'], output: ['text'] })).toEqual({ input: ['text', 'pdf', 'image'], output: ['text'] });
+    // Already correct records are left alone, order included.
+    expect(modalitiesFor(true, { input: ['text', 'image', 'pdf'], output: ['text'] })).toEqual({ input: ['text', 'image', 'pdf'], output: ['text'] });
+    // A non-vision model never advertises image input, whatever the record said.
+    expect(modalitiesFor(false, { input: ['text', 'image'], output: ['text'] })).toEqual({ input: ['text'], output: ['text'] });
   });
 });
