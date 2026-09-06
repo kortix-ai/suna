@@ -143,8 +143,12 @@ export function ProjectHomeWelcomeBody({
       */}
       <div
         className={cn(
-          'm-auto flex w-full shrink-0 flex-col gap-10 py-8 sm:px-4',
-          aside ? 'max-w-5xl' : 'max-w-3xl',
+          'flex w-full shrink-0 flex-col gap-10 py-8 sm:px-4',
+          // With a panel beside it the block pins to the TOP (`mx-auto`, not
+          // `m-auto`): the panel's sections open and close, and a vertically
+          // centred column would re-centre on every toggle — the composer
+          // sliding up and down under the cursor (user, 2026-09-06).
+          aside ? 'mx-auto max-w-5xl pt-10 lg:pt-16' : 'm-auto max-w-3xl',
         )}
       >
         <div
