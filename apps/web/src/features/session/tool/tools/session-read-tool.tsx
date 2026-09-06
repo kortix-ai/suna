@@ -1,4 +1,5 @@
 'use client';
+
 import { STATUS_TEXT } from '@/components/ui/status';
 import {
   BasicTool,
@@ -18,9 +19,11 @@ import {
   ClockIcon as Clock,
   EyeglassesIcon as Glasses,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -85,7 +88,7 @@ export function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolPr
     <BasicTool
       icon={<Glasses className="size-3.5 shrink-0" />}
       trigger={{
-        title: `Session · ${modeLabel}`,
+        title: tI18nComplete('textc616e8ff6ba3', { value0: modeLabel }),
         subtitle: sid,
         args: statusArgs,
       }}

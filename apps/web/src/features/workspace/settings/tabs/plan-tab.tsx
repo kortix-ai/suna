@@ -33,6 +33,7 @@ import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { usePermission } from '@/lib/use-permission';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { SettingsTabHeader } from '../settings-tab-header';
 
@@ -43,6 +44,7 @@ function planReturnUrl(): string {
 }
 
 export function PlanTab({ accountId }: { accountId: string | undefined }) {
+  const t = useTranslations('settings.plan');
   const canWrite = usePermission(accountId, 'account.write');
 
   return (
@@ -70,12 +72,9 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
         </BillingAccountProvider>
       ) : (
         <SettingsRowGroup>
-          <SettingsRow
-            label="Managed by an account admin"
-            description="Only admins of this account can change its plan or buy credits."
-          >
+          <SettingsRow label={t('managedByAdmin')} description={t('adminOnly')}>
             <Button asChild variant="secondary" size="sm">
-              <Link href={`/accounts/${accountId}`}>Open account</Link>
+              <Link href={`/accounts/${accountId}`}>{t('openAccount')}</Link>
             </Button>
           </SettingsRow>
         </SettingsRowGroup>

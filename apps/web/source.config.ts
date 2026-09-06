@@ -3,12 +3,6 @@ import { defineConfig, defineDocs, frontmatterSchema } from 'fumadocs-mdx/config
 import { z } from 'zod';
 import { SHIKI_THEME_DARK, SHIKI_THEME_LIGHT } from './src/lib/code-theme';
 
-// Docs use fumadocs/MDX. The blog does NOT — it is React-rendered from a typed
-// registry (src/lib/blog-posts.ts), so there is no blog collection here.
-export const docs = defineDocs({
-  dir: 'content/docs',
-});
-
 // Frontmatter contract for the use-case / case-study MDX collection. `author`
 // references a key in the author registry (src/lib/blog.ts); the rest is
 // self-describing.

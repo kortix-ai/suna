@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 
 import { ROTATION_SIZE } from '@/stores/starter-prompt-rotation-store';
 import {
@@ -10,6 +11,25 @@ import {
   STARTER_PROMPTS_BY_ID,
   WORKFORCE_STARTER_PROMPTS,
 } from './starter-prompts';
+
+const STARTER_PROMPT_LOCALES = ['en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es', 'sr'] as const;
+
+type TranslatedStarterPrompt = {
+  label: string;
+  prompt: string;
+};
+
+function readStarterPromptCatalog(locale: (typeof STARTER_PROMPT_LOCALES)[number]) {
+  const path = new URL(`../../translations/${locale}.json`, import.meta.url);
+  const catalog = JSON.parse(readFileSync(path, 'utf8')) as {
+    starterPrompts: { items: Record<string, TranslatedStarterPrompt> };
+  };
+  return catalog.starterPrompts.items;
+}
+
+function backtickTokens(value: string) {
+  return [...value.matchAll(/`[^`]+`/g)].map(([token]) => token).sort();
+}
 
 describe('the prompt pool holds together', () => {
   // Ids are PERSISTED by the daily rotation, so a duplicate would let one
@@ -161,5 +181,38 @@ describe('every prompt is renderable and sendable', () => {
     );
     expect(interrogators.map((prompt) => prompt.id)).toEqual([]);
     expect(PINNED_STARTER_PROMPT.prompt).toContain('Ask about my company');
+  });
+});
+
+describe('every prompt is translated without breaking its contract', () => {
+  const ids = STARTER_PROMPTS.map(({ id }) => id);
+
+  for (const locale of STARTER_PROMPT_LOCALES) {
+    test(`${locale} contains every prompt in source order`, () => {
+      expect(Object.keys(readStarterPromptCatalog(locale))).toEqual(ids);
+    });
+
+    test(`${locale} preserves content and rendering constraints`, () => {
+      const catalog = readStarterPromptCatalog(locale);
+
+      for (const source of STARTER_PROMPTS) {
+        const translated = catalog[source.id];
+        expect(translated.label.trim().length).toBeGreaterThan(0);
+        expect(translated.label.length).toBeLessThanOrEqual(32);
+        expect(translated.prompt.trim().length).toBeGreaterThan(15);
+        expect(translated.prompt.trim()).toMatch(/[.!?。！？]$/);
+        expect(backtickTokens(translated.label)).toEqual(backtickTokens(source.label));
+        expect(backtickTokens(translated.prompt)).toEqual(backtickTokens(source.prompt));
+      }
+    });
+  }
+
+  test('Serbian starter prompts use Cyrillic', () => {
+    const text = Object.values(readStarterPromptCatalog('sr'))
+      .map(({ label, prompt }) => `${label}${prompt}`)
+      .join('');
+    expect([...text].filter((letter) => /[\u0400-\u04ff]/u.test(letter)).length).toBeGreaterThan(
+      3000,
+    );
   });
 });

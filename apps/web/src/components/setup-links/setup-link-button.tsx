@@ -11,8 +11,10 @@ import {
 import { OutcomeCard } from '@/features/session/outcomes/outcome-card';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
 import { outcomeTint } from '@/features/session/outcomes/outcome-vocabulary';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 import { KeyIcon, PlugIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ConnectorIntake } from './connector-intake';
 import { SecretIntakeForm } from './secret-intake-form';
@@ -69,6 +71,7 @@ export function SetupLinkButton({
   token: string;
   children?: React.ReactNode;
 }): React.ReactElement {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   /**
    * Settled from THIS card, in this page's lifetime.
@@ -86,7 +89,8 @@ export function SetupLinkButton({
    * the GET response, which is an API change.
    */
   const [settled, setSettled] = useState(false);
-  const copy = COPY[kind];
+  const localizedCopy = useLocalizedUiCatalog(COPY);
+  const copy = localizedCopy[kind];
   const Icon = copy.icon;
   const tint = outcomeTint(settled ? 'success' : 'warning');
   const label = setupLinkChipLabel(textOf(children), token, copy.fallback);
@@ -115,13 +119,13 @@ export function SetupLinkButton({
       description: '',
       status: settled
         ? { label: copy.doneStatus, tone: 'success' }
-        : { label: 'Waiting for you', tone: 'warning' },
+        : { label: tI18nComplete.raw('text9f760ab20739'), tone: 'warning' },
       at: 0,
       meta: [],
       action: { label: settled ? 'View' : copy.action, intent: 'open' },
       resourceHref: null,
     }),
-    [token, label, copy.action, copy.doneStatus, settled],
+    [token, label, settled, copy.doneStatus, copy.action, tI18nComplete],
   );
 
   return (

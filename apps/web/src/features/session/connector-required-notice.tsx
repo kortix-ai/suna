@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils';
 import { useConnectorGateStore } from '@/stores/connector-gate-store';
 import type { KortixSendError, KortixSendErrorConnector } from '@kortix/sdk/react';
 import { PlugIcon } from '@phosphor-icons/react';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 export interface ConnectorNoticeCopy {
   /** "Gmail" · "Gmail and Slack" · "Gmail, Slack and Notion". */
@@ -45,12 +46,8 @@ export function connectorNoticeCopy(
   const names = connectors.map((connector) => connector.name);
   return {
     label:
-      names.length <= 1
-        ? (names[0] ?? '')
-        : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`,
-    connectable: connectors.filter(
-      (connector) => connector.authorization_strategy === 'project',
-    ),
+      names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`,
+    connectable: connectors.filter((connector) => connector.authorization_strategy === 'project'),
   };
 }
 
@@ -66,13 +63,16 @@ export function ConnectorRequiredNotice({
   resend: (() => void) | undefined;
   className?: string;
 }) {
+  const t = useTranslations('sessionUi.connectorRequired');
+  const locale = useLocale();
   const openConnectorGate = useConnectorGateStore((state) => state.openConnectorGate);
 
   const connectors = error?.kind === 'connector' ? error.connectors : undefined;
   if (!connectors?.length || !projectId) return null;
 
   const names = connectors.map((connector) => connector.name);
-  const { label, connectable } = connectorNoticeCopy(connectors);
+  const { connectable } = connectorNoticeCopy(connectors);
+  const label = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(names);
 
   return (
     <div className={cn('bg-popover rounded-md border px-4 py-3.5', className)}>
@@ -81,14 +81,9 @@ export function ConnectorRequiredNotice({
           <PlugIcon className="text-kortix-orange size-4" weight="fill" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-foreground text-sm font-medium">
-            Connect {label} to continue
-          </p>
+          <p className="text-foreground text-sm font-medium">{t('title', { connectors: label })}</p>
           <p className="text-muted-foreground mt-1 text-xs text-pretty">
-            This session needs {label}, and nothing is connected to{' '}
-            {names.length === 1 ? 'it' : 'them'} yet. Nothing has run and nothing was charged —
-            connect{' '}
-            {names.length === 1 ? 'the account' : 'the accounts'} and your message is sent again.
+            {t('description', { connectors: label, count: names.length })}
           </p>
 
           {connectable.length > 0 ? (
@@ -104,14 +99,15 @@ export function ConnectorRequiredNotice({
               }
             >
               <PlugIcon className="size-3.5 shrink-0" />
-              {connectable.length === 1 ? `Connect ${connectable[0].name}` : 'Connect accounts'}
+              {connectable.length === 1
+                ? t('connectOne', { connector: connectable[0].name })
+                : t('connectMany')}
             </Button>
           ) : (
             // Every one is `user` strategy: this app cannot mint a link that
             // would help, and a dead button is worse than a straight sentence.
             <p className="text-muted-foreground mt-2 text-xs text-pretty">
-              {label} authorizes one account at a time, so it has to be connected by the account
-              this session runs as.
+              {t('privateDescription', { connectors: label, count: names.length })}
             </p>
           )}
         </div>

@@ -1,7 +1,6 @@
+import { FullScreenPresentationViewer } from '@/features/file-renderers/presentation/FullScreenPresentationViewer';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import React from 'react';
-import { FullScreenPresentationViewer } from '@/features/file-renderers/presentation/FullScreenPresentationViewer';
 
 interface PresentationViewerState {
   isOpen: boolean;
@@ -21,7 +20,11 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
       sandboxUrl: undefined,
       initialSlide: undefined,
 
-      openPresentation: (presentationName: string, sandboxUrl: string, initialSlide: number = 1) => {
+      openPresentation: (
+        presentationName: string,
+        sandboxUrl: string,
+        initialSlide: number = 1,
+      ) => {
         set({
           isOpen: true,
           presentationName,
@@ -41,8 +44,8 @@ export const usePresentationViewerStore = create<PresentationViewerState>()(
     }),
     {
       name: 'presentation-viewer-store',
-    }
-  )
+    },
+  ),
 );
 
 // Backward compatibility hook

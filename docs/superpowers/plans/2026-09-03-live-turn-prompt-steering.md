@@ -405,4 +405,3 @@ gh pr view 7103 --json mergeStateStatus,isDraft,state,mergedAt,url
 ```
 
 Expected: clean worktree, draft open PR, and `mergedAt: null`.
-

@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
 

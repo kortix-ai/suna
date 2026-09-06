@@ -1,4 +1,3 @@
-import type { QueryClient } from '@tanstack/react-query';
 import {
   getProjectSandboxProviderTransition,
   type KortixProject,
@@ -7,6 +6,7 @@ import {
   type UpdateProjectSandboxProviderResult,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import type { QueryClient } from '@tanstack/react-query';
 
 /**
  * A provider-migration transition never changes again once it reaches one of

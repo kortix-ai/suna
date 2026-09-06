@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The Experimental tab — one row per `experimental_features` catalog entry
  * each with an on/off switch. No stability badge: Experimental / Beta /
@@ -74,6 +75,7 @@ import {
   getProject,
   updateFeatureFlag,
   type FeatureFlagKey,
+  type FeatureFlagStability,
   type FeatureFlagView,
   type ProjectDetail,
 } from '@kortix/sdk';
@@ -89,9 +91,37 @@ import { SettingsTabHeader } from '../settings-tab-header';
  * an overridden flag says only that, rather than guessing a default it cannot
  * see.
  */
-function originLabel(feature: FeatureFlagView): string {
-  if (feature.overridden) return 'Overridden for this project';
-  return feature.enabled ? 'Default on' : 'Default off';
+export interface ExperimentalCopy {
+  stability: Record<FeatureFlagStability, string>;
+  overridden: string;
+  defaultOn: string;
+  defaultOff: string;
+  search: string;
+  loadFailed: string;
+  retry: string;
+  noMatches: (query: string) => string;
+  emptyTitle: string;
+  emptyDescription: string;
+  permission: string;
+}
+
+export const DEFAULT_EXPERIMENTAL_COPY: ExperimentalCopy = {
+  stability: { experimental: 'Experimental', beta: 'Beta', stable: 'Stable' },
+  overridden: 'Overridden for this project',
+  defaultOn: 'Default on',
+  defaultOff: 'Default off',
+  search: 'Search features',
+  loadFailed: 'Failed to load project',
+  retry: 'Retry',
+  noMatches: (query) => `No matches for ${query}.`,
+  emptyTitle: 'No experimental features',
+  emptyDescription: 'This deployment exposes no per-project feature flags.',
+  permission: "You need the project's customize-write permission to change a feature flag.",
+};
+
+function originLabel(feature: FeatureFlagView, copy: ExperimentalCopy): string {
+  if (feature.overridden) return copy.overridden;
+  return feature.enabled ? copy.defaultOn : copy.defaultOff;
 }
 
 /**
@@ -128,11 +158,13 @@ function ExperimentalFeatureRow({
   pending,
   canManage,
   onToggle,
+  copy,
 }: {
   feature: FeatureFlagView;
   pending: boolean;
   canManage: boolean;
   onToggle: (key: string, next: boolean) => void;
+  copy: ExperimentalCopy;
 }) {
   // The switch's accessible name, pointed at the row's VISIBLE name rather
   // than repeating the string in an `aria-label`. `main`'s
@@ -153,7 +185,7 @@ function ExperimentalFeatureRow({
           <p id={nameId} className="text-foreground text-sm font-medium">
             {feature.name}
           </p>
-          <span className="text-muted-foreground/70 text-xs">{originLabel(feature)}</span>
+          <span className="text-muted-foreground/70 text-xs">{originLabel(feature, copy)}</span>
         </div>
         <p className="text-muted-foreground mt-0.5 text-xs text-pretty">{feature.description}</p>
       </div>
@@ -203,6 +235,7 @@ export interface ExperimentalTabViewProps {
    *  known, and asserting a denial there would be a guess. Ported from
    *  `main`'s `feature-flags-view.tsx`. */
   showPermissionNotice?: boolean;
+  copy?: ExperimentalCopy;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -223,6 +256,7 @@ export function ExperimentalTabView({
   showPermissionNotice = false,
   query = '',
   onQueryChange = () => {},
+  copy = DEFAULT_EXPERIMENTAL_COPY,
 }: ExperimentalTabViewProps) {
   const searching = query.trim().length > 0;
   // Shown once there is something to search, or while a query is active so the
@@ -241,7 +275,7 @@ export function ExperimentalTabView({
               <Search />
             </InputGroupSearchIcon>
             <InputGroupSearchInput
-              placeholder="Search features"
+              placeholder={copy.search}
               value={query}
               onChange={(e) => onQueryChange(e.target.value)}
               variant="popover"
@@ -255,11 +289,11 @@ export function ExperimentalTabView({
         ) : isError ? (
           <ErrorState
             size="sm"
-            title="Failed to load project"
+            title={copy.loadFailed}
             description={errorMessage}
             action={
               <Button variant="outline" size="sm" onClick={onRetry}>
-                Retry
+                {copy.retry}
               </Button>
             }
           />
@@ -272,7 +306,7 @@ export function ExperimentalTabView({
           // split `secrets-view.tsx` makes.
           searching ? (
             <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-              No matches for <span className="text-foreground font-mono">{query}</span>.
+              {copy.noMatches(query)}
             </p>
           ) : (
             // The shared primitive, not a bare sentence — ported from `main`'s
@@ -281,8 +315,8 @@ export function ExperimentalTabView({
             <EmptyState
               size="sm"
               icon={FlagIcon}
-              title="No experimental features"
-              description="This deployment exposes no per-project feature flags."
+              title={copy.emptyTitle}
+              description={copy.emptyDescription}
             />
           )
         ) : (
@@ -295,13 +329,12 @@ export function ExperimentalTabView({
                   pending={pendingKeySet.has(feature.key)}
                   canManage={canManage}
                   onToggle={onToggle}
+                  copy={copy}
                 />
               ))}
             </div>
             {showPermissionNotice ? (
-              <p className="text-muted-foreground text-xs">
-                You need the project&apos;s customize-write permission to change a feature flag.
-              </p>
+              <p className="text-muted-foreground text-xs">{copy.permission}</p>
             ) : null}
           </>
         )}
@@ -316,6 +349,8 @@ export function ExperimentalTabView({
  *  `settings-panel.tsx` returns `null` otherwise), so nothing here fetches on
  *  panel open. */
 export function ExperimentalTab({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const t = useI18nTranslations('settings.featureFlags');
   const queryClient = useQueryClient();
 
   const projectQuery = useQuery({
@@ -380,13 +415,19 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       }
     },
     onError: (error: Error, variables) => {
-      errorToast(error.message || `Failed to update ${variables.key}`);
+      errorToast(error.message || tI18nComplete('text6926cad8145a', { value0: variables.key }));
     },
   });
 
   const [query, setQuery] = useState('');
 
-  const rawFeatures = (project?.experimental_features ?? []).filter((f) => f.available);
+  const rawFeatures = (project?.experimental_features ?? [])
+    .filter((f) => f.available)
+    .map((feature) => ({
+      ...feature,
+      name: t(`flags.${feature.key}.name` as never),
+      description: t(`flags.${feature.key}.description` as never),
+    }));
   const withPending = rawFeatures.map((f) => ({
     ...f,
     enabled: pendingValues[f.key] ?? f.enabled,
@@ -412,6 +453,23 @@ export function ExperimentalTab({ projectId }: { projectId: string }) {
       showPermissionNotice={!canEdit && !writeCap.isLoading}
       query={query}
       onQueryChange={setQuery}
+      copy={{
+        stability: {
+          experimental: t('stability.experimental'),
+          beta: t('stability.beta'),
+          stable: t('stability.stable'),
+        },
+        overridden: t('origin.overridden'),
+        defaultOn: t('origin.defaultOn'),
+        defaultOff: t('origin.defaultOff'),
+        search: t('search'),
+        loadFailed: t('loadFailed'),
+        retry: t('retry'),
+        noMatches: (value) => t('noMatches', { query: value }),
+        emptyTitle: t('emptyTitle'),
+        emptyDescription: t('emptyDescription'),
+        permission: t('permission'),
+      }}
     />
   );
 }

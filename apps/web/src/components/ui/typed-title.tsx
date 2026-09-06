@@ -16,8 +16,8 @@
  * shared decision, surface-specific presentation.
  */
 
-import { TypingAnimation } from '@/components/ui/typing-animation';
 import { shouldTypeOnChange, TYPE_SPEED_MS } from '@/components/ui/typed-title-logic';
+import { TypingAnimation } from '@/components/ui/typing-animation';
 import { cn } from '@/lib/utils';
 import { useReducedMotion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';

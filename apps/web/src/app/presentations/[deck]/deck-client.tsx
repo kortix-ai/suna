@@ -6,8 +6,8 @@
  */
 
 import { notFound } from 'next/navigation';
-import { findDeck } from '../registry';
 import { Deck } from '../engine/deck';
+import { findDeck } from '../registry';
 
 export function DeckClient({ slug }: { slug: string }) {
   const deck = findDeck(slug);

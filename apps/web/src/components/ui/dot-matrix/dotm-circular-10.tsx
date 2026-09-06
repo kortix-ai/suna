@@ -1,13 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isWithinCircularMask } from "@/lib/dotmatrix-core";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, isWithinCircularMask } from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmCircular10Props = DotMatrixCommonProps;
 
@@ -29,27 +26,31 @@ export function DotmCircular10({
   ...rest
 }: DotmCircular10Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const animPhase = useCyclePhase({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1600,
-    speed
+    speed,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ row, col, phase }) => {
       if (!isWithinCircularMask(row, col)) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const x = col - 2;
       const y = row - 2;
       const ring = Math.round(Math.sqrt(x * x + y * y));
-      const tick = reducedMotion || phase === "idle" ? 0 : Math.floor((animPhase) * 10);
+      const tick = reducedMotion || phase === 'idle' ? 0 : Math.floor(animPhase * 10);
       const cellCode = (row * 3 + col * 5 + ring * 2) % 10;
       const d = moduloDistance(cellCode, tick, 10);
       const parityGate = (row + col + tick) % 2 === 0;

@@ -1,6 +1,6 @@
+import { getPortalRoot } from '@/lib/portal-root';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getPortalRoot } from '@/lib/portal-root';
 
 interface PortalProps {
   children: React.ReactNode;

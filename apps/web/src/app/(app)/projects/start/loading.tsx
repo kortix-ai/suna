@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Navigation Suspense boundary for /projects/start.
  *
@@ -15,9 +16,10 @@
  * `ProjectStartSkeleton` in `page.tsx` so the handover does not shift layout.
  */
 export default function ProjectStartLoading() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex min-h-screen flex-col" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Opening your project</span>
+      <span className="sr-only">{tI18nComplete.raw('text9498be620d80')}</span>
       <div className="w-full border-b">
         <div className="kx-app-header px-mobile mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-2 py-4 sm:gap-3">
           <div className="bg-muted-foreground/10 h-5 w-32 animate-pulse rounded-md" />

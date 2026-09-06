@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { EnvelopeOpenIcon as MailCheck } from '@phosphor-icons/react';
 import { FormEvent, Suspense, useState } from 'react';
@@ -13,7 +13,7 @@ import { AuthCardShell, BackToSignIn } from '@/features/auth/auth-card-shell';
 import { forgotPassword } from '../actions';
 
 function ForgotPasswordContent() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const t = useTranslations('auth.passwordReset');
   const [pending, setPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -33,11 +33,11 @@ function ForgotPasswordContent() {
         setSentTo(email);
         return;
       }
-      const msg = (result as any)?.message || 'Could not send reset link';
+      const msg = (result as any)?.message || t('errors.sendFailed');
       setErrorMessage(msg);
       errorToast(msg);
     } catch (err: any) {
-      const msg = err?.message || 'An unexpected error occurred';
+      const msg = err?.message || t('errors.unexpected');
       setErrorMessage(msg);
       errorToast(msg);
     } finally {
@@ -48,17 +48,17 @@ function ForgotPasswordContent() {
   if (sentTo) {
     return (
       <AuthCardShell
-        title={tHardcodedUi.raw('appAuthForgotPasswordPage.line43JsxAttrTitleCheckYourEmail')}
-        description={tHardcodedUi.raw(
-          'appAuthForgotPasswordPage.line44JsxAttrDescriptionWeVeSentYouAPasswordResetLink',
-        )}
+        title={t('sent.title')}
+        description={t('sent.description')}
         footer={<BackToSignIn />}
       >
-        <div className="border-border bg-muted/60 text-foreground/80 flex items-center gap-2 rounded-md border px-3 py-2.5">
+        <div className="border-border bg-muted/60 text-muted-foreground flex items-center gap-2 rounded-md border px-3 py-2.5">
           <MailCheck className="size-4 shrink-0" />
           <span className="truncate text-sm">
-            {tHardcodedUi.raw('appAuthForgotPasswordPage.line50JsxTextResetLinkSentTo')}
-            <span className="text-foreground">{sentTo}</span>
+            {t.rich('sent.address', {
+              email: sentTo,
+              address: (chunks) => <span className="text-foreground">{chunks}</span>,
+            })}
           </span>
         </div>
       </AuthCardShell>
@@ -67,16 +67,14 @@ function ForgotPasswordContent() {
 
   return (
     <AuthCardShell
-      title={tHardcodedUi.raw('appAuthForgotPasswordPage.line59JsxAttrTitleResetYourPassword')}
-      description={tHardcodedUi.raw(
-        'appAuthForgotPasswordPage.line60JsxAttrDescriptionEnterYourEmailAndWeLlSendYou',
-      )}
+      title={t('request.title')}
+      description={t('request.description')}
       footer={<BackToSignIn />}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="space-y-3">
           <label htmlFor="email" className="text-muted-foreground text-sm font-medium">
-            Email
+            {t('request.email')}
           </label>
           <Input
             id="email"
@@ -84,14 +82,14 @@ function ForgotPasswordContent() {
             name="email"
             type="email"
             size="md"
-            placeholder="Your email address"
+            placeholder={t('request.emailPlaceholder')}
             required
             autoComplete="email"
             autoFocus
           />
         </div>
         <Button type="submit" size="lg" disabled={pending} className="w-full">
-          {pending ? 'Sending link…' : 'Send reset link'}
+          {pending ? t('request.sending') : t('request.submit')}
         </Button>
       </form>
     </AuthCardShell>
@@ -99,8 +97,9 @@ function ForgotPasswordContent() {
 }
 
 export default function ForgotPassword() {
+  const t = useTranslations('auth.passwordReset');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Loading" />}>
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={t('loading')} />}>
       <ForgotPasswordContent />
     </Suspense>
   );

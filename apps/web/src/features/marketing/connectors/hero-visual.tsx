@@ -3,8 +3,9 @@
 import { favicon } from '@/components/home/interactive-demo/data';
 import { EASE_OUT, LEAD, panel } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { broker } from './content';
+import { getLocalizedConnectorsContent } from './content';
 
 /**
  * `/connectors` hero scene — the wall.
@@ -79,19 +80,20 @@ const CARD_LEFT = 14;
 const CARD_RIGHT = 2;
 const DIVIDER = ((WALL - CARD_LEFT) / (100 - CARD_LEFT - CARD_RIGHT)) * 100;
 
-/** `connector.call("gmail", "send_email", {…})` — the real call shape. */
-const CALL = broker.flow[0]?.mono ?? '';
-/** The one thing the sandbox actually carries. */
-const TOKEN = broker.after.lines[0];
-
 export function ConnectorsHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { broker } = getLocalizedConnectorsContent(tI18nComplete);
+  /** `connector.call("gmail", "send_email", {…})` — the real call shape. */
+  const call = broker.flow[0]?.mono ?? '';
+  /** The one thing the sandbox actually carries. */
+  const token = broker.after.lines[0];
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label="Thousands of connected apps on one side of a boundary, and the sandbox on the other, carrying a single scoped token and no credential."
+      aria-label={tI18nComplete.raw('text7f09a839ed67')}
     >
       <div className="relative h-[23rem] w-full max-w-[38rem] overflow-hidden sm:h-[26rem]">
         {/* ── the catalog, larger than the frame ──────────────────────── */}
@@ -150,7 +152,7 @@ export function ConnectorsHeroVisual(): ReactNode {
           transition={{ duration: 0.3, delay: LEAD + 0.3, ease: EASE_OUT }}
           aria-hidden
         >
-          the wall
+          {tI18nComplete.raw('texte59eaa3acaf1')}
         </m.span>
 
         {/* ── how many, said quietly ──────────────────────────────────── */}
@@ -161,7 +163,7 @@ export function ConnectorsHeroVisual(): ReactNode {
           transition={{ duration: 0.3, delay: LEAD + 0.34, ease: EASE_OUT }}
           aria-hidden
         >
-          3,000+ connected
+          {tI18nComplete.raw('text27691018adc6')}
         </m.span>
 
         {/* ── the crossing ────────────────────────────────────────────── */}
@@ -174,20 +176,20 @@ export function ConnectorsHeroVisual(): ReactNode {
             {/* outside: the call is assembled here, with the credential */}
             <div className="border-border/70 border-r border-dashed px-4 py-4">
               <span className="text-muted-foreground/45 block font-mono text-[10px] tracking-widest uppercase">
-                the call
+                {tI18nComplete.raw('text40b7bbb5b5d6')}
               </span>
               <p className="text-foreground/90 mt-2.5 font-mono text-[11px] leading-[1.6] break-words">
-                {CALL}
+                {call}
               </p>
             </div>
 
             {/* inside: exactly one line, because that is all there is */}
             <div className="px-4 py-4">
               <span className="text-muted-foreground/45 block font-mono text-[10px] tracking-widest uppercase">
-                in the sandbox
+                {tI18nComplete.raw('text833d4de66a37')}
               </span>
               <p className="text-foreground mt-2.5 font-mono text-[11px] leading-[1.6] break-words">
-                {TOKEN}
+                {token}
               </p>
               <p className="text-muted-foreground/55 mt-2 text-[11px] leading-snug text-pretty">
                 {broker.after.title}

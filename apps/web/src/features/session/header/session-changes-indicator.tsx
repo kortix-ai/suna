@@ -39,7 +39,8 @@ import {
 } from '@/features/session/session-changes-shared';
 import { cn } from '@/lib/utils';
 import { ArrowRightIcon, FilesIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -52,6 +53,8 @@ function splitPath(path: string) {
 
 export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const changeStatusMeta = useLocalizedUiCatalog(CHANGE_STATUS_META);
   const { id: projectId, sessionId: gitSessionId } = useParams<{
     id: string;
     sessionId: string;
@@ -106,12 +109,15 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
           </span>
           <div className="min-w-0 flex-1">
             <h3 className="text-foreground truncate text-sm font-medium tracking-tight">
-              <span className="tabular-nums">{changedCount}</span> {fileWord} changed
+              <span className="tabular-nums">{changedCount}</span> {fileWord}{' '}
+              {tI18nHardcoded.raw('i18nComplete.textd67e2e944994')}
             </h3>
             <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-              <span className="shrink-0">In this session</span>
+              <span className="shrink-0">
+                {tI18nHardcoded.raw('i18nComplete.text4501d03a0603')}
+              </span>
               <ArrowRightIcon className="size-3 shrink-0 opacity-50" aria-hidden />
-              <span className="sr-only">to</span>
+              <span className="sr-only">{tI18nHardcoded.raw('i18nComplete.text663ea1bfffe5')}</span>
               <Badge variant="outline" size="sm" className="max-w-32 min-w-0 font-normal">
                 <span className="truncate">{baseRef}</span>
               </Badge>
@@ -127,7 +133,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
           <ul>
             {changedFiles.map((file) => {
               const meta =
-                CHANGE_STATUS_META[file.status ?? 'modified'] ?? CHANGE_STATUS_META.modified;
+                changeStatusMeta[file.status ?? 'modified'] ?? changeStatusMeta.modified;
               const { name, dir } = splitPath(file.file);
               return (
                 <li
@@ -140,7 +146,15 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
                     aria-hidden
                   />
                   <span className="text-foreground/90 truncate font-medium">{name}</span>
-                  <span className="sr-only">{meta.label}</span>
+                  <span className="sr-only">
+                    {tI18nComplete.raw(
+                      meta.label === 'Added'
+                        ? 'text6b02e0d363a4'
+                        : meta.label === 'Removed'
+                          ? 'text4118fb4fed0e'
+                          : 'text7117f0807129',
+                    )}
+                  </span>
                   {dir && (
                     <span className="text-muted-foreground/60 ml-auto max-w-[45%] shrink-0 truncate">
                       {dir}

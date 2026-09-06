@@ -10,11 +10,13 @@ import {
   HardDrivesIcon as Server,
   ShieldCheckIcon as ShieldCheck,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
+import { CONTACT_TRANSLATION_KEYS } from '@/i18n/contact-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 
 const CONTACT_EMAIL = 'hey@kortix.ai';
 
@@ -54,7 +56,9 @@ const VALUE_PROPS = [
 
 export default function ContactPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
+  const valueProps = localizeUiCatalog(VALUE_PROPS, tI18nComplete, CONTACT_TRANSLATION_KEYS);
 
   return (
     <div className="bg-background relative min-h-dvh overflow-hidden">
@@ -103,7 +107,7 @@ export default function ContactPage() {
 
         {/* Value props — minimal list, balanced regardless of count. */}
         <div className="mx-auto mt-16 flex w-full max-w-md flex-col gap-5 text-left">
-          {VALUE_PROPS.map(({ icon, title, desc }) => (
+          {valueProps.map(({ icon, title, desc }) => (
             <div key={title} className="flex items-start gap-3.5">
               <div className="text-muted-foreground mt-0.5 flex size-7 shrink-0 items-center justify-center">
                 {icon}

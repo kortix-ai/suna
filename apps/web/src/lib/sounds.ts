@@ -57,9 +57,8 @@ const SYNTH_CONFIG: Record<SoundEvent, { freq: number; duration: number; type: O
 
 function playSynthFallback(event: SoundEvent, volume: number) {
   try {
-    const AudioCtx = (typeof AudioContext !== 'undefined')
-      ? AudioContext
-      : (window as any).webkitAudioContext;
+    const AudioCtx =
+      typeof AudioContext !== 'undefined' ? AudioContext : (window as any).webkitAudioContext;
     if (!AudioCtx) return;
 
     const ctx = new AudioCtx();

@@ -1,8 +1,8 @@
 'use client';
 
-import * as React from 'react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import * as React from 'react';
 
 /**
  * Kortix <SectionCard> — the one panel pattern.
@@ -66,33 +66,24 @@ export function SectionCard({
       )}
     >
       {hasHeader && (
-        <div className="flex items-start justify-between gap-3 border-b border-border/60 px-6 py-4">
+        <div className="border-border/60 flex items-start justify-between gap-3 border-b px-6 py-4">
           <div className="min-w-0">
             {title != null && (
-              <h2 className="text-base font-semibold text-foreground">
+              <h2 className="text-foreground text-base font-semibold">
                 {title}
                 {count != null && (
-                  <span className="font-normal text-muted-foreground">
-                    {' '}
-                    ({count})
-                  </span>
+                  <span className="text-muted-foreground font-normal"> ({count})</span>
                 )}
               </h2>
             )}
             {description != null && (
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {description}
-              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>
             )}
           </div>
           {action != null && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      {flush ? (
-        children
-      ) : (
-        <div className={cn('px-6 py-5', bodyClassName)}>{children}</div>
-      )}
+      {flush ? children : <div className={cn('px-6 py-5', bodyClassName)}>{children}</div>}
     </Card>
   );
 }

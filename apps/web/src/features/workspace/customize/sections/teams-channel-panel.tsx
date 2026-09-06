@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * "Use your own Microsoft Teams app" — the self-hosted / custom-bot install
  * path for the Teams channel, rendered under the channel rows in
@@ -60,6 +61,7 @@ const TEAMS_MANIFEST_STEPS = [
 ];
 
 export function TeamsChannelPanel({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: mode, isLoading } = useTeamsMode(projectId);
 
   if (isLoading || !mode?.enabled) return null;
@@ -72,9 +74,9 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
           className="flex h-fit w-full items-center justify-between rounded-none py-2.5"
         >
           <div className="min-w-0 text-left">
-            <p className="text-sm font-medium">Use your own Microsoft Teams app</p>
+            <p className="text-sm font-medium">{tI18nComplete.raw('texte2065cb79c86')}</p>
             <p className="text-muted-foreground mt-0.5 text-xs">
-              For self-hosted setups, or to sideload the app into your tenant manually.
+              {tI18nComplete.raw('text82f78edabb4d')}
             </p>
           </div>
         </Button>
@@ -90,6 +92,7 @@ export function TeamsChannelPanel({ projectId }: { projectId: string }) {
 }
 
 function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode | undefined }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const managedAvailable = Boolean(mode?.available && !mode.byo);
   const [tenantId, setTenantId] = useState('');
   const [teamName, setTeamName] = useState('');
@@ -119,9 +122,11 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
   return (
     <div className="space-y-5">
       <div className="space-y-1">
-        <h3 className="text-foreground text-sm font-medium">Add Kortix to Microsoft Teams</h3>
+        <h3 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text31a96910354d')}
+        </h3>
         <p className="text-muted-foreground text-sm leading-relaxed">
-          Install the Kortix app into your Teams tenant, then bind this project to that tenant.
+          {tI18nComplete.raw('text66189757845d')}
         </p>
       </div>
 
@@ -146,7 +151,7 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="outline" size="sm" className="gap-1.5" asChild>
                 <Link href={mode?.adminConsentUrl ?? '#'} target="_blank" rel="noopener noreferrer">
-                  Grant admin consent
+                  {tI18nComplete.raw('text848c28cd6858')}
                   <ExternalLinkIcon className="size-3.5 shrink-0" />
                 </Link>
               </Button>
@@ -166,22 +171,18 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
       {managedAvailable ? (
         <div className="flex items-center justify-between gap-4">
           <Label htmlFor="teams-byo" className="text-muted-foreground text-sm font-normal">
-            Use your own Azure bot instead of the managed Kortix bot
+            {tI18nComplete.raw('text8d56fc37564c')}
           </Label>
           <Switch id="teams-byo" checked={byo} onCheckedChange={setByo} />
         </div>
       ) : (
-        <InfoBanner tone="neutral">
-          No managed Kortix Teams bot is configured on this server. Register a multi-tenant Azure
-          Bot and connect its credentials below; after connecting, point its messaging endpoint at
-          this project&apos;s Teams webhook.
-        </InfoBanner>
+        <InfoBanner tone="neutral">{tI18nComplete.raw('textb389c97b8141')}</InfoBanner>
       )}
 
       {byo ? (
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="teams-app-id">Bot app (client) ID</Label>
+            <Label htmlFor="teams-app-id">{tI18nComplete.raw('text1ea62f53296b')}</Label>
             <Input
               id="teams-app-id"
               placeholder="00000000-0000-0000-0000-000000000000"
@@ -192,11 +193,11 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="teams-app-password">Bot client secret</Label>
+            <Label htmlFor="teams-app-password">{tI18nComplete.raw('textafb32719ca9e')}</Label>
             <Input
               id="teams-app-password"
               type="password"
-              placeholder="Client secret value"
+              placeholder={tI18nComplete.raw('text1aae7cd92dea')}
               value={appPassword}
               onChange={(e) => setAppPassword(e.target.value)}
               autoComplete="off"
@@ -208,24 +209,22 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
 
       <div className="space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="teams-tenant-id">Azure AD tenant ID</Label>
+          <Label htmlFor="teams-tenant-id">{tI18nComplete.raw('text2ff3e0bff1fd')}</Label>
           <Input
             id="teams-tenant-id"
-            placeholder="00000000-0000-0000-0000-000000000000 or contoso.onmicrosoft.com"
+            placeholder={tI18nComplete.raw('textb17e65e14323')}
             value={tenantId}
             onChange={(e) => setTenantId(e.target.value)}
             autoComplete="off"
             spellCheck={false}
           />
-          <p className="text-muted-foreground text-xs">
-            Found in Azure Portal → Microsoft Entra ID → Overview → Tenant ID.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textd5901ccea8a3')}</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="teams-team-name">Team name (optional)</Label>
+          <Label htmlFor="teams-team-name">{tI18nComplete.raw('text472048e0f712')}</Label>
           <Input
             id="teams-team-name"
-            placeholder="Acme Corp"
+            placeholder={tI18nComplete.raw('texta73cb4563ee2')}
             value={teamName}
             onChange={(e) => setTeamName(e.target.value)}
             autoComplete="off"
@@ -234,7 +233,7 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
       </div>
 
       {error ? (
-        <InfoBanner tone="destructive" title="Could not connect">
+        <InfoBanner tone="destructive" title={tI18nComplete.raw('text8630b4dd33f2')}>
           {error}
         </InfoBanner>
       ) : null}
@@ -242,7 +241,7 @@ function InstallFlow({ projectId, mode }: { projectId: string; mode: TeamsMode |
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={connect.isPending || !canSubmit}>
           {connect.isPending ? <Loading className="mr-2 size-3.5 shrink-0" /> : null}
-          Connect Teams
+          {tI18nComplete.raw('text5df0a8e1f30f')}
         </Button>
       </div>
     </div>

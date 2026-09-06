@@ -3,8 +3,8 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 import { ConnectorsPage } from '@/features/workspace/capabilities/connectors/connectors-page';
+import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalog. See

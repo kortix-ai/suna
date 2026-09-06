@@ -28,6 +28,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from '@/com
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { AccountSettingsSidebar } from './account-settings-sidebar';
 import { accountHubCrumbs } from './sections';
 import { useAccountDetail } from './use-account-detail';
@@ -54,12 +55,19 @@ function CollapsedTrigger() {
 
 /** Reads the route and `?tab=`, so it renders under `Suspense`. */
 function ShellBreadcrumb() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const params = useParams<{ id?: string }>();
   const accountId = params?.id;
   const { activeSection } = useAccountHubSection(accountId);
   const accountQuery = useAccountDetail(accountId);
-  const crumbs = accountHubCrumbs(pathname, accountId, activeSection, accountQuery.data?.name);
+  const crumbs = accountHubCrumbs(
+    pathname,
+    accountId,
+    activeSection,
+    accountQuery.data?.name,
+    tI18nComplete,
+  );
 
   return (
     <Breadcrumb className="min-w-0 flex-1">

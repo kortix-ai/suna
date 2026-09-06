@@ -91,21 +91,14 @@ describe('buildWorkspacePaletteRows', () => {
     const rows = rowsWithActive(SITE.project_id);
 
     expect(ids(rows).sort()).toEqual(ALL.map((w) => w.project_id).sort());
-    expect(new Set(rows.map((r) => r.accountId))).toEqual(
-      new Set(['acct-personal', 'acct-acme']),
-    );
+    expect(new Set(rows.map((r) => r.accountId))).toEqual(new Set(['acct-personal', 'acct-acme']));
   });
 
   test('sorts the active account first, then by most recently opened', () => {
     // The sidebar's order, because it is literally the sidebar's function.
     // Active workspace is in acct-personal, so that account leads; inside it
     // Notes (Aug 25) beats Site (Aug 20).
-    expect(names(rowsWithActive(SITE.project_id))).toEqual([
-      'Notes',
-      'Site',
-      'Site',
-      'Billing',
-    ]);
+    expect(names(rowsWithActive(SITE.project_id))).toEqual(['Notes', 'Site', 'Site', 'Billing']);
   });
 
   test('falls back to alphabetical account order when no workspace is open', () => {
@@ -317,9 +310,15 @@ describe('groupWorkspacePaletteRows', () => {
     // Insertion-ordered Map, not a sort. Interleaved input must not produce
     // the same account twice.
     const groups = groupWorkspacePaletteRows([
-      ...rowsWithActive(null).filter((r) => r.accountId === 'acct-acme').slice(0, 1),
-      ...rowsWithActive(null).filter((r) => r.accountId === 'acct-personal').slice(0, 1),
-      ...rowsWithActive(null).filter((r) => r.accountId === 'acct-acme').slice(1, 2),
+      ...rowsWithActive(null)
+        .filter((r) => r.accountId === 'acct-acme')
+        .slice(0, 1),
+      ...rowsWithActive(null)
+        .filter((r) => r.accountId === 'acct-personal')
+        .slice(0, 1),
+      ...rowsWithActive(null)
+        .filter((r) => r.accountId === 'acct-acme')
+        .slice(1, 2),
     ]);
     expect(groups.map((g) => g.accountId)).toEqual(['acct-acme', 'acct-personal']);
     expect(groups[0].rows).toHaveLength(2);

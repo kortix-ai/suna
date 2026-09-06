@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/modal';
 import { errorToast } from '@/components/ui/toast';
 import { useSummarizeRuntimeSession } from '@kortix/sdk/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback } from 'react';
 
 interface CompactDialogProps {
@@ -42,9 +42,11 @@ export function CompactModal({
     // Only a failure still needs a voice — the card cannot say why the HTTP
     // call itself never reached the runtime.
     summarize.mutateAsync({ sessionId }).catch((error: unknown) => {
-      errorToast(error instanceof Error ? error.message : 'Failed to compact session');
+      errorToast(
+        error instanceof Error ? error.message : tHardcodedUi.raw('i18nComplete.texta4a83d949891'),
+      );
     });
-  }, [sessionId, summarize, onOpenChange, onCompactStart]);
+  }, [onCompactStart, onOpenChange, summarize, sessionId, tHardcodedUi]);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -92,10 +94,10 @@ export function CompactModal({
             className="w-full sm:w-auto"
             onClick={() => onOpenChange(false)}
           >
-            Cancel
+            {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
           </Button>
           <Button size="sm" className="w-full sm:w-auto" onClick={handleCompact}>
-            Compact
+            {tHardcodedUi.raw('i18nComplete.text99452646e34b')}
           </Button>
         </ModalFooter>
       </ModalContent>

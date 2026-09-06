@@ -166,6 +166,12 @@ describe('web ECS migration', () => {
     // in this workflow may delete it any more.
     expect(workflow).not.toContain('labels/preview');
     expect(workflow).toContain('PREVIEW_BRANCH_ENV');
+    expect(workflow).toContain(
+      'persistent_branch=$([ "$EVENT_NAME" = workflow_dispatch ] && [ "$provider" = daytona ] && printf \'\' || printf \'%s\' "$branch")',
+    );
+    expect(workflow).toContain(
+      'PREVIEW_BRANCH_ENV: ${{ needs.authorize.outputs.persistent_branch }}',
+    );
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts deploy');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts teardown');
     expect(workflow).toContain('bun tests/bin/sandbox-preview.ts reconcile');

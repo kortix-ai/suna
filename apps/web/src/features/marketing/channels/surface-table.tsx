@@ -5,8 +5,9 @@ import { Kortix } from '@/features/icon/icons/kortix';
 import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
 import { Slack } from '@/features/icon/icons/slack';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { surfaces } from './content';
+import { getLocalizedChannelsContent } from './content';
 
 /** `surfaces.rows[].icon` selects a logo by name at runtime, so it can't be
  *  statically resolved to a single import — this explicit map is the smallest
@@ -22,6 +23,8 @@ const ROW_ICONS = { Slack, MicrosoftTeams, Gmail, Kortix } as const;
  * switch cannot be mistaken for a surface that is on.
  */
 export function SurfaceTable(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { surfaces } = getLocalizedChannelsContent(tI18nComplete);
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
       {/* Column headers earn their keep on wide screens only — stacked rows on

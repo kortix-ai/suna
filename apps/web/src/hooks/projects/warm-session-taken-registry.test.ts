@@ -116,9 +116,9 @@ describe('takenIdsAddedByStorageEvent', () => {
       ['s-1', T0],
       ['s-2', T0 + 1],
     ]);
-    expect(takenIdsAddedByStorageEvent({ key: WARM_TAKEN_STORAGE_KEY, oldValue, newValue })).toEqual(
-      ['s-2'],
-    );
+    expect(
+      takenIdsAddedByStorageEvent({ key: WARM_TAKEN_STORAGE_KEY, oldValue, newValue }),
+    ).toEqual(['s-2']);
   });
 
   test('an event for a different key adds nothing', () => {

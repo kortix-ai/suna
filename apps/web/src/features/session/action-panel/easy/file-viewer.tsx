@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `FileViewer` — one file, shown the way that file wants to be read.
  *
@@ -125,6 +126,7 @@ export function FileViewer({
   onClose?: () => void;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Previewable only WITH a path. The preview is the file served by the
   // sandbox's static file server (see `HtmlPreview`), so with nothing on disk
   // to serve there is no rendered form — and therefore no second view to
@@ -154,12 +156,17 @@ export function FileViewer({
                 <TabsTrigger
                   size="xs"
                   value="preview"
-                  aria-label="Preview"
+                  aria-label={tI18nComplete.raw('text324b134f57c7')}
                   className="h-7 w-7 px-0"
                 >
                   <Eye className="size-3.5" />
                 </TabsTrigger>
-                <TabsTrigger size="xs" value="source" aria-label="Source" className="h-7 w-7 px-0">
+                <TabsTrigger
+                  size="xs"
+                  value="source"
+                  aria-label={tI18nComplete.raw('text0e570ca6fabe')}
+                  className="h-7 w-7 px-0"
+                >
                   <Code2 className="size-3.5" />
                 </TabsTrigger>
               </TabsList>
@@ -179,7 +186,7 @@ export function FileViewer({
           <ViewerActions
             copy={{
               run: () => navigator.clipboard.writeText(content),
-              ariaLabel: 'Copy file contents',
+              ariaLabel: tI18nComplete.raw('textb3278e5f53cc'),
             }}
             shareContext={shareContext}
             shareInput={fileShareInput(path, fileName)}

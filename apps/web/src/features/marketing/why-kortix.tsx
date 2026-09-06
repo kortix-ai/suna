@@ -1,5 +1,5 @@
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 type OpenRow = {
   title: string;

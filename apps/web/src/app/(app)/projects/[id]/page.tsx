@@ -1,8 +1,9 @@
 'use client';
 
+import { errorToast } from '@/components/ui/toast';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import { attachedFilesToDataUrlParts } from '@/features/session/uploaded-file-refs';
-import { errorToast } from '@/components/ui/toast';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import {
@@ -19,10 +20,10 @@ import {
 } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, writeStartStash } from '@kortix/sdk/react';
-import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -32,6 +33,7 @@ import { promptFromSearchParams } from './prompt-from-search-params';
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
 export default function ProjectIndexPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const pathname = usePathname();
@@ -65,8 +67,10 @@ export default function ProjectIndexPage() {
     if (window.localStorage.getItem(storageKey) === '1') return;
 
     window.localStorage.setItem(storageKey, '1');
-    openUpgradeDialog(billingDialogArgs('no_subscription', accountState, projectAccountId));
-  }, [accountState, projectAccountId, openUpgradeDialog]);
+    openUpgradeDialog(
+      billingDialogArgs('no_subscription', accountState, projectAccountId, tI18nComplete),
+    );
+  }, [accountState, projectAccountId, openUpgradeDialog, tI18nComplete]);
 
   // `/projects/start?q=<prompt>` forwards its query string onto this route
   // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as
@@ -100,7 +104,9 @@ export default function ProjectIndexPage() {
       // sandbox grant are allowed through because their state is `active`.
       const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
       if (isBillingEnabled() && !billingLoading && !billingStateAllowsRun(billingState)) {
-        openUpgradeDialog(billingDialogArgs(billingState, accountState, projectAccountId));
+        openUpgradeDialog(
+          billingDialogArgs(billingState, accountState, projectAccountId, tI18nComplete),
+        );
         return;
       }
 
@@ -124,7 +130,7 @@ export default function ProjectIndexPage() {
       try {
         parts = await attachedFilesToDataUrlParts(files);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Attachments are too large');
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
         setSending(false);
         return;
       }
@@ -169,7 +175,7 @@ export default function ProjectIndexPage() {
         },
       });
     },
-    [billingLoading, accountState, projectAccountId, openUpgradeDialog, newSession],
+    [billingLoading, accountState, newSession, openUpgradeDialog, projectAccountId, tI18nComplete],
   );
 
   return <ProjectHome projectId={projectId} onSend={handleSend} busy={sending} />;

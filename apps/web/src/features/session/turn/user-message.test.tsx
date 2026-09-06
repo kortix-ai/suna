@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { MentionChip, chipClass } from '@/features/session/mention-chip';
 import type { MessageWithParts } from '@/ui';
 
 import { RemoveFromQueueButton } from './queued-prompt-bubbles';

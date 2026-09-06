@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Modal } from '@/components/ui/modal';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { railGroups } from './rail';
+import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
 import {
   ACCOUNT_SCOPED_SETTINGS_TABS,
   buildSettingsPanelSettingsNav,
@@ -67,6 +68,7 @@ function baseProps(overrides: Partial<SettingsPanelShellProps> = {}): SettingsPa
     accountId: undefined,
     groups: allGroups,
     allItems,
+    chrome: DEFAULT_SETTINGS_RAIL_CHROME_COPY,
     ...overrides,
   };
 }

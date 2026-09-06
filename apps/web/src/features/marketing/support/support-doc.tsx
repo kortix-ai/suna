@@ -9,6 +9,7 @@ import {
 } from '@/features/marketing/doc-rail';
 import { cn } from '@/lib/utils';
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpRightIcon, type Icon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -70,7 +71,7 @@ function CardArrow({ href }: { href: string }) {
         'text-muted-foreground/40 size-3.5 shrink-0 transition-all',
         'group-hover:text-muted-foreground',
         leavesPage
-          ? 'group-hover:-translate-y-0.5 group-hover:translate-x-0.5'
+          ? 'group-hover:translate-x-0.5 group-hover:-translate-y-0.5'
           : 'group-hover:translate-x-0.5',
       )}
     />
@@ -155,12 +156,13 @@ export function SupportDocGrid({
   sections: readonly { id: string; label: string }[];
   children: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const ids = sections.map((section) => section.id);
   const active = useActiveSection(ids);
 
   return (
     <div className={DOC_GRID}>
-      <DocRail label="On this page">
+      <DocRail label={tI18nComplete.raw('textb5658fc8edda')}>
         {sections.map((section) => (
           <a
             key={section.id}
@@ -209,7 +211,7 @@ export function ChannelCard({
       className={cn(
         'group bg-popover relative flex flex-col gap-3 border p-4',
         CARD_RADIUS,
-        'hover:border-foreground/20 hover:shadow-sm transition-[color,box-shadow,border-color]',
+        'hover:border-foreground/20 transition-[color,box-shadow,border-color] hover:shadow-sm',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2',
         'focus-visible:ring-offset-background focus-visible:outline-none',
       )}

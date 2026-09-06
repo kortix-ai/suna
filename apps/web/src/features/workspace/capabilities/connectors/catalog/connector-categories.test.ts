@@ -125,10 +125,7 @@ describe('groupIntoSections', () => {
   });
 
   test('an uncurated category still renders — below the curated ones', () => {
-    const groups = groupIntoSections(
-      [item('a', ['life-sciences']), item('b', ['finance'])],
-      get,
-    );
+    const groups = groupIntoSections([item('a', ['life-sciences']), item('b', ['finance'])], get);
     expect(keys(groups)).toEqual(['finance', 'life-sciences']);
   });
 
@@ -144,10 +141,7 @@ describe('groupIntoSections', () => {
     // `project-management` and `task-management` both roll into Productivity.
     // Deduping the RAW names (the old behaviour) would push this item twice
     // into one bucket, under two identical React keys.
-    const groups = groupIntoSections(
-      [item('a', ['project-management', 'task-management'])],
-      get,
-    );
+    const groups = groupIntoSections([item('a', ['project-management', 'task-management'])], get);
     expect(groups).toEqual([
       { category: 'productivity', items: [item('a', ['project-management', 'task-management'])] },
     ]);
@@ -198,9 +192,7 @@ describe('groupIntoSections', () => {
 
   test('a category repeated on one item does not duplicate the card', () => {
     const groups = groupIntoSections([item('a', ['data', 'data'])], get);
-    expect(groups).toEqual([
-      { category: 'data-analytics', items: [item('a', ['data', 'data'])] },
-    ]);
+    expect(groups).toEqual([{ category: 'data-analytics', items: [item('a', ['data', 'data'])] }]);
   });
 
   test('the row cap is two rows of the widest grid', () => {

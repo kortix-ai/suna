@@ -1,6 +1,7 @@
 'use client';
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -80,6 +81,7 @@ type Agent = ProjectConfigSummary['agents'][number];
  * list the Triggers tab reads — one request, counted per agent name.
  */
 export function AgentsPage({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -165,7 +167,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         pending={configure.pending}
         onChat={() => configure.start(newConfigPrompt('agent'))}
         manual={{
-          description: 'Add an agents entry to kortix.yaml in Files.',
+          description: tI18nComplete.raw('text5210c5acc2cd'),
           href: `/projects/${projectId}/files`,
         }}
       />
@@ -173,8 +175,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
 
   return (
     <CapabilityPageShell
-      title="Agents"
-      description="Each agent is what a person gets access to. Configure what it knows, what it can reach, and when it runs."
+      title={tI18nComplete.raw('text279b44d2ab4b')}
+      description={tI18nComplete.raw('text636453e23d69')}
       action={createButton('New')}
       search={
         <InputGroupSearch>
@@ -182,7 +184,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
-            placeholder="Search agents"
+            placeholder={tI18nComplete.raw('text212fd04a1d20')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
@@ -195,8 +197,9 @@ export function AgentsPage({ projectId }: { projectId: string }) {
         config ? (
           <>
             <p className="text-muted-foreground text-xs">
-              {agents.length} {agents.length === 1 ? 'agent' : 'agents'} in{' '}
-              <span className="font-mono">kortix.yaml</span>
+              {agents.length} {agents.length === 1 ? 'agent' : 'agents'}{' '}
+              {tI18nComplete.raw('text582967534d0f')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('text1965f383021e')}</span>
             </p>
             <DefaultAgentSelector projectId={projectId} config={config} canWrite={canWrite} />
           </>
@@ -216,8 +219,8 @@ export function AgentsPage({ projectId }: { projectId: string }) {
             <EmptyState
               icon={RobotIcon}
               size="sm"
-              title="No agents yet"
-              description="Create an agent to customize how sessions run."
+              title={tI18nComplete.raw('text971b61f8cb4d')}
+              description={tI18nComplete.raw('textc4e4294c6777')}
               action={createButton('Create an agent')}
               secondaryAction={
                 <Button asChild variant="ghost" size="sm" className="gap-1.5">
@@ -226,7 +229,7 @@ export function AgentsPage({ projectId }: { projectId: string }) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Docs
+                    {tI18nComplete.raw('text7af023c43013')}
                   </a>
                 </Button>
               }
@@ -278,6 +281,7 @@ function AgentCardFacts({
   triggerCount: number;
   peopleCount: number | null;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const model = agent.model ? agent.model.split('/').pop() : null;
   const sep = (
     <span aria-hidden className="text-muted-foreground/40">
@@ -286,7 +290,9 @@ function AgentCardFacts({
   );
   return (
     <>
-      <span className={cn('truncate', model && 'font-mono')}>{model ?? 'Default model'}</span>
+      <span className={cn('truncate', model && 'font-mono')}>
+        {model ?? tI18nComplete.raw('text3840d9d29421')}
+      </span>
       {sep}
       <span className="tabular-nums">
         {triggerCount} {triggerCount === 1 ? 'trigger' : 'triggers'}
@@ -296,7 +302,7 @@ function AgentCardFacts({
           {sep}
           <span className="tabular-nums">
             {peopleCount === 0
-              ? 'Admins only'
+              ? tI18nComplete.raw('textb6c70926c1aa')
               : `${peopleCount} ${peopleCount === 1 ? 'grant' : 'grants'}`}
           </span>
         </>
@@ -314,6 +320,7 @@ function AgentCardFacts({
  * worth marking.
  */
 function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolean }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode = agent.mode?.toLowerCase();
   return (
     <>
@@ -325,13 +332,13 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
       {isDefault ? (
         <StarSolid
           weight="fill"
-          aria-label="Default agent"
+          aria-label={tI18nComplete.raw('text94da52ecd6c5')}
           className="text-kortix-orange size-3.5 shrink-0"
         />
       ) : null}
       {agent.enabled === false ? (
         <Badge variant="muted" size="xs">
-          Disabled
+          {tI18nComplete.raw('text75081b593d15')}
         </Badge>
       ) : null}
     </>
@@ -355,6 +362,7 @@ function DefaultAgentSelector({
   config: ProjectConfigSummary;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const isV2 = detectManifestVersion(config.manifest_raw) === 2;
   const availableAgents = toArray(config.agents).filter((agent) => agent.enabled !== false);
@@ -362,28 +370,36 @@ function DefaultAgentSelector({
   const mutation = useMutation({
     mutationFn: (agentName: string) => updateProjectDefaultAgent(projectId, agentName),
     onSuccess: async (result) => {
-      successToast(`${capitalizeWords(result.default_agent)} is now the project default`);
+      successToast(
+        tI18nComplete('text0bb557895b32', { value0: capitalizeWords(result.default_agent) }),
+      );
       // One invalidation, not two: the project CONFIG is a `select` projection
       // over this same `qk.project.detail(id)` entry (`useProjectConfig`), not
       // its own fetch. The retired standalone `['project-config', id]` slot no
       // longer exists, so a second call for it would invalidate nothing.
       await queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update default agent'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text7f724c2ad694')),
   });
 
   if (!isV2 || availableAgents.length === 0 || !current) return null;
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <span className="text-muted-foreground hidden text-xs sm:block">Default</span>
+      <span className="text-muted-foreground hidden text-xs sm:block">
+        {tI18nComplete.raw('text21b111cbfe6e')}
+      </span>
       {mutation.isPending ? <Loading className="size-4 shrink-0" /> : null}
       <Select
         value={current}
         onValueChange={(agentName) => mutation.mutate(agentName)}
         disabled={!canWrite || mutation.isPending}
       >
-        <SelectTrigger aria-label="Default agent" className="w-44 shrink-0" size="sm">
+        <SelectTrigger
+          aria-label={tI18nComplete.raw('text94da52ecd6c5')}
+          className="w-44 shrink-0"
+          size="sm"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="end">

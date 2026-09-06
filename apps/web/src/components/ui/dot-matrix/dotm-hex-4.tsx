@@ -1,18 +1,20 @@
-"use client";
+'use client';
 
-import type { CSSProperties } from "react";
+import type { CSSProperties } from 'react';
 
-import { cx } from "@/lib/dotmatrix-core";
-import { resolveDmxColorTokens } from "@/lib/dotmatrix-core";
-import { styleOpacity, stylePx } from "@/lib/dotmatrix-core";
-import { remapOpacityToTriplet } from "@/lib/dotmatrix-core";
-import { dmxBloomRootActive, dmxDotBloomParts } from "@/lib/dotmatrix-core";
-import { getPatternIndexes } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotMatrixCommonProps } from "@/lib/dotmatrix-core";
-import { applyDotMatrixScale } from "@/lib/dotmatrix-core";
+import type { DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import {
+  applyDotMatrixScale,
+  cx,
+  dmxBloomRootActive,
+  dmxDotBloomParts,
+  getPatternIndexes,
+  remapOpacityToTriplet,
+  resolveDmxColorTokens,
+  styleOpacity,
+  stylePx,
+} from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmHex4Props = DotMatrixCommonProps;
 
@@ -27,28 +29,18 @@ function hexPatternIndex(row: number, rowCount: number, col: number): number {
 }
 const TRAIL_SPAN = 2.2;
 
-const VERTEX_PATH = [
-  "0,2",
-  "1,3",
-  "2,4",
-  "3,3",
-  "4,2",
-  "3,0",
-  "2,0",
-  "1,0",
-  "0,0"
-] as const;
+const VERTEX_PATH = ['0,2', '1,3', '2,4', '3,3', '4,2', '3,0', '2,0', '1,0', '0,0'] as const;
 
 const ECHO_BY_VERTEX: Readonly<Record<(typeof VERTEX_PATH)[number], readonly string[]>> = {
-  "0,2": ["0,1", "1,2"],
-  "1,3": ["1,2", "2,3"],
-  "2,4": ["2,3", "2,2"],
-  "3,3": ["3,2", "2,3"],
-  "4,2": ["4,1", "3,2"],
-  "3,0": ["3,1", "2,1"],
-  "2,0": ["2,1", "2,2"],
-  "1,0": ["1,1", "2,1"],
-  "0,0": ["0,1", "1,1"]
+  '0,2': ['0,1', '1,2'],
+  '1,3': ['1,2', '2,3'],
+  '2,4': ['2,3', '2,2'],
+  '3,3': ['3,2', '2,3'],
+  '4,2': ['4,1', '3,2'],
+  '3,0': ['3,1', '2,1'],
+  '2,0': ['2,1', '2,2'],
+  '1,0': ['1,1', '2,1'],
+  '0,0': ['0,1', '1,1'],
 };
 
 const PATH_LEN = VERTEX_PATH.length;
@@ -64,7 +56,7 @@ function pointForCell(row: number, col: number): { x: number; y: number } {
   const count = ROW_COUNTS[row] ?? 1;
   return {
     x: col - (count - 1) / 2,
-    y: (row - 2) * HEX_ROW_PITCH_RATIO
+    y: (row - 2) * HEX_ROW_PITCH_RATIO,
   };
 }
 
@@ -95,7 +87,7 @@ function opacityForCell(row: number, col: number, phase: number): number {
     opacity = Math.max(opacity, BASE_OPACITY + echo * 0.52);
   }
 
-  if (id === "2,2") {
+  if (id === '2,2') {
     const centerBeat = 0.5 + 0.5 * Math.sin(phase * Math.PI * PATH_LEN);
     opacity = Math.max(opacity, MID_OPACITY + centerBeat * 0.22);
   }
@@ -109,37 +101,41 @@ export function DotmHex4({
   scale = 1,
   size: sizeProp = 34,
   dotSize: dotSizeProp = 5,
-  color = "currentColor",
+  color = 'currentColor',
   colorPreset,
-  ariaLabel = "Loading",
+  ariaLabel = 'Loading',
   className,
   muted = false,
   bloom = false,
   halo = 0,
   dotClassName,
-  dotShape = "circle",
+  dotShape = 'circle',
   speed = 1.5,
   animated = true,
   hoverAnimated = false,
-  pattern = "full",
+  pattern = 'full',
   cellPadding,
   boxSize,
   minSize,
   opacityBase,
   opacityMid,
-  opacityPeak
+  opacityPeak,
 }: DotmHex4Props) {
   const { size, dotSize } = applyDotMatrixScale(sizeProp, dotSizeProp, scale);
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const cyclePhase = useCyclePhase({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1650,
-    speed
+    speed,
   });
 
   const gap =
@@ -155,67 +151,80 @@ export function DotmHex4({
   const ob = clamp01(opacityBase);
   const om = clamp01(opacityMid);
   const op = clamp01(opacityPeak);
-  const phase = reducedMotion || matrixPhase === "idle" ? 0.12 : cyclePhase;
+  const phase = reducedMotion || matrixPhase === 'idle' ? 0.12 : cyclePhase;
   const activePatternIndexes = new Set(getPatternIndexes(pattern));
   const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset);
   const matrixStyle = {
     width: stylePx(matrixWidth),
     height: stylePx(matrixHeight),
-    ["--dmx-dot-fill" as const]: dotFill,
+    ['--dmx-dot-fill' as const]: dotFill,
     color: resolvedColor,
-    ["--dmx-dot-size" as const]: `${dotSize}px`,
-      ["--dmx-halo-level" as const]: halo,
-    ...(ob !== undefined && { ["--dmx-opacity-base" as const]: ob }),
-    ...(om !== undefined && { ["--dmx-opacity-mid" as const]: om }),
-    ...(op !== undefined && { ["--dmx-opacity-peak" as const]: op }),
+    ['--dmx-dot-size' as const]: `${dotSize}px`,
+    ['--dmx-halo-level' as const]: halo,
+    ...(ob !== undefined && { ['--dmx-opacity-base' as const]: ob }),
+    ...(om !== undefined && { ['--dmx-opacity-mid' as const]: om }),
+    ...(op !== undefined && { ['--dmx-opacity-peak' as const]: op }),
     ...(useWrapper
       ? {
           transform: `scale(${boxScale})`,
-          transformOrigin: "center center" as const
+          transformOrigin: 'center center' as const,
         }
-      : { minWidth: minSize, minHeight: minSize })
+      : { minWidth: minSize, minHeight: minSize }),
   } as unknown as CSSProperties;
 
   const matrix = (
     <div
-      role={useWrapper ? undefined : "status"}
-      aria-live={useWrapper ? undefined : "polite"}
+      role={useWrapper ? undefined : 'status'}
+      aria-live={useWrapper ? undefined : 'polite'}
       aria-label={useWrapper ? undefined : ariaLabel}
-      className={cx("dmx-root", `dmx-dot-shape-${dotShape}`, muted && "dmx-muted", dmxBloomRootActive(bloom, halo) && "dmx-bloom", !useWrapper && className)}
+      className={cx(
+        'dmx-root',
+        `dmx-dot-shape-${dotShape}`,
+        muted && 'dmx-muted',
+        dmxBloomRootActive(bloom, halo) && 'dmx-bloom',
+        !useWrapper && className,
+      )}
       style={matrixStyle}
       onMouseEnter={useWrapper ? undefined : onMouseEnter}
       onMouseLeave={useWrapper ? undefined : onMouseLeave}
     >
       <div
         style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
           gap: stylePx(rowGap),
-          width: "100%",
-          height: "100%"
+          width: '100%',
+          height: '100%',
         }}
       >
         {ROW_COUNTS.map((count, row) => (
-          <div key={row} style={{ display: "flex", justifyContent: "center", gap: stylePx(gap) }}>
+          <div key={row} style={{ display: 'flex', justifyContent: 'center', gap: stylePx(gap) }}>
             {Array.from({ length: count }).map((_, col) => {
               const isActive = activePatternIndexes.has(hexPatternIndex(row, count, col));
               const opacity = isActive ? opacityForCell(row, col, phase) : 0;
 
-                        const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);
+              const dmxBloom = dmxDotBloomParts(isActive, opacity, bloom, halo, ob, om, op);
 
-          return (
+              return (
                 <span
                   key={`${row},${col}`}
                   aria-hidden="true"
-                  className={cx("dmx-dot", !isActive && "dmx-inactive", dmxBloom.bloomDot && "dmx-bloom-dot", dotClassName)}
-                  style={{
-                    width: stylePx(dotSize),
-                    height: stylePx(dotSize),
-                    opacity: styleOpacity(remapOpacityToTriplet(opacity, ob, om, op)),
-                    ["--dmx-bloom-level" as const]: dmxBloom.level
-                  } as CSSProperties}
+                  className={cx(
+                    'dmx-dot',
+                    !isActive && 'dmx-inactive',
+                    dmxBloom.bloomDot && 'dmx-bloom-dot',
+                    dotClassName,
+                  )}
+                  style={
+                    {
+                      width: stylePx(dotSize),
+                      height: stylePx(dotSize),
+                      opacity: styleOpacity(remapOpacityToTriplet(opacity, ob, om, op)),
+                      ['--dmx-bloom-level' as const]: dmxBloom.level,
+                    } as CSSProperties
+                  }
                 />
               );
             })}
@@ -233,14 +242,14 @@ export function DotmHex4({
         aria-label={ariaLabel}
         className={className}
         style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           width: stylePx(outerDim),
           height: stylePx(outerDim),
           minWidth: minSize == null ? undefined : stylePx(minSize),
           minHeight: minSize == null ? undefined : stylePx(minSize),
-          overflow: "hidden"
+          overflow: 'hidden',
         }}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}

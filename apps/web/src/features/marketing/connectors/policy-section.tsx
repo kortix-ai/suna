@@ -4,7 +4,12 @@ import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
-import { policy, type PolicyStateId } from './content';
+import { useTranslations } from '@/i18n/use-translations';
+import {
+  getLocalizedConnectorsContent,
+  policy as policySource,
+  type PolicyStateId,
+} from './content';
 import { Eyebrow, ProductShot, Section } from './shared';
 
 /**
@@ -25,11 +30,7 @@ const DOT: Record<PolicyStateId, string> = {
   block: 'bg-destructive',
 };
 
-function StateCard({
-  state,
-}: {
-  state: (typeof policy.states)[number];
-}) {
+function StateCard({ state }: { state: (typeof policySource.states)[number] }) {
   return (
     <article className="flex h-full flex-col p-6 sm:p-8">
       <div className="flex items-center gap-2">
@@ -51,6 +52,8 @@ function StateCard({
 
 /** The hold, drawn as three beats on one rail. */
 function PauseTimeline() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { policy } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <div className="border-border bg-card overflow-hidden rounded-sm border">
       <div className="border-border border-b px-6 py-4 sm:px-8">
@@ -100,17 +103,19 @@ function PauseTimeline() {
 
 /** Argument-level conditions, as a three-row rule table. */
 function ConditionTable() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { policy } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <div className="border-border overflow-hidden rounded-sm border">
       <div className="border-border bg-foreground/[0.02] grid grid-cols-12 gap-4 border-b px-5 py-2.5">
         <span className="text-muted-foreground col-span-4 font-mono text-[10px] tracking-widest uppercase">
-          Action
+          {tI18nComplete.raw('text64cff1319d2f')}
         </span>
         <span className="text-muted-foreground col-span-5 font-mono text-[10px] tracking-widest uppercase">
-          When
+          {tI18nComplete.raw('textcf9c7aa24a26')}
         </span>
         <span className="text-muted-foreground col-span-3 text-right font-mono text-[10px] tracking-widest uppercase">
-          Then
+          {tI18nComplete.raw('text0597f441dcca')}
         </span>
       </div>
       {policy.conditions.rows.map((row) => (
@@ -139,6 +144,8 @@ function ConditionTable() {
 }
 
 export function PolicySection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { policy } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <Section id="policy">
       <SectionHeader eyebrow={policy.eyebrow} title={policy.title} description={policy.sub} />
@@ -148,10 +155,7 @@ export function PolicySection() {
           {policy.states.map((state, i) => (
             <div
               key={state.id}
-              className={cn(
-                'border-border',
-                i > 0 && 'border-t sm:border-t-0 sm:border-l',
-              )}
+              className={cn('border-border', i > 0 && 'border-t sm:border-t-0 sm:border-l')}
             >
               <StateCard state={state} />
             </div>

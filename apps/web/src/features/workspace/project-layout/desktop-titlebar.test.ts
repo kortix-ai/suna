@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 /**
@@ -98,8 +98,7 @@ describe('macOS title-bar band: CSS mirrors the Electron geometry', () => {
   test('the app control and the traffic lights share a centre line', () => {
     const controlCentre =
       cssVarPx(block, '--kx-titlebar-control-top') + chrome.MAC_TITLEBAR.control / 2;
-    const lightCentre =
-      chrome.macTrafficLightPosition().y + chrome.MAC_TITLEBAR.lightSize / 2;
+    const lightCentre = chrome.macTrafficLightPosition().y + chrome.MAC_TITLEBAR.lightSize / 2;
     expect(controlCentre).toBe(lightCentre);
     expect(controlCentre).toBe(metrics.band / 2);
   });
@@ -131,7 +130,10 @@ describe('no app control overlaps the macOS traffic lights', () => {
   };
 
   const overlaps = (r: { left: number; right: number; top: number; bottom: number }) =>
-    r.left < lights.right && r.right > lights.left && r.top < lights.bottom && r.bottom > lights.top;
+    r.left < lights.right &&
+    r.right > lights.left &&
+    r.top < lights.bottom &&
+    r.bottom > lights.top;
 
   test('the shell sidebar toggle clears them', () => {
     const left = cssVarPx(block, '--kx-titlebar-control-left');
@@ -164,10 +166,7 @@ describe('no app control overlaps the macOS traffic lights', () => {
  * out, or the alignment above is silently wrong by a factor of the zoom.
  */
 describe('the shell zoom does not drag the band off the OS controls', () => {
-  const desktopLib = readFileSync(
-    join(repoRoot, 'apps/web/src/lib/desktop.ts'),
-    'utf8',
-  );
+  const desktopLib = readFileSync(join(repoRoot, 'apps/web/src/lib/desktop.ts'), 'utf8');
   const baseBlock = css.match(/html\[data-desktop='true'\]\s*\{([^}]*)\}/);
 
   test('CSS seeds the same factor the shell actually applies', () => {
@@ -194,7 +193,8 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
     const block = macVarBlock();
     const scaled = ['inset', 'lights-end', 'control-top', 'control-left', 'content-left'];
     const uncancelled = scaled.filter(
-      (n) => !new RegExp(`--kx-titlebar-${n}:\\s*calc\\([^;]*var\\(--kx-desktop-zoom\\)`).test(block),
+      (n) =>
+        !new RegExp(`--kx-titlebar-${n}:\\s*calc\\([^;]*var\\(--kx-desktop-zoom\\)`).test(block),
     );
     expect(uncancelled).toEqual([]);
   });
@@ -270,9 +270,7 @@ describe('nothing re-hard-codes the band', () => {
   // sits under whichever platform's controls it forgot about.
   test('.kx-titlebar-row indents on both sides, on every desktop platform', () => {
     expect(css).toContain("html[data-desktop='true'] .kx-titlebar-row {");
-    expect(css).toContain(
-      "html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {",
-    );
+    expect(css).toContain("html[data-desktop='true'] .kx-titlebar-row[data-sidebar-collapsed] {");
   });
 });
 

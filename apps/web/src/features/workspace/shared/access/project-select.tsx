@@ -147,7 +147,9 @@ export function ProjectSelect({
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
-        {allOptionLabel ? <SelectItem value={PROJECT_SELECT_ALL}>{allOptionLabel}</SelectItem> : null}
+        {allOptionLabel ? (
+          <SelectItem value={PROJECT_SELECT_ALL}>{allOptionLabel}</SelectItem>
+        ) : null}
         {candidates.map((project) => (
           <SelectItem key={project.project_id} value={project.project_id}>
             {project.name}

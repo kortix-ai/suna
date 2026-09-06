@@ -1,8 +1,10 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 export const Codex = ({ className }: { className?: string }) => {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <svg
       height="1em"
@@ -12,7 +14,7 @@ export const Codex = ({ className }: { className?: string }) => {
       xmlns="http://www.w3.org/2000/svg"
       className={cn('size-4', className)}
     >
-      <title>Codex</title>
+      <title>{tI18nComplete.raw('text616efbe96852')}</title>
       <path
         d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z"
         fill="#fff"

@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/marketing/button';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import GDPR from '../trust/gdpr';
 import Soc2Type1 from '../trust/soc-2-type-1';
 import Soc2Type2 from '../trust/soc-2-type-2';
-import { trust } from './content';
+import { getLocalizedLandingContent } from './content';
 
 function TrustSeal({ children, label }: { children: ReactNode; label?: string }) {
   return (
@@ -58,6 +59,8 @@ function TrustColumn({
  * like GDPR); SOC 2 Type II is still in progress.
  */
 export function TrustSection(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { trust } = getLocalizedLandingContent(tI18nComplete);
   return (
     <section id="trust" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
       <Reveal>
@@ -71,8 +74,8 @@ export function TrustSection(): ReactNode {
                 </p>
 
                 <h2 className="text-foreground max-w-full font-sans text-2xl leading-snug font-medium text-pretty sm:max-w-125 sm:text-3xl sm:leading-tight sm:text-balance md:text-4xl">
-                  Giving agents real access is the easy part. <br className="hidden sm:block" />
-                  Trusting them with it is the work.
+                  {tI18nComplete.raw('textc45599294aec')} <br className="hidden sm:block" />
+                  {tI18nComplete.raw('text2cf2da056542')}
                 </h2>
                 {/* <p className="mt-5 max-w-md text-base leading-relaxed text-white/55">{trust.sub}</p> */}
               </div>
@@ -90,7 +93,7 @@ export function TrustSection(): ReactNode {
                 <TrustSeal>
                   <Soc2Type1 />
                 </TrustSeal>
-                <TrustSeal label="In progress">
+                <TrustSeal label={tI18nComplete.raw('textc1f88e9d6c41')}>
                   <Soc2Type2 />
                 </TrustSeal>
                 <TrustSeal>

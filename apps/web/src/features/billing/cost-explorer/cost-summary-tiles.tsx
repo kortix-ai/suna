@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 import type { CostSummary } from '@kortix/sdk';
 
 import { Skeleton } from '@/components/ui/skeleton';
@@ -123,10 +124,11 @@ function TileFillers({ count }: { count: number }) {
 }
 
 export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummaryTilesProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (isLoading || !summary) {
     const tileCount = 3 + extraTiles.length;
     return (
-      <div className={GRID_CLASS} aria-label="Loading cost summary">
+      <div className={GRID_CLASS} aria-label={tI18nComplete.raw('textb400f4160d8e')}>
         {Array.from({ length: tileCount }).map((_, index) => (
           <div key={index} className={TILE_CLASS}>
             <Skeleton className="h-3 w-12" />
@@ -144,7 +146,7 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
   // tile showing the total's shape would be a chart that lies.
   const tiles: (CostSummaryTile & { delta?: PeriodDelta | null })[] = [
     {
-      label: 'Total',
+      label: tI18nComplete.raw('textc9b3c38247f7'),
       value: formatSessionCostUsd(summary.totals.total_cost),
       delta,
       series: summary.series.map((point) => point.total_cost),
@@ -155,7 +157,7 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
       series: summary.series.map((point) => point.llm_cost),
     },
     {
-      label: 'Compute',
+      label: tI18nComplete.raw('textcedc516df056'),
       value: formatSessionCostUsd(summary.totals.compute_cost),
       series: summary.series.map((point) => point.compute_cost),
     },
@@ -200,13 +202,13 @@ export function CostSummaryTiles({ summary, isLoading, extraTiles }: CostSummary
               {tile.delta ? (
                 <p
                   className="text-muted-foreground text-xs tabular-nums"
-                  aria-label={`${tile.delta.label} versus the prior period`}
+                  aria-label={tI18nComplete('textaf82ae6a8d73', { value0: tile.delta.label })}
                 >
                   {tile.delta.label}
                 </p>
               ) : null}
               {tile.series ? (
-                <span className="ml-auto absolute bottom-px right-px">
+                <span className="absolute right-px bottom-px ml-auto">
                   <CostSparkline values={tile.series} label={tile.label} />
                 </span>
               ) : null}

@@ -28,6 +28,7 @@ import {
   ChatCircleIcon as ChatCircle,
   CheckCircleIcon as CheckCircle,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/button';
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
@@ -57,7 +58,13 @@ export function DoneStep({
   /** Completes onboarding AND fires the kickoff prompt as the first turn. */
   onStart: () => void;
 }) {
-  const kickoff = buildOnboardingKickoffPrompt(domain, connectedCount);
+  const t = useTranslations('projectOnboarding');
+  const kickoff = buildOnboardingKickoffPrompt(domain, connectedCount, {
+    noDomain: (toolsClause) => t('kickoff.noDomain', { toolsClause }),
+    withDomain: (companyDomain, toolsClause) =>
+      t('kickoff.withDomain', { domain: companyDomain, toolsClause }),
+    tools: (count) => t('kickoff.tools', { count }),
+  });
 
   // The same key and fetcher workspace Settings' General tab uses, so the two
   // share one cache entry rather than each holding a copy of the project.
@@ -88,13 +95,13 @@ export function DoneStep({
       </span>
 
       <StepShell
-        title="Your command center is live"
+        title={t('done.title')}
         description={
           connectedCount > 0
-            ? `${connectedCount} ${connectedCount === 1 ? 'tool' : 'tools'} connected. Opening starts your first conversation with Kortix.`
-            : 'Opening starts your first conversation with Kortix.'
+            ? t('done.descriptionWithTools', { count: connectedCount })
+            : t('done.description')
         }
-        primaryLabel="Open project"
+        primaryLabel={t('done.openProject')}
         onPrimary={onStart}
       >
         <div className="bg-popover flex items-start gap-3 rounded-md border px-4 py-4">
@@ -102,7 +109,7 @@ export function DoneStep({
             <ChatCircle className="text-muted-foreground size-4" />
           </span>
           <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-muted-foreground text-xs font-medium">Your first message</p>
+            <p className="text-muted-foreground text-xs font-medium">{t('done.firstMessage')}</p>
             <p className="text-foreground text-sm leading-6 text-pretty">{kickoff}</p>
           </div>
         </div>
@@ -118,7 +125,7 @@ export function DoneStep({
               onClick={onBookCall}
             >
               <Calendar className="size-3.5" />
-              Book a 20-minute setup call with Marko
+              {t('done.bookCall')}
             </Button>
           </div>
         )}

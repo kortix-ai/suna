@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
 import { cn } from '@/lib/utils';
+import * as React from 'react';
 
 interface KortixLoaderProps {
   /**
@@ -115,10 +115,7 @@ export function KortixLoader({
   const animationDuration = 0.8 / speed;
 
   return (
-    <div
-      className={cn('flex items-center justify-center', className)}
-      style={style}
-    >
+    <div className={cn('flex items-center justify-center', className)} style={style}>
       <div
         className={
           forcedVariant === null
@@ -132,9 +129,7 @@ export function KortixLoader({
           borderWidth,
           ...(forcedVariant !== null && {
             borderColor:
-              forcedVariant === 'white'
-                ? 'rgba(255, 255, 255, 0.15)'
-                : 'rgba(0, 0, 0, 0.1)',
+              forcedVariant === 'white' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
             borderTopColor: forcedVariant === 'white' ? '#ffffff' : '#000000',
           }),
           borderRadius: '50%',

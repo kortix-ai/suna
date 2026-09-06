@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * Who may use this agent — managed here, on the agent's page.
  *
@@ -127,6 +128,7 @@ export function AgentPeopleSection({
   projectId: string;
   agentName: string;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
@@ -211,8 +213,8 @@ export function AgentPeopleSection({
 
   return (
     <EditorSection
-      title="Who can use it"
-      description="Members and groups granted this agent. They inherit its connectors and secrets as their own."
+      title={tI18nComplete.raw('text82d9af69e1a1')}
+      description={tI18nComplete.raw('text96feb5be077d')}
     >
       <div className="space-y-3 py-3.5">
         {grantsQuery.isLoading ? (
@@ -222,7 +224,7 @@ export function AgentPeopleSection({
           </div>
         ) : assigned.length === 0 ? (
           <p className="text-muted-foreground text-xs text-pretty">
-            No one is granted this agent yet. Project managers can always use it.
+            {tI18nComplete.raw('text011c4e48df01')}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -248,9 +250,11 @@ export function AgentPeopleSection({
                     <span className="text-muted-foreground block truncate text-xs">
                       {g.principal_type === 'group' ? 'Group' : 'Member'}
                       {g.expires_at
-                        ? ` · until ${new Date(g.expires_at).toLocaleDateString()}`
+                        ? tI18nComplete('textdc40ace03968', {
+                            value0: new Date(g.expires_at).toLocaleDateString(),
+                          })
                         : ''}
-                      {g.orphaned ? ' · grant no longer matches an agent' : ''}
+                      {g.orphaned ? tI18nComplete.raw('textc795f93da2e5') : ''}
                     </span>
                   </span>
                   <Button
@@ -261,7 +265,7 @@ export function AgentPeopleSection({
                     disabled={!accountId}
                   >
                     <PencilSimpleIcon className="size-3.5 shrink-0" />
-                    Edit
+                    {tI18nComplete.raw('text464c4ffd019e')}
                   </Button>
                 </li>
               );
@@ -277,7 +281,7 @@ export function AgentPeopleSection({
             onClick={() => setGrantOpen(true)}
           >
             <PlusIcon className="size-3.5 shrink-0" />
-            Grant access
+            {tI18nComplete.raw('text8693768c7e08')}
           </Button>
         ) : null}
       </div>

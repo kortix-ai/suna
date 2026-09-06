@@ -17,9 +17,9 @@ import {
   parseLastProjectForUser,
   projectPathFromId,
 } from '@/lib/onboarding/landing-destination';
-import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
+import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -278,10 +278,7 @@ export async function GET(request: NextRequest) {
           // the previous account's project — i.e. onto "Request access to this
           // project", on every login.
           const lastProjectPath = projectPathFromId(
-            parseLastProjectForUser(
-              request.cookies.get(LAST_PROJECT_COOKIE)?.value,
-              data.user.id,
-            ),
+            parseLastProjectForUser(request.cookies.get(LAST_PROJECT_COOKIE)?.value, data.user.id),
           );
           if (lastProjectPath) finalDestination = lastProjectPath;
         }

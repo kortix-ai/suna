@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   isErrorOutput,
@@ -9,11 +10,11 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { StackIcon as Layers } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
-const TRIGGER = { title: 'Session Stats', subtitle: '', args: [] as string[] };
-
 export function SessionStatsTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const t = useTranslations('hardcodedUi.i18nComplete');
   const output = partOutput(part);
 
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over
@@ -23,7 +24,7 @@ export function SessionStatsTool({ part, defaultOpen, forceOpen }: ToolProps) {
   return (
     <BasicTool
       icon={<Layers className="size-3.5 shrink-0" />}
-      trigger={TRIGGER}
+      trigger={{ title: t.raw('textfe4aca69783d'), subtitle: '', args: [] }}
       defaultOpen={defaultOpen}
       forceOpen={forceOpen}
     >

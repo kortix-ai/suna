@@ -1,4 +1,5 @@
 'use client';
+
 import { Badge } from '@/components/ui/badge';
 import { DiffStat } from '@/components/ui/status';
 import { TextShimmer } from '@/components/ui/text-shimmer';
@@ -24,6 +25,8 @@ import {
   FilePlusIcon,
   PencilSimpleIcon,
 } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useContext, useMemo, useState } from 'react';
 
 import {
@@ -40,6 +43,8 @@ const PATCH_ICON = {
 } as const;
 
 export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const patchTypeStyle = useLocalizedUiCatalog(PATCH_TYPE_STYLE);
   const metadata = partMetadata(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -123,7 +128,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
         isPreparing ? (
           <div className="flex min-w-0 flex-1 items-center">
             <TextShimmer duration={1} spread={2} className="min-w-0 truncate text-sm">
-              Preparing changes…
+              {tI18nComplete.raw('text778ed69bedf7')}
             </TextShimmer>
           </div>
         ) : (
@@ -146,7 +151,7 @@ export function ApplyPatchTool({ part, defaultOpen, forceOpen, locked }: ToolPro
             const name = getFilename(relPath) || relPath;
             const dir = getDirectory(relPath);
             const typeKey = (file.type || 'update') as keyof typeof PATCH_TYPE_STYLE;
-            const typeMeta = PATCH_TYPE_STYLE[typeKey] ?? PATCH_TYPE_STYLE.update;
+            const typeMeta = patchTypeStyle[typeKey] ?? patchTypeStyle.update;
             const isOpen = expanded === i;
             const hasDiff =
               file.before != null || file.after != null || !!file.patch || !!file.diff;

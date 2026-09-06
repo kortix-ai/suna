@@ -19,7 +19,7 @@ import {
   PencilSimpleIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * The two leaves this card's kebab gates on. Edit renames the project
@@ -98,7 +98,7 @@ const ProjectCard = ({
               {project.name}
             </h3>
             <p className="text-muted-foreground truncate text-xs tabular-nums">
-              Updated {updatedLabel}
+              {tHardcodedUi.raw('i18nComplete.text3a5ecca188c0')} {updatedLabel}
             </p>
           </div>
         </div>
@@ -135,7 +135,7 @@ const ProjectCard = ({
               ) : (
                 <TrashIcon className="size-4" />
               )}
-              Archive
+              {tHardcodedUi.raw('i18nComplete.text66f4804ee23d')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

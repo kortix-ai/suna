@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { getTranslations } from '@/i18n/get-translations';
 import { notFound } from 'next/navigation';
 
 import { MarketplaceDetailPublic } from '@/features/marketplace/marketplace-detail-public';
@@ -34,6 +35,7 @@ export async function generateMetadata({
 }: {
   params: Promise<PageParams>;
 }): Promise<Metadata> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const { company, item } = await params;
   const id = pathPartsToItemId(company, item);
   const pathname = `/marketplace/${company}/${item.map(encodeURIComponent).join('/')}`;
@@ -48,7 +50,10 @@ export async function generateMetadata({
       ...socialMetadata(title, description, `${CANONICAL_ORIGIN}${pathname}`),
     };
   } catch {
-    return { title: 'Marketplace — Kortix', robots: { index: false, follow: false } };
+    return {
+      title: tI18nComplete.raw('text8e16e780b661'),
+      robots: { index: false, follow: false },
+    };
   }
 }
 
@@ -78,7 +83,11 @@ export default async function MarketplaceItemPage({ params }: { params: Promise<
 
   return (
     <PublicMarketplaceProvider>
-      <MarketplaceDetailPublic data={detail} company={companySummary} otherProjects={otherProjects} />
+      <MarketplaceDetailPublic
+        data={detail}
+        company={companySummary}
+        otherProjects={otherProjects}
+      />
     </PublicMarketplaceProvider>
   );
 }

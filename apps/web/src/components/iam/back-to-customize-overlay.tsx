@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `BackToCustomizeOverlay` — the way back to the project you came from, and
  * deliberately NOT part of the account hub's layout.
@@ -39,6 +40,7 @@ import { CaretLeftIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 
 export function BackToCustomizeOverlay() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4 sm:inset-x-auto sm:left-6 sm:justify-start sm:px-0">
@@ -48,7 +50,7 @@ export function BackToCustomizeOverlay() {
         className="bg-background/80 text-muted-foreground hover:text-foreground border-border pointer-events-auto flex items-center gap-1.5 rounded-full border py-2 pr-4 pl-3 text-sm shadow-sm backdrop-blur-md transition-colors"
       >
         <CaretLeftIcon className="size-3.5 shrink-0" />
-        Back to Customize
+        {tI18nComplete.raw('text1d280015aac2')}
       </button>
     </div>
   );

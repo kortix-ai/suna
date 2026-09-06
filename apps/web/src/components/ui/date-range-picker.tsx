@@ -40,10 +40,7 @@ const PRESET_LABELS: Record<Exclude<CostRangePreset, 'custom'>, string> = {
  * a UI affordance only — every cost endpoint takes just `from`/`to`, so this
  * is where a preset turns into the wire values.
  */
-export function resolvePreset(
-  preset: Exclude<CostRangePreset, 'custom'>,
-  now: Date,
-): CostRange {
+export function resolvePreset(preset: Exclude<CostRangePreset, 'custom'>, now: Date): CostRange {
   const to = now.toISOString();
   const from = new Date(now.getTime() - PRESET_DAYS[preset] * 86_400_000).toISOString();
   return { preset, from, to };
@@ -147,8 +144,7 @@ export function formatRangeLabel(range: CostRange): string {
 
 /** One click's effect on a range that is being picked. */
 export type RangeDraftStep =
-  | { kind: 'pending'; draft: DateRange }
-  | { kind: 'complete'; from: Date; to: Date };
+  { kind: 'pending'; draft: DateRange } | { kind: 'complete'; from: Date; to: Date };
 
 /**
  * What a click on `day` does, given the half-made range currently on screen.

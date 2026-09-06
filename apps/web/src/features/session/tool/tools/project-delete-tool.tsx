@@ -3,7 +3,7 @@ import { BasicTool, partInput } from '@/features/session/tool/shared/infrastruct
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { TrashIcon as Trash2 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function ProjectDeleteTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -13,7 +13,7 @@ export function ProjectDeleteTool({ part }: ToolProps) {
     <BasicTool
       icon={<Trash2 className="text-muted-foreground/40 size-3.5 shrink-0" />}
       trigger={{
-        title: 'Workspace',
+        title: tHardcodedUi.raw('i18nComplete.text87bb59ba2f92'),
         subtitle: tHardcodedUi.raw(
           'componentsSessionToolRenderers.line6211JsxTextWorkspaceDeleteDisabled',
         ),

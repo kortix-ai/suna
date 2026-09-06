@@ -2,6 +2,7 @@
 
 import { cn } from '@/lib/utils';
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
@@ -152,9 +153,7 @@ function CodeSurface({
         </pre>
       </div>
 
-      {footer ? (
-        <div className="border-border bg-card border-t px-4 py-3">{footer}</div>
-      ) : null}
+      {footer ? <div className="border-border bg-card border-t px-4 py-3">{footer}</div> : null}
     </div>
   );
 }
@@ -183,7 +182,16 @@ kortix init
 kortix ship`;
 
 export function CliSurface({ cta }: { cta?: React.ReactNode }) {
-  return <CodeSurface title="kortix — terminal" lines={CLI_LINES} lang="sh" copyText={CLI_COPY} footer={cta} />;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <CodeSurface
+      title={tI18nComplete.raw('text64ca63c51b02')}
+      lines={CLI_LINES}
+      lang="sh"
+      copyText={CLI_COPY}
+      footer={cta}
+    />
+  );
 }
 
 /* ── SDK ─────────────────────────────────────────────────────────────────── */
@@ -209,7 +217,16 @@ const SDK_LINES = [
 const SDK_COPY = SDK_LINES.filter((l) => !l.startsWith('//')).join('\n');
 
 export function SdkSurface({ cta }: { cta?: React.ReactNode }) {
-  return <CodeSurface title="renewal.ts" lines={SDK_LINES} lang="ts" copyText={SDK_COPY} footer={cta} />;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <CodeSurface
+      title={tI18nComplete.raw('text3f71d2398daa')}
+      lines={SDK_LINES}
+      lang="ts"
+      copyText={SDK_COPY}
+      footer={cta}
+    />
+  );
 }
 
 export function SurfaceLink({ href, children }: { href: string; children: React.ReactNode }) {

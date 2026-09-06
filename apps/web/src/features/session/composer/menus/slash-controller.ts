@@ -4,15 +4,15 @@ import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
 
 import { insertCommandChip, insertMention } from '../editor/mention-node';
-import { baseSuggestion } from '../editor/suggestion';
 import type { MenuController } from '../editor/suggestion';
+import { baseSuggestion } from '../editor/suggestion';
+import { MenuNavState } from './menu-nav-state';
 import { mountDockedMenu, mountSuggestionMenu } from './mount';
-import { SlashMenu } from './slash-menu';
 import type { SlashAction } from './slash-actions';
 import type { SlashFile } from './slash-files';
-import { buildSlashSections } from './slash-items';
 import type { SlashRow, SlashSection } from './slash-items';
-import { MenuNavState } from './menu-nav-state';
+import { buildSlashSections } from './slash-items';
+import { SlashMenu } from './slash-menu';
 
 export const SLASH_PLUGIN_KEY = new PluginKey('slashSuggestion');
 
@@ -33,6 +33,7 @@ export interface CreateSlashSuggestionOptions {
    * (the marketing composer, project home), which simply drops both sections.
    */
   getFiles?: () => SlashFile[];
+  actionsHeading?: string;
   /**
    * CSS selector for the element the menu docks into. Omitted → the menu
    * floats at the caret, `document.body`-portalled, same as `@`. See
@@ -127,6 +128,7 @@ export function createSlashSuggestion(
       commands: opts.getCommands(),
       actions: opts.getActions?.(),
       files: opts.getFiles?.(),
+      actionsHeading: opts.actionsHeading,
       query,
     });
     nav.setRows(sections.flatMap((s) => s.rows));

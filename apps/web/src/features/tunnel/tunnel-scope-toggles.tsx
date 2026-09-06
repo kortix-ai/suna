@@ -1,9 +1,8 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -11,7 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
 import {
   useGrantTunnelPermission,
   useRevokeTunnelPermission,
@@ -20,8 +21,13 @@ import {
 import { cn } from '@/lib/utils';
 import { Fragment, useMemo, useState } from 'react';
 import type { ScopeInfo } from './types';
-import { EXPIRY_OPTIONS, getExpiresAt, SCOPE_REGISTRY } from './types';
-import type { TunnelPermission } from '@/hooks/tunnel/use-tunnel';
+import {
+  EXPIRY_OPTIONS,
+  getExpiresAt,
+  localizedExpiryOptions,
+  localizedScopeRegistry,
+  SCOPE_REGISTRY,
+} from './types';
 
 interface TunnelScopeTogglesProps {
   tunnelId: string;
@@ -39,7 +45,9 @@ function groupBy<T>(arr: T[], fn: (item: T) => string): Record<string, T[]> {
   return result;
 }
 
-export function buildActiveScopeMap(permissions: TunnelPermission[] | undefined): Map<string, string> {
+export function buildActiveScopeMap(
+  permissions: TunnelPermission[] | undefined,
+): Map<string, string> {
   const map = new Map<string, string>();
   if (!permissions) return map;
   for (const p of permissions) {
@@ -62,12 +70,15 @@ export function buildActiveScopeMap(permissions: TunnelPermission[] | undefined)
 
 export function TunnelScopeToggles({ tunnelId, canWrite = false }: TunnelScopeTogglesProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: permissions, isLoading } = useTunnelPermissions(tunnelId);
   const grantMutation = useGrantTunnelPermission();
   const revokeMutation = useRevokeTunnelPermission();
   const [expiryValue, setExpiryValue] = useState('never');
 
-  const groups = useMemo(() => groupBy(SCOPE_REGISTRY, (s) => s.category), []);
+  const localizedScopes = useMemo(() => localizedScopeRegistry(tI18nComplete), [tI18nComplete]);
+  const expiryOptions = useMemo(() => localizedExpiryOptions(tI18nComplete), [tI18nComplete]);
+  const groups = useMemo(() => groupBy(localizedScopes, (s) => s.category), [localizedScopes]);
 
   const activeScopeMap = useMemo(() => buildActiveScopeMap(permissions), [permissions]);
 
@@ -112,7 +123,7 @@ export function TunnelScopeToggles({ tunnelId, canWrite = false }: TunnelScopeTo
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {EXPIRY_OPTIONS.map((opt) => (
+            {expiryOptions.map((opt) => (
               <SelectItem
                 key={opt.value}
                 value={opt.value}
@@ -127,7 +138,7 @@ export function TunnelScopeToggles({ tunnelId, canWrite = false }: TunnelScopeTo
 
       {Object.entries(groups).map(([category, scopes], index) => (
         <Fragment key={category}>
-          {index > 0 && <Separator className='opacity-50'/>}
+          {index > 0 && <Separator className="opacity-50" />}
           <div>
             <Label>{category}</Label>
             <div className="space-y-2">

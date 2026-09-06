@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { cn } from '@/lib/utils';
 import {
@@ -165,6 +165,8 @@ import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { EmptyState } from '@/features/layout/section/empty-state';
+import { DESIGN_SYSTEM_TRANSLATION_KEYS } from '@/i18n/design-system-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { WALLPAPER_DOWNLOADS, type WallpaperDownload } from '@/lib/wallpaper-downloads';
 import {
   PlugsConnectedIcon as Cable,
@@ -722,6 +724,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
 }
 
 function SocialCard({ asset }: { asset: SocialAsset }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const downloadName = `kortix-avatar-${asset.variant.toLowerCase()}.png`;
 
   return (
@@ -735,7 +738,7 @@ function SocialCard({ asset }: { asset: SocialAsset }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={asset.pngSrc}
-          alt={`Kortix avatar ${asset.variant}`}
+          alt={tI18nComplete('text0330aaf3e67a', { value0: asset.variant })}
           className="size-full object-cover"
         />
 
@@ -751,7 +754,9 @@ function SocialCard({ asset }: { asset: SocialAsset }) {
       </div>
 
       <div className="mt-2 flex items-baseline gap-1.5 px-0.5">
-        <span className="text-foreground text-xs font-medium">Avatar</span>
+        <span className="text-foreground text-xs font-medium">
+          {tI18nComplete.raw('textca8e826d9c2e')}
+        </span>
         <span className="text-muted-foreground font-mono text-xs">{asset.variant}</span>
       </div>
     </div>
@@ -771,6 +776,13 @@ function formatBytes(bytes: number) {
  * wallpaper that is no longer what you get.
  */
 function WallpaperCard({ wallpaper }: { wallpaper: WallpaperDownload }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localizedWallpaper = localizeUiCatalog(
+    wallpaper,
+    tI18nComplete,
+    DESIGN_SYSTEM_TRANSLATION_KEYS,
+  );
+  wallpaper = localizedWallpaper;
   const isDark = wallpaper.theme === 'dark';
 
   return (
@@ -784,7 +796,10 @@ function WallpaperCard({ wallpaper }: { wallpaper: WallpaperDownload }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={wallpaper.preview}
-          alt={`Kortix ${wallpaper.name} wallpaper, ${wallpaper.theme}`}
+          alt={tI18nComplete('text58432f02cc20', {
+            value0: wallpaper.name,
+            value1: wallpaper.theme,
+          })}
           className="size-full object-cover"
           loading="lazy"
         />
@@ -911,6 +926,7 @@ function ComponentDesc({ children }: { children: React.ReactNode }) {
  * marketing route — inline, every visitor would pay for it without opening it.
  */
 function EmojiPickerDemo() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<EmojiSelection | null>(null);
 
@@ -922,7 +938,11 @@ function EmojiPickerDemo() {
             type="button"
             variant="outline"
             size="icon"
-            aria-label={selection ? `Icon: ${selection.label}. Change it` : 'Choose an icon'}
+            aria-label={
+              selection
+                ? tI18nComplete('text1c01c6630cab', { value0: selection.label })
+                : tI18nComplete.raw('textb9edcf16a2bc')
+            }
             className="hit-area-1 size-9 shrink-0 transition-[color,background-color,scale] duration-150 active:scale-[0.96]"
           >
             {selection ? (
@@ -941,7 +961,7 @@ function EmojiPickerDemo() {
             surface. p-0 because the picker owns its own padding. */}
         <PopoverContent
           align="start"
-          aria-label="Choose an icon"
+          aria-label={tI18nComplete.raw('textb9edcf16a2bc')}
           className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
         >
           <EmojiPicker
@@ -953,7 +973,7 @@ function EmojiPickerDemo() {
         </PopoverContent>
       </Popover>
       <span className="text-muted-foreground text-sm">
-        {selection ? selection.label : 'Nothing picked yet'}
+        {selection ? selection.label : tI18nComplete.raw('texte45a9a911fcd')}
       </span>
     </div>
   );
@@ -971,6 +991,7 @@ function EmojiPickerDemo() {
  * this is a public marketing route.
  */
 function ProjectIconPickerDemo() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [open, setOpen] = useState(false);
   const [emoji, setEmoji] = useState<EmojiSelection | null>(null);
   const [glyph, setGlyph] = useState<GlyphSelection | null>(null);
@@ -986,10 +1007,10 @@ function ProjectIconPickerDemo() {
             size="icon"
             aria-label={
               emoji
-                ? `Icon: ${emoji.label}. Change it`
+                ? tI18nComplete('text1c01c6630cab', { value0: emoji.label })
                 : glyph
-                  ? `Icon: ${glyph.name}. Change it`
-                  : 'Choose a project icon'
+                  ? tI18nComplete('text1c01c6630cab', { value0: glyph.name })
+                  : tI18nComplete.raw('textf2a9bd94c131')
             }
             className={cn(
               'hit-area-1 size-9 shrink-0 transition-[color,background-color,box-shadow,scale] duration-150 active:scale-[0.96]',
@@ -1014,7 +1035,7 @@ function ProjectIconPickerDemo() {
             so the popover never resizes when the Icon tab is selected. */}
         <PopoverContent
           align="start"
-          aria-label="Choose a project icon"
+          aria-label={tI18nComplete.raw('textf2a9bd94c131')}
           className="w-[calc(75*var(--spacing)+2px)] overflow-hidden p-0"
         >
           <ProjectIconPicker
@@ -1032,7 +1053,7 @@ function ProjectIconPickerDemo() {
         </PopoverContent>
       </Popover>
       <span className="text-muted-foreground text-sm">
-        {emoji ? emoji.label : glyph ? glyph.name : 'Nothing picked yet'}
+        {emoji ? emoji.label : glyph ? glyph.name : tI18nComplete.raw('texte45a9a911fcd')}
       </span>
     </div>
   );
@@ -1051,6 +1072,7 @@ function MotionBar({
   easing?: string;
   easingToken?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [active, setActive] = useState(false);
 
   const replay = () => {
@@ -1073,7 +1095,7 @@ function MotionBar({
         <div
           className="bg-foreground/70 absolute top-1 bottom-1 left-1 rounded-sm"
           style={{
-            width: active ? 'calc(100% - 8px)' : '24px',
+            width: active ? "calc(100% - 8px)" : '24px',
             transitionProperty: 'width',
             transitionDuration: durationToken ? `var(${durationToken})` : `${durationMs}ms`,
             transitionTimingFunction: easingToken ? `var(${easingToken})` : easing,
@@ -1081,7 +1103,8 @@ function MotionBar({
         />
       </div>
       <span className="text-muted-foreground w-14 shrink-0 text-right font-mono text-xs">
-        {durationMs}ms
+        {durationMs}
+        {tI18nComplete.raw('textf785c3ce1d58')}
       </span>
     </div>
   );
@@ -1121,7 +1144,7 @@ function AntiPatternBlock({
           <div className="mb-2.5 flex items-center gap-1.5">
             <Check className="size-3 text-emerald-500" />
             <span className="text-xs font-medium tracking-widest text-emerald-500/70 uppercase">
-              Do
+              {tHardcodedUi.raw('i18nComplete.text30094e0bec00')}
             </span>
           </div>
           <pre className="text-muted-foreground bg-muted/30 max-w-full min-w-0 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
@@ -1173,6 +1196,12 @@ function scrollActiveTocLinkIntoView(nav: HTMLElement, link: HTMLElement) {
 }
 
 function TocSidebar({ onNavigate }: { onNavigate: (id: string) => boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tocSections = localizeUiCatalog(
+    TOC_SECTIONS,
+    tI18nComplete,
+    DESIGN_SYSTEM_TRANSLATION_KEYS,
+  );
   const [activeId, setActiveId] = useState('hero');
   const navRef = useRef<HTMLDivElement>(null);
   const isClickNavigating = useRef(false);
@@ -1245,7 +1274,7 @@ function TocSidebar({ onNavigate }: { onNavigate: (id: string) => boolean }) {
   };
 
   /* Determine which parent section is active based on the current activeId */
-  const activeParentId = TOC_SECTIONS.find((s) => {
+  const activeParentId = tocSections.find((s) => {
     if (s.id === activeId) return true;
     if ('children' in s && s.children) {
       return s.children.some((c) => c.id === activeId);
@@ -1260,7 +1289,7 @@ function TocSidebar({ onNavigate }: { onNavigate: (id: string) => boolean }) {
       className="scrollbar-hide max-h-[calc(100vh-5rem)] w-full scroll-py-10 overflow-y-auto overscroll-y-contain pt-2"
     >
       <ul className="space-y-0.5 pb-32">
-        {TOC_SECTIONS.map((s) => {
+        {tocSections.map((s) => {
           const isParentActive = s.id === activeParentId;
           const hasChildren = 'children' in s && s.children;
           return (
@@ -1303,6 +1332,8 @@ function TocSidebar({ onNavigate }: { onNavigate: (id: string) => boolean }) {
 export default function BrandPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const logoAssets = localizeUiCatalog(LOGO_ASSETS, tI18nComplete, DESIGN_SYSTEM_TRANSLATION_KEYS);
   const [logoFmt, setLogoFmt] = useState<LogoFormat>('svg');
   const [checkboxGroupValue, setCheckboxGroupValue] = useState<string[]>(['a']);
   const [switchOn, setSwitchOn] = useState(true);
@@ -1364,7 +1395,7 @@ export default function BrandPage() {
             <section id="hero">
               <div className="mb-3">
                 <Badge variant="outline" className="font-mono text-xs">
-                  v1.0
+                  {tI18nHardcoded.raw('i18nComplete.textfa8b919c909d')}
                 </Badge>
               </div>
               <h1 className="text-foreground mb-5 text-3xl font-medium tracking-tight sm:text-4xl md:text-5xl">
@@ -1377,10 +1408,12 @@ export default function BrandPage() {
               </p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <Badge variant="secondary">
-                  <span className="font-mono">30+</span> Components
+                  <span className="font-mono">30+</span>{' '}
+                  {tI18nHardcoded.raw('i18nComplete.texta150ce221602')}
                 </Badge>
                 <Badge variant="secondary">
-                  <span className="font-mono">7</span> Themes
+                  <span className="font-mono">7</span>{' '}
+                  {tI18nHardcoded.raw('i18nComplete.text43ae3265b99f')}
                 </Badge>
                 <Badge variant="secondary">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line714JsxTextOklchColors')}
@@ -1393,7 +1426,9 @@ export default function BrandPage() {
 
             <section id="logo" className="mt-14">
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-muted-foreground text-xs tracking-widest uppercase">Logo</h2>
+                <h2 className="text-muted-foreground text-xs tracking-widest uppercase">
+                  {tI18nHardcoded.raw('i18nComplete.textd707dc2f1936')}
+                </h2>
                 <FormatToggle value={logoFmt} onChange={setLogoFmt} />
               </div>
               <p className="text-muted-foreground mb-6 text-base leading-relaxed">
@@ -1402,7 +1437,7 @@ export default function BrandPage() {
                 )}
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {LOGO_ASSETS.map((a) => (
+                {logoAssets.map((a) => (
                   <LogoCard key={a.id} asset={a} fmt={logoFmt} />
                 ))}
               </div>
@@ -1427,7 +1462,7 @@ export default function BrandPage() {
                   {tI18nHardcoded.raw(
                     'autoAppPublicMarketingDesignSystemPageJsxTextTheSymboleb8e02af',
                   )}{' '}
-                  PNG (1000&times;1000, &lt;1&nbsp;MB).
+                  {tI18nHardcoded.raw('i18nComplete.textd7abbd37d0b8')}
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {SOCIAL_ASSETS.map((a) => (
@@ -1440,26 +1475,30 @@ export default function BrandPage() {
             <section id="wallpapers">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
-                Wallpapers
+                {tI18nHardcoded.raw('i18nComplete.text006547c4fdf5')}
               </h2>
               <p className="text-muted-foreground mb-8 text-base leading-relaxed">
-                Desktop and phone wallpapers, black and white. Every file is generated by{' '}
+                {tI18nHardcoded.raw('i18nComplete.text63315dd386b3')}{' '}
                 <code className="text-foreground font-mono text-sm">
                   scripts/generate-wallpapers.mjs
                 </code>{' '}
-                — re-run it and this section updates itself.
+                {tI18nHardcoded.raw('i18nComplete.textdf6816ae6cb1')}
               </p>
 
               <div className="mb-10">
                 <h3 className="text-muted-foreground mb-2 text-xs tracking-widest uppercase">
-                  Brand
+                  {tI18nHardcoded.raw('i18nComplete.text090ed4316f1d')}
                 </h3>
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-                  Two families on a solid field, nothing else:{' '}
-                  <strong className="font-medium">Symbol</strong> is the mark alone,{' '}
-                  <strong className="font-medium">Logo</strong> is the full lockup. Both sit dead
-                  centre and are drawn from the source SVG at each size, so the edges stay exact on
-                  a retina display.
+                  {tI18nHardcoded.raw('i18nComplete.text1a093dfd0cde')}{' '}
+                  <strong className="font-medium">
+                    {tI18nHardcoded.raw('i18nComplete.textba0e4afa9340')}
+                  </strong>{' '}
+                  {tI18nHardcoded.raw('i18nComplete.textc2d30e82e60f')}{' '}
+                  <strong className="font-medium">
+                    {tI18nHardcoded.raw('i18nComplete.textd707dc2f1936')}
+                  </strong>{' '}
+                  {tI18nHardcoded.raw('i18nComplete.texte53dd7d993e1')}
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {MARK_WALLPAPERS.map((w) => (
@@ -1470,13 +1509,10 @@ export default function BrandPage() {
 
               <div>
                 <h3 className="text-muted-foreground mb-2 text-xs tracking-widest uppercase">
-                  Product
+                  {tI18nHardcoded.raw('i18nComplete.textfb9ef894175c')}
                 </h3>
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
-                  The wallpapers you can set on a Kortix home. Five of the six are live shader
-                  compositions, so each one is rendered at full size in a browser and captured as a
-                  still. Desktop is 5120&times;2880 and downsamples cleanly to 4K and 1440p; the
-                  phone file is its own portrait render, not a crop.
+                  {tI18nHardcoded.raw('i18nComplete.text739dadd6f1f5')}
                 </p>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {PRODUCT_WALLPAPERS.map((w) => (
@@ -1494,8 +1530,8 @@ export default function BrandPage() {
             >
               <CollapsibleSection
                 id="colors"
-                label="Colors"
-                summary="Black and white plus one accent per theme, and the full core palette in OKLCH."
+                label={tI18nHardcoded.raw('i18nComplete.text88c45d9e526c')}
+                summary={tI18nHardcoded.raw('i18nComplete.textffd43fd60b28')}
               >
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -1504,7 +1540,9 @@ export default function BrandPage() {
                 </p>
 
                 <div className="mb-8">
-                  <p className="text-muted-foreground mb-3 text-xs">Foundation</p>
+                  <p className="text-muted-foreground mb-3 text-xs">
+                    {tI18nHardcoded.raw('i18nComplete.textdf42a4d5d353')}
+                  </p>
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                     {BRAND_COLORS.map((c) => (
                       <div key={c.hex}>
@@ -1548,7 +1586,7 @@ export default function BrandPage() {
                             style={{ backgroundColor: token.light }}
                           >
                             <span className="absolute bottom-1 left-2 font-mono text-xs tracking-widest text-black/55 uppercase">
-                              light
+                              {tI18nHardcoded.raw('i18nComplete.text99a7026172d4')}
                             </span>
                           </div>
                           <div
@@ -1556,7 +1594,7 @@ export default function BrandPage() {
                             style={{ backgroundColor: token.dark }}
                           >
                             <span className="absolute bottom-1 left-2 font-mono text-xs tracking-widest text-white/55 uppercase">
-                              dark
+                              {tI18nHardcoded.raw('i18nComplete.texte6bb5689beec')}
                             </span>
                           </div>
                         </div>
@@ -1582,8 +1620,8 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="typography"
-                label="Typography"
-                summary="Roobert and Roobert Mono, the two weights we ship, and the whole type scale."
+                label={tI18nHardcoded.raw('i18nComplete.textcab94aba84f9')}
+                summary={tI18nHardcoded.raw('i18nComplete.text0c3397719010')}
               >
                 <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -1593,8 +1631,14 @@ export default function BrandPage() {
 
                 <div className="space-y-6">
                   {[
-                    { label: 'Medium · 500', cls: 'font-medium' },
-                    { label: 'Regular · 400', cls: 'font-normal' },
+                    {
+                      label: tI18nHardcoded.raw('i18nComplete.texte64e02c862bd'),
+                      cls: 'font-medium',
+                    },
+                    {
+                      label: tI18nHardcoded.raw('i18nComplete.textb6bcbb175d23'),
+                      cls: 'font-normal',
+                    },
                   ].map((s) => (
                     <div key={s.label} className="border-border/30 border-b pb-5">
                       <span className="text-muted-foreground mb-2 block font-mono text-xs tracking-widest">
@@ -1662,8 +1706,8 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="motion"
-                label="Motion"
-                summary="Duration and easing tokens. Click a label to play it."
+                label={tI18nHardcoded.raw('i18nComplete.text8ca344247c18')}
+                summary={tI18nHardcoded.raw('i18nComplete.textd1345dc7da98')}
               >
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -1711,8 +1755,8 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="spacing"
-                label="Spacing"
-                summary="The 4px-based scale behind every padding, margin, and gap."
+                label={tI18nHardcoded.raw('i18nComplete.text62a822a58309')}
+                summary={tI18nHardcoded.raw('i18nComplete.texte2fe1fe9cff1')}
               >
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -1731,7 +1775,10 @@ export default function BrandPage() {
                           className="bg-foreground/60 h-5 rounded-sm"
                           style={{ width: `${s.px * 3}px` }}
                         />
-                        <span className="text-muted-foreground font-mono text-xs">{s.px}px</span>
+                        <span className="text-muted-foreground font-mono text-xs">
+                          {s.px}
+                          {tI18nHardcoded.raw('i18nComplete.text6ee2cc105a67')}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1740,15 +1787,15 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="shadows"
-                label="Shadows"
-                summary="The elevation ladder. In-flow surfaces stay flat; shadows belong to overlays."
+                label={tI18nHardcoded.raw('i18nComplete.text2a19bdc09aa3')}
+                summary={tI18nHardcoded.raw('i18nComplete.text9d1a9c5808a8')}
               >
                 <p className="text-muted-foreground mb-6 text-base leading-relaxed">
                   {tI18nHardcoded.raw(
                     'autoAppPublicMarketingDesignSystemPageJsxTextSubtleElevation8c9f8cda',
                   )}{' '}
                   <code className="bg-muted rounded px-1 font-mono text-xs">box-shadow</code>{' '}
-                  values.
+                  {tI18nHardcoded.raw('i18nComplete.textdb482d99cacb')}
                 </p>
 
                 <DemoContainer>
@@ -1780,8 +1827,8 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="components"
-                label="Components"
-                summary="The full library — 32 components with their variants, sizes, and states."
+                label={tI18nHardcoded.raw('i18nComplete.texta150ce221602')}
+                summary={tI18nHardcoded.raw('i18nComplete.texta55bc449bcc1')}
               >
                 <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -1790,7 +1837,9 @@ export default function BrandPage() {
                 </p>
 
                 <div id="comp-button" className="mb-12">
-                  <ComponentLabel>Button</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text707eab0c23ec')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1029JsxTextText10Variants8SizesTheFoundationOfEvery',
@@ -1825,12 +1874,24 @@ export default function BrandPage() {
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1039JsxTextBaseVariants')}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          <Button variant="default">Default</Button>
-                          <Button variant="secondary">Secondary</Button>
-                          <Button variant="destructive">Destructive</Button>
-                          <Button variant="outline">Outline</Button>
-                          <Button variant="ghost">Ghost</Button>
-                          <Button variant="link">Link</Button>
+                          <Button variant="default">
+                            {tI18nHardcoded.raw('i18nComplete.text21b111cbfe6e')}
+                          </Button>
+                          <Button variant="secondary">
+                            {tI18nHardcoded.raw('i18nComplete.text62f2ccfffcc5')}
+                          </Button>
+                          <Button variant="destructive">
+                            {tI18nHardcoded.raw('i18nComplete.textc3e58a73609d')}
+                          </Button>
+                          <Button variant="outline">
+                            {tI18nHardcoded.raw('i18nComplete.texteabbf3abaf8d')}
+                          </Button>
+                          <Button variant="ghost">
+                            {tI18nHardcoded.raw('i18nComplete.textdf1bc4984a05')}
+                          </Button>
+                          <Button variant="link">
+                            {tI18nHardcoded.raw('i18nComplete.texta6a32dbc5618')}
+                          </Button>
                         </div>
                       </div>
                       <div>
@@ -1840,10 +1901,18 @@ export default function BrandPage() {
                           )}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          <Button variant="secondary">Secondary</Button>
-                          <Button variant="muted">Muted</Button>
-                          <Button variant="inverse">Inverse</Button>
-                          <Button variant="success">Success</Button>
+                          <Button variant="secondary">
+                            {tI18nHardcoded.raw('i18nComplete.text62f2ccfffcc5')}
+                          </Button>
+                          <Button variant="muted">
+                            {tI18nHardcoded.raw('i18nComplete.text2346f214ad56')}
+                          </Button>
+                          <Button variant="inverse">
+                            {tI18nHardcoded.raw('i18nComplete.textbfe272f94fb0')}
+                          </Button>
+                          <Button variant="success">
+                            {tI18nHardcoded.raw('i18nComplete.textc88a0b907419')}
+                          </Button>
                         </div>
                       </div>
                       <div>
@@ -1851,9 +1920,15 @@ export default function BrandPage() {
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1061JsxTextStandardSizes')}
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button size="lg">Large</Button>
-                          <Button size="default">Default</Button>
-                          <Button size="sm">Small</Button>
+                          <Button size="lg">
+                            {tI18nHardcoded.raw('i18nComplete.textab80540d98d2')}
+                          </Button>
+                          <Button size="default">
+                            {tI18nHardcoded.raw('i18nComplete.text21b111cbfe6e')}
+                          </Button>
+                          <Button size="sm">
+                            {tI18nHardcoded.raw('i18nComplete.text5263293fc202')}
+                          </Button>
                           <Button size="icon">
                             <Settings className="size-4" />
                           </Button>
@@ -1865,10 +1940,10 @@ export default function BrandPage() {
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
                           <Button size="toolbar" variant="muted">
-                            Toolbar
+                            {tI18nHardcoded.raw('i18nComplete.text451aa51a0fb5')}
                           </Button>
                           <Button size="xs" variant="muted">
-                            XSmall
+                            {tI18nHardcoded.raw('i18nComplete.text35542ace70ce')}
                           </Button>
                           <Button size="icon-sm" variant="ghost">
                             <Settings className="size-3.5" />
@@ -1888,35 +1963,43 @@ export default function BrandPage() {
                             {tHardcodedUi.raw('appHomeDesignSystemPage.line1083JsxTextSendEmail')}
                           </Button>
                           <Button variant="outline">
-                            <Plus className="size-4" /> Create
+                            <Plus className="size-4" />{' '}
+                            {tI18nHardcoded.raw('i18nComplete.text4759498ac2a7')}
                           </Button>
                           <Button variant="secondary">
-                            <Search className="size-4" /> Search
+                            <Search className="size-4" />{' '}
+                            {tI18nHardcoded.raw('i18nComplete.text49c266baaaa7')}
                           </Button>
                           <Button variant="destructive">
-                            <Trash2 className="size-4" /> Delete
+                            <Trash2 className="size-4" />{' '}
+                            {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
                           </Button>
                           <Button variant="inverse">
-                            <ArrowRight className="size-4" /> Launch
+                            <ArrowRight className="size-4" />{' '}
+                            {tI18nHardcoded.raw('i18nComplete.textccf56ef5db0b')}
                           </Button>
                           <Button variant="success" size="toolbar">
-                            <Check className="size-3.5" /> Confirm
+                            <Check className="size-3.5" />{' '}
+                            {tI18nHardcoded.raw('i18nComplete.texteebdd24a77d9')}
                           </Button>
                         </div>
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          States
+                          {tI18nHardcoded.raw('i18nComplete.text2f6e9daec8e9')}
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button disabled>Disabled</Button>
+                          <Button disabled>
+                            {tI18nHardcoded.raw('i18nComplete.text75081b593d15')}
+                          </Button>
                           <Button disabled variant="outline">
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1096JsxTextDisabledOutline',
                             )}
                           </Button>
                           <Button>
-                            <Loading className="size-4" /> Loading
+                            <Loading className="size-4" />{' '}
+                            {tI18nHardcoded.raw('i18nComplete.textdc380888c4e2')}
                           </Button>
                         </div>
                       </div>
@@ -1925,7 +2008,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-badge" className="mb-12">
-                  <ComponentLabel>Badge</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text002474e36821')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1108JsxTextLabelsStatusIndicatorsAndTagsSevenVariantsFrom',
@@ -1954,16 +2039,36 @@ export default function BrandPage() {
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line1114JsxTextBaseVariants')}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="solid">Solid</Badge>
-                          <Badge variant="default">Default</Badge>
-                          <Badge variant="secondary">Secondary</Badge>
-                          <Badge variant="accent">Accent</Badge>
-                          <Badge variant="destructive">Destructive</Badge>
-                          <Badge variant="outline">Outline</Badge>
-                          <Badge variant="new">New</Badge>
-                          <Badge variant="beta">Beta</Badge>
-                          <Badge variant="highlight">Highlight</Badge>
-                          <Badge variant="transparent">Transparent</Badge>
+                          <Badge variant="solid">
+                            {tI18nHardcoded.raw('i18nComplete.textb8b311b0f273')}
+                          </Badge>
+                          <Badge variant="default">
+                            {tI18nHardcoded.raw('i18nComplete.text21b111cbfe6e')}
+                          </Badge>
+                          <Badge variant="secondary">
+                            {tI18nHardcoded.raw('i18nComplete.text62f2ccfffcc5')}
+                          </Badge>
+                          <Badge variant="accent">
+                            {tI18nHardcoded.raw('i18nComplete.texta5c6fb18c9af')}
+                          </Badge>
+                          <Badge variant="destructive">
+                            {tI18nHardcoded.raw('i18nComplete.textc3e58a73609d')}
+                          </Badge>
+                          <Badge variant="outline">
+                            {tI18nHardcoded.raw('i18nComplete.texteabbf3abaf8d')}
+                          </Badge>
+                          <Badge variant="new">
+                            {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
+                          </Badge>
+                          <Badge variant="beta">
+                            {tI18nHardcoded.raw('i18nComplete.text703390318bd5')}
+                          </Badge>
+                          <Badge variant="highlight">
+                            {tI18nHardcoded.raw('i18nComplete.text07ccd15df32a')}
+                          </Badge>
+                          <Badge variant="transparent">
+                            {tI18nHardcoded.raw('i18nComplete.textaac7e89fcd0e')}
+                          </Badge>
                         </div>
                       </div>
                       <div>
@@ -1973,29 +2078,41 @@ export default function BrandPage() {
                           )}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          <Badge variant="success">Success</Badge>
+                          <Badge variant="success">
+                            {tI18nHardcoded.raw('i18nComplete.textc88a0b907419')}
+                          </Badge>
                           <Badge variant="badgeSuccess">
                             {tI18nHardcoded.raw(
                               'autoAppPublicMarketingDesignSystemPageJsxTextBadgeSuccessef599436',
                             )}
                           </Badge>
-                          <Badge variant="kortix">Update</Badge>
-                          <Badge variant="warning">Warning</Badge>
-                          <Badge variant="info">Info</Badge>
-                          <Badge variant="muted">Muted</Badge>
+                          <Badge variant="kortix">
+                            {tI18nHardcoded.raw('i18nComplete.textc1c1009d3f37')}
+                          </Badge>
+                          <Badge variant="warning">
+                            {tI18nHardcoded.raw('i18nComplete.texte981ddae45d8')}
+                          </Badge>
+                          <Badge variant="info">
+                            {tI18nHardcoded.raw('i18nComplete.text170322a32f3c')}
+                          </Badge>
+                          <Badge variant="muted">
+                            {tI18nHardcoded.raw('i18nComplete.text2346f214ad56')}
+                          </Badge>
                         </div>
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          Sizes
+                          {tI18nHardcoded.raw('i18nComplete.text74a3978d1004')}
                         </p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="default">Default</Badge>
+                          <Badge variant="default">
+                            {tI18nHardcoded.raw('i18nComplete.text21b111cbfe6e')}
+                          </Badge>
                           <Badge variant="default" size="sm">
-                            Small
+                            {tI18nHardcoded.raw('i18nComplete.text5263293fc202')}
                           </Badge>
                           <Badge variant="default" size="xs">
-                            XSmall
+                            {tI18nHardcoded.raw('i18nComplete.text35542ace70ce')}
                           </Badge>
                           <Badge variant="secondary" size="tabular">
                             9
@@ -2004,10 +2121,10 @@ export default function BrandPage() {
                             12
                           </Badge>
                           <Badge variant="success" size="sm">
-                            Active
+                            {tI18nHardcoded.raw('i18nComplete.text92340695899b')}
                           </Badge>
                           <Badge variant="warning" size="sm">
-                            Pending
+                            {tI18nHardcoded.raw('i18nComplete.text331551b0de41')}
                           </Badge>
                         </div>
                       </div>
@@ -2018,19 +2135,19 @@ export default function BrandPage() {
                         <div className="flex flex-wrap gap-2">
                           <Badge variant="default">
                             <Star className="size-3" />
-                            Featured
+                            {tI18nHardcoded.raw('i18nComplete.textc533cafab69e')}
                           </Badge>
                           <Badge variant="success">
                             <Check className="size-3" />
-                            Verified
+                            {tI18nHardcoded.raw('i18nComplete.text4f7838402f37')}
                           </Badge>
                           <Badge variant="info">
                             <Info className="size-3" />
-                            v2.1.0
+                            {tI18nHardcoded.raw('i18nComplete.texta6fd69e48a48')}
                           </Badge>
                           <Badge variant="warning">
                             <AlertTriangle className="size-3" />
-                            Pending
+                            {tI18nHardcoded.raw('i18nComplete.text331551b0de41')}
                           </Badge>
                         </div>
                       </div>
@@ -2039,20 +2156,19 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-card" className="mb-12">
-                  <ComponentLabel>Card</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textbe3702e3f1af')}
+                  </ComponentLabel>
                   <ComponentDesc>
-                    One compositional card — media, eyebrow, title, description, action, content,
-                    footer — laid out by a sibling CardGroup. Two layout axes (orientation, columns)
-                    and two framing switches (border, separated) cover every variant below.
-                    Transparent and borderless by default: cards inherit the substrate under them
-                    and lean on hairline dividers plus a magnetic proximity highlight instead of a
-                    drawn frame.
+                    {tI18nHardcoded.raw('i18nComplete.text4e37aaf3f5f2')}
                   </ComponentDesc>
                   <CardSection />
                 </div>
 
                 <div id="comp-input" className="mb-12">
-                  <ComponentLabel>Input</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text36ecb4f86691')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1211JsxTextTextInputForFormsAndSearchTheCanonical',
@@ -2061,7 +2177,9 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="max-w-sm space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="demo-input">Label</Label>
+                        <Label htmlFor="demo-input">
+                          {tI18nHardcoded.raw('i18nComplete.text0e66373f45dc')}
+                        </Label>
                         <Input
                           type="text"
                           id="demo-input"
@@ -2082,13 +2200,19 @@ export default function BrandPage() {
                           'appHomeDesignSystemPage.line1225JsxAttrPlaceholderPasswordInput',
                         )}
                       />
-                      <Input type="text" disabled placeholder="Disabled" />
+                      <Input
+                        type="text"
+                        disabled
+                        placeholder={tI18nHardcoded.raw('i18nComplete.text75081b593d15')}
+                      />
                     </div>
                   </DemoContainer>
                 </div>
 
                 <div id="comp-textarea" className="mb-12">
-                  <ComponentLabel>Textarea</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text467065a16a2e')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1235JsxTextMultiLineTextInputForLongerContentShares',
@@ -2112,7 +2236,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-select" className="mb-12">
-                  <ComponentLabel>Select</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text2a78025de6aa')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1251JsxTextDropdownSelectionFromAListOfOptionsMatches',
@@ -2129,10 +2255,18 @@ export default function BrandPage() {
                           />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="next">Next.js</SelectItem>
-                          <SelectItem value="remix">Remix</SelectItem>
-                          <SelectItem value="astro">Astro</SelectItem>
-                          <SelectItem value="nuxt">Nuxt</SelectItem>
+                          <SelectItem value="next">
+                            {tI18nHardcoded.raw('i18nComplete.text30b7f8482c4f')}
+                          </SelectItem>
+                          <SelectItem value="remix">
+                            {tI18nHardcoded.raw('i18nComplete.textf84ed4375595')}
+                          </SelectItem>
+                          <SelectItem value="astro">
+                            {tI18nHardcoded.raw('i18nComplete.textc490cce12748')}
+                          </SelectItem>
+                          <SelectItem value="nuxt">
+                            {tI18nHardcoded.raw('i18nComplete.texte88c87da3c8c')}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2179,7 +2313,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-switch" className="mb-12">
-                  <ComponentLabel>Switch</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text39921a740bf2')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1311JsxTextToggleControlForOnOffStates',
@@ -2189,7 +2325,9 @@ export default function BrandPage() {
                     <div className="space-y-4">
                       <div className="flex items-center gap-3">
                         <Switch id="switch-on" checked={switchOn} onCheckedChange={setSwitchOn} />
-                        <Label htmlFor="switch-on">On</Label>
+                        <Label htmlFor="switch-on">
+                          {tI18nHardcoded.raw('i18nComplete.text130011756125')}
+                        </Label>
                       </div>
                       <div className="flex items-center gap-3">
                         <Switch
@@ -2197,12 +2335,14 @@ export default function BrandPage() {
                           checked={switchOff}
                           onCheckedChange={setSwitchOff}
                         />
-                        <Label htmlFor="switch-off">Off</Label>
+                        <Label htmlFor="switch-off">
+                          {tI18nHardcoded.raw('i18nComplete.textca7981b46ecf')}
+                        </Label>
                       </div>
                       <div className="flex items-center gap-3">
                         <Switch id="switch-dis" disabled />
                         <Label htmlFor="switch-dis" className="text-muted-foreground">
-                          Disabled
+                          {tI18nHardcoded.raw('i18nComplete.text75081b593d15')}
                         </Label>
                       </div>
                     </div>
@@ -2210,7 +2350,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-toggle" className="mb-12">
-                  <ComponentLabel>Toggle</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text3d03a1dea561')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1348JsxTextATwoStateButtonWithDefaultAndOutline',
@@ -2252,9 +2394,15 @@ export default function BrandPage() {
                           )}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          <Toggle variant="default">Bold</Toggle>
-                          <Toggle variant="outline">Archive</Toggle>
-                          <Toggle variant="secondary">Pinned</Toggle>
+                          <Toggle variant="default">
+                            {tI18nHardcoded.raw('i18nComplete.text94fee62e68e2')}
+                          </Toggle>
+                          <Toggle variant="outline">
+                            {tI18nHardcoded.raw('i18nComplete.text66f4804ee23d')}
+                          </Toggle>
+                          <Toggle variant="secondary">
+                            {tI18nHardcoded.raw('i18nComplete.textf20c87946555')}
+                          </Toggle>
                         </div>
                       </div>
                       <div>
@@ -2266,19 +2414,19 @@ export default function BrandPage() {
                         <div className="flex flex-wrap gap-2">
                           <Toggle variant="default">
                             <Bold className="size-4" />
-                            Bold
+                            {tI18nHardcoded.raw('i18nComplete.text94fee62e68e2')}
                           </Toggle>
                           <Toggle variant="outline">
                             <Star className="size-4" />
-                            Starred
+                            {tI18nHardcoded.raw('i18nComplete.text07a2d579c3f0')}
                           </Toggle>
                           <Toggle variant="secondary">
                             <Check className="size-4" />
-                            Selected
+                            {tI18nHardcoded.raw('i18nComplete.text57fd7a0cf33f')}
                           </Toggle>
                           <Toggle variant="outline">
                             <Settings className="size-4" />
-                            Settings
+                            {tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}
                           </Toggle>
                         </div>
                       </div>
@@ -2297,15 +2445,29 @@ export default function BrandPage() {
                   </ComponentDesc>
                   <DemoContainer className="max-w-xs">
                     <RadioGroup defaultValue="default">
-                      <RadioGroupItem value="default" id="r1" label="Default" />
-                      <RadioGroupItem value="comfortable" id="r2" label="Comfortable" />
-                      <RadioGroupItem value="compact" id="r3" label="Compact" />
+                      <RadioGroupItem
+                        value="default"
+                        id="r1"
+                        label={tI18nHardcoded.raw('i18nComplete.text21b111cbfe6e')}
+                      />
+                      <RadioGroupItem
+                        value="comfortable"
+                        id="r2"
+                        label={tI18nHardcoded.raw('i18nComplete.text459a23a5980f')}
+                      />
+                      <RadioGroupItem
+                        value="compact"
+                        id="r3"
+                        label={tI18nHardcoded.raw('i18nComplete.text99452646e34b')}
+                      />
                     </RadioGroup>
                   </DemoContainer>
                 </div>
 
                 <div id="comp-tabs" className="mb-12">
-                  <ComponentLabel>Tabs</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text8e5ea509893e')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1395JsxTextTabbedNavigationWithStandardAndCompactVariants',
@@ -2314,12 +2476,20 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="space-y-6">
                       <div>
-                        <p className="text-muted-foreground mb-3 text-xs">Standard</p>
+                        <p className="text-muted-foreground mb-3 text-xs">
+                          {tI18nHardcoded.raw('i18nComplete.textef6691545d2c')}
+                        </p>
                         <Tabs defaultValue="tab1">
                           <TabsList>
-                            <TabsTrigger value="tab1">Account</TabsTrigger>
-                            <TabsTrigger value="tab2">Password</TabsTrigger>
-                            <TabsTrigger value="tab3">Settings</TabsTrigger>
+                            <TabsTrigger value="tab1">
+                              {tI18nHardcoded.raw('i18nComplete.text7e1b0d5641f2')}
+                            </TabsTrigger>
+                            <TabsTrigger value="tab2">
+                              {tI18nHardcoded.raw('i18nComplete.texte7cf3ef4f17c')}
+                            </TabsTrigger>
+                            <TabsTrigger value="tab3">
+                              {tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}
+                            </TabsTrigger>
                           </TabsList>
                           <TabsContent value="tab1">
                             <p className="text-muted-foreground mt-2 text-sm">
@@ -2345,64 +2515,86 @@ export default function BrandPage() {
                         </Tabs>
                       </div>
                       <div>
-                        <p className="text-muted-foreground mb-3 text-xs">Outline</p>
+                        <p className="text-muted-foreground mb-3 text-xs">
+                          {tI18nHardcoded.raw('i18nComplete.texteabbf3abaf8d')}
+                        </p>
                         <Tabs defaultValue="outline-account">
                           <TabsList animate="none">
                             <TabsTrigger variant="outline" value="outline-account">
-                              Account
+                              {tI18nHardcoded.raw('i18nComplete.text7e1b0d5641f2')}
                             </TabsTrigger>
                             <TabsTrigger variant="outline" value="outline-password">
-                              Password
+                              {tI18nHardcoded.raw('i18nComplete.texte7cf3ef4f17c')}
                             </TabsTrigger>
                             <TabsTrigger variant="outline" value="outline-settings">
-                              Settings
+                              {tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}
                             </TabsTrigger>
                           </TabsList>
                           <TabsContent value="outline-account">
                             <p className="text-muted-foreground mt-2 text-sm">
-                              Account settings and preferences.
+                              {tI18nHardcoded.raw('i18nComplete.text7e2d43454354')}
                             </p>
                           </TabsContent>
                           <TabsContent value="outline-password">
                             <p className="text-muted-foreground mt-2 text-sm">
-                              Change your password.
+                              {tI18nHardcoded.raw('i18nComplete.textdcd23310a7aa')}
                             </p>
                           </TabsContent>
                           <TabsContent value="outline-settings">
-                            <p className="text-muted-foreground mt-2 text-sm">General settings.</p>
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {tI18nHardcoded.raw('i18nComplete.text54b316135c61')}
+                            </p>
                           </TabsContent>
                         </Tabs>
                       </div>
                       <div>
-                        <p className="text-muted-foreground mb-3 text-xs">Underline</p>
+                        <p className="text-muted-foreground mb-3 text-xs">
+                          {tI18nHardcoded.raw('i18nComplete.text02f843261112')}
+                        </p>
                         <Tabs defaultValue="underline-account">
                           <TabsList type="underline">
-                            <TabsTrigger value="underline-account">Account</TabsTrigger>
-                            <TabsTrigger value="underline-password">Password</TabsTrigger>
-                            <TabsTrigger value="underline-settings">Settings</TabsTrigger>
+                            <TabsTrigger value="underline-account">
+                              {tI18nHardcoded.raw('i18nComplete.text7e1b0d5641f2')}
+                            </TabsTrigger>
+                            <TabsTrigger value="underline-password">
+                              {tI18nHardcoded.raw('i18nComplete.texte7cf3ef4f17c')}
+                            </TabsTrigger>
+                            <TabsTrigger value="underline-settings">
+                              {tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}
+                            </TabsTrigger>
                           </TabsList>
                           <TabsContent value="underline-account">
                             <p className="text-muted-foreground mt-2 text-sm">
-                              Account settings and preferences.
+                              {tI18nHardcoded.raw('i18nComplete.text7e2d43454354')}
                             </p>
                           </TabsContent>
                           <TabsContent value="underline-password">
                             <p className="text-muted-foreground mt-2 text-sm">
-                              Change your password.
+                              {tI18nHardcoded.raw('i18nComplete.textdcd23310a7aa')}
                             </p>
                           </TabsContent>
                           <TabsContent value="underline-settings">
-                            <p className="text-muted-foreground mt-2 text-sm">General settings.</p>
+                            <p className="text-muted-foreground mt-2 text-sm">
+                              {tI18nHardcoded.raw('i18nComplete.text54b316135c61')}
+                            </p>
                           </TabsContent>
                         </Tabs>
                       </div>
                       <div>
-                        <p className="text-muted-foreground mb-3 text-xs">Compact</p>
+                        <p className="text-muted-foreground mb-3 text-xs">
+                          {tI18nHardcoded.raw('i18nComplete.text99452646e34b')}
+                        </p>
                         <Tabs defaultValue="c1">
                           <TabsListCompact>
-                            <TabsTriggerCompact value="c1">Day</TabsTriggerCompact>
-                            <TabsTriggerCompact value="c2">Week</TabsTriggerCompact>
-                            <TabsTriggerCompact value="c3">Month</TabsTriggerCompact>
+                            <TabsTriggerCompact value="c1">
+                              {tI18nHardcoded.raw('i18nComplete.text8f2364e11b8b')}
+                            </TabsTriggerCompact>
+                            <TabsTriggerCompact value="c2">
+                              {tI18nHardcoded.raw('i18nComplete.texte78041ab51a8')}
+                            </TabsTriggerCompact>
+                            <TabsTriggerCompact value="c3">
+                              {tI18nHardcoded.raw('i18nComplete.text310ca503ef36')}
+                            </TabsTriggerCompact>
                           </TabsListCompact>
                           <TabsContent value="c1">
                             <p className="text-muted-foreground mt-2 text-sm">
@@ -2432,7 +2624,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-dialog" className="mb-12">
-                  <ComponentLabel>Dialog</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text69b51517d04b')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1467JsxTextModalOverlayForFocusedInteractions',
@@ -2464,8 +2658,10 @@ export default function BrandPage() {
                           </p>
                         </div>
                         <DialogFooter>
-                          <Button variant="outline">Cancel</Button>
-                          <Button>Confirm</Button>
+                          <Button variant="outline">
+                            {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+                          </Button>
+                          <Button>{tI18nHardcoded.raw('i18nComplete.texteebdd24a77d9')}</Button>
                         </DialogFooter>
                       </DialogContent>
                     </Dialog>
@@ -2473,7 +2669,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-modal" className="mb-12">
-                  <ComponentLabel>Modal</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text18093cad2644')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tI18nHardcoded.raw(
                       'autoAppPublicMarketingDesignSystemPageJsxTextResponsiveOverlay8094b284',
@@ -2510,8 +2708,10 @@ export default function BrandPage() {
                           </p>
                         </ModalBody>
                         <ModalFooter>
-                          <Button variant="outline">Cancel</Button>
-                          <Button>Confirm</Button>
+                          <Button variant="outline">
+                            {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+                          </Button>
+                          <Button>{tI18nHardcoded.raw('i18nComplete.texteebdd24a77d9')}</Button>
                         </ModalFooter>
                       </ModalContent>
                     </Modal>
@@ -2519,7 +2719,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-sheet" className="mb-12">
-                  <ComponentLabel>Sheet</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text54bf0ebbfb3e')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1500JsxTextSlideOutPanelFromTheEdgeOfThe',
@@ -2563,7 +2765,7 @@ export default function BrandPage() {
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1528JsxTextContextualMenuTriggeredByAButtonRowsStay',
                     )}{' '}
-                    <strong>neutral</strong>
+                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1529JsxTextEvenDestructiveOnesLikeDeleteOrRemoveRed',
                     )}
@@ -2573,24 +2775,36 @@ export default function BrandPage() {
                       <DropdownMenuTrigger asChild>
                         <Button variant="outline">
                           <MoreHorizontal className="size-4" />
-                          Options
+                          {tI18nHardcoded.raw('i18nComplete.textd0db8b5e364b')}
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuLabel>
+                          {tI18nHardcoded.raw('i18nComplete.textff8059dc6752')}
+                        </DropdownMenuLabel>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem>Edit</DropdownMenuItem>
-                        <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                        <DropdownMenuItem>Archive</DropdownMenuItem>
+                        <DropdownMenuItem>
+                          {tI18nHardcoded.raw('i18nComplete.text464c4ffd019e')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          {tI18nHardcoded.raw('i18nComplete.text02cdaabfca80')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem>
+                          {tI18nHardcoded.raw('i18nComplete.text66f4804ee23d')}
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem>Delete</DropdownMenuItem>
+                        <DropdownMenuItem>
+                          {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </DemoContainer>
                 </div>
 
                 <div id="comp-tooltip" className="mb-12">
-                  <ComponentLabel>Tooltip</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text20f12289f9b8')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1558JsxTextContextualInformationOnHover',
@@ -2622,7 +2836,7 @@ export default function BrandPage() {
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            <p>Settings</p>
+                            <p>{tI18nHardcoded.raw('i18nComplete.text74a883a037bc')}</p>
                             <KbdGroup>
                               <Kbd>⌘</Kbd>
                               <Kbd>,</Kbd>
@@ -2635,7 +2849,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-popover" className="mb-12">
-                  <ComponentLabel>Popover</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text064f6ac1a789')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1598JsxTextFloatingContentPanelAttachedToATrigger',
@@ -2666,35 +2882,38 @@ export default function BrandPage() {
                   </DemoContainer>
                 </div>
 
-              <div id="comp-emoji-picker" className="mb-12">
-                <ComponentLabel>Emoji Picker</ComponentLabel>
-                <ComponentDesc>
-                  Emoji grid for picking a project icon — search, keyboard grid navigation, and a
-                  skin-tone selector. The hovered cell takes one of six tints, rotated by three on
-                  alternating rows. The dataset is self-hosted from <code>public/emojibase/</code>{' '}
-                  and fetched on first open, never from a CDN.
-                </ComponentDesc>
-                <DemoContainer>
-                  <EmojiPickerDemo />
-                </DemoContainer>
-              </div>
+                <div id="comp-emoji-picker" className="mb-12">
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text7a9d22da3496')}
+                  </ComponentLabel>
+                  <ComponentDesc>
+                    {tI18nHardcoded.raw('i18nComplete.textdc4156c43e06')}
+                    <code>public/emojibase/</code>{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text639c4f3db6ec')}
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <EmojiPickerDemo />
+                  </DemoContainer>
+                </div>
 
-              <div id="comp-project-icon-picker" className="mb-12">
-                <ComponentLabel>Project Icon Picker</ComponentLabel>
-                <ComponentDesc>
-                  Emoji and Icon side by side in one popover — <code>Tabs</code> wrapping the emoji
-                  grid above and a 64-glyph grid, both fixed to the same <code>368px</code> height and
-                  9-column geometry so switching tabs never resizes the popover. The Icon tab&apos;s
-                  grid previews in the selected colour; the colour row lives in the footer, where the
-                  Emoji tab puts its skin-tone selector.
-                </ComponentDesc>
-                <DemoContainer>
-                  <ProjectIconPickerDemo />
-                </DemoContainer>
-              </div>
+                <div id="comp-project-icon-picker" className="mb-12">
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text44088993f639')}
+                  </ComponentLabel>
+                  <ComponentDesc>
+                    {tI18nHardcoded.raw('i18nComplete.text8d199c5ef725')} <code>Tabs</code>{' '}
+                    {tI18nHardcoded.raw('i18nComplete.text7e27fa80abb2')}
+                    <code>368px</code> {tI18nHardcoded.raw('i18nComplete.text2b4d98953dc8')}
+                  </ComponentDesc>
+                  <DemoContainer>
+                    <ProjectIconPickerDemo />
+                  </DemoContainer>
+                </div>
 
                 <div id="comp-alert" className="mb-12">
-                  <ComponentLabel>Alert</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text44a57b22e03d')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1622JsxTextInlineNotificationWithContextualVariants',
@@ -2724,7 +2943,9 @@ export default function BrandPage() {
                           <AlertCircle className="size-4" />
                         </AlertMedia>
                         <AlertContent>
-                          <AlertTitle>Destructive</AlertTitle>
+                          <AlertTitle>
+                            {tI18nHardcoded.raw('i18nComplete.textc3e58a73609d')}
+                          </AlertTitle>
                           <AlertDescription>
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1637JsxTextSomethingWentWrongPleaseTryAgain',
@@ -2737,7 +2958,9 @@ export default function BrandPage() {
                           <TriangleAlert className="size-4" />
                         </AlertMedia>
                         <AlertContent>
-                          <AlertTitle>Warning</AlertTitle>
+                          <AlertTitle>
+                            {tI18nHardcoded.raw('i18nComplete.texte981ddae45d8')}
+                          </AlertTitle>
                           <AlertDescription>
                             {tHardcodedUi.raw(
                               'appHomeDesignSystemPage.line1644JsxTextThisActionMayHaveUnintendedConsequences',
@@ -2750,7 +2973,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-toast" className="mb-12">
-                  <ComponentLabel>Toast</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text34b86033459d')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tI18nHardcoded.raw(
                       'autoAppPublicMarketingDesignSystemPageJsxTextEphemeralNotifications64698ef7',
@@ -2758,7 +2983,7 @@ export default function BrandPage() {
                     <code>successToast</code>, <code>errorToast</code>, <code>infoToast</code>,{' '}
                     <code>warningToast</code>
                     {tI18nHardcoded.raw('autoAppPublicMarketingDesignSystemPageJsxTextAndd93e251a')}
-                    <code>loadingToast</code> from{' '}
+                    <code>loadingToast</code> {tI18nHardcoded.raw('i18nComplete.text75857a458999')}{' '}
                     <code>
                       {tI18nHardcoded.raw(
                         'autoAppPublicMarketingDesignSystemPageJsxTextComponentsUi3eb49cdd',
@@ -2772,67 +2997,67 @@ export default function BrandPage() {
                     <div className="space-y-6">
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          Variants
+                          {tI18nHardcoded.raw('i18nComplete.text63d2643b059e')}
                         </p>
                         <div className="flex flex-wrap gap-2">
                           <Button
                             onClick={() =>
-                              successToast('Saved', {
-                                description: 'Your changes were saved.',
+                              successToast(tI18nHardcoded.raw('i18nComplete.textb5c120b316c2'), {
+                                description: tI18nHardcoded.raw('i18nComplete.texta96b9d862cf9'),
                               })
                             }
                             variant="success"
                           >
-                            Success
+                            {tI18nHardcoded.raw('i18nComplete.textc88a0b907419')}
                           </Button>
                           <Button
                             onClick={() =>
-                              errorToast('Could not save', {
-                                description: 'Try again in a moment.',
+                              errorToast(tI18nHardcoded.raw('i18nComplete.text12467751a925'), {
+                                description: tI18nHardcoded.raw('i18nComplete.text69fe3e7c4d5a'),
                               })
                             }
                             variant="error"
                           >
-                            Error
+                            {tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
                           </Button>
                           <Button
                             onClick={() =>
-                              infoToast('Heads up', {
-                                description: 'This only affects your local workspace.',
+                              infoToast(tI18nHardcoded.raw('i18nComplete.textf9b19898161f'), {
+                                description: tI18nHardcoded.raw('i18nComplete.text5a4db0bfccdc'),
                               })
                             }
                             variant="info"
                           >
-                            Info
+                            {tI18nHardcoded.raw('i18nComplete.text170322a32f3c')}
                           </Button>
                           <Button
                             onClick={() =>
-                              warningToast('Check your input', {
-                                description: 'Some fields need attention.',
+                              warningToast(tI18nHardcoded.raw('i18nComplete.textf7243551e2b7'), {
+                                description: tI18nHardcoded.raw('i18nComplete.text558bb9bf0163'),
                               })
                             }
                             variant="warning"
                           >
-                            Warning
+                            {tI18nHardcoded.raw('i18nComplete.texte981ddae45d8')}
                           </Button>
                         </div>
                       </div>
                       <div>
                         <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
-                          Promise
+                          {tI18nHardcoded.raw('i18nComplete.text1eec97a07f6b')}
                         </p>
                         <div className="flex flex-wrap gap-2">
                           <Button
                             variant="secondary"
                             onClick={() =>
                               loadingToast(
-                                'Saving…',
+                                tI18nHardcoded.raw('i18nComplete.text96e743d6c46e'),
                                 () =>
                                   new Promise<string>((resolve) => {
                                     setTimeout(() => resolve('Saved'), 2000);
                                   }),
                                 {
-                                  description: 'Hang tight while we sync.',
+                                  description: tI18nHardcoded.raw('i18nComplete.text5c991b7cc507'),
                                   success: (data) => data,
                                 },
                               )
@@ -2846,13 +3071,21 @@ export default function BrandPage() {
                             variant="secondary"
                             onClick={() =>
                               loadingToast(
-                                'Saving…',
+                                tI18nHardcoded.raw('i18nComplete.text96e743d6c46e'),
                                 () =>
                                   new Promise<never>((_resolve, reject) => {
-                                    setTimeout(() => reject(new Error('Network error')), 2000);
+                                    setTimeout(
+                                      () =>
+                                        reject(
+                                          new Error(
+                                            tI18nHardcoded.raw('i18nComplete.text2a33d984de88'),
+                                          ),
+                                        ),
+                                      2000,
+                                    );
                                   }),
                                 {
-                                  description: 'This request will fail.',
+                                  description: tI18nHardcoded.raw('i18nComplete.texta2daa4911a3f'),
                                   showErrorToast: true,
                                 },
                               ).catch(() => undefined)
@@ -2896,8 +3129,12 @@ export default function BrandPage() {
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Cancel</AlertDialogCancel>
-                          <AlertDialogAction>Delete</AlertDialogAction>
+                          <AlertDialogCancel>
+                            {tI18nHardcoded.raw('i18nComplete.text19766ed6ccb2')}
+                          </AlertDialogCancel>
+                          <AlertDialogAction>
+                            {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
+                          </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
@@ -2905,7 +3142,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-accordion" className="mb-12">
-                  <ComponentLabel>Accordion</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text68344d566701')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1685JsxTextCollapsibleContentSectionsWithSmoothAnimation',
@@ -2952,7 +3191,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-collapsible" className="mb-12">
-                  <ComponentLabel>Collapsible</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textd4a5d5f8fd9b')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1730JsxTextASimplerExpandCollapsePrimitiveUnlikeAccordionIt',
@@ -2973,7 +3214,9 @@ export default function BrandPage() {
                         <CollapsibleTrigger asChild>
                           <Button variant="ghost" size="sm">
                             <ChevronsUpDown className="size-4" />
-                            <span className="sr-only">Toggle</span>
+                            <span className="sr-only">
+                              {tI18nHardcoded.raw('i18nComplete.text3d03a1dea561')}
+                            </span>
                           </Button>
                         </CollapsibleTrigger>
                       </div>
@@ -2997,7 +3240,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-separator" className="mb-12">
-                  <ComponentLabel>Separator</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textbe237eda7fff')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1769JsxTextVisualDividerBetweenContentSections',
@@ -3017,7 +3262,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-skeleton" className="mb-12">
-                  <ComponentLabel>Skeleton</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textea5f6bdc79b8')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1788JsxTextLoadingPlaceholderForContentThatHasn',
@@ -3062,7 +3309,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-progress" className="mb-12">
-                  <ComponentLabel>Progress</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text4664827f8e89')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1828JsxTextVisualIndicatorOfCompletionOrLoading',
@@ -3081,7 +3330,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-slider" className="mb-12">
-                  <ComponentLabel>Slider</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text14f34284b054')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1848JsxTextRangeInputForSelectingNumericValues',
@@ -3096,14 +3347,16 @@ export default function BrandPage() {
                         step={1}
                       />
                       <span className="text-muted-foreground font-mono text-xs">
-                        Value: {sliderValue[0]}
+                        {tI18nHardcoded.raw('i18nComplete.text224a3369a5c9')} {sliderValue[0]}
                       </span>
                     </div>
                   </DemoContainer>
                 </div>
 
                 <div id="comp-label" className="mb-12">
-                  <ComponentLabel>Label</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text0e66373f45dc')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1869JsxTextAccessibleLabelForFormControls',
@@ -3126,7 +3379,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-kbd" className="mb-12">
-                  <ComponentLabel>Kbd</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text76cce341b6b9')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1968JsxTextKeyboardShortcutIndicatorsThemeAwareIncludingAutomaticStyling',
@@ -3143,10 +3398,10 @@ export default function BrandPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <Kbd>⌘</Kbd>
                           <Kbd>K</Kbd>
-                          <Kbd>Shift</Kbd>
-                          <Kbd>Enter</Kbd>
-                          <Kbd>Esc</Kbd>
-                          <Kbd>Tab</Kbd>
+                          <Kbd>{tI18nHardcoded.raw('i18nComplete.text2e544a292f69')}</Kbd>
+                          <Kbd>{tI18nHardcoded.raw('i18nComplete.textdc8659db6d41')}</Kbd>
+                          <Kbd>{tI18nHardcoded.raw('i18nComplete.text52f878edb34f')}</Kbd>
+                          <Kbd>{tI18nHardcoded.raw('i18nComplete.text90ddf1963abb')}</Kbd>
                         </div>
                       </div>
                       <div>
@@ -3164,12 +3419,12 @@ export default function BrandPage() {
                           <KbdGroup>
                             <Kbd>⌘</Kbd>
                             <span className="text-muted-foreground text-xs">+</span>
-                            <Kbd>Shift</Kbd>
+                            <Kbd>{tI18nHardcoded.raw('i18nComplete.text2e544a292f69')}</Kbd>
                             <span className="text-muted-foreground text-xs">+</span>
                             <Kbd>P</Kbd>
                           </KbdGroup>
                           <KbdGroup>
-                            <Kbd>Ctrl</Kbd>
+                            <Kbd>{tI18nHardcoded.raw('i18nComplete.texte2ee2909fe27')}</Kbd>
                             <span className="text-muted-foreground text-xs">+</span>
                             <Kbd>C</Kbd>
                           </KbdGroup>
@@ -3191,7 +3446,7 @@ export default function BrandPage() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>
-                              <p>Search</p>
+                              <p>{tI18nHardcoded.raw('i18nComplete.text49c266baaaa7')}</p>
                               <KbdGroup>
                                 <Kbd>⌘</Kbd>
                                 <Kbd>K</Kbd>
@@ -3205,7 +3460,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-breadcrumb" className="mb-12">
-                  <ComponentLabel>Breadcrumb</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text2bd873d6c734')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1887JsxTextNavigationHierarchyTrail',
@@ -3215,11 +3472,15 @@ export default function BrandPage() {
                     <Breadcrumb>
                       <BreadcrumbList>
                         <BreadcrumbItem>
-                          <BreadcrumbLink href="#">Home</BreadcrumbLink>
+                          <BreadcrumbLink href="#">
+                            {tI18nHardcoded.raw('i18nComplete.text3a78695388b3')}
+                          </BreadcrumbLink>
                         </BreadcrumbItem>
                         <BreadcrumbSeparator />
                         <BreadcrumbItem>
-                          <BreadcrumbLink href="#">Workspace</BreadcrumbLink>
+                          <BreadcrumbLink href="#">
+                            {tI18nHardcoded.raw('i18nComplete.text87bb59ba2f92')}
+                          </BreadcrumbLink>
                         </BreadcrumbItem>
                         <BreadcrumbSeparator />
                         <BreadcrumbItem>
@@ -3235,7 +3496,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-table" className="mb-12">
-                  <ComponentLabel>Table</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text16d1c9050a0b')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line1912JsxTextStructuredDataDisplayInRowsAndColumns',
@@ -3245,49 +3508,65 @@ export default function BrandPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Component</TableHead>
-                          <TableHead>Variants</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="text-right">Instances</TableHead>
+                          <TableHead>
+                            {tI18nHardcoded.raw('i18nComplete.textce54f0e22dbb')}
+                          </TableHead>
+                          <TableHead>
+                            {tI18nHardcoded.raw('i18nComplete.text63d2643b059e')}
+                          </TableHead>
+                          <TableHead>
+                            {tI18nHardcoded.raw('i18nComplete.text920e413c7d41')}
+                          </TableHead>
+                          <TableHead className="text-right">
+                            {tI18nHardcoded.raw('i18nComplete.textaa8c181ac338')}
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         <TableRow>
-                          <TableCell className="font-medium">Button</TableCell>
+                          <TableCell className="font-medium">
+                            {tI18nHardcoded.raw('i18nComplete.text707eab0c23ec')}
+                          </TableCell>
                           <TableCell>6</TableCell>
                           <TableCell>
                             <Badge variant="new" className="text-xs">
-                              Stable
+                              {tI18nHardcoded.raw('i18nComplete.text90ee305714d7')}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">624</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium">Badge</TableCell>
+                          <TableCell className="font-medium">
+                            {tI18nHardcoded.raw('i18nComplete.text002474e36821')}
+                          </TableCell>
                           <TableCell>7</TableCell>
                           <TableCell>
                             <Badge variant="new" className="text-xs">
-                              Stable
+                              {tI18nHardcoded.raw('i18nComplete.text90ee305714d7')}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">189</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium">Card</TableCell>
+                          <TableCell className="font-medium">
+                            {tI18nHardcoded.raw('i18nComplete.textbe3702e3f1af')}
+                          </TableCell>
                           <TableCell>2</TableCell>
                           <TableCell>
                             <Badge variant="new" className="text-xs">
-                              Stable
+                              {tI18nHardcoded.raw('i18nComplete.text90ee305714d7')}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">312</TableCell>
                         </TableRow>
                         <TableRow>
-                          <TableCell className="font-medium">Input</TableCell>
+                          <TableCell className="font-medium">
+                            {tI18nHardcoded.raw('i18nComplete.text36ecb4f86691')}
+                          </TableCell>
                           <TableCell>1</TableCell>
                           <TableCell>
                             <Badge variant="beta" className="text-xs">
-                              Enhancing
+                              {tI18nHardcoded.raw('i18nComplete.text6c5b75e51441')}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">247</TableCell>
@@ -3298,7 +3577,9 @@ export default function BrandPage() {
                 </div>
 
                 <div id="comp-calendar" className="mb-12">
-                  <ComponentLabel>Calendar</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textd5d0a30b517e')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2026JsxTextDatePickerCalendarGrid',
@@ -3349,7 +3630,7 @@ export default function BrandPage() {
               <CollapsibleSection
                 id="page-patterns"
                 label={tHardcodedUi.raw('appHomeDesignSystemPage.line2070JsxTextPagePatterns')}
-                summary="How a list or management page is assembled: header, search bar, cards, stagger."
+                summary={tI18nHardcoded.raw('i18nComplete.text65562e698ff8')}
               >
                 <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -3364,7 +3645,9 @@ export default function BrandPage() {
 
                 {/* ── SpotlightCard ── */}
                 <div id="pat-spotlight-card" className="mb-12">
-                  <ComponentLabel>SpotlightCard</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text4bbe0b7e8387')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2113JsxTextItemCardUsedAcrossEveryListPageMouse',
@@ -3381,14 +3664,26 @@ export default function BrandPage() {
                   <DemoContainer>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {[
-                        { icon: Cable, label: 'tunnel-42', sub: 'exposes :3000' },
-                        { icon: Radio, label: '#releases', sub: 'Slack channel' },
+                        {
+                          icon: Cable,
+                          label: tI18nHardcoded.raw('i18nComplete.text5b4cd52a0cf7'),
+                          sub: tI18nHardcoded.raw('i18nComplete.text76eaadc67d03'),
+                        },
+                        {
+                          icon: Radio,
+                          label: tI18nHardcoded.raw('i18nComplete.texta57d47538d79'),
+                          sub: tI18nHardcoded.raw('i18nComplete.textda7d161a2777'),
+                        },
                         {
                           icon: Zap,
-                          label: 'nightly-cron',
-                          sub: 'every day at 03:00',
+                          label: tI18nHardcoded.raw('i18nComplete.text43f94e8f3c65'),
+                          sub: tI18nHardcoded.raw('i18nComplete.textb8babd5bba24'),
                         },
-                        { icon: Plug, label: 'GitHub', sub: 'Connected' },
+                        {
+                          icon: Plug,
+                          label: tI18nHardcoded.raw('i18nComplete.textf911e414cf6b'),
+                          sub: tI18nHardcoded.raw('i18nComplete.text22965568d22a'),
+                        },
                       ].map((item) => {
                         const I = item.icon;
                         return (
@@ -3418,7 +3713,9 @@ export default function BrandPage() {
 
                 {/* ── PageSearchBar ── */}
                 <div id="pat-search-bar" className="mb-12">
-                  <ComponentLabel>PageSearchBar</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text8b46aff86ab6')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2156JsxTextStandardSearchPillPlacedInTheActionBar',
@@ -3440,7 +3737,7 @@ export default function BrandPage() {
                       />
                       <Button size="sm" className="gap-1.5">
                         <Plus className="h-3.5 w-3.5" />
-                        New
+                        {tI18nHardcoded.raw('i18nComplete.text18fdd549b2ed')}
                       </Button>
                     </div>
                   </DemoContainer>
@@ -3460,22 +3757,17 @@ export default function BrandPage() {
                     <code className="font-mono text-xs">delay-150</code>.
                   </ComponentDesc>
                   <DemoContainer>
-                    <pre className="text-muted-foreground bg-muted/20 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">{`// Page header
-<div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
-
-// Search + action bar
-<div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-75">
-
-// Content area
-<div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both delay-150">`}</pre>
+                    <pre className="text-muted-foreground bg-muted/20 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">
+                      {tI18nHardcoded.raw('i18nComplete.text8d70026dc329')}
+                    </pre>
                   </DemoContainer>
                 </div>
               </CollapsibleSection>
 
               <CollapsibleSection
                 id="patterns"
-                label="Primitives"
-                summary="The smaller composition pieces — shells, rows, avatars, status, empty states."
+                label={tI18nHardcoded.raw('i18nComplete.text70929371c10c')}
+                summary={tI18nHardcoded.raw('i18nComplete.textc4f980147c40')}
               >
                 <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -3485,7 +3777,9 @@ export default function BrandPage() {
 
                 {/* ── PageShell ── */}
                 <div id="pat-page-shell" className="mb-12">
-                  <ComponentLabel>PageShell</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text45b37f9e9c85')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2214JsxTextTheOneLayoutWrapperStandardisesMaxWidthHorizontal',
@@ -3521,14 +3815,16 @@ export default function BrandPage() {
 
                 {/* ── Section ── */}
                 <div id="pat-section" className="mb-12">
-                  <ComponentLabel>Section</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textdfca5da56b8c')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2233JsxTextLabelledSectionInsideAPageshellUppercaseMicroLabel',
                     )}
                   </ComponentDesc>
                   <DemoContainer>
-                    <BrandSection label="About">
+                    <BrandSection label={tI18nHardcoded.raw('i18nComplete.text4efca0d10c5f')}>
                       <p className="text-foreground text-sm leading-relaxed">
                         {tHardcodedUi.raw(
                           'appHomeDesignSystemPage.line2241JsxTextDescriptionContentLivesHereSectionsSeparateConcernsOn',
@@ -3536,10 +3832,10 @@ export default function BrandPage() {
                       </p>
                     </BrandSection>
                     <BrandSection
-                      label="Details"
+                      label={tI18nHardcoded.raw('i18nComplete.text45989de49fb7')}
                       action={
                         <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
-                          Edit
+                          {tI18nHardcoded.raw('i18nComplete.text464c4ffd019e')}
                         </Button>
                       }
                     >
@@ -3554,7 +3850,9 @@ export default function BrandPage() {
 
                 {/* ── SectionCard ── */}
                 <div id="pat-section-card" className="mb-12">
-                  <ComponentLabel>SectionCard</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text894b02c84063')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2264JsxTextTheOnePanelPatternComposesTheDesignSystem',
@@ -3571,21 +3869,21 @@ export default function BrandPage() {
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2268JsxTextForDangerZonesNoSeparateComponentADanger',
                     )}
-                    <strong>neutral</strong>
+                    <strong>{tI18nHardcoded.raw('i18nComplete.text7e2372f4115c')}</strong>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2270JsxTextTriggerRedIsTheBrakeNotThePaint',
                     )}
                   </ComponentDesc>
                   <DemoContainer className="space-y-4">
                     <SectionCard
-                      title="Members"
+                      title={tI18nHardcoded.raw('i18nComplete.text1044a4c056d0')}
                       count={2}
                       description={tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line2278JsxAttrDescriptionPeopleWithAccessToThisAccount',
                       )}
                       action={
                         <Button size="sm" className="h-8 px-3 text-sm">
-                          Invite
+                          {tI18nHardcoded.raw('i18nComplete.text1fd9ae1607aa')}
                         </Button>
                       }
                     >
@@ -3622,7 +3920,7 @@ export default function BrandPage() {
                           </p>
                         </div>
                         <Button variant="outline" size="sm" className="shrink-0">
-                          Delete
+                          {tI18nHardcoded.raw('i18nComplete.texte2d0a54968ea')}
                         </Button>
                       </div>
                     </SectionCard>
@@ -3631,7 +3929,9 @@ export default function BrandPage() {
 
                 {/* ── Avatars ── */}
                 <div id="pat-avatars" className="mb-12">
-                  <ComponentLabel>Avatars</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.textfedfdc14d4f7')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw('appHomeDesignSystemPage.line2316JsxTextOneRule')}
                     <strong>
@@ -3659,7 +3959,7 @@ export default function BrandPage() {
                   <DemoContainer className="space-y-5">
                     <div className="flex items-center gap-4">
                       <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">
-                        People
+                        {tI18nHardcoded.raw('i18nComplete.text7db20897053b')}
                       </span>
                       <UserAvatar
                         email={tHardcodedUi.raw(
@@ -3684,7 +3984,7 @@ export default function BrandPage() {
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">
-                        Things
+                        {tI18nHardcoded.raw('i18nComplete.text32b31975c6ca')}
                       </span>
                       <EntityAvatar
                         label={tHardcodedUi.raw(
@@ -3692,17 +3992,24 @@ export default function BrandPage() {
                         )}
                         size="sm"
                       />
-                      <EntityAvatar label="Kortix" />
+                      <EntityAvatar label={tI18nHardcoded.raw('i18nComplete.textab54cf5e1d9d')} />
                       <EntityAvatar icon={FolderGit2} />
                       <EntityAvatar icon={Users} size="lg" />
-                    {/* `emoji` beats both the icon and the initial, and drops the
+                      {/* `emoji` beats both the icon and the initial, and drops the
                         chalk fill — the glyph is already the colour. */}
-                    <EntityAvatar label="Turtle Shop" emoji="🐢" />
-                    <EntityAvatar label="Turtle Shop" emoji="🐢" size="lg" />
+                      <EntityAvatar
+                        label={tI18nHardcoded.raw('i18nComplete.text638e417f4255')}
+                        emoji="🐢"
+                      />
+                      <EntityAvatar
+                        label={tI18nHardcoded.raw('i18nComplete.text638e417f4255')}
+                        emoji="🐢"
+                        size="lg"
+                      />
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">
-                        Chalk
+                        {tI18nHardcoded.raw('i18nComplete.text78ea37549c37')}
                       </span>
                       {['Atlas', 'Beacon', 'Cobalt', 'Drift', 'Ember', 'Forge', 'Glacier'].map(
                         (label) => (
@@ -3722,7 +4029,8 @@ export default function BrandPage() {
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2350JsxTextTheStandardListADividerSeparated',
                     )}
-                    <code>List</code> of <code>ListRow</code>
+                    <code>List</code> {tI18nHardcoded.raw('i18nComplete.text28391d3bc64e')}{' '}
+                    <code>ListRow</code>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2351JsxTextSEachWithALeadingAvatarSlotUseravatar',
                     )}{' '}
@@ -3732,7 +4040,11 @@ export default function BrandPage() {
                     .
                   </ComponentDesc>
                   <DemoContainer className="p-0">
-                    <SectionCard title="Members" count={2} flush>
+                    <SectionCard
+                      title={tI18nHardcoded.raw('i18nComplete.text1044a4c056d0')}
+                      count={2}
+                      flush
+                    >
                       <List>
                         <ListRow
                           leading={
@@ -3748,7 +4060,7 @@ export default function BrandPage() {
                           )}
                           badges={
                             <Badge variant="outline" size="sm">
-                              You
+                              {tI18nHardcoded.raw('i18nComplete.text08b041935798')}
                             </Badge>
                           }
                           subtitle={
@@ -3771,7 +4083,7 @@ export default function BrandPage() {
                               size="sm"
                               className="border-foreground/30 text-foreground"
                             >
-                              Owner
+                              {tI18nHardcoded.raw('i18nComplete.text4b1b8aa3608a')}
                             </Badge>
                           }
                         />
@@ -3798,7 +4110,7 @@ export default function BrandPage() {
                           }
                           trailing={
                             <Badge variant="outline" size="sm">
-                              Member
+                              {tI18nHardcoded.raw('i18nComplete.text7c968fb71f50')}
                             </Badge>
                           }
                         />
@@ -3809,7 +4121,9 @@ export default function BrandPage() {
 
                 {/* ── DefinitionList ── */}
                 <div id="pat-definition-list" className="mb-12">
-                  <ComponentLabel>DefinitionList</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text3f9ff5e181e9')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2403JsxTextKeyValuePairsFixedWidthLabelColumnSo',
@@ -3817,27 +4131,31 @@ export default function BrandPage() {
                   </ComponentDesc>
                   <DemoContainer>
                     <DefinitionList dividers>
-                      <DefinitionRow label="Path">
+                      <DefinitionRow label={tI18nHardcoded.raw('i18nComplete.text62fa5a5b0d3c')}>
                         <code className="text-foreground font-mono text-xs">
                           /workspace/jjk-domain-search
                         </code>
                       </DefinitionRow>
-                      <DefinitionRow label="Created">
+                      <DefinitionRow label={tI18nHardcoded.raw('i18nComplete.textd70b9e24bca2')}>
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line2413JsxTextText2DaysAgo')}
                       </DefinitionRow>
-                      <DefinitionRow label="Updated">
+                      <DefinitionRow label={tI18nHardcoded.raw('i18nComplete.text3a5ecca188c0')}>
                         <span className="tabular-nums">
                           {tHardcodedUi.raw('appHomeDesignSystemPage.line2415JsxTextText3mAgo')}
                         </span>
                       </DefinitionRow>
-                      <DefinitionRow label="Sessions">8</DefinitionRow>
+                      <DefinitionRow label={tI18nHardcoded.raw('i18nComplete.text6fa3cbf451b2')}>
+                        8
+                      </DefinitionRow>
                     </DefinitionList>
                   </DemoContainer>
                 </div>
 
                 {/* ── InlineMeta ── */}
                 <div id="pat-inline-meta" className="mb-12">
-                  <ComponentLabel>InlineMeta</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text053805aad93b')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2426JsxTextDotSeparatedFactsDropAnyNumberOfChildren',
@@ -3845,7 +4163,9 @@ export default function BrandPage() {
                   </ComponentDesc>
                   <DemoContainer>
                     <InlineMeta>
-                      <span className="text-foreground font-mono">/workspace/jjk</span>
+                      <span className="text-foreground font-mono">
+                        {tI18nHardcoded.raw('i18nComplete.textde996979df5c')}
+                      </span>
                       <span>
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line2435JsxTextText24Issues')}
                       </span>
@@ -3861,7 +4181,9 @@ export default function BrandPage() {
 
                 {/* ── EmptyState ── */}
                 <div id="pat-empty-state" className="mb-12">
-                  <ComponentLabel>EmptyState</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.texta422df8c8b26')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2446JsxTextTheCalmTeachingMomentIconHeadlineOneLine',
@@ -3892,7 +4214,9 @@ export default function BrandPage() {
 
                 {/* ── InfoBanner ── */}
                 <div id="pat-info-banner" className="mb-12">
-                  <ComponentLabel>InfoBanner</ComponentLabel>
+                  <ComponentLabel>
+                    {tI18nHardcoded.raw('i18nComplete.text17df71c477b7')}
+                  </ComponentLabel>
                   <ComponentDesc>
                     {tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2473JsxTextAnInlineStatusInfoNoticeManifestStatusA',
@@ -3931,7 +4255,7 @@ export default function BrandPage() {
                       title={tHardcodedUi.raw('appHomeDesignSystemPage.line2488JsxAttrTitleAllSet')}
                       action={
                         <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
-                          Dismiss
+                          {tI18nHardcoded.raw('i18nComplete.text48845bff334a')}
                         </Button>
                       }
                     >
@@ -3969,19 +4293,24 @@ export default function BrandPage() {
                   <DemoContainer className="flex flex-col gap-4">
                     <div className="flex items-center gap-4 text-sm">
                       <span className="inline-flex items-center gap-1.5">
-                        <StatusDot tone="success" /> Idle
+                        <StatusDot tone="success" />{' '}
+                        {tI18nHardcoded.raw('i18nComplete.textab0171ca0494')}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
-                        <StatusDot tone="success" pulse /> Running
+                        <StatusDot tone="success" pulse />{' '}
+                        {tI18nHardcoded.raw('i18nComplete.textf4ccae29e1bb')}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
-                        <StatusDot tone="warning" /> Warning
+                        <StatusDot tone="warning" />{' '}
+                        {tI18nHardcoded.raw('i18nComplete.texte981ddae45d8')}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
-                        <StatusDot tone="destructive" /> Error
+                        <StatusDot tone="destructive" />{' '}
+                        {tI18nHardcoded.raw('i18nComplete.text54a0e8c17ebb')}
                       </span>
                       <span className="inline-flex items-center gap-1.5">
-                        <StatusDot tone="info" /> Info
+                        <StatusDot tone="info" />{' '}
+                        {tI18nHardcoded.raw('i18nComplete.text170322a32f3c')}
                       </span>
                     </div>
                     <div className="flex items-center gap-4 text-sm">
@@ -3999,11 +4328,15 @@ export default function BrandPage() {
                       <StatusBadge tone="destructive">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line2537JsxTextText2Errors')}
                       </StatusBadge>
-                      <StatusBadge tone="info">Modified</StatusBadge>
-                      <StatusBadge tone="neutral">Idle</StatusBadge>
+                      <StatusBadge tone="info">
+                        {tI18nHardcoded.raw('i18nComplete.texte8ce5dcaf408')}
+                      </StatusBadge>
+                      <StatusBadge tone="neutral">
+                        {tI18nHardcoded.raw('i18nComplete.textab0171ca0494')}
+                      </StatusBadge>
                     </div>
                     <p className="text-muted-foreground text-xs">
-                      Use <code>StatusBadge</code>
+                      {tI18nHardcoded.raw('i18nComplete.textc36d819e7bc6')} <code>StatusBadge</code>
                       {tHardcodedUi.raw(
                         'appHomeDesignSystemPage.line2542JsxTextForInformationalStatusFaintInclRed',
                       )}
@@ -4022,8 +4355,8 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="anti-patterns"
-                label="Anti-Patterns"
-                summary="Six patterns that break the system, each with the fix beside it."
+                label={tI18nHardcoded.raw('i18nComplete.text8d2be39d6187')}
+                summary={tI18nHardcoded.raw('i18nComplete.text067ed033e4a6')}
               >
                 <p className="text-muted-foreground mb-8 text-base leading-relaxed">
                   {tHardcodedUi.raw(
@@ -4039,8 +4372,8 @@ export default function BrandPage() {
                     description={tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2565JsxAttrDescriptionBypassesTheUtilitySystemCanTBePurged',
                     )}
-                    bad={`<div style={{ height: '14px', overflow: 'hidden' }}>\n  Content\n</div>`}
-                    good={`<div className="h-3.5 overflow-hidden">\n  Content\n</div>`}
+                    bad={tI18nHardcoded.raw('i18nComplete.text8814f18c10c8')}
+                    good={tI18nHardcoded.raw('i18nComplete.text042ce1942693')}
                   />
 
                   <AntiPatternBlock
@@ -4051,12 +4384,12 @@ export default function BrandPage() {
                       'appHomeDesignSystemPage.line2572JsxAttrDescriptionCreatesInconsistentTypeSizesWithNoSemanticMeaning',
                     )}
                     bad={
-                      '<span className="text-' +
-                      '[11px]">Label</span>\n<span className="text-' +
-                      '[13.5px]">Meta</span>\n<span className="text-' +
+                      tI18nHardcoded.raw('i18nComplete.text4f4c5e40c2e8') +
+                      tI18nHardcoded.raw('i18nComplete.text92600913f25b') +
+                      tI18nHardcoded.raw('i18nComplete.text10e4622539f8') +
                       '[0.875em]">Body</span>'
                     }
-                    good={`<span className="text-xs">Label</span>\n<span className="text-xs">Meta</span>\n<span className="text-sm">Body</span>`}
+                    good={tI18nHardcoded.raw('i18nComplete.texteba19c8747ae')}
                   />
 
                   <AntiPatternBlock
@@ -4066,8 +4399,8 @@ export default function BrandPage() {
                     description={tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2584JsxAttrDescriptionRawButtonsBypassVariantSystemHaveInconsistentSizing',
                     )}
-                    bad={`<button\n  className="px-3 py-1.5 rounded-lg\n    bg-neutral-100 hover:bg-neutral-200"\n  onClick={handleClick}\n>\n  Save\n</button>`}
-                    good={`<Button\n  variant="secondary"\n  size="sm"\n  onClick={handleClick}\n>\n  Save\n</Button>`}
+                    bad={tI18nHardcoded.raw('i18nComplete.text4fbe0827517d')}
+                    good={tI18nHardcoded.raw('i18nComplete.text2b00ca23b112')}
                   />
 
                   <AntiPatternBlock
@@ -4077,8 +4410,8 @@ export default function BrandPage() {
                     description={tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2591JsxAttrDescriptionAnimatesEveryCssPropertyIncludingWidthHeightPadding',
                     )}
-                    bad={`<div className="transition-colors duration-200\n  hover:bg-accent">`}
-                    good={`<div className="transition-colors\n  duration-moderate hover:bg-accent">`}
+                    bad={tI18nHardcoded.raw('i18nComplete.textef09f3cb9afd')}
+                    good={tI18nHardcoded.raw('i18nComplete.text6b84bc014a9f')}
                   />
 
                   <AntiPatternBlock
@@ -4088,8 +4421,8 @@ export default function BrandPage() {
                     description={tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2598JsxAttrDescriptionCompletelyBypassesTheThemeSystemWillLookWrong',
                     )}
-                    bad={`<div className="text-emerald-500">\n  Success\n</div>\n<div style={{ color: '#3b82f6' }}>\n  Info\n</div>`}
-                    good={`<div className="text-success">\n  Success\n</div>\n<div className="text-info">\n  Info\n</div>`}
+                    bad={tI18nHardcoded.raw('i18nComplete.text9b68117141f2')}
+                    good={tI18nHardcoded.raw('i18nComplete.text9e5ea6b4c372')}
                   />
 
                   <AntiPatternBlock
@@ -4099,33 +4432,33 @@ export default function BrandPage() {
                     description={tHardcodedUi.raw(
                       'appHomeDesignSystemPage.line2605JsxAttrDescriptionNotKeyboardAccessibleNoFocusRingNotAnnounced',
                     )}
-                    bad={`<div\n  onClick={handler}\n  className="cursor-pointer"\n>\n  Click me\n</div>`}
-                    good={`<Button\n  variant="ghost"\n  onClick={handler}\n>\n  Click me\n</Button>`}
+                    bad={tI18nHardcoded.raw('i18nComplete.textdd93abf29136')}
+                    good={tI18nHardcoded.raw('i18nComplete.text525174cc0d8d')}
                   />
                 </div>
               </CollapsibleSection>
 
               <CollapsibleSection
                 id="usage"
-                label="Usage"
-                summary="Ten things to do and ten not to, side by side."
+                label={tI18nHardcoded.raw('i18nComplete.text8d59829c1e15')}
+                summary={tI18nHardcoded.raw('i18nComplete.text0b2657a2d044')}
               >
                 <div className="grid gap-10 md:grid-cols-2">
                   <div>
                     <p className="mb-4 text-xs tracking-widest text-emerald-600 uppercase dark:text-emerald-400">
-                      Do
+                      {tI18nHardcoded.raw('i18nComplete.text30094e0bec00')}
                     </p>
                     {[
-                      'Use the logo on solid black or white backgrounds',
-                      'Maintain minimum clear space on all sides',
-                      'Use the provided SVG/PNG files',
-                      'Black logo on light, white on dark',
-                      'Scale proportionally',
-                      'Use font-medium (500) for headings',
-                      'Use semantic color tokens (success, warning, info)',
-                      'Use the defined type scale tokens',
-                      'Use specific transition properties',
-                      'Use <Button> and <IconButton> components',
+                      tI18nHardcoded.raw('i18nComplete.textf54a674cd9e6'),
+                      tI18nHardcoded.raw('i18nComplete.textb8bad1ee3036'),
+                      tI18nHardcoded.raw('i18nComplete.text64f160413fef'),
+                      tI18nHardcoded.raw('i18nComplete.textdc54941c8b98'),
+                      tI18nHardcoded.raw('i18nComplete.text43d8ab235dde'),
+                      tI18nHardcoded.raw('i18nComplete.text88f3c1c6662e'),
+                      tI18nHardcoded.raw('i18nComplete.textfd0b25a736aa'),
+                      tI18nHardcoded.raw('i18nComplete.textb4568bcc15f8'),
+                      tI18nHardcoded.raw('i18nComplete.text659344748c8e'),
+                      tI18nHardcoded.raw('i18nComplete.text1329b0068f14'),
                     ].map((t) => (
                       <div
                         key={t}
@@ -4140,19 +4473,20 @@ export default function BrandPage() {
                   </div>
                   <div>
                     <p className="mb-4 text-xs tracking-widest text-red-600 uppercase dark:text-red-400">
-                      Don{"'"}t
+                      {tI18nHardcoded.raw('i18nComplete.text24b6bef25e6e')}
+                      {"'"}t
                     </p>
                     {[
-                      'Rotate, skew, or stretch the logo',
-                      'Add drop shadows or effects',
-                      'Place on busy or patterned backgrounds',
-                      'Use unapproved color combinations',
-                      'Use bold (700) for headings',
-                      'Use colored or tinted backgrounds',
-                      'Use arbitrary pixel text sizes',
-                      'Use transition-colors on elements',
-                      'Use raw <button> for interactions',
-                      'Use hardcoded hex colors in components',
+                      tI18nHardcoded.raw('i18nComplete.textb2a0575f2c15'),
+                      tI18nHardcoded.raw('i18nComplete.text3968b17ec8ee'),
+                      tI18nHardcoded.raw('i18nComplete.text8ac2997f797e'),
+                      tI18nHardcoded.raw('i18nComplete.text8a280803e026'),
+                      tI18nHardcoded.raw('i18nComplete.textc21f6265f30c'),
+                      tI18nHardcoded.raw('i18nComplete.text787c76603041'),
+                      tI18nHardcoded.raw('i18nComplete.text4fb7aff6ff92'),
+                      tI18nHardcoded.raw('i18nComplete.textb5845e7eea2b'),
+                      tI18nHardcoded.raw('i18nComplete.text97a6a4e757fa'),
+                      tI18nHardcoded.raw('i18nComplete.textb2e30caf44ee'),
                     ].map((t) => (
                       <div
                         key={t}
@@ -4170,16 +4504,16 @@ export default function BrandPage() {
 
               <CollapsibleSection
                 id="icons"
-                label="Icons"
-                summary="Phosphor only, one app-wide weight. Compare all six here."
+                label={tI18nHardcoded.raw('i18nComplete.texteae96e02bbc4')}
+                summary={tI18nHardcoded.raw('i18nComplete.textfbb883595364')}
               >
                 <IconsSection />
               </CollapsibleSection>
 
               <CollapsibleSection
                 id="confetti"
-                label="Confetti"
-                summary="The one celebration in the product, made of the workspace's own icon."
+                label={tI18nHardcoded.raw('i18nComplete.text2b54343f65e9')}
+                summary={tI18nHardcoded.raw('i18nComplete.textcfca1e280a8c')}
               >
                 <ConfettiSection />
               </CollapsibleSection>

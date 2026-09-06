@@ -3,7 +3,7 @@
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { WarningIcon as AlertTriangle } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 import { PDFViewer } from './pdf-viewer';
 

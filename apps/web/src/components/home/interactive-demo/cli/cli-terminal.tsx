@@ -2,7 +2,7 @@
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useRef, type HTMLAttributes } from 'react';
 import { KORTIX_CMD_CLASS, KORTIX_CMD_STYLE, LineView } from './terminal';
 import type { DemoDirector } from './use-demo-director';

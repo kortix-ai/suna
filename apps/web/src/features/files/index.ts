@@ -7,39 +7,39 @@
 
 // Types
 export type {
-  FileNode,
+  FileCommitDiff,
   FileContent,
+  FileHistoryResult,
+  FileNode,
   FilePatch,
   FilePatchHunk,
   FindMatch,
+  GitCommit,
   LssHit,
   LssSearchResult,
   RuntimeProjectInfo,
   ServerHealth,
-  GitCommit,
-  FileHistoryResult,
-  FileCommitDiff,
 } from '@/features/file-browser/types';
 
 // API — read
 export {
-  listFiles,
-  readFile,
+  copyFile,
+  createFile,
+  deleteFile,
+  downloadFile,
   findFiles,
   findText,
   getCurrentProject,
   getServerHealth,
   isServerReachable,
+  listFiles,
+  mkdirFile,
+  readFile,
   // binary helpers
   readFileAsBlob,
-  downloadFile,
+  renameFile,
   // write
   uploadFile,
-  deleteFile,
-  mkdirFile,
-  renameFile,
-  createFile,
-  copyFile,
   type UploadResult,
 } from './api/runtime-files';
 
@@ -47,49 +47,49 @@ export {
 export { hasFileExtension } from './path-utils';
 
 // API — git history
-export { getFileHistory, getFileCommitDiff, getFileAtCommit } from './api/git-history';
+export { getFileAtCommit, getFileCommitDiff, getFileHistory } from './api/git-history';
 
 // Hooks
 export {
-  useFileList,
-  useInvalidateFileList,
-  useFileContent,
-  useInvalidateFileContent,
-  useFileSearch,
-  useServerHealth,
+  fileContentKeys,
+  fileHistoryKeys,
+  fileListKeys,
+  fileSearchKeys,
   useCurrentProject,
-  useFileEventInvalidation,
-  useFileUpload,
+  useFileAtCommit,
+  useFileCommitDiff,
+  useFileContent,
+  useFileCopy,
+  useFileCreate,
   useFileDelete,
+  useFileEventInvalidation,
+  useFileHistory,
+  useFileList,
   useFileMkdir,
   useFileRename,
-  useFileCreate,
-  useFileCopy,
-  useFileHistory,
-  useFileCommitDiff,
-  useFileAtCommit,
-  fileListKeys,
-  fileContentKeys,
-  fileSearchKeys,
-  fileHistoryKeys,
+  useFileSearch,
+  useFileUpload,
+  useInvalidateFileContent,
+  useInvalidateFileList,
+  useServerHealth,
 } from './hooks';
 
 // Standalone workspace file search (CMD+K, @-mentions, etc.)
-export { searchWorkspaceFiles } from './search/workspace-search-service';
 export { useWorkspaceSearch } from './hooks/use-workspace-search';
+export { searchWorkspaceFiles } from './search/workspace-search-service';
 
 // Store
 export {
-  createFilesStore,
   FilesStoreProvider,
+  createFilesStore,
   globalFilesStore,
   useFilesStore,
   useFilesStoreApi,
-  type FilesView,
-  type ClipboardOperation,
   type ClipboardItem,
+  type ClipboardOperation,
   type FilesStore,
   type FilesStoreApi,
+  type FilesView,
 } from '@/features/file-browser/store/files-store';
 
 // Explorer source (the shared Drive explorer UI lives in features/project-files)

@@ -2,8 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const nextConfig = () =>
-  readFileSync(resolve(import.meta.dir, '../../next.config.ts'), 'utf8');
+const nextConfig = () => readFileSync(resolve(import.meta.dir, '../../next.config.ts'), 'utf8');
 
 describe('router client cache', () => {
   // Without this, `staleTimes.dynamic` defaults to 0 and every navigation to a

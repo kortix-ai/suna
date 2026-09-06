@@ -1,33 +1,58 @@
-import { locales, type Locale } from '@/i18n/config';
+import { locales } from '@/i18n/catalog.mjs';
 import {
   authorizeEnvironment,
   deriveEnvironmentAccessCookie,
   ENVIRONMENT_ACCESS_COOKIE,
 } from '@/lib/environment-protection';
 import { legalTermsRedirectUrl } from '@/lib/legal-terms-redirect';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import { MAINTENANCE_BYPASS_COOKIE, verifyBypassToken } from '@/lib/maintenance-bypass';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 import {
   AUTH_BOUNCE_COOKIE,
   AUTH_BOUNCE_MAX_AGE,
   LAST_PROJECT_COOKIE,
-  PROJECT_LANDING_PATH,
   parseLastProjectOwner,
+  PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
   serializeAuthBounce,
 } from '@/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import {
-  resolveMiddlewareIdentity,
-  type MiddlewareUser,
-} from '@/lib/supabase/middleware-identity';
+import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
-// Marketing pages that support locale routing for SEO (/de, /it, etc.)
-const MARKETING_ROUTES = ['/', '/legal', '/support'];
+type Locale = (typeof locales)[number];
+
+// Public application surfaces that support explicit locale routing for SEO
+// and unauthenticated language verification (/de/about, /sr/pricing, etc.).
+const MARKETING_ROUTES = [
+  '/',
+  '/about',
+  '/agent-computer',
+  '/agents-and-skills',
+  '/automations',
+  '/blog',
+  '/careers',
+  '/channels',
+  '/changelog',
+  '/company-as-code',
+  '/connectors',
+  '/contact',
+  '/design-system',
+  '/developers',
+  '/download',
+  '/enterprise',
+  '/legal',
+  '/marketplace',
+  '/pricing',
+  '/security',
+  '/self-hosted',
+  '/solutions',
+  '/support',
+  '/use-cases',
+];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
 // (KORTIX_PUBLIC_DISABLE_LANDING_PAGE) should NOT serve — they bounce to the
@@ -178,11 +203,9 @@ export async function middleware(request: NextRequest) {
   // dynamic keys so the standalone container uses ECS runtime values instead of
   // build-time replacements. The gate fails closed when enabled without a secret.
   const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
-    | string
-    | undefined;
+    string | undefined;
   const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
-    | string
-    | undefined;
+    string | undefined;
   const authorization = request.headers.get('authorization');
   const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
   const expectedAccessCookie =
@@ -413,8 +436,12 @@ export async function middleware(request: NextRequest) {
 
     if (isRemainingPathMarketing) {
       // Rewrite /de to /, etc.
-      const response = NextResponse.rewrite(new URL(remainingPath, request.url));
-      // Store locale in headers so next-intl can pick it up for the explicit URL.
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set('x-locale', locale);
+      const response = NextResponse.rewrite(new URL(remainingPath, request.url), {
+        request: { headers: requestHeaders },
+      });
+      // Keep the locale response header for diagnostics and cache inspection.
       // Do not persist it: language only changes permanently via profile settings.
       response.headers.set('x-locale', locale);
 

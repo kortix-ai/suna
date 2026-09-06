@@ -1,8 +1,8 @@
 'use client';
 
-import * as React from 'react';
 import { UserAvatar, type UserAvatarSize } from '@/components/ui/user-avatar';
 import { cn } from '@/lib/utils';
+import * as React from 'react';
 
 export interface UserRowProps {
   email: string;
@@ -50,30 +50,22 @@ export function UserRow({
       <UserAvatar email={email} name={name} avatarUrl={avatarUrl} size={size} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-foreground truncate text-sm font-medium">
-            {displayPrimary}
-          </span>
+          <span className="text-foreground truncate text-sm font-medium">{displayPrimary}</span>
           {isSelf ? (
-            <span className="text-muted-foreground/80 text-xs font-medium uppercase tracking-wider">
+            <span className="text-muted-foreground/80 text-xs font-medium tracking-wider uppercase">
               · you
             </span>
           ) : null}
         </div>
         {(showSecondary || subtitle) && (
           <div className="text-muted-foreground/80 flex items-center gap-2 truncate text-xs">
-            {showSecondary ? (
-              <span className="truncate">{showSecondary}</span>
-            ) : null}
+            {showSecondary ? <span className="truncate">{showSecondary}</span> : null}
             {showSecondary && subtitle ? <span>·</span> : null}
             {subtitle ? <span className="truncate">{subtitle}</span> : null}
           </div>
         )}
       </div>
-      {trailing ? (
-        <div className="ml-2 flex shrink-0 items-center gap-1.5">
-          {trailing}
-        </div>
-      ) : null}
+      {trailing ? <div className="ml-2 flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
     </Comp>
   );
 }

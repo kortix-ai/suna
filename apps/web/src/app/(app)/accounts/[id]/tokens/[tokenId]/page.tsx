@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { KeyIcon as KeyRound } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
@@ -64,7 +64,12 @@ export default function TokenDetailPage() {
   }
 
   return (
-    <AccountPane back={{ href: `/accounts/${accountId}?tab=tokens`, label: 'Back to tokens' }}>
+    <AccountPane
+      back={{
+        href: `/accounts/${accountId}?tab=tokens`,
+        label: tI18nHardcoded.raw('i18nComplete.text40c4210fc53c'),
+      }}
+    >
       <div className="space-y-5">
         <div className="flex min-w-0 items-center gap-3.5">
           <EntityAvatar icon={KeyRound} size="lg" />
@@ -73,14 +78,20 @@ export default function TokenDetailPage() {
               <Skeleton className="h-6 w-44" />
             ) : (
               <h2 className="text-foreground truncate text-xl font-medium">
-                {token?.name ?? 'Token not found'}
+                {token?.name ?? tI18nHardcoded.raw('i18nComplete.text4441b4b45947')}
               </h2>
             )}
             {token ? (
               <InlineMeta className="text-sm">
                 <span className="capitalize">{token.status}</span>
-                <span>Created {formatDate(token.created_at)}</span>
-                <span>Last used {formatDate(token.last_used_at)}</span>
+                <span>
+                  {tI18nHardcoded.raw('i18nComplete.textd70b9e24bca2')}{' '}
+                  {formatDate(token.created_at)}
+                </span>
+                <span>
+                  {tI18nHardcoded.raw('i18nComplete.text830ec7f812f9')}{' '}
+                  {formatDate(token.last_used_at)}
+                </span>
               </InlineMeta>
             ) : null}
           </div>
@@ -93,7 +104,9 @@ export default function TokenDetailPage() {
       </div>
 
       {!tokensQuery.isLoading && !token && tokenId ? (
-        <InfoBanner tone="neutral">This token doesn&apos;t exist or has been revoked.</InfoBanner>
+        <InfoBanner tone="neutral">
+          {tI18nHardcoded.raw('i18nComplete.textade47fe8dce3')}
+        </InfoBanner>
       ) : null}
 
       {token && accountId ? (

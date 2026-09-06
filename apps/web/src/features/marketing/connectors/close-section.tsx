@@ -4,12 +4,15 @@ import { Reveal } from '@/components/home/reveal';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { close } from './content';
+import { getLocalizedConnectorsContent } from './content';
 import { Section } from './shared';
 
 /** Closing card. Same shape as the enterprise page close, so the two pages end alike. */
 export function CloseSection() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { close } = getLocalizedConnectorsContent(tI18nComplete);
   return (
     <Section id="cta">
       <Reveal>

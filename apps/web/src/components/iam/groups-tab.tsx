@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 // Groups tab on the account page. A picker (the list) or, when the hub's
 // `?group=<id>` param is set, that group's `GroupAccessPanel` — the exact
@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 // access surface renders. Only `CreateGroupDialog` stays local: it DEFINES a
 // group, it does not grant access, so it is not an `AccessDialog` mode.
 
+import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import {
   ArrowRightIcon,
   MagnifyingGlassIcon,
@@ -19,7 +20,6 @@ import {
   TrashIcon,
   UsersIcon,
 } from '@phosphor-icons/react';
-import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FormEvent, useMemo, useState } from 'react';
 
@@ -145,12 +145,13 @@ function GroupsList({
   const deleteMutation = useMutation({
     mutationFn: (groupId: string) => deleteGroup(accountId, groupId),
     onSuccess: () => {
-      successToast('Group deleted');
+      successToast(tHardcodedUi.raw('i18nComplete.textff2857a72bfa'));
       void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setDeleteTarget(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to delete group'),
+    onError: (err: Error) =>
+      errorToast(err.message || tHardcodedUi.raw('i18nComplete.text7924ed958d5b')),
   });
 
   const filtered = useMemo(() => {
@@ -168,17 +169,17 @@ function GroupsList({
     rbacEnabled ? (
       <Button onClick={() => setCreateOpen(true)} size="sm" variant="secondary" className="gap-1.5">
         <PlusIcon className="size-4" />
-        Create a group
+        {tHardcodedUi.raw('i18nComplete.texte3c4877576de')}
       </Button>
     ) : (
       <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
         <span className="inline-flex items-center gap-1.5">
           <Button size="sm" variant="secondary" className="gap-1.5" disabled>
             <PlusIcon className="size-4" />
-            Create a group
+            {tHardcodedUi.raw('i18nComplete.texte3c4877576de')}
           </Button>
           <Badge variant="outline" size="sm">
-            Enterprise
+            {tHardcodedUi.raw('i18nComplete.text3fbe5ed156f1')}
           </Badge>
         </span>
       </Hint>
@@ -197,7 +198,8 @@ function GroupsList({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-0.5">
           <p className="text-foreground text-sm font-medium">
-            Groups{settled ? ` · ${total}` : ''}
+            {tHardcodedUi.raw('i18nComplete.text39bbb719fa2b')}
+            {settled ? ` · ${total}` : ''}
           </p>
           <p className="text-muted-foreground text-xs">
             {tHardcodedUi.raw(
@@ -211,14 +213,14 @@ function GroupsList({
       {gated && (
         <InfoBanner
           tone="info"
-          title="Enterprise feature"
+          title={tHardcodedUi.raw('i18nComplete.text9d48410d14d3')}
           action={
             <Button
               variant="outline"
               size="sm"
               onClick={() => openDemo({ source: 'accounts-groups' })}
             >
-              Contact sales
+              {tHardcodedUi.raw('i18nComplete.text604abea32b49')}
             </Button>
           }
         >
@@ -231,7 +233,7 @@ function GroupsList({
           <MagnifyingGlassIcon />
         </InputGroupSearchIcon>
         <InputGroupSearchInput
-          placeholder="Search by user group name"
+          placeholder={tHardcodedUi.raw('i18nComplete.textd16be1a95200')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           variant="popover"
@@ -242,11 +244,11 @@ function GroupsList({
       {groupsQuery.isError && (
         <ErrorState
           size="sm"
-          title="Failed to load groups"
+          title={tHardcodedUi.raw('i18nComplete.textab76ead329cc')}
           description={(groupsQuery.error as Error)?.message}
           action={
             <Button variant="outline" size="sm" onClick={() => groupsQuery.refetch()}>
-              Retry
+              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
             </Button>
           }
         />
@@ -264,11 +266,15 @@ function GroupsList({
         <EmptyState
           icon={UsersIcon}
           size="sm"
-          title={search ? 'No groups match your search' : 'No groups yet'}
+          title={
+            search
+              ? tHardcodedUi.raw('i18nComplete.text912c257cf5b2')
+              : tHardcodedUi.raw('i18nComplete.text07514d065adb')
+          }
           description={
             !search && canCreate
               ? rbacEnabled
-                ? 'Create a group to bulk-add members to projects.'
+                ? tHardcodedUi.raw('i18nComplete.texte268202ba9f5')
                 : RBAC_UPSELL_MESSAGE
               : undefined
           }
@@ -289,11 +295,13 @@ function GroupsList({
                   className={g.source === 'scim' ? undefined : 'capitalize'}
                   title={
                     g.source === 'scim'
-                      ? 'Pushed by your identity provider via Directory Sync — name and membership are managed there.'
+                      ? tHardcodedUi.raw('i18nComplete.text2aa5f5cc5cac')
                       : undefined
                   }
                 >
-                  {g.source === 'scim' ? 'Synced from IdP' : g.source}
+                  {g.source === 'scim'
+                    ? tHardcodedUi.raw('i18nComplete.text2d83971aa73e')
+                    : g.source}
                 </Badge>
               }
               metaParts={[
@@ -302,17 +310,17 @@ function GroupsList({
                 pluralize(g.project_count ?? 0, 'project'),
               ].filter(Boolean)}
               onClick={() => openGroup(g.group_id)}
-              kebabLabel={`Actions for ${g.name}`}
+              kebabLabel={tHardcodedUi('i18nComplete.text33da220b1a34', { value0: g.name })}
               kebab={[
                 {
-                  label: 'Open',
+                  label: tHardcodedUi.raw('i18nComplete.texted077f3d8125'),
                   icon: <ArrowRightIcon className="size-3.5" />,
                   onSelect: () => openGroup(g.group_id),
                 },
                 ...(canCreate
                   ? [
                       {
-                        label: 'Delete group',
+                        label: tHardcodedUi.raw('i18nComplete.text3f7374ac08ea'),
                         icon: <TrashIcon className="size-3.5" />,
                         variant: 'destructive' as const,
                         separated: true,
@@ -338,13 +346,13 @@ function GroupsList({
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title="Delete group"
+        title={tHardcodedUi.raw('i18nComplete.text3f7374ac08ea')}
         description={
           deleteTarget
-            ? `Delete "${deleteTarget.name}"? Any permission policies attached to this group will be removed.`
+            ? tHardcodedUi('i18nComplete.text44db009e7d12', { value0: deleteTarget.name })
             : ''
         }
-        confirmLabel="Delete group"
+        confirmLabel={tHardcodedUi.raw('i18nComplete.text3f7374ac08ea')}
         confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => {
@@ -376,14 +384,15 @@ function CreateGroupDialog({
     mutationFn: () =>
       createGroup(accountId, { name: name.trim(), description: description.trim() || undefined }),
     onSuccess: (group) => {
-      successToast('Group created');
+      successToast(tHardcodedUi.raw('i18nComplete.textda74d185ef7c'));
       queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
       setName('');
       setDescription('');
       onOpenChange(false);
       onCreated(group.group_id);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to create group'),
+    onError: (err: Error) =>
+      errorToast(err.message || tHardcodedUi.raw('i18nComplete.text8848db900667')),
   });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -406,7 +415,7 @@ function CreateGroupDialog({
     >
       <ModalContent className="sm:max-w-md">
         <ModalHeader>
-          <ModalTitle>Create a group</ModalTitle>
+          <ModalTitle>{tHardcodedUi.raw('i18nComplete.texte3c4877576de')}</ModalTitle>
           <ModalDescription>
             {tHardcodedUi.raw(
               'componentsIamGroupsTab.line311JsxTextGroupsBundleMembersTogetherAttachPermissionPoliciesTo',
@@ -416,12 +425,14 @@ function CreateGroupDialog({
         <form onSubmit={handleSubmit}>
           <ModalBody className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="group-name">Group name</Label>
+              <Label htmlFor="group-name">
+                {tHardcodedUi.raw('i18nComplete.text762ebb70ef0e')}
+              </Label>
               <Input
                 id="group-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Engineering"
+                placeholder={tHardcodedUi.raw('i18nComplete.text729bb48d0f86')}
                 maxLength={128}
                 autoFocus
                 required
@@ -430,14 +441,16 @@ function CreateGroupDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="group-description">
-                Description{' '}
-                <span className="text-muted-foreground text-xs font-normal">(optional)</span>
+                {tHardcodedUi.raw('i18nComplete.text526e0087cc3f')}{' '}
+                <span className="text-muted-foreground text-xs font-normal">
+                  {tHardcodedUi.raw('i18nComplete.text0059798b7f70')}
+                </span>
               </Label>
               <Input
                 id="group-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Engineers shipping the platform"
+                placeholder={tHardcodedUi.raw('i18nComplete.text8ddb6af74aaf')}
                 maxLength={256}
                 disabled={createMutation.isPending}
               />
@@ -451,7 +464,7 @@ function CreateGroupDialog({
               onClick={() => onOpenChange(false)}
               disabled={createMutation.isPending}
             >
-              Cancel
+              {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
             </Button>
             <Button
               type="submit"
@@ -460,7 +473,7 @@ function CreateGroupDialog({
               className="gap-1.5"
             >
               {createMutation.isPending && <Loading className="size-4 shrink-0" />}
-              Create group
+              {tHardcodedUi.raw('i18nComplete.text35be9c541d68')}
             </Button>
           </ModalFooter>
         </form>

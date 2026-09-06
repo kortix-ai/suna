@@ -15,15 +15,15 @@
  *   - Returns structured results with name, path, isDir
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { findText } from '../api/runtime-files';
-import type { FindMatch } from '@/features/file-browser/types';
 import {
   type WorkspaceSearchEntry,
   parseWorkspacePaths,
   rankWorkspaceSearchEntry,
 } from '@/features/file-browser/search/workspace-search-core';
+import type { FindMatch } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { findText } from '../api/runtime-files';
 import {
   searchWorkspaceFileEntries,
   searchWorkspaceFilePaths,
@@ -100,10 +100,7 @@ export function parseFileResults(paths: string[]): FileSearchResult[] {
  * Returns plain `string[]` paths (dirs have trailing `/`).
  * Drop-in replacement for `findOpenCodeFiles`.
  */
-export async function searchWorkspaceFiles(
-  query: string,
-  limit = 50,
-): Promise<string[]> {
+export async function searchWorkspaceFiles(query: string, limit = 50): Promise<string[]> {
   return searchWorkspaceFilePaths(query, { limit, apiLimit: Math.max(limit, 100) });
 }
 
@@ -178,17 +175,29 @@ export function useWorkspaceSearch(
     }, debounceMs);
 
     return () => clearTimeout(timer);
-  }, [effectiveQuery, isContentSearch, debounceMs, maxResults, maxTextResults, apiLimit, minQueryLength, serverUrl]);
+  }, [
+    effectiveQuery,
+    isContentSearch,
+    debounceMs,
+    maxResults,
+    maxTextResults,
+    apiLimit,
+    minQueryLength,
+    serverUrl,
+  ]);
 
   const hasResults = results.length > 0 || textResults.length > 0;
 
-  return useMemo(() => ({
-    results,
-    textResults,
-    isLoading,
-    searchedQuery,
-    isContentSearch,
-    effectiveQuery,
-    hasResults,
-  }), [results, textResults, isLoading, searchedQuery, isContentSearch, effectiveQuery, hasResults]);
+  return useMemo(
+    () => ({
+      results,
+      textResults,
+      isLoading,
+      searchedQuery,
+      isContentSearch,
+      effectiveQuery,
+      hasResults,
+    }),
+    [results, textResults, isLoading, searchedQuery, isContentSearch, effectiveQuery, hasResults],
+  );
 }

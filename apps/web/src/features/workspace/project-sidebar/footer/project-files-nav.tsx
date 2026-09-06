@@ -1,6 +1,7 @@
 'use client';
 
 import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams, usePathname } from 'next/navigation';
 import { useCallback } from 'react';
 
@@ -35,6 +36,7 @@ import { FoldersIcon } from '@phosphor-icons/react';
  * replaced them and moved to the top of the panel, under New session.
  */
 export function ProjectFilesNavItem() {
+  const t = useTranslations('sidebar');
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const projectId = params?.id;
@@ -57,12 +59,12 @@ export function ProjectFilesNavItem() {
       <SidebarMenuButton
         asChild
         isActive={isActive}
-        tooltip="Files"
+        tooltip={t('files')}
         className="group/menu-button text-sidebar-foreground relative"
       >
         <HoverPrefetchLink href={`/projects/${projectId}/files`} prefetch onClick={handleClick}>
           <FoldersIcon />
-          Files
+          {t('files')}
         </HoverPrefetchLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

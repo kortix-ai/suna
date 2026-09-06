@@ -1,5 +1,6 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { ReactNode } from 'react';
 import { control } from './content';
 import { Passage } from './passage';
@@ -31,5 +32,5 @@ import { Passage } from './passage';
  * and stays quiet.
  */
 export function ControlSection(): ReactNode {
-  return <Passage passage={control} />;
+  return <Passage passage={useLocalizedUiCatalog(control)} />;
 }

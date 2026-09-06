@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   ToolOutputFallback,
@@ -9,11 +10,13 @@ import { OutputBlock } from '@/features/session/tool/shared/output-block';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { FolderIcon as Folder } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 import { type ProjectEntry, parseProjectListOutput } from '@/lib/utils/kortix-tool-output';
 
 export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const output = partOutput(part);
   const projects = useMemo(() => parseProjectListOutput(output || ''), [output]);
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it, next to
@@ -24,8 +27,8 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     <BasicTool
       icon={<Folder />}
       trigger={{
-        title: 'Workspace',
-        subtitle: projects.length > 0 ? 'global workspace' : undefined,
+        title: tI18nComplete.raw('text87bb59ba2f92'),
+        subtitle: projects.length > 0 ? tI18nComplete.raw('textff73053e6892') : undefined,
       }}
       defaultOpen={defaultOpen || projects.length === 0}
       forceOpen={forceOpen}

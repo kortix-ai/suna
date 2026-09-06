@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import type { ComponentProps, ReactNode } from 'react';
 
@@ -142,6 +142,7 @@ function isUsageLimitError(text: string): boolean {
 }
 
 function UsageLimitCard({ errorText, className }: { errorText: string; className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountId = useCurrentAccountStore((s) => s.selectedAccountId);
   const billingHref = buildAccountSettingsHref({ tab: 'billing', accountId });
 
@@ -159,7 +160,7 @@ function UsageLimitCard({ errorText, className }: { errorText: string; className
         <Button asChild size="sm" className="active:scale-[0.96]">
           <Link href={billingHref} prefetch>
             <LightningIcon className="size-3.5 shrink-0" />
-            Upgrade plan
+            {tI18nComplete.raw('text39b7ec1e8402')}
           </Link>
         </Button>
       </ItemActions>
@@ -267,6 +268,7 @@ function GatewayMetaLine({
  * `error-details.tsx` uses for a stack.
  */
 function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDetails }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const failures = details?.attemptFailures;
   if (!failures?.length) return null;
 
@@ -280,13 +282,17 @@ function GatewayAttemptFailureList({ details }: { details?: TurnErrorGatewayDeta
         )}
       >
         <CaretRightIcon className="size-3 shrink-0 group-open/failures:rotate-90" />
-        {failures.length === 1 ? '1 attempt' : `${failures.length} attempts`}
+        {failures.length === 1
+          ? tI18nComplete.raw('textce4c96225f63')
+          : `${failures.length} attempts`}
       </summary>
       <ol className="text-muted-foreground mt-1 list-decimal space-y-1 pl-4 wrap-anywhere">
         {failures.map((failure) => (
           <li key={failure.attempt}>
             <span className="text-foreground font-medium">{failureTarget(failure)}</span> ·{' '}
-            {failure.status !== undefined ? `HTTP ${failure.status} · ` : ''}
+            {failure.status !== undefined
+              ? tI18nComplete('textf6a6d0e934f4', { value0: failure.status })
+              : ''}
             {String(failure.code)} · {failure.message}
           </li>
         ))}

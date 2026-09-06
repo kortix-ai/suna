@@ -1,4 +1,5 @@
 'use client';
+
 import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   BasicTool,
@@ -10,11 +11,13 @@ import {
 } from '@/features/session/tool/shared/infrastructure';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
+import { useTranslations } from '@/i18n/use-translations';
 import { getChildSessionId } from '@/ui';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
 import { useMemo, useState } from 'react';
 
 export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const status = partStatus(part);
   const output = partOutput(part);
@@ -36,7 +39,7 @@ export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
       <BasicTool
         icon={<MessageCircle className="size-3.5 shrink-0" />}
         trigger={{
-          title: 'Message agent',
+          title: tI18nComplete.raw('text8833ce4e6595'),
           subtitle: taskId ? taskId.slice(-12) : undefined,
           args: isError ? ['failed'] : undefined,
         }}
@@ -58,7 +61,7 @@ export function AgentMessageTool({ part, defaultOpen, forceOpen }: ToolProps) {
           open={modalOpen}
           onOpenChange={setModalOpen}
           sessionId={childSessionId}
-          title={`Message → ${taskId || 'worker'}`}
+          title={tI18nComplete('text8116da8fa64c', { value0: taskId || 'worker' })}
         />
       )}
     </>

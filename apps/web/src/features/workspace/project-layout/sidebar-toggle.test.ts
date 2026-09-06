@@ -14,7 +14,10 @@ import { fileURLToPath } from 'node:url';
  * the third piece: that the one implementation still does the things the six
  * copies it replaced each did.
  */
-const source = readFileSync(fileURLToPath(new URL('./sidebar-toggle.tsx', import.meta.url)), 'utf8');
+const source = readFileSync(
+  fileURLToPath(new URL('./sidebar-toggle.tsx', import.meta.url)),
+  'utf8',
+);
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('SidebarToggle', () => {
@@ -72,7 +75,10 @@ describe('SidebarToggle', () => {
     expect(code).toContain("placement = 'inline'");
     expect(code).toContain("placement === 'floating' && 'absolute top-2 left-2 z-20'");
     // The base class list — the part every surface gets — must not position.
-    const base = code.slice(code.indexOf('className={cn('), code.indexOf("placement === 'floating'"));
+    const base = code.slice(
+      code.indexOf('className={cn('),
+      code.indexOf("placement === 'floating'"),
+    );
     expect(base).not.toContain('absolute');
   });
 

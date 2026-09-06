@@ -1,6 +1,7 @@
 'use client';
 
 import { ShippingContainerIcon as Container } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import Hint from '@/components/ui/hint';
 
@@ -11,11 +12,12 @@ import Hint from '@/components/ui/hint';
  * a choice that would be ignored.
  */
 export function MetaRuntimeIndicator() {
+  const t = useTranslations('projectHome');
   return (
-    <Hint label="Meta uses a fixed minimal sandbox. It starts specialized sessions for project work.">
+    <Hint label={t('runtime.metaDescription')}>
       <span className="text-muted-foreground inline-flex h-8 items-center gap-1.5 px-2.5 text-xs font-medium">
         <Container className="size-3.5" />
-        Meta runtime
+        {t('runtime.metaLabel')}
       </span>
     </Hint>
   );

@@ -1,11 +1,14 @@
-type AccountStateLike = {
-  /** The RESOLVED plan (billing/services/resolve-billing.ts). Authoritative
-   *  when present; `subscription.tier_key` is only the STORED plan. */
-  plan?: { key?: string | null } | null;
-  subscription?: { tier_key?: string | null } | null;
-  tier?: { name?: string | null } | null;
-  credits?: { can_run?: boolean | null } | null;
-} | null | undefined;
+type AccountStateLike =
+  | {
+      /** The RESOLVED plan (billing/services/resolve-billing.ts). Authoritative
+       *  when present; `subscription.tier_key` is only the STORED plan. */
+      plan?: { key?: string | null } | null;
+      subscription?: { tier_key?: string | null } | null;
+      tier?: { name?: string | null } | null;
+      credits?: { can_run?: boolean | null } | null;
+    }
+  | null
+  | undefined;
 
 /** True when the account may use the repo-first app (free tier included). */
 export function accountHasAppAccess(accountState: AccountStateLike): boolean {

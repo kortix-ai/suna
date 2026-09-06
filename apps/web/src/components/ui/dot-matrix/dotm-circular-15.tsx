@@ -1,13 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isWithinCircularMask } from "@/lib/dotmatrix-core";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, isWithinCircularMask } from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmCircular15Props = DotMatrixCommonProps;
 
@@ -17,12 +14,12 @@ const MID_OPACITY = 0.34;
 const HIGH_OPACITY = 0.95;
 
 const BRAILLE_PHASES: ReadonlyArray<ReadonlySet<string>> = [
-  new Set(["1,1", "2,1", "3,1", "1,3", "2,3", "3,3"]), // rails
-  new Set(["1,1", "2,1", "3,1", "2,2", "1,3", "2,3", "3,3"]), // center bridge
-  new Set(["1,1", "1,2", "1,3", "2,1", "2,3", "3,1", "3,2", "3,3"]), // top+bottom bars
-  new Set(["1,1", "3,1", "2,2", "1,3", "3,3"]), // X-cross
-  new Set(["2,1", "1,2", "3,2", "2,3"]), // plus motif
-  new Set(["1,1", "2,1", "2,2", "2,3", "3,3"]) // diagonal sweep
+  new Set(['1,1', '2,1', '3,1', '1,3', '2,3', '3,3']), // rails
+  new Set(['1,1', '2,1', '3,1', '2,2', '1,3', '2,3', '3,3']), // center bridge
+  new Set(['1,1', '1,2', '1,3', '2,1', '2,3', '3,1', '3,2', '3,3']), // top+bottom bars
+  new Set(['1,1', '3,1', '2,2', '1,3', '3,3']), // X-cross
+  new Set(['2,1', '1,2', '3,2', '2,3']), // plus motif
+  new Set(['1,1', '2,1', '2,2', '2,3', '3,3']), // diagonal sweep
 ];
 
 export function DotmCircular15({
@@ -32,21 +29,25 @@ export function DotmCircular15({
   ...rest
 }: DotmCircular15Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const animPhase = useCyclePhase({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1680,
-    speed
+    speed,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ row, col, phase }) => {
       if (!isWithinCircularMask(row, col)) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const x = col - 2;
@@ -54,7 +55,7 @@ export function DotmCircular15({
       const ring = Math.sqrt(x * x + y * y);
       const count = BRAILLE_PHASES.length;
       const phaseIndex =
-        reducedMotion || phase === "idle"
+        reducedMotion || phase === 'idle'
           ? 0
           : (() => {
               const t = Number.isFinite(animPhase) ? animPhase : 0;

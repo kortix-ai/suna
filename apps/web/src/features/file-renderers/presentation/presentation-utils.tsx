@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { errorToast, infoToast, successToast } from '@/components/ui/toast';
+import type { UiTranslator } from '@/i18n/translator';
 import { getEnv } from '@/lib/env-config';
 import {
   buildPresentationTemplateImageUrl,
@@ -80,6 +81,7 @@ export function createPresentationViewerToolContent(
   presentationName: string,
   filePath: string,
   slideNumber: number,
+  tI18nComplete: UiTranslator,
 ): string {
   // PresentationViewer expects presentation_path to be the directory, not the file
   // e.g., "presentations/mypresentation" not "presentations/mypresentation/slide_01.html"
@@ -92,7 +94,7 @@ export function createPresentationViewerToolContent(
     slide_number: slideNumber,
     slide_file: filePath,
     presentation_title: presentationName,
-    message: `Slide ${slideNumber} edited successfully`,
+    message: tI18nComplete('text854a397472d0', { value0: slideNumber }),
   };
 
   return JSON.stringify(toolOutput);
@@ -129,6 +131,7 @@ export async function downloadPresentation(
   sandboxUrl: string,
   presentationPath: string,
   presentationName: string,
+  tI18nComplete: UiTranslator,
 ): Promise<void> {
   try {
     if (format === DownloadFormat.GOOGLE_SLIDES) {
@@ -136,15 +139,18 @@ export async function downloadPresentation(
     }
     const blob = await convertRuntimePresentation(format, sandboxUrl, presentationPath, {
       onGenerating: () => {
-        infoToast(`Generating ${format.toUpperCase()}… this can take a moment for large decks`, {
+        infoToast(tI18nComplete('text72662e145fd4', { value0: format.toUpperCase() }), {
           duration: 6000,
         });
       },
     });
     saveBlob(blob, `${presentationName}.${format}`);
-    successToast(`Downloaded ${presentationName} as ${format.toUpperCase()}`, {
-      duration: 8000,
-    });
+    successToast(
+      tI18nComplete('text979f490e2ae0', { value0: presentationName, value1: format.toUpperCase() }),
+      {
+        duration: 8000,
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[downloadPresentation] Error downloading ${format}:`, error);
@@ -153,7 +159,20 @@ export async function downloadPresentation(
   }
 }
 
-export const handleGoogleAuth = async (presentationPath: string, sandboxUrl: string) => {
+export interface GoogleSlidesMessages {
+  authFailed: string;
+  redirecting: string;
+  uploaded: string;
+  openInSlides: string;
+  authenticateFirst: string;
+  uploadFailed: string;
+}
+
+export const handleGoogleAuth = async (
+  presentationPath: string,
+  sandboxUrl: string,
+  messages: GoogleSlidesMessages,
+) => {
   try {
     // Store intent to upload to Google Slides after OAuth
     sessionStorage.setItem(
@@ -173,11 +192,16 @@ export const handleGoogleAuth = async (presentationPath: string, sandboxUrl: str
     }
   } catch (error) {
     console.error('Error initiating Google auth:', error);
-    errorToast('Failed to initiate Google authentication');
+    errorToast(messages.authFailed);
   }
 };
 
-export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationPath: string) => {
+export const handleGoogleSlidesUpload = async (
+  sandboxUrl: string,
+  presentationPath: string,
+  messages: GoogleSlidesMessages,
+  tI18nComplete: UiTranslator,
+) => {
   if (!sandboxUrl || !presentationPath) {
     throw new Error('Missing required parameters');
   }
@@ -186,29 +210,27 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
     const result = await convertPresentationToGoogleSlides(presentationPath, sandboxUrl);
 
     if (!result.success && !result.is_api_enabled) {
-      infoToast('Redirecting to Google authentication...', {
+      infoToast(messages.redirecting, {
         duration: 3000,
       });
-      handleGoogleAuth(presentationPath, sandboxUrl);
+      handleGoogleAuth(presentationPath, sandboxUrl, messages);
       return {
         success: false,
         redirected_to_auth: true,
-        message: 'Redirecting to Google authentication',
+        message: tI18nComplete.raw('text66e4abf0a3a3'),
       };
     }
 
     if (result.google_slides_url) {
       // Always show rich success toast - this is universal
-      successToast('🎉 Presentation uploaded successfully!', {
+      successToast(messages.uploaded, {
         button: (
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
-              window.open(result.google_slides_url, '_blank', 'noopener,noreferrer')
-            }
+            onClick={() => window.open(result.google_slides_url, '_blank', 'noopener,noreferrer')}
           >
-            Open in Google Slides
+            {messages.openInSlides}
           </Button>
         ),
         duration: 20000,
@@ -220,7 +242,7 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
       return {
         success: true,
         google_slides_url: result.google_slides_url,
-        message: `"${presentationName}" uploaded successfully`,
+        message: tI18nComplete('text7c2e0b8b96cb', { value0: presentationName }),
       };
     }
 
@@ -231,9 +253,9 @@ export const handleGoogleSlidesUpload = async (sandboxUrl: string, presentationP
 
     // Show error toasts - this is also universal
     if (error instanceof Error && error.message.includes('not authenticated')) {
-      errorToast('Please authenticate with Google first');
+      errorToast(messages.authenticateFirst);
     } else {
-      errorToast('Failed to upload to Google Slides');
+      errorToast(messages.uploadFailed);
     }
 
     // Re-throw for any calling code that needs to handle it

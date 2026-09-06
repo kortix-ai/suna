@@ -1,6 +1,7 @@
 'use client';
 
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { KortixLogo } from '@/components/ui/kortix-logo';
 import { TextShimmer } from '@/components/ui/text-shimmer';
@@ -58,6 +59,7 @@ export function WorkspaceHandoff({
    *  exists, so the escape hatch is not rendered at all rather than disabled. */
   projectId: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const reduceMotion = useReducedMotion();
 
   return (
@@ -80,7 +82,7 @@ export function WorkspaceHandoff({
         transition={CAPTION_IN}
       >
         <TextShimmer>
-          {workspaceName ? `Creating ${workspaceName}` : 'Opening your workspace'}
+          {workspaceName ? `Creating ${workspaceName}` : tI18nComplete.raw('textbc3528a9d83c')}
         </TextShimmer>
       </m.div>
     </div>

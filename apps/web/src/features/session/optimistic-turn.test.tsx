@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
-import { NextIntlClientProvider } from 'next-intl';
+import { NextIntlClientProvider } from '@/i18n/use-translations';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { OptimisticTurn } from './optimistic-turn';
@@ -58,7 +58,13 @@ describe('OptimisticTurn', () => {
 
   test('unfolds upload refs into file cards, never raw XML', () => {
     const text = buildOptimisticPromptTextWithUploads('look at this', [
-      { kind: 'remote', url: 'https://x/y', mime: 'image/png', filename: '/workspace/shot.png', isImage: true },
+      {
+        kind: 'remote',
+        url: 'https://x/y',
+        mime: 'image/png',
+        filename: '/workspace/shot.png',
+        isImage: true,
+      },
     ]);
     const markup = render(<OptimisticTurn text={text} />);
     expect(markup).toContain('look at this');
@@ -82,7 +88,13 @@ describe('OptimisticTurn', () => {
     // tile surface must stay identical across the shell → chat crossfade or the
     // thread reflows under the handover.
     const text = buildOptimisticPromptTextWithUploads('with a file', [
-      { kind: 'remote', url: 'https://x/y', mime: 'image/png', filename: '/workspace/a.png', isImage: true },
+      {
+        kind: 'remote',
+        url: 'https://x/y',
+        mime: 'image/png',
+        filename: '/workspace/a.png',
+        isImage: true,
+      },
     ]);
     const shell = render(<OptimisticTurn text={text} deferPreview />);
     const chat = render(<OptimisticTurn text={text} />);
@@ -92,9 +104,7 @@ describe('OptimisticTurn', () => {
       expect(chat).toContain(box);
     }
     // Both still open with the same bubble and close with the same waiting row.
-    expect(shell.slice(0, shell.indexOf('size-20'))).toBe(
-      chat.slice(0, chat.indexOf('size-20')),
-    );
+    expect(shell.slice(0, shell.indexOf('size-20'))).toBe(chat.slice(0, chat.indexOf('size-20')));
     expect(shell).toContain('Thinking');
     expect(chat).toContain('Thinking');
   });

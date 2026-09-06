@@ -53,7 +53,9 @@ describe('sandbox alert — controls are IAM-gated, the message is not', () => {
     // And it is a Button, not body-coloured text. Styled `text-muted-foreground
     // text-xs p-0` it was character-for-character the copy beside it, and sat
     // above the title row reading as a stranded caption.
-    expect(code).toContain('<Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>');
+    expect(code).toContain(
+      '<Button asChild size="sm" variant="outline" className={ACTION_BUTTON}>',
+    );
     expect(code).not.toContain('DETAILS_LINK');
   });
 

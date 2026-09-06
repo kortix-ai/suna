@@ -1,7 +1,7 @@
 'use client';
 
 import { CaretRightIcon, WarningIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -9,9 +9,9 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { Progress } from '@/components/ui/progress';
 import { STATUS_DOT, STATUS_TEXT, type StatusTone } from '@/components/ui/status';
 
-import { ContextRing } from './context-ring';
 import { cn } from '@/lib/utils';
 import type { MessageWithParts } from '@kortix/sdk/react';
+import { ContextRing } from './context-ring';
 
 import type { FlatModel } from '../model-flatten';
 
@@ -341,7 +341,10 @@ export function ContextUsageCard({
 
       {tip ? (
         <p className="text-muted-foreground flex gap-1.5 text-xs text-pretty">
-          <WarningIcon weight="fill" className={cn('mt-0.5 size-3.5 shrink-0', STATUS_TEXT[tone])} />
+          <WarningIcon
+            weight="fill"
+            className={cn('mt-0.5 size-3.5 shrink-0', STATUS_TEXT[tone])}
+          />
           <span>{tip}</span>
         </p>
       ) : null}

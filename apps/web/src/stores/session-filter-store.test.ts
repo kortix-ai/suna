@@ -19,7 +19,7 @@ import {
 } from './session-filter-store';
 
 const P = 'project-1';
-const read = <T,>(selector: (s: ReturnType<typeof useSessionFilterStore.getState>) => T): T =>
+const read = <T>(selector: (s: ReturnType<typeof useSessionFilterStore.getState>) => T): T =>
   selector(useSessionFilterStore.getState());
 
 beforeEach(() => {

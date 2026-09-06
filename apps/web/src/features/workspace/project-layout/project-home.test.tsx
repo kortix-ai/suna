@@ -2,9 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
-
-
 const source = readFileSync(fileURLToPath(new URL('./project-home.tsx', import.meta.url)), 'utf8');
 const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 

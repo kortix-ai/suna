@@ -2,6 +2,7 @@
 
 import { createConnector, getConnectorConfig, type AdminConnector } from '@kortix/sdk';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -41,6 +42,7 @@ export function ComputerConnectorAccount({
   canWrite: boolean;
   onChanged: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const configQuery = useQuery({
     queryKey: ['connector-config', projectId, connector.slug],
@@ -59,15 +61,14 @@ export function ComputerConnectorAccount({
         tunnel_ids: normalizeMachineSelection(selectedIds),
       }),
     onSuccess: () => {
-      successToast('Computer Tunnel assignments saved');
+      successToast(tI18nComplete.raw('texte113af6b6913'));
       setSelection(null);
       void queryClient.invalidateQueries({
         queryKey: ['connector-config', projectId, connector.slug],
       });
       onChanged();
     },
-    onError: (error: Error) =>
-      errorToast(error.message || 'Failed to save Computer Tunnel assignments'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('text465e15da7bba')),
   });
 
   if (configQuery.isLoading) {
@@ -77,11 +78,11 @@ export function ComputerConnectorAccount({
     return (
       <ErrorState
         size="sm"
-        title="Couldn’t load Computer Tunnel assignments"
+        title={tI18nComplete.raw('textf6d0f6c23cc4')}
         description={(configQuery.error as Error).message}
         action={
           <Button variant="outline" size="sm" onClick={() => void configQuery.refetch()}>
-            Retry
+            {tI18nComplete.raw('text942087cc2d41')}
           </Button>
         }
       />
@@ -92,10 +93,9 @@ export function ComputerConnectorAccount({
   return (
     <section className="space-y-4">
       <div className="space-y-1">
-        <Label>Assigned machines</Label>
+        <Label>{tI18nComplete.raw('textc9ebef5b7729')}</Label>
         <p className="text-muted-foreground text-xs text-pretty">
-          Pair, inspect, and select machines here. Agents can list and target only the selected
-          machines.
+          {tI18nComplete.raw('textac6b2a0cfa8e')}
         </p>
       </div>
 
@@ -116,7 +116,7 @@ export function ComputerConnectorAccount({
               disabled={save.isPending}
               onClick={() => setSelection(null)}
             >
-              Reset
+              {tI18nComplete.raw('textdaee7606b339')}
             </Button>
           ) : null}
           <Button
@@ -125,7 +125,7 @@ export function ComputerConnectorAccount({
             onClick={() => save.mutate()}
           >
             {save.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            Save assignments
+            {tI18nComplete.raw('text79af590ff652')}
           </Button>
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { MarketplaceItem } from '@/lib/marketplace-client';
 import {
   buildMarketplaceGridRows,
   flattenMarketplaceItems,
@@ -10,7 +11,6 @@ import {
   shouldVirtualizeMarketplacePagedGrid,
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
-import type { MarketplaceItem } from '@/lib/marketplace-client';
 
 function makeItems(type: string, ids: string[]): MarketplaceItem[] {
   return ids.map((id) => ({ id, type, name: id, title: id }) as unknown as MarketplaceItem);

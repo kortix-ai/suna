@@ -49,8 +49,25 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 /** Exactly the fields this list reads — nothing else from `KortixAccount`. */
 export type AccountMembership = Pick<KortixAccount, 'account_id' | 'name' | 'account_role'>;
 
-/** Matches `workspace-grouping.ts`'s fallback: a row never renders blank. */
-const FALLBACK_ACCOUNT_NAME = 'Account';
+export interface AccountMembershipsCopy {
+  title: string;
+  description: string;
+  fallbackAccountName: string;
+  owner: string;
+  admin: string;
+  member: string;
+  manage: string;
+}
+
+export const DEFAULT_ACCOUNT_MEMBERSHIPS_COPY: AccountMembershipsCopy = {
+  title: 'Organizations',
+  description: "Members, billing, roles, and audit live in each organization's own settings.",
+  fallbackAccountName: 'Account',
+  owner: 'Owner',
+  admin: 'Admin',
+  member: 'Member',
+  manage: 'Manage',
+};
 
 /**
  * The row's second line: the caller's role in that account.
@@ -60,14 +77,17 @@ const FALLBACK_ACCOUNT_NAME = 'Account';
  * an absent or unrecognized value returns `undefined` and the row renders with
  * no description rather than the literal string it was handed.
  */
-export function accountRoleLabel(role: string | null | undefined): string | undefined {
+export function accountRoleLabel(
+  role: string | null | undefined,
+  copy: AccountMembershipsCopy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
+): string | undefined {
   switch (role) {
     case 'owner':
-      return 'Owner';
+      return copy.owner;
     case 'admin':
-      return 'Admin';
+      return copy.admin;
     case 'member':
-      return 'Member';
+      return copy.member;
     default:
       return undefined;
   }
@@ -76,6 +96,7 @@ export function accountRoleLabel(role: string | null | undefined): string | unde
 export interface AccountMembershipsSectionProps {
   accounts?: readonly AccountMembership[];
   isLoading?: boolean;
+  copy?: AccountMembershipsCopy;
 }
 
 /**
@@ -86,16 +107,14 @@ export interface AccountMembershipsSectionProps {
 export function AccountMembershipsSection({
   accounts = [],
   isLoading = false,
+  copy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
 }: AccountMembershipsSectionProps) {
   // Nothing, not a heading over an empty box — see this file's header.
   if (!isLoading && accounts.length === 0) return null;
 
   return (
     <section className="space-y-3">
-      <SettingsSubsectionHeader
-        title="Organizations"
-        description="Members, billing, roles, and audit live in each organization's own settings."
-      />
+      <SettingsSubsectionHeader title={copy.title} description={copy.description} />
 
       <SettingsRowGroup>
         {isLoading ? (
@@ -109,11 +128,11 @@ export function AccountMembershipsSection({
           accounts.map((account) => (
             <SettingsRow
               key={account.account_id}
-              label={account.name?.trim() || FALLBACK_ACCOUNT_NAME}
-              description={accountRoleLabel(account.account_role)}
+              label={account.name?.trim() || copy.fallbackAccountName}
+              description={accountRoleLabel(account.account_role, copy)}
             >
               <Button asChild variant="outline" size="sm">
-                <Link href={`/accounts/${account.account_id}`}>Manage</Link>
+                <Link href={`/accounts/${account.account_id}`}>{copy.manage}</Link>
               </Button>
             </SettingsRow>
           ))

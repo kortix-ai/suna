@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 // Self-host: one coherent "managed-git" setup card covering all three ways
 // to configure it — create a GitHub App in-app (manifest flow, recommended),
 // paste in credentials for an App that already exists, or a personal/
@@ -157,6 +159,8 @@ interface GitHubAppSetupCardProps {
 }
 
 export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const setupMethods = useLocalizedUiCatalog(SETUP_METHODS);
   const queryClient = useQueryClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -187,7 +191,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally only reacts to the `github` flag — re-running on every searchParams/queryClient identity change (incl. our own replace() below) would loop.
   useEffect(() => {
     if (githubReturnFlag !== 'connected') return;
-    successToast('GitHub connected');
+    successToast(tI18nComplete.raw('text62cbe80fb119'));
     const next = new URLSearchParams(searchParams.toString());
     next.delete('github');
     const qs = next.toString();
@@ -204,9 +208,8 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       if (!manifest || typeof manifest.url !== 'string' || !manifest.url.startsWith('http')) {
         // eslint-disable-next-line no-console
         console.error('[github-app] manifest is malformed, not submitting:', manifest);
-        errorToast('GitHub setup failed', {
-          description:
-            'The app manifest came back without a valid homepage URL. Retry, or use the token option below.',
+        errorToast(tI18nComplete.raw('textf2c3996c2fc5'), {
+          description: tI18nComplete.raw('text378665754d2d'),
         });
         return;
       }
@@ -214,7 +217,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       console.debug('[github-app] submitting manifest to GitHub:', manifest);
       submitManifestForm(github_create_url, state, manifest);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to start GitHub App setup'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text1db8b5fa8eb7')),
   });
 
   function onSetupSuccess(message: string) {
@@ -240,7 +243,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       setAppClientSecret('');
       onSetupSuccess('GitHub App connected');
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect the GitHub App'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text66caa493b364')),
   });
 
   const patMutation = useMutation({
@@ -250,18 +253,18 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       setPatOwner('');
       onSetupSuccess('GitHub token connected');
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to connect the token'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6b4d673c26ae')),
   });
 
   const disconnectMutation = useMutation({
     mutationFn: () => disconnectGitHubApp(),
     onSuccess: () => {
-      successToast('GitHub disconnected');
+      successToast(tI18nComplete.raw('text06993786f49e'));
       setConfirmDisconnectOpen(false);
       setReconfiguring(false);
       queryClient.invalidateQueries({ queryKey: GITHUB_APP_STATUS_KEY });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to disconnect GitHub'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6e9715f4f2a9')),
   });
 
   if (!canManage) return null;
@@ -302,11 +305,11 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
         <div className="bg-popover rounded-md border px-4 py-5">
           <ErrorState
             size="sm"
-            title="Couldn't load GitHub status"
+            title={tI18nComplete.raw('text4d37c559e4b7')}
             description={err?.message || undefined}
             action={
               <Button variant="outline" size="sm" onClick={() => statusQuery.refetch()}>
-                Retry
+                {tI18nComplete.raw('text942087cc2d41')}
               </Button>
             }
           />
@@ -326,24 +329,24 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
           <>
             {status.configured ? (
               <Badge variant="success" size="sm">
-                Connected
+                {tI18nComplete.raw('text22965568d22a')}
               </Badge>
             ) : (
               <Badge variant="muted" size="sm">
-                Not connected
+                {tI18nComplete.raw('text0303e1824670')}
               </Badge>
             )}
             {status.configured && status.source === 'env' ? (
               <Badge variant="muted" size="sm">
-                Environment
+                {tI18nComplete.raw('text9e471951a1b4')}
               </Badge>
             ) : null}
           </>
         }
         description={
           status.configured
-            ? 'Powers repository creation and pushes for every project on this instance.'
-            : 'Every Kortix project is a git repository the server creates and pushes to on your behalf. Connect GitHub once here to enable projects.'
+            ? tI18nComplete.raw('texta08beb1fae8b')
+            : tI18nComplete.raw('textf4a0f0ba4a27')
         }
         action={
           reconfiguring ? (
@@ -355,7 +358,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
               disabled={anyPending}
               onClick={() => setReconfiguring(false)}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
           ) : null
         }
@@ -364,8 +367,12 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       {showSetup ? (
         <div className="space-y-3">
           {reconfiguring ? (
-            <InfoBanner tone="warning" icon={WarningIcon} title="Replacing the current connection">
-              The connection you have now keeps working until a replacement is saved.
+            <InfoBanner
+              tone="warning"
+              icon={WarningIcon}
+              title={tI18nComplete.raw('text8f0059a35e90')}
+            >
+              {tI18nComplete.raw('text4795dc5fb288')}
             </InfoBanner>
           ) : null}
 
@@ -376,10 +383,10 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
           <RadioGroup
             value={method}
             onValueChange={(value) => setMethod(value as SetupMethod)}
-            aria-label="How Kortix authenticates to GitHub"
+            aria-label={tI18nComplete.raw('text0a53eddc090c')}
             className="bg-popover divide-border gap-0 divide-y overflow-hidden rounded-md border"
           >
-            {SETUP_METHODS.map((entry) => (
+            {setupMethods.map((entry) => (
               // Controlled with no `onOpenChange` on purpose: the radio owns
               // `method`, and `method` owns every row's open state. A toggle
               // here would be a second source of truth for the same fact.
@@ -398,7 +405,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                       {entry.title}
                       {entry.recommended ? (
                         <Badge variant="highlight" size="xs">
-                          Recommended
+                          {tI18nComplete.raw('textd70604e84304')}
                         </Badge>
                       ) : null}
                     </span>
@@ -410,26 +417,24 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                   {entry.id === 'manifest' ? (
                     <div className="space-y-4 px-4 py-5">
                       <p className="text-muted-foreground text-xs leading-relaxed">
-                        GitHub opens next: you confirm the App, choose which repositories it may
-                        access, and land back here connected.
+                        {tI18nComplete.raw('textfd49dcc8d164')}
                       </p>
                       <div className="space-y-1.5">
                         <Label htmlFor={`${fieldId}-org`} className="text-xs">
-                          GitHub organization (optional)
+                          {tI18nComplete.raw('text1f3073c23e1e')}
                         </Label>
                         <Input
                           id={`${fieldId}-org`}
                           value={org}
                           onChange={(e) => setOrg(e.target.value)}
-                          placeholder="e.g. acme-inc"
+                          placeholder={tI18nComplete.raw('text6f24f840d748')}
                           disabled={startMutation.isPending}
                           autoComplete="off"
                           spellCheck={false}
                           variant="popover"
                         />
                         <p className="text-muted-foreground text-xs">
-                          Leave blank to create the App under your personal GitHub account instead
-                          of an organization.
+                          {tI18nComplete.raw('text49e1b64b0981')}
                         </p>
                       </div>
                       <Button
@@ -444,7 +449,9 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                         ) : (
                           <Github className="size-4" />
                         )}
-                        {startMutation.isPending ? 'Redirecting to GitHub' : 'Create GitHub App'}
+                        {startMutation.isPending
+                          ? tI18nComplete.raw('text608ed1284584')
+                          : tI18nComplete.raw('textd1b4e98ecd9b')}
                       </Button>
                     </div>
                   ) : null}
@@ -453,7 +460,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                     <div className="space-y-4 px-4 py-5">
                       <div className="space-y-1.5">
                         <Label htmlFor={`${fieldId}-app-id`} className="text-xs">
-                          App ID
+                          {tI18nComplete.raw('text3c2f1e20ab37')}
                         </Label>
                         <Input
                           id={`${fieldId}-app-id`}
@@ -466,18 +473,18 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                           variant="popover"
                         />
                         <p className="text-muted-foreground text-xs">
-                          On the App&apos;s GitHub settings page, under About.
+                          {tI18nComplete.raw('text961c25e7d44b')}
                         </p>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`${fieldId}-pem`} className="text-xs">
-                          Private key (PEM)
+                          {tI18nComplete.raw('text1a5ad9860afa')}
                         </Label>
                         <Textarea
                           id={`${fieldId}-pem`}
                           value={appPrivateKey}
                           onChange={(e) => setAppPrivateKey(e.target.value)}
-                          placeholder="-----BEGIN RSA PRIVATE KEY-----"
+                          placeholder={tI18nComplete.raw('text8bcac7908eb9')}
                           disabled={appMutation.isPending}
                           rows={5}
                           autoComplete="off"
@@ -485,13 +492,12 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                           className="resize-y font-mono text-xs"
                         />
                         <p className="text-muted-foreground text-xs">
-                          The whole file, including both header lines. Stored encrypted and never
-                          shown again.
+                          {tI18nComplete.raw('text8e4a53297966')}
                         </p>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`${fieldId}-installation-id`} className="text-xs">
-                          Installation ID
+                          {tI18nComplete.raw('texta20e85bba3cf')}
                         </Label>
                         <Input
                           id={`${fieldId}-installation-id`}
@@ -504,42 +510,39 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                           variant="popover"
                         />
                         <p className="text-muted-foreground text-xs">
-                          The last path segment of the App&apos;s installation URL:{' '}
-                          <span className="font-mono">
-                            github.com/settings/installations/&lt;id&gt;
-                          </span>
+                          {tI18nComplete.raw('textc5d595a751bb')}{' '}
+                          <span className="font-mono">{tI18nComplete.raw('text2829444ea003')}</span>
                         </p>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`${fieldId}-client-id`} className="text-xs">
-                          Client ID (optional)
+                          {tI18nComplete.raw('text4c9c57419990')}
                         </Label>
                         <Input
                           id={`${fieldId}-client-id`}
                           value={appClientId}
                           onChange={(e) => setAppClientId(e.target.value)}
-                          placeholder="Iv1.xxxxxxxxxxxxxxxx"
+                          placeholder={tI18nComplete.raw('text8a8dc78e312d')}
                           disabled={appMutation.isPending}
                           autoComplete="off"
                           spellCheck={false}
                           variant="popover"
                         />
                         <p className="text-muted-foreground text-xs">
-                          From the App&apos;s GitHub settings page, under General →{' '}
-                          &quot;Client secrets&quot;. Without this, members can&apos;t link an
-                          account to this App from Kortix.
+                          {tI18nComplete.raw('textd515f678c881')}{' '}
+                          {tI18nComplete.raw('textf93df3dc0e07')}
                         </p>
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor={`${fieldId}-client-secret`} className="text-xs">
-                          Client secret (optional)
+                          {tI18nComplete.raw('text4a93cfc32f25')}
                         </Label>
                         <Input
                           id={`${fieldId}-client-secret`}
                           type="password"
                           value={appClientSecret}
                           onChange={(e) => setAppClientSecret(e.target.value)}
-                          placeholder="Generate a new client secret on the same page"
+                          placeholder={tI18nComplete.raw('textbde68b612323')}
                           disabled={appMutation.isPending}
                           autoComplete="off"
                           spellCheck={false}
@@ -563,7 +566,9 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                         ) : (
                           <FileCode2 className="size-4" />
                         )}
-                        {appMutation.isPending ? 'Connecting' : 'Connect App'}
+                        {appMutation.isPending
+                          ? 'Connecting'
+                          : tI18nComplete.raw('textf4ea27b929c2')}
                       </Button>
                     </div>
                   ) : null}
@@ -576,57 +581,50 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                             gives no hint which setting was wrong. */}
                       <div className="space-y-3 px-4 py-4">
                         <p className="text-foreground text-xs font-medium">
-                          Token settings that make this work
+                          {tI18nComplete.raw('text4519df68f5f4')}
                         </p>
                         <dl className="space-y-2 text-xs">
                           <div className="sm:flex sm:gap-3">
                             <dt className="text-muted-foreground sm:w-[8.5rem] sm:shrink-0">
-                              Resource owner
+                              {tI18nComplete.raw('textf8abf0bf6188')}
                             </dt>
                             <dd className="text-foreground leading-relaxed">
-                              The user or org that should own project repos — must match the owner
-                              field below.
+                              {tI18nComplete.raw('textde7c5922d6eb')}
                             </dd>
                           </div>
                           <div className="sm:flex sm:gap-3">
                             <dt className="text-muted-foreground sm:w-[8.5rem] sm:shrink-0">
-                              Repository access
+                              {tI18nComplete.raw('text3e3d7edf97ee')}
                             </dt>
                             <dd className="text-foreground leading-relaxed">
-                              All repositories — Kortix creates a new repo per project, so a fixed
-                              repo list cannot cover future ones.
+                              {tI18nComplete.raw('text76f2a71948f3')}
                             </dd>
                           </div>
                           <div className="sm:flex sm:gap-3">
                             <dt className="text-muted-foreground sm:w-[8.5rem] sm:shrink-0">
-                              Permissions
+                              {tI18nComplete.raw('textabccc78cc93c')}
                             </dt>
                             <dd className="text-foreground leading-relaxed">
-                              Administration — Read and write (create repos, manage collaborators).
-                              Contents — Read and write (push, pull, branches). Metadata: Read is
-                              added automatically. Nothing else.
+                              {tI18nComplete.raw('textf51ad0b730d4')}
                             </dd>
                           </div>
                         </dl>
                         <p className="text-muted-foreground text-xs leading-relaxed">
-                          Create it under GitHub → Settings → Developer settings → Fine-grained
-                          tokens. Do not paste your everyday personal token. Org tokens may also
-                          need approval under the org&apos;s Settings → Third-party Access →
-                          Personal access tokens.
+                          {tI18nComplete.raw('textfb43a788ba7b')}
                         </p>
                       </div>
 
                       <div className="space-y-4 px-4 py-5">
                         <div className="space-y-1.5">
                           <Label htmlFor={`${fieldId}-pat`} className="text-xs">
-                            Personal / fine-grained access token
+                            {tI18nComplete.raw('text29df79f4ec6d')}
                           </Label>
                           <Input
                             id={`${fieldId}-pat`}
                             type="password"
                             value={patToken}
                             onChange={(e) => setPatToken(e.target.value)}
-                            placeholder="github_pat_..."
+                            placeholder={tI18nComplete.raw('text94238580b1b0')}
                             disabled={patMutation.isPending}
                             autoComplete="off"
                             spellCheck={false}
@@ -635,20 +633,20 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                         </div>
                         <div className="space-y-1.5">
                           <Label htmlFor={`${fieldId}-pat-owner`} className="text-xs">
-                            GitHub owner (user or org)
+                            {tI18nComplete.raw('text4c53d51e3182')}
                           </Label>
                           <Input
                             id={`${fieldId}-pat-owner`}
                             value={patOwner}
                             onChange={(e) => setPatOwner(e.target.value)}
-                            placeholder="e.g. acme-inc"
+                            placeholder={tI18nComplete.raw('text6f24f840d748')}
                             disabled={patMutation.isPending}
                             autoComplete="off"
                             spellCheck={false}
                             variant="popover"
                           />
                           <p className="text-muted-foreground text-xs">
-                            Must match the token&apos;s resource owner exactly.
+                            {tI18nComplete.raw('text1903bc11a8e9')}
                           </p>
                         </div>
                         <Button
@@ -663,7 +661,9 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                           ) : (
                             <KeyRound className="size-4" />
                           )}
-                          {patMutation.isPending ? 'Connecting' : 'Connect token'}
+                          {patMutation.isPending
+                            ? 'Connecting'
+                            : tI18nComplete.raw('textcc37009888e3')}
                         </Button>
                       </div>
                     </div>
@@ -685,12 +685,12 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-foreground truncate text-sm font-medium">
-                {status.owner ?? 'Managed GitHub'}
+                {status.owner ?? tI18nComplete.raw('text5387a784de3a')}
               </p>
-              <p className="text-muted-foreground text-pretty text-xs leading-relaxed">
+              <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
                 {status.source === 'pat'
-                  ? 'New project repositories are created under this owner with the stored access token.'
-                  : 'New project repositories are created under this account by the GitHub App.'}
+                  ? tI18nComplete.raw('text438e8341dabf')
+                  : tI18nComplete.raw('text6f51d7ca1b48')}
               </p>
             </div>
           </div>
@@ -698,14 +698,18 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
           {/* Facts: one label per value, so nothing floats unexplained. */}
           <dl className="border-border grid gap-x-8 gap-y-4 border-t px-4 py-4 sm:grid-cols-2">
             <div className="min-w-0">
-              <dt className="text-muted-foreground text-xs">Authentication</dt>
+              <dt className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text66880d2d8216')}
+              </dt>
               <dd className="text-foreground mt-1 truncate text-xs font-medium">
                 {methodLabel(status.source)}
               </dd>
             </div>
             {status.slug ? (
               <div className="min-w-0">
-                <dt className="text-muted-foreground text-xs">GitHub App</dt>
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('texte53bb01e5503')}
+                </dt>
                 <dd className="mt-1">
                   <a
                     href={`https://github.com/apps/${status.slug}`}
@@ -721,7 +725,9 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
             ) : null}
             {status.installation_id ? (
               <div className="min-w-0">
-                <dt className="text-muted-foreground text-xs">Installation</dt>
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('textc3fc54aa5390')}
+                </dt>
                 <dd className="text-foreground mt-1 truncate font-mono text-xs tabular-nums">
                   {status.installation_id}
                 </dd>
@@ -729,12 +735,11 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
             ) : null}
             {!status.oauth_configured ? (
               <div className="min-w-0 sm:col-span-2">
-                <dt className="text-muted-foreground text-xs">Account linking</dt>
-                <dd className="text-muted-foreground mt-1 text-pretty text-xs leading-relaxed">
-                  No OAuth client configured for this App — members can&apos;t use &quot;Continue
-                  with GitHub&quot; to link an existing installation to their account. Add a Client
-                  ID and secret via Reconfigure, or set
-                  KORTIX_GITHUB_APP_CLIENT_ID/KORTIX_GITHUB_APP_CLIENT_SECRET.
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('texte1f0d6f4fe26')}
+                </dt>
+                <dd className="text-muted-foreground mt-1 text-xs leading-relaxed text-pretty">
+                  {tI18nComplete.raw('text8795b764ac98')}
                 </dd>
               </div>
             ) : null}
@@ -743,8 +748,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
           <div className="border-border border-t px-4 py-3">
             {status.source === 'env' ? (
               <p className="text-muted-foreground text-xs leading-relaxed">
-                Configured by environment variables on the server. Change or remove this connection
-                by updating those variables and restarting the API.
+                {tI18nComplete.raw('textfe2edea70871')}
               </p>
             ) : (
               <div className="flex flex-wrap items-center justify-end gap-2">
@@ -754,7 +758,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                   size="sm"
                   onClick={() => setReconfiguring(true)}
                 >
-                  Reconfigure
+                  {tI18nComplete.raw('text7458d4f300eb')}
                 </Button>
                 <Button
                   type="button"
@@ -763,7 +767,7 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
                   className="text-destructive hover:text-destructive"
                   onClick={() => setConfirmDisconnectOpen(true)}
                 >
-                  Disconnect
+                  {tI18nComplete.raw('textacfc5be785a9')}
                 </Button>
               </div>
             )}
@@ -774,9 +778,9 @@ export function GitHubAppSetupCard({ canManage }: GitHubAppSetupCardProps) {
       <ConfirmDialog
         open={confirmDisconnectOpen}
         onOpenChange={setConfirmDisconnectOpen}
-        title="Disconnect GitHub?"
-        description="Projects that already have a repo keep working, but Kortix won't be able to create new managed repos until you reconnect."
-        confirmLabel="Disconnect"
+        title={tI18nComplete.raw('text45380e17ca1a')}
+        description={tI18nComplete.raw('text78d14cc87b89')}
+        confirmLabel={tI18nComplete.raw('textacfc5be785a9')}
         confirmVariant="destructive"
         onConfirm={() => disconnectMutation.mutate()}
         isPending={disconnectMutation.isPending}
@@ -797,11 +801,12 @@ function CardHeading({
   description?: string;
   action?: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex items-start justify-between gap-4">
       <div className="min-w-0 space-y-0.5">
         <p className="text-foreground flex flex-wrap items-center gap-2 text-sm font-medium">
-          Managed GitHub
+          {tI18nComplete.raw('text5387a784de3a')}
           {badges}
         </p>
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{description}</p>

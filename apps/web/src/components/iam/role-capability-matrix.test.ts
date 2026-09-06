@@ -3,6 +3,8 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import type { Permission } from '@/lib/iam-client';
+import type { CapabilityScope } from './role-capability-matrix';
 import {
   applyBulk,
   applyCell,
@@ -12,8 +14,6 @@ import {
   foldSelection,
   unmappedLeaves,
 } from './role-capability-matrix';
-import type { CapabilityScope } from './role-capability-matrix';
-import type { Permission } from '@/lib/iam-client';
 
 /**
  * The matrix is a DISPLAY over the same leaf strings the IAM engine reads, so
@@ -32,14 +32,18 @@ const MIGRATIONS_DIR = join(import.meta.dir, '../../../../../packages/db/migrati
  *  tree, in file order. Handles both column orders in use. */
 function seededCatalog(): Permission[] {
   const out = new Map<string, Permission>();
-  for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()) {
+  for (const file of readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
     const inserts = sql.matchAll(
       /INSERT INTO kortix\.permissions\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
     );
     for (const insert of inserts) {
       const columns = insert[1].split(',').map((c) => c.trim().replace(/"/g, ''));
-      for (const row of insert[2].matchAll(/\(([\s\S]*?)\)(?=\s*(?:,\s*\(|\s*ON CONFLICT|\s*$))/gi)) {
+      for (const row of insert[2].matchAll(
+        /\(([\s\S]*?)\)(?=\s*(?:,\s*\(|\s*ON CONFLICT|\s*$))/gi,
+      )) {
         const values = splitValues(row[1]);
         if (values.length !== columns.length) continue;
         const record: Record<string, string> = {};
@@ -78,10 +82,18 @@ function splitValues(body: string): string[] {
       }
       continue;
     }
-    if (ch === "'") { quoted = true; current += ch; continue; }
+    if (ch === "'") {
+      quoted = true;
+      current += ch;
+      continue;
+    }
     if (ch === '(' || ch === '[') depth += 1;
     if (ch === ')' || ch === ']') depth -= 1;
-    if (ch === ',' && depth === 0) { out.push(current.trim()); current = ''; continue; }
+    if (ch === ',' && depth === 0) {
+      out.push(current.trim());
+      current = '';
+      continue;
+    }
     current += ch;
   }
   if (current.trim()) out.push(current.trim());
@@ -110,7 +122,9 @@ const ACCOUNT_LEAVES = CATALOG.filter((p) => p.scope_type === 'account').map((p)
  *  built-in. */
 function seededRolePermissions(): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort()) {
+  for (const file of readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
     for (const block of sql.matchAll(
       /INSERT INTO kortix\.iam_role_actions[\s\S]*?FROM \(VALUES([\s\S]*?)\)\s*AS/gi,
@@ -202,9 +216,7 @@ describe('the area table covers the catalog', () => {
 
   test('every table leaf is a real action in the catalog', () => {
     for (const scope of ['project', 'account'] as const) {
-      const known = new Set(
-        CATALOG.filter((a) => a.resource_type === scope).map((a) => a.action),
-      );
+      const known = new Set(CATALOG.filter((a) => a.resource_type === scope).map((a) => a.action));
       for (const area of buildAreaTable(scope, CATALOG)) {
         for (const leaf of [...area.view, ...area.edit]) {
           expect({ scope, leaf, known: known.has(leaf) }).toEqual({ scope, leaf, known: true });
@@ -289,7 +301,9 @@ describe('cell state', () => {
       edit: 'partial',
       partial: true,
     });
-    expect(foldSelection('project', CATALOG, new Set(roleActions('member', 'project'))).needsAdvanced).toBe(true);
+    expect(
+      foldSelection('project', CATALOG, new Set(roleActions('member', 'project'))).needsAdvanced,
+    ).toBe(true);
   });
 
   test('an area with no leaves on one side reads as off, never partial', () => {
@@ -434,9 +448,9 @@ describe('applyBulk', () => {
 
   test('Edit everything grants the whole project catalog except the admin leaves', () => {
     const next = applyBulk('project', new Set(), 'edit-all', CATALOG);
-    const adminLeaves = CATALOG.filter((p) => p.scope_type === 'project' && p.level === 'admin').map(
-      (p) => p.action,
-    );
+    const adminLeaves = CATALOG.filter(
+      (p) => p.scope_type === 'project' && p.level === 'admin',
+    ).map((p) => p.action);
     expect(adminLeaves.length).toBeGreaterThan(0);
     expect(sorted(next)).toEqual(sorted(PROJECT_LEAVES.filter((a) => !adminLeaves.includes(a))));
   });

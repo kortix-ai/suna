@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { SessionPrompt } from '@kortix/sdk';
+import { describe, expect, test } from 'bun:test';
 import { projectQueueRows } from './queue-projection';
 
 function prompt(overrides: Partial<SessionPrompt> = {}): SessionPrompt {

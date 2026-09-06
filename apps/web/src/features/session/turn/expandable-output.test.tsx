@@ -15,13 +15,7 @@ import { COLLAPSED_MAX_HEIGHT, ExpandableRegion, nextContentHeight } from './exp
  */
 const renderRegion = (props: Partial<React.ComponentProps<typeof ExpandableRegion>> = {}) =>
   renderToStaticMarkup(
-    <ExpandableRegion
-      canExpand
-      expanded={false}
-      onToggle={() => {}}
-      contentHeight={900}
-      {...props}
-    >
+    <ExpandableRegion canExpand expanded={false} onToggle={() => {}} contentHeight={900} {...props}>
       <p>command output</p>
     </ExpandableRegion>,
   );

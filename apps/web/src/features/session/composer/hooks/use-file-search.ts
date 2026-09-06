@@ -177,10 +177,7 @@ export function isMenuOpenTransition(wasOpen: boolean, isOpen: boolean): boolean
  * reshuffle of `useOpenCodeAgents`'s branching can't repeat this silently.
  */
 export function menuRevalidationKeys(projectId?: string | null): QueryKey[] {
-  const keys: QueryKey[] = [
-    runtimeKeys.agents().slice(0, -1),
-    runtimeKeys.commands().slice(0, -1),
-  ];
+  const keys: QueryKey[] = [runtimeKeys.agents().slice(0, -1), runtimeKeys.commands().slice(0, -1)];
   if (projectId) {
     keys.push([...qk.project.detail(projectId), 'agents']);
   }
