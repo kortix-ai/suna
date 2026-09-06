@@ -157,6 +157,8 @@ run_suite opid       node test/opid-identity.mjs
 run_suite cancel     node test/cancel-logic.mjs
 run_suite skills     node test/skills-logic.mjs
 run_suite parity     node test/ledger-parity.mjs
+# The Kortix session surface on a cell — in-process, no Docker (kortix-parity.mjs).
+run_suite kparity    node --experimental-sqlite ./test/kortix-parity.mjs
 run_suite archive    node test/archive-logic.mjs
 run_suite meter      node test/meter-logic.mjs
 run_suite envplat    node test/execenv-platinum.mjs

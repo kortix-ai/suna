@@ -672,6 +672,89 @@ export class AgentCell {
     // `?queue=1` also drops what has not started. Off by default: stopping the
     // command someone is watching is a different intent from discarding work
     // they queued.
+    // ── THE KORTIX SESSION SURFACE ────────────────────────────────────────
+    //
+    // A Kortix session drives a worker over a fixed set of paths (see
+    // apps/kortix-worker/src/main.ts): /kortix/health, /kortix/env,
+    // /kortix/refresh, /events, /interrupt, /turn, /session. This cell already
+    // does every one of those things under its own names, so parity is a
+    // mapping, not a second engine — and the mapping lives here rather than in
+    // the API so a cell stays drivable by anything that speaks the session
+    // protocol.
+    //
+    // Deliberately NOT aliases in a table: each one answers in the shape the
+    // session expects, which is not always the shape this cell returns.
+    if (url.pathname === "/kortix/health") {
+      return Response.json({
+        ok: true,
+        agent: "pi-in-a-cell",
+        sessionId,
+        // `runtime` is what the session polls for readiness: a cell is ready as
+        // soon as it can answer, because there is no daemon to come up.
+        runtime: "ready",
+        busy: !!this.running,
+        turns: this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n,
+      });
+    }
+    // Env sync. The session pushes the environment a turn must run with; a cell
+    // keeps it per session, so this is a write, not a restart.
+    if (url.pathname === "/kortix/env" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const incoming = (body && typeof body === "object" && body.env && typeof body.env === "object") ? body.env : body;
+      const applied = [];
+      for (const [k, v] of Object.entries(incoming ?? {})) {
+        if (typeof k !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+        this.sessionEnv = this.sessionEnv ?? {};
+        this.sessionEnv[k] = String(v);
+        applied.push(k);
+      }
+      return Response.json({ ok: true, sessionId, applied: applied.length, keys: applied.slice(0, 40) });
+    }
+    if (url.pathname === "/kortix/env") {
+      return Response.json({ ok: true, sessionId, keys: Object.keys(this.sessionEnv ?? {}) });
+    }
+    // Refresh: a session asks a worker to re-read what it can re-read. For a
+    // cell that is its skills; nothing else here is cached across a turn.
+    if (url.pathname === "/kortix/refresh" && req.method === "POST") {
+      const { skills, diagnostics } = await this.skills(sessionId, { reload: true });
+      return Response.json({ ok: true, sessionId, skills: skills.length, diagnostics });
+    }
+    // The session's own stop verb.
+    if (url.pathname === "/interrupt" && req.method === "POST") {
+      const running = this.running;
+      if (!running) return Response.json({ stopped: false, reason: "no turn is running" });
+      running.agent.abort();
+      return Response.json({ stopped: true, turn: running.turn });
+    }
+    // One turn's state, the way a session asks for it: the newest turn, and
+    // whether anything is running right now.
+    if (url.pathname === "/turn") {
+      // `i` is the turn id everywhere else in this file (this.running.turn is
+      // set from it); there is no `turn` column.
+      const rows = [...this.sql.exec("SELECT i, status, error FROM turns ORDER BY i DESC LIMIT 1")];
+      const last = rows[0] ?? null;
+      return Response.json({
+        sessionId,
+        running: !!this.running,
+        turn: this.running ? this.running.turn : (last ? last.i : null),
+        status: this.running ? "running" : (last ? last.status : "idle"),
+        error: last?.error ?? null,
+      });
+    }
+    // The session document: what a session page needs before it renders one
+    // message — who this is, whether it is busy, how much it has said.
+    if (url.pathname === "/session") {
+      const msgs = this.sql.exec("SELECT COUNT(*) AS n FROM msgs").toArray()[0].n;
+      const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
+      return Response.json({
+        sessionId,
+        agent: "pi-in-a-cell",
+        busy: !!this.running,
+        messages: msgs,
+        turns,
+        contextFrom: this.contextFrom(),
+      });
+    }
     if (url.pathname === "/stop" && req.method === "POST") {
       const running = this.running;
       let dropped = 0;
@@ -998,6 +1081,11 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     if (url.pathname === "/health") return Response.json({ ok: true, agent: "pi-in-a-cell" });
+    // The session polls readiness BEFORE it has a session to name, so this one
+    // answers at the worker, not in a cell.
+    if (url.pathname === "/kortix/health" && !url.searchParams.get("c")) {
+      return Response.json({ ok: true, agent: "pi-in-a-cell", runtime: "ready" });
+    }
     const name = url.searchParams.get("c") ?? "default";
     return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);
   },
