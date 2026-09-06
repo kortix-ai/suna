@@ -54,8 +54,13 @@ describe('AttachmentTile', () => {
   test('a named file: name top, extension badge bottom, one square', () => {
     const html = render(<AttachmentTile filename="pr-context.zip" mime="application/zip" />);
     expect(html).toContain('pr-context.zip');
-    // The badge is the design system's Badge, xs, medium weight, lowercase ext.
+    // The badge is the design system's Badge, xs, medium weight. The ext is
+    // lowercase in the DOM and uppercase on screen: the badge centres a
+    // capital's height, and a lowercase body sits ~1.3px low in it (see the
+    // note at the badge). `secondary` is `normal-case`; `uppercase` must win.
     expect(html).toMatch(/data-slot="badge"[^>]*>zip</);
+    expect(html).toMatch(/data-slot="badge" class="[^"]*\buppercase\b/);
+    expect(html).not.toMatch(/data-slot="badge" class="[^"]*normal-case/);
     expect(html).toContain('font-medium');
     expect(html).toContain(TILE_SURFACE);
     expect(html).toContain('size-28');

@@ -16,7 +16,7 @@
  * Every value is a token (`kortix-brand-guidelines`): `size-24` on the 0.23rem
  * scale (~88px), `rounded-md`, the one `border-border` hairline, `bg-popover`
  * as the lifted-surface fill, `text-xs` for the name. The badge is the design
- * system's `Badge` at `size="xs"`.
+ * system's `Badge` at `size="xs"`, uppercase — the note at the badge says why.
  */
 
 import { Badge } from '@/components/ui/badge';
@@ -113,8 +113,17 @@ export function AttachmentTile({
 }: AttachmentTileProps) {
   const ext = attachmentExtension(filename, mime);
   const split = splitFilenameForTile(filename);
+  // Uppercase, and that is what centres it. The badge centres the font's
+  // content area — Roobert Mono ascends 1.016em and descends 0.234em, so that
+  // middle sits 0.39em above the baseline, which is where the middle of a
+  // capital is (cap height 0.70em). Lowercase only reaches the x-height
+  // (0.50em): its body sits 0.1em ≈ 1.3px low at this size, and a descender
+  // drags the ink another 1.3px down, so "svg" read visibly low (Jay,
+  // 2026-09-06). Measured in Chromium at 2x: caps +0.2px off centre, "sv"
+  // +1.5px, "svg" +2.7px. The `secondary` variant is `normal-case`; the
+  // `uppercase` here wins in `cn`. The text stays lowercase in the DOM.
   const badge = ext ? (
-    <Badge variant="secondary" size="xs" className="font-medium">
+    <Badge variant="secondary" size="xs" className="font-medium uppercase">
       {ext}
     </Badge>
   ) : null;
