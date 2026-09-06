@@ -112,8 +112,8 @@ export function ProjectHome({
       ? [subproject, ...list]
       : list;
   }, [subprojectsQuery.data, subproject]);
-  const activeSubprojectAgent =
-    subprojects.find((s) => s.slug === activeSubproject)?.agent ?? null;
+  const activeSubprojectSpec = subprojects.find((s) => s.slug === activeSubproject) ?? null;
+  const activeSubprojectAgent = activeSubprojectSpec?.agent ?? null;
   const canCreateSubproject =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE).allowed === true;
 
@@ -312,6 +312,9 @@ export function ProjectHome({
             onAgentSelectionChange={setSelectedAgent}
             toolbarSlot={metaSelected ? <MetaRuntimeIndicator /> : null}
             sandboxSlot={sandboxSlot}
+            // The roster follows the pick: a subproject's own agents appear
+            // only while it is chosen; the whole project offers globals only.
+            subproject={activeSubprojectSpec ? { agents: activeSubprojectSpec.agents ?? [] } : null}
             // The tray under the card: where the session starts (user,
             // 2026-09-05 — "under the main chat box, like Claude's project or
             // folder strip"). Absent until the project has a subproject to

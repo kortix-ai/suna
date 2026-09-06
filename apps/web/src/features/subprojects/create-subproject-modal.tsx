@@ -71,8 +71,10 @@ export function CreateSubprojectModal({
     enabled: open && !!projectId,
     ...contract('config'),
   });
+  // Globals only: a subproject has no agents of its own before it exists,
+  // and another subproject's agents are not usable here (spec 2026-09-06 §2).
   const agents = (detailQuery.data?.config?.agents ?? []).filter(
-    (a) => a.enabled !== false && a.mode?.toLowerCase() !== 'subagent',
+    (a) => a.enabled !== false && a.mode?.toLowerCase() !== 'subagent' && !a.subproject,
   );
 
   const reset = () => {

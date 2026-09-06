@@ -341,6 +341,12 @@ function AgentCardBadges({ agent, isDefault }: { agent: Agent; isDefault: boolea
           {tI18nComplete.raw('text75081b593d15')}
         </Badge>
       ) : null}
+      {/* Declared by a subproject file — usable only there and where referenced. */}
+      {agent.subproject ? (
+        <Badge variant="muted" size="xs">
+          {`In ${agent.subproject}`}
+        </Badge>
+      ) : null}
     </>
   );
 }

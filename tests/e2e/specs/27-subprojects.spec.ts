@@ -150,6 +150,15 @@ test.describe('27 — Subprojects', () => {
         page.locator(`a[href="/projects/${projectId}/subprojects/marketing"]`).first(),
       ).toBeVisible();
 
+      // The create landed as its own file, `kortix-marketing.yaml`, beside the
+      // root manifest (spec 2026-09-06) — read it back through the files API.
+      const file = await api<{ content: string }>(
+        session.access_token,
+        'GET',
+        `/projects/${projectId}/files/content?path=kortix-marketing.yaml`,
+      );
+      expect(file.content).toContain('name: Marketing');
+
       // ── 3. Editing the instructions PATCHes ───────────────────────────
       const patchBodies: Record<string, unknown>[] = [];
       page.on('request', (request) => {
