@@ -1,4 +1,11 @@
-FROM python:3.12-slim
+# linux/amd64 EXPLICITLY, because the only celld binary that exists is
+# x86_64. A plain `docker build` on an arm64 machine produces an arm64 image
+# around an x86 executable, and the build fails at `celld --version` with
+# "cannot execute binary file" — or, on a daemon that emulates silently, an
+# image that fails much later. Measured 2026-09-07: after an OrbStack restart
+# dropped the cached image, a rebuild failed here and took five Docker suites
+# with it (e2e, streaming, crash, platinum, dev-e2e).
+FROM --platform=linux/amd64 python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 # celld itself, pinned exactly as infra/celld/pt-celld.spec.json pins it.
 RUN set -eu; V=v0.3.0; \

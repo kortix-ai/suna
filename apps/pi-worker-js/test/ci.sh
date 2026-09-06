@@ -24,7 +24,15 @@ docker run --rm --network host --entrypoint sh quay.io/minio/mc -c \
   || { echo "  could not create bucket ${BUCKET}"; exit 1; }
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   echo "  building ${IMAGE} from Dockerfile.celld"
-  docker build -q -f Dockerfile.celld -t "$IMAGE" . >/dev/null
+  # --provenance=false --load, or the build produces a multi-platform MANIFEST
+  # LIST that `docker run` cannot resolve on an arm64 host — the image is
+  # listed by `docker images` and every run of it says "Unable to find image
+  # ... locally", which then reads as a missing image rather than an
+  # unrunnable one. Measured 2026-09-07, after an OrbStack restart dropped the
+  # cached image: the rebuild reported success and five Docker suites failed.
+  docker build --provenance=false --sbom=false --load -q -f Dockerfile.celld -t "$IMAGE" . >/dev/null
+  docker run --rm "$IMAGE" celld --version >/dev/null 2>&1 || {
+    echo "  built ${IMAGE} but it will not run — see Dockerfile.celld's platform note"; exit 1; }
 fi
 echo "  minio :${MINIO_PORT} bucket ${BUCKET}; image ${IMAGE}"
 exec ./test/all.sh

@@ -270,6 +270,46 @@ function manifestFromWrangler(cfg) {
     raw_metadata: { bindings, ...(cfg.compatibility_date ? { compatibility_date: cfg.compatibility_date } : {}), main_module: "index.js", migrations } };
 }
 
+/**
+ * ROLL THE CELLS ONTO A JUST-ACTIVATED VERSION.
+ *
+ * celld loads a deployment at NODE process start, and activating a version does
+ * not roll a node that is already up. So after a deploy, a cell created on a
+ * running node still serves the version that node loaded — not the one that was
+ * just activated. Measured on dev 2026-09-06: three cells created 8, 16 and 25
+ * minutes after activating `5ae58c50` all served the previous bundle, while a
+ * cell created once every cell on that node had been deleted served the new one
+ * immediately. A stop/start of one cell also picked it up.
+ *
+ * That is the trap this closes. Without it a deploy looks successful — the
+ * version uploads, activates, and `deploy/current.json` names it — while every
+ * new session keeps running the old code, which is indistinguishable from the
+ * change not working.
+ *
+ * Sequential, not parallel: rolling every cell at once takes the whole worker
+ * down, and a cell is somebody's live session.
+ */
+export async function restartCells(api, token, cells, log = console.log) {
+  const h = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+  const rolled = [];
+  for (const cell of cells) {
+    const id = typeof cell === "string" ? cell : cell?.id;
+    if (!id) continue;
+    try {
+      await fetch(`${api}/v1/sandboxes/${id}/stop`, { method: "POST", headers: h });
+      const started = await fetch(
+        `${api}/v1/sandboxes/${id}/start?wait_for_state=running&wait_timeout_ms=180000`,
+        { method: "POST", headers: h },
+      );
+      if (started.ok) { rolled.push(id); log(`  rolled ${id}`); }
+      else log(`  ${id} did not come back: HTTP ${started.status}`);
+    } catch (err) {
+      log(`  ${id} failed to roll: ${err?.message ?? err}`);
+    }
+  }
+  return rolled;
+}
+
 async function deployViaPlatinum() {
   const api = process.env.PT_API_URL, token = process.env.PT_TOKEN, worker = process.env.PT_WORKER;
   if (!api || !token || !worker) die("the platinum target needs PT_API_URL, PT_TOKEN and PT_WORKER (the worker folder a cell boots from)");
@@ -288,7 +328,17 @@ async function deployViaPlatinum() {
   const aj = await a.json().catch(() => ({}));
   if (a.status !== 200) die(`activate failed: ${a.status} ${JSON.stringify(aj).slice(0, 200)}`);
   console.log(`deployed ${cfg.name} version ${vj.version} to worker ${worker} (${vj.bytes} bytes)`);
-  if (aj.restart_required && aj.cells?.length) console.log(`restart ${aj.cells.length} cell(s) to load it: ${aj.cells.map((c) => c.id).join(", ")}`);
+  if (aj.restart_required && aj.cells?.length) {
+    const ids = aj.cells.map((c) => c.id);
+    if (argv.includes("--restart")) {
+      console.log(`rolling ${ids.length} cell(s) onto ${vj.version}:`);
+      const rolled = await restartCells(api, token, ids);
+      console.log(`rolled ${rolled.length}/${ids.length} cell(s) onto ${vj.version}`);
+    } else {
+      console.log(`restart ${ids.length} cell(s) to load it: ${ids.join(", ")}`);
+      console.log("  (a cell created on a node that is already up serves the version THAT NODE loaded — pass --restart to roll them)");
+    }
+  }
   return vj.version;
 }
 

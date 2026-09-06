@@ -12,7 +12,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=86
+// EXPECTED_PASSES=91
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -617,6 +617,48 @@ time.sleep(30)`], { stdio: "ignore" });
   const nothing = scan("");
   check("A SCAN THAT EXAMINED NOTHING IS NOT A PASS — it exits 2, distinctly from a finding",
     nothing.code === 2 && /scanned nothing/.test(nothing.out), JSON.stringify(nothing).slice(0, 140));
+}
+
+// ROLLING A DEPLOY ONTO RUNNING CELLS.
+//
+// celld loads a deployment at NODE process start, so activating a version does
+// not reach a node that is already up: a cell created on it keeps serving the
+// version that node loaded. Measured on dev 2026-09-06 — three cells created 8,
+// 16 and 25 minutes after activating `5ae58c50` all served the PREVIOUS bundle,
+// while one created after every cell on that node was gone served the new one
+// at once. A deploy therefore looks successful while every new session runs old
+// code, which is indistinguishable from the change not working.
+{
+  const { restartCells } = await import("../celldctl.mjs");
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push(`${init?.method ?? "GET"} ${String(url).replace(/^https?:\/\/[^/]+/, "")}`);
+    return { ok: !String(url).includes("sbx_bad"), status: String(url).includes("sbx_bad") ? 500 : 200 };
+  };
+  const rolled = await restartCells("https://api.test", "tok", ["sbx_a", "sbx_b"], () => {});
+  globalThis.fetch = realFetch;
+
+  check("a roll STOPS and STARTS each cell — a stop alone leaves it down",
+    calls.filter((c) => c.includes("/stop")).length === 2 && calls.filter((c) => c.includes("/start")).length === 2,
+    JSON.stringify(calls));
+  check("and waits for each one to be running again before moving on — a cell is somebody's session",
+    calls.every((c) => !c.includes("/start") || c.includes("wait_for_state=running")), JSON.stringify(calls));
+  check("it reports which cells actually came back", rolled.join(",") === "sbx_a,sbx_b", rolled.join(","));
+
+  // The half that matters when it goes wrong: a cell that does not come back is
+  // NOT reported as rolled, so a partial roll cannot read as a complete one.
+  const calls2 = [];
+  globalThis.fetch = async (url, init) => {
+    calls2.push(String(url));
+    return { ok: !String(url).includes("sbx_bad"), status: String(url).includes("sbx_bad") ? 500 : 200 };
+  };
+  const partial = await restartCells("https://api.test", "tok", ["sbx_a", "sbx_bad", "sbx_c"], () => {});
+  globalThis.fetch = realFetch;
+  check("A CELL THAT DID NOT COME BACK IS NOT COUNTED AS ROLLED",
+    partial.join(",") === "sbx_a,sbx_c", partial.join(","));
+  check("and the roll carries on to the cells after it rather than stopping at the first failure",
+    calls2.some((u) => u.includes("sbx_c")), JSON.stringify(calls2).slice(0, 200));
 }
 
 console.log(bad ? `\n  ${bad} failure(s)` : "\n  celldctl keeps secrets out of the deployment");
