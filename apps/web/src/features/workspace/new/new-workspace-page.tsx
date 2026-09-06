@@ -1,22 +1,22 @@
 'use client';
 
-import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
-import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { readCloneParam } from '@/features/workspace/new/clone-param';
 import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
 import { readSourceParam } from '@/features/workspace/new/source-param';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
+import { AnimatePresence, m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { AccountPicker } from '@/features/workspace/new/account-picker';
 import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
 import {
@@ -34,6 +34,7 @@ import {
   WORKSPACE_NAME_MAX_LENGTH,
   validateWorkspaceName,
 } from '@/features/workspace/new/workspace-name';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { cn } from '@/lib/utils';
@@ -117,6 +118,8 @@ const ICON_WIDTH = '2.5rem';
  * top-right, independent of the form below.
  */
 export function NewWorkspacePage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('newWorkspace');
   const { user, isLoading: authLoading } = useAuth();
   const searchParams = useSearchParams();
   const cloneItemId = readCloneParam(new URLSearchParams(searchParams?.toString() ?? ''));
@@ -168,8 +171,13 @@ export function NewWorkspacePage() {
   const nameError = useMemo(() => {
     if (!touched) return null;
     const result = validateWorkspaceName(state.name);
-    return result.ok ? null : result.error;
-  }, [state.name, touched]);
+    if (result.ok) return null;
+    if (result.error === 'Name is required') return t('validation.nameRequired');
+    if (result.error.startsWith('Name must be')) {
+      return t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
+    }
+    return t('validation.nameCharacters');
+  }, [state.name, t, touched]);
 
   // Same user-scoped cache entry `WorkspaceSwitcher`/`AccountSwitcher` read —
   // one shared query, not a page-local duplicate. `useAccountsList` is also
@@ -259,6 +267,7 @@ export function NewWorkspacePage() {
     // naming the condition here directly means a future edit to either
     // function cannot silently reopen the disclosure by accident.
     !foreignAccountList;
+  const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut');
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
@@ -302,7 +311,7 @@ export function NewWorkspacePage() {
           }}
         >
           {signingOut ? <Loading className="size-4 shrink-0" /> : null}
-          {signingOut ? 'Signing out' : 'Log out'}
+          {signOutLabel}
         </Button>
       </div>
 
@@ -347,11 +356,9 @@ export function NewWorkspacePage() {
           >
             <header className="flex flex-col gap-2 text-center">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-                Create a workspace
+                {t('title')}
               </h1>
-              <p className="text-muted-foreground text-[15px] text-balance">
-                A workspace is where your agents, files and sessions live.
-              </p>
+              <p className="text-muted-foreground text-sm text-balance">{t('description')}</p>
             </header>
 
             <form
@@ -364,9 +371,7 @@ export function NewWorkspacePage() {
               }}
             >
               {state.templateId && (
-                <p className="text-muted-foreground text-center text-xs">
-                  This workspace will be seeded from the template you picked.
-                </p>
+                <p className="text-muted-foreground text-center text-xs">{t('templateSeed')}</p>
               )}
 
               {/* No card. A single question does not need a bordered surface
@@ -445,7 +450,7 @@ export function NewWorkspacePage() {
                         track collapsed to nothing, `1fr` already takes the whole
                         row. */}
                   <div className="flex w-full min-w-0 flex-col space-y-3">
-                    <Label htmlFor="workspace-name">Workspace name</Label>
+                    <Label htmlFor="workspace-name">{t('name.label')}</Label>
                     <Input
                       id="workspace-name"
                       autoFocus
@@ -454,7 +459,7 @@ export function NewWorkspacePage() {
                       value={state.name}
                       onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                       onBlur={() => setTouched(true)}
-                      placeholder="Workspace name"
+                      placeholder={t('name.placeholder')}
                       maxLength={WORKSPACE_NAME_MAX_LENGTH}
                       size="md"
                       className="w-full"
@@ -484,7 +489,7 @@ export function NewWorkspacePage() {
                       second card. Account picking itself lives in the top bar. */}
                 {!accountsQuery.isLoading && creatableAccounts.length === 0 ? (
                   <p className="text-muted-foreground text-xs">
-                    You need owner or admin access in an account to create a workspace.
+                    {t('permissions.noCreatableAccount')}
                   </p>
                 ) : null}
 
@@ -501,15 +506,14 @@ export function NewWorkspacePage() {
                       gated on `!accountsQuery.isLoading` for the same reason. */}
                 {!accountsQuery.isLoading && foreignAccountList ? (
                   <p className="text-muted-foreground text-xs">
-                    We can't tell which of your accounts is yours, so we're not guessing.
-                    Email{' '}
+                    {t('permissions.unknownAccountPrefix')}{' '}
                     <a
                       href="mailto:support@kortix.ai"
                       className="text-foreground underline underline-offset-2"
                     >
-                      support@kortix.ai
+                      {tI18nComplete.raw('textb18f581a06eb')}
                     </a>{' '}
-                    and we'll get it fixed.
+                    {t('permissions.unknownAccountSuffix')}
                   </p>
                 ) : null}
 
@@ -519,15 +523,11 @@ export function NewWorkspacePage() {
                       picker hides itself below two accounts). Passing the raw
                       value would leave those queries permanently disabled for
                       exactly the users who have nothing to pick. */}
-                <AdvancedFields
-                  state={state}
-                  accountId={effectiveAccountId}
-                  onChange={setState}
-                />
+                <AdvancedFields state={state} accountId={effectiveAccountId} onChange={setState} />
               </div>
 
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
-                Create workspace
+                {t('actions.create')}
               </Button>
               {/* Form-level, not a field error: every failure `messageFor`
                     (`use-create-workspace.ts`) maps — 403 wrong-account, 400
@@ -562,7 +562,7 @@ export function NewWorkspacePage() {
                       className="text-muted-foreground hover:text-foreground"
                       onClick={retry}
                     >
-                      Try again
+                      {t('actions.tryAgain')}
                     </Button>
                   ) : null}
                 </div>

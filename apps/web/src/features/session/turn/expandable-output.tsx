@@ -183,7 +183,7 @@ export function ExpandableRegion({
               // Explicit properties, never `transition-all` — and `scale` is its
               // own CSS property in Tailwind v4, so the press does not cancel
               // the `-translate-x-1/2` that centres the button.
-              'transition-[color,scale] active:scale-[0.96] border',
+              'border transition-[color,scale] active:scale-[0.96]',
             )}
           >
             {open ? collapseLabel : expandLabel}

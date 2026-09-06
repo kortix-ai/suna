@@ -1,5 +1,7 @@
 'use client';
 
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * All · Pick · None — the one governance grant-mode machine, parameterized so
  * both a flat checklist (skills/connectors/secrets) and a grouped catalog
@@ -17,14 +19,23 @@ import { KORTIX_CLI_CATALOG } from './agent-editor-catalog';
 export type GrantMode = 'all' | 'pick' | 'none';
 
 /** Summarize a grant set — "All", "None", "3 picked" — for a card header. */
-export function grantSummary(v: AgentGrantSetV2 | undefined): {
+export function grantSummary(
+  v: AgentGrantSetV2 | undefined,
+  tI18nComplete?: UiTranslator,
+): {
   label: string;
   tone: 'muted' | 'outline';
 } {
-  if (v === 'all') return { label: 'All', tone: 'outline' };
+  if (v === 'all')
+    return { label: tI18nComplete?.raw('texta52ace420f21') ?? 'All', tone: 'outline' };
   if (v === undefined || v === 'none' || (Array.isArray(v) && v.length === 0))
-    return { label: 'None', tone: 'muted' };
-  return { label: `${(v as string[]).length} picked`, tone: 'outline' };
+    return { label: tI18nComplete?.raw('textdc937b598926') ?? 'None', tone: 'muted' };
+  return {
+    label:
+      tI18nComplete?.('text8b168cb79501', { value0: (v as string[]).length }) ??
+      `${(v as string[]).length} picked`,
+    tone: 'outline',
+  };
 }
 
 const GRANT_MODES: { value: GrantMode; label: string }[] = [
@@ -54,6 +65,7 @@ export function GrantModeField({
     mode: GrantMode;
   }) => React.ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const mode: GrantMode =
     value === 'all' ? 'all' : value === 'none' || value === undefined ? 'none' : 'pick';
   const [wantPick, setWantPick] = useState(() => Array.isArray(value) && value.length > 0);
@@ -82,7 +94,7 @@ export function GrantModeField({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <Tabs value={effectiveMode} onValueChange={(m) => pick(m as GrantMode)} className="w-fit">
-          <TabsListCompact type="default" aria-label="Grant mode">
+          <TabsListCompact type="default" aria-label={tI18nComplete.raw('text74009e6664f5')}>
             {GRANT_MODES.map((m) => (
               <TabsTriggerCompact key={m.value} value={m.value}>
                 {m.label}
@@ -138,12 +150,13 @@ export function GrantSetField({
    *  sibling. Fields that pass nothing render exactly as before. */
   rowAccessory?: (id: string, isSelected: boolean) => ReactNode;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <GrantModeField
       value={value}
       onChange={onChange}
       allLabel={allLabel}
-      noneLabel="Deny — nothing granted."
+      noneLabel={tI18nComplete.raw('text765b240c2900')}
     >
       {({ selected, toggle }) => {
         const optionIds = new Set(options.map((o) => o.id));
@@ -192,7 +205,11 @@ export function GrantSetField({
                     ) : null}
                   </span>
                   {o.trailing ? <span className="shrink-0">{o.trailing}</span> : null}
-                  {isOrphan && <span className="text-kortix-orange shrink-0">missing</span>}
+                  {isOrphan && (
+                    <span className="text-kortix-orange shrink-0">
+                      {tI18nComplete.raw('textffa63583dfa6')}
+                    </span>
+                  )}
                 </button>
               );
               return accessory ? (
@@ -219,12 +236,13 @@ export function KortixCliField({
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <GrantModeField
       value={value}
       onChange={onChange}
-      allLabel="Everything the person who started the session can do."
-      noneLabel="Deny — nothing granted."
+      allLabel={tI18nComplete.raw('text75a5e3a6d5d3')}
+      noneLabel={tI18nComplete.raw('text765b240c2900')}
     >
       {({ selected, toggle }) => (
         <div className="border-border/60 max-h-64 space-y-3 overflow-y-auto rounded-md border p-2.5">

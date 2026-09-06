@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Minimal tool metadata — matches the reference opencode implementation.
  *
@@ -6,8 +7,8 @@
  * 2. Extracting a one-line identity for any tool call (primary arg).
  */
 
-import type { ToolPart } from '@/ui';
 import { truncate as sharedTruncate } from '@/lib/utils/string';
+import type { ToolPart } from '@/ui';
 import { humanizeSearchQuery } from './shared/search-query';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
@@ -82,8 +83,7 @@ export function getToolPrimaryArg(part: ToolPart): string {
     case 'grep': {
       const pat = input.pattern ?? input.query;
       const where = input.path ?? input.include;
-      if (pat && where)
-        return `"${truncate(String(pat), 40)}" in ${basename(String(where))}`;
+      if (pat && where) return `"${truncate(String(pat), 40)}" in ${basename(String(where))}`;
       if (pat) return `"${truncate(String(pat), 60)}"`;
       return '';
     }
@@ -124,7 +124,10 @@ export function getToolPrimaryArg(part: ToolPart): string {
  * UnifiedGroup. Context tools get friendly names; others use their
  * canonical name in Title Case.
  */
-export function contextToolTrigger(part: ToolPart): {
+export function contextToolTrigger(
+  part: ToolPart,
+  tI18nComplete: UiTranslator,
+): {
   title: string;
   subtitle: string;
 } {
@@ -132,44 +135,42 @@ export function contextToolTrigger(part: ToolPart): {
   const sub = getToolPrimaryArg(part);
   switch (n) {
     case 'read':
-      return { title: 'Read', subtitle: sub };
+      return { title: tI18nComplete.raw('text9b9a8d05a7ec'), subtitle: sub };
     case 'glob':
-      return { title: 'Search', subtitle: sub };
+      return { title: tI18nComplete.raw('text49c266baaaa7'), subtitle: sub };
     case 'grep':
-      return { title: 'Search', subtitle: sub };
+      return { title: tI18nComplete.raw('text49c266baaaa7'), subtitle: sub };
     case 'list':
-      return { title: 'List', subtitle: sub };
+      return { title: tI18nComplete.raw('text6f202f54a7b2'), subtitle: sub };
     case 'bash':
-      return { title: 'Shell', subtitle: sub };
+      return { title: tI18nComplete.raw('texta733285486d5'), subtitle: sub };
     case 'edit':
     case 'morph_edit':
-      return { title: 'Edit', subtitle: sub };
+      return { title: tI18nComplete.raw('text464c4ffd019e'), subtitle: sub };
     case 'write':
-      return { title: 'Write', subtitle: sub };
+      return { title: tI18nComplete.raw('text3f00927a7193'), subtitle: sub };
     case 'webfetch':
     case 'web_fetch':
-      return { title: 'Fetch', subtitle: sub };
+      return { title: tI18nComplete.raw('textcd7d61bf7e38'), subtitle: sub };
     case 'websearch':
     case 'web_search':
-      return { title: 'Web Search', subtitle: sub };
+      return { title: tI18nComplete.raw('textd04fc7d7e197'), subtitle: sub };
     case 'scrape':
     case 'scrape_webpage':
-      return { title: 'Scrape', subtitle: sub };
+      return { title: tI18nComplete.raw('text9af605fcac97'), subtitle: sub };
     case 'apply_patch':
-      return { title: 'Apply Patch', subtitle: sub };
+      return { title: tI18nComplete.raw('text01bcfe7a9296'), subtitle: sub };
     case 'task':
-      return { title: 'Task', subtitle: sub };
+      return { title: tI18nComplete.raw('text4bc74b21357c'), subtitle: sub };
     case 'session_spawn':
     case 'session_start_background':
-      return { title: 'Worker', subtitle: sub };
+      return { title: tI18nComplete.raw('texta67b04cd5c49'), subtitle: sub };
     case 'project_select':
-      return { title: 'Workspace', subtitle: sub };
+      return { title: tI18nComplete.raw('text87bb59ba2f92'), subtitle: sub };
     case 'project_list':
-      return { title: 'Workspace', subtitle: sub };
+      return { title: tI18nComplete.raw('text87bb59ba2f92'), subtitle: sub };
     default: {
-      const display = n
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const display = n.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
       return { title: display, subtitle: sub };
     }
   }

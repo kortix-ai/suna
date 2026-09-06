@@ -1,13 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { isWithinCircularMask } from "@/lib/dotmatrix-core";
-import { useCyclePhase } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, isWithinCircularMask } from '@/lib/dotmatrix-core';
+import { useCyclePhase, useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmCircular5Props = DotMatrixCommonProps;
 
@@ -22,28 +19,32 @@ export function DotmCircular5({
   ...rest
 }: DotmCircular5Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const phase = useCyclePhase({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1650,
-    speed
+    speed,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ row, col, phase: p }) => {
       if (!isWithinCircularMask(row, col)) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const x = col - 2;
       const y = row - 2;
       const radius = Math.hypot(x, y);
       const angle = Math.atan2(y, x);
-      const theta = (reducedMotion || p === "idle" ? 0 : phase) * Math.PI * 2;
+      const theta = (reducedMotion || p === 'idle' ? 0 : phase) * Math.PI * 2;
       const pinwheel = Math.cos(angle * 4 - theta * 2.2);
       const radialGate = Math.sin(radius * 2.1 - theta * 1.25);
 

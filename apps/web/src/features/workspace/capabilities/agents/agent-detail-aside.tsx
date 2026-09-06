@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The v1 fallback cards of the agent page, plus the scope-checklist helpers
  * the v2 editor shares with them.
@@ -24,6 +25,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { flattenModels } from '@/features/session/session-chat-input';
+import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
@@ -35,7 +37,6 @@ import {
   type ProjectConfigSummary,
   setAgentScope,
 } from '@kortix/sdk';
-import { isLlmGatewayEnabled } from '@/lib/llm-gateway';
 import { contract, qk, useModelDefaults, useRuntimeProviders } from '@kortix/sdk/react';
 import { CheckIcon as Check } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -50,6 +51,7 @@ type Agent = ProjectConfigSummary['agents'][number];
  * read-only resolved model.
  */
 export function AgentModel({ projectId, agentName }: { projectId: string; agentName: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // Pinning an agent's model is a customize write, which is what the route
   // asserts — not "is this person a manager".
   const canManage =
@@ -80,10 +82,10 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
   return (
     <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
       <div className="flex items-center gap-2">
-        <Label>Model</Label>
+        <Label>{tI18nComplete.raw('text5e2c614c23f0')}</Label>
         {explicit ? (
           <Badge variant="muted" size="xs">
-            Pinned
+            {tI18nComplete.raw('textf20c87946555')}
           </Badge>
         ) : null}
       </div>
@@ -110,35 +112,35 @@ export function AgentModel({ projectId, agentName }: { projectId: string; agentN
               className="h-7 px-2 text-xs"
               onClick={() => {
                 void defaults.clearAgentDefault(agentName);
-                successToast(`${agentName} follows the default model again`);
+                successToast(tI18nComplete('text86781ce4c5b4', { value0: agentName }));
               }}
             >
-              Reset to default
+              {tI18nComplete.raw('textbc5b45ae7b60')}
             </Button>
           ) : null}
         </div>
       ) : (
         <Badge variant="outline" size="sm" className="font-mono">
-          {nameOf(resolved) ?? 'No model configured'}
+          {nameOf(resolved) ?? tI18nComplete.raw('text1f0a5246c481')}
         </Badge>
       )}
 
       <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
         {explicit ? (
           <>
-            Every session run by this agent uses{' '}
+            {tI18nComplete.raw('text40124896532d')}{' '}
             <span className="text-foreground font-medium">{nameOf(explicit)}</span>.
           </>
         ) : (
           <>
-            Follows the project default
+            {tI18nComplete.raw('text46e3bd02feee')}
             {resolved ? (
               <>
                 {' '}
                 (<span className="text-foreground font-medium">{nameOf(resolved)}</span>)
               </>
             ) : null}
-            . Pick a model to pin it.
+            {tI18nComplete.raw('textd5bf3036405d')}
           </>
         )}
       </p>
@@ -179,6 +181,7 @@ function AgentScopeCard({
   agentName: string;
   scope: NonNullable<Agent['scope']>;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   // `PUT /projects/:id/agents/:name/scope` asserts `project.customize.write`
   // (docs/sdk/reference: "the route answers 403 otherwise"). Ask for that.
@@ -226,25 +229,25 @@ function AgentScopeCard({
   const save = useMutation({
     mutationFn: () => setAgentScope(projectId, agentName, { env, connectors }),
     onSuccess: () => {
-      successToast(`Scope updated for ${agentName}`);
+      successToast(tI18nComplete('text62dc0f9c686a', { value0: agentName }));
       // Refetch the project config so the committed scope (this card's source) updates.
       queryClient.invalidateQueries({ queryKey: qk.project.detail(projectId) });
     },
-    onError: (e: Error) => errorToast(e.message || 'Failed to update scope'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text3738dea54aaa')),
   });
 
   // Non-managers get the read-only mirror (the old presentation).
   if (!canManage) {
     return (
       <div className="bg-popover space-y-3 rounded-md border px-4 py-4">
-        <Label>Access</Label>
+        <Label>{tI18nComplete.raw('textec5ba0abb717')}</Label>
         <dl className="space-y-2">
-          <ScopeRow label="Secrets" value={scope.env} />
-          <ScopeRow label="Connectors" value={scope.connectors} />
+          <ScopeRow label={tI18nComplete.raw('textd8707d411d99')} value={scope.env} />
+          <ScopeRow label={tI18nComplete.raw('textc3d2e79ebdd0')} value={scope.connectors} />
           <ScopeRow label="CLI" value={scope.kortix_cli} />
         </dl>
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          All = everything the person launching the session can see. None = fully scoped out.
+          {tI18nComplete.raw('textac4c418e412f')}
         </p>
       </div>
     );
@@ -252,12 +255,12 @@ function AgentScopeCard({
 
   return (
     <div className="bg-popover space-y-4 rounded-md border px-4 py-4">
-      <Label>Access</Label>
+      <Label>{tI18nComplete.raw('textec5ba0abb717')}</Label>
       <ScopeEditor
         key={`env-${editorNonce}`}
-        label="Secrets"
-        allLabel="All the launcher can see"
-        emptyLabel="No secrets in this project yet."
+        label={tI18nComplete.raw('textd8707d411d99')}
+        allLabel={tI18nComplete.raw('text922315177668')}
+        emptyLabel={tI18nComplete.raw('text82a37b8c2266')}
         value={env}
         options={secretOptions}
         match="case-insensitive"
@@ -265,9 +268,9 @@ function AgentScopeCard({
       />
       <ScopeEditor
         key={`connectors-${editorNonce}`}
-        label="Connectors"
-        allLabel="Every project connector"
-        emptyLabel="No connectors in this project yet."
+        label={tI18nComplete.raw('textc3d2e79ebdd0')}
+        allLabel={tI18nComplete.raw('texta2e8754e4899')}
+        emptyLabel={tI18nComplete.raw('text389fb5217392')}
         value={connectors}
         options={connectorOptions}
         onChange={setConnectors}
@@ -289,11 +292,11 @@ function AgentScopeCard({
               setEditorNonce((n) => n + 1);
             }}
           >
-            Reset
+            {tI18nComplete.raw('textdaee7606b339')}
           </Button>
           <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
             {save.isPending && <Loading className="size-3.5 shrink-0" />}
-            Save
+            {tI18nComplete.raw('text1509f561f241')}
           </Button>
         </div>
       ) : null}
@@ -430,6 +433,7 @@ function ScopeEditor({
   match?: ScopeMatch;
   onChange: (v: AgentGrantSet) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // "Specific" with nothing selected yet is a real UI state the value type can't
   // hold — an empty list is indistinguishable from "None". So we latch the user's
   // choice locally: without this, clicking Specific from All writes `[]`, which
@@ -512,7 +516,11 @@ function ScopeEditor({
                     {o.hint}
                   </span>
                 ) : null}
-                {o.orphan && <span className="text-kortix-orange">missing</span>}
+                {o.orphan && (
+                  <span className="text-kortix-orange">
+                    {tI18nComplete.raw('textffa63583dfa6')}
+                  </span>
+                )}
               </button>
             ))}
           </div>

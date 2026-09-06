@@ -35,8 +35,7 @@ export const SETTINGS_SHORTCUT_KEY = ',';
  * hydration mismatch.
  */
 export function settingsShortcutLabel(): string {
-  const isMac =
-    typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
   return isMac ? `⌘${SETTINGS_SHORTCUT_KEY}` : `Ctrl+${SETTINGS_SHORTCUT_KEY}`;
 }
 

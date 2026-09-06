@@ -90,7 +90,7 @@ export function FileTileBody({ filename, pending }: { filename: string; pending?
       ) : (
         <Icon className="text-muted-foreground size-5 shrink-0" />
       )}
-      <span className="text-foreground min-w-0 line-clamp-2 break-all text-left text-xs leading-tight">
+      <span className="text-foreground line-clamp-2 min-w-0 text-left text-xs leading-tight break-all">
         {filename}
       </span>
     </span>

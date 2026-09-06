@@ -17,7 +17,9 @@ describe('loadObjectGrants memo — empty map caching', () => {
     expect(flat).toContain(
       "shouldCache: (map, _projectId, objectType) => map.size > 0 || !CLOSED_BY_DEFAULT_OBJECT_TYPES.has(objectType)",
     );
-    expect(flat).toContain("CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent'])");
+    expect(flat).toContain(
+      "CLOSED_BY_DEFAULT_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'subproject'])",
+    );
   });
 
   test('the unconditional cache-everything rule is gone', () => {

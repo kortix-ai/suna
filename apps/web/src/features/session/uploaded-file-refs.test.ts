@@ -3,8 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { parseFileReferences } from '@/features/session/message-parsing';
 import type { AttachedFile } from '@/features/session/session-chat-input';
 import {
+  attachedFilesToDataUrlParts,
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
+  DATA_URL_ATTACHMENTS_MAX_BYTES,
   MAX_UPLOAD_FILENAME_BYTES,
   optimisticUploadedFileRef,
   sanitizeUploadFilename,
@@ -12,8 +14,6 @@ import {
   uploadedFileRefXml,
   UPLOADS_DIR,
   type UploadFileForPrompt,
-  attachedFilesToDataUrlParts,
-  DATA_URL_ATTACHMENTS_MAX_BYTES,
 } from './uploaded-file-refs';
 
 function localFile(name: string, type = 'text/plain'): Extract<AttachedFile, { kind: 'local' }> {
@@ -320,7 +320,13 @@ describe('attachedFilesToDataUrlParts', () => {
   test('a local file becomes a data-URL file part; a remote one rides as-is', async () => {
     const parts = await attachedFilesToDataUrlParts([
       local('shot.png', new Uint8Array([1, 2, 3])),
-      { kind: 'remote', url: 'https://files.test/a.pdf', filename: 'a.pdf', mime: 'application/pdf', isImage: false },
+      {
+        kind: 'remote',
+        url: 'https://files.test/a.pdf',
+        filename: 'a.pdf',
+        mime: 'application/pdf',
+        isImage: false,
+      },
     ]);
 
     expect(parts).toEqual([
@@ -335,7 +341,11 @@ describe('attachedFilesToDataUrlParts', () => {
   });
 
   test('refuses a batch over the cap with copy that names the way out', async () => {
-    const big = local('big.bin', new Uint8Array(DATA_URL_ATTACHMENTS_MAX_BYTES + 1), 'application/octet-stream');
+    const big = local(
+      'big.bin',
+      new Uint8Array(DATA_URL_ATTACHMENTS_MAX_BYTES + 1),
+      'application/octet-stream',
+    );
     await expect(attachedFilesToDataUrlParts([big])).rejects.toThrow(/after the session starts/i);
   });
 

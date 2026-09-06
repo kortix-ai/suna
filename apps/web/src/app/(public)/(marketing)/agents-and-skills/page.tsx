@@ -2,20 +2,14 @@ import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { Separator } from '@/components/ui/separator';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
-import {
-  agent,
-  hero,
-  marketplace,
-  reach,
-  repo,
-  skill,
-} from '@/features/marketing/agents-and-skills/content';
+import { getLocalizedAgentsAndSkillsContent } from '@/features/marketing/agents-and-skills/content';
+import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
 import { MdPanel } from '@/features/marketing/agents-and-skills/md-panel';
 import { RepoTree } from '@/features/marketing/agents-and-skills/repo-tree';
-import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { cn } from '@/lib/utils';
+import { getTranslations } from '@/i18n/get-translations';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -49,7 +43,10 @@ function SectionDivider(): ReactNode {
  * has no deterministic installer — adding an item runs an agent import that
  * opens a change request.
  */
-export default function AgentsAndSkillsPage(): ReactNode {
+export default async function AgentsAndSkillsPage(): Promise<ReactNode> {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
+  const { agent, hero, marketplace, reach, repo, skill } =
+    getLocalizedAgentsAndSkillsContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero

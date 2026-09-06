@@ -1,6 +1,7 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -183,7 +184,7 @@ const languageMap: Record<string, () => any> = {
 };
 
 // Get language from file extension
-export function getLanguageFromExtension(fileName: string): string {
+export function getLanguageFromExtension(fileName: string, tI18nComplete: UiTranslator): string {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';
   const fileNameLower = fileName.toLowerCase();
   const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
@@ -234,7 +235,7 @@ export function getLanguageFromExtension(fileName: string): string {
 
     // Markdown
     md: 'markdown',
-    markdown: 'markdown',
+    markdown: tI18nComplete.raw('textbc18f7068971'),
     mdx: 'markdown',
 
     // Python
@@ -361,6 +362,7 @@ export function CodeEditor({
   targetLine,
   editorClassName,
 }: CodeEditorProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -474,7 +476,7 @@ export function CodeEditor({
   }, [readOnly]);
 
   // Determine language
-  const language = propLanguage || getLanguageFromExtension(fileName);
+  const language = propLanguage || getLanguageFromExtension(fileName, tI18nComplete);
 
   // Get language extension
   const langExtension = useMemo(() => {
@@ -635,7 +637,9 @@ export function CodeEditor({
         return (
           <Button variant="ghost" size="sm" disabled className="h-7 gap-1.5 px-2 text-xs">
             <KortixLoader size="small" />
-            <span className="hidden sm:inline">Saving</span>
+            <span className="hidden sm:inline">
+              {tHardcodedUi.raw('i18nComplete.text096b73624b09')}
+            </span>
           </Button>
         );
       case 'saved':
@@ -647,7 +651,9 @@ export function CodeEditor({
             className="h-7 gap-1.5 px-2 text-xs text-emerald-600"
           >
             <Check className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Saved</span>
+            <span className="hidden sm:inline">
+              {tHardcodedUi.raw('i18nComplete.textb5c120b316c2')}
+            </span>
           </Button>
         );
       case 'error':
@@ -659,7 +665,9 @@ export function CodeEditor({
             className="h-7 gap-1.5 px-2 text-xs text-red-500 hover:bg-red-50 hover:text-red-600"
           >
             <AlertCircle className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Retry</span>
+            <span className="hidden sm:inline">
+              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
+            </span>
           </Button>
         );
       default:
@@ -675,7 +683,9 @@ export function CodeEditor({
                   className="h-7 gap-1.5 px-2 text-xs"
                 >
                   <Save className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Save</span>
+                  <span className="hidden sm:inline">
+                    {tHardcodedUi.raw('i18nComplete.text1509f561f241')}
+                  </span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
@@ -687,7 +697,7 @@ export function CodeEditor({
                     </kbd>
                   </>
                 ) : (
-                  'No changes to save'
+                  tHardcodedUi.raw('i18nComplete.textd608d0f65354')
                 )}
               </TooltipContent>
             </Tooltip>
@@ -740,7 +750,9 @@ export function CodeEditor({
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
                 </span>
-                <span className="font-semibold">Unsaved</span>
+                <span className="font-semibold">
+                  {tHardcodedUi.raw('i18nComplete.text6250d5725dda')}
+                </span>
               </div>
             )}
           </div>

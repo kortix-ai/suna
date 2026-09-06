@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import {
   ChartLineUpIcon,
   CubeIcon,
@@ -27,6 +28,7 @@ import {
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 interface AdminNavItem {
@@ -70,18 +72,20 @@ export function isAdminNavActive(pathname: string | null, href: string): boolean
  * — the mark is the way back.
  */
 export function AdminSidebar() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const pathname = usePathname();
   const { setOpenMobile } = useSidebar();
+  const navItems = useLocalizedUiCatalog(NAV_ITEMS);
 
   return (
     <Sidebar collapsible="offcanvas" variant="sidebar">
       <SidebarHeader>
         <div className="flex h-8 w-full items-center justify-between gap-2">
-          <Hint label="Back to app" side="bottom">
+          <Hint label={tI18nComplete.raw('texta6989680b352')} side="bottom">
             <Link
               href={PROJECT_LANDING_PATH}
               prefetch
-              aria-label="Back to app"
+              aria-label={tI18nComplete.raw('texta6989680b352')}
               className="focus-visible:ring-ring flex items-center rounded-md px-1 outline-none focus-visible:ring-2"
               onClick={() => setOpenMobile(false)}
             >
@@ -96,7 +100,7 @@ export function AdminSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {NAV_ITEMS.map((item) => (
+              {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild

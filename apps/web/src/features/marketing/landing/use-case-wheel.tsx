@@ -2,12 +2,18 @@
 
 import { cn } from '@/lib/utils';
 import { useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useCases, type ArtifactTone, type UseCase, type UseCaseArtifact } from './content';
+import {
+  getLocalizedLandingContent,
+  useCases as useCasesSource,
+  type ArtifactTone,
+  type UseCase,
+  type UseCaseArtifact,
+} from './content';
 
-const CARDS = useCases.cards;
-const COUNT = CARDS.length;
+const COUNT = useCasesSource.cards.length;
 
 /**
  * Position ticks. Same falloff as the session chat minimap: the active tick is
@@ -330,6 +336,8 @@ function Chart({ artifact }: { artifact: Extract<UseCaseArtifact, { kind: 'chart
  * produced, and must never imply a Kortix UI that does not exist.
  */
 function Artifact({ artifact }: { artifact: UseCaseArtifact }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { useCases } = getLocalizedLandingContent(tI18nComplete);
   return (
     <div className="border-border bg-background mt-auto w-full min-w-0 overflow-hidden rounded-md border">
       <div className="border-border/70 bg-muted/30 flex items-baseline justify-between gap-2 border-b px-2.5 py-2 sm:px-3">
@@ -395,6 +403,8 @@ const EDGE_MASK = 'linear-gradient(to right, transparent 0%, #000 7%, #000 93%, 
 
 /** Header, shared by the wheel and the reduced-motion grid. */
 function SectionHeader({ counter }: { counter?: ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { useCases } = getLocalizedLandingContent(tI18nComplete);
   return (
     <div className="mx-auto w-full max-w-7xl gap-4 px-6">
       <span
@@ -421,11 +431,13 @@ function SectionHeader({ counter }: { counter?: ReactNode }) {
 
 /** `prefers-reduced-motion` fallback: the same seven cards, no transforms. */
 function UseCaseGrid() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { useCases } = getLocalizedLandingContent(tI18nComplete);
   return (
     <section id="use-cases" aria-labelledby="use-case-wheel-title" className="py-24 sm:py-30">
       <SectionHeader />
       <div className="mx-auto mt-12 grid w-full max-w-7xl grid-cols-1 gap-4 px-6 sm:grid-cols-2 lg:grid-cols-3">
-        {CARDS.map((card, index) => (
+        {useCases.cards.map((card, index) => (
           <article key={card.id} className={CARD_SHELL}>
             <UseCaseCard card={card} index={index} active={false} />
           </article>
@@ -436,6 +448,8 @@ function UseCaseGrid() {
 }
 
 export function UseCaseWheel(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { useCases } = getLocalizedLandingContent(tI18nComplete);
   const trackRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Array<HTMLElement | null>>([]);
   const activeRef = useRef(0);
@@ -533,7 +547,7 @@ export function UseCaseWheel(): ReactNode {
           <SectionHeader
             counter={
               <div aria-hidden className="flex shrink-0 items-end gap-[3px]">
-                {CARDS.map((card, index) => {
+                {useCases.cards.map((card, index) => {
                   const distance = Math.abs(index - activeIndex);
                   const focused = distance === 0;
                   const scale = tickHeight(distance) / TICK_HEIGHT_MAX;
@@ -571,7 +585,7 @@ export function UseCaseWheel(): ReactNode {
               WebkitMaskImage: EDGE_MASK,
             }}
           >
-            {CARDS.map((card, index) => (
+            {useCases.cards.map((card, index) => (
               <article
                 key={card.id}
                 ref={(node) => {
@@ -585,7 +599,7 @@ export function UseCaseWheel(): ReactNode {
                   'absolute top-1/2 left-1/2 h-[368px] w-[292px] will-change-transform sm:h-[404px] sm:w-[468px]',
                   'data-[active=true]:border-foreground/20 shadow-none data-[active=true]:shadow-2xl',
                 )}
-                style={{ transform: 'translate(-50%, -50%)' }}
+                style={{ transform: "translate(-50%, -50%)" }}
               >
                 <UseCaseCard card={card} index={index} active={index === activeIndex} />
                 {card.href && index === activeIndex ? (

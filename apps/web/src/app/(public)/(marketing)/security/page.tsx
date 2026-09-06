@@ -1,24 +1,15 @@
 import { Reveal } from '@/components/home/reveal';
 import { Separator } from '@/components/ui/separator';
-import { SecurityHeroVisual } from '@/features/marketing/security-page/hero-visual';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
 import { BoundaryDiagram } from '@/features/marketing/security-page/boundary-diagram';
 import { CodePanel } from '@/features/marketing/security-page/code-panel';
-import {
-  audit,
-  control,
-  credentials,
-  disclosure,
-  hero,
-  identity,
-  isolation,
-  landing,
-  posture,
-} from '@/features/marketing/security-page/content';
+import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
 import { CredentialFlow } from '@/features/marketing/security-page/credential-flow';
+import { SecurityHeroVisual } from '@/features/marketing/security-page/hero-visual';
 import { PermissionMatrix } from '@/features/marketing/security-page/permission-matrix';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 /**
@@ -77,6 +68,9 @@ function RowList({
  * Read that header before editing a single line here.
  */
 export default function SecurityPage(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { audit, control, credentials, disclosure, hero, identity, isolation, landing, posture } =
+    getLocalizedSecurityContent(tI18nComplete);
   return (
     <div className="bg-background relative">
       <CapabilityHero
@@ -92,7 +86,11 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 1 · isolation ───────────────────────────────────────────────── */}
       <section id="isolation" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={isolation.eyebrow} title={isolation.title} description={isolation.sub} />
+        <SectionHeader
+          eyebrow={isolation.eyebrow}
+          title={isolation.title}
+          description={isolation.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -134,7 +132,11 @@ export default function SecurityPage(): ReactNode {
 
       {/* ── 3 · identity & permissions ──────────────────────────────────── */}
       <section id="identity" className="mx-auto max-w-7xl px-6 py-24 md:py-30">
-        <SectionHeader eyebrow={identity.eyebrow} title={identity.title} description={identity.sub} />
+        <SectionHeader
+          eyebrow={identity.eyebrow}
+          title={identity.title}
+          description={identity.sub}
+        />
 
         <Reveal delay={0.06}>
           <div className="mt-10">
@@ -333,7 +335,7 @@ export default function SecurityPage(): ReactNode {
           <div className="border-border bg-card mt-10 grid overflow-hidden rounded-sm border lg:grid-cols-12">
             <div className="border-border flex flex-col justify-center p-6 sm:p-8 lg:col-span-5 lg:border-r">
               <p className="text-muted-foreground font-mono text-[10px] tracking-widest uppercase">
-                security contact
+                {tI18nComplete.raw('text43c1eff02d17')}
               </p>
               <a
                 href={`mailto:${disclosure.email}`}
@@ -364,7 +366,6 @@ export default function SecurityPage(): ReactNode {
           </div>
         </Reveal>
       </section>
-
     </div>
   );
 }

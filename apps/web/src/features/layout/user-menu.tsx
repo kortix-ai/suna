@@ -22,11 +22,11 @@ import {
   ThemeSubmenu,
   useLogoutFlow,
 } from '@/features/layout/user-menu-shared';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { isBillingEnabled } from '@/lib/config';
 import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
 import {
@@ -35,7 +35,7 @@ import {
   DownloadSimple,
   SignOutIcon as LogOut,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
@@ -254,7 +254,7 @@ export function UserMenu({
           <DropdownMenuItem asChild onClick={() => setMenuOpen(false)} size="sm">
             <Link href={`/accounts/${currentAccount.account_id}?tab=billing`} prefetch>
               <CreditCard />
-              Billing
+              {tI18nHardcoded.raw('i18nComplete.text3ac8bbca9a74')}
             </Link>
           </DropdownMenuItem>
         )}

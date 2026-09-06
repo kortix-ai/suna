@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The panel behind a row click.
  *
@@ -87,7 +88,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { TRIGGER_SESSION_ACCESS_COPY } from './trigger-session-access-copy';
+import { triggerSessionAccessCopy } from './trigger-session-access-copy';
 
 import {
   CUSTOM_TIMING_LABEL,
@@ -161,19 +162,23 @@ export function ScheduleDetailSheet({
   onDelete: () => void;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => updateProjectTrigger(projectId, trigger!.slug, { enabled }),
     onSuccess: (_data, enabled) => {
-      successToast(enabled ? 'Resumed' : 'Paused');
+      successToast(
+        enabled ? tI18nComplete.raw('texta97d32ddb6ba') : tI18nComplete.raw('texte159b06187d3'),
+      );
       onMutated();
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'Could not update'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text43ec39943667')),
   });
 
   if (!trigger) return null;
 
   const isCron = trigger.type === 'cron';
-  const status = triggerStatus(trigger.enabled);
+  const status = triggerStatus(trigger.enabled, tI18nComplete);
   const KindIcon = isCron ? TimerIcon : WebhooksLogoIcon;
 
   return (
@@ -237,7 +242,7 @@ export function ScheduleDetailSheet({
                 ) : (
                   <PlayIcon weight="fill" className="size-3.5 shrink-0" />
                 )}
-                Run now
+                {tI18nComplete.raw('text0991397702fa')}
               </Button>
               <Button
                 size="sm"
@@ -258,14 +263,19 @@ export function ScheduleDetailSheet({
               <div className="min-w-2 flex-1" />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" aria-label="More actions">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    aria-label={tI18nComplete.raw('textf8d46c2570e7')}
+                  >
                     <DotsThreeIcon className="size-4 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <TrashIcon className="size-3.5 shrink-0" />
-                    Delete {isCron ? 'schedule' : 'webhook'}
+                    {tI18nComplete.raw('texte2d0a54968ea')}
+                    {isCron ? 'schedule' : 'webhook'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -377,6 +387,7 @@ function WhatItDoesPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [name, setName] = useState(trigger.name);
   const [instruction, setInstruction] = useState(trigger.prompt_template);
 
@@ -394,15 +405,18 @@ function WhatItDoesPanel({
         prompt_template: instruction,
       }),
     onSuccess: () => {
-      successToast('Saved');
+      successToast(tI18nComplete.raw('textb5c120b316c2'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not save'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text16efcd21d74f')),
   });
 
   if (!canWrite) {
     return (
-      <PanelSection title="What it does" description="The instruction sent to the agent each run.">
+      <PanelSection
+        title={tI18nComplete.raw('textc74ea9dc9cd2')}
+        description={tI18nComplete.raw('text79e527fa7dd1')}
+      >
         <p className="text-foreground text-sm leading-relaxed whitespace-pre-wrap">
           {trigger.prompt_template}
         </p>
@@ -417,28 +431,28 @@ function WhatItDoesPanel({
 
   return (
     <PanelSection
-      title="What it does"
-      description="The instruction sent to the agent each time this runs."
+      title={tI18nComplete.raw('textc74ea9dc9cd2')}
+      description={tI18nComplete.raw('text6744f8cb9594')}
       action={
         <SaveButton dirty={dirty && valid} pending={save.isPending} onSave={() => save.mutate()} />
       }
     >
       <div className="space-y-1.5">
         <Label htmlFor="schedule-name" className="text-xs">
-          Name
+          {tI18nComplete.raw('textdcd1d5223f73')}
         </Label>
         <Input
           id="schedule-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={64}
-          placeholder="Daily standup digest"
+          placeholder={tI18nComplete.raw('textc8cf587a3b6c')}
         />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="schedule-instruction" className="text-xs">
-          Instruction
+          {tI18nComplete.raw('text112f3ccb1b36')}
         </Label>
         <Textarea
           id="schedule-instruction"
@@ -446,10 +460,10 @@ function WhatItDoesPanel({
           onChange={(e) => setInstruction(e.target.value)}
           rows={5}
           className="resize-y leading-relaxed"
-          placeholder="Write today's status report and save it to /workspace/reports/"
+          placeholder={tI18nComplete.raw('text2438ee64fbf9')}
         />
         <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-          You can drop details from the incoming message straight into the instruction:{' '}
+          {tI18nComplete.raw('textb560dc33f1db')}{' '}
           {PLACEHOLDERS.map((p, i) => (
             <span key={p}>
               {i > 0 ? ', ' : ''}
@@ -476,6 +490,7 @@ function WhenItRunsPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [editing, setEditing] = useState(false);
   const [cron, setCron] = useState(trigger.cron ?? '0 0 9 * * *');
   const [runAt, setRunAt] = useState<string | null>(trigger.run_at);
@@ -500,17 +515,17 @@ function WhenItRunsPanel({
           : { cron: cron.trim(), run_at: null, timezone },
       ),
     onSuccess: () => {
-      successToast('Schedule updated');
+      successToast(tI18nComplete.raw('text5e2e76e79516'));
       setEditing(false);
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update the schedule'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text0aef01b447e9')),
   });
 
   const action = !canWrite ? null : editing ? (
     <ButtonGroup>
       <Button variant="outline" size="sm" onClick={() => setEditing(false)}>
-        Cancel
+        {tI18nComplete.raw('text19766ed6ccb2')}
       </Button>
       <Button
         variant="outline"
@@ -520,19 +535,19 @@ function WhenItRunsPanel({
         onClick={() => save.mutate()}
       >
         {save.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-        Save
+        {tI18nComplete.raw('text1509f561f241')}
       </Button>
     </ButtonGroup>
   ) : (
     <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setEditing(true)}>
       <PencilSimpleIcon className="size-3.5 shrink-0" />
-      Edit
+      {tI18nComplete.raw('text464c4ffd019e')}
     </Button>
   );
 
   if (canWrite && editing) {
     return (
-      <PanelSection title="When it runs" action={action}>
+      <PanelSection title={tI18nComplete.raw('text1bd739e67b5e')} action={action}>
         <ScheduleBuilder
           value={cron}
           onChange={setCron}
@@ -551,15 +566,17 @@ function WhenItRunsPanel({
     !trigger.run_at && trigger.cron ? describeCadence(trigger.cron) === CUSTOM_TIMING_LABEL : false;
 
   return (
-    <PanelSection title="When it runs" action={action}>
+    <PanelSection title={tI18nComplete.raw('text1bd739e67b5e')} action={action}>
       <PropertyList
         rows={[
-          { label: 'Runs', value: describeWhen(trigger) },
-          ...(trigger.run_at ? [] : [{ label: 'Timezone', value: trigger.timezone }]),
+          { label: tI18nComplete.raw('text848f54e89660'), value: describeWhen(trigger) },
+          ...(trigger.run_at
+            ? []
+            : [{ label: tI18nComplete.raw('text4ceca1d52ced'), value: trigger.timezone }]),
           ...(custom
             ? [
                 {
-                  label: 'Timing',
+                  label: tI18nComplete.raw('textfc4e84255a41'),
                   value: <code className="font-mono text-xs">{trigger.cron}</code>,
                 },
               ]
@@ -583,9 +600,10 @@ function AddressPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const url = trigger.webhook_url ?? '';
   const sample = useMemo(() => buildSampleRequest(url), [url]);
-  const security = describeSecurity(trigger);
+  const security = describeSecurity(trigger, tI18nComplete);
 
   const [secretName, setSecretName] = useState(trigger.secret_env ?? '');
   useEffect(() => {
@@ -596,25 +614,29 @@ function AddressPanel({
     mutationFn: () =>
       updateProjectTrigger(projectId, trigger.slug, { secret_env: secretName.trim() }),
     onSuccess: () => {
-      successToast('Signing key updated');
+      successToast(tI18nComplete.raw('textd5c147e93f23'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update the signing key'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text966761671cbc')),
   });
 
   const dirty = secretName.trim().length > 0 && secretName.trim() !== (trigger.secret_env ?? '');
 
   return (
     <PanelSection
-      title="Address"
-      description="Give this to the other app. It starts a run whenever it receives a request."
+      title={tI18nComplete.raw('text56ef8f20955f')}
+      description={tI18nComplete.raw('text8e3784778668')}
       action={
         canWrite ? (
           <SaveButton dirty={dirty} pending={save.isPending} onSave={() => save.mutate()} />
         ) : null
       }
     >
-      <CopyBlock value={url} label="Copy address" copiedLabel="Address copied" />
+      <CopyBlock
+        value={url}
+        label={tI18nComplete.raw('text7c4e5224f9d4')}
+        copiedLabel={tI18nComplete.raw('texta26175817712')}
+      />
 
       <InfoBanner tone={security.signed ? 'success' : 'warning'} className="text-xs">
         {security.detail}
@@ -623,7 +645,7 @@ function AddressPanel({
       {canWrite ? (
         <div className="space-y-1.5">
           <Label htmlFor="webhook-signing-key" className="text-xs">
-            Signing key
+            {tI18nComplete.raw('text49395b9594c2')}
           </Label>
           <Input
             id="webhook-signing-key"
@@ -633,8 +655,7 @@ function AddressPanel({
             className="font-mono text-sm"
           />
           <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-            The name of a saved secret holding the key both sides sign with. Add the secret under
-            Secrets first — the key itself is never stored here.
+            {tI18nComplete.raw('texte5c253036018')}
           </p>
         </div>
       ) : null}
@@ -649,7 +670,7 @@ function AddressPanel({
             size="sm"
             className="text-muted-foreground -mx-2 w-[calc(100%+1rem)] justify-between px-2"
           >
-            Sample request
+            {tI18nComplete.raw('text4b8aec6e6cd2')}
             <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
           </Button>
         </DisclosureTrigger>
@@ -658,11 +679,11 @@ function AddressPanel({
             <CopyBlock
               value={sample}
               multiline
-              label="Copy sample request"
-              copiedLabel="Sample request copied"
+              label={tI18nComplete.raw('text87365b87dda3')}
+              copiedLabel={tI18nComplete.raw('textc6092ea6beec')}
             />
             <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
-              The signature has to cover the request body exactly as it is sent, byte for byte.
+              {tI18nComplete.raw('text75110f412649')}
             </p>
           </div>
         </DisclosureContent>
@@ -684,6 +705,7 @@ function ConditionsPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [rows, setRows] = useState<ConditionRow[]>(() => conditionsToRows(trigger.filter));
 
   // The list refetches every 10s and `trigger.filter` is a fresh object each
@@ -698,20 +720,21 @@ function ConditionsPanel({
     mutationFn: () =>
       updateProjectTrigger(projectId, trigger.slug, { filter: rowsToConditions(rows) }),
     onSuccess: () => {
-      successToast('Conditions saved');
+      successToast(tI18nComplete.raw('textfc62a0071f66'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not save the conditions'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text2371acc8f6df')),
   });
 
   if (!canWrite) {
     const entries = Object.entries(trigger.filter ?? {});
     return (
-      <PanelSection title="Only run when" description="Requests that don't match are ignored.">
+      <PanelSection
+        title={tI18nComplete.raw('text94c7226773af')}
+        description={tI18nComplete.raw('textd6627a42b6b2')}
+      >
         {entries.length === 0 ? (
-          <p className="text-muted-foreground text-xs">
-            No conditions — every request starts a run.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textbce22443b335')}</p>
         ) : (
           <PropertyList
             rows={entries.map(([path, value]) => ({
@@ -726,8 +749,8 @@ function ConditionsPanel({
 
   return (
     <PanelSection
-      title="Only run when"
-      description="Ignore requests you don't care about. Leave empty to run on all of them."
+      title={tI18nComplete.raw('text94c7226773af')}
+      description={tI18nComplete.raw('text8e47e838d897')}
       action={
         <SaveButton
           dirty={!sameConditions(rowsToConditions(rows), trigger.filter)}
@@ -758,6 +781,7 @@ function AgentPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const agents = useVisibleAgents({ projectId });
   const { data: providers } = useRuntimeProviders();
   const models = useMemo(() => flattenModels(providers), [providers]);
@@ -772,10 +796,10 @@ function AgentPanel({
   const saveAgent = useMutation({
     mutationFn: (agent: string) => updateProjectTrigger(projectId, trigger.slug, { agent }),
     onSuccess: () => {
-      successToast('Agent updated');
+      successToast(tI18nComplete.raw('textd24a95381c8e'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update the agent'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('textc617ab4ba83d')),
   });
 
   // Only the subprojects this caller is granted, so the picker can never
@@ -806,19 +830,22 @@ function AgentPanel({
         model: model ? modelKeyToWire(model) : null,
       }),
     onSuccess: () => {
-      successToast('Model updated');
+      successToast(tI18nComplete.raw('text4c658b4e952e'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update the model'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text6ff3502ac059')),
   });
 
   if (!canWrite) {
     return (
-      <PanelSection title="Who runs it">
+      <PanelSection title={tI18nComplete.raw('text7fcc18556e6e')}>
         <PropertyList
           rows={[
-            { label: 'Agent', value: trigger.agent },
-            { label: 'Model', value: trigger.model ?? "The agent's usual model" },
+            { label: tI18nComplete.raw('text11b39c93777e'), value: trigger.agent },
+            {
+              label: tI18nComplete.raw('text5e2c614c23f0'),
+              value: trigger.model ?? "The agent's usual model",
+            },
             ...(triggerSubproject(trigger)
               ? [{ label: 'Subproject', value: triggerSubproject(trigger)! }]
               : []),
@@ -829,9 +856,12 @@ function AgentPanel({
   }
 
   return (
-    <PanelSection title="Who runs it" description="The agent and model used for every run.">
+    <PanelSection
+      title={tI18nComplete.raw('text7fcc18556e6e')}
+      description={tI18nComplete.raw('textad7959257d8d')}
+    >
       <div className="space-y-1.5">
-        <Label className="text-xs">Agent</Label>
+        <Label className="text-xs">{tI18nComplete.raw('text11b39c93777e')}</Label>
         {/* `AgentSelector` comes from the chat composer, where it is a floating
             pill in a rounded input bar. Wrapping it in `rounded-full bg-card
             inline-flex` carried that chrome into a settings sheet, where every
@@ -873,7 +903,7 @@ function AgentPanel({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label className="text-xs">Model</Label>
+          <Label className="text-xs">{tI18nComplete.raw('text5e2c614c23f0')}</Label>
           {trigger.model ? (
             <Button
               variant="ghost"
@@ -882,7 +912,7 @@ function AgentPanel({
               disabled={saveModel.isPending}
               onClick={() => saveModel.mutate(null)}
             >
-              Use the agent&apos;s usual model
+              {tI18nComplete.raw('text6960ac83d152')}
             </Button>
           ) : null}
         </div>
@@ -893,7 +923,7 @@ function AgentPanel({
             models={models}
             providers={providers}
             selectedModel={selectedModel}
-            unsetLabel="Agent's usual model"
+            unsetLabel={tI18nComplete.raw('text57069bbd0d2e')}
             onSelect={(next) => saveModel.mutate(next)}
           />
         </div>
@@ -915,6 +945,7 @@ function MemoryPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [mode, setMode] = useState<SessionMode>(trigger.session_mode);
   const [pinned, setPinned] = useState<string | null>(trigger.session_id);
   const [key, setKey] = useState(trigger.session_key ?? '');
@@ -936,15 +967,15 @@ function MemoryPanel({
     mutationFn: (input: UpdateProjectTriggerInput) =>
       updateProjectTrigger(projectId, trigger.slug, input),
     onSuccess: () => {
-      successToast('Updated');
+      successToast(tI18nComplete.raw('text3a5ecca188c0'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text43ec39943667')),
   });
 
   if (!canWrite) {
     return (
-      <PanelSection title="Memory between runs">
+      <PanelSection title={tI18nComplete.raw('text345e6cf10469')}>
         <p className="text-foreground text-sm">{describeRunLocation(trigger)}</p>
       </PanelSection>
     );
@@ -952,8 +983,8 @@ function MemoryPanel({
 
   return (
     <PanelSection
-      title="Memory between runs"
-      description="Whether the agent picks up where it left off, or starts clean."
+      title={tI18nComplete.raw('text345e6cf10469')}
+      description={tI18nComplete.raw('text319d909352ff')}
     >
       <RunLocationFields
         mode={mode}
@@ -1017,28 +1048,27 @@ function AccessPanel({
   canWrite: boolean;
   onMutated: () => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [selection, setSelection] = useState<SharingSelection>(trigger.session_access);
 
   const save = useMutation({
     mutationFn: () => updateProjectTrigger(projectId, trigger.slug, { session_access: selection }),
     onSuccess: () => {
-      successToast('Session access updated');
+      successToast(tI18nComplete.raw('text416476d59f76'));
       onMutated();
     },
-    onError: (e: Error) => errorToast(e.message || 'Could not update session access'),
+    onError: (e: Error) => errorToast(e.message || tI18nComplete.raw('text68d66e06fd0f')),
   });
 
   if (!canWrite) {
     return (
       <PanelSection
-        title="Session access"
-        description="Who can open sessions created by this trigger."
+        title={tI18nComplete.raw('textbc9424d3f527')}
+        description={tI18nComplete.raw('text515ebffde3e4')}
       >
         <p className="text-foreground text-sm">{accessSummary(trigger.session_access)}</p>
         {trigger.session_mode === 'pinned' ? (
-          <p className="text-muted-foreground text-xs">
-            The pinned session keeps its own sharing settings.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text60049ed7a3f8')}</p>
         ) : null}
       </PanelSection>
     );
@@ -1051,8 +1081,8 @@ function AccessPanel({
 
   return (
     <PanelSection
-      title="Session access"
-      description="Who can open sessions created by this trigger. Saving also updates its prior sessions."
+      title={tI18nComplete.raw('textbc9424d3f527')}
+      description={tI18nComplete.raw('texta4de16df5a99')}
       action={<SaveButton dirty={dirty} pending={save.isPending} onSave={() => save.mutate()} />}
     >
       <SharingPicker
@@ -1060,12 +1090,11 @@ function AccessPanel({
         value={selection}
         onChange={setSelection}
         showHeading={false}
-        copy={TRIGGER_SESSION_ACCESS_COPY}
+        copy={triggerSessionAccessCopy(tI18nComplete)}
       />
       {trigger.session_mode === 'pinned' ? (
         <InfoBanner tone="info" className="text-xs">
-          The pinned session keeps its own sharing settings. This policy applies if the trigger
-          creates a fallback session.
+          {tI18nComplete.raw('textd33efef68fbd')}
         </InfoBanner>
       ) : null}
     </PanelSection>
@@ -1075,6 +1104,7 @@ function AccessPanel({
 /* ─── Details — facts, not settings ─────────────────────────────────────── */
 
 function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   return (
     <Disclosure className="group bg-popover overflow-hidden rounded-md border">
       <DisclosureTrigger>
@@ -1083,7 +1113,7 @@ function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
           size="sm"
           className="text-muted-foreground w-full justify-between rounded-none px-4 py-3"
         >
-          Details
+          {tI18nComplete.raw('text45989de49fb7')}
           <CaretDownIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
         </Button>
       </DisclosureTrigger>
@@ -1096,11 +1126,11 @@ function DetailsPanel({ trigger }: { trigger: ProjectTrigger }) {
                 value: <code className="font-mono text-xs">{trigger.slug}</code>,
               },
               {
-                label: 'Saved in',
+                label: tI18nComplete.raw('text456a1fdc1530'),
                 value: <code className="font-mono text-xs">{trigger.path}</code>,
               },
               {
-                label: 'Last run',
+                label: tI18nComplete.raw('text512a48218ba2'),
                 value: (
                   <span className="tabular-nums">
                     {trigger.last_fired_at

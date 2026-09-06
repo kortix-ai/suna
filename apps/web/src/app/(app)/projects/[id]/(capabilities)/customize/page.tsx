@@ -23,8 +23,8 @@
  * page fills placeholders in place instead of flashing a blank.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
 import { capabilityTabHref } from '@/features/workspace/capabilities/shared/capability-tab-routes';

@@ -49,15 +49,8 @@ export function EasyPanel() {
   // read-only inside `sub-session-modal.tsx`, which has no panel at all.
   if (!panel) return null;
 
-  const {
-    files,
-    context,
-    apps,
-    outputsDefaultOpen,
-    sessionId,
-    handleOpenOutput,
-    openDetail,
-  } = panel;
+  const { files, context, apps, outputsDefaultOpen, sessionId, handleOpenOutput, openDetail } =
+    panel;
 
   return (
     // A fill-and-scroll column, not a scrolling stack.

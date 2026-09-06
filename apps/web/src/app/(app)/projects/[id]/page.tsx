@@ -2,10 +2,12 @@
 
 import { ProjectHome } from '@/features/workspace/project-layout/project-home';
 import { useProjectHomeSend } from '@/features/workspace/project-layout/use-project-home-send';
+import { useTranslations } from '@/i18n/use-translations';
 import { useAccountState } from '@/hooks/billing';
 import { billingDialogArgs, resolveBillingState } from '@/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
+import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
@@ -18,6 +20,7 @@ import { promptFromSearchParams } from './prompt-from-search-params';
 const FREE_ONBOARDING_UPGRADE_MODAL_KEY = 'kortix:free-onboarding-upgrade-modal-shown';
 
 export default function ProjectIndexPage() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const pathname = usePathname();
@@ -51,8 +54,10 @@ export default function ProjectIndexPage() {
     if (window.localStorage.getItem(storageKey) === '1') return;
 
     window.localStorage.setItem(storageKey, '1');
-    openUpgradeDialog(billingDialogArgs('no_subscription', accountState, projectAccountId));
-  }, [accountState, projectAccountId, openUpgradeDialog]);
+    openUpgradeDialog(
+      billingDialogArgs('no_subscription', accountState, projectAccountId, tI18nComplete),
+    );
+  }, [accountState, projectAccountId, openUpgradeDialog, tI18nComplete]);
 
   // `/projects/start?q=<prompt>` forwards its query string onto this route
   // unchanged (see `withCurrentQuery` in `../start/page.tsx`), landing here as

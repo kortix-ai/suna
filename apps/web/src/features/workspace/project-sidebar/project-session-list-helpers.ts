@@ -173,9 +173,7 @@ function resolveSessionTitle(session: ProjectSession): string | null {
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
-  return (
-    session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null
-  );
+  return session.custom_name?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
 }
 
 /**
@@ -223,9 +221,7 @@ const TITLE_WAIT_WINDOW_MS = 2 * 60_000;
  */
 export function isAwaitingTitle(session: ProjectSession, now: number): boolean {
   if (sessionTitleHasLanded(session)) return false;
-  const createdAt = Date.parse(
-    (session as { created_at?: string | null }).created_at ?? '',
-  );
+  const createdAt = Date.parse((session as { created_at?: string | null }).created_at ?? '');
   if (!Number.isFinite(createdAt)) return false;
   const windowStart = Math.max(createdAt, promptActivityMs(session) ?? createdAt);
   return now - windowStart <= TITLE_WAIT_WINDOW_MS;

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `SessionPanelProvider` — the single owner of everything a session's panel
  * surfaces show, hoisted above BOTH of them.
@@ -52,12 +53,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { collectAllToolParts } from './shared/collect-tool-parts';
-import { type OutputItem, deriveContext, deriveOutputs } from './shared/derive-panels';
-import { groupSteps } from './shared/group-steps';
-import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
-import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
-import { deriveRunOutcome } from './shared/run-outcome';
 import { AppPreview } from './easy/app-preview';
 import type { Detail } from './easy/detail-view';
 import {
@@ -74,6 +69,12 @@ import {
 import { FilePreview, reportsIntrinsicSize } from './easy/file-preview';
 import { StepDetailBody } from './easy/step-detail-body';
 import { StepIcon } from './easy/step-icon';
+import { collectAllToolParts } from './shared/collect-tool-parts';
+import { deriveContext, deriveOutputs, type OutputItem } from './shared/derive-panels';
+import { groupSteps } from './shared/group-steps';
+import { latestRunCallIds, latestRunMessages } from './shared/latest-run';
+import { selectPrimaryDeliverable, sortOutputs } from './shared/output-priority';
+import { deriveRunOutcome } from './shared/run-outcome';
 
 /** Where an open was triggered from. Telemetry only (W5) — never read for
  *  behavior, only reported alongside `deliverable_opened`. */
@@ -143,6 +144,7 @@ export function SessionPanelProvider({
   projectSessionId?: string;
   children: ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const parts = useMemo(() => collectAllToolParts(messages), [messages]);
   const steps = useMemo(() => groupSteps(parts), [parts]);
   const latestIds = useMemo(() => latestRunCallIds(messages), [messages]);
@@ -672,11 +674,11 @@ export function SessionPanelProvider({
   const openAudit = useCallback(() => {
     openDetail({
       key: 'audit',
-      title: 'Audit',
+      title: tI18nComplete.raw('textbb6aea287396'),
       padded: false,
       body: <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />,
     });
-  }, [openDetail, projectId, projectSessionId]);
+  }, [openDetail, projectId, projectSessionId, tI18nComplete]);
 
   /**
    * The opt-in File Explorer (Marko's ask). Never a default view and never a

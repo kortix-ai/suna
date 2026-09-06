@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 import { wireToModelKey } from '@kortix/sdk/react';
@@ -42,7 +42,10 @@ describe('the identity a badged row is decided by', () => {
    * quietly loses its badge — no error, no failing render.
    */
   test('wireToModelKey keeps the whole wire id in modelID', () => {
-    expect(wireToModelKey('glm-5.3-flash')).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+    expect(wireToModelKey('glm-5.3-flash')).toEqual({
+      providerID: 'kortix',
+      modelID: 'glm-5.3-flash',
+    });
   });
 
   test('a BYOK provider/model wire id is NOT split across the two fields', () => {
@@ -53,7 +56,11 @@ describe('the identity a badged row is decided by', () => {
   });
 
   test('the round trip a row comparison depends on holds for both id shapes', () => {
-    for (const wire of ['glm-5.3-flash', 'anthropic/claude-opus-4-8', 'us.anthropic.claude-opus-4-8']) {
+    for (const wire of [
+      'glm-5.3-flash',
+      'anthropic/claude-opus-4-8',
+      'us.anthropic.claude-opus-4-8',
+    ]) {
       expect(wireToModelKey(wire).modelID).toBe(wire);
     }
   });
@@ -81,8 +88,8 @@ describe('ModelsTab offers both default scopes', () => {
     // row as often as your own, and "my" in a badge is ambiguous about whose
     // "my" it is; the menu item that SETS it still says "my", because there
     // the reader is the actor.
-    expect(tabSource).toContain('<Tag>project default</Tag>');
-    expect(tabSource).toContain('<Tag>your default</Tag>');
+    expect(tabSource).toContain("raw('text5e06ae1125b5')");
+    expect(tabSource).toContain("raw('text071c0f5e8495')");
   });
 
   /**

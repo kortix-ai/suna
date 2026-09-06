@@ -1,11 +1,10 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase } from '@/lib/dotmatrix-core';
+import { useDotMatrixPhases, usePrefersReducedMotion } from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare9Props = DotMatrixCommonProps;
 
@@ -61,27 +60,31 @@ function resolveBraille(row: number, col: number): { bit: number } | null {
 
 export function DotmSquare9({
   speed = 1.5,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare9Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
 
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, row, col, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const braille = resolveBraille(row, col);
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         if (braille) {
           const mask = CHECK_A;
           const on = (mask & braille.bit) !== 0;
@@ -101,17 +104,17 @@ export function DotmSquare9({
         return { style: { opacity: BASE_OPACITY } };
       }
 
-      let bitClass = "dmx-square9-d1";
+      let bitClass = 'dmx-square9-d1';
       if (braille.bit === D2) {
-        bitClass = "dmx-square9-d2";
+        bitClass = 'dmx-square9-d2';
       } else if (braille.bit === D3) {
-        bitClass = "dmx-square9-d3";
+        bitClass = 'dmx-square9-d3';
       } else if (braille.bit === D4) {
-        bitClass = "dmx-square9-d4";
+        bitClass = 'dmx-square9-d4';
       } else if (braille.bit === D5) {
-        bitClass = "dmx-square9-d5";
+        bitClass = 'dmx-square9-d5';
       } else if (braille.bit === D6) {
-        bitClass = "dmx-square9-d6";
+        bitClass = 'dmx-square9-d6';
       }
 
       return { className: `dmx-square9-bit ${bitClass}` };

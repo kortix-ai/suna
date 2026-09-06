@@ -2,8 +2,8 @@
 
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 

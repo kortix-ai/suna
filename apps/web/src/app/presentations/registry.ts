@@ -16,6 +16,9 @@
  * the whole route tree is `noindex`, internal, and behind no hot path.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import { useSlides as usePlatformSlides } from './decks/platform';
 import { useSlides as useSalesSlides } from './decks/sales';
 import { useSlides as useSecuritySlides } from './decks/security';
@@ -64,6 +67,10 @@ export const DECKS: readonly DeckDef[] = [
 
 export function findDeck(slug: string): DeckDef | undefined {
   return DECKS.find((d) => d.slug === slug);
+}
+
+export function localizedDecks(tI18nComplete: UiTranslator): readonly DeckDef[] {
+  return localizeUiCatalog(DECKS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
 }
 
 /** Total → presses in a deck: one per slide, plus each slide's build steps. */

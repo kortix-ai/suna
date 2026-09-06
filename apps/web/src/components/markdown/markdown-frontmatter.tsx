@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { UnifiedMarkdown } from './unified-markdown';
 
@@ -81,6 +82,7 @@ function ScalarValue({ value }: { value: string }) {
 }
 
 function NestedTable({ data }: { data: Record<string, string> }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const entries = Object.entries(data);
   if (entries.length === 0) return <span className="text-muted-foreground/60">—</span>;
   return (
@@ -88,7 +90,7 @@ function NestedTable({ data }: { data: Record<string, string> }) {
       {entries.map(([k, v]) => (
         <Badge key={k} size="sm" variant="secondary" className="gap-1">
           <span className="text-muted-foreground/70">{k}</span>
-          <span className="text-muted-foreground/30">&bull;</span>
+          <span className="text-muted-foreground/30">{tI18nComplete.raw('text3b9453dad42b')}</span>
           <ScalarValue value={v} />
         </Badge>
       ))}
@@ -101,6 +103,7 @@ function NestedTable({ data }: { data: Record<string, string> }) {
  * with Show more / Show less once the content overflows the cap.
  */
 function FrontmatterValueBody({ value }: { value: FrontmatterValue }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -155,7 +158,7 @@ function FrontmatterValueBody({ value }: { value: FrontmatterValue }) {
             'focus-visible:ring-ring/50 rounded-sm focus-visible:ring-2 focus-visible:outline-none',
           )}
         >
-          {expanded ? 'Show less' : 'Show more'}
+          {expanded ? tI18nComplete.raw('text94ea9b1d33a0') : tI18nComplete.raw('textf5c9bd131486')}
         </button>
       ) : null}
     </div>

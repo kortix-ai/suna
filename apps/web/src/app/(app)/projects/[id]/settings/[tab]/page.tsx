@@ -37,8 +37,8 @@
  * ever rendered here. Redirecting away fixes both.
  */
 
-import { useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { parseSettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useLegacySectionRedirect } from '@/features/workspace/settings/use-account-section-redirect';

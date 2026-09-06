@@ -5,7 +5,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { deleteProjectSession } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 interface SessionDeleteModalProps {
   projectId: string;
@@ -30,13 +30,19 @@ export function SessionDeleteModal({
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteProjectSession(projectId, id),
     onSuccess: () => {
-      successToast(sessionLabel ? `"${sessionLabel}" deleted` : 'Session deleted');
+      successToast(
+        sessionLabel
+          ? tHardcodedUi('i18nComplete.text0690079160b0', { value0: sessionLabel })
+          : tHardcodedUi.raw('i18nComplete.text3c0cf36859ac'),
+      );
       queryClient.invalidateQueries({ queryKey: qk.project.sessionsScope(projectId) });
       onDeleted?.();
       onOpenChange(false);
     },
     onError: (err) => {
-      errorToast(err instanceof Error ? err.message : 'Failed to delete session');
+      errorToast(
+        err instanceof Error ? err.message : tHardcodedUi.raw('i18nComplete.text5c9c6608b47d'),
+      );
     },
   });
 
@@ -63,7 +69,7 @@ export function SessionDeleteModal({
           )}
         </>
       }
-      confirmLabel="Delete"
+      confirmLabel={tHardcodedUi.raw('i18nComplete.texte2d0a54968ea')}
       confirmVariant="destructive"
       isPending={deleteMutation.isPending}
       onConfirm={confirmDelete}

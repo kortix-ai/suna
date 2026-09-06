@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The "Changes" section of a change's review page: every file the branch
  * touched, each with its live diff open underneath. Reuses the project-files
@@ -36,6 +37,7 @@ function splitPath(path: string): { name: string; dir: string } {
 }
 
 export function ChangeFiles({ crId }: { crId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading, isError } = useChangeRequestDiff(crId);
   // Every file starts open — the diff is what a reviewer came for. Collapsing
   // is per file and remembered until the page is left.
@@ -56,7 +58,7 @@ export function ChangeFiles({ crId }: { crId: string }) {
   } else if (isError || files.length === 0) {
     body = (
       <div className="bg-popover text-muted-foreground rounded-md border px-4 py-8 text-center text-sm">
-        No file changes to show.
+        {tI18nComplete.raw('text9de1afb68dd7')}
       </div>
     );
   } else {
@@ -108,14 +110,18 @@ export function ChangeFiles({ crId }: { crId: string }) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-foreground text-sm font-medium">Changes</h2>
+        <h2 className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('textbbd4b6a86bc6')}
+        </h2>
         {files.length > 1 && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setClosed(allClosed ? new Set() : new Set(files.map((f) => f.path)))}
           >
-            {allClosed ? 'Expand all' : 'Collapse all'}
+            {allClosed
+              ? tI18nComplete.raw('texta3e586be3eff')
+              : tI18nComplete.raw('text25f7b3721119')}
           </Button>
         )}
       </div>

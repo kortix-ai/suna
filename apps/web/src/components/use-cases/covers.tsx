@@ -1,3 +1,4 @@
+import { useTranslations } from '@/i18n/use-translations';
 /* eslint-disable @next/next/no-img-element */
 import {
   ActivityIcon as Activity,
@@ -62,7 +63,6 @@ import {
   WalletIcon as Wallet,
 } from '@/lib/icons/ssr';
 import type { ComponentType, ReactNode } from 'react';
-
 
 import type { Post } from '@/lib/blog';
 import { cn } from '@/lib/utils';
@@ -174,6 +174,7 @@ function FeatureCover({ children, glow }: { children: ReactNode; glow: string })
 }
 
 function HeroCover({ children }: { children: ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <CoverBackdrop>
       <Rings sizes={[110, 175, 240]} />
@@ -186,7 +187,7 @@ function HeroCover({ children }: { children: ReactNode }) {
           <div className="absolute -right-1.5 -bottom-1.5 overflow-hidden rounded-lg shadow-md ring-[3px] ring-white">
             <img
               src="/usecases/logos/kortix.png"
-              alt="Kortix"
+              alt={tI18nComplete.raw('textab54cf5e1d9d')}
               className="size-7 object-cover sm:size-8"
             />
           </div>

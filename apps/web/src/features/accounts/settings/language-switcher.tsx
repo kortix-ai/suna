@@ -1,6 +1,6 @@
 'use client';
 
-import { useLanguage } from '@/hooks/use-language';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -8,20 +8,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { locales, type Locale } from '@/i18n/config';
-import { useTranslations } from 'next-intl';
-
-const languageNames: Record<Locale, string> = {
-  en: 'English',
-  de: 'Deutsch',
-  it: 'Italiano',
-  zh: '中文',
-  ja: '日本語',
-  pt: 'Português',
-  fr: 'Français',
-  es: 'Español',
-};
+import { useLanguage } from '@/hooks/use-language';
+import { localeNames, type Locale } from '@/i18n/config';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function LanguageSwitcher() {
   const { locale, setLanguage, availableLanguages } = useLanguage();
@@ -29,22 +18,15 @@ export function LanguageSwitcher() {
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="language-select">
-        {t('title')}
-      </Label>
-      <Select
-        value={locale}
-        onValueChange={(value) => setLanguage(value as Locale)}
-      >
-        <SelectTrigger id="language-select" className="w-full !h-11">
-          <SelectValue>
-            {languageNames[locale as Locale] || locale}
-          </SelectValue>
+      <Label htmlFor="language-select">{t('title')}</Label>
+      <Select value={locale} onValueChange={(value) => setLanguage(value as Locale)}>
+        <SelectTrigger id="language-select" className="!h-11 w-full">
+          <SelectValue>{localeNames[locale as Locale] || locale}</SelectValue>
         </SelectTrigger>
         <SelectContent>
           {availableLanguages.map((lang) => (
             <SelectItem key={lang} value={lang}>
-              {languageNames[lang]}
+              {localeNames[lang]}
             </SelectItem>
           ))}
         </SelectContent>

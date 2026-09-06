@@ -205,10 +205,7 @@ export async function runSignOut(
   // beat the guard's stand-down.
   signOutStarted = true;
 
-  const server = await withTimeBudget(
-    steps.finalizeServerSession(),
-    budgets.finalizeServerSession,
-  );
+  const server = await withTimeBudget(steps.finalizeServerSession(), budgets.finalizeServerSession);
   if (server.status !== 'settled') {
     // Best effort. A backend that is down — or merely slow — must never be able
     // to keep a user signed in.

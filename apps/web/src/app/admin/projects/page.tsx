@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
@@ -62,6 +63,7 @@ function shortDate(value: string | null): string {
 }
 
 export default function AdminProjectsPage() {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const [searchInput, setSearchInput] = useState('');
   const search = useDebounce(searchInput);
   const [status, setStatus] = useState<StatusFilter>('all');
@@ -128,21 +130,26 @@ export default function AdminProjectsPage() {
   return (
     <AdminPageShell
       width="wide"
-      title="Projects"
-      description="Every project across every account, most-active first. Activity is the newest session on the project, not the last row edit."
+      title={tI18nComplete.raw('text04e2a9728af7')}
+      description={tI18nComplete.raw('text396b656e8564')}
     >
       {/* Two stat cards on their own row… */}
       <StatGrid className="sm:grid-cols-2 lg:grid-cols-2">
         <StatTile
-          label="Total filtered"
+          label={tI18nComplete.raw('text5871c99664b2')}
           value={total.toLocaleString()}
-          hint={filtered ? 'Matches the current filters' : 'All projects'}
+          hint={
+            filtered ? tI18nComplete.raw('text904eb9015563') : tI18nComplete.raw('text4b87271b6b81')
+          }
         />
         <StatTile
-          label="Live sessions"
+          label={tI18nComplete.raw('text366487a11e4c')}
           value={liveOnPage.toLocaleString()}
           tone={liveOnPage > 0 ? 'success' : 'default'}
-          hint={`On this page (${projects.length} of ${total.toLocaleString()})`}
+          hint={tI18nComplete('textd478d8374dfc', {
+            value0: projects.length,
+            value1: total.toLocaleString(),
+          })}
         />
       </StatGrid>
 
@@ -155,12 +162,12 @@ export default function AdminProjectsPage() {
           <AdminSearch
             value={searchInput}
             onChange={setSearchInput}
-            placeholder="Search projects, accounts, owners"
+            placeholder={tI18nComplete.raw('text005b4c1dad87')}
           />
         </div>
         <Select value={status} onValueChange={(v) => applyStatus(v as StatusFilter)}>
           <SelectTrigger className="w-full sm:w-44">
-            <SelectValue placeholder="Status" />
+            <SelectValue placeholder={tI18nComplete.raw('text920e413c7d41')} />
           </SelectTrigger>
           <SelectContent align="end">
             {STATUS_OPTIONS.map((option) => (
@@ -180,14 +187,16 @@ export default function AdminProjectsPage() {
           <EmptyState
             icon={IconInbox}
             size="sm"
-            title={filtered ? 'No projects match these filters' : 'No projects yet'}
-            description={
-              filtered ? 'Try a different status, or clear the search.' : undefined
+            title={
+              filtered
+                ? tI18nComplete.raw('text93ae826087ca')
+                : tI18nComplete.raw('textf83c80652286')
             }
+            description={filtered ? tI18nComplete.raw('text5ef5b4754d95') : undefined}
             action={
               filtered ? (
                 <Button variant="outline" size="sm" onClick={resetFilters}>
-                  Clear filters
+                  {tI18nComplete.raw('text7179ea0035fc')}
                 </Button>
               ) : undefined
             }
@@ -198,10 +207,10 @@ export default function AdminProjectsPage() {
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Project</TableHead>
-                <TableHead>Account</TableHead>
+                <TableHead>{tI18nComplete.raw('text985959785319')}</TableHead>
+                <TableHead>{tI18nComplete.raw('text7e1b0d5641f2')}</TableHead>
                 <AdminSortHeader
-                  label="Sessions"
+                  label={tI18nComplete.raw('text6fa3cbf451b2')}
                   column="sessions"
                   sortBy={sortBy}
                   sortDir={sortDir}
@@ -209,14 +218,14 @@ export default function AdminProjectsPage() {
                   align="right"
                 />
                 <AdminSortHeader
-                  label="Last activity"
+                  label={tI18nComplete.raw('text06475633ed3e')}
                   column="activity"
                   sortBy={sortBy}
                   sortDir={sortDir}
                   onSort={setSort}
                 />
                 <AdminSortHeader
-                  label="Created"
+                  label={tI18nComplete.raw('textd70b9e24bca2')}
                   column="created"
                   sortBy={sortBy}
                   sortDir={sortDir}
@@ -234,7 +243,7 @@ export default function AdminProjectsPage() {
                         className="group inline-flex max-w-full items-center gap-1.5 text-sm font-medium"
                       >
                         <span className="truncate group-hover:underline">
-                          {project.name || 'Unnamed project'}
+                          {project.name || tI18nComplete.raw('textedba1e383471')}
                         </span>
                         <ArrowSquareOutIcon className="text-muted-foreground size-3 shrink-0" />
                       </Link>
@@ -243,7 +252,7 @@ export default function AdminProjectsPage() {
                         {project.status === 'archived' && (
                           <>
                             <span className="text-muted-foreground/40 mx-1.5">·</span>
-                            <span>Archived</span>
+                            <span>{tI18nComplete.raw('textbdb86505f806')}</span>
                           </>
                         )}
                       </div>
@@ -259,10 +268,12 @@ export default function AdminProjectsPage() {
                           {project.ownerEmail}
                         </Link>
                       ) : (
-                        <span className="text-muted-foreground text-sm">No owner email</span>
+                        <span className="text-muted-foreground text-sm">
+                          {tI18nComplete.raw('textaca82dbb8ef0')}
+                        </span>
                       )}
                       <div className="text-muted-foreground truncate text-xs">
-                        {project.accountName || 'Unnamed account'}
+                        {project.accountName || tI18nComplete.raw('textefeba8456698')}
                       </div>
                     </div>
                   </TableCell>
@@ -282,7 +293,9 @@ export default function AdminProjectsPage() {
                     <span>{project.sessionCount}</span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {project.lastSessionAt ? relativeTime(project.lastSessionAt) : 'Never run'}
+                    {project.lastSessionAt
+                      ? relativeTime(project.lastSessionAt)
+                      : tI18nComplete.raw('text3d40a69d3160')}
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {shortDate(project.createdAt)}

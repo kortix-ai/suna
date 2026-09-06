@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // Account-wide MFA enforcement toggle on the Settings tab. Off by default.
 // When ON, every browser/JWT request whose session is not aal2 is denied
 // at the IAM engine — super-admins are exempt (so the switch can't
@@ -53,6 +54,7 @@ interface MfaRequiredCardProps {
 }
 
 export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -90,9 +92,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
     mutationFn: (enabled: boolean) => setMfaRequired(accountId, enabled),
     onSuccess: (res) => {
       successToast(
-        res.enabled
-          ? 'Two-factor authentication is now required'
-          : 'Two-factor authentication is no longer required',
+        res.enabled ? tI18nComplete.raw('text385ec5e81a2c') : tI18nComplete.raw('texteffc26c96de0'),
       );
       queryClient.invalidateQueries({ queryKey: ['iam-mfa-required', accountId] });
       // Permission probes cache verdicts and the MFA gate flips them
@@ -101,7 +101,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
       queryClient.invalidateQueries({ queryKey: ['iam-permission-batch'] });
       setConfirmOpen(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update MFA requirement'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textd46bb949f04b')),
   });
 
   const enabled = statusQuery.data?.enabled ?? false;
@@ -122,11 +122,11 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
   return (
     <>
       <SettingsRow
-        label="Require two-factor authentication"
+        label={tI18nComplete.raw('text80b64b2966be')}
         // One line, and only the part an admin decides on. Where a member
         // enrols is the member's problem, and it is answered on the Profile
         // pane where they do it — it does not belong in this row.
-        description="Members confirm a second factor before any protected action. Super-admins and API keys are exempt."
+        description={tI18nComplete.raw('textd45f25a6299a')}
       >
         {statusQuery.isLoading ? (
           <Skeleton className="h-5 w-9 shrink-0 rounded-full" />
@@ -139,7 +139,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               // and the query invalidation after it lands is what moves this.
               onCheckedChange={() => setConfirmOpen(true)}
               disabled={!canManage || flipMutation.isPending}
-              aria-label="Require two-factor authentication"
+              aria-label={tI18nComplete.raw('text80b64b2966be')}
               className="shrink-0"
             />
           </>
@@ -155,15 +155,12 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
       >
         <ModalContent className="lg:max-w-lg">
           <ModalHeader>
-            <ModalTitle>Require two-factor authentication?</ModalTitle>
+            <ModalTitle>{tI18nComplete.raw('text563038dc7264')}</ModalTitle>
             {/* Same words as the row that opens this — "protected action" and
                 "API keys", not "IAM-gated action" and "PATs". A confirmation
                 that renames what you just read is a confirmation you have to
                 re-read. */}
-            <ModalDescription>
-              Members without a verified second factor are blocked from every protected action until
-              they enrol. API keys are unaffected.
-            </ModalDescription>
+            <ModalDescription>{tI18nComplete.raw('text08a608865569')}</ModalDescription>
           </ModalHeader>
 
           <ModalBody className="space-y-3">
@@ -176,8 +173,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
 
             {previewQuery.data && previewQuery.data.will_lock_out_account && (
               <InfoBanner tone="destructive" icon={AlertTriangle}>
-                Nobody would retain access. Promote a super-admin or have at least one member enrol
-                MFA before enabling.
+                {tI18nComplete.raw('text62dd34b5892f')}
               </InfoBanner>
             )}
 
@@ -186,11 +182,11 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                 <span className="text-foreground font-medium">
                   {previewQuery.data.members_with_mfa}
                 </span>{' '}
-                of{' '}
+                {tI18nComplete.raw('text28391d3bc64e')}{' '}
                 <span className="text-foreground font-medium">
                   {previewQuery.data.total_members}
                 </span>{' '}
-                members have MFA enrolled.
+                {tI18nComplete.raw('texta8d4a1d5bb6d')}
               </InfoBanner>
             )}
 
@@ -198,7 +194,10 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               <InfoBanner
                 tone="warning"
                 icon={AlertTriangle}
-                title={`${partitionedLosers.lockouts.length} ${partitionedLosers.lockouts.length === 1 ? 'member' : 'members'} will be locked out until they enrol MFA:`}
+                title={tI18nComplete('text2be1f843485e', {
+                  value0: partitionedLosers.lockouts.length,
+                  value1: partitionedLosers.lockouts.length === 1 ? 'member' : 'members',
+                })}
               >
                 <ul className="max-h-40 space-y-0.5 overflow-y-auto">
                   {partitionedLosers.lockouts.map((l) => (
@@ -220,11 +219,11 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
                 title={
                   <span className="inline-flex flex-wrap items-center gap-1.5">
                     <Badge variant="outline" size="xs">
-                      exempt
+                      {tI18nComplete.raw('text42d8a7ea9caf')}
                     </Badge>
-                    {partitionedLosers.exemptAdmins.length} super-admin
-                    {partitionedLosers.exemptAdmins.length === 1 ? '' : 's'} without MFA — they
-                    won&apos;t be locked out, but consider asking them to enrol:
+                    {partitionedLosers.exemptAdmins.length} {tI18nComplete.raw('text11c520bc9f1f')}
+                    {partitionedLosers.exemptAdmins.length === 1 ? '' : 's'}{' '}
+                    {tI18nComplete.raw('textdc78f4d17256')}
                   </span>
                 }
               >
@@ -246,7 +245,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               onClick={() => setConfirmOpen(false)}
               disabled={flipMutation.isPending}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button
               size="sm"
@@ -255,7 +254,7 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
               className="gap-1.5"
             >
               {flipMutation.isPending && <Loading className="size-3.5 shrink-0" />}
-              Require it
+              {tI18nComplete.raw('text644381187e8b')}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -267,9 +266,9 @@ export function MfaRequiredCard({ accountId, canManage }: MfaRequiredCardProps) 
         onOpenChange={(v) => {
           if (!flipMutation.isPending) setConfirmOpen(v);
         }}
-        title="Stop requiring two-factor authentication?"
-        description="Members will be able to sign in with a password alone. Any policy you set a second-factor condition on individually still enforces it — only the account-wide rule is removed."
-        confirmLabel="Stop requiring it"
+        title={tI18nComplete.raw('textf2e8cb47665e')}
+        description={tI18nComplete.raw('text1c1a67e4558f')}
+        confirmLabel={tI18nComplete.raw('texta89a654b8541')}
         confirmVariant="destructive"
         isPending={flipMutation.isPending}
         onConfirm={() => flipMutation.mutate(false)}

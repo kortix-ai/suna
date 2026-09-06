@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * Plain-language copy for schedules and webhooks.
  *
@@ -180,16 +184,16 @@ export type TriggerStatus = {
   iconClassName: string;
 };
 
-export function triggerStatus(enabled: boolean): TriggerStatus {
+export function triggerStatus(enabled: boolean, tI18nComplete: UiTranslator): TriggerStatus {
   return enabled
     ? {
-        label: 'Active',
+        label: tI18nComplete.raw('text92340695899b'),
         active: true,
         tileClassName: 'bg-kortix-green/10',
         iconClassName: 'text-kortix-green',
       }
     : {
-        label: 'Paused',
+        label: tI18nComplete.raw('texte159b06187d3'),
         active: false,
         tileClassName: 'bg-muted',
         iconClassName: 'text-muted-foreground',
@@ -271,18 +275,21 @@ export type SecurityState = {
   detail: string;
 };
 
-export function describeSecurity(trigger: ProjectTrigger): SecurityState {
+export function describeSecurity(
+  trigger: ProjectTrigger,
+  tI18nComplete: UiTranslator,
+): SecurityState {
   if (trigger.secret_env) {
     return {
-      label: 'Signed',
+      label: tI18nComplete.raw('text08251562b340'),
       signed: true,
-      detail: `Requests are checked against the saved secret ${trigger.secret_env}.`,
+      detail: tI18nComplete('text9a4b273e6216', { secret: trigger.secret_env }),
     };
   }
   return {
-    label: 'Not signed',
+    label: tI18nComplete.raw('textc0f06f876fa1'),
     signed: false,
-    detail: 'Anyone with this address can start a run. Add a signing key to lock it down.',
+    detail: tI18nComplete.raw('text2e5ec4fb360d'),
   };
 }
 
@@ -364,10 +371,22 @@ export const TRIGGERS_COPY = {
     'Create one to have an agent run automatically — on a schedule, or when another app sends a signal.',
 } as const;
 
+export function localizedKindCopy(tI18nComplete: UiTranslator): Record<TriggerKind, KindCopy> {
+  return localizeUiCatalog(KIND_COPY, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
+export function localizedTriggersCopy(tI18nComplete: UiTranslator): typeof TRIGGERS_COPY {
+  return localizeUiCatalog(TRIGGERS_COPY, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS);
+}
+
 /* ─── Search ────────────────────────────────────────────────────────────── */
 
 /** Matches what a person can see in the list, not the wire fields. */
-export function matchesQuery(trigger: ProjectTrigger, query: string): boolean {
+export function matchesQuery(
+  trigger: ProjectTrigger,
+  query: string,
+  tI18nComplete: UiTranslator,
+): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   return [
@@ -375,6 +394,6 @@ export function matchesQuery(trigger: ProjectTrigger, query: string): boolean {
     trigger.agent,
     describeWhen(trigger),
     trigger.slug,
-    triggerStatus(trigger.enabled).label,
+    triggerStatus(trigger.enabled, tI18nComplete).label,
   ].some((field) => field.toLowerCase().includes(q));
 }

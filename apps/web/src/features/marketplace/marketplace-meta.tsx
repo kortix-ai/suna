@@ -10,7 +10,11 @@ import {
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 
 interface TypeMeta {
   label: string;
@@ -40,8 +44,18 @@ const TYPE_META: Record<string, TypeMeta> = {
   'registry:file': { label: 'File', Icon: FileText, tile: NEUTRAL },
 };
 
-export function typeMeta(type: string): TypeMeta {
-  return TYPE_META[type] ?? { label: type.replace('registry:', ''), Icon: FileText, tile: NEUTRAL };
+export function typeMeta(type: string, tI18nComplete?: UiTranslator): TypeMeta {
+  const meta = TYPE_META[type] ?? {
+    label: type.replace('registry:', ''),
+    Icon: FileText,
+    tile: NEUTRAL,
+  };
+  return tI18nComplete
+    ? {
+        ...meta,
+        label: translateUiCatalogText(meta.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+      }
+    : meta;
 }
 
 const TILE_SIZES = {
@@ -60,7 +74,8 @@ export function TypeTile({
   size?: keyof typeof TILE_SIZES;
   className?: string;
 }) {
-  const { Icon, tile } = typeMeta(type);
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { Icon, tile } = typeMeta(type, tI18nComplete);
   const s = TILE_SIZES[size];
   return (
     <span
@@ -91,3 +106,17 @@ export const TYPE_SECTIONS: Array<{ type: string; label: string }> = [
   { type: 'registry:tool', label: 'Tools' },
   { type: 'registry:bundle', label: 'Bundles' },
 ];
+
+export function localizedTypeFilters(tI18nComplete: UiTranslator) {
+  return TYPE_FILTERS.map((filter) => ({
+    ...filter,
+    label: translateUiCatalogText(filter.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+  }));
+}
+
+export function localizedTypeSections(tI18nComplete: UiTranslator) {
+  return TYPE_SECTIONS.map((section) => ({
+    ...section,
+    label: translateUiCatalogText(section.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+  }));
+}

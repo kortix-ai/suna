@@ -1,6 +1,6 @@
+import { PROJECT_GLYPH_COLORS } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { PROJECT_GLYPH_COLORS } from '@kortix/shared';
 import { glyphForeground, glyphTint, glyphTintHover } from './glyph-tint';
 
 describe('glyph tint', () => {

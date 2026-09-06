@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   Accordion,
@@ -21,12 +21,7 @@ import {
   SupportHeader,
 } from '@/features/marketing/support/support-doc';
 import { cn } from '@/lib/utils';
-import {
-  BookOpenIcon,
-  DiscordLogoIcon,
-  EnvelopeIcon,
-  PulseIcon,
-} from '@phosphor-icons/react';
+import { BookOpenIcon, DiscordLogoIcon, EnvelopeIcon, PulseIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, type ReactNode } from 'react';

@@ -4,6 +4,7 @@ import {
   applyPreviewEnvironment,
   buildPreviewCaddyfile,
   buildPreviewComposeOverlay,
+  readPreviewRuntimeSecrets,
   validatePreviewRuntimeSecrets,
 } from '../src/core/preview-stack';
 
@@ -52,7 +53,12 @@ describe('ephemeral self-host preview stack', () => {
     expect(caddy).toContain('lb_try_duration 30s');
     expect(caddy).toContain('lb_try_interval 250ms');
     // Every upstream that a deploy recreates, not just the frontend.
-    for (const upstream of ['kortix-api:8008', 'supabase-kong:8000', 'llm-gateway:8090', 'frontend:3000']) {
+    for (const upstream of [
+      'kortix-api:8008',
+      'supabase-kong:8000',
+      'llm-gateway:8090',
+      'frontend:3000',
+    ]) {
       const block = caddy.slice(caddy.indexOf(`reverse_proxy ${upstream}`));
       expect(block.slice(0, block.indexOf('\n  }'))).toContain('import swap_tolerant');
     }
@@ -69,7 +75,13 @@ describe('ephemeral self-host preview stack', () => {
       'SUPABASE_SERVICE_ROLE_KEY=s',
       'INTERNAL_SERVICE_KEY=i',
     ].join('\n');
-    const stack = { origin: 'https://x.example.test', sha: SHA, apiImage: 'a', gatewayImage: 'g', frontendImage: 'f' };
+    const stack = {
+      origin: 'https://x.example.test',
+      sha: SHA,
+      apiImage: 'a',
+      gatewayImage: 'g',
+      frontendImage: 'f',
+    };
     const app = {
       KORTIX_GITHUB_APP_ID: '1',
       KORTIX_GITHUB_APP_PRIVATE_KEY: 'k',
@@ -81,7 +93,10 @@ describe('ephemeral self-host preview stack', () => {
     expect(applyPreviewEnvironment(base, stack, app).testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
     // A PAT alone is enough — an App that lacks `administration: write` cannot
     // create a repo, and before this the preview had no way to work around it.
-    const pat = { MANAGED_GIT_GITHUB_OWNER: 'o', MANAGED_GIT_GITHUB_TOKEN: 't' };
+    const pat = {
+      MANAGED_GIT_GITHUB_OWNER: 'o',
+      MANAGED_GIT_GITHUB_TOKEN: 't',
+    };
     const patEnv = applyPreviewEnvironment(base, stack, pat);
     expect(patEnv.testEnv).toContain('KE2E_CAP_MANAGED_GIT=1');
     expect(patEnv.runtimeEnv).toContain('MANAGED_GIT_GITHUB_TOKEN=t');
@@ -141,6 +156,16 @@ describe('ephemeral self-host preview stack', () => {
     ).toThrow('DEV_DATABASE_URL');
   });
 
+  it('reads every allowed runtime secret from the deployment environment', () => {
+    const source = Object.fromEntries(
+      PREVIEW_RUNTIME_SECRET_ALLOWLIST.map((key) => [key, ` ${key}-value `]),
+    );
+
+    expect(readPreviewRuntimeSecrets({ ...source, DEV_DATABASE_URL: 'forbidden' })).toEqual(
+      Object.fromEntries(PREVIEW_RUNTIME_SECRET_ALLOWLIST.map((key) => [key, `${key}-value`])),
+    );
+  });
+
   it('pins exact images and configures the preview data plane', () => {
     const configured = applyPreviewEnvironment(
       'POSTGRES_PASSWORD=generated\nSUPABASE_ANON_KEY=anon\nSUPABASE_SERVICE_ROLE_KEY=service\nINTERNAL_SERVICE_KEY=internal\n',
@@ -165,7 +190,9 @@ describe('ephemeral self-host preview stack', () => {
     );
 
     expect(configured.runtimeEnv).toContain(`API_IMAGE=kortix/kortix-api:pr-${SHA}`);
-    expect(configured.runtimeEnv).toContain('DATABASE_URL=postgresql://postgres:generated@supabase-db:5432/postgres');
+    expect(configured.runtimeEnv).toContain(
+      'DATABASE_URL=postgresql://postgres:generated@supabase-db:5432/postgres',
+    );
     expect(configured.runtimeEnv).toContain('SUPABASE_PUBLIC_URL=https://preview.example');
     expect(configured.runtimeEnv).toContain('INTERNAL_KORTIX_ENV=preview');
     expect(configured.runtimeEnv).toContain('EMAIL_PROVIDER_ORDER=mailpit');
@@ -175,7 +202,9 @@ describe('ephemeral self-host preview stack', () => {
     expect(configured.testEnv).toContain('KE2E_TARGET=preview');
     expect(configured.testEnv).toContain(`KE2E_PREVIEW_AUTHORIZATION=approved:${SHA}`);
     expect(configured.testEnv).toContain('E2E_MAILPIT_URL=https://preview.example/_mailpit');
-    expect(configured.testEnv).toContain('KE2E_DATABASE_URL=postgresql://postgres:generated@127.0.0.1:15432/postgres');
+    expect(configured.testEnv).toContain(
+      'KE2E_DATABASE_URL=postgresql://postgres:generated@127.0.0.1:15432/postgres',
+    );
     expect(configured.testEnv).toContain('KE2E_CAP_MANAGED_GIT_PUSH=1');
     expect(configured.testEnv).toContain('E2E_AGENTMAIL_API_KEY=');
   });

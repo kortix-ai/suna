@@ -26,7 +26,7 @@ import {
   type QuestionRequest,
   type ToolPart,
 } from '@/ui';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 interface PermissionPromptInlineProps {
@@ -60,7 +60,8 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
   return (
     <div className={cn('flex items-center gap-2 px-2.5 py-2', STATUS_TEXT.warning)}>
       <span className="text-foreground flex-1 text-xs">
-        Permission: <span className="font-medium">{label}</span>
+        {tHardcodedUi.raw('i18nComplete.text5427e0ef4eba')}{' '}
+        <span className="font-medium">{label}</span>
       </span>
       <div className="flex items-center gap-1.5">
         <Button
@@ -70,7 +71,7 @@ function PermissionPromptInline({ permission, onReply }: PermissionPromptInlineP
           size="xs"
           className="hover:text-destructive hover:bg-destructive/10"
         >
-          Deny
+          {tHardcodedUi.raw('i18nComplete.text05a2d7332eb9')}
         </Button>
         <Button
           disabled={replying}
@@ -110,6 +111,7 @@ function ToolPartRendererImpl({
   defaultOpen,
   disableNavigation = false,
 }: ToolPartRendererProps & { sessionId?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const toolDurationMs = useMemo(() => {
     const s = (part.state as any)?.time?.start;
     const e = (part.state as any)?.time?.end;
@@ -165,7 +167,7 @@ function ToolPartRendererImpl({
             <BasicTool
               trigger={{
                 title: display,
-                subtitle: 'failed',
+                subtitle: tI18nComplete.raw('text5d28a90f4498'),
                 args: server ? [server] : undefined,
               }}
               badge="error"
@@ -219,12 +221,7 @@ function ToolPartRendererImpl({
     // fallback for every unregistered/MCP tool, and dropping them left that
     // whole class of call permanently closed and unopenable on the panel — the
     // one surface where a single call IS the view.
-    <GenericTool
-      part={part}
-      defaultOpen={defaultOpen}
-      forceOpen={forceOpen}
-      locked={isLocked}
-    />
+    <GenericTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} locked={isLocked} />
   );
 
   return (

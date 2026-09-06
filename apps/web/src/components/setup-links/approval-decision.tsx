@@ -8,9 +8,11 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { type ApprovalLinkDetails, getApprovalLink, resolveApproval } from '@kortix/sdk';
 import { WarningIcon } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState } from 'react';
 
 export function ApprovalDecision({ token }: { token: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [details, setDetails] = useState<ApprovalLinkDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyDecision, setBusyDecision] = useState<ApprovalDecisionValue | null>(null);
@@ -44,7 +46,11 @@ export function ApprovalDecision({ token }: { token: string }) {
       await resolveApproval(details.project_id, details.execution_id, decision);
       setOutcome(decision);
       setDetails((current) => (current ? { ...current, pending: false } : current));
-      successToast(decision === 'approve' ? 'Action approved' : 'Action denied');
+      successToast(
+        decision === tI18nComplete.raw('text74e21680eac7')
+          ? tI18nComplete.raw('text0674d4a026cb')
+          : tI18nComplete.raw('text4341be8eb7f0'),
+      );
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : 'Could not record your decision.';
       setError(message);
@@ -58,7 +64,7 @@ export function ApprovalDecision({ token }: { token: string }) {
     return (
       <div className="text-muted-foreground flex items-center justify-center gap-2 py-10 text-sm">
         <Loading className="size-4 shrink-0" />
-        Loading approval
+        {tI18nComplete.raw('textf4059bb85610')}
       </div>
     );
   }
@@ -69,9 +75,11 @@ export function ApprovalDecision({ token }: { token: string }) {
         <span className="bg-kortix-red/15 text-kortix-red flex size-10 items-center justify-center rounded-sm">
           <WarningIcon className="size-5" />
         </span>
-        <p className="text-foreground text-sm font-medium">This approval cannot be opened</p>
+        <p className="text-foreground text-sm font-medium">
+          {tI18nComplete.raw('text4c05fac320dc')}
+        </p>
         <p className="text-muted-foreground max-w-sm text-xs text-pretty">
-          {error ?? 'The link is invalid or expired.'}
+          {error ?? tI18nComplete.raw('text301fe0058472')}
         </p>
       </div>
     );

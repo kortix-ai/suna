@@ -1,5 +1,6 @@
 import { KeyIcon, RobotIcon } from '@phosphor-icons/react';
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -31,9 +32,19 @@ const rows = (overrides: Partial<SessionOverrideRow>[] = []): SessionOverrideRow
   },
 ];
 
+const messages = { threads: { sessionOverrides: 'Session overrides' } };
+
+function withMessages(children: React.ReactNode) {
+  return (
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      {children}
+    </NextIntlClientProvider>
+  );
+}
+
 function render(props: Partial<React.ComponentProps<typeof SessionOverridesControlContent>> = {}) {
   return renderToStaticMarkup(
-    <SessionOverridesControlContent rows={rows()} onSave={() => true} {...props} />,
+    withMessages(<SessionOverridesControlContent rows={rows()} onSave={() => true} {...props} />),
   );
 }
 
@@ -72,7 +83,10 @@ describe('SessionOverridesControlContent', () => {
     // came back empty must not be able to hide the only way back to the
     // default.
     const overridden = render({
-      rows: rows([{ overridden: true, onReset: () => {}, resetLabel: 'Reset to agent default' }, {}]),
+      rows: rows([
+        { overridden: true, onReset: () => {}, resetLabel: 'Reset to agent default' },
+        {},
+      ]),
     });
     const inherited = render({
       rows: rows([{ onReset: () => {}, resetLabel: 'Reset to agent default' }, {}]),
@@ -92,7 +106,7 @@ describe('SessionOverridesControlContent', () => {
 
   test('uses a non-submit toolbar trigger inside the composer', () => {
     const html = renderToStaticMarkup(
-      <SessionOverridesControl rows={rows()} onSave={() => true} />,
+      withMessages(<SessionOverridesControl rows={rows()} onSave={() => true} />),
     );
 
     expect(html).toContain('aria-label="Session overrides"');
@@ -103,16 +117,18 @@ describe('SessionOverridesControlContent', () => {
     // The composer bar says nothing about the axes — muted icon only, even
     // while overrides are in force. The panel is where overrides live.
     const quiet = renderToStaticMarkup(
-      <SessionOverridesControl rows={rows()} onSave={() => true} />,
+      withMessages(<SessionOverridesControl rows={rows()} onSave={() => true} />),
     );
     expect(quiet).toContain('text-muted-foreground');
     expect(quiet).not.toContain('Session<');
 
     const withOverrides = renderToStaticMarkup(
-      <SessionOverridesControl
-        rows={rows([{ overridden: true }, { overridden: true }])}
-        onSave={() => true}
-      />,
+      withMessages(
+        <SessionOverridesControl
+          rows={rows([{ overridden: true }, { overridden: true }])}
+          onSave={() => true}
+        />,
+      ),
     );
     // Row names/counts never leak onto the closed trigger.
     expect(withOverrides).not.toContain('2 overrides');

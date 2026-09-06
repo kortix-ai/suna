@@ -1,0 +1,20 @@
+/** Generated source-string mapping for the interactive provider catalog. */
+export const PROVIDER_HINT_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
+  'Managed routing — injected into every sandbox': 'textc1fb7a9962c8',
+  'Claude — Opus, Sonnet, Haiku': 'texte5bfa5b324a2',
+  'GPT-5, GPT-4o, o-series': 'textd1215f289861',
+  'Gemini 2.5 Pro, Flash': 'textbd31adce024e',
+  'Fast inference — Llama, Mixtral, Kimi': 'text2c1fd17b6e13',
+  Grok: 'textdca61d32363b',
+  'DeepSeek V3, R1': 'text184ebc449e02',
+  'Mistral Large, Codestral': 'textcc48a68cd6d9',
+  'Routes across many providers': 'textd34acc9c3902',
+  'Very fast — Llama, Qwen': 'text03fd31167171',
+  'Open models hosted': 'textce3221285a92',
+  'Web-grounded models': 'text558a4c169f94',
+  'Claude, Llama, Titan': 'text99986fdbc439',
+  'Azure-hosted OpenAI': 'textf8843c7902c3',
+  'Command R': 'text7369760ba735',
+  'Inference endpoints': 'textddf25c2d9671',
+  'NIM microservices': 'text262d5a77978a',
+};

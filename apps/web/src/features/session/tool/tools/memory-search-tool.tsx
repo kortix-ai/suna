@@ -15,7 +15,7 @@ import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { parseMemorySearchOutput } from '@/lib/utils/memory-search-output';
 import { MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useContext, useMemo } from 'react';
 
 /**
@@ -35,6 +35,7 @@ export function hitPreview(content: string): string {
 
 export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -43,7 +44,9 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
   const query = ((input.query as string) || parsed.query || '').trim();
   const source = ((input.source as string) || '').trim();
   const isStreaming = (status === 'pending' && running) || status === 'running';
-  const triggerTitle = parsed.label.toLowerCase().includes('ltm') ? 'LTM Search' : 'Memory Search';
+  const triggerTitle = parsed.label.toLowerCase().includes('ltm')
+    ? tI18nComplete.raw('text152f471fbe21')
+    : tI18nComplete.raw('text9993673dd585');
   const resultCount = parsed.hits.length;
 
   return (
@@ -54,7 +57,7 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
         subtitle: query || undefined,
         args:
           status === 'completed'
-            ? [`${resultCount} ${resultCount === 1 ? 'result' : 'results'}`]
+            ? [tI18nComplete('text9a719be343e8', { count: resultCount })]
             : undefined,
       }}
       defaultOpen={defaultOpen}
@@ -71,10 +74,24 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
         // folds the body behind it.
         <ToolResultCard bodyClassName="space-y-1.5">
           {(query || source) && (
-            <FoldedSection label="Request" className="px-2 pt-1.5">
+            <FoldedSection
+              label={tHardcodedUi.raw('i18nComplete.text59f03d642b41')}
+              className="px-2 pt-1.5"
+            >
               <div className="flex flex-wrap items-center gap-1.5">
-                {source && <ToolField label="Source" value={source} />}
-                {query && <ToolField label="Query" value={query} mono />}
+                {source && (
+                  <ToolField
+                    label={tHardcodedUi.raw('i18nComplete.text0e570ca6fabe')}
+                    value={source}
+                  />
+                )}
+                {query && (
+                  <ToolField
+                    label={tHardcodedUi.raw('i18nComplete.textb80a37564fbb')}
+                    value={query}
+                    mono
+                  />
+                )}
               </div>
             </FoldedSection>
           )}
@@ -129,13 +146,25 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
         </ToolResultCard>
       ) : parsed.matched ? (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Searching memory...' : 'No memories found.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tHardcodedUi.raw('i18nComplete.text876ee3e4596e')
+                : tHardcodedUi.raw('i18nComplete.text926859e51f61')
+            }
+          />
         </ToolResultCard>
       ) : output ? (
         <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="ltm_search" />
       ) : (
         <ToolResultCard>
-          <ToolEmptyState message={isStreaming ? 'Searching memory...' : 'No search output yet.'} />
+          <ToolEmptyState
+            message={
+              isStreaming
+                ? tHardcodedUi.raw('i18nComplete.text876ee3e4596e')
+                : tHardcodedUi.raw('i18nComplete.text61109c370902')
+            }
+          />
         </ToolResultCard>
       )}
     </BasicTool>

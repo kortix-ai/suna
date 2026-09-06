@@ -2,27 +2,24 @@
 
 import { accountHasAppAccess } from '@/lib/auth/account-access';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
-import { clearAuthBounceCookie } from '@/lib/auth/sign-out-actions';
 import {
   isInviteReturnUrl,
   resolveNewAccountReturnUrl,
   sanitizeAuthReturnUrl,
   shouldDemoteReturnUrl,
 } from '@/lib/auth/return-url';
+import { clearAuthBounceCookie } from '@/lib/auth/sign-out-actions';
 import {
   type EmailFlowMode,
   SIGNUPS_CLOSED_MESSAGE,
   SSO_REQUIRED_MESSAGE,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
+import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
-import {
-  checkAccessEmail,
-  fetchAccountStateWithToken,
-  submitAccessRequest,
-} from '@kortix/sdk';
-import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
+import { checkAccessEmail, fetchAccountStateWithToken, submitAccessRequest } from '@kortix/sdk';
+import { getTranslations } from '@/i18n/get-translations';
 import { cookies, headers } from 'next/headers';
 
 /**
@@ -150,6 +147,7 @@ export async function resolveAuthMode(email: string): Promise<{ mode: EmailFlowM
  * "sign in" tab skipped this check entirely and quietly created accounts).
  */
 export async function sendEmailCode(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const requestedReturnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
@@ -158,7 +156,7 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
+    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
   }
 
   const normalizedEmail = email.trim().toLowerCase();
@@ -221,18 +219,19 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
 
   return {
     success: true,
-    message: 'Check your email for a sign-in code',
+    message: tI18nComplete.raw('textd7eb7cdcff7d'),
     email: normalizedEmail,
   };
 }
 
 export async function requestAccess(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const company = formData.get('company') as string | undefined;
   const useCase = formData.get('useCase') as string | undefined;
 
   if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
+    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
   }
 
   try {
@@ -247,19 +246,20 @@ export async function requestAccess(prevState: any, formData: FormData) {
     );
     return {
       success: true,
-      message: "Your access request has been submitted. We'll be in touch!",
+      message: tI18nComplete.raw('textebab65dedf4d'),
     };
   } catch {
-    return { message: 'Failed to submit request. Please try again.' };
+    return { message: tI18nComplete.raw('text00c6dcd85ab3') };
   }
 }
 
 export async function forgotPassword(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const origin = formData.get('origin') as string;
 
   if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
+    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
   }
 
   const supabase = await createClient();
@@ -274,20 +274,21 @@ export async function forgotPassword(prevState: any, formData: FormData) {
 
   return {
     success: true,
-    message: 'Check your email for a password reset link',
+    message: tI18nComplete.raw('text150bfa8e7f53'),
   };
 }
 
 export async function resetPassword(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
 
   if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
+    return { message: tI18nComplete.raw('text2005290ddda9') };
   }
 
   if (password !== confirmPassword) {
-    return { message: 'Passwords do not match' };
+    return { message: tI18nComplete.raw('textb6eb82cd3300') };
   }
 
   const supabase = await createClient();
@@ -302,11 +303,12 @@ export async function resetPassword(prevState: any, formData: FormData) {
 
   return {
     success: true,
-    message: 'Password updated successfully',
+    message: tI18nComplete.raw('texteb737b99ee2a'),
   };
 }
 
 export async function signInWithPassword(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
@@ -314,11 +316,11 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
+    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
   }
 
   if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
+    return { message: tI18nComplete.raw('text2005290ddda9') };
   }
 
   // SSO enforcement: when the domain's org has flipped `enforce_sso`, the
@@ -398,6 +400,7 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
  * `enable_confirmations`, not by any billing flag.
  */
 export async function signUpWithPassword(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = (formData.get('email') as string | null)?.trim().toLowerCase();
   const password = formData.get('password') as string;
   const confirmPassword = formData.get('confirmPassword') as string;
@@ -410,13 +413,13 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
+    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
   }
   if (!password || password.length < 6) {
-    return { message: 'Password must be at least 6 characters' };
+    return { message: tI18nComplete.raw('text2005290ddda9') };
   }
   if (password !== confirmPassword) {
-    return { message: 'Passwords do not match' };
+    return { message: tI18nComplete.raw('textb6eb82cd3300') };
   }
 
   // Access control gate — same rule the email-code path enforces: a brand-new
@@ -469,7 +472,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     ) {
       return {
         success: true,
-        message: 'Check your email to confirm your account',
+        message: tI18nComplete.raw('textac0a6f3b5c61'),
         email,
         requiresEmailConfirmation: true,
       };
@@ -480,7 +483,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
       // sign-in with honest "wrong password" copy.
       return {
         code: 'existing_account_wrong_password',
-        message: 'An account with this email already exists. Try signing in instead.',
+        message: tI18nComplete.raw('text6b234ac2b5d2'),
       };
     }
     return { message: signInError.message || 'Account created but could not sign in' };
@@ -533,6 +536,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
 //    post-logout bounce.
 
 export async function verifyOtp(prevState: any, formData: FormData) {
+  const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const token = formData.get('token') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
@@ -540,11 +544,11 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
-    return { message: 'Please enter a valid email address' };
+    return { message: tI18nComplete.raw('textb00f7e3ae5e8') };
   }
 
   if (!token || token.length !== 6) {
-    return { message: 'Please enter the 6-digit code from your email' };
+    return { message: tI18nComplete.raw('textdf9658428180') };
   }
 
   const supabase = await createClient();

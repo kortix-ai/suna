@@ -5,6 +5,9 @@
  * a solid Kortix-token icon.
  */
 
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REVIEW_META_TRANSLATION_KEYS } from '@/i18n/review-meta-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 import {
   ChatsIcon as ChatMessages,
   CheckCircleIcon as CheckCircleSolid,
@@ -129,3 +132,23 @@ export const SEGMENT_LABEL = {
   waiting: 'Waiting',
   done: 'Done',
 } as const;
+
+export function getLocalizedReviewMeta(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(
+    { KIND_META, RISK_META, STATUS_META, SOURCE_META, SEGMENT_LABEL },
+    tI18nComplete,
+    REVIEW_META_TRANSLATION_KEYS,
+  );
+}
+
+export function reviewKindLabel(kind: ReviewKind, tI18nComplete: UiTranslator): string {
+  return getLocalizedReviewMeta(tI18nComplete).KIND_META[kind].label;
+}
+
+export function reviewRiskLabel(risk: ReviewRisk, tI18nComplete: UiTranslator): string {
+  return getLocalizedReviewMeta(tI18nComplete).RISK_META[risk].label;
+}
+
+export function reviewStatusLabel(status: ReviewStatus, tI18nComplete: UiTranslator): string {
+  return getLocalizedReviewMeta(tI18nComplete).STATUS_META[status].label;
+}

@@ -19,5 +19,7 @@ declare module 'sql.js' {
     close(): void;
     getRowsModified(): number;
   }
-  export default function initSqlJs(config?: { locateFile?: (file: string) => string }): Promise<{ Database: typeof Database }>;
+  export default function initSqlJs(config?: {
+    locateFile?: (file: string) => string;
+  }): Promise<{ Database: typeof Database }>;
 }

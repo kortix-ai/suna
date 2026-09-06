@@ -20,7 +20,7 @@ import {
 } from '@/ui';
 import { useSessionStateStore } from '@kortix/sdk/react';
 import { PlugIcon as Plug } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 
 export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -36,7 +36,7 @@ export function RemovedConnectorTool({ part, defaultOpen, forceOpen, locked }: T
             {tHardcodedUi.raw('componentsSessionToolRenderers.line5270JsxTextLegacyConnectorTool')}
           </span>
           <span className="text-muted-foreground/60 ml-auto text-xs font-medium whitespace-nowrap">
-            removed
+            {tHardcodedUi.raw('i18nComplete.texte1f79758cc42')}
           </span>
         </div>
       }

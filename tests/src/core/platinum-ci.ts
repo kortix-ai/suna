@@ -3,9 +3,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 
 export const PLATINUM_CI_TEMPLATE_VERSION = 'v14';
-const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v11';
+const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v12';
 export const PLATINUM_CI_NODE_IMAGE =
-  'node:22.22.0-bookworm@sha256:2e3d655fd1e3ffaa6b5f23ee9f3905a0fd9e8c0a65df94c8ae6e4d18a0f48870';
+  'node:22.22.2-bookworm@sha256:62e4daa6819762bbd3072af77cc282ab72c631c4aed30dd7980192babaf385b3';
 export const PLATINUM_CI_BUN_VERSION = '1.3.14';
 export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 export const CI_DOCKER_COMPOSE_VERSION = 'v2.40.3';
@@ -74,12 +74,16 @@ export class PlatinumHttpError extends Error {
 
 export function isRetryablePlatinumError(error: unknown): boolean {
   if (error instanceof PlatinumHttpError) {
-    return TRANSIENT_STATUS_CODES.has(error.status)
-      || (error.status === 500 && /operation was aborted/i.test(error.message));
+    return (
+      TRANSIENT_STATUS_CODES.has(error.status) ||
+      (error.status === 500 && /operation was aborted/i.test(error.message))
+    );
   }
   if (error instanceof SyntaxError) return true;
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-  return /abort|connection reset|econnreset|fetch failed|network|socket|timed?\s*out/i.test(message);
+  return /abort|connection reset|econnreset|fetch failed|network|socket|timed?\s*out/i.test(
+    message,
+  );
 }
 
 export function platinumRetryDelayMs(attempt: number): number {
@@ -93,8 +97,8 @@ export async function retryPlatinumOperation<T>(input: {
   sleep?: (ms: number) => Promise<void>;
 }): Promise<T> {
   const attempts = input.attempts ?? API_MAX_ATTEMPTS;
-  const sleep = input.sleep
-    ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep =
+    input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -116,9 +120,29 @@ export function selectReusablePlatinumTemplate(
   templates: PlatinumTemplate[],
   name: string,
 ): PlatinumTemplate | null {
-  return templates.find((template) =>
-    template.name === name && ['ready', 'building'].includes(String(template.state ?? '').toLowerCase())
-  ) ?? null;
+  return (
+    templates.find(
+      (template) =>
+        template.name === name &&
+        ['ready', 'building'].includes(String(template.state ?? '').toLowerCase()),
+    ) ?? null
+  );
+}
+
+export function platinumTemplateCreateIdempotencyKey(
+  name: string,
+  templates: PlatinumTemplate[],
+): string {
+  const failedIds = templates
+    .filter(
+      (template) =>
+        template.name === name && String(template.state ?? '').toLowerCase() === 'failed',
+    )
+    .map((template) => template.id)
+    .sort();
+  if (failedIds.length === 0) return `kortix-ci-template-${name}`;
+  const failureSet = createHash('sha256').update(failedIds.join('\n')).digest('hex').slice(0, 12);
+  return `kortix-ci-template-${name}-retry-${failureSet}`;
 }
 
 export interface PlatinumSandbox {
@@ -484,9 +508,9 @@ export class PlatinumApi {
       ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(init.headers ?? {}),
     };
-    const retryable = retryOptions.retry ?? (
-      ['GET', 'PUT', 'DELETE'].includes(method) || new Headers(headers).has('idempotency-key')
-    );
+    const retryable =
+      retryOptions.retry ??
+      (['GET', 'PUT', 'DELETE'].includes(method) || new Headers(headers).has('idempotency-key'));
     const operation = async () => {
       const response = await fetch(`${this.base}${path}`, {
         ...init,
@@ -495,7 +519,10 @@ export class PlatinumApi {
       });
       const body = await response.text();
       if (!response.ok) {
-        throw new PlatinumHttpError(`Platinum ${method} ${path} -> ${response.status}: ${body}`, response.status);
+        throw new PlatinumHttpError(
+          `Platinum ${method} ${path} -> ${response.status}: ${body}`,
+          response.status,
+        );
       }
       return (body ? JSON.parse(body) : null) as T;
     };
@@ -522,7 +549,10 @@ export class PlatinumApi {
           },
         );
         if (!response.ok) {
-          throw new PlatinumHttpError(`Platinum file write -> ${response.status}: ${await response.text()}`, response.status);
+          throw new PlatinumHttpError(
+            `Platinum file write -> ${response.status}: ${await response.text()}`,
+            response.status,
+          );
         }
       },
     });
@@ -546,7 +576,10 @@ export class PlatinumApi {
           signal: AbortSignal.timeout(60_000),
         });
         if (!response.ok) {
-          throw new PlatinumHttpError(`Platinum file read ${path} -> ${response.status}: ${await response.text()}`, response.status);
+          throw new PlatinumHttpError(
+            `Platinum file read ${path} -> ${response.status}: ${await response.text()}`,
+            response.status,
+          );
         }
         return new Uint8Array(await response.arrayBuffer());
       },
@@ -594,11 +627,7 @@ export async function cleanupPlatinumCiSandboxes(input: {
     sandboxes.push(...page.rows);
     if (!page.has_more || page.rows.length === 0) break;
   }
-  const ids = selectOutstandingPlatinumSandboxIds(
-    sandboxes,
-    input.runId,
-    input.runAttempt,
-  );
+  const ids = selectOutstandingPlatinumSandboxIds(sandboxes, input.runId, input.runAttempt);
   for (const id of ids) {
     try {
       await api.json(
@@ -615,7 +644,10 @@ export async function cleanupPlatinumCiSandboxes(input: {
   return ids.length;
 }
 
-async function waitForTemplate(api: PlatinumApi, template: PlatinumTemplate): Promise<PlatinumTemplate> {
+async function waitForTemplate(
+  api: PlatinumApi,
+  template: PlatinumTemplate,
+): Promise<PlatinumTemplate> {
   const deadline = Date.now() + TEMPLATE_TIMEOUT_MS;
   let lastState = '';
   let observationFailures = 0;
@@ -647,25 +679,27 @@ async function waitForTemplate(api: PlatinumApi, template: PlatinumTemplate): Pr
     }
     if (state === 'ready') return current;
     if (state === 'failed') {
-      throw new Error(`Platinum template ${current.id} failed: ${current.build_logs ?? current.buildLogs ?? ''}`);
+      throw new Error(
+        `Platinum template ${current.id} failed: ${current.build_logs ?? current.buildLogs ?? ''}`,
+      );
     }
     await Bun.sleep(POLL_MS);
   }
-  throw new Error(`Platinum template ${template.id} did not become ready within ${TEMPLATE_TIMEOUT_MS}ms`);
+  throw new Error(
+    `Platinum template ${template.id} did not become ready within ${TEMPLATE_TIMEOUT_MS}ms`,
+  );
 }
 
 export async function ensureTemplate(
   api: PlatinumApi,
   spec: PlatinumTemplateSpec,
 ): Promise<PlatinumTemplate> {
-  const existing = selectReusablePlatinumTemplate(
-    await api.json<PlatinumTemplate[]>(
-      `/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`,
-      {},
-      { attempts: 20 },
-    ),
-    spec.name,
+  const templates = await api.json<PlatinumTemplate[]>(
+    `/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`,
+    {},
+    { attempts: 20 },
   );
+  const existing = selectReusablePlatinumTemplate(templates, spec.name);
   if (existing) {
     console.log(`[platinum-ci] template=${spec.name} cache=hit id=${existing.id}`);
     return waitForTemplate(api, existing);
@@ -673,7 +707,7 @@ export async function ensureTemplate(
   console.log(`[platinum-ci] template=${spec.name} cache=miss`);
   const queued = await api.json<PlatinumTemplate>('/v1/templates/from-spec', {
     method: 'POST',
-    headers: { 'idempotency-key': `kortix-ci-template-${spec.name}` },
+    headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(spec.name, templates) },
     body: JSON.stringify(spec),
   });
   return waitForTemplate(api, queued);
@@ -685,14 +719,12 @@ export async function ensureWarmTemplate(
   lockHash: string,
 ): Promise<PlatinumTemplate> {
   const name = platinumTemplateName(lockHash);
-  const existing = selectReusablePlatinumTemplate(
-    await api.json<PlatinumTemplate[]>(
-      `/v1/templates?name=${encodeURIComponent(name)}&limit=20`,
-      {},
-      { attempts: 20 },
-    ),
-    name,
+  const templates = await api.json<PlatinumTemplate[]>(
+    `/v1/templates?name=${encodeURIComponent(name)}&limit=20`,
+    {},
+    { attempts: 20 },
   );
+  const existing = selectReusablePlatinumTemplate(templates, name);
   if (existing) {
     console.log(`[platinum-ci] template=${name} cache=hit id=${existing.id}`);
     return waitForTemplate(api, existing);
@@ -700,7 +732,7 @@ export async function ensureWarmTemplate(
   console.log(`[platinum-ci] template=${name} cache=miss parent=${base.id}`);
   const derived = await api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
     method: 'POST',
-    headers: { 'idempotency-key': `kortix-ci-template-${name}` },
+    headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(name, templates) },
     body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
   });
   return waitForTemplate(api, derived);
@@ -720,9 +752,13 @@ export async function observePlatinumSandboxStart(input: {
   const sleep = input.sleep ?? Bun.sleep;
   const deadline = input.startedAt + (input.timeoutMs ?? SANDBOX_START_TIMEOUT_MS);
   const pollMs = input.pollMs ?? POLL_MS;
-  const write = input.write ?? ((state: string, sandbox: PlatinumSandbox) => {
-    console.log(`[platinum-ci] sandbox=${sandbox.id} state=${state} via=${sandbox.via ?? 'unknown'}`);
-  });
+  const write =
+    input.write ??
+    ((state: string, sandbox: PlatinumSandbox) => {
+      console.log(
+        `[platinum-ci] sandbox=${sandbox.id} state=${state} via=${sandbox.via ?? 'unknown'}`,
+      );
+    });
   const terminalStates = new Set(['archived', 'deleted', 'error', 'failed', 'stopped']);
   let current = input.sandbox;
   let lastState = '';
@@ -746,7 +782,9 @@ export async function observePlatinumSandboxStart(input: {
       const observed = await input.readSandbox();
       current = { ...current, ...observed, via: observed.via ?? current.via };
       if (observationFailures > 0) {
-        console.warn(`[platinum-ci] sandbox polling recovered after ${observationFailures} failure(s)`);
+        console.warn(
+          `[platinum-ci] sandbox polling recovered after ${observationFailures} failure(s)`,
+        );
         observationFailures = 0;
       }
     } catch (error) {
@@ -765,9 +803,7 @@ export async function observePlatinumSandboxStart(input: {
   );
 }
 
-export function platinumWarmReadinessTimeoutMs(
-  via: PlatinumSandbox['via'],
-): number {
+export function platinumWarmReadinessTimeoutMs(via: PlatinumSandbox['via']): number {
   return via === 'cold-boot' ? WARM_PREPARE_TIMEOUT_MS : PLATINUM_CI_WARM_TIMEOUT_MS;
 }
 
@@ -786,9 +822,11 @@ export async function waitForWarmSandbox(
           await Bun.sleep(POLL_MS);
           continue;
         }
-        const marker = new TextDecoder().decode(
-          await api.read(sandboxId, '/workspace/.kortix-ci-warm-ready', undefined, undefined, 1),
-        ).trim();
+        const marker = new TextDecoder()
+          .decode(
+            await api.read(sandboxId, '/workspace/.kortix-ci-warm-ready', undefined, undefined, 1),
+          )
+          .trim();
         console.log(`[platinum-ci] warm_sandbox_ready=1 ${marker}`);
         return;
       }
@@ -823,10 +861,14 @@ export async function exec(
   command: string[],
   retry = false,
 ): Promise<NonNullable<PlatinumExecResult['result']>> {
-  const response = await api.json<PlatinumExecResult>(`/v1/sandboxes/${sandboxId}/exec`, {
-    method: 'POST',
-    body: JSON.stringify({ cmd: command, timeout_ms: 300_000 }),
-  }, { retry });
+  const response = await api.json<PlatinumExecResult>(
+    `/v1/sandboxes/${sandboxId}/exec`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ cmd: command, timeout_ms: 300_000 }),
+    },
+    { retry },
+  );
   if (response.error) throw new Error(response.error);
   if (response.result?.error) throw new Error(response.result.error);
   if (!response.result) throw new Error('Platinum exec response did not include a result');
@@ -880,7 +922,9 @@ export async function observePlatinumWorker(input: PlatinumWorkerObserverInput):
       if (!isRetryablePlatinumError(error)) throw error;
       statusFailures += 1;
       if (shouldReportObservationFailure(statusFailures)) {
-        warn(`[platinum-ci] worker status unavailable failures=${statusFailures} error=${String(error)}`);
+        warn(
+          `[platinum-ci] worker status unavailable failures=${statusFailures} error=${String(error)}`,
+        );
       }
     }
 
@@ -901,7 +945,9 @@ export async function observePlatinumWorker(input: PlatinumWorkerObserverInput):
     } catch (error) {
       logFailures += 1;
       if (shouldReportObservationFailure(logFailures)) {
-        warn(`[platinum-ci] incremental log unavailable failures=${logFailures} error=${String(error)}`);
+        warn(
+          `[platinum-ci] incremental log unavailable failures=${logFailures} error=${String(error)}`,
+        );
       }
     }
 
@@ -911,15 +957,17 @@ export async function observePlatinumWorker(input: PlatinumWorkerObserverInput):
   throw new Error(`Platinum worker exceeded ${timeoutMs}ms`);
 }
 
-async function readWorkerExitCode(
-  api: PlatinumApi,
-  sandboxId: string,
-): Promise<number | null> {
-  const result = await exec(api, sandboxId, [
-    'bash',
-    '-lc',
-    'if [[ -f /workspace/kortix-test.exit ]]; then cat /workspace/kortix-test.exit; else exit 3; fi',
-  ], true);
+async function readWorkerExitCode(api: PlatinumApi, sandboxId: string): Promise<number | null> {
+  const result = await exec(
+    api,
+    sandboxId,
+    [
+      'bash',
+      '-lc',
+      'if [[ -f /workspace/kortix-test.exit ]]; then cat /workspace/kortix-test.exit; else exit 3; fi',
+    ],
+    true,
+  );
   if (result?.exit_code === 3) return null;
   if ((result?.exit_code ?? 0) !== 0) {
     throw new Error(`Platinum worker status check failed: ${result?.stderr ?? ''}`);
@@ -929,10 +977,7 @@ async function readWorkerExitCode(
   return exitCode;
 }
 
-async function readWorkerExitCodeFile(
-  api: PlatinumApi,
-  sandboxId: string,
-): Promise<number | null> {
+async function readWorkerExitCodeFile(api: PlatinumApi, sandboxId: string): Promise<number | null> {
   const status = await stat(api, sandboxId, '/workspace/kortix-test.exit', 1);
   if (!status) return null;
   const bytes = await api.read(sandboxId, '/workspace/kortix-test.exit', undefined, undefined, 1);
@@ -965,8 +1010,7 @@ async function streamWorker(
       }
     },
     statLog: () => stat(api, sandboxId, '/workspace/kortix-test.log', 1),
-    readLog: (offset, limit) =>
-      api.read(sandboxId, '/workspace/kortix-test.log', offset, limit, 1),
+    readLog: (offset, limit) => api.read(sandboxId, '/workspace/kortix-test.log', offset, limit, 1),
   });
 }
 
@@ -1046,13 +1090,15 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
       {
         method: 'POST',
         headers: { 'idempotency-key': `kortix-ci-${input.runId}-${input.runAttempt}` },
-        body: JSON.stringify(buildPlatinumWorkerRequest({
-          templateId: template.id,
-          repository: input.repository,
-          sha: input.sha,
-          runId: input.runId,
-          runAttempt: input.runAttempt,
-        })),
+        body: JSON.stringify(
+          buildPlatinumWorkerRequest({
+            templateId: template.id,
+            repository: input.repository,
+            sha: input.sha,
+            runId: input.runId,
+            runAttempt: input.runAttempt,
+          }),
+        ),
       },
     );
     sandboxId = created.id;
@@ -1070,11 +1116,7 @@ export async function runPlatinumCi(input: PlatinumCiInput): Promise<number> {
 
     const workerScript = buildWorkerScript(input);
     await api.write(`${sandboxId}:/workspace/run-kortix-tests.sh`, workerScript, '0755');
-    const launch = await exec(api, sandboxId, [
-      'bash',
-      '-lc',
-      platinumWorkerLaunchCommand(),
-    ]);
+    const launch = await exec(api, sandboxId, ['bash', '-lc', platinumWorkerLaunchCommand()]);
     if ((launch?.exit_code ?? 0) !== 0) {
       throw new Error(`Platinum worker launch failed: ${launch?.stderr ?? ''}`);
     }

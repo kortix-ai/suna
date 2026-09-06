@@ -40,6 +40,30 @@ const rowLabelIndex = (html: string, label: string): number => {
 const skeletons = (html: string): number => [...html.matchAll(/animate-pulse/g)].length;
 
 describe('ConnectedAccountsTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <ConnectedAccountsTabView
+        canManageAccount
+        copy={{
+          checking: 'Провера налога.',
+          connectedAs: (name) => `Повезано као ${name}.`,
+          unavailable: 'Статус није доступан.',
+          install: 'Инсталирајте GitHub App.',
+          disconnect: 'Прекини везу',
+          connect: 'Повежи',
+          github: 'GitHub',
+          moreInstallations: (count) => `Још инсталација: ${count}`,
+          adminOnly: 'Само администратор може да повеже GitHub.',
+          disconnectedToast: 'GitHub веза је прекинута',
+          disconnectFailed: 'Прекид GitHub везе није успео',
+        }}
+      />,
+    );
+    expect(out).toContain('Инсталирајте GitHub App.');
+    expect(out).toContain('Повежи');
+    expect(out).not.toContain('>Connect<');
+  });
+
   test('renders exactly one provider row — GitHub', () => {
     const out = renderToStaticMarkup(<ConnectedAccountsTabView canManageAccount />);
     expect(headings(out)).toEqual(['Connected accounts']);

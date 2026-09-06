@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { JSONContent } from '@tiptap/core';
+import { describe, expect, test } from 'bun:test';
 
 import {
   planDraftSubmission,

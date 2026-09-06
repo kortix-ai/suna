@@ -1,4 +1,4 @@
-import type { Page } from "@playwright/test";
+import type { Page, Response } from "@playwright/test";
 import { supabaseAdminHeaders } from "../../src/core/supabase-admin";
 
 import { clearCookiesPreservingBypass } from "./deployment-bypass";
@@ -134,17 +134,25 @@ export async function signIn(
       requireEnvValue("NEXT_PUBLIC_SUPABASE_ANON_KEY", ...files),
     "SUPABASE_ANON_KEY",
   );
-  return json<AuthSession>(
-    await fetch(`${options.supabaseUrl}/auth/v1/token?grant_type=password`, {
+  const url = `${options.supabaseUrl}/auth/v1/token?grant_type=password`;
+  const retryableStatuses = new Set([429, 502, 503, 504]);
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         apikey: anonKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ email, password: options.password }),
-    }),
-    200,
-  );
+    });
+    if (!retryableStatuses.has(response.status) || attempt === maxAttempts) {
+      return json<AuthSession>(response, 200);
+    }
+    await response.body?.cancel();
+    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (attempt - 1)));
+  }
+  throw new Error("Supabase password grant exhausted its retry budget");
 }
 
 /**
@@ -158,7 +166,7 @@ export async function installBrowserSessionDirect(
   session: AuthSession,
   returnUrl: string,
   options: AuthOptions,
-): Promise<void> {
+): Promise<Response | null> {
   // Drops any previous app session but keeps the deployment-protection cookie:
   // a plain clearCookies() sends the next navigation to vercel.com/sso-api.
   await clearCookiesPreservingBypass(page.context());
@@ -191,7 +199,8 @@ export async function installBrowserSessionDirect(
       timeout: 180_000,
     });
     const status = response?.status() ?? 0;
-    if (status < 500 || attempt === maxNav) return;
+    if (status < 500 || attempt === maxNav) return response;
     await page.waitForTimeout(Math.min(2_000 * attempt, 8_000));
   }
+  return null;
 }

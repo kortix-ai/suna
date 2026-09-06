@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // AccessList / AccessRow — THE list row for every access surface.
 //
 // Canonical anatomy, extracted faithfully from the account `MembersCard`
@@ -191,15 +192,16 @@ export function AccessRow({
           <span className="text-foreground truncate text-sm font-medium">{title}</span>
           {badges}
         </div>
-        {meta ?? (metaParts && metaParts.length > 0 ? (
-          <div className="text-muted-foreground text-xs">
-            <InlineMeta>
-              {metaParts.map((part, i) => (
-                <span key={i}>{part}</span>
-              ))}
-            </InlineMeta>
-          </div>
-        ) : null)}
+        {meta ??
+          (metaParts && metaParts.length > 0 ? (
+            <div className="text-muted-foreground text-xs">
+              <InlineMeta>
+                {metaParts.map((part, i) => (
+                  <span key={i}>{part}</span>
+                ))}
+              </InlineMeta>
+            </div>
+          ) : null)}
       </div>
       {hasTrailingSlot ? (
         <div
@@ -208,9 +210,7 @@ export function AccessRow({
           onKeyDown={(event) => event.stopPropagation()}
           role="presentation"
         >
-          {trailing ? (
-            <span className="text-muted-foreground text-sm">{trailing}</span>
-          ) : null}
+          {trailing ? <span className="text-muted-foreground text-sm">{trailing}</span> : null}
           {actions}
           <div className="flex w-7 shrink-0 justify-end">
             {pending ? (
@@ -312,14 +312,14 @@ export interface AccessListProps {
 }
 
 export function AccessList({ children, header, selectable, className }: AccessListProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const selected = selectable
     ? selectable.selectedIds instanceof Set
       ? selectable.selectedIds
       : new Set(selectable.selectedIds as readonly string[])
     : null;
   const eligible = selectable?.eligibleIds ?? [];
-  const allSelected =
-    !!selected && eligible.length > 0 && eligible.every((id) => selected.has(id));
+  const allSelected = !!selected && eligible.length > 0 && eligible.every((id) => selected.has(id));
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -338,7 +338,9 @@ export function AccessList({ children, header, selectable, className }: AccessLi
                   onChange={selectable.onToggleAll}
                   className="border-border accent-primary size-3.5 cursor-pointer rounded"
                 />
-                {allSelected ? 'Deselect all' : 'Select all visible'}
+                {allSelected
+                  ? tI18nComplete.raw('text967549497036')
+                  : tI18nComplete.raw('textb48c0322c628')}
               </label>
             ) : null}
             {header?.actions}

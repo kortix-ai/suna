@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import type { CostModelRow } from '@kortix/sdk';
@@ -88,6 +89,7 @@ export function CostModelList({ models }: CostModelListProps) {
 }
 
 function ModelRow({ row, maxCost }: { row: CostModelRow; maxCost: number }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pct = maxCost > 0 ? Math.max(0, Math.min(100, (row.cost / maxCost) * 100)) : 0;
 
   return (
@@ -107,7 +109,7 @@ function ModelRow({ row, maxCost }: { row: CostModelRow; maxCost: number }) {
             {formatSessionCostUsd(row.cost)}
           </p>
           <p className="text-muted-foreground text-xs tabular-nums">
-            {row.request_count.toLocaleString('en-US')} reqs
+            {row.request_count.toLocaleString('en-US')} {tI18nComplete.raw('textaed7a1237429')}
           </p>
         </div>
       </div>

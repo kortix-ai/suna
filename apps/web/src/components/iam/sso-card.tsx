@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // SAML SSO config on the Settings tab. The Supabase auth.sso_providers
 // row is created out-of-band (Studio or auth admin API) — admins paste
 // the resulting UUID + primary email domain here, plus the JWT claim
@@ -10,8 +11,8 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import {
   ArrowRightIcon as ArrowRight,
-  CaretDownIcon as ChevronDown,
   CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
   PlusIcon as Plus,
   TrashIcon as Trash2,
   XIcon as X,
@@ -38,6 +39,8 @@ import {
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { ErrorState } from '@/features/layout/section/error-state';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
   CopyRow,
   EMPTY_PRINCIPAL_SELECTION,
@@ -45,8 +48,6 @@ import {
   type PrincipalSelection,
   singlePrincipal,
 } from '@/features/workspace/shared/access';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { useAuth } from '@/features/providers/auth-provider';
 import {
   type SsoGroupMapping,
   type SsoProvider,
@@ -97,23 +98,30 @@ function SpDetails({
   className?: string;
   heading?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className={className}>
       {heading && (
         <>
-          <h3 className="text-foreground text-sm font-medium">Service provider details</h3>
+          <h3 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('text4b6617d27a7f')}
+          </h3>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            Paste these into your identity provider's SAML configuration.
+            {tI18nComplete.raw('text6261ccf529dc')}
           </p>
         </>
       )}
       <div className={heading ? 'mt-3 space-y-3' : 'space-y-3'}>
         <CopyRow
-          label="Identifier (Entity ID)"
+          label={tI18nComplete.raw('text8e5381229b65')}
           value={urls.entityId}
-          successMessage="Entity ID copied"
+          successMessage={tI18nComplete.raw('textcae19266dc91')}
         />
-        <CopyRow label="Reply URL (ACS)" value={urls.acsUrl} successMessage="Reply URL copied" />
+        <CopyRow
+          label={tI18nComplete.raw('text2085a74cbb9b')}
+          value={urls.acsUrl}
+          successMessage={tI18nComplete.raw('textcbd6aeca8616')}
+        />
       </div>
     </div>
   );
@@ -125,6 +133,7 @@ interface SsoCardProps {
 }
 
 export function SsoCard({ accountId, canManage }: SsoCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -147,22 +156,22 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
   const deleteMutation = useMutation({
     mutationFn: () => deleteSsoProvider(accountId),
     onSuccess: () => {
-      successToast('SSO provider removed');
+      successToast(tI18nComplete.raw('textb7ce84ad7e7d'));
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
       queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] });
       setDeleteOpen(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to remove provider'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textccbfd6f25c02')),
   });
 
   const deleteMappingMutation = useMutation({
     mutationFn: (mappingId: string) => deleteSsoGroupMapping(accountId, mappingId),
     onSuccess: () => {
-      successToast('Mapping removed');
+      successToast(tI18nComplete.raw('textdc613b61cff5'));
       queryClient.invalidateQueries({ queryKey: ['iam-sso-mappings', accountId] });
       setMapDeleteTarget(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to remove mapping'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text0d8104fca93b')),
   });
 
   const provider = providerQuery.data;
@@ -187,11 +196,13 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
     },
     onSuccess: (updated) => {
       successToast(
-        updated.enforce_sso ? 'SSO is now enforced for this domain' : 'SSO enforcement turned off',
+        updated.enforce_sso
+          ? tI18nComplete.raw('textfb93c43856a8')
+          : tI18nComplete.raw('textb97d0d8acd14'),
       );
       queryClient.invalidateQueries({ queryKey: ['iam-sso-provider', accountId] });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to update SSO enforcement'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text6d0137714cf5')),
   });
 
   return (
@@ -199,17 +210,17 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 space-y-0.5">
           <p className="text-foreground flex items-center gap-2 text-sm font-medium">
-            SAML SSO
+            {tI18nComplete.raw('text405e739d53d2')}
             {provider && (
               <Badge variant="success" size="sm">
-                connected
+                {tI18nComplete.raw('text12a7bd86e0a4')}
               </Badge>
             )}
           </p>
           <p className="text-muted-foreground text-xs">
             {provider
-              ? 'Connect your IdP. Users signing in via SAML are auto-provisioned and their IAM groups are kept in sync from a JWT claim.'
-              : 'Auto-provision members from your IdP. Group claims sync to IAM groups.'}
+              ? tI18nComplete.raw('textfa497ac79066')
+              : tI18nComplete.raw('textb769a269132c')}
           </p>
         </div>
         {canManage &&
@@ -220,13 +231,15 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
               size="sm"
               className="shrink-0"
             >
-              Edit
+              {tI18nComplete.raw('text464c4ffd019e')}
             </Button>
           ) : (
             // New providers go through the guided setup wizard (per-IdP
             // steps + inline import) instead of the bare dialog.
             <Button asChild size="sm" variant="secondary" className="shrink-0">
-              <Link href={`/accounts/${accountId}/sso-setup`}>Configure</Link>
+              <Link href={`/accounts/${accountId}/sso-setup`}>
+                {tI18nComplete.raw('text6defafa2caa6')}
+              </Link>
             </Button>
           ))}
       </div>
@@ -244,13 +257,13 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <div className="px-4 py-5">
             <ErrorState
               size="sm"
-              title="Couldn't load SSO status"
+              title={tI18nComplete.raw('textb91015bed915')}
               description={
                 providerQuery.error instanceof Error ? providerQuery.error.message : undefined
               }
               action={
                 <Button variant="outline" size="sm" onClick={() => providerQuery.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -258,10 +271,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         )}
         {!provider && !providerQuery.isLoading && !providerQuery.isError && (
           <div className="px-4 py-5">
-            <p className="text-foreground text-sm font-medium">Not connected yet</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('text898569356612')}
+            </p>
             <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-              Route your domain's sign-ins through your identity provider — Configure walks Entra,
-              Okta, Google and more step by step, including everything your IdP asks for.
+              {tI18nComplete.raw('textec89d54062ea')}
             </p>
           </div>
         )}
@@ -275,17 +289,23 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 glance instead of eating half the card. */}
             <dl className="grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
               <div className="min-w-0">
-                <dt className="text-muted-foreground text-xs">Provider</dt>
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('text472590ae974d')}
+                </dt>
                 <dd className="text-foreground mt-0.5 truncate font-medium">{provider.name}</dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-muted-foreground text-xs">Primary domain</dt>
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('textb58723266197')}
+                </dt>
                 <dd className="text-foreground mt-1 truncate font-mono text-xs">
                   {provider.primary_domain}
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-muted-foreground text-xs">Group claim</dt>
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('textae030e046fcf')}
+                </dt>
                 <dd className="mt-1">
                   <code className="bg-muted/60 text-foreground rounded px-1.5 py-0.5 font-mono text-xs">
                     {provider.group_claim_name}
@@ -293,7 +313,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 </dd>
               </div>
               <div className="min-w-0">
-                <dt className="text-muted-foreground text-xs">Provisioning</dt>
+                <dt className="text-muted-foreground text-xs">
+                  {tI18nComplete.raw('textc2b1b8e2e039')}
+                </dt>
                 <dd className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
                   <span
                     className={
@@ -303,7 +325,8 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                     }
                   >
                     {provider.auto_create_members ? <Check className="size-3.5 shrink-0" /> : null}
-                    Auto-create members{provider.auto_create_members ? '' : ': off'}
+                    {tI18nComplete.raw('text33e17e895ebc')}
+                    {provider.auto_create_members ? '' : tI18nComplete.raw('text6e81eb627df1')}
                   </span>
                   <span
                     className={
@@ -315,7 +338,8 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                     {provider.auto_provision_groups ? (
                       <Check className="size-3.5 shrink-0" />
                     ) : null}
-                    Auto-provision groups{provider.auto_provision_groups ? '' : ': off'}
+                    {tI18nComplete.raw('text459ff8f45278')}
+                    {provider.auto_provision_groups ? '' : tI18nComplete.raw('text6e81eb627df1')}
                   </span>
                 </dd>
               </div>
@@ -327,10 +351,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
           <div className="border-border border-t px-4 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 space-y-0.5">
-                <p className="text-foreground text-sm font-medium">Enforce SSO for this domain</p>
+                <p className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('text05b1748edb1e')}
+                </p>
                 <p className="text-muted-foreground text-xs">
-                  Members must sign in with your identity provider — the password option disappears
-                  the moment this is on, and only your identity provider works after that.
+                  {tI18nComplete.raw('text3e29ac703c2f')}
                 </p>
               </div>
               {canManage && (
@@ -338,7 +363,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                   checked={!!provider.enforce_sso}
                   onCheckedChange={(checked) => enforceSsoMutation.mutate(checked)}
                   disabled={enforceSsoMutation.isPending || providerQuery.isLoading}
-                  aria-label="Enforce SSO for this domain"
+                  aria-label={tI18nComplete.raw('text05b1748edb1e')}
                 />
               )}
             </div>
@@ -352,7 +377,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                 <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-foreground flex items-center gap-2 text-sm font-medium">
-                      Group mappings
+                      {tI18nComplete.raw('text1ca52f90af41')}
                       {mappings.length > 0 && (
                         <Badge variant="muted" size="sm">
                           {mappings.length}
@@ -360,9 +385,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                       )}
                     </p>
                     <p className="text-muted-foreground mt-0.5 text-xs">
-                      Route IdP group values (from the{' '}
-                      <span className="font-mono">{provider.group_claim_name}</span> claim) to
-                      specific IAM groups.
+                      {tI18nComplete.raw('textd39e457aea5f')}{' '}
+                      <span className="font-mono">{provider.group_claim_name}</span>{' '}
+                      {tI18nComplete.raw('texte6158ee80566')}
                     </p>
                   </div>
                   <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
@@ -378,7 +403,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                       onClick={() => setMapOpen(true)}
                     >
                       <Plus className="size-3.5 shrink-0" />
-                      Add mapping
+                      {tI18nComplete.raw('text160cc87a108c')}
                     </Button>
                   </div>
                 )}
@@ -388,9 +413,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                   </div>
                 ) : mappings.length === 0 ? (
                   <p className="text-muted-foreground px-4 py-4 text-xs">
-                    No mappings yet — with auto-provision on, your IdP&apos;s groups appear by
-                    themselves; add a mapping only to route a claim value into a specific existing
-                    group.
+                    {tI18nComplete.raw('text7c6d27aed192')}
                   </p>
                 ) : (
                   <div className="divide-border divide-y">
@@ -403,7 +426,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                           {m.claim_value}
                         </code>
                         <ArrowRight className="text-muted-foreground/50 size-3.5 shrink-0" />
-                        <Badge variant="outline" size="sm" className="min-w-0 max-w-[42%] truncate">
+                        <Badge variant="outline" size="sm" className="max-w-[42%] min-w-0 truncate">
                           {m.group_name}
                         </Badge>
                         <span className="flex-1" />
@@ -413,7 +436,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
                             variant="ghost"
                             className="text-muted-foreground hover:text-destructive shrink-0"
                             onClick={() => setMapDeleteTarget(m)}
-                            aria-label="Remove mapping"
+                            aria-label={tI18nComplete.raw('textde5a4015009a')}
                           >
                             <X className="size-3.5 shrink-0" />
                           </Button>
@@ -435,9 +458,11 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
               <DisclosureTrigger>
                 <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-foreground text-sm font-medium">Service provider values</p>
+                    <p className="text-foreground text-sm font-medium">
+                      {tI18nComplete.raw('textc4be9515eb1a')}
+                    </p>
                     <p className="text-muted-foreground mt-0.5 text-xs">
-                      The Entity ID and ACS URL your IdP's SAML config asks for.
+                      {tI18nComplete.raw('texta48a3f3dfb45')}
                     </p>
                   </div>
                   <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
@@ -461,7 +486,7 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
               onClick={() => setDeleteOpen(true)}
             >
               <Trash2 className="size-3.5 shrink-0" />
-              Remove SSO provider
+              {tI18nComplete.raw('text95819284355b')}
             </Button>
           </div>
         )}
@@ -494,9 +519,9 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Remove SSO provider?"
-        description="Existing members keep their access; new sign-ins via SAML stop being provisioned and group sync no longer runs."
-        confirmLabel="Remove provider"
+        title={tI18nComplete.raw('textdd1415c23913')}
+        description={tI18nComplete.raw('text1f923dc84e2f')}
+        confirmLabel={tI18nComplete.raw('text5234fbffc3e9')}
         confirmVariant="destructive"
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
@@ -507,13 +532,16 @@ export function SsoCard({ accountId, canManage }: SsoCardProps) {
         onOpenChange={(o) => {
           if (!o) setMapDeleteTarget(null);
         }}
-        title="Remove mapping?"
+        title={tI18nComplete.raw('text45afe4152eb7')}
         description={
           mapDeleteTarget
-            ? `Users with the "${mapDeleteTarget.claim_value}" claim will no longer auto-join "${mapDeleteTarget.group_name}".`
+            ? tI18nComplete('text5a4c567b2373', {
+                value0: mapDeleteTarget.claim_value,
+                value1: mapDeleteTarget.group_name,
+              })
             : ''
         }
-        confirmLabel="Remove mapping"
+        confirmLabel={tI18nComplete.raw('textde5a4015009a')}
         confirmVariant="destructive"
         isPending={deleteMappingMutation.isPending}
         onConfirm={() => {
@@ -545,6 +573,7 @@ function EditProviderDialog({
   existing: SsoProvider;
   onSaved: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { user } = useAuth();
   // The current admin's own email domain — if this account routes it to the
   // IdP and the admin isn't ALSO the identity that comes back from that IdP,
@@ -581,11 +610,11 @@ function EditProviderDialog({
         auto_provision_groups: autoProvision,
       }),
     onSuccess: () => {
-      successToast('SSO provider updated');
+      successToast(tI18nComplete.raw('text72db205c0097'));
       onSaved();
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to save provider'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('texte21fa38b5758')),
   });
 
   const ready = name.trim().length > 0 && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain.trim());
@@ -596,11 +625,8 @@ function EditProviderDialog({
     <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
-          <ModalTitle>Edit SAML provider</ModalTitle>
-          <ModalDescription>
-            Update the display name, sign-in domain, and group-claim settings for your identity
-            provider.
-          </ModalDescription>
+          <ModalTitle>{tI18nComplete.raw('text32581286f916')}</ModalTitle>
+          <ModalDescription>{tI18nComplete.raw('text41bb63a2e247')}</ModalDescription>
         </ModalHeader>
 
         <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
@@ -609,59 +635,59 @@ function EditProviderDialog({
           )}
 
           <div className="space-y-1.5">
-            <Label>Display name</Label>
+            <Label>{tI18nComplete.raw('text2b7f6a84de91')}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Azure AD"
+              placeholder={tI18nComplete.raw('text8c061bef8878')}
               disabled={mutation.isPending}
               variant="popover"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label>Primary email domain</Label>
+            <Label>{tI18nComplete.raw('text196f5a9a744a')}</Label>
             <Input
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              placeholder="acme.com"
+              placeholder={tI18nComplete.raw('text1194228da8fd')}
               disabled={mutation.isPending}
               variant="popover"
             />
-            <p className="text-muted-foreground text-xs">
-              Every sign-in from this domain is routed to this identity provider instead of password
-              login — only add a domain your IdP actually controls. Users on other domains are
-              unaffected.
-            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texte6c1f062119d')}</p>
             {adminEmailDomain && domain.trim().toLowerCase() === adminEmailDomain && (
-              <p className="text-kortix-yellow text-xs">
-                This is your own email domain — saving this will route YOUR next sign-in to the IdP
-                too. Make sure your account exists there before you continue.
-              </p>
+              <p className="text-kortix-yellow text-xs">{tI18nComplete.raw('textcd93ff59e7c2')}</p>
             )}
           </div>
 
           <div className="space-y-1.5">
-            <Label>Group claim name</Label>
+            <Label>{tI18nComplete.raw('texte75adb62c8c7')}</Label>
             <Input
               value={claim}
               onChange={(e) => setClaim(e.target.value)}
-              placeholder="groups"
+              placeholder={tI18nComplete.raw('text4ed379d418bb')}
               className="font-mono text-xs"
               disabled={mutation.isPending}
               variant="popover"
             />
             <p className="text-muted-foreground text-xs">
-              Common values: <span className="font-mono">groups</span> (Okta),{' '}
-              <span className="font-mono">memberOf</span> (Azure AD).
+              {tI18nComplete.raw('textdca21555d836')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('text4ed379d418bb')}</span>{' '}
+              {tI18nComplete.raw('text0f92526d5f8f')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('text310478914595')}</span>{' '}
+              {tI18nComplete.raw('text9715b82f0966')}
             </p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              <span className="text-kortix-yellow">Entra tip:</span> set your SAML{' '}
-              <span className="font-mono">emailaddress</span> claim source to{' '}
-              <span className="font-mono">userPrincipalName</span> — onmicrosoft.com users have no{' '}
-              <span className="font-mono">mail</span>, and an empty email breaks sign-in. Entra also
-              emits group <span className="font-mono">Object IDs</span> by default: map those, or
-              emit names via “Groups assigned to the application” (needs Entra ID P1/P2).
+              <span className="text-kortix-yellow">{tI18nComplete.raw('textd46958e8ca77')}</span>{' '}
+              {tI18nComplete.raw('textab09dcc1883e')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('text2a9a3df163eb')}</span>{' '}
+              {tI18nComplete.raw('texte6b55c9a01c3')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('texte378907770e5')}</span>{' '}
+              {tI18nComplete.raw('texta5949a4c27d3')}{' '}
+              <span className="font-mono">{tI18nComplete.raw('text00d8d3f11739')}</span>
+              {tI18nComplete.raw('text352007bbaa9e')}
+              <span className="font-mono">{tI18nComplete.raw('textdea47e4b79d6')}</span>{' '}
+              {tI18nComplete.raw('texte4ce46bf8c90')}
             </p>
           </div>
 
@@ -674,10 +700,9 @@ function EditProviderDialog({
               disabled={mutation.isPending}
             />
             <span>
-              <span className="font-medium">Auto-create members</span>
+              <span className="font-medium">{tI18nComplete.raw('text33e17e895ebc')}</span>
               <span className="text-muted-foreground block text-xs">
-                When off, only users an admin has already invited can sign in via SAML. Group sync
-                still runs for those members.
+                {tI18nComplete.raw('text4568e87aaf86')}
               </span>
             </span>
           </label>
@@ -691,10 +716,9 @@ function EditProviderDialog({
               disabled={mutation.isPending}
             />
             <span>
-              <span className="font-medium">Auto-provision groups</span>
+              <span className="font-medium">{tI18nComplete.raw('text459ff8f45278')}</span>
               <span className="text-muted-foreground block text-xs">
-                Create an IAM group for every group the IdP sends and add users to it — no per-group
-                mapping. You just attach project roles to the auto-created groups.
+                {tI18nComplete.raw('text8a562f22155c')}
               </span>
             </span>
           </label>
@@ -708,7 +732,7 @@ function EditProviderDialog({
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
-            Cancel
+            {tI18nComplete.raw('text19766ed6ccb2')}
           </Button>
           <Button
             size="sm"
@@ -717,7 +741,7 @@ function EditProviderDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
-            Save changes
+            {tI18nComplete.raw('textdd0ae7a5cbcf')}
           </Button>
         </ModalFooter>
       </ModalContent>
@@ -738,6 +762,7 @@ function AddMappingDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [claimValue, setClaimValue] = useState('');
   // The ONE principal picker. Group-only, single-select — the same control
   // every other "who is this for?" field in the access surface uses.
@@ -760,11 +785,11 @@ function AddMappingDialog({
         group_id: groupId,
       }),
     onSuccess: () => {
-      successToast('Mapping added');
+      successToast(tI18nComplete.raw('text2d782022e664'));
       onCreated();
       onOpenChange(false);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to add mapping'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textc7a1b38bba89')),
   });
 
   const ready = claimValue.trim().length > 0 && groupId.length > 0;
@@ -773,31 +798,26 @@ function AddMappingDialog({
     <Modal open={open} onOpenChange={(o) => !mutation.isPending && onOpenChange(o)}>
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
-          <ModalTitle>Add group mapping</ModalTitle>
-          <ModalDescription>
-            Users with this claim value in their SAML token will be added to the chosen IAM group on
-            sign-in.
-          </ModalDescription>
+          <ModalTitle>{tI18nComplete.raw('text67467eb27011')}</ModalTitle>
+          <ModalDescription>{tI18nComplete.raw('text62d62774a85e')}</ModalDescription>
         </ModalHeader>
 
         <ModalBody className="space-y-4">
           <div className="space-y-1.5">
-            <Label>Claim value</Label>
+            <Label>{tI18nComplete.raw('textd06d32440b8d')}</Label>
             <Input
               value={claimValue}
               onChange={(e) => setClaimValue(e.target.value)}
-              placeholder="Engineers"
+              placeholder={tI18nComplete.raw('text373a7598b12d')}
               className="font-mono text-xs"
               disabled={mutation.isPending}
               variant="popover"
             />
-            <p className="text-muted-foreground text-xs">
-              Exact, case-sensitive match against an entry in the group claim your IdP sends.
-            </p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text45b895cb8502')}</p>
           </div>
 
           <div className="space-y-1.5">
-            <Label>IAM group</Label>
+            <Label>{tI18nComplete.raw('texta4d51f7a060a')}</Label>
             <PrincipalPicker
               scope={{ kind: 'account', accountId }}
               selection="single"
@@ -806,7 +826,7 @@ function AddMappingDialog({
               onChange={setPrincipal}
               disabled={mutation.isPending}
               autoFocus={false}
-              emptyLabel="No groups in this account yet. Create one first."
+              emptyLabel={tI18nComplete.raw('text011275ae7075')}
             />
           </div>
         </ModalBody>
@@ -819,7 +839,7 @@ function AddMappingDialog({
             onClick={() => onOpenChange(false)}
             disabled={mutation.isPending}
           >
-            Cancel
+            {tI18nComplete.raw('text19766ed6ccb2')}
           </Button>
           <Button
             size="sm"
@@ -828,7 +848,7 @@ function AddMappingDialog({
             className="gap-1.5"
           >
             {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
-            Add mapping
+            {tI18nComplete.raw('text160cc87a108c')}
           </Button>
         </ModalFooter>
       </ModalContent>

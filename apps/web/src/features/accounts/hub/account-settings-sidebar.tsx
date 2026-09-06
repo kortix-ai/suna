@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The settings sidebar — the 300px left column of every `/accounts/**` route.
  *
@@ -44,10 +45,12 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { openCommandPalette } from '@/features/workspace/open-command-palette';
 import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 
 import { cn } from '@/lib/utils';
-import { NAV_GROUPS, type AccountNavItem } from './sections';
+import { localizedAccountNavGroups, type AccountNavItem } from './sections';
 import { useAccountHubSection } from './use-account-hub-access';
 import { useAccountMembers } from './use-account-members';
 
@@ -135,6 +138,8 @@ function NavSkeleton() {
  * a `Suspense` boundary — see `AccountSettingsSidebar`.
  */
 function SettingsNav() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const navGroups = localizedAccountNavGroups(tI18nComplete);
   const params = useParams<{ id?: string }>();
   const accountId = params?.id;
   const accountsQuery = useAccountsList();
@@ -153,10 +158,12 @@ function SettingsNav() {
     sectionVisible.members && !membersQuery.isLoading ? (membersQuery.data ?? []).length : null;
 
   const sectionGroups = accountId
-    ? NAV_GROUPS.map((group) => ({
-        label: group.label,
-        items: group.items.filter((item) => sectionVisible[item.id]),
-      })).filter((group) => group.items.length > 0)
+    ? navGroups
+        .map((group) => ({
+          label: group.label,
+          items: group.items.filter((item) => sectionVisible[item.id]),
+        }))
+        .filter((group) => group.items.length > 0)
     : [];
 
   const sectionEntry = (item: AccountNavItem): NavEntry => ({
@@ -182,7 +189,7 @@ function SettingsNav() {
   return (
     <>
       <SidebarGroup className="px-2 py-0">
-        <GroupLabel>Accounts</GroupLabel>
+        <GroupLabel>{tI18nComplete.raw('text8a7c8b67fe8b')}</GroupLabel>
         {accountsQuery.isLoading ? (
           <div className="space-y-1">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -190,7 +197,9 @@ function SettingsNav() {
             ))}
           </div>
         ) : accountsQuery.isError ? (
-          <p className="text-muted-foreground px-2.5 py-2 text-xs">Accounts failed to load.</p>
+          <p className="text-muted-foreground px-2.5 py-2 text-xs">
+            {tI18nComplete.raw('textb170e6a477b8')}
+          </p>
         ) : (
           <SidebarMenu>
             {accounts.map((account) => {
@@ -226,6 +235,8 @@ function SettingsNav() {
 }
 
 export function AccountSettingsSidebar() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const footerLinks = localizeUiCatalog(FOOTER_LINKS, tI18nComplete, ACCOUNT_HUB_TRANSLATION_KEYS);
   return (
     // `--surface` is this shell's pane color, one rung off canvas. The child
     // variant is required: `className` lands on the positioning container,
@@ -245,22 +256,22 @@ export function AccountSettingsSidebar() {
           >
             <Link href={PROJECT_LANDING_PATH}>
               <ArrowLeftIcon className="size-4 shrink-0" />
-              Back to app
+              {tI18nComplete.raw('texta6989680b352')}
             </Link>
           </Button>
           <div className="flex items-center gap-px">
-            <Hint label="Search" side="bottom">
+            <Hint label={tI18nComplete.raw('text49c266baaaa7')} side="bottom">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Search"
+                aria-label={tI18nComplete.raw('text49c266baaaa7')}
                 onClick={() => openCommandPalette()}
               >
                 <MagnifyingGlassIcon className="text-muted-foreground size-4" />
               </Button>
             </Hint>
-            <Hint label="Hide sidebar" side="bottom">
+            <Hint label={tI18nComplete.raw('textd1db29ebc76d')} side="bottom">
               <SidebarTrigger className="text-muted-foreground" />
             </Hint>
           </div>
@@ -275,7 +286,7 @@ export function AccountSettingsSidebar() {
 
       <SidebarFooter className="p-2">
         <SidebarMenu>
-          {FOOTER_LINKS.map((link) => (
+          {footerLinks.map((link) => (
             <SidebarMenuItem key={link.href}>
               <SidebarMenuButton asChild className={ROW_CLASS}>
                 <a href={link.href} target="_blank" rel="noreferrer">

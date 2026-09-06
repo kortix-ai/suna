@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * Who may use this agent — managed here, on the agent's page.
  *
@@ -95,23 +96,26 @@ export function agentIdsHeldBy(
 /** The section's copy, per resource type. The two objects the IAM engine
  *  closes by default are granted the same way, so they get the same section
  *  with the sentence that names what is actually inherited. */
-const RESOURCE_COPY: Record<
-  'agent' | 'subproject',
-  { description: string; empty: string; rowSuffix: string }
-> = {
-  agent: {
-    description:
-      'Members and groups granted this agent. They inherit its connectors and secrets as their own.',
-    empty: 'No one is granted this agent yet. Project managers can always use it.',
-    rowSuffix: 'grant no longer matches an agent',
-  },
-  subproject: {
+/** The agent copy is localized (main's keys); the subproject copy is not
+ *  yet — it stays English until its keys are generated. */
+function resourceCopy(
+  resourceType: 'agent' | 'subproject',
+  tI18nComplete: ReturnType<typeof useI18nTranslations>,
+): { description: string; empty: string; rowSuffix: string } {
+  if (resourceType === 'agent') {
+    return {
+      description: tI18nComplete.raw('text96feb5be077d'),
+      empty: tI18nComplete.raw('text011c4e48df01'),
+      rowSuffix: tI18nComplete.raw('textc795f93da2e5'),
+    };
+  }
+  return {
     description:
       'Members and groups granted this subproject. A subproject grant is not an agent grant — they need its agent in their own right too.',
     empty: 'No one is granted this subproject yet. Project managers can always use it.',
-    rowSuffix: 'grant no longer matches a subproject',
-  },
-};
+    rowSuffix: '· grant no longer matches a subproject',
+  };
+}
 
 // The live `/access` contract carries a custom-role binding per member and a
 // `group_access` array the SDK type does not yet declare — the same gap
@@ -159,7 +163,8 @@ export function AgentPeopleSection({
    *  the agent page's two call sites are unchanged. */
   resourceType?: 'agent' | 'subproject';
 }) {
-  const copy = RESOURCE_COPY[resourceType];
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const copy = resourceCopy(resourceType, tI18nComplete);
   const canManage =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
@@ -258,7 +263,7 @@ export function AgentPeopleSection({
   };
 
   return (
-    <EditorSection title="Who can use it" description={copy.description}>
+    <EditorSection title={tI18nComplete.raw('text82d9af69e1a1')} description={copy.description}>
       <div className="space-y-3 py-3.5">
         {grantsQuery.isLoading ? (
           <div className="space-y-2">
@@ -291,9 +296,11 @@ export function AgentPeopleSection({
                     <span className="text-muted-foreground block truncate text-xs">
                       {g.principal_type === 'group' ? 'Group' : 'Member'}
                       {g.expires_at
-                        ? ` · until ${new Date(g.expires_at).toLocaleDateString()}`
+                        ? tI18nComplete('textdc40ace03968', {
+                            value0: new Date(g.expires_at).toLocaleDateString(),
+                          })
                         : ''}
-                      {g.orphaned ? ` · ${copy.rowSuffix}` : ''}
+                      {g.orphaned ? copy.rowSuffix : ''}
                     </span>
                   </span>
                   <Button
@@ -304,7 +311,7 @@ export function AgentPeopleSection({
                     disabled={!accountId}
                   >
                     <PencilSimpleIcon className="size-3.5 shrink-0" />
-                    Edit
+                    {tI18nComplete.raw('text464c4ffd019e')}
                   </Button>
                 </li>
               );
@@ -320,7 +327,7 @@ export function AgentPeopleSection({
             onClick={() => setGrantOpen(true)}
           >
             <PlusIcon className="size-3.5 shrink-0" />
-            Grant access
+            {tI18nComplete.raw('text8693768c7e08')}
           </Button>
         ) : null}
       </div>

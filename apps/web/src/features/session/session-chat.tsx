@@ -28,7 +28,7 @@ import {
   PlayIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -411,6 +411,7 @@ function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] 
 // ============================================================================
 
 function AnsweredQuestionCard({ part }: { part: ToolPart }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [expanded, setExpanded] = useState(false);
   const input = (part.state as any)?.input ?? {};
   const metadata = (part.state as any)?.metadata ?? {};
@@ -437,9 +438,11 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
           variant="popover"
           className="bg-card flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-4 py-2 text-left"
         >
-          <span className="text-foreground text-xs font-medium">Questions</span>
+          <span className="text-foreground text-xs font-medium">
+            {tI18nComplete.raw('text9a72221a2747')}
+          </span>
           <span className="text-muted-foreground text-xs tabular-nums">
-            {answeredCount} answered
+            {answeredCount} {tI18nComplete.raw('text68c780cd132a')}
           </span>
           <ChevronDown
             className={cn(
@@ -453,7 +456,7 @@ function AnsweredQuestionCard({ part }: { part: ToolPart }) {
         <div className="space-y-2 px-3.5 py-2">
           {questions.map((q, i) => {
             const answer = answers[i] || [];
-            const answerText = answer.join(', ') || 'No answer';
+            const answerText = answer.join(', ') || tI18nComplete.raw('text7e49c68db30e');
             return (
               <div key={q.question} className="space-y-0.5">
                 <div className="[&_*]:!text-muted-foreground [&_strong]:!text-muted-foreground [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_p]:!text-pretty [&_ul]:!my-0">
@@ -763,6 +766,7 @@ export function SessionReportCard({
   report: SessionReport;
   onOpen: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const complete = report.status === 'COMPLETE';
   return (
     // A real <button>: Enter, Space and the focus ring come free, where the
@@ -787,7 +791,7 @@ export function SessionReportCard({
 
       <span className="min-w-0 flex-1">
         <span className="text-foreground block truncate text-sm font-medium">
-          Worker {complete ? 'complete' : 'failed'}
+          {tI18nComplete.raw('texta67b04cd5c49')} {complete ? 'complete' : 'failed'}
         </span>
         {/* One meta line, truncated by CSS against the real available width —
             the old 60-character slice cut mid-word at every viewport and still
@@ -796,7 +800,10 @@ export function SessionReportCard({
           <span className="text-muted-foreground block truncate text-xs">
             {report.project}
             {report.project && report.prompt && (
-              <span className="text-muted-foreground/40"> &bull; </span>
+              <span className="text-muted-foreground/40">
+                {' '}
+                {tI18nComplete.raw('text3b9453dad42b')}{' '}
+              </span>
             )}
             {report.prompt}
           </span>
@@ -842,6 +849,7 @@ function SessionTurnImpl({
   onEditCancel,
   onEditSend,
 }: SessionTurnProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [connectProviderOpen, setConnectProviderOpen] = useState(false);
@@ -1255,11 +1263,11 @@ function SessionTurnImpl({
     const msgs: KortixSystemMessage[] = [];
     for (const p of turn.userMessage.parts) {
       if (isTextPart(p) && (p as TextPart).text) {
-        msgs.push(...extractKortixSystemMessages((p as TextPart).text!));
+        msgs.push(...extractKortixSystemMessages((p as TextPart).text!, tI18nComplete));
       }
     }
     return msgs;
-  }, [turn.userMessage.parts]);
+  }, [tI18nComplete, turn.userMessage.parts]);
 
   const hasVisibleUserContent = useMemo(() => {
     // Session reports render as their own card — don't show as user bubble
@@ -1622,7 +1630,7 @@ function SessionTurnImpl({
           data-turn-pending={pending || interruptedBeforeRun || undefined}
           data-turn-queue-state={queueState ?? undefined}
           className={cn(
-            'transition-opacity duration-500',
+            'duration-slow transition-opacity',
             (pending || interruptedBeforeRun) && QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
@@ -1739,7 +1747,7 @@ function SessionTurnImpl({
           every turn in the DOM, so select-all across the transcript copied each
           answer twice. The visible markdown is already in the a11y tree. */}
       <div className="sr-only" aria-live="polite">
-        {!working && response ? 'Response complete' : ''}
+        {!working && response ? tHardcodedUi.raw('i18nComplete.text7889d06f7235') : ''}
       </div>
 
       {/* Inline content: text and answered questions rendered in natural order.
@@ -1791,7 +1799,7 @@ function SessionTurnImpl({
                 <div className="bg-secondary flex w-full flex-col overflow-hidden rounded-lg">
                   <div className="text-foreground flex min-w-0 items-center justify-between gap-2 p-3 pb-0 text-xs [&>svg]:size-4">
                     <span
-                      className="bg-popover text-foreground/95 dark:bg-card min-w-0 truncate rounded-[calc(var(--radius-sm)-0.5px)] border px-1.5 py-[0.08rem] align-baseline font-mono text-[0.95em] font-medium wrap-anywhere whitespace-nowrap"
+                      className="bg-popover text-foreground min-w-0 truncate rounded-sm border px-1.5 py-0.5 align-baseline font-mono text-xs font-medium wrap-anywhere whitespace-nowrap"
                       title={`/${commandForTurn.name}`}
                     >
                       {commandForTurn.name}
@@ -1900,13 +1908,13 @@ function SessionTurnImpl({
           duration / cost would be permanently invisible, and tap-emulated
           `:hover` would leave exactly one arbitrary turn's bar lit. */}
       {!working && (
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
+        <div className="duration-normal flex items-center gap-0.5 opacity-0 transition-opacity group-hover/turn:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 max-md:opacity-100">
           {response ? (
             <Button
               variant="ghost"
               size="icon-sm"
               onClick={handleCopy}
-              aria-label={copied ? 'Copied' : 'Copy response'}
+              aria-label={copied ? 'Copied' : tHardcodedUi.raw('i18nComplete.textf0f755afea88')}
               className="hit-area-3"
             >
               <span className="relative inline-flex shrink-0 items-center justify-center">
@@ -1920,9 +1928,9 @@ function SessionTurnImpl({
                     className="absolute inset-0 inline-flex items-center justify-center"
                   >
                     {copied ? (
-                      <CheckIcon className="text-foreground/70 size-[1.05rem]" />
+                      <CheckIcon className="text-muted-foreground size-[1.05rem]" />
                     ) : (
-                      <Copy className="text-foreground/70 size-[1.05rem]" />
+                      <Copy className="text-muted-foreground size-[1.05rem]" />
                     )}
                   </m.span>
                 </AnimatePresence>
@@ -2885,10 +2893,10 @@ export function SessionChat({
         const detail = error instanceof Error && error.message.trim() ? error.message.trim() : null;
         errorToast(
           status === 409
-            ? (detail ?? 'The agent is already answering that prompt')
+            ? (detail ?? tHardcodedUi.raw('i18nComplete.text3e739b3b4329'))
             : status === 404
-              ? 'That prompt is no longer in the queue'
-              : (detail ?? 'Could not remove that prompt'),
+              ? tHardcodedUi.raw('i18nComplete.text128773c76940')
+              : (detail ?? tHardcodedUi.raw('i18nComplete.text42fcd9dda5f6')),
         );
         return;
       }
@@ -2907,7 +2915,7 @@ export function SessionChat({
       // gating every removal behind a modal would make it unusable, and the
       // thing being removed is a draft, not data. Reversible beats guarded.
       const undoToastId = `queue-undo-${sessionId}-${removed.prompt_id}`;
-      infoToast('Removed from queue', {
+      infoToast(tHardcodedUi.raw('i18nComplete.text2c6041fda32c'), {
         id: undoToastId,
         duration: 5000,
         button: (
@@ -2925,10 +2933,10 @@ export function SessionChat({
               mintMessageId: () => mintSessionWireMessageId(sessionId),
               enqueue: promptInbox.enqueue,
               dismiss: () => dismissToast(undoToastId),
-              onError: () => errorToast('Could not restore that prompt'),
+              onError: () => errorToast(tHardcodedUi.raw('i18nComplete.text8af21acebf14')),
             })}
           >
-            Undo
+            {tHardcodedUi.raw('i18nComplete.texta737e54996f8')}
           </Button>
         ),
       });
@@ -2941,7 +2949,9 @@ export function SessionChat({
     (id: string) => {
       // Re-queued UNDER ITS ORIGINAL WIRE ID, so a delivery that actually
       // landed is still absorbed by the proxy instead of running twice.
-      void promptInbox.retry(id).catch(() => errorToast('Could not retry that prompt'));
+      void promptInbox
+        .retry(id)
+        .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text4869b2a820dd')));
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [promptInbox.retry],
@@ -3605,11 +3615,11 @@ export function SessionChat({
     try {
       await sessionState.restoreRewind();
     } catch (error) {
-      errorToast('Session restore failed', {
+      errorToast(tHardcodedUi.raw('i18nComplete.text8f43efcd9139'), {
         description: formatCommandError(error),
       });
     }
-  }, [sessionState]);
+  }, [sessionState, tHardcodedUi]);
 
   // ============================================================================
   // Send / Stop / Command handlers
@@ -4104,9 +4114,11 @@ export function SessionChat({
         }
         if (removed > 0) {
           infoToast(
-            removed === 1 ? 'Queued message removed' : `${removed} queued messages removed`,
+            removed === 1
+              ? tHardcodedUi.raw('i18nComplete.textcd165519e204')
+              : tHardcodedUi('i18nComplete.textba6a7b88050c', { value0: removed }),
             {
-              description: 'They were written for the messages this rewind discards.',
+              description: tHardcodedUi.raw('i18nComplete.text8190a722b30a'),
             },
           );
         }
@@ -4136,14 +4148,14 @@ export function SessionChat({
           useSessionStateStore.getState().commitSessionRevert(sessionState.opencodeSessionId);
         }
       } catch (error) {
-        errorToast('Session rewind failed', {
+        errorToast(tHardcodedUi.raw('i18nComplete.text810b28e5110c'), {
           description: formatCommandError(error),
         });
       } finally {
         setEditSendPending(false);
       }
     },
-    [sessionState, promptInbox.prompts, promptInbox.remove, handleSend],
+    [sessionState, promptInbox.prompts, promptInbox.remove, handleSend, tHardcodedUi],
   );
 
   const handleStop = useCallback(async () => {
@@ -4199,8 +4211,8 @@ export function SessionChat({
         // stop did not also pause the queue, and that pressing Stop again (or
         // Resume/Send-now) is how they recover.
         console.warn('[session-chat] failed to hold the prompt inbox on stop', error);
-        errorToast('Stopped, but the queue could not be paused', {
-          description: 'Queued prompts may still send. Press Stop again to pause them.',
+        errorToast(tHardcodedUi.raw('i18nComplete.text57a524b52549'), {
+          description: tHardcodedUi.raw('i18nComplete.text45eca4a01ff2'),
         });
       }),
       new Promise((resolve) => setTimeout(resolve, STOP_HOLD_DEADLINE_MS)),
@@ -4224,7 +4236,9 @@ export function SessionChat({
       await promptInbox.hold(false);
     } catch (error) {
       console.warn('[session-chat] failed to release the prompt inbox hold', error);
-      errorToast('Could not resume the queue', { description: 'Try again in a moment.' });
+      errorToast(tHardcodedUi.raw('i18nComplete.text06619384104c'), {
+        description: tHardcodedUi.raw('i18nComplete.text29cc3339fce9'),
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [promptInbox.hold]);
@@ -4263,7 +4277,9 @@ export function SessionChat({
         // the one that runs and the rest of the queue follows it. Releasing
         // the hold separately first is what made the oldest row run instead.
         dispatch: async () => {
-          await promptInbox.retry(id).catch(() => errorToast('Could not send that prompt'));
+          await promptInbox
+            .retry(id)
+            .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.text7f8b8908c573')));
         },
       });
     },
@@ -4662,15 +4678,18 @@ export function SessionChat({
   useEffect(() => {
     panelRef.current = panel;
   }, [panel]);
-  const handleOpenCompactionSummary = useCallback((turnId: string, summary: string) => {
-    panelRef.current?.openDetail({
-      key: `compaction:${turnId}`,
-      title: 'Compaction summary',
-      icon: <Layers weight="duotone" className="size-4" />,
-      padded: true,
-      body: <CompactionSummaryBody summary={summary} />,
-    });
-  }, []);
+  const handleOpenCompactionSummary = useCallback(
+    (turnId: string, summary: string) => {
+      panelRef.current?.openDetail({
+        key: `compaction:${turnId}`,
+        title: tHardcodedUi.raw('i18nComplete.text9859804cb618'),
+        icon: <Layers weight="duotone" className="size-4" />,
+        padded: true,
+        body: <CompactionSummaryBody summary={summary} />,
+      });
+    },
+    [tHardcodedUi],
+  );
 
   /**
    * The session's files, handed to the composer so the `/` palette can offer
@@ -4728,8 +4747,9 @@ export function SessionChat({
             <div className="text-muted-foreground flex min-w-0 items-center gap-2 text-sm">
               <PauseIcon weight="fill" className="size-4 shrink-0" />
               <span className="truncate">
-                Queue paused — {heldQueueCount} {heldQueueCount === 1 ? 'prompt' : 'prompts'}{' '}
-                waiting
+                {tHardcodedUi.raw('i18nComplete.text1dd1ec642eed')} {heldQueueCount}{' '}
+                {heldQueueCount === 1 ? 'prompt' : 'prompts'}{' '}
+                {tHardcodedUi.raw('i18nComplete.text80cfa3e7f28d')}
               </span>
             </div>
             <Button
@@ -4739,7 +4759,7 @@ export function SessionChat({
               onClick={() => void handleResumeQueue()}
             >
               <PlayIcon weight="fill" className="size-3.5" />
-              Resume
+              {tHardcodedUi.raw('i18nComplete.textd640c7421da0')}
             </Button>
           </div>
         ) : null}
@@ -4759,8 +4779,8 @@ export function SessionChat({
             className={cn(
               'w-full overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
               questionPromptVisible
-                ? 'max-h-130 translate-y-0 opacity-100 duration-300'
-                : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
+                ? 'duration-slow max-h-130 translate-y-0 opacity-100'
+                : 'duration-slow pointer-events-none max-h-0 -translate-y-1 opacity-0',
             )}
           >
             <QuestionPrompt
@@ -4787,6 +4807,7 @@ export function SessionChat({
       queueRows.held,
       heldQueueCount,
       handleResumeQueue,
+      tHardcodedUi,
     ],
   );
 
@@ -5016,9 +5037,11 @@ export function SessionChat({
             className="flex flex-1 flex-col items-center justify-center gap-3 p-6"
             data-testid="session-transcript-error"
           >
-            <p className="text-muted-foreground text-sm">Couldn&apos;t load this conversation.</p>
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw('i18nComplete.text8d0cef2d3405')}
+            </p>
             <Button variant="outline" size="sm" onClick={() => retryTranscript()}>
-              Retry
+              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
             </Button>
           </div>
         </div>
@@ -5195,7 +5218,7 @@ export function SessionChat({
                             className="text-muted-foreground flex items-center gap-2 py-1 text-xs"
                           >
                             <Loading className="size-3.5 shrink-0" />
-                            Loading older messages
+                            {tHardcodedUi.raw('i18nComplete.text85bf890776a7')}
                           </div>
                         )}
                         {!showOlderLoading &&
@@ -5207,13 +5230,13 @@ export function SessionChat({
                               size="sm"
                               onClick={() => void handleLoadOlder()}
                             >
-                              Load older messages
+                              {tHardcodedUi.raw('i18nComplete.textf17671d83db0')}
                             </Button>
                           )}
                         {olderPullFailed && !showOlderLoading && (
                           <div className="flex items-center gap-2">
                             <span className="text-muted-foreground text-xs">
-                              Couldn&apos;t load older messages.
+                              {tHardcodedUi.raw('i18nComplete.textb03a0041ce33')}
                             </span>
                             <Button
                               type="button"
@@ -5221,7 +5244,7 @@ export function SessionChat({
                               size="sm"
                               onClick={() => void handleLoadOlder()}
                             >
-                              Retry
+                              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
                             </Button>
                           </div>
                         )}
@@ -5505,15 +5528,15 @@ export function SessionChat({
                   style={{
                     left: `${selectionPopup.x}px`,
                     top: `${selectionPopup.y}px`,
-                    transform: 'translate(-50%, -100%)',
+                    transform: "translate(-50%, -100%)",
                   }}
                 >
                   <Button
                     onClick={handleSelectionReply}
                     size="sm"
-                    className="animate-in fade-in-0 zoom-in-95 origin-bottom px-3 text-xs duration-150 ease-out has-[>svg]:px-3"
+                    className="animate-in fade-in-0 zoom-in-95 duration-normal origin-bottom px-3 text-xs ease-out has-[>svg]:px-3"
                   >
-                    Reply
+                    {tHardcodedUi.raw('i18nComplete.textc253f451bdd5')}
                     <ArrowBendUpLeftIcon className="size-4 shrink-0" />
                   </Button>
                 </div>
@@ -5541,8 +5564,8 @@ export function SessionChat({
                     'hit-area-2 liquid-glass bg-liquid-glass hover:bg-liquid-glass-hover shadow-liquid-glass rounded-full',
                     'transition-[opacity,scale] ease-[cubic-bezier(0.23,1,0.32,1)] active:scale-[0.96] motion-reduce:scale-100 motion-reduce:transition-opacity',
                     showScrollButton
-                      ? 'scale-100 opacity-100 duration-150'
-                      : 'scale-[0.97] opacity-0 duration-100',
+                      ? 'duration-normal scale-100 opacity-100'
+                      : 'duration-fast scale-[0.97] opacity-0',
                   )}
                   onClick={smoothScrollToAbsoluteBottom}
                 >

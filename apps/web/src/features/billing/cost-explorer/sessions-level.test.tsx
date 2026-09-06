@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
   ApiError,
-  type SessionCostsPage,
   type SessionCostSort,
+  type SessionCostsPage,
   type SessionCostSummary,
 } from '@kortix/sdk';
 import {
@@ -36,7 +36,11 @@ import {
   sessionSortDirection,
 } from './sessions-level';
 
-const range = { preset: '30d' as const, from: '2026-07-01T00:00:00.000Z', to: '2026-08-01T00:00:00.000Z' };
+const range = {
+  preset: '30d' as const,
+  from: '2026-07-01T00:00:00.000Z',
+  to: '2026-08-01T00:00:00.000Z',
+};
 
 // ── collectOwnerOptions — the brief's own canonical tests, verbatim ────────
 
@@ -305,9 +309,9 @@ describe('applySessionSort', () => {
   // The owner filter is a separate dimension and must survive a sort change —
   // re-sorting is not a request to widen the scope back to every owner.
   test('preserves the owner filter', () => {
-    expect(applySessionSort({ ownerId: 'owner-9', sort: 'total_desc', offset: 25 }, 'total')).toEqual(
-      { ownerId: 'owner-9', sort: 'total_asc', offset: 0 },
-    );
+    expect(
+      applySessionSort({ ownerId: 'owner-9', sort: 'total_desc', offset: 25 }, 'total'),
+    ).toEqual({ ownerId: 'owner-9', sort: 'total_asc', offset: 0 });
   });
 });
 
@@ -820,8 +824,8 @@ describe('the state a failed /usage/session-costs request hands the table', () =
           // what dropped the error here: there is no error to narrow.
           error={result.error instanceof Error ? result.error : null}
           sort="total_desc"
-        onSort={noop}
-        onSelectSession={noop}
+          onSort={noop}
+          onSelectSession={noop}
           onPreviousPage={noop}
           onNextPage={noop}
         />,
@@ -880,8 +884,8 @@ describe('the state a failed /usage/session-costs request hands the table', () =
           isLoading={result.isLoading}
           error={result.error instanceof Error ? result.error : null}
           sort="total_desc"
-        onSort={noop}
-        onSelectSession={noop}
+          onSort={noop}
+          onSelectSession={noop}
           onPreviousPage={noop}
           onNextPage={noop}
         />,
@@ -955,4 +959,3 @@ describe('SessionsLevel', () => {
     expect(html).toContain('aria-label="Filter sessions by owner"');
   });
 });
-

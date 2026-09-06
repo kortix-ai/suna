@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowLeftIcon as ArrowLeft, BookOpenIcon as BookOpen } from '@phosphor-icons/react';
 import { usePathname } from 'next/navigation';
@@ -41,7 +41,7 @@ export default function ProjectNotFound() {
           },
           {
             href: '/docs',
-            label: 'Documentation',
+            label: tHardcodedUi.raw('i18nComplete.textc205924de0fe'),
             icon: <BookOpen className="h-4 w-4" />,
             variant: 'outline',
           },

@@ -3,7 +3,7 @@
 import { ConnectorIntake } from '@/components/setup-links/connector-intake';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useParams } from 'next/navigation';
 
 export default function ConnectIntakePage() {

@@ -11,7 +11,10 @@
 import type { Command } from '@kortix/sdk/react';
 import type { JSONContent } from '@tiptap/core';
 
-import { mergeFailedSubmissionDocument, mergeFailedSubmissionFiles } from '../composer-draft-recovery';
+import {
+  mergeFailedSubmissionDocument,
+  mergeFailedSubmissionFiles,
+} from '../composer-draft-recovery';
 import type { AttachedFile } from './types';
 
 /**
@@ -285,8 +288,7 @@ export interface PlanDraftSubmissionInput {
 }
 
 export type DraftSubmissionPlan =
-  | { kind: 'command'; command: Command; args?: string }
-  | { kind: 'message'; text: string };
+  { kind: 'command'; command: Command; args?: string } | { kind: 'message'; text: string };
 
 /**
  * Decide whether a draft runs a command or sends a message.

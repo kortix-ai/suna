@@ -7,7 +7,7 @@ import { isRuntimeNotReadyNoiseMessage } from '@/lib/browser-error-noise';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon, CheckIcon } from '@phosphor-icons/react';
 import * as Sentry from '@sentry/nextjs';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ErrorInfo } from 'react';
 import { Component, useCallback, useMemo, useState } from 'react';
 

@@ -1,5 +1,5 @@
-import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 import type { SessionPrompt } from '@kortix/sdk';
+import { isOptimisticSessionPrompt } from '@kortix/sdk/react';
 
 /**
  * What the transcript's queued bubbles (`turn/queued-prompt-bubbles.tsx`)

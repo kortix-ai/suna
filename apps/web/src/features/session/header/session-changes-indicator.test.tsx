@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { fileURLToPath } from 'node:url';
 
 const source = readFileSync(
@@ -30,7 +30,8 @@ describe('SessionChangesIndicator — reads without knowing git', () => {
     expect(source).not.toContain('badge.letter');
     expect(source).toContain('STATUS_DOT[meta.tone]');
     // Color alone is not a label — the word rides along for screen readers.
-    expect(source).toContain('<span className="sr-only">{meta.label}</span>');
+    expect(source).toContain("meta.label === 'Added'");
+    expect(source).toContain("? 'text6b02e0d363a4'");
   });
 
   test('states the destination once, as a Badge, never as mono text mid-sentence', () => {
@@ -73,10 +74,11 @@ describe('SessionChangesIndicator — reads without knowing git', () => {
     expect(header).toContain('size-9 shrink-0 items-center justify-center rounded-sm');
 
     // Exactly two lines of copy: the count, then where it goes.
-    expect(header).toContain('{fileWord} changed');
+    expect(header).toContain('{fileWord}');
+    expect(header).toContain("tI18nHardcoded.raw('i18nComplete.textd67e2e944994')");
     expect(header).toContain('In this session');
     expect(header).toContain('<ArrowRightIcon');
-    expect(header).toContain('<span className="sr-only">to</span>');
+    expect(header).toContain("tI18nHardcoded.raw('i18nComplete.text663ea1bfffe5')");
 
     // The paragraph that repeated the first two lines is gone.
     expect(header).not.toContain('<p className="text-muted-foreground mt-2.5');

@@ -1,6 +1,9 @@
 import type { ProjectSession } from '@kortix/sdk';
 
 import { sessionDisplayStatus, sessionSource } from '@/components/projects/session-label';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 
 import { getSessionDisplayTitle, sessionLastActivityAt } from './project-session-list-helpers';
 
@@ -39,6 +42,14 @@ export const SESSION_ORDER_MODES: Array<{ value: SessionOrderMode; label: string
   { value: 'created', label: 'Date created' },
   { value: 'name', label: 'Name' },
 ];
+
+export function localizedSessionGroupModes(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(SESSION_GROUP_MODES, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+}
+
+export function localizedSessionOrderModes(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(SESSION_ORDER_MODES, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS);
+}
 
 /** Status-mode section ids — kept as its own union for callers that only ever
  *  see status-mode sections. */
@@ -193,6 +204,7 @@ export function groupSessions(
     hiddenSections?: readonly string[];
     now?: number;
   },
+  tI18nComplete: UiTranslator,
 ): GroupedSessions {
   const { mode, order, reviewCountBySession, hiddenSections, now = Date.now() } = options;
   const hidden = new Set(hiddenSections ?? []);
@@ -216,16 +228,36 @@ export function groupSessions(
   const yesterdayStart = todayStart - DAY_MS;
   const weekStart = todayStart - 7 * DAY_MS;
 
+  const statusSections = localizeUiCatalog(
+    STATUS_SECTION_ORDER,
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
+  const activitySections = localizeUiCatalog(
+    ACTIVITY_SECTION_ORDER,
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
+  const sourceSections = localizeUiCatalog(
+    SOURCE_SECTION_ORDER,
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
+  const allSections = localizeUiCatalog(
+    NONE_SECTION_ORDER,
+    tI18nComplete,
+    PRODUCT_CATALOG_TRANSLATION_KEYS,
+  );
   const declared =
     mode === 'status'
-      ? STATUS_SECTION_ORDER
+      ? statusSections
       : mode === 'activity'
-        ? ACTIVITY_SECTION_ORDER
+        ? activitySections
         : mode === 'source'
-          ? SOURCE_SECTION_ORDER
+          ? sourceSections
           : mode === 'subproject'
             ? subprojectSectionOrder(sessions)
-            : NONE_SECTION_ORDER;
+            : allSections;
 
   const buckets = new Map<string, ProjectSession[]>(declared.map((section) => [section.id, []]));
 
@@ -241,7 +273,7 @@ export function groupSessions(
               weekStart,
             )
           : mode === 'source'
-            ? sessionSource(session).kind
+            ? sessionSource(session, tI18nComplete).kind
             : mode === 'subproject'
               ? (session.subproject
                   ? subprojectSectionId(session.subproject)

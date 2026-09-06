@@ -3,7 +3,7 @@
 /** Moved from session-chat.tsx (`UserMessageRow`) so the turn module owns the
  *  user-message card. Full-width card, no reference chips. */
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -62,10 +62,10 @@ import {
   SystemNotificationCard,
 } from '../message-parsing';
 
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { messageCreatedAt } from './message-time';
 import { MessageTimeLabel } from './message-time-label';
 import { PlanCard, useHasPlan } from './plan-card';
-import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // ============================================================================
 // Fixed channel brand colors + DCP (dynamic context pruning) notifications —
@@ -310,7 +310,9 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
       >
         <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
         <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
-          {isPrune ? 'Context Pruned' : 'Context Compressed'}
+          {isPrune
+            ? tHardcodedUi.raw('i18nComplete.textec5c2f7304b1')
+            : tHardcodedUi.raw('i18nComplete.text01c88f6e4fdd')}
         </span>
 
         {/* Stats pills */}
@@ -322,21 +324,23 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           )}
           {isPrune && notification.prunedCount > 0 && (
             <Badge variant="warning" size="sm">
-              {notification.prunedCount} pruned
+              {notification.prunedCount} {tHardcodedUi.raw('i18nComplete.text0fedead8d392')}
             </Badge>
           )}
           {!isPrune && notification.messagesCount && notification.messagesCount > 0 && (
             <Badge variant="info" size="sm">
-              {notification.messagesCount} msgs
+              {notification.messagesCount} {tHardcodedUi.raw('i18nComplete.text8dc321b9135e')}
             </Badge>
           )}
           {notification.batchSaved > 0 && (
             <Badge variant="success" size="sm">
-              -{formatDCPTokens(notification.batchSaved)} tokens
+              -{formatDCPTokens(notification.batchSaved)}{' '}
+              {tHardcodedUi.raw('i18nComplete.textc51e455b41df')}
             </Badge>
           )}
           <Badge variant="muted" size="sm">
-            {formatDCPTokens(notification.tokensSaved)} saved
+            {formatDCPTokens(notification.tokensSaved)}{' '}
+            {tHardcodedUi.raw('i18nComplete.textd81c55f49c5b')}
           </Badge>
           {hasDetails && (
             <ChevronDown
@@ -379,7 +383,9 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           {/* Compress topic */}
           {notification.topic && (
             <div className="text-muted-foreground/80 text-xs">
-              <span className="text-muted-foreground/50">Topic:</span>{' '}
+              <span className="text-muted-foreground/50">
+                {tHardcodedUi.raw('i18nComplete.textce46f520653b')}
+              </span>{' '}
               <span>{notification.topic}</span>
             </div>
           )}
@@ -388,7 +394,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           {notification.distilled && (
             <div className="border-border/30 mt-1.5 border-t pt-1.5">
               <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                Distilled
+                {tHardcodedUi.raw('i18nComplete.text8e077406440b')}
               </div>
               <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
                 {notification.distilled}
@@ -400,7 +406,7 @@ function DCPNotificationCard({ notification }: { notification: DCPNotification }
           {notification.summary && (
             <div className="border-border/30 mt-1.5 border-t pt-1.5">
               <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
-                Summary
+                {tHardcodedUi.raw('i18nComplete.text8e76a94ac832')}
               </div>
               <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs wrap-break-word whitespace-pre-wrap">
                 {notification.summary}
@@ -594,6 +600,7 @@ export function MessageAttachments({
   /** The whole message is still being sent, so every tile is still uploading. */
   pending?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const [expanded, setExpanded] = useState(false);
 
@@ -626,7 +633,10 @@ export function MessageAttachments({
                   e.stopPropagation();
                   setExpanded(true);
                 }}
-                aria-label={`Show ${hidden} more attachment${hidden === 1 ? '' : 's'}`}
+                aria-label={tI18nComplete('textf9c98eec768a', {
+                  value0: hidden,
+                  value1: hidden === 1 ? '' : 's',
+                })}
                 className={cn(
                   TILE_SURFACE,
                   TILE_INTERACTIVE,
@@ -727,6 +737,7 @@ export function UserMessageBubble({
   replyContext?: string | null;
   children?: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div
       className={cn(
@@ -781,7 +792,11 @@ export function UserMessageBubble({
           {canExpand && (
             <button
               type="button"
-              aria-label={expanded ? 'Collapse message' : 'Expand message'}
+              aria-label={
+                expanded
+                  ? tI18nComplete.raw('text8820bd428377')
+                  : tI18nComplete.raw('text737f67f9918f')
+              }
               aria-expanded={expanded}
               aria-controls={textId}
               onClick={(e) => {
@@ -866,6 +881,7 @@ export function UserMessageActions({
    *  the user has to hunt for. */
   alwaysVisible?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Copy stays available while the agent is busy / rewind is locked.
   // Only edit-from-here is gated — hiding the whole bar was wrong.
   const canRewind = Boolean(onRewind && messageId && !rewindDisabled);
@@ -923,7 +939,7 @@ export function UserMessageActions({
         {copyText && (
           <div className="flex shrink-0 items-center gap-0.5">
             {canRewind && (
-              <Hint label="Edit from here" side="top" align="center">
+              <Hint label={tI18nComplete.raw('textc72e5d059e24')} side="top" align="center">
                 <Button
                   type="button"
                   variant="ghost"
@@ -931,7 +947,7 @@ export function UserMessageActions({
                   // 24px visible, 40px target — grown with a pseudo-element so the
                   // dense action row keeps its rhythm.
                   className="hit-area-2"
-                  aria-label="Edit message and rewind session"
+                  aria-label={tI18nComplete.raw('text673d6a594efa')}
                   onClick={() => onRewind?.(messageId as string, rewindPromptText ?? '')}
                 >
                   <PencilSimpleIcon weight="regular" className="text-foreground size-4" />
@@ -979,6 +995,7 @@ export function UserMessageEditor({
   onCancel: () => void;
   onSend: (text: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [draft, setDraft] = useState(initialText);
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const canSend = Boolean(draft.trim()) && !pending;
@@ -1022,7 +1039,7 @@ export function UserMessageEditor({
             if (canSend) onSend(draft);
           }
         }}
-        aria-label="Edit message"
+        aria-label={tI18nComplete.raw('text9757ccd5ef12')}
         className={cn(
           BUBBLE_TEXT,
           'max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent outline-none',
@@ -1030,7 +1047,7 @@ export function UserMessageEditor({
       />
       <div className="flex items-center justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={onCancel}>
-          Cancel
+          {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
         <Button
           type="button"
@@ -1039,7 +1056,7 @@ export function UserMessageEditor({
           onClick={() => canSend && onSend(draft)}
         >
           {pending && <Loading variant="spokes" className="size-3.5 shrink-0" />}
-          Send
+          {tI18nComplete.raw('textf6f4688ff23d')}
         </Button>
       </div>
     </div>
@@ -1103,6 +1120,7 @@ export function UserMessage({
   /** See `UserMessageActions.alwaysVisible`. */
   actionsAlwaysVisible?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
     () => splitUserParts(message.parts),
@@ -1391,7 +1409,12 @@ export function UserMessage({
     if (raw.startsWith('ses_')) {
       const href = sessionHref(raw);
       if (!href) return;
-      openTabAndNavigate({ id: raw, title: 'Session', type: 'session', href });
+      openTabAndNavigate({
+        id: raw,
+        title: tI18nComplete.raw('text6959b4159575'),
+        type: 'session',
+        href,
+      });
       return;
     }
     const ref = sessionRefs.find((s) => s.title === raw);
@@ -1493,11 +1516,11 @@ export function UserMessage({
           <div className="flex items-center gap-2">
             <Timer className="text-muted-foreground size-3.5 shrink-0" />
             <span className="text-foreground font-mono text-sm">
-              {triggerEventInfo.data?.trigger || 'Scheduled Task'}
+              {triggerEventInfo.data?.trigger || tI18nComplete.raw('text512618790549')}
             </span>
             {triggerEventInfo.data?.data?.manual && (
               <Badge variant="muted" size="sm">
-                Manual
+                {tI18nComplete.raw('textb0b9fe24ffa9')}
               </Badge>
             )}
           </div>

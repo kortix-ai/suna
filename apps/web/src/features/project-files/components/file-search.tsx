@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { Input } from '@/components/ui/input';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
@@ -141,7 +141,7 @@ export function FileSearch() {
 
             {isLoading && debouncedQuery.length > 0 && (
               <div className="text-muted-foreground px-4 py-4 text-center text-sm">
-                Searching...
+                {tI18nHardcoded.raw('i18nComplete.text78c9d9f6ace0')}
               </div>
             )}
 

@@ -19,13 +19,17 @@ describe('marketing page metadata contract', () => {
       expect(metadata.alternates?.canonical, record.htmlPath).toBe(url);
       expect(metadata.openGraph?.url, record.htmlPath).toBe(url);
       const ogImages = metadata.openGraph?.images;
-      expect(Array.isArray(ogImages) ? ogImages.length : ogImages ? 1 : 0, record.htmlPath)
-        .toBeGreaterThan(0);
+      expect(
+        Array.isArray(ogImages) ? ogImages.length : ogImages ? 1 : 0,
+        record.htmlPath,
+      ).toBeGreaterThan(0);
       expect((metadata.twitter as { card?: string })?.card, record.htmlPath).toBe(
         'summary_large_image',
       );
-      expect((metadata.twitter as { images?: string[] })?.images?.length, record.htmlPath)
-        .toBeGreaterThan(0);
+      expect(
+        (metadata.twitter as { images?: string[] })?.images?.length,
+        record.htmlPath,
+      ).toBeGreaterThan(0);
     }
   });
 

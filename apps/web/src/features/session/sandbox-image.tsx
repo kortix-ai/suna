@@ -1,11 +1,11 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import { useFileContent } from '@/features/files/hooks/use-file-content';
-import { fetchAttachmentPart, isAttachmentPartRef, isSandboxNotReadyError } from '@kortix/sdk';
 import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
+import { fetchAttachmentPart, isAttachmentPartRef, isSandboxNotReadyError } from '@kortix/sdk';
 import { useEffect, useMemo, useState } from 'react';
 
 /**
@@ -57,7 +57,9 @@ function useAttachmentPartBlobUrl(src: string): { url: string | null; loading: b
   }, [isRef, src]);
 
   if (!isRef) return { url: null, loading: false };
-  return state.src === src ? { url: state.url, loading: state.loading } : { url: null, loading: true };
+  return state.src === src
+    ? { url: state.url, loading: state.loading }
+    : { url: null, loading: true };
 }
 
 export function useSandboxImageSrc(src: string): {

@@ -9,6 +9,7 @@ import {
 } from '@kortix/sdk';
 import { ArrowSquareOutIcon, CubeIcon, GlobeIcon } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -91,6 +92,7 @@ export function DiscoverAddFlow({
    */
   onAdded: (slug?: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The variant the user picked, held separately so the surface list can close
   // before the connection form opens (two stacked modals would trap focus twice).
   const [target, setTarget] = useState<VariantTarget | null>(null);
@@ -146,18 +148,16 @@ export function DiscoverAddFlow({
     onSuccess: ({ slug, name, syncError }) => {
       setTarget(null);
       if (syncError) {
-        warningToast(
-          `Added ${name} to the manifest, but synchronization failed: ${syncError}. Use Sync to retry.`,
-        );
+        warningToast(tI18nComplete('textd6a135de3872', { value0: name, value1: syncError }));
         // No slug: see `onAdded`'s contract above. `discover-catalogue.tsx:197`
         // and the three `AddAppPanel` create paths do the same.
         onAdded();
         return;
       }
-      successToast(`Added ${name}`);
+      successToast(tI18nComplete('text29f396e2d238', { value0: name }));
       onAdded(slug);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to add'),
+    onError: (error: Error) => errorToast(error.message || tI18nComplete.raw('texta34a2714da91')),
   });
 
   const connectionName = target?.name ?? '';
@@ -168,7 +168,9 @@ export function DiscoverAddFlow({
         <ModalContent className="lg:max-w-2xl">
           <ModalHeader>
             <ModalTitle>{connector?.name ?? 'Connector'}</ModalTitle>
-            <ModalDescription>Choose a surface published by {connector?.domain}.</ModalDescription>
+            <ModalDescription>
+              {tI18nComplete.raw('textaa798730f64d')} {connector?.domain}.
+            </ModalDescription>
           </ModalHeader>
           <ModalBody className="max-h-[60vh] overflow-y-auto">
             {detailQuery.isLoading ? (
@@ -180,14 +182,14 @@ export function DiscoverAddFlow({
             ) : detailQuery.isError ? (
               <InfoBanner
                 tone="destructive"
-                title="Couldn't load surfaces"
+                title={tI18nComplete.raw('textf886cdc83491')}
                 action={
                   <Button variant="outline" size="sm" onClick={() => detailQuery.refetch()}>
-                    Retry
+                    {tI18nComplete.raw('text942087cc2d41')}
                   </Button>
                 }
               >
-                {(detailQuery.error as Error)?.message ?? 'Try again.'}
+                {(detailQuery.error as Error)?.message ?? tI18nComplete.raw('texta0c2cc1374d9')}
               </InfoBanner>
             ) : detailQuery.data?.variants.length ? (
               <ul className="space-y-2">
@@ -215,7 +217,7 @@ export function DiscoverAddFlow({
                           </Badge>
                           {variant.requiresAuth ? (
                             <span className="text-muted-foreground text-xs">
-                              Credential required
+                              {tI18nComplete.raw('text46f49bfb8d8f')}
                             </span>
                           ) : null}
                         </div>
@@ -232,18 +234,18 @@ export function DiscoverAddFlow({
                             setTarget({ name: variant.name, connector });
                           }}
                         >
-                          Add
+                          {tI18nComplete.raw('text9fd728c66c9a')}
                         </Button>
                       ) : href ? (
                         <Button asChild variant="outline" size="sm" className="shrink-0">
                           <a href={href} target="_blank" rel="noreferrer">
-                            Docs
+                            {tI18nComplete.raw('text7af023c43013')}
                             <ArrowSquareOutIcon className="size-3.5 shrink-0" />
                           </a>
                         </Button>
                       ) : (
                         <Badge variant="secondary" size="sm">
-                          Metadata only
+                          {tI18nComplete.raw('textdf0453d185c4')}
                         </Badge>
                       )}
                     </li>
@@ -254,8 +256,8 @@ export function DiscoverAddFlow({
               <EmptyState
                 icon={GlobeIcon}
                 size="sm"
-                title="No usable surface published"
-                description="This record is discoverable, but its provider has not published a machine-readable endpoint."
+                title={tI18nComplete.raw('text363579e1d66b')}
+                description={tI18nComplete.raw('text4d286e47d580')}
               />
             )}
           </ModalBody>
@@ -266,7 +268,7 @@ export function DiscoverAddFlow({
         open={target !== null}
         idPrefix="browse-connection"
         title={`Add ${connectionName || 'connector'}`}
-        description="Create a connector connection. The display name and slug identify this connection in project configuration."
+        description={tI18nComplete.raw('text69d6a27a1b6d')}
         initialName={connectionName}
         initialSlug={target ? proposeConnectorConnectionSlug(connectionName, existingSlugs) : ''}
         existingSlugs={existingSlugs}

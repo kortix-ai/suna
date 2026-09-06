@@ -1,11 +1,11 @@
-import { describe, expect, test } from 'bun:test';
-import type { QueryClient } from '@tanstack/react-query';
 import type {
   KortixProject,
   SandboxProviderTransitionState,
   UpdateProjectSandboxProviderResult,
 } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
+import type { QueryClient } from '@tanstack/react-query';
+import { describe, expect, test } from 'bun:test';
 import {
   applySandboxProviderResult,
   isSandboxProviderTransitionTerminal,
@@ -18,7 +18,8 @@ function fakeQueryClient() {
   const client = {
     setQueryData: (key: unknown, value: unknown) => {
       // Mirror react-query's updater support so functional updates don't throw.
-      const resolved = typeof value === 'function' ? (value as (c: unknown) => unknown)(undefined) : value;
+      const resolved =
+        typeof value === 'function' ? (value as (c: unknown) => unknown)(undefined) : value;
       setCalls.push({ key, value: resolved });
       return resolved;
     },
@@ -45,7 +46,7 @@ const projectResult = (): UpdateProjectSandboxProviderResult =>
     created_at: 'now',
     updated_at: 'now',
     default_sandbox_provider: 'daytona',
-  } as unknown as UpdateProjectSandboxProviderResult);
+  }) as unknown as UpdateProjectSandboxProviderResult;
 
 const preparationResult = (): UpdateProjectSandboxProviderResult => ({
   kind: 'preparation',
@@ -103,7 +104,16 @@ describe('applySandboxProviderResult (FIX-L)', () => {
 
 describe('isSandboxProviderTransitionTerminal', () => {
   test('terminal statuses + null are terminal; live statuses are not', () => {
-    for (const s of ['activated', 'failed', 'superseded', 'cancelled', 'noop', 'cleared', null, undefined]) {
+    for (const s of [
+      'activated',
+      'failed',
+      'superseded',
+      'cancelled',
+      'noop',
+      'cleared',
+      null,
+      undefined,
+    ]) {
       expect(isSandboxProviderTransitionTerminal(s)).toBe(true);
     }
     for (const s of ['pending', 'building', 'ready', 'activating']) {

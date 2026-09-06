@@ -1,4 +1,5 @@
 'use client';
+
 import {
   BasicTool,
   partInput,
@@ -9,8 +10,10 @@ import { OutputBlock, ToolSection } from '@/features/session/tool/shared/output-
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import type { ToolProps } from '@/features/session/tool/shared/types';
 import { ChatCircleIcon as MessageCircle } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 export function SessionMessageTool({ part, forceOpen }: ToolProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const input = partInput(part);
   const output = partOutput(part);
   const status = partStatus(part);
@@ -23,7 +26,7 @@ export function SessionMessageTool({ part, forceOpen }: ToolProps) {
     <BasicTool
       icon={<MessageCircle className="size-3.5 shrink-0" />}
       trigger={{
-        title: 'Messaged a session',
+        title: tI18nComplete.raw('text0762fc8b575e'),
         subtitle: sid,
         args: isOk ? ['sent'] : status === 'error' ? ['failed'] : [],
       }}
@@ -32,7 +35,7 @@ export function SessionMessageTool({ part, forceOpen }: ToolProps) {
     >
       {message && (
         <div className="px-3 py-2">
-          <ToolSection label="Message">
+          <ToolSection label={tI18nComplete.raw('text2f77668a9dfb')}>
             <OutputBlock text={message.slice(0, 500)} />
           </ToolSection>
         </div>

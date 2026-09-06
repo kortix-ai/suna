@@ -29,6 +29,7 @@ import { attachedFilesToDataUrlParts } from '@/features/session/uploaded-file-re
 import { buildNewSessionCreateInput } from '@/features/workspace/project-layout/new-session-create';
 import type { ProjectHomeSendOptions } from '@/features/workspace/project-layout/project-home';
 import { useAccountState } from '@/hooks/billing';
+import { useTranslations } from '@/i18n/use-translations';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectCanRun } from '@/hooks/projects/use-project-can-run';
 import {
@@ -48,6 +49,7 @@ export interface ProjectHomeSendConfig {
 
 export function useProjectHomeSend(projectId: string, config: ProjectHomeSendConfig = {}) {
   const { accountId } = config;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { isLoading: billingLoading } = useProjectCanRun(projectId);
   const { data: accountState } = useAccountState({ accountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -69,7 +71,7 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
       // sandbox grant are allowed through because their state is `active`.
       const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
       if (isBillingEnabled() && !billingStateAllowsRun(billingState)) {
-        openUpgradeDialog(billingDialogArgs(billingState, accountState, accountId));
+        openUpgradeDialog(billingDialogArgs(billingState, accountState, accountId, tI18nComplete));
         return;
       }
 
@@ -88,7 +90,7 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
       try {
         parts = await attachedFilesToDataUrlParts(files);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Attachments are too large');
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('texta9c0123d9962'));
         setSending(false);
         return;
       }
@@ -133,6 +135,7 @@ export function useProjectHomeSend(projectId: string, config: ProjectHomeSendCon
       accountId,
       openUpgradeDialog,
       newSession,
+      tI18nComplete,
     ],
   );
 

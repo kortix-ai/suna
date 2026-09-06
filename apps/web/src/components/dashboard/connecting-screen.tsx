@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   WarningCircleIcon as AlertCircle,
@@ -15,10 +15,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { useAppHome } from '@/lib/onboarding/use-app-home';
 import { STAGE_LABELS, type ProvisioningStageInfo } from '@/lib/provisioning-stages';
 import { useRuntimeConnectionStore } from '@kortix/sdk/react';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
@@ -109,7 +111,7 @@ export function ConnectingScreen({
       <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <ProvisioningView
           label={labelOverride || serverLabel}
-          title={title || 'Provisioning workspace'}
+          title={title || tHardcodedUi.raw('i18nComplete.texta9ae0049edf7')}
           progress={provisioning.progress}
           stageLabel={provisioning.stageLabel}
           stages={provisioning.stages}
@@ -321,9 +323,15 @@ function ProvisioningView({
   } | null;
   backHref: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const pct = Math.max(0, Math.min(100, progress));
-  const stageText =
+  const rawStageText =
     stageLabel || (currentStage ? STAGE_LABELS[currentStage] : undefined) || 'Preparing workspace';
+  const stageText = translateUiCatalogText(
+    rawStageText,
+    tI18nComplete,
+    REMAINING_UI_TRANSLATION_KEYS,
+  );
 
   return (
     <>
@@ -417,7 +425,7 @@ function ErrorView({
         className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
       >
         <ArrowLeft className="h-3 w-3" />
-        Back
+        {tHardcodedUi.raw('i18nComplete.text76900f1bfd16')}
       </Link>
     </>
   );
@@ -457,7 +465,7 @@ function StoppedView({ label, backHref }: { label: string; backHref: string }) {
           className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeft className="h-3 w-3" />
-          Back
+          {tHardcodedUi.raw('i18nComplete.text76900f1bfd16')}
         </Link>
       </div>
     </>
@@ -469,6 +477,7 @@ function StoppedView({ label, backHref }: { label: string; backHref: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BackLink({ href }: { href: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Link
       href={href}
@@ -476,7 +485,7 @@ function BackLink({ href }: { href: string }) {
       className="text-muted-foreground/35 hover:text-foreground/70 fixed top-5 left-5 inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
     >
       <ArrowLeft className="h-3 w-3" />
-      Back
+      {tI18nComplete.raw('text76900f1bfd16')}
     </Link>
   );
 }
@@ -500,6 +509,7 @@ function UnreachableView({
   backHref: string;
   sandboxId?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <div
@@ -511,23 +521,21 @@ function UnreachableView({
 
       <div className="flex flex-col items-center gap-1.5">
         <h1 className="text-foreground/90 text-sm font-medium">
-          {degraded ? 'Workspace services unavailable' : 'Workspace offline'}
+          {degraded ? tI18nComplete.raw('texte48034ba91dd') : tI18nComplete.raw('text42b3d52014ba')}
         </h1>
         <p className="text-muted-foreground/55 max-w-[300px] text-center text-xs leading-relaxed">
-          {degraded
-            ? 'The host is reachable, but the core workspace runtime is failing requests. Restart the runtime or workload to recover services.'
-            : 'This workspace is unreachable. Return to projects and open or create another session.'}
+          {degraded ? tI18nComplete.raw('texta4c128e48978') : tI18nComplete.raw('textd94a83e48b64')}
         </p>
         {sandboxId ? (
           <p className="text-muted-foreground/35 font-mono text-xs">
-            Sandbox {sandboxId.slice(0, 8)}
+            {tI18nComplete.raw('text67fc62497e85')} {sandboxId.slice(0, 8)}
           </p>
         ) : null}
       </div>
 
       <div className="text-muted-foreground/45 inline-flex items-center gap-1.5 text-xs">
         <Loading className="h-3 w-3" />
-        <span>Retrying automatically</span>
+        <span>{tI18nComplete.raw('text26f0dd993530')}</span>
         {reconnectAttempts > 0 && (
           <span className="text-muted-foreground/35 font-mono tabular-nums">
             · {reconnectAttempts}
@@ -542,7 +550,7 @@ function UnreachableView({
           className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
         >
           <ArrowLeftRight className="h-3 w-3" />
-          Projects
+          {tI18nComplete.raw('text04e2a9728af7')}
         </Link>
       </div>
     </>
@@ -562,6 +570,7 @@ function ReconnectPill({
   disconnectedAt: number | null;
   backHref: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const elapsed = useElapsedTime(disconnectedAt);
   const label = status === 'unreachable' ? 'Unreachable' : 'Reconnecting';
 
@@ -581,7 +590,7 @@ function ReconnectPill({
         <Button asChild variant="muted" size="xs" className="rounded-full">
           <Link href={backHref} prefetch>
             <ArrowLeftRight className="h-2.5 w-2.5" />
-            Projects
+            {tI18nComplete.raw('text04e2a9728af7')}
           </Link>
         </Button>
       </div>
@@ -598,6 +607,7 @@ function HealthPill({
   detail?: string;
   backHref: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
       <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
@@ -614,7 +624,7 @@ function HealthPill({
         <Button asChild variant="muted" size="xs" className="rounded-full">
           <Link href={backHref} prefetch>
             <ArrowLeftRight className="h-2.5 w-2.5" />
-            Projects
+            {tI18nComplete.raw('text04e2a9728af7')}
           </Link>
         </Button>
       </div>

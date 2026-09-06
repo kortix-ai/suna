@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -204,7 +204,11 @@ export function InstantSessionShell({
           },
         });
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Could not queue your message');
+        errorToast(
+          error instanceof Error
+            ? error.message
+            : tI18nHardcoded.raw('i18nComplete.text8cea8af247c2'),
+        );
         throw error;
       }
       playSound('send');
@@ -215,7 +219,7 @@ export function InstantSessionShell({
         setExtraSends((prev) => [...prev, { id: `shell-extra-${Date.now()}`, text }]);
       }
     },
-    [projectId, sessionId, submitted, onSubmit],
+    [sessionId, submitted, projectId, tI18nHardcoded, onSubmit],
   );
 
   const handleCommand = useCallback(

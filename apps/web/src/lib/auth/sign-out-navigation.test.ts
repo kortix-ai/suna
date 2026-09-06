@@ -17,7 +17,7 @@
 // this file names `router.push` / `router.replace` only inside string
 // constants — never in prose that a future slice could pick up.
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from '@/i18n/test-source';
 import { dirname, relative, resolve } from 'node:path';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
@@ -91,7 +91,7 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
     name: "/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
     from: 'fallbackLabel={user?.email}',
-    to: 'Log out',
+    to: '</Button>',
   },
   {
     name: "phone verification's Sign out",
@@ -206,7 +206,11 @@ describe('nothing on an identity change can wait forever', () => {
     // Each one spends its OWN budget, not a shared number: the server revoke
     // must not be bounded tighter than its own `AbortSignal.timeout(3_000)`,
     // and the reset needs far less than either.
-    for (const budget of ['budgets.finalizeServerSession', 'budgets.endSession', 'budgets.resetClientState']) {
+    for (const budget of [
+      'budgets.finalizeServerSession',
+      'budgets.endSession',
+      'budgets.resetClientState',
+    ]) {
       expect(sequence).toContain(budget);
     }
   });
@@ -434,7 +438,7 @@ describe('the three bare logout controls now say something is happening', () => 
       name: "/new's Log out",
       file: 'features/workspace/new/new-workspace-page.tsx',
       handler: ['<AccountPicker', 'Log out'],
-      control: ['<AccountPicker', 'Log out'],
+      control: ['<AccountPicker', '</Button>'],
       holdsDialog: false,
     },
   ];

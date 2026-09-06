@@ -139,6 +139,19 @@ describe('relayTurnAnswer', () => {
     expect(await relayTurnAnswer('sess-1', 'x')).toBe(false);
     expect(apiCalls).toHaveLength(0);
   });
+
+  // Same defect as the Slack side: STREAM_TTL_MS is refreshed only by a step
+  // relay, so a quiet stretch of real agent work longer than 15 minutes used to
+  // delete the row here and drop the answer. The GC sweep is the only reaper.
+  test('a row past expires_at still delivers its answer', async () => {
+    dbResults = [
+      [streamRow({ messageTs: 'act-1', expiresAt: new Date(Date.now() - 60_000) })],
+      [{ sessionId: 'sess-1' }],
+      [],
+    ];
+    expect(await relayTurnAnswer('sess-1', 'Late answer.')).toBe(true);
+    expect(apiCalls.map((c) => c.fn)).toEqual(['updateCard']);
+  });
 });
 
 describe('relayTurnEnd', () => {

@@ -1,3 +1,5 @@
+import type { UiTranslator } from '@/i18n/translator';
+
 import type { ProjectRuntimeSession, ProjectSession } from '@kortix/sdk';
 
 /**
@@ -70,21 +72,25 @@ export function sessionIsShared(session: Pick<ProjectSession, 'is_owner'>): bool
   return session.is_owner === false;
 }
 
-export function sessionSource(session: ProjectSession): SessionSource {
+export function sessionSource(session: ProjectSession, tI18nComplete: UiTranslator): SessionSource {
   const meta = (session.metadata ?? {}) as Record<string, unknown>;
   const source = typeof meta.source === 'string' ? meta.source : null;
-  if (source === 'slack') return { kind: 'slack', label: 'Slack', triggerSlug: null };
-  if (source === 'telegram') return { kind: 'telegram', label: 'Telegram', triggerSlug: null };
-  if (source === 'email') return { kind: 'email', label: 'Email', triggerSlug: null };
+  if (source === 'slack')
+    return { kind: 'slack', label: tI18nComplete.raw('textb27fb38ba323'), triggerSlug: null };
+  if (source === 'telegram')
+    return { kind: 'telegram', label: tI18nComplete.raw('textacdd1e734125'), triggerSlug: null };
+  if (source === 'email')
+    return { kind: 'email', label: tI18nComplete.raw('text969ccbd3cf63'), triggerSlug: null };
   if (typeof meta.trigger_source === 'string') {
     const triggerSlug = typeof meta.trigger_slug === 'string' ? meta.trigger_slug : null;
     // Classify by the trigger's kind (cron|webhook) when present so a manual
     // "run now" fire groups under its trigger; fall back to the fire source.
     const type = typeof meta.trigger_type === 'string' ? meta.trigger_type : meta.trigger_source;
-    if (type === 'cron') return { kind: 'schedule', label: 'Scheduled', triggerSlug };
-    return { kind: 'webhook', label: 'Webhook', triggerSlug };
+    if (type === 'cron')
+      return { kind: 'schedule', label: tI18nComplete.raw('text4724f344c1c0'), triggerSlug };
+    return { kind: 'webhook', label: tI18nComplete.raw('text4814f62c108d'), triggerSlug };
   }
-  return { kind: 'chat', label: 'Chat', triggerSlug: null };
+  return { kind: 'chat', label: tI18nComplete.raw('text460b3a7da007'), triggerSlug: null };
 }
 
 /**
@@ -116,13 +122,7 @@ export function sessionDisplayLabel(session: ProjectSession): string {
  * so `completed` maps to `done` and is rendered muted — never green.
  */
 export type SessionDisplayStatus =
-  | 'needs-you'
-  | 'starting'
-  | 'running'
-  | 'done'
-  | 'stopped'
-  | 'failed'
-  | 'legacy';
+  'needs-you' | 'starting' | 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 /** Tooltip + section copy. Never "Active": `running` means the sandbox is up,
  *  not that the agent is working, and the payload carries no signal for that. */
@@ -193,13 +193,7 @@ export function sessionDisplayStatus(
  * alongside arrays would allow `['all', 'running']`, which has no meaning.
  */
 export type SessionSourceFilter =
-  | 'mine'
-  | 'shared'
-  | 'slack'
-  | 'telegram'
-  | 'email'
-  | 'schedule'
-  | 'webhook';
+  'mine' | 'shared' | 'slack' | 'telegram' | 'email' | 'schedule' | 'webhook';
 export type SessionStatusFilter = 'running' | 'done' | 'stopped' | 'failed' | 'legacy';
 
 export const SESSION_SOURCE_FILTERS: Array<{ value: SessionSourceFilter; label: string }> = [
@@ -237,9 +231,10 @@ export function matchesStatusFilters(
 export function matchesSourceFilters(
   session: ProjectSession,
   filters: readonly SessionSourceFilter[],
+  tI18nComplete: UiTranslator,
 ): boolean {
   if (filters.length === 0) return true;
-  const kind = sessionSource(session).kind;
+  const kind = sessionSource(session, tI18nComplete).kind;
   return filters.some((filter) => {
     // `is_owner` is viewer-relative and older payloads omit it — unknown
     // ownership reads as "mine" so the default view never hides a session.

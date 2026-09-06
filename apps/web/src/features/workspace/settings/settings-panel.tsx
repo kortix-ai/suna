@@ -20,6 +20,7 @@ import {
   type SettingsNav,
 } from '@/features/workspace/shared/settings-nav-context';
 import { useIsMobile } from '@/hooks/utils';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import {
   CUSTOMIZE_SECTION_GATE_ACTIONS,
   isCustomizeSectionVisible,
@@ -33,12 +34,19 @@ import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-
 import { getProjectDetail, type KortixProject } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import { ArrowLeftIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
-import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo } from 'react';
 import { isRailItemActive, railGroups } from './rail';
-import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
+import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from './rail-copy-context';
 import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import {
+  accountRoleLabel,
+  DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
+  useAccountMemberships,
+  type AccountMembership,
+  type AccountMembershipsCopy,
+} from './tabs/account-memberships';
 import { AppearanceTab } from './tabs/appearance-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { CreditsTab } from './tabs/credits-tab';
@@ -51,14 +59,10 @@ import { SandboxTab } from './tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
 import { SnapshotsTab } from './tabs/snapshots-tab';
-import {
-  type AccountMembership,
-  accountRoleLabel,
-  useAccountMemberships,
-} from './tabs/account-memberships';
 import { TokensTab } from './tabs/tokens-tab';
 import type { RailGroup, RailItem } from './type';
 import { useSettingsAccountId } from './use-settings-account-id';
+import { useSettingsKeyboardShortcut } from './use-settings-shortcut';
 
 /**
  * The tabs that still render with no project open.
@@ -191,6 +195,8 @@ export function buildSettingsPanelSettingsNav(state: {
 }
 
 export function SettingsPanel({ projectId }: { projectId?: string }) {
+  const tSettingsRail = useI18nTranslations('settings.rail');
+  const tOrganizations = useI18nTranslations('settings.profile.organizations');
   const open = useSettingsPanelStore((s) => s.open);
   const tab = useSettingsPanelStore((s) => s.tab);
   const setTab = useSettingsPanelStore((s) => s.setTab);
@@ -239,13 +245,34 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
 
   const groups = useMemo(() => {
     const allowed: RailGroup[] = [];
-    for (const g of railGroups()) {
+    for (const g of railGroups((key) => tSettingsRail(key as never))) {
       const items = g.items.filter((item) => isTabAllowed(item.tab));
       if (items.length > 0) allowed.push({ ...g, items });
     }
     return allowed;
-  }, [isTabAllowed]);
+  }, [isTabAllowed, tSettingsRail]);
   const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
+  const chrome = useMemo<SettingsRailChromeCopy>(
+    () => ({
+      settings: tSettingsRail('settings'),
+      backToApp: tSettingsRail('backToApp'),
+      close: tSettingsRail('close'),
+      docs: tSettingsRail('docs'),
+    }),
+    [tSettingsRail],
+  );
+  const organizationCopy = useMemo<AccountMembershipsCopy>(
+    () => ({
+      title: tOrganizations('title'),
+      description: tOrganizations('description'),
+      fallbackAccountName: tOrganizations('fallbackAccountName'),
+      owner: tOrganizations('owner'),
+      admin: tOrganizations('admin'),
+      member: tOrganizations('member'),
+      manage: tOrganizations('manage'),
+    }),
+    [tOrganizations],
+  );
   const tabVisible = allItems.some((item) => isRailItemActive(item, tab));
 
   useEffect(() => {
@@ -275,6 +302,11 @@ export function SettingsPanel({ projectId }: { projectId?: string }) {
         groups={groups}
         allItems={allItems}
         organizations={memberships.accounts}
+        organizationCopy={organizationCopy}
+        chrome={chrome}
+        modalTitle={
+          project ? tSettingsRail('projectTitle', { projectName: project.name }) : chrome.settings
+        }
       />
     </SettingsNavProvider>
   );
@@ -302,6 +334,9 @@ export interface SettingsPanelViewProps {
    * Optional so the shell stays renderable without a query client.
    */
   organizations?: readonly AccountMembership[];
+  organizationCopy: AccountMembershipsCopy;
+  chrome: SettingsRailChromeCopy;
+  modalTitle: string;
 }
 
 export function SettingsPanelView({
@@ -316,6 +351,9 @@ export function SettingsPanelView({
   groups,
   allItems,
   organizations,
+  organizationCopy,
+  chrome,
+  modalTitle,
 }: SettingsPanelViewProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -345,9 +383,7 @@ export function SettingsPanelView({
           'translate-x-0! translate-y-0! rounded-none! border-0!',
         )}
       >
-        <ModalTitle className="sr-only">
-          {project ? `Preferences — ${project.name}` : 'Preferences'}
-        </ModalTitle>
+        <ModalTitle className="sr-only">{modalTitle}</ModalTitle>
 
         <SettingsPanelShell
           tab={tab}
@@ -358,6 +394,8 @@ export function SettingsPanelView({
           groups={groups}
           allItems={allItems}
           organizations={organizations}
+          organizationCopy={organizationCopy}
+          chrome={chrome}
         />
       </ModalContent>
     </Modal>
@@ -389,8 +427,10 @@ export function SettingsPanelView({
  */
 export type SettingsPanelShellProps = Omit<
   SettingsPanelViewProps,
-  'open' | 'onOpenChange' | 'project'
->;
+  'open' | 'onOpenChange' | 'project' | 'modalTitle' | 'organizationCopy'
+> & {
+  organizationCopy?: AccountMembershipsCopy;
+};
 
 export function SettingsPanelShell({
   tab,
@@ -401,6 +441,8 @@ export function SettingsPanelShell({
   groups,
   allItems,
   organizations = [],
+  organizationCopy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
+  chrome,
 }: SettingsPanelShellProps) {
   // A heading over a lone group labels nothing — it is the only group, and the
   // dialog's own title already says Settings. It comes back the moment a
@@ -417,208 +459,212 @@ export function SettingsPanelShell({
        neither tsc nor the suite can see. WAI-ARIA's own guidance is manual
        activation whenever selecting a tab has a side effect. Arrow moves
        focus; Enter/Space selects. Pinned by `settings-panel-a11y.test.ts`. */
-    <Tabs
-      value={tab}
-      onValueChange={(next) => onTabChange(next as SettingsTab)}
-      orientation="vertical"
-      activationMode="manual"
-      className={cn('min-h-0 flex-1 gap-0', isMobile ? 'flex flex-col' : 'grid')}
-      // The shell's own sidebar width, so the overlay and `/accounts/[id]`
-      // measure the same column.
-      style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
-    >
-      {isMobile ? (
-        <nav
-          aria-label="Preferences"
-          className="border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
-        >
-          <FadedScrollArea
-            orientation="horizontal"
-            fadeColor="from-background"
-            className="min-w-0 flex-1 py-2"
+    <SettingsRailCopyProvider groups={groups} chrome={chrome}>
+      <Tabs
+        value={tab}
+        onValueChange={(next) => onTabChange(next as SettingsTab)}
+        orientation="vertical"
+        activationMode="manual"
+        className={cn('min-h-0 flex-1 gap-0', isMobile ? 'flex flex-col' : 'grid')}
+        // The shell's own sidebar width, so the overlay and `/accounts/[id]`
+        // measure the same column.
+        style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
+      >
+        {isMobile ? (
+          <nav
+            aria-label={chrome.settings}
+            className="border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
           >
-            <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
-              {allItems.map((item) => (
-                <TabsTrigger
-                  key={item.tab}
-                  value={item.tab}
-                  className="w-auto shrink-0 gap-2.5 px-3 whitespace-nowrap"
+            <FadedScrollArea
+              orientation="horizontal"
+              fadeColor="from-background"
+              className="min-w-0 flex-1 py-2"
+            >
+              <TabsList orientation="horizontal" className="w-fit gap-1 px-2">
+                {allItems.map((item) => (
+                  <TabsTrigger
+                    key={item.tab}
+                    value={item.tab}
+                    className="w-auto shrink-0 gap-2.5 px-3 whitespace-nowrap"
+                  >
+                    <RailTriggerBody item={item} horizontal />
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {organizations.length > 0
+                ? organizations.map((account) => (
+                    <ModalClose asChild key={account.account_id}>
+                      <Link
+                        href={`/accounts/${account.account_id}`}
+                        prefetch
+                        className="text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
+                      >
+                        {account.name?.trim() || organizationCopy.fallbackAccountName}
+                        <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
+                      </Link>
+                    </ModalClose>
+                  ))
+                : null}
+            </FadedScrollArea>
+            <div className="flex shrink-0 items-center px-3">
+              <ModalClose asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hit-area-2 shrink-0"
+                  aria-label={chrome.close}
                 >
-                  <RailTriggerBody item={item} horizontal />
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {organizations.length > 0
-              ? organizations.map((account) => (
-                  <ModalClose asChild key={account.account_id}>
-                    <Link
-                      href={`/accounts/${account.account_id}`}
-                      prefetch
-                      className="text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
-                    >
-                      {account.name?.trim() || 'Account'}
-                      <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-                    </Link>
-                  </ModalClose>
-                ))
-              : null}
-          </FadedScrollArea>
-          <div className="flex shrink-0 items-center px-3">
-            <ModalClose asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="text-muted-foreground hit-area-2 shrink-0"
-                aria-label="Close"
-              >
-                <Close className="text-foreground size-4 stroke-1" />
-              </Button>
-            </ModalClose>
-          </div>
-        </nav>
-      ) : (
-        /* The settings sidebar, as `/accounts/[id]` draws it
+                  <Close className="text-foreground size-4 stroke-1" />
+                </Button>
+              </ModalClose>
+            </div>
+          </nav>
+        ) : (
+          /* The settings sidebar, as `/accounts/[id]` draws it
            (`accounts/hub/account-settings-sidebar.tsx`): one column — the
            `Back to app` row on top, then the rows. Same background as the
            content — the hairline is the only seam. Rows take the `xs` button
            footprint (28px, 13px type, `rounded-sm`), in that sidebar's
            `ROW_CLASS` dialect keyed on the Radix `data-state` the trigger
            carries instead of `data-active`. */
-        <aside className="flex min-h-0 flex-col border-r bg-inherit">
-          <div className="flex h-11 shrink-0 items-center px-2">
-            <ModalClose asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-foreground gap-1 text-xs"
-              >
-                <ArrowLeftIcon className="size-4 shrink-0" />
-                Back to app
-              </Button>
-            </ModalClose>
-          </div>
+          <aside className="flex min-h-0 flex-col border-r bg-inherit">
+            <div className="flex h-11 shrink-0 items-center px-2">
+              <ModalClose asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-foreground gap-1 text-xs"
+                >
+                  <ArrowLeftIcon className="size-4 shrink-0" />
+                  {chrome.backToApp}
+                </Button>
+              </ModalClose>
+            </div>
 
-          <nav
-            aria-label="Preferences"
-            className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-          >
-            {groups.map((group) => (
-              <div key={group.label}>
-                {showGroupLabels ? (
-                  <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                    {group.label}
-                  </div>
-                ) : null}
-                <TabsList orientation="vertical" className="w-full">
-                  {group.items.map((item) => (
-                    <TabsTrigger
-                      key={item.tab}
-                      value={item.tab}
-                      size="md"
-                      className={cn(
-                        'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
-                        'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
-                        'data-[state=active]:bg-active data-[state=active]:font-medium',
-                        '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
-                      )}
-                    >
-                      <RailTriggerBody item={item} />
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
-            ))}
+            <nav
+              aria-label={chrome.settings}
+              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {groups.map((group) => (
+                <div key={group.label}>
+                  {showGroupLabels ? (
+                    <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+                      {group.label}
+                    </div>
+                  ) : null}
+                  <TabsList orientation="vertical" className="w-full">
+                    {group.items.map((item) => (
+                      <TabsTrigger
+                        key={item.tab}
+                        value={item.tab}
+                        size="md"
+                        className={cn(
+                          'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
+                          'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
+                          'data-[state=active]:bg-active data-[state=active]:font-medium',
+                          '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
+                        )}
+                      >
+                        <RailTriggerBody item={item} />
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
+              ))}
 
-            {organizations.length > 0 ? (
-              /* The organizations the person belongs to. Each row LEAVES the
+              {organizations.length > 0 ? (
+                /* The organizations the person belongs to. Each row LEAVES the
                  overlay for that organization's own settings page — members,
                  billing, roles, audit all live there — so it is a link that
                  closes the dialog, not a tab. Same row footprint as the tabs
                  above so the rail reads as one list with two kinds of row. */
-              <div>
-                <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                  Organizations
-                </div>
-                <ul className="flex flex-col gap-0.5">
-                  {organizations.map((account) => (
-                    <li key={account.account_id}>
-                      <ModalClose asChild>
-                        <Link
-                          href={`/accounts/${account.account_id}`}
-                          prefetch
-                          className={cn(
-                            'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
-                            'text-foreground hover:bg-hover transition-colors',
-                          )}
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate">{account.name?.trim() || 'Account'}</span>
-                            {accountRoleLabel(account.account_role) ? (
-                              <span className="text-muted-foreground block truncate text-xs">
-                                {accountRoleLabel(account.account_role)}
+                <div>
+                  <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
+                    {organizationCopy.title}
+                  </div>
+                  <ul className="flex flex-col gap-0.5">
+                    {organizations.map((account) => (
+                      <li key={account.account_id}>
+                        <ModalClose asChild>
+                          <Link
+                            href={`/accounts/${account.account_id}`}
+                            prefetch
+                            className={cn(
+                              'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
+                              'text-foreground hover:bg-hover transition-colors',
+                            )}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate">
+                                {account.name?.trim() || organizationCopy.fallbackAccountName}
                               </span>
-                            ) : null}
-                          </span>
-                          <ArrowUpRightIcon
-                            aria-hidden
-                            className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
-                          />
-                        </Link>
-                      </ModalClose>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </nav>
-        </aside>
-      )}
+                              {accountRoleLabel(account.account_role, organizationCopy) ? (
+                                <span className="text-muted-foreground block truncate text-xs">
+                                  {accountRoleLabel(account.account_role, organizationCopy)}
+                                </span>
+                              ) : null}
+                            </span>
+                            <ArrowUpRightIcon
+                              aria-hidden
+                              className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
+                            />
+                          </Link>
+                        </ModalClose>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </nav>
+          </aside>
+        )}
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-inherit">
-        {isMobile ? null : (
-          /* The 44px `Settings / <pane>` bar the account shell puts over its
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-inherit">
+          {isMobile ? null : (
+            /* The 44px `Settings / <pane>` bar the account shell puts over its
              content (`account-settings-shell.tsx`). Neither crumb is a link:
              Settings is where you are, and the pane is picked in the rail. */
-          <header className="flex h-11 shrink-0 items-center border-b px-2">
-            <Breadcrumb className="min-w-0 flex-1">
-              <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
-                <BreadcrumbItem className="min-w-0">
-                  <span className="flex h-7 items-center px-2">Preferences</span>
-                </BreadcrumbItem>
-                {activeItem ? (
-                  <>
-                    <BreadcrumbSeparator>
-                      <span aria-hidden className="bg-border block h-3.5 w-px rotate-12" />
-                    </BreadcrumbSeparator>
-                    <BreadcrumbItem className="min-w-0">
-                      <BreadcrumbPage className="flex h-7 items-center truncate px-2 font-medium">
-                        {activeItem.label}
-                      </BreadcrumbPage>
-                    </BreadcrumbItem>
-                  </>
-                ) : null}
-              </BreadcrumbList>
-            </Breadcrumb>
-          </header>
-        )}
-        {allItems.map((item) => (
-          <TabsContent
-            key={item.tab}
-            value={item.tab}
-            /* The account pane's gutters (`account-pane.tsx`: 48px around a
+            <header className="flex h-11 shrink-0 items-center border-b px-2">
+              <Breadcrumb className="min-w-0 flex-1">
+                <BreadcrumbList className="text-foreground flex-nowrap gap-1 text-sm font-medium sm:gap-1">
+                  <BreadcrumbItem className="min-w-0">
+                    <span className="flex h-7 items-center px-2">{chrome.settings}</span>
+                  </BreadcrumbItem>
+                  {activeItem ? (
+                    <>
+                      <BreadcrumbSeparator>
+                        <span aria-hidden className="bg-border block h-3.5 w-px rotate-12" />
+                      </BreadcrumbSeparator>
+                      <BreadcrumbItem className="min-w-0">
+                        <BreadcrumbPage className="flex h-7 items-center truncate px-2 font-medium">
+                          {activeItem.label}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : null}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </header>
+          )}
+          {allItems.map((item) => (
+            <TabsContent
+              key={item.tab}
+              value={item.tab}
+              /* The account pane's gutters (`account-pane.tsx`: 48px around a
                centred column). The pane scrolls, the frame does not. */
-            className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-10 sm:px-12 sm:py-12"
-          >
-            <SettingsTabPane
-              item={item}
-              active={item.tab === tab}
-              projectId={projectId}
-              accountId={accountId}
-            />
-          </TabsContent>
-        ))}
-      </main>
-    </Tabs>
+              className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-4 py-10 sm:px-12 sm:py-12"
+            >
+              <SettingsTabPane
+                item={item}
+                active={item.tab === tab}
+                projectId={projectId}
+                accountId={accountId}
+              />
+            </TabsContent>
+          ))}
+        </main>
+      </Tabs>
+    </SettingsRailCopyProvider>
   );
 }
 

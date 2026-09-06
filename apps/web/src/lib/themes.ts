@@ -70,7 +70,5 @@ export function getThemeClassName(id: string): string | undefined {
 
 /** Returns all non-default theme class names (for cleanup) */
 export function getAllThemeClassNames(): string[] {
-  return THEMES.filter((t) => t.id !== DEFAULT_THEME_ID).map(
-    (t) => `theme-${t.id}`
-  );
+  return THEMES.filter((t) => t.id !== DEFAULT_THEME_ID).map((t) => `theme-${t.id}`);
 }

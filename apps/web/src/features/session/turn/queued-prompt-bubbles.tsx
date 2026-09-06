@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Prompts that are queued at the server but not yet in the transcript, drawn
  * IN the transcript — as the user bubbles they are about to become.
@@ -23,12 +24,7 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
-import {
-  ArrowClockwiseIcon,
-  PaperPlaneRightIcon,
-  WarningIcon,
-  XIcon,
-} from '@phosphor-icons/react';
+import { ArrowClockwiseIcon, PaperPlaneRightIcon, WarningIcon, XIcon } from '@phosphor-icons/react';
 import { BUBBLE_SURFACE, BUBBLE_TEXT } from './user-message';
 
 export interface QueuedPromptRow {
@@ -145,6 +141,7 @@ export function QueuedPromptActions({
   onSendNow?: (id: string) => void;
   onRetry?: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const failed = state === 'failed';
   const interrupted = state === 'interrupted';
   // In-flight is NOT beyond removal any more: the server cancels a forwarded
@@ -158,12 +155,12 @@ export function QueuedPromptActions({
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       {failed && onRetry && (
-        <Action label="Retry" onClick={() => onRetry(id)}>
+        <Action label={tI18nComplete.raw('text942087cc2d41')} onClick={() => onRetry(id)}>
           <ArrowClockwiseIcon className="size-4" />
         </Action>
       )}
       {state === 'held' && onSendNow && (
-        <Action label="Send now" onClick={() => onSendNow(id)}>
+        <Action label={tI18nComplete.raw('text588032878324')} onClick={() => onSendNow(id)}>
           <PaperPlaneRightIcon className="size-4" />
         </Action>
       )}
@@ -185,8 +182,9 @@ export function RemoveFromQueueButton({
   id: string;
   onRemove: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
-    <Action label="Remove from queue" onClick={() => onRemove(id)} destructive>
+    <Action label={tI18nComplete.raw('textc0b9d9e9ac1d')} onClick={() => onRemove(id)} destructive>
       <XIcon className="size-4" />
     </Action>
   );
@@ -278,7 +276,7 @@ function QueuedBubble({
             failed ? 'opacity-90' : live ? 'opacity-100' : QUEUED_BUBBLE_OPACITY_CLASS,
           )}
         >
-          <div className={cn('max-w-full min-w-0 max-h-[200px] overflow-hidden', BUBBLE_TEXT)}>
+          <div className={cn('max-h-[200px] max-w-full min-w-0 overflow-hidden', BUBBLE_TEXT)}>
             {row.text}
           </div>
         </div>
@@ -317,12 +315,15 @@ export function QueuedPromptBubbles({
   onRetry,
   className,
 }: QueuedPromptBubblesProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (queued.length === 0 && failed.length === 0) return null;
   const inFlight = inFlightIds instanceof Set ? inFlightIds : new Set(inFlightIds ?? []);
   return (
     <div
       role="list"
-      aria-label={held ? 'Queued prompts, held' : 'Queued prompts'}
+      aria-label={
+        held ? tI18nComplete.raw('textaef78db89933') : tI18nComplete.raw('textc7ce396fcd33')
+      }
       className={cn('flex flex-col gap-3', className)}
     >
       {queued.map((row) => (

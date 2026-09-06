@@ -43,9 +43,9 @@ describe('agent environment editor', () => {
     expect(accessFieldsSource).toContain('stalePin');
     // The Environment control IS the shared sandbox menu the composer uses.
     expect(accessFieldsSource).toContain('<SandboxTemplateMenu');
-    expect(accessFieldsSource).toContain('label="Environment"');
+    expect(accessFieldsSource).toContain("raw('text9e471951a1b4')");
     expect(accessFieldsSource).toContain("set('sandbox'");
-    expect(accessFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain("raw('texte8cb80e5c5cb')");
   });
 });
 
@@ -175,10 +175,12 @@ describe('mode pickers use the shared component library', () => {
   // The control these replaced hid "unset" behind clicking the already-active
   // segment. Every inherit-capable picker must now NAME that option.
   test('every inherit-capable picker names its inherit option', () => {
-    expect(accessFieldsSource).toContain('Project default');
-    expect(basicsFieldsSource).toContain('Project default');
+    expect(accessFieldsSource).toContain("raw('texte8cb80e5c5cb')");
+    expect(basicsFieldsSource).toContain("raw('text64f405e80a8d')");
     expect(permissionEditorSource).toContain('inheritLabel');
-    expect(permissionEditorSource).toContain('inheritLabel="Inherit"');
+    expect(permissionEditorSource).toContain(
+      "inheritLabel={tI18nComplete.raw('text3f72f0385768')}",
+    );
   });
 });
 

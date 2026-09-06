@@ -10,6 +10,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import type { GatewaySeriesPoint } from '@/lib/projects-gateway-client';
 import { cn } from '@/lib/utils';
 
@@ -61,6 +62,7 @@ export function RangeSelector({
   setDays: (days: number) => void;
   className?: string;
 }) {
+  const ranges = useLocalizedUiCatalog(RANGES);
   return (
     <div
       className={cn(
@@ -68,7 +70,7 @@ export function RangeSelector({
         className,
       )}
     >
-      {RANGES.map((r) => (
+      {ranges.map((r) => (
         <button
           key={r.days}
           type="button"
@@ -168,8 +170,9 @@ export function UsageChart({
   keys: (keyof typeof chartConfig)[];
   yFormatter?: (v: number) => string;
 }) {
+  const localizedChartConfig = useLocalizedUiCatalog(chartConfig);
   return (
-    <ChartContainer config={chartConfig} className="h-[200px] w-full">
+    <ChartContainer config={localizedChartConfig} className="h-[200px] w-full">
       <AreaChart accessibilityLayer data={data} margin={{ left: 4, right: 8, top: 4 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis
@@ -186,7 +189,7 @@ export function UsageChart({
               labelFormatter={(l) => fmtDay(String(l))}
               formatter={(value, name) => {
                 const num = Number(value);
-                const cfg = chartConfig[name as keyof typeof chartConfig];
+                const cfg = localizedChartConfig[name as keyof typeof chartConfig];
                 return (
                   <span className="flex w-full items-center justify-between gap-3">
                     <span className="text-muted-foreground flex items-center gap-1.5">

@@ -7,12 +7,6 @@
 // so the client module is never loaded at runtime.
 
 import { getEnv } from '@/lib/env-config';
-import {
-  getPublicMarketplaceItem as sdkGetPublicMarketplaceItem,
-  getPublicMarketplaceItemFile as sdkGetPublicMarketplaceItemFile,
-  listPublicMarketplaceItems as sdkListPublicMarketplaceItems,
-  listPublicMarketplaces as sdkListPublicMarketplaces,
-} from '@kortix/sdk';
 import type {
   ItemsPage,
   MarketplaceItem,
@@ -22,6 +16,12 @@ import type {
   MarketplaceSummary,
   PendingSource,
 } from '@/lib/marketplace-client';
+import {
+  getPublicMarketplaceItem as sdkGetPublicMarketplaceItem,
+  getPublicMarketplaceItemFile as sdkGetPublicMarketplaceItemFile,
+  listPublicMarketplaceItems as sdkListPublicMarketplaceItems,
+  listPublicMarketplaces as sdkListPublicMarketplaces,
+} from '@kortix/sdk';
 
 /** Static/ISR revalidation for public marketplace catalog reads. */
 export const MARKETPLACE_PUBLIC_REVALIDATE_SECONDS = 3600;
@@ -111,11 +111,7 @@ export async function getPublicMarketplaceItemFile(
   id: string,
   target: string,
 ): Promise<MarketplaceItemFile> {
-  return sdkGetPublicMarketplaceItemFile<MarketplaceItemFile>(
-    id,
-    target,
-    publicRequestOptions(),
-  );
+  return sdkGetPublicMarketplaceItemFile<MarketplaceItemFile>(id, target, publicRequestOptions());
 }
 
 // ── Bounded SSR loaders (A4) ────────────────────────────────────────────────
@@ -171,7 +167,11 @@ export async function loadMarketplaceExploreData(): Promise<{
     ]);
     return { itemsPage, marketplacesPage, projectItems: projectItemsPage.items };
   } catch {
-    return { itemsPage: emptyItemsPage(), marketplacesPage: emptyMarketplacesPage(), projectItems: [] };
+    return {
+      itemsPage: emptyItemsPage(),
+      marketplacesPage: emptyMarketplacesPage(),
+      projectItems: [],
+    };
   }
 }
 

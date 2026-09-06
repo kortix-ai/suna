@@ -2,8 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const page = code(readFileSync(join(import.meta.dir, '..', 'connectors-page.tsx'), 'utf8'));
 const browse = code(readFileSync(join(import.meta.dir, 'connector-browse.tsx'), 'utf8'));
 

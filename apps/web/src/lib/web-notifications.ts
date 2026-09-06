@@ -1,3 +1,4 @@
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * Web Notification utility module.
  *
@@ -13,15 +14,15 @@
  *  5. Optionally skips if tab is visible (onlyWhenHidden preference)
  */
 
-import { useWebNotificationStore } from '@/stores/web-notification-store';
-import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import { toast } from '@/lib/toast';
 import { logger } from '@/lib/logger';
 import { softNavigate } from '@/lib/navigation/router-bridge';
-import { normalizeAppPathname } from '@kortix/sdk';
-import { playSound } from '@/lib/sounds';
-import type { SoundEvent } from '@/stores/sound-store';
 import { projectSessionHref } from '@/lib/navigation/session-href';
+import { playSound } from '@/lib/sounds';
+import { toast } from '@/lib/toast';
+import type { SoundEvent } from '@/stores/sound-store';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { useWebNotificationStore } from '@/stores/web-notification-store';
+import { normalizeAppPathname } from '@kortix/sdk';
 
 // ============================================================================
 // Types
@@ -43,6 +44,8 @@ export interface WebNotificationPayload {
   /** Project the session belongs to, captured when the notification is raised.
    *  Without it there is no routable URL — see `navigateToSession`. */
   projectId?: string | null;
+  /** Localized label for the in-app session action. */
+  actionLabel?: string;
   /** Optional click handler — by default focuses the window and navigates to session */
   onClick?: () => void;
 }
@@ -51,7 +54,10 @@ export interface WebNotificationPayload {
 // Preference key mapping
 // ============================================================================
 
-const TYPE_TO_PREF: Record<WebNotificationType, 'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'> = {
+const TYPE_TO_PREF: Record<
+  WebNotificationType,
+  'onCompletion' | 'onError' | 'onQuestion' | 'onPermission'
+> = {
   completion: 'onCompletion',
   error: 'onError',
   question: 'onQuestion',
@@ -78,7 +84,10 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
  */
 function playNotificationPing() {
   try {
-    if (typeof AudioContext === 'undefined' && typeof (window as any).webkitAudioContext === 'undefined') {
+    if (
+      typeof AudioContext === 'undefined' &&
+      typeof (window as any).webkitAudioContext === 'undefined'
+    ) {
       return;
     }
     const AudioCtx = AudioContext || (window as any).webkitAudioContext;
@@ -317,10 +326,10 @@ function showInAppToast(payload: WebNotificationPayload) {
     toastFn(payload.title, {
       description: payload.body,
       duration: 8000,
-      ...(payload.sessionId
+      ...(payload.sessionId && payload.actionLabel
         ? {
             action: {
-              label: 'Open',
+              label: payload.actionLabel,
               onClick: () => {
                 navigateToSession(payload.sessionId!, payload.body, {
                   projectId: payload.projectId,
@@ -342,17 +351,22 @@ function showInAppToast(payload: WebNotificationPayload) {
 /**
  * Notify that a session task has completed.
  */
-export function notifyTaskComplete(sessionId: string, sessionTitle?: string) {
+export function notifyTaskComplete(
+  sessionId: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
+) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 60)}"`
     : `Session ${sessionId.slice(0, 8)}`;
 
   sendWebNotification({
     type: 'completion',
-    title: 'Task Complete',
-    body: `${label} has finished.`,
+    title: tI18nComplete.raw('text107f1806b5d7'),
+    body: tI18nComplete('text27d628c8b427', { label }),
     tag: `completion:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });
@@ -364,7 +378,8 @@ export function notifyTaskComplete(sessionId: string, sessionTitle?: string) {
 export function notifySessionError(
   sessionId: string,
   errorTitle: string,
-  sessionTitle?: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 50)}"`
@@ -372,10 +387,11 @@ export function notifySessionError(
 
   sendWebNotification({
     type: 'error',
-    title: 'Session Error',
+    title: tI18nComplete.raw('textee584829f9e9'),
     body: `${label}: ${errorTitle}`,
     tag: `error:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });
@@ -387,7 +403,8 @@ export function notifySessionError(
 export function notifyQuestion(
   sessionId: string,
   questionText: string,
-  sessionTitle?: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 40)}"`
@@ -395,10 +412,11 @@ export function notifyQuestion(
 
   sendWebNotification({
     type: 'question',
-    title: 'Input Needed',
+    title: tI18nComplete.raw('text6e8c98a8560e'),
     body: `${label}: ${questionText.slice(0, 100)}`,
     tag: `question:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });
@@ -410,7 +428,8 @@ export function notifyQuestion(
 export function notifyPermissionRequest(
   sessionId: string,
   toolName: string,
-  sessionTitle?: string,
+  sessionTitle: string | undefined,
+  tI18nComplete: UiTranslator,
 ) {
   const label = sessionTitle
     ? `"${sessionTitle.slice(0, 40)}"`
@@ -418,10 +437,11 @@ export function notifyPermissionRequest(
 
   sendWebNotification({
     type: 'permission',
-    title: 'Permission Requested',
-    body: `${label} needs permission for: ${toolName}`,
+    title: tI18nComplete.raw('text7e497182c7ed'),
+    body: tI18nComplete('textbe9a4d2a34e1', { label, toolName }),
     tag: `permission:${sessionId}`,
     sessionId,
+    actionLabel: tI18nComplete.raw('texted077f3d8125'),
     // Captured now, while the raising event proves which project is open.
     projectId: currentProjectId(),
   });

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
   isLegacyMigratedSession,
@@ -58,7 +59,13 @@ describe('sessionDisplayStatus', () => {
 
   test('every display status has a label', () => {
     const all: SessionDisplayStatus[] = [
-      'needs-you', 'starting', 'running', 'done', 'stopped', 'failed', 'legacy',
+      'needs-you',
+      'starting',
+      'running',
+      'done',
+      'stopped',
+      'failed',
+      'legacy',
     ];
     for (const value of all) {
       expect(SESSION_DISPLAY_STATUS_LABELS[value]).toBeTruthy();
@@ -108,15 +115,15 @@ describe('legacy migrated sessions', () => {
     expect(sessionDisplayStatus(makeSession({ status: 'running', metadata: legacyMeta }))).toBe(
       'running',
     );
-    expect(sessionDisplayStatus(makeSession({ status: 'provisioning', metadata: legacyMeta }))).toBe(
-      'starting',
-    );
+    expect(
+      sessionDisplayStatus(makeSession({ status: 'provisioning', metadata: legacyMeta })),
+    ).toBe('starting');
   });
 
   test('a pending review still outranks the legacy state', () => {
-    expect(sessionDisplayStatus(makeSession({ status: 'completed', metadata: legacyMeta }), 1)).toBe(
-      'needs-you',
-    );
+    expect(
+      sessionDisplayStatus(makeSession({ status: 'completed', metadata: legacyMeta }), 1),
+    ).toBe('needs-you');
   });
 
   test("the 'legacy' filter matches migrated sessions; 'done' does not", () => {
@@ -142,9 +149,13 @@ describe('matchesStatusFilters', () => {
   });
 
   test('several selected values are ORed', () => {
-    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['done', 'failed'])).toBe(true);
+    expect(matchesStatusFilters(makeSession({ status: 'completed' }), ['done', 'failed'])).toBe(
+      true,
+    );
     expect(matchesStatusFilters(makeSession({ status: 'failed' }), ['done', 'failed'])).toBe(true);
-    expect(matchesStatusFilters(makeSession({ status: 'stopped' }), ['done', 'failed'])).toBe(false);
+    expect(matchesStatusFilters(makeSession({ status: 'stopped' }), ['done', 'failed'])).toBe(
+      false,
+    );
   });
 
   test('reads the lifecycle, never the review overlay', () => {
@@ -154,14 +165,22 @@ describe('matchesStatusFilters', () => {
 
 describe('matchesSourceFilters', () => {
   test('an empty array matches everything', () => {
-    expect(matchesSourceFilters(makeSession(), [])).toBe(true);
-    expect(matchesSourceFilters(makeSession({ metadata: { source: 'slack' } }), [])).toBe(true);
+    expect(matchesSourceFilters(makeSession(), [], testUiTranslator)).toBe(true);
+    expect(
+      matchesSourceFilters(makeSession({ metadata: { source: 'slack' } }), [], testUiTranslator),
+    ).toBe(true);
   });
 
   test('mine and shared split chats by ownership', () => {
-    expect(matchesSourceFilters(makeSession({ is_owner: true }), ['mine'])).toBe(true);
-    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['mine'])).toBe(false);
-    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['shared'])).toBe(true);
+    expect(matchesSourceFilters(makeSession({ is_owner: true }), ['mine'], testUiTranslator)).toBe(
+      true,
+    );
+    expect(matchesSourceFilters(makeSession({ is_owner: false }), ['mine'], testUiTranslator)).toBe(
+      false,
+    );
+    expect(
+      matchesSourceFilters(makeSession({ is_owner: false }), ['shared'], testUiTranslator),
+    ).toBe(true);
   });
 
   test('shared ownership is independent of the session source', () => {
@@ -170,7 +189,7 @@ describe('matchesSourceFilters', () => {
       metadata: { trigger_source: 'cron', trigger_type: 'cron' },
     });
     expect(sessionIsShared(scheduled)).toBe(true);
-    expect(matchesSourceFilters(scheduled, ['shared'])).toBe(true);
+    expect(matchesSourceFilters(scheduled, ['shared'], testUiTranslator)).toBe(true);
   });
 
   test('own and legacy sessions use the unmarked default state', () => {
@@ -179,19 +198,19 @@ describe('matchesSourceFilters', () => {
   });
 
   test('unknown ownership counts as mine so nothing is silently hidden', () => {
-    expect(matchesSourceFilters(makeSession(), ['mine'])).toBe(true);
+    expect(matchesSourceFilters(makeSession(), ['mine'], testUiTranslator)).toBe(true);
   });
 
   test('automation sources match their kind', () => {
     const slack = makeSession({ metadata: { source: 'slack' } });
-    expect(matchesSourceFilters(slack, ['slack'])).toBe(true);
-    expect(matchesSourceFilters(slack, ['email'])).toBe(false);
-    expect(matchesSourceFilters(slack, ['mine', 'slack'])).toBe(true);
+    expect(matchesSourceFilters(slack, ['slack'], testUiTranslator)).toBe(true);
+    expect(matchesSourceFilters(slack, ['email'], testUiTranslator)).toBe(false);
+    expect(matchesSourceFilters(slack, ['mine', 'slack'], testUiTranslator)).toBe(true);
   });
 
   test('telegram matches its own kind only', () => {
     const telegram = makeSession({ metadata: { source: 'telegram' } });
-    expect(matchesSourceFilters(telegram, ['telegram'])).toBe(true);
-    expect(matchesSourceFilters(telegram, ['slack'])).toBe(false);
+    expect(matchesSourceFilters(telegram, ['telegram'], testUiTranslator)).toBe(true);
+    expect(matchesSourceFilters(telegram, ['slack'], testUiTranslator)).toBe(false);
   });
 });

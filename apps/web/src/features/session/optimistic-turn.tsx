@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 
 import { MentionChip } from '@/features/session/mention-chip';
@@ -20,10 +21,10 @@ import {
   type NormalizedAttachment,
   UserMessageActions,
 } from '@/features/session/turn/user-message';
+import { useProjectSessionHref } from '@/lib/navigation/session-href';
 import { cn } from '@/lib/utils';
 import { getFilename } from '@/lib/utils/file-utils';
 import { openTabAndNavigate } from '@/stores/tab-store';
-import { useProjectSessionHref } from '@/lib/navigation/session-href';
 
 // `BUBBLE_SURFACE` / `BUBBLE_TEXT` are imported from `turn/user-message.tsx`,
 // not redeclared here. A local copy drifted twice already — first the dark
@@ -204,6 +205,7 @@ export function HighlightMentions({
   agentNames?: string[];
   onFileClick?: (path: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // Strip every ref block (project/file/agent/session) before processing
   // inline @ mentions so the visible text never shows raw XML.
   const { cleanText, sessions } = useMemo(() => {
@@ -241,7 +243,12 @@ export function HighlightMentions({
     if (raw.startsWith('ses_')) {
       const href = sessionHref(raw);
       if (!href) return;
-      openTabAndNavigate({ id: raw, title: 'Session', type: 'session', href });
+      openTabAndNavigate({
+        id: raw,
+        title: tI18nComplete.raw('text6959b4159575'),
+        type: 'session',
+        href,
+      });
       return;
     }
     const ref = sessions.find((s) => s.title === raw);

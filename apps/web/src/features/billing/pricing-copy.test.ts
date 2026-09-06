@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const pricingPageSource = readFileSync(
@@ -68,8 +68,8 @@ describe('pricing model billing copy', () => {
     // Seats are the billing unit. The earlier "team members" control implied
     // per-member billing and was removed for exactly that reason.
     expect(calculatorSource).not.toContain('teamMembers');
-    expect(calculatorSource).toContain('label="Team seats"');
-    expect(calculatorSource).toContain('label="Agent Computer runtime"');
+    expect(calculatorSource).toContain("raw('text42ef2c24bd7a')");
+    expect(calculatorSource).toContain("raw('texte835694dddb1')");
 
     // Every figure reads from compute-pricing.ts. A second typed-in copy of a
     // billing number has drifted wrong in this file before.

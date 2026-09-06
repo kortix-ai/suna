@@ -27,10 +27,23 @@ export function providerLabel(provider: string | null | undefined): string {
  * an account with — the difference decides whether they go looking for a login
  * somewhere else.
  */
-export function providerSentence(provider: string | null | undefined): string {
+export interface ProviderSentenceCopy {
+  hosted: (provider: string) => string;
+  stored: (provider: string) => string;
+}
+
+const DEFAULT_PROVIDER_SENTENCE_COPY: ProviderSentenceCopy = {
+  hosted: (provider) => `Hosted on ${provider}.`,
+  stored: (provider) => `Stored in ${provider}.`,
+};
+
+export function providerSentence(
+  provider: string | null | undefined,
+  copy: ProviderSentenceCopy = DEFAULT_PROVIDER_SENTENCE_COPY,
+): string {
   const label = providerLabel(provider);
-  if (provider === 'code-storage' || provider === 'code_storage') return `Stored in ${label}.`;
-  return `Hosted on ${label}.`;
+  if (provider === 'code-storage' || provider === 'code_storage') return copy.stored(label);
+  return copy.hosted(label);
 }
 
 export function repositoryWebUrl(
@@ -43,6 +56,20 @@ export function repositoryWebUrl(
 
 export type ConnectionTone = 'connected' | 'attention' | 'unknown';
 
+export interface ConnectionStatusCopy {
+  connected: string;
+  attention: string;
+  connecting: string;
+  disconnected: string;
+}
+
+const DEFAULT_CONNECTION_STATUS_COPY: ConnectionStatusCopy = {
+  connected: 'Connected',
+  attention: 'Needs attention',
+  connecting: 'Connecting…',
+  disconnected: 'Not connected',
+};
+
 /**
  * A backend connection status turned into something a person can act on.
  *
@@ -52,12 +79,18 @@ export type ConnectionTone = 'connected' | 'attention' | 'unknown';
  * exactly as useful as no connection at all, and printing the enum would just
  * ask them to interpret it.
  */
-export function connectionStatusLabel(status: string | null | undefined): {
+export function connectionStatusLabel(
+  status: string | null | undefined,
+  copy: ConnectionStatusCopy = DEFAULT_CONNECTION_STATUS_COPY,
+): {
   tone: ConnectionTone;
   label: string;
 } {
-  if (status === 'connected') return { tone: 'connected', label: 'Connected' };
-  if (status === 'error' || status === 'failed') return { tone: 'attention', label: 'Needs attention' };
-  if (status === 'pending' || status === 'connecting') return { tone: 'unknown', label: 'Connecting…' };
-  return { tone: 'unknown', label: 'Not connected' };
+  if (status === 'connected') return { tone: 'connected', label: copy.connected };
+  if (status === 'error' || status === 'failed')
+    return { tone: 'attention', label: copy.attention };
+  if (status === 'pending' || status === 'connecting') {
+    return { tone: 'unknown', label: copy.connecting };
+  }
+  return { tone: 'unknown', label: copy.disconnected };
 }

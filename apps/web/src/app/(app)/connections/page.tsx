@@ -5,7 +5,7 @@ import {
   CheckCircleIcon as CheckCircle2,
   PlugIcon as Plug,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect } from 'react';
 
@@ -63,12 +63,14 @@ function ConnectionResult() {
         </div>
         <div className="space-y-2">
           <h1 className="text-xl font-semibold tracking-tight">
-            {state === 'connected' ? 'Connector connected' : 'Connection failed'}
+            {state === 'connected'
+              ? tI18nHardcoded.raw('i18nComplete.text3f45cbce573b')
+              : tI18nHardcoded.raw('i18nComplete.text596c52f1eb65')}
           </h1>
           <p className="text-muted-foreground text-sm">
             {state === 'connected'
-              ? 'Authorized. You can close this tab and return to where you started. Your agent can use this connection now.'
-              : "The authorization didn't complete. Close this tab and start the connect again from your terminal or the dashboard."}
+              ? tI18nHardcoded.raw('i18nComplete.text6257cc52416f')
+              : tI18nHardcoded.raw('i18nComplete.text380ded41df15')}
           </p>
         </div>
         <div className="flex items-center justify-center gap-2">

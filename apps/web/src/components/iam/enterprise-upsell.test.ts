@@ -8,9 +8,9 @@
 // deleted 2026-08-18 — written, never rendered), and neither is Groups: both
 // carry free content server-side, so they always mount and gate only their
 // own write controls on `rbacEnabled`.
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { NAV_GROUPS } from '@/features/accounts/hub/sections';
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const dir = import.meta.dir;
@@ -50,13 +50,17 @@ describe('account page gates each IAM surface behind the entitlement', () => {
   // pins is that neither pane is swapped for an EnterpriseUpsell card — see
   // `accounts/[id]/account-hub-section-gating.test.ts` for the permission map.
   test('groups tab: no entitlement gate, passed rbacEnabled to gate its own controls', () => {
-    expect(pageSource).toMatch(/activeSection === 'groups' && sectionVisible\.groups \?[\s\S]*?<GroupsTab/);
+    expect(pageSource).toMatch(
+      /activeSection === 'groups' && sectionVisible\.groups \?[\s\S]*?<GroupsTab/,
+    );
     expect(pageSource).toMatch(/<GroupsTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
     expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" />');
   });
 
   test('roles tab: no entitlement gate, passed rbacEnabled to gate its own controls', () => {
-    expect(pageSource).toMatch(/activeSection === 'roles' && sectionVisible\.roles \?[\s\S]*?<RolesTab/);
+    expect(pageSource).toMatch(
+      /activeSection === 'roles' && sectionVisible\.roles \?[\s\S]*?<RolesTab/,
+    );
     expect(pageSource).toMatch(/<RolesTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
     expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" />');
   });

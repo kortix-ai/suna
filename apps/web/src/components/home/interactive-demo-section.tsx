@@ -6,6 +6,10 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Slack } from '@/features/icon/icons/slack';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { PROVIDER_HINT_TRANSLATION_KEYS } from '@/i18n/provider-hint-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import { safeScrollTo } from '@/lib/utils/safe-scroll-to';
 import {
@@ -36,7 +40,6 @@ import {
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
-import { useTranslations } from 'next-intl';
 import { useEffect, useRef, useState } from 'react';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
@@ -208,13 +211,15 @@ function Toggle({ on, onClick }: { on: boolean; onClick?: () => void }) {
 }
 
 function ConnectBadge({ connected }: { connected: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return connected ? (
     <Badge size="sm" variant="success" className="ml-auto shrink-0 gap-1">
-      <span className="size-1.5 rounded-full bg-emerald-500" /> Connected
+      <span className="size-1.5 rounded-full bg-emerald-500" />{' '}
+      {tI18nComplete.raw('text22965568d22a')}
     </Badge>
   ) : (
     <Badge size="sm" variant="outline" className="ml-auto shrink-0">
-      Connect
+      {tI18nComplete.raw('text1a2303ede074')}
     </Badge>
   );
 }
@@ -401,6 +406,7 @@ const AGENTS: AgentDef[] = [
 ];
 
 function AgentCard({ agent }: { agent: AgentDef }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="border-border/70 bg-card hover:border-border hover:bg-muted/20 flex flex-col rounded-md border p-3.5 transition-colors">
       <div className="flex items-start gap-3">
@@ -434,7 +440,9 @@ function AgentCard({ agent }: { agent: AgentDef }) {
             />
             {agent.model}
           </span>
-          <span>{agent.runs} runs</span>
+          <span>
+            {agent.runs} {tI18nComplete.raw('text1f64fff08d78')}
+          </span>
           <span>{agent.last}</span>
         </InlineMeta>
       </div>
@@ -444,10 +452,12 @@ function AgentCard({ agent }: { agent: AgentDef }) {
 
 function AgentsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const running = AGENTS.filter((a) => a.on).length;
-  const triggered = AGENTS.filter((a) => a.trigger !== 'manual' && a.trigger !== 'primary').length;
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const agents = localizeUiCatalog(AGENTS, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS);
+  const running = agents.filter((a) => a.on).length;
+  const triggered = agents.filter((a) => a.trigger !== 'manual' && a.trigger !== 'primary').length;
   const stats: [string, string][] = [
-    [String(AGENTS.length), 'Agents'],
+    [String(agents.length), 'Agents'],
     [String(running), 'Running now'],
     ['22.2k', 'Runs · 7d'],
     [String(triggered), 'Auto-triggered'],
@@ -455,7 +465,7 @@ function AgentsPage() {
   return (
     <div>
       <PageHead
-        title="Agents"
+        title={tI18nHardcoded.raw('i18nComplete.text279b44d2ab4b')}
         sub={tI18nHardcoded.raw(
           'autoComponentsHomeInteractiveDemoSectionJsxAttrSubEachAgent23df874b',
         )}
@@ -477,7 +487,7 @@ function AgentsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
-        {AGENTS.map((a) => (
+        {agents.map((a) => (
           <AgentCard key={a.name} agent={a} />
         ))}
       </div>
@@ -518,6 +528,7 @@ const CONNECTOR_TYPES = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'];
 
 function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const list = CONNECTORS.filter(
@@ -529,7 +540,9 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <div className="min-w-0">
-          <h3 className="text-foreground text-lg font-semibold tracking-tight">Connectors</h3>
+          <h3 className="text-foreground text-lg font-semibold tracking-tight">
+            {tI18nHardcoded.raw('i18nComplete.textc3d2e79ebdd0')}
+          </h3>
           <p className="text-muted-foreground mt-0.5 text-sm">
             {tI18nHardcoded.raw('autoComponentsHomeInteractiveDemoSectionJsxText3000Apps0dfb5b41')}
           </p>
@@ -571,7 +584,7 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
                 onClick={() => setQ('')}
                 className="text-muted-foreground hover:text-foreground text-xs"
               >
-                Clear
+                {tI18nHardcoded.raw('i18nComplete.text83b12c2216ef')}
               </button>
             )}
           </div>
@@ -627,7 +640,9 @@ function ConnectorsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) 
       <button className="border-border/60 bg-muted/20 hover:bg-muted/40 mt-2.5 flex w-full items-center justify-center gap-2 rounded-md border border-dashed py-3 text-sm transition-colors">
         <Blocks className="text-muted-foreground size-4" />
         <span className="text-foreground font-medium">
-          {query ? `Search “${q}” across all 3,000+ apps` : 'Browse all 3,000+ apps'}
+          {query
+            ? tI18nComplete('text0ea7891b939a', { value0: q })
+            : tI18nHardcoded.raw('i18nComplete.text1d9413cfa08c')}
         </span>
         <ArrowRight className="text-muted-foreground size-3.5" />
       </button>
@@ -703,11 +718,13 @@ function ModelsPage({
   connectedDomains?: string[];
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const providers = localizeUiCatalog(PROVIDERS, tI18nComplete, PROVIDER_HINT_TRANSLATION_KEYS);
   const activeName = activeModel?.name ?? 'Claude Opus 4.8';
   return (
     <div>
       <PageHead
-        title="Models"
+        title={tI18nHardcoded.raw('i18nComplete.textd17d2d78d76e')}
         sub={`Bring any provider — routed per session · active: ${activeName}`}
         action={
           <Button variant="default" size="sm">
@@ -720,7 +737,7 @@ function ModelsPage({
       />
 
       <div className="space-y-2">
-        {PROVIDERS.map((p) => {
+        {providers.map((p) => {
           const isActive = !!activeModel && p.domain === activeModel.domain;
           const connected =
             p.state === 'connected' || (!!p.domain && connectedDomains.includes(p.domain));
@@ -745,17 +762,20 @@ function ModelsPage({
               </div>
               {isActive ? (
                 <Badge size="sm" variant="success" className="shrink-0 gap-1">
-                  <HiMiniSparkles weight="fill" className="size-3" /> Active
+                  <HiMiniSparkles weight="fill" className="size-3" />{' '}
+                  {tI18nHardcoded.raw('i18nComplete.text92340695899b')}
                 </Badge>
               ) : p.state === 'managed' ? (
                 <Badge size="sm" variant="highlight" className="shrink-0 gap-1">
-                  <HiMiniSparkles weight="fill" className="size-3" /> Managed
+                  <HiMiniSparkles weight="fill" className="size-3" />{' '}
+                  {tI18nHardcoded.raw('i18nComplete.text8f2de600bf94')}
                 </Badge>
               ) : connected ? (
                 <ConnectBadge connected />
               ) : (
                 <Button variant="outline" size="sm" className="shrink-0">
-                  <KeyRound className="size-3.5" /> Connect
+                  <KeyRound className="size-3.5" />{' '}
+                  {tI18nHardcoded.raw('i18nComplete.text1a2303ede074')}
                 </Button>
               )}
             </div>
@@ -816,7 +836,7 @@ function SchedulingPage({ added = false }: { added?: boolean }) {
   return (
     <div>
       <PageHead
-        title="Scheduling"
+        title={tI18nHardcoded.raw('i18nComplete.texted5c58303a98')}
         sub={`${activeCount} active · cron triggers in your timezone, running 24/7`}
         action={
           <Button size="sm">
@@ -873,11 +893,12 @@ function ChannelsPage({
   workspace?: string | null;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [showByo, setShowByo] = useState(false);
   return (
     <div>
       <PageHead
-        title="Channels"
+        title={tI18nHardcoded.raw('i18nComplete.text4c8906cf76f5')}
         sub={tI18nHardcoded.raw(
           'autoComponentsHomeInteractiveDemoSectionJsxAttrSubRunThisb0deafba',
         )}
@@ -897,19 +918,22 @@ function ChannelsPage({
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
                 {connected
-                  ? `Connected to ${workspace ?? 'your workspace'}`
-                  : 'Add Kortix to your Slack workspace'}
+                  ? tI18nComplete('textc70408ee88e9', {
+                      value0: workspace ?? tI18nHardcoded.raw('i18nComplete.textf981bd62fb8b'),
+                    })
+                  : tI18nHardcoded.raw('i18nComplete.text0e671041e03f')}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
                 {connected
-                  ? 'Tokens are encrypted in this project’s secrets. Invite the bot to any channel and @mention it to spawn a session.'
-                  : 'One click — approve scopes in Slack and we’ll wire this project to the workspace you choose. Tokens stay encrypted in this project’s secrets.'}
+                  ? tI18nHardcoded.raw('i18nComplete.text3f9f3e586a10')
+                  : tI18nHardcoded.raw('i18nComplete.text78dbeb914e19')}
               </p>
             </div>
           </div>
           {connected ? (
             <Badge size="sm" variant="success" className="shrink-0 gap-1">
-              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> Connected
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />{' '}
+              {tI18nHardcoded.raw('i18nComplete.text22965568d22a')}
             </Badge>
           ) : (
             <Button size="sm" className="shrink-0">
@@ -951,7 +975,10 @@ function ChannelsPage({
             {tI18nHardcoded.raw(
               'autoComponentsHomeInteractiveDemoSectionJsxTextPasteASlackac1c89fb',
             )}
-            <span className="text-foreground font-mono">project_secrets</span>.
+            <span className="text-foreground font-mono">
+              {tI18nHardcoded.raw('i18nComplete.textbba1343dfb5a')}
+            </span>
+            .
           </div>
         )}
       </div>
@@ -1040,6 +1067,7 @@ const POLICIES: Policy[] = [
 ];
 
 function PolicyRow({ policy }: { policy: Policy }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const total = policy.allow + policy.ask + policy.block;
   const pct = (n: number) => `${(n / total) * 100}%`;
   return (
@@ -1048,7 +1076,9 @@ function PolicyRow({ policy }: { policy: Policy }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <span className="text-foreground text-sm font-medium">{policy.name}</span>
-          <span className="text-muted-foreground text-xs">{total} tools</span>
+          <span className="text-muted-foreground text-xs">
+            {total} {tI18nComplete.raw('textf9d35d43770d')}
+          </span>
         </div>
         <div className="bg-muted mt-2 flex h-1.5 overflow-hidden rounded-full">
           <span className="bg-kortix-green" style={{ width: pct(policy.allow) }} />
@@ -1058,10 +1088,14 @@ function PolicyRow({ policy }: { policy: Policy }) {
           )}
         </div>
         <div className="mt-1.5 flex items-center gap-3 text-xs font-medium">
-          <span className="text-emerald-600 dark:text-emerald-500">{policy.allow} allow</span>
-          <span className="text-amber-600 dark:text-amber-500">{policy.ask} ask</span>
+          <span className="text-emerald-600 dark:text-emerald-500">
+            {policy.allow} {tI18nComplete.raw('text410083735735')}
+          </span>
+          <span className="text-amber-600 dark:text-amber-500">
+            {policy.ask} {tI18nComplete.raw('text2f2fc7f2e9ce')}
+          </span>
           <span className={policy.block > 0 ? 'text-destructive' : 'text-muted-foreground/50'}>
-            {policy.block} block
+            {policy.block} {tI18nComplete.raw('text496aca80e4d8')}
           </span>
         </div>
       </div>
@@ -1129,7 +1163,7 @@ function SecurityPage({
             count={`· ${members.length}`}
             action={
               <Button variant="outline" size="sm">
-                <Plus className="size-3.5" /> Invite
+                <Plus className="size-3.5" /> {tI18nHardcoded.raw('i18nComplete.text1fd9ae1607aa')}
               </Button>
             }
           >
@@ -1183,7 +1217,9 @@ function SecurityPage({
                 subtitle={
                   <InlineMeta>
                     <span className="font-mono">{sec.masked}</span>
-                    <span>rotated {sec.rotated}</span>
+                    <span>
+                      {tI18nHardcoded.raw('i18nComplete.textf42546d5ecdd')} {sec.rotated}
+                    </span>
                   </InlineMeta>
                 }
                 trailing={
@@ -1333,10 +1369,12 @@ export function InteractiveDemoSection({
   className?: string;
   contentClassName?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const pages = localizeUiCatalog(PAGES, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS);
   const director = useDemoDirector();
   const active = director.activePage;
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
-  const page = PAGES[active];
+  const page = pages[active];
   const rootRef = useRef<HTMLDivElement>(null);
   const tabStripRef = useRef<HTMLDivElement>(null);
   const panelScrollRef = useRef<HTMLDivElement>(null);
@@ -1473,7 +1511,7 @@ export function InteractiveDemoSection({
               className="shadow-custom flex w-full [scrollbar-width:none] items-center gap-0.5 overflow-hidden overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
             >
               {ORDER.map((id, index) => {
-                const { label, icon: Icon } = PAGES[id];
+                const { label, icon: Icon } = pages[id];
                 const isActive = id === active;
                 return (
                   <button
