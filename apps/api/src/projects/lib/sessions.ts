@@ -70,7 +70,7 @@ import {
 import type { WorkspaceModeV2 } from '@kortix/manifest-schema';
 import { withProjectGitAuth } from './git';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
-import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
+import { resolvePiWorkerProvider, resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
 import { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName } from './sandbox-env-names';
 import {
   ACTIVE_SESSION_STATUSES,
@@ -1870,10 +1870,15 @@ export async function createProjectSession(input: {
         allowProjectImage: piWorkerBoot
           ? false
           : projectImageAllowedForSession(agentName, workspaceMode),
-        // v0 pins the worker to Daytona: the entrypoint override in
-        // ensurePiWorkerImage is only exercised there so far. Lift once the
-        // other adapters' entrypoint handling is verified.
-        provider: piWorkerBoot ? 'daytona' : providerName,
+        // Daytona wherever it is configured (the path with the miles on it);
+        // otherwise the deployment's own provider, because pinning a session to
+        // a provider the deployment does not have is fatal, not conservative.
+        provider: piWorkerBoot
+          ? resolvePiWorkerProvider({
+              allowed: config.ALLOWED_SANDBOX_PROVIDERS,
+              deploymentProvider: providerName,
+            })
+          : providerName,
         providerLocked: piWorkerBoot ? true : providerLocked,
         metadata: {
           session_id: sessionId,

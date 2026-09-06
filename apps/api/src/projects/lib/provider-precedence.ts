@@ -92,3 +92,24 @@ export function nextFailoverProvider(input: {
   if (input.providerLocked || input.fallbackAttempted || !input.fallbackEnabled) return null;
   return input.allowed.find((p) => p !== input.current) ?? null;
 }
+
+/**
+ * The provider a PI WORKER session boots on.
+ *
+ * v0 pinned this to Daytona outright, with a note to lift it once another
+ * adapter's entrypoint handling was verified. On a deployment that does not
+ * have Daytona at all the pin is not conservative, it is fatal: the session
+ * dies at `getProvider('daytona')` with "requires DAYTONA_API_KEY", which is
+ * what every pi session on a Platinum-only deployment did (dev, 2026-09-06).
+ *
+ * Daytona still wins wherever it is configured — that is the path with the
+ * miles on it. Everywhere else the session takes the deployment's own
+ * provider, which on Platinum boots the worker as a CELL (an isolate on a
+ * celld node) rather than a microVM: 340-570 ms to spawn against 8-12 s.
+ */
+export function resolvePiWorkerProvider<T extends string>(opts: {
+  allowed: readonly string[];
+  deploymentProvider: T;
+}): T {
+  return (opts.allowed.includes('daytona') ? ('daytona' as T) : opts.deploymentProvider);
+}
