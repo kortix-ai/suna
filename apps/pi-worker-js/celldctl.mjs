@@ -297,6 +297,18 @@ export async function restartCells(api, token, cells, log = console.log) {
     if (!id) continue;
     try {
       await fetch(`${api}/v1/sandboxes/${id}/stop`, { method: "POST", headers: h });
+      // WAIT FOR `stopped`, because /stop RETURNS BEFORE THE BOX IS DOWN.
+      // Starting a box that is still `stopping` is a 409, and the roll then
+      // reports the cell as not coming back while it is merely mid-stop.
+      // Measured on dev 2026-09-07: the first roll after this was written left
+      // sbx_01M1WBJS236V97N96Q3C3PSTB2 stopped and reported 0/1 rolled — a
+      // deploy that took a live cell DOWN and said it had failed.
+      for (let i = 0; i < 120; i++) {
+        const r = await fetch(`${api}/v1/sandboxes/${id}`, { headers: h });
+        const state = await r.json().then((b) => b?.state, () => null);
+        if (state === "stopped") break;
+        await new Promise((res) => setTimeout(res, 1000));
+      }
       const started = await fetch(
         `${api}/v1/sandboxes/${id}/start?wait_for_state=running&wait_timeout_ms=180000`,
         { method: "POST", headers: h },

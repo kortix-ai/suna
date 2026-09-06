@@ -12,7 +12,7 @@
 // Read by test/all.sh. The suite's own tail line catches a section that ran
 // and produced nothing; it cannot catch an exit partway through, which skips
 // the tail entirely. This is the number that check compares against.
-// EXPECTED_PASSES=91
+// EXPECTED_PASSES=92
 
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -632,9 +632,20 @@ time.sleep(30)`], { stdio: "ignore" });
   const { restartCells } = await import("../celldctl.mjs");
   const calls = [];
   const realFetch = globalThis.fetch;
+  // The box reports `stopping` on the first read and `stopped` after — which is
+  // what dev does, and what a stub that answers `stopped` immediately hides.
+  let reads = 0;
   globalThis.fetch = async (url, init) => {
-    calls.push(`${init?.method ?? "GET"} ${String(url).replace(/^https?:\/\/[^/]+/, "")}`);
-    return { ok: !String(url).includes("sbx_bad"), status: String(url).includes("sbx_bad") ? 500 : 200 };
+    const u = String(url);
+    calls.push(`${init?.method ?? "GET"} ${u.replace(/^https?:\/\/[^/]+/, "")}`);
+    if (/\/v1\/sandboxes\/[^/?]+$/.test(u)) {
+      reads += 1;
+      return { ok: true, status: 200, json: async () => ({ state: reads > 1 ? "stopped" : "stopping" }) };
+    }
+    if (u.includes("/start") && !calls.some((c) => c.includes(`GET /v1/sandboxes/${u.match(/sandboxes\/([^/?]+)/)?.[1]}`))) {
+      return { ok: false, status: 409 };                   // started before it settled
+    }
+    return { ok: !u.includes("sbx_bad"), status: u.includes("sbx_bad") ? 500 : 200 };
   };
   const rolled = await restartCells("https://api.test", "tok", ["sbx_a", "sbx_b"], () => {});
   globalThis.fetch = realFetch;
@@ -646,12 +657,23 @@ time.sleep(30)`], { stdio: "ignore" });
     calls.every((c) => !c.includes("/start") || c.includes("wait_for_state=running")), JSON.stringify(calls));
   check("it reports which cells actually came back", rolled.join(",") === "sbx_a,sbx_b", rolled.join(","));
 
+  // THE WAIT BETWEEN THEM. /stop returns before the box is down, and starting a
+  // `stopping` box is a 409 — so a roll with no wait takes a live cell DOWN and
+  // then reports that it failed. Measured on dev 2026-09-07, the first real
+  // roll: sbx_01M1WBJS23… stopped, start 409, "rolled 0/1".
+  const order = calls.filter((c) => /\/(stop|start)|GET \/v1\/sandboxes\/sbx_a$/.test(c));
+  check("A ROLL WAITS FOR `stopped` BEFORE IT STARTS — /stop returns before the box is down",
+    order[0].includes("/stop") && order[1].startsWith("GET ") && order[order.length - 1].includes("/start"),
+    JSON.stringify(order));
+
   // The half that matters when it goes wrong: a cell that does not come back is
   // NOT reported as rolled, so a partial roll cannot read as a complete one.
   const calls2 = [];
   globalThis.fetch = async (url, init) => {
-    calls2.push(String(url));
-    return { ok: !String(url).includes("sbx_bad"), status: String(url).includes("sbx_bad") ? 500 : 200 };
+    const u = String(url);
+    calls2.push(u);
+    if (/\/v1\/sandboxes\/[^/?]+$/.test(u)) return { ok: true, status: 200, json: async () => ({ state: "stopped" }) };
+    return { ok: !u.includes("sbx_bad"), status: u.includes("sbx_bad") ? 500 : 200 };
   };
   const partial = await restartCells("https://api.test", "tok", ["sbx_a", "sbx_bad", "sbx_c"], () => {});
   globalThis.fetch = realFetch;
