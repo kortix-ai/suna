@@ -4,6 +4,7 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 
 import { IdentityConfetti } from '@/components/ui/identity-confetti';
+import { cn } from '@/lib/utils';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import { useProjectIcon, useProjectName } from '@kortix/sdk/react';
 import {
@@ -66,6 +67,7 @@ export function ProjectHomeWelcomeBody({
   onPickSuggestion,
   hero,
   below,
+  aside,
 }: {
   projectId: string;
   /** The composer input rendered in the hero position, directly under the heading. */
@@ -80,6 +82,13 @@ export function ProjectHomeWelcomeBody({
   hero?: ProjectHomeHero;
   /** Rendered under the ask group, in the column's `gap-10` rhythm. */
   below?: ReactNode;
+  /**
+   * A column to the RIGHT of the composer on wide screens (a subproject's
+   * panel of instructions, context and schedules). The heading spans both
+   * columns; the composer and `below` share the left one. Stacks under the
+   * composer below `lg`.
+   */
+  aside?: ReactNode;
 }) {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // One source for the project name — see `useProjectName`'s doc comment.
@@ -132,8 +141,18 @@ export function ProjectHomeWelcomeBody({
         short container scrolls the column rather than compressing it.
         `gap-10` separates the ask group from whatever a host puts beneath it.
       */}
-      <div className="m-auto flex w-full max-w-3xl shrink-0 flex-col gap-10 py-8 sm:px-4">
-        <div className="flex w-full flex-col gap-6">
+      <div
+        className={cn(
+          'm-auto flex w-full shrink-0 flex-col gap-10 py-8 sm:px-4',
+          aside ? 'max-w-5xl' : 'max-w-3xl',
+        )}
+      >
+        <div
+          className={cn(
+            'flex w-full flex-col gap-6',
+            aside && 'lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-x-8',
+          )}
+        >
           {/*
               `w-full` with no `max-w`: the line runs the full column and breaks
               where the column ends, which is the composer's own right edge.
@@ -150,7 +169,12 @@ export function ProjectHomeWelcomeBody({
               centred block, and this one is ragged-right by design; pretty just
               keeps the last line off a single orphan word.
             */}
-          <h1 className="text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl">
+          <h1
+            className={cn(
+              'text-muted-foreground w-full px-4 text-3xl leading-[1.2] tracking-tight text-balance max-sm:text-2xl',
+              aside && 'lg:col-span-2',
+            )}
+          >
             {greeting.before}{' '}
             {/*
                 A real <button>, not a <span> with an onClick: this is the only
@@ -215,15 +239,29 @@ export function ProjectHomeWelcomeBody({
           ) : null}
 
           {hero?.description ? (
-            <p className="text-muted-foreground w-full px-4 text-base text-pretty">
+            <p
+              className={cn(
+                'text-muted-foreground w-full px-4 text-base text-pretty',
+                aside && 'lg:col-span-2',
+              )}
+            >
               {hero.description}
             </p>
           ) : null}
 
-          {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
+          {aside ? (
+            // With a panel beside it, the composer and what sits under it share
+            // the left column, so the panel's top lines up with the card's.
+            <div className="flex min-w-0 flex-col gap-10">
+              {composer ? <div className="flex w-full flex-col gap-4">{composer}</div> : null}
+              {below}
+            </div>
+          ) : composer ? (
+            <div className="flex w-full flex-col gap-4">{composer}</div>
+          ) : null}
+          {aside ? <aside className="min-w-0">{aside}</aside> : null}
         </div>
-
-        {below}
+        {aside ? null : below}
 
         {/* Nothing under the composer, on purpose (Marko, 2026-09-02: "just
             have the chat input there & that's it"). The "Get started" setup

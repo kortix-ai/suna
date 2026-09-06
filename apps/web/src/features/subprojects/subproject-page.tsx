@@ -37,14 +37,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
@@ -67,7 +59,6 @@ import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
 import {
   DotsThreeIcon,
   FolderSimpleIcon,
-  NotePencilIcon,
   ShareNetworkIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
@@ -75,7 +66,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
-import { SubprojectMeta, useInvalidateSubproject } from './subproject-sections';
+import { SubprojectAside } from './subproject-aside';
+import { SubprojectRecents } from './subproject-recents';
+import { useInvalidateSubproject } from './subproject-sections';
 
 /** The grants naming this subproject. Orphaned rows (the block was deleted)
  *  are kept — they are inert, and hiding them hides the thing to clean up. */
@@ -148,11 +141,12 @@ function SubprojectBody({
       toolbar={
         <SubprojectToolbar projectId={projectId} subproject={subproject} canManage={canManage} />
       }
-      // Nothing under the composer — the same rule the project home follows
-      // (Marko, 2026-09-02: "just have the chat input there & that's it").
-      // Sessions are in the sidebar under the folder; instructions, context,
-      // schedules and access are one press away in the `⋯` menu (user,
-      // 2026-09-04).
+      // Two columns (user, 2026-09-06, after Claude's project page): the
+      // composer with the subproject's recent sessions under it on the left,
+      // and what it owns — instructions, context, schedules, access — as one
+      // panel on the right, no drawer.
+      below={<SubprojectRecents projectId={projectId} slug={subproject.slug} />}
+      aside={<SubprojectAside projectId={projectId} subproject={subproject} canManage={canManage} />}
     />
   );
 }
@@ -218,7 +212,6 @@ function SubprojectToolbar({
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE).allowed === true;
   const accountId = useProjectAccountId(projectId);
   const [shareOpen, setShareOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(subproject.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -358,11 +351,6 @@ function SubprojectToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuItem onSelect={() => setTimeout(() => setEditOpen(true), 0)}>
-              <NotePencilIcon />
-              Instructions, context & schedules…
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">
               Sessions here are readable by
             </DropdownMenuLabel>
@@ -413,32 +401,11 @@ function SubprojectToolbar({
         />
       ) : null}
 
-      {/* What the subproject owns, edited off the page: the home surface stays
-          bare, and the rows keep their editors exactly as they were. */}
-      <Sheet open={editOpen} onOpenChange={setEditOpen}>
-        <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-xl">
-          <SheetHeader className="border-border shrink-0 space-y-1 border-b px-5 py-4 pr-12 text-left">
-            <SheetTitle className="text-base font-medium">{subproject.name}</SheetTitle>
-            <SheetDescription className="text-xs text-pretty">
-              What the agent is told, what it reads first, what runs on its own, and who may use it.
-            </SheetDescription>
-          </SheetHeader>
-          <SheetBody className="min-h-0 gap-0 px-3 py-3">
-            <SubprojectMeta
-              projectId={projectId}
-              subproject={subproject}
-              canManage={canManage}
-              className="px-0"
-            />
-          </SheetBody>
-        </SheetContent>
-      </Sheet>
-
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title={`Delete ${subproject.name}?`}
-        description="The block is removed from kortix.yaml and its triggers lose the back-reference. Its sessions are kept, but members granted only this subproject stop seeing them."
+        description={`kortix-${subproject.slug}.yaml is removed from the repository and its triggers lose the back-reference. Its sessions are kept, but members granted only this subproject stop seeing them.`}
         confirmLabel="Delete"
         confirmVariant="destructive"
         isPending={remove.isPending}

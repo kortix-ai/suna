@@ -133,17 +133,13 @@ test.describe('27 — Subprojects', () => {
       await expect(
         page.getByRole('button', { name: 'Select subproject', exact: true }),
       ).toContainText('Marketing');
-      // What the subproject owns opens from the `⋯` menu in a side sheet; the
-      // page itself stays the bare home surface.
-      await page.getByRole('button', { name: 'Subproject actions', exact: true }).click();
-      await page.getByRole('menuitem', { name: /Instructions, context/ }).click();
-      const instructionsRow = page.getByRole('button', { name: /^Instructions/ });
+      // What the subproject owns is a panel beside the composer (user,
+      // 2026-09-06): one section each, opened from its title.
+      const instructionsRow = page.getByRole('button', { name: 'Instructions', exact: true });
       await expect(instructionsRow).toBeVisible();
-      await expect(page.getByRole('button', { name: /^Context/ })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^Scheduled/ })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^Context/ })).toContainText(
-        'Files the agent reads first',
-      );
+      await expect(page.getByRole('button', { name: 'Context', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Scheduled', exact: true })).toBeVisible();
+      await expect(page.getByText('Files the agent reads first.', { exact: true })).toBeVisible();
 
       // The sidebar picked up the new row without a reload.
       await expect(
@@ -175,7 +171,7 @@ test.describe('27 — Subprojects', () => {
       });
 
       const instructions = 'Always write in British English.';
-      // The editor lives inside the Instructions row: open it first. Its
+      // The editor lives inside the Instructions section: open it first. Its
       // textarea carries `aria-label="Instructions"`; Save only exists while
       // the draft differs from what is saved.
       await instructionsRow.click();
@@ -199,11 +195,6 @@ test.describe('27 — Subprojects', () => {
           { timeout: 20_000 },
         )
         .toBe(instructions);
-
-      // The sheet is modal: close it so the composer underneath is reachable,
-      // the same way a person would before typing.
-      await page.getByRole('button', { name: 'Close', exact: true }).click();
-      await expect(page.getByRole('dialog', { name: 'Marketing', exact: true })).toBeHidden();
 
       // ── 4. A send carries `subproject` in the create body ─────────────
       // Session CREATE cannot boot in the local profile (no sandbox provider),
