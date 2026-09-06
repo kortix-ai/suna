@@ -47,6 +47,7 @@ import {
   startPiWorkerPoolMaintenance,
   stopPiWorkerPoolMaintenance,
 } from './platform/services/pi-worker-pool';
+import { maintainPlatinumPiWorkerPool } from './platform/services/pi-worker-pool-platinum';
 import { handleAppPublicRequest, resolveAppRequest } from './apps/public-proxy';
 import { appWsHandlers, prepareAppWsUpgrade } from './apps/ws-proxy';
 import { authRouter } from './auth';
@@ -1504,6 +1505,13 @@ async function startSingletonWorkers() {
   // creates claim instead of cold-creating. No-op unless
   // KORTIX_PI_WORKER_POOL_TARGET > 0.
   startPiWorkerPoolMaintenance();
+  // The same pool on Platinum: its registry is the sandbox NAME (Platinum has
+  // no label mutation), so it lives in its own module and starts beside the
+  // Daytona one. Both are no-ops unless KORTIX_PI_WORKER_POOL_TARGET > 0.
+  if ((config.ALLOWED_SANDBOX_PROVIDERS ?? []).includes('platinum')) {
+    void maintainPlatinumPiWorkerPool();
+    setInterval(() => void maintainPlatinumPiWorkerPool(), 5 * 60_000);
+  }
   startAuditWebhookWorker();
   startAuditReconciliationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row

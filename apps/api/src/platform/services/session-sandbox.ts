@@ -55,6 +55,7 @@ import {
   getProvider,
 } from '../providers';
 import { claimParkedPiWorkerBox, maintainPiWorkerPool } from './pi-worker-pool';
+import { claimParkedPlatinumBox, maintainPlatinumPiWorkerPool } from './pi-worker-pool-platinum';
 import { selectProvider } from './provider-balancer';
 import { recordProviderEvent } from './provider-events';
 import { ProvisionTimeline } from './provision-timeline';
@@ -632,7 +633,21 @@ export async function provisionSessionSandbox(opts: {
         // (session token + gateway URL included), so the box boots the same
         // session either way; null falls through to the cold create unchanged.
         const pooledClaim =
-          opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
+          opts.metadata?.pi_worker_boot === true && providerName === 'platinum'
+            ? await claimParkedPlatinumBox(
+                providerCreateInput.envVars ?? {},
+                // The rename IS the de-registration on Platinum (no label or
+                // metadata mutation exists), so the claim hands the box the
+                // exact name a cold create would have given it.
+                `kortix-${sandbox.sandboxId}-a0`,
+              ).catch((err) => {
+                console.warn(
+                  `[session-sandbox] platinum pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
+                  err,
+                );
+                return null;
+              })
+          : opts.metadata?.pi_worker_boot === true && providerName === 'daytona'
             ? await claimParkedPiWorkerBox(providerCreateInput.envVars ?? {}).catch((err) => {
                 console.warn(
                   `[session-sandbox] pi pool claim errored for ${sandbox.sandboxId}; cold create:`,
@@ -739,6 +754,7 @@ export async function provisionSessionSandbox(opts: {
         }
         // Refill toward target after every pi boot — a consumed claim leaves a
         // hole, and a claim miss means the pool is empty. Fire-and-forget.
+        if (opts.metadata?.pi_worker_boot === true && providerName === 'platinum') void maintainPlatinumPiWorkerPool();
         if (opts.metadata?.pi_worker_boot === true && providerName === 'daytona') {
           void maintainPiWorkerPool();
         }
