@@ -1,5 +1,5 @@
 /**
- * The pi worker pool on PLATINUM — parked microVMs claimed at session create,
+ * The pi worker pool on PLATINUM — parked CELLS claimed at session create,
  * the same accelerator `pi-worker-pool.ts` gives a Daytona deployment.
  *
  * Why a second module rather than a provider seam inside that one: its whole
@@ -26,6 +26,7 @@ import { config } from '../../config';
 import { ensurePiWorkerImage } from '../../snapshots/builder';
 import { withTimeout } from '../../shared/with-timeout';
 import { providerAutoStopBackstopMinutes } from '../providers';
+import { CELL_PORT, buildCellCreateBody } from '../providers/platinum';
 import type { ClaimedPiWorkerBox } from './pi-worker-pool';
 
 const PARK_PREFIX = 'pi-park-';
@@ -139,22 +140,43 @@ async function stillParked(externalId: string): Promise<PlatinumParkedBox | null
   }
 }
 
-async function createParked(templateId: string, contentHash: string): Promise<void> {
+/**
+ * A PARK IS A CELL, because the session it is parked for is one.
+ *
+ * This used to create a microVM from the pi-worker template, which was wrong
+ * in two ways at once and cost a session every time it won a claim.
+ *
+ * The runtime: a claimed park becomes the session's box, so a microVM park
+ * handed a pi session a microVM no matter what the cell path did — the create
+ * that would have made a cell never ran. Measured on dev 2026-09-06, session
+ * 4b61bea9: it claimed a parked microVM, then sat in `open-session:starting`
+ * for 173 s and ended `runtime-asset refresh not delivered / unreachable`.
+ *
+ * The port: `exposed_ports` is the READ-ONLY field a sandbox row shows a
+ * caller, and the create route ignores it (Platinum now answers 400 for it —
+ * kortix-ai/platinum#924). So every park ever made had NO port open, and the
+ * claim POST could not have reached it. `expose` is the field that opens one.
+ *
+ * Both are fixed by building the same body a session's own cell create builds,
+ * so a park and the thing it stands in for cannot drift apart again.
+ */
+async function createParked(_templateId: string, contentHash: string): Promise<void> {
   const token = newParkToken();
+  const body = buildCellCreateBody({
+    name: parkName(contentHash, token),
+    envVars: {
+      KORTIX_PI_PARK: '1',
+      KORTIX_PI_PARK_TOKEN: token,
+      KORTIX_API_URL: `${(config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
+      KORTIX_SERVICE_PORT: String(CELL_PORT),
+    },
+    metadata: { 'kortix.piworker-park': '1' },
+  }) as Record<string, unknown>;
   await platinumJson('/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000', {
     method: 'POST',
     body: JSON.stringify({
-      template: templateId,
-      name: parkName(contentHash, token),
-      exposed_ports: [8000],
+      ...body,
       auto_stop_minutes: Math.max(1, config.KORTIX_PI_WORKER_POOL_MAX_AGE_MINUTES),
-      envVars: {
-        KORTIX_PI_PARK: '1',
-        KORTIX_PI_PARK_TOKEN: token,
-        KORTIX_API_URL: `${(config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1$/, '')}/v1`,
-        KORTIX_SERVICE_PORT: '8000',
-      },
-      metadata: { 'kortix.managed': 'true', 'kortix.piworker-park': '1' },
     }),
   });
 }
@@ -166,13 +188,13 @@ async function removeBox(externalId: string): Promise<void> {
 /** The claim URL for a parked box — the API's own sandbox proxy, as sessions use. */
 export function claimUrl(externalId: string): string {
   const root = (config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1\/router$/, '').replace(/\/v1$/, '');
-  return `${root}/v1/p/${externalId}/8000/kortix/claim`;
+  return `${root}/v1/p/${externalId}/${CELL_PORT}/kortix/claim`;
 }
 
 /** The base URL a claimed box serves the session on. */
 export function claimedBaseUrl(externalId: string): string {
   const root = (config.KORTIX_URL ?? '').replace(/\/+$/, '').replace(/\/v1\/router$/, '').replace(/\/v1$/, '');
-  return `${root}/v1/p/${externalId}/8000`;
+  return `${root}/v1/p/${externalId}/${CELL_PORT}`;
 }
 
 /**

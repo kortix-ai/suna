@@ -72,8 +72,11 @@ describe('reading the pool out of a sandbox list', () => {
 
 describe('the URLs a claim uses', () => {
   test('claim and base URLs ride the API\'s own sandbox proxy, with no double /v1', () => {
-    expect(claimUrl('sbx_9')).toMatch(/\/v1\/p\/sbx_9\/8000\/kortix\/claim$/);
-    expect(claimedBaseUrl('sbx_9')).toMatch(/\/v1\/p\/sbx_9\/8000$/);
+    // 8080, not 8000: a park is a CELL, and a cell's worker listens on 8080
+    // while the microVM agent listens on 8000. A claim POST to 8000 reaches
+    // nothing, which is indistinguishable from a park that was never claimed.
+    expect(claimUrl('sbx_9')).toMatch(/\/v1\/p\/sbx_9\/8080\/kortix\/claim$/);
+    expect(claimedBaseUrl('sbx_9')).toMatch(/\/v1\/p\/sbx_9\/8080$/);
     expect(claimUrl('sbx_9')).not.toMatch(/\/v1\/v1\//);
     expect(claimedBaseUrl('sbx_9')).not.toMatch(/\/v1\/v1\//);
     expect(claimUrl('sbx_9').startsWith(claimedBaseUrl('sbx_9'))).toBe(true);
