@@ -15,7 +15,7 @@
  * a Dockerfile that can't build in the cloud is as much a broken project as a
  * malformed manifest, and both are decidable from text alone.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
 import {
   DEPRECATED_KORTIX_CLI_ALIASES,
@@ -24,6 +24,10 @@ import {
   formatIssues,
   manifestFormatForPath,
   validateManifest,
+  parseManifestText,
+  subprojectSlugFromPath,
+  validateManifestSetV2,
+  validateSubprojectFileV2,
 } from '@kortix/manifest-schema';
 import { extractSandboxTemplates } from '@kortix/shared/sandbox';
 import { lintDockerfile } from '../dockerfile-lint.ts';
@@ -100,6 +104,46 @@ function lintSandboxDockerfiles(
 }
 
 /** One line per agent: its assigned connectors + Kortix-CLI powers. */
+/**
+ * Every `kortix-<slug>.yaml` beside the root manifest, validated alone and as
+ * a set with the root. Issues carry the file name so a report over three
+ * files still reads. A v1 root (or one that failed to parse) has no set.
+ */
+function validateSubprojectFiles(
+  manifestPath: string,
+  parsedRoot: Record<string, unknown> | null,
+): ManifestIssue[] {
+  const issues: ManifestIssue[] = [];
+  if (!parsedRoot || Number(parsedRoot.kortix_version) !== 2) return issues;
+  const dir = dirname(manifestPath);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return issues;
+  }
+  const subprojects: Array<{ slug: string; path: string; raw: Record<string, unknown> }> = [];
+  for (const name of names.sort()) {
+    const slug = subprojectSlugFromPath(name);
+    if (!slug) continue;
+    let raw: Record<string, unknown>;
+    try {
+      raw = parseManifestText(readFileSync(resolve(dir, name), 'utf8'), 'yaml');
+    } catch (err) {
+      issues.push({
+        path: name,
+        message: `not valid YAML: ${err instanceof Error ? err.message : String(err)}`,
+        severity: 'error',
+      });
+      continue;
+    }
+    validateSubprojectFileV2(raw, slug, issues, { path: name });
+    subprojects.push({ slug, path: name, raw });
+  }
+  validateManifestSetV2({ root: parsedRoot, subprojects }, issues);
+  return issues;
+}
+
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
   if (!Array.isArray(agents) || agents.length === 0) return '';
@@ -175,6 +219,11 @@ export function runValidate(argv: string[]): number {
   }
 
   const result = validateManifest(raw, manifestFormatForPath(filePath));
+  // Subprojects are their own files beside the root manifest
+  // (`kortix-<slug>.yaml`, spec 2026-09-06). Validate each one's shape, then
+  // the SET — unique agent names, `from` references, default agents, trigger
+  // back-references — so `kortix validate` sees what the API sees.
+  const subprojectIssues = validateSubprojectFiles(filePath, result.parsed);
 
   // Manifest issues first, then the Dockerfile lint — one merged report, one
   // exit code. A Dockerfile `error` fails `validate` exactly like a schema
@@ -182,6 +231,7 @@ export function runValidate(argv: string[]): number {
   // stop it without any extra wiring.
   const issues = [
     ...result.issues,
+    ...subprojectIssues,
     ...(flags.dockerfileLint ? lintSandboxDockerfiles(result.parsed, filePath) : []),
   ];
   const valid = !issues.some((i) => i.severity === 'error');
