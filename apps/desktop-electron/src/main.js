@@ -19,13 +19,16 @@ const {
   app,
   BrowserWindow,
   Menu,
+  dialog,
   shell,
   ipcMain,
   nativeTheme,
+  safeStorage,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
+const basicAuth = require('./basic-auth');
 const {
   DESKTOP_CHROME_JS,
   configureNativeWindowControls,
@@ -37,7 +40,13 @@ const {
 // and so we never inherit another "Kortix" app's stale Chromium state (per-site
 // zoom / GPU cache) — a real cause of blurry rendering. `${name} Desktop` keeps
 // us off the bare "Kortix" Application Support folder.
-app.setPath('userData', path.join(app.getPath('appData'), `${app.getName()} Desktop`));
+// KORTIX_DESKTOP_USER_DATA points a launch at an isolated profile (automated
+// runs, side-by-side test sessions) without touching the real one.
+app.setPath(
+  'userData',
+  process.env.KORTIX_DESKTOP_USER_DATA ||
+    path.join(app.getPath('appData'), `${app.getName()} Desktop`),
+);
 
 /* ─── Config ──────────────────────────────────────────────────────────── */
 
@@ -491,6 +500,225 @@ function navigateMainWindow(url) {
   mainWindow.focus();
 }
 
+/* ─── HTTP Basic credentials (dev/staging environment password) ────────────
+   Policy is basicAuth.decideChallenge(); this section owns the side effects:
+   the safeStorage-encrypted file userData/basic_auth.json, the per-session
+   memory, the dialog window, and the "was that rejected?" bookkeeping. */
+
+/** host → { user, password } for this process lifetime (remembered or not). */
+const sessionBasicCredentials = new Map();
+/** host → { source: 'env'|'stored'|'prompt', at } — last credential we sent. */
+const lastBasicAnswers = new Map();
+/** host → Promise resolving to the dialog result; dedupes parallel challenges. */
+const pendingBasicPrompts = new Map();
+
+function basicAuthStorePath() {
+  return path.join(app.getPath('userData'), 'basic_auth.json');
+}
+
+function readBasicAuthStore() {
+  try {
+    return basicAuth.parseStore(fs.readFileSync(basicAuthStorePath(), 'utf8'));
+  } catch {
+    return basicAuth.parseStore(null);
+  }
+}
+
+function writeBasicAuthStore(store) {
+  try {
+    fs.mkdirSync(path.dirname(basicAuthStorePath()), { recursive: true });
+    fs.writeFileSync(basicAuthStorePath(), basicAuth.serializeStore(store), { mode: 0o600 });
+  } catch (e) {
+    console.warn(`[kortix] could not write ${basicAuthStorePath()}: ${e}`);
+  }
+}
+
+function canRememberBasicCredential() {
+  try {
+    return safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
+}
+
+/** Remembered credential for `host` — memory first, then the encrypted file. */
+function loadBasicCredential(host) {
+  const inMemory = sessionBasicCredentials.get(host);
+  if (inMemory) return inMemory;
+  const entry = basicAuth.lookupHost(readBasicAuthStore(), host);
+  if (!entry || !canRememberBasicCredential()) return null;
+  try {
+    const password = safeStorage.decryptString(Buffer.from(entry.secret, 'base64'));
+    const cred = { user: entry.user, password };
+    sessionBasicCredentials.set(host, cred);
+    return cred;
+  } catch (e) {
+    // Keychain changed / different user account — the blob is unreadable.
+    console.warn(`[kortix] dropping unreadable saved credential for ${host}: ${e}`);
+    writeBasicAuthStore(basicAuth.removeHost(readBasicAuthStore(), host));
+    return null;
+  }
+}
+
+function rememberBasicCredential(host, cred, persist) {
+  sessionBasicCredentials.set(host, cred);
+  if (!persist || !canRememberBasicCredential()) return;
+  const secret = safeStorage.encryptString(cred.password).toString('base64');
+  writeBasicAuthStore(basicAuth.upsertHost(readBasicAuthStore(), host, { user: cred.user, secret }));
+}
+
+function forgetBasicCredential(host) {
+  sessionBasicCredentials.delete(host);
+  lastBasicAnswers.delete(host);
+  const store = readBasicAuthStore();
+  const had = !!basicAuth.lookupHost(store, host);
+  if (had) writeBasicAuthStore(basicAuth.removeHost(store, host));
+  return had;
+}
+
+function forgetBasicCredentialForAppHost() {
+  let host;
+  try {
+    host = new URL(resolveAppUrl()).hostname;
+  } catch {
+    return;
+  }
+  const had = forgetBasicCredential(host);
+  dialog.showMessageBox({
+    type: 'info',
+    message: had
+      ? `Forgot the saved environment password for ${host}.`
+      : `No environment password is saved for ${host}.`,
+    detail: had ? 'The next time this host asks, the sign-in dialog opens again.' : undefined,
+  });
+}
+
+/**
+ * Open the credential dialog. Resolves to { user, password, remember } or null
+ * on cancel/close. Parallel challenges for one host share one dialog.
+ */
+function promptForBasicCredential({ host, realm, user, error }) {
+  const pending = pendingBasicPrompts.get(host);
+  if (pending) return pending;
+
+  // The first challenge fires before the app has painted, while the main
+  // window is still hidden behind the splash. Chrome shows its dialog over a
+  // blank page; do the same — the dark main window is the parent.
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+    dismissSplash();
+    mainWindow.show();
+  }
+
+  const promise = new Promise((resolve) => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const win = new BrowserWindow({
+      width: 400,
+      height: 320,
+      parent,
+      modal: !!parent,
+      show: false,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      title: 'Sign in',
+      backgroundColor: '#141414',
+      webPreferences: {
+        preload: path.join(__dirname, 'basic-auth-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true,
+      },
+    });
+    win.setMenuBarVisibility(false);
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      console.log(`[kortix] Basic sign-in dialog for ${host}: ${result ? 'submitted' : 'cancelled'}.`);
+      ipcMain.removeListener('kortix:basic-auth:submit', onSubmit);
+      ipcMain.removeListener('kortix:basic-auth:cancel', onCancel);
+      pendingBasicPrompts.delete(host);
+      if (!win.isDestroyed()) win.destroy();
+      resolve(result);
+    };
+    const fromThisDialog = (event) => !win.isDestroyed() && event.sender === win.webContents;
+    const onSubmit = (event, payload) => {
+      if (!fromThisDialog(event)) return;
+      finish({
+        user: String(payload?.user ?? '').trim() || basicAuth.DEFAULT_USER,
+        password: String(payload?.password ?? ''),
+        remember: Boolean(payload?.remember),
+      });
+    };
+    const onCancel = (event) => {
+      if (fromThisDialog(event)) finish(null);
+    };
+    ipcMain.on('kortix:basic-auth:submit', onSubmit);
+    ipcMain.on('kortix:basic-auth:cancel', onCancel);
+    win.on('closed', () => finish(null));
+
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('kortix:basic-auth:init', {
+        host,
+        realm: realm || '',
+        user,
+        error,
+        canRemember: canRememberBasicCredential(),
+      });
+      win.show();
+    });
+    win.loadFile(path.join(__dirname, '..', 'assets', 'basic-auth.html'));
+  });
+  pendingBasicPrompts.set(host, promise);
+  return promise;
+}
+
+/** Answer one app-origin Basic challenge (env → remembered → dialog). */
+async function answerBasicChallenge(authInfo, callback) {
+  const host = authInfo.host;
+  const decision = basicAuth.decideChallenge({
+    host,
+    env: {
+      user: process.env.KORTIX_DESKTOP_BASIC_USER,
+      password: process.env.KORTIX_DESKTOP_BASIC_PASSWORD,
+    },
+    stored: loadBasicCredential(host),
+    lastAnswer: lastBasicAnswers.get(host) || null,
+    now: Date.now(),
+  });
+
+  if (decision.action === 'answer') {
+    console.log(`[kortix] Basic challenge from ${host}: answering from ${decision.source}.`);
+    lastBasicAnswers.set(host, { source: decision.source, at: Date.now() });
+    callback(decision.user, decision.password);
+    return;
+  }
+  console.log(`[kortix] Basic challenge from ${host}: asking the user.`);
+
+  if (decision.dropStored) {
+    console.warn(`[kortix] ${host} rejected the saved environment password — forgetting it.`);
+    forgetBasicCredential(host);
+  }
+  const result = await promptForBasicCredential({
+    host,
+    realm: authInfo.realm,
+    user: decision.user,
+    error: decision.error,
+  });
+  if (!result) {
+    // Cancel → the request fails and the page renders the 401 body, same as
+    // Chrome. A reload re-challenges.
+    lastBasicAnswers.delete(host);
+    callback();
+    return;
+  }
+  rememberBasicCredential(host, { user: result.user, password: result.password }, result.remember);
+  lastBasicAnswers.set(host, { source: 'prompt', at: Date.now() });
+  callback(result.user, result.password);
+}
+
 /* ─── Native menu (incl. hidden "Frontend URL" switcher) ───────────────────*/
 
 function buildMenu() {
@@ -542,6 +770,13 @@ function buildMenu() {
           clearUrlOverride();
           navigateMainWindow(appBaseUrl());
         },
+      },
+      { type: 'separator' },
+      {
+        // Drops the HTTP Basic credential remembered for the current app host
+        // (dev/staging environment password) so the next challenge asks again.
+        label: 'Forget Saved Environment Password',
+        click: () => forgetBasicCredentialForAppHost(),
       },
     ],
   };
@@ -723,32 +958,28 @@ if (!gotLock) {
   // Chrome shows its own username/password dialog for these. Electron does NOT:
   // if nothing handles 'login' the request is simply cancelled, so the window
   // renders the bare 401 body with no way to get past it. That is exactly what
-  // a dev build pointed at dev.kortix.com looks like.
+  // a dev build pointed at dev.kortix.com looked like before this handler.
+  //
+  // Order: KORTIX_DESKTOP_BASIC_PASSWORD env → credential remembered for this
+  // host → a native-style dialog (assets/basic-auth.html). Policy, including
+  // "was our last answer rejected?", is the pure decideChallenge() in
+  // src/basic-auth.js so it is unit-tested.
   //
   // The credential is answered ONLY for the configured app origin. Untrusted
   // in-app content (sandbox previews, iframes) can point at any host, and a
   // 401 Basic challenge is all an attacker host would need to harvest it.
   app.on('login', (event, _webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy && authInfo.scheme === 'basic') {
-      if (!isAppOriginChallenge(authInfo)) {
-        console.warn(
-          `[kortix] ignoring HTTP Basic challenge from ${authInfo.host} — not the app origin.`,
-        );
-        event.preventDefault();
-        callback();
-        return;
-      }
-      const password = process.env.KORTIX_DESKTOP_BASIC_PASSWORD;
-      if (password) {
-        event.preventDefault();
-        callback(process.env.KORTIX_DESKTOP_BASIC_USER || 'kortix', password);
-        return;
-      }
+    if (authInfo.isProxy || authInfo.scheme !== 'basic') return;
+    if (!isAppOriginChallenge(authInfo)) {
       console.warn(
-        `[kortix] ${authInfo.host} requires HTTP Basic auth and no credential is set. ` +
-          `Re-run with KORTIX_DESKTOP_BASIC_PASSWORD=… (user defaults to "kortix").`,
+        `[kortix] ignoring HTTP Basic challenge from ${authInfo.host} — not the app origin.`,
       );
+      event.preventDefault();
+      callback();
+      return;
     }
+    event.preventDefault();
+    answerBasicChallenge(authInfo, callback);
   });
 
   app.on('second-instance', (_event, argv) => {

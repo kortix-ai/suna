@@ -127,12 +127,9 @@ test.describe('18 — Kortix Apps UI', () => {
       page.off('request', recordDisabledRequest);
 
       // Enable through the flag list — the only activation path. The gate
-      // screen's "Feature flags" row is a real link now
-      // (`feature-gate-screen.tsx`), to
-      // `/projects/[id]/config?section=feature-flags` — Feature flags
-      // graduated out of the Settings overlay's Experimental tab onto the
-      // Customize bar's Settings tab, same as every other project-config pane
-      // (`settings-tabs.ts` GRADUATED map).
+      // screen's "Feature flags" row is a real link
+      // (`feature-gate-screen.tsx`) to `/projects/[id]/settings/feature-flags`,
+      // the Settings overlay's deep-link route for its Feature flags tab.
       await page.getByRole('link', { name: 'Feature flags' }).click();
       const panel = page.locator('body');
       await expect(

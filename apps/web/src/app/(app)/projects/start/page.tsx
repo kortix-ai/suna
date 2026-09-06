@@ -3,7 +3,9 @@
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { useAuth } from '@/features/providers/auth-provider';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { SignOutIcon } from '@phosphor-icons/react';
 import {
   clearAutoProjectSuppression,
@@ -13,9 +15,8 @@ import {
 } from '@/lib/onboarding/ensure-first-project';
 import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { resolveLandingDestination } from '@/lib/onboarding/resolve-landing-destination';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts } from '@kortix/sdk';
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -67,29 +68,26 @@ export default function ProjectStartPage() {
     null,
   );
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // The guard has done its one job the moment this surface renders: the user
   // has now been TOLD their last workspace is gone and offered a way back
-  // (below). Leaving the flag set past this point would silently block
-  // auto-provision for the next account this tab visits that happens to be
-  // empty too — it's a single process-wide sessionStorage key, not scoped to
-  // the account that triggered it. Session-scoped by design (see
-  // ensure-first-project.ts): a later sign-in or a fresh tab still
-  // auto-provisions normally, clear or not.
+  // (below). `isAutoProjectSuppressed` binds the flag to `{accountId, at}`
+  // (`ensure-first-project.ts`), so a stale flag can no longer suppress
+  // auto-provision for a DIFFERENT account — but nothing un-suppresses THIS
+  // account's own retries without this clear: leaving it set would keep
+  // showing this SAME account the "suppressed" terminal on every later visit
+  // to this tab, past the one deliberate delete it was recorded for. Session-
+  // scoped by design (see ensure-first-project.ts): a later sign-in or a
+  // fresh tab still auto-provisions normally, clear or not.
   useEffect(() => {
     if (terminal === 'suppressed') clearAutoProjectSuppression();
   }, [terminal]);
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: !!user,
-    staleTime: 60_000,
-    retry: 3,
-  });
+  // `retry: 3` is this reader's own budget, kept verbatim: the landing
+  // destination is resolved FROM this list, so one transient failure here
+  // strands the user on a spinner with nowhere to go.
+  const accountsQuery = useAccountsList({ retry: 3 });
 
   const resolve = useCallback(async () => {
     if (resolving.current) return;
@@ -99,18 +97,30 @@ export default function ProjectStartPage() {
     resolving.current = true;
     attempts.current += 1;
 
-    const suppressed = isAutoProjectSuppressed();
-
     try {
       // Every membership is a candidate, not just the remembered/first one: a
       // stale persisted selection (a team where the user is a plain member
       // with zero grants) used to end here as a false "No workspace yet"
       // while the personal account, in the same list, held their projects.
+      //
+      // `isAccountSuppressed` is passed straight through, NOT pre-reduced to
+      // a single boolean here: suppression is bound per-account
+      // (ensure-first-project.ts), and this resolver only ever evaluates
+      // auto-create for ONE primary candidate account
+      // (resolve-landing-destination.ts). Computing `.some(...)` over every
+      // account the user owns — the earlier version of this fix — let a flag
+      // set on account A suppress creation on an unrelated account B owned
+      // by the same user, which is the same cross-account leak this task
+      // exists to close, just at a narrower scope. `isAutoProjectSuppressed`
+      // itself is still identity-safe on its own: never against a persisted
+      // `selectedAccountId`, which can be stale left over from a previous
+      // account — the resolver applies it only to the account IT resolves
+      // as primary from the freshly-fetched, server-verified `accounts` list.
       const resolution = await resolveLandingDestination({
         accounts,
         selectedAccountId,
         preferredProjectId: readLastProjectId(user?.id),
-        suppressed,
+        isAccountSuppressed: isAutoProjectSuppressed,
         mayCreate: navigationMayCreateProject(),
       });
 
@@ -130,7 +140,7 @@ export default function ProjectStartPage() {
       // project, or the rare cross-site-navigation edge. `/projects` is a
       // redirect back to THIS route (Task 21), so bouncing there would loop
       // forever — render the terminal state inline instead.
-      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed }));
+      setTerminal(classifyLandingTerminal({ canCreate: resolution.canCreate, suppressed: resolution.suppressed }));
     } catch (err) {
       // A concurrent, healthy provision — this account's OTHER tab or entry
       // point is mid-create with the same persisted idempotency key — is not
@@ -204,22 +214,16 @@ export default function ProjectStartPage() {
 /**
  * Both stuck states on this route (terminal and error) used to be dead ends:
  * no app chrome renders here, so a user parked on "No workspace yet" had no
- * way to sign out and try another account. `signOut` (auth-provider) already
- * clears every piece of persisted client state — including the stale account
- * selection that used to cause the false terminal.
+ * way to sign out and try another account. `performSignOut` clears every piece
+ * of persisted client state — including the stale account selection that used
+ * to cause the false terminal — and then leaves on a document load.
  *
  * Deliberately OUTSIDE `ProjectStartEmpty`: the no-permission case pins "no
  * <a>/<button> in the empty surface" (landing-terminal.test.tsx), and that
  * contract is about create controls that would 403 — not about this exit.
  */
 function StartSignOutButton() {
-  const router = useRouter();
-  const { signOut } = useAuth();
   const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    router.prefetch('/auth');
-  }, [router]);
 
   return (
     <div className="absolute top-4 right-4 sm:top-6 sm:right-6">
@@ -228,13 +232,14 @@ function StartSignOutButton() {
         size="sm"
         className="gap-1.5 rounded-full"
         disabled={pending}
-        onClick={async () => {
+        onClick={() => {
           setPending(true);
-          await signOut();
-          // nav-contract: prefetch-only — the navigation must follow `signOut`,
-          // so an anchor would race the sign-out it is meant to complete. The
-          // effect above warms `/auth`.
-          router.replace('/auth');
+          // `performSignOut` owns the navigation and ends it on a DOCUMENT
+          // load, so there is nothing to prefetch and nothing to push: a soft
+          // transition would carry this account's route cache into the next
+          // one's session. `pending` is never cleared because the document is
+          // replaced, not re-rendered.
+          void performSignOut();
         }}
       >
         {pending ? (

@@ -1,5 +1,6 @@
 'use client';
 
+import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -9,7 +10,6 @@ import {
   InputGroupSearchIcon,
   InputGroupSearchInput,
 } from '@/components/ui/input-group';
-import Loading from '@/components/ui/loading';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import {
@@ -20,7 +20,7 @@ import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk, useProjectAccountId } from '@kortix/sdk/react';
-import { MagnifyingGlassIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
+import { MagnifyingGlassIcon, SparkleIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
@@ -121,19 +121,11 @@ export function SkillsPage({ projectId }: { projectId: string }) {
   // mismatched on a row that is centred, so both edges were off.
   const createButton = (label: string) =>
     canWrite ? (
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => configure.start(newConfigPrompt('skill'))}
-        disabled={configure.pending}
-      >
-        {configure.pending ? (
-          <Loading className="size-4 shrink-0" />
-        ) : (
-          <PlusIcon className="size-4" />
-        )}
-        {label}
-      </Button>
+      <NewEntityMenu
+        label={label}
+        pending={configure.pending}
+        onChat={() => configure.start(newConfigPrompt('skill'))}
+      />
     ) : null;
 
   return (

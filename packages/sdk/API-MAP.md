@@ -30,7 +30,8 @@ and `./server` exist because React is a peer dependency and `./server` staticall
 imports `node:async_hooks`, respectively. The 20 legacy subpaths
 (`@kortix/sdk/projects-client`, `/turns`, `/files`, `/session`, `/event-stream`,
 the zustand stores, …) are `@deprecated` aliases that still resolve — import from
-the root instead. `./internal/*` backs `apps/web`'s zustand stores and is not
+the root instead. That the root really does cover all of them is asserted by
+`src/root-canonical.test.ts`, not merely claimed here. `./internal/*` backs `apps/web`'s zustand stores and is not
 reachable from `window.Kortix`; treat it as visible implementation detail, not
 designed API.
 
@@ -313,7 +314,7 @@ Map exists, but these belong to the platform app, not the agent SDK:
 | Channels (Slack/email/Meet installs) | 🟡 client fns ✅ in SDK, hooks still web-local — now also includes the Slack file get/upload proxy and Meet `speak` (client + facade wired; see §17) |
 | Triggers, project secrets, change-requests | 🟡→partial ✅ — `useProjectTriggers`/`useProjectSecrets`/`useChangeRequests` now in `@kortix/sdk/react`; the pre-existing web hooks for these haven't migrated onto them yet |
 | Connector runtime | 🟡 web-local |
-| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Not on the ROOT barrel (deliberate — it's an opencode-runtime surface, reached via the opencode-client subpath) |
+| kortix-master daemon family (tasks/tickets/projects/milestones/credentials/services) | ✅ client in SDK (`opencode/kortix-master.ts`, re-exported via `@kortix/sdk/opencode-client`) + hooks in `@kortix/sdk/react` (`use-kortix-master.ts`); web's `hooks/kortix/*` files are now thin re-export wrappers over them. Reachable from the root barrel like the rest of the runtime client; `@kortix/sdk/opencode-client` is a deprecated alias for the same names |
 
 ### To make the SDK the whole data layer
 1. ~~Add a `files` client to the SDK~~ — **done**: `@kortix/sdk/files` wraps the daemon `/file` + `/find` endpoints (12 ops). Remaining: move `features/files` hooks in; **collapse the `features/project-files` twin** into it (backend-parameterized).

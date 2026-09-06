@@ -39,7 +39,7 @@ function seededCatalog(): Permission[] {
     );
     for (const insert of inserts) {
       const columns = insert[1].split(',').map((c) => c.trim().replace(/"/g, ''));
-      for (const row of insert[2].matchAll(/\(([\s\S]*?)\)(?=\s*(?:,\s*\(|\s*ON CONFLICT|\s*$))/g)) {
+      for (const row of insert[2].matchAll(/\(([\s\S]*?)\)(?=\s*(?:,\s*\(|\s*ON CONFLICT|\s*$))/gi)) {
         const values = splitValues(row[1]);
         if (values.length !== columns.length) continue;
         const record: Record<string, string> = {};
@@ -121,9 +121,11 @@ function seededRolePermissions(): Map<string, string[]> {
       }
     }
     // The single-row `SELECT r.role_id, '<action>' FROM kortix.iam_roles r WHERE key = '<key>'`
-    // shape used by additive follow-up migrations.
+    // shape used by additive follow-up migrations. Post-cutover ones target the
+    // BASE TABLE `kortix.role_permissions`: `kortix.iam_role_actions` is a view
+    // now, and a view cannot take ON CONFLICT.
     for (const one of sql.matchAll(
-      /INSERT INTO kortix\.iam_role_actions \(role_id, action\)\s*SELECT r\.role_id, '([^']+)'[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'/gi,
+      /INSERT INTO kortix\.(?:iam_role_actions|role_permissions) \(role_id, action\)\s*SELECT r\.role_id, '([^']+)'[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'/gi,
     )) {
       const key = `${one[2]}:${one[3]}`;
       out.set(key, [...(out.get(key) ?? []), one[1]]);
@@ -158,7 +160,7 @@ function sorted(set: Iterable<string>): string[] {
 
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(43);
+    expect(PROJECT_LEAVES.length).toBe(45);
     expect(ACCOUNT_LEAVES.length).toBe(27);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
@@ -227,14 +229,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(43);
+    expect(fold.totalCount).toBe(45);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(43);
+    expect(fold.selectedCount).toBe(45);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

@@ -56,8 +56,6 @@ export const PROJECT_ACTIONS = {
    *  a custom role can grant editing without granting deletion. */
   PROJECT_DELETE: 'project.delete',
 
-  PROJECT_CR_OPEN: 'project.cr.open',
-  PROJECT_CR_MERGE: 'project.cr.merge',
 
   PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
   PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
@@ -85,6 +83,8 @@ export const PROJECT_ACTIONS = {
   PROJECT_GITOPS_READ: 'project.gitops.read',
   PROJECT_GITOPS_PUSH: 'project.gitops.push',
   PROJECT_GITOPS_MERGE: 'project.gitops.merge',
+  PROJECT_GITOPS_REF_ANY: 'project.gitops.ref.any',
+  PROJECT_GITOPS_REF_DELETE: 'project.gitops.ref.delete',
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
   PROJECT_CONNECTOR_READ: 'project.connector.read',

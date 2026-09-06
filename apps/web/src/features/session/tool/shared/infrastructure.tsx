@@ -847,6 +847,35 @@ export const ToolOutcomeContext = createContext<ToolOutcome>('ok');
 
 export const StalePendingContext = createContext(false);
 
+/**
+ * Whether the turn that owns this part is STILL RUNNING.
+ *
+ * `ToolRunningContext` cannot answer this, and that is the bug this exists to
+ * close. A tool call is created `pending` with an empty `input`, and its
+ * arguments arrive afterwards as streamed JSON in `state.raw`. For the frames
+ * between those two events, a live call is byte-for-byte identical to a
+ * leftover `pending` part from a run that died — same status, same empty input,
+ * same absent `raw` — so `tool-part-renderer`'s stale test matched both and
+ * `ToolRunningContext` reported `false` for a call that had only just started.
+ *
+ * The visible cost was a row contradicting the line directly beneath it: the
+ * transcript rendered "No content received" over a `write` while the SDK's own
+ * status line, reading THAT SAME PART, rendered "Making changes..."
+ * (`packages/sdk/src/core/turns/state.ts`). One part, two views, opposite
+ * verdicts — which is what made a working session look frozen.
+ *
+ * The part alone cannot settle it, so the answer comes from one level up. The
+ * turn already knows whether it is working (`session-chat.tsx`'s `working`), and
+ * that single boolean is the whole discriminator: while the turn is live, an
+ * input-less pending part is a call that has not spoken YET; once the turn is
+ * over, the same part is a call that never will.
+ *
+ * Defaults to `false` so a surface that renders parts outside a live turn — the
+ * Advanced panel, `/debug/tools`, a restored transcript — keeps the settled
+ * reading without opting in.
+ */
+export const TurnLiveContext = createContext(false);
+
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
 export {

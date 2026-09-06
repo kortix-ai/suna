@@ -42,13 +42,17 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { CapabilityPageShell } from '@/features/workspace/capabilities/shared/capability-page-shell';
+import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import {
+  newConfigPrompt,
+  useConfigureThread,
+} from '@/features/workspace/customize/use-configure-thread';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import {
   type ProjectTrigger,
   deleteProjectTrigger,
   fireProjectTrigger,
-  getProject,
   listProjectTriggers,
   setProjectTriggersActivation,
   updateProjectTrigger,
@@ -226,6 +230,7 @@ export function ScheduleView({ projectId }: { projectId: string }) {
 
   const [query, setQuery] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const configure = useConfigureThread(projectId);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProjectTrigger | null>(null);
 
@@ -332,15 +337,12 @@ export function ScheduleView({ projectId }: { projectId: string }) {
           <div className="flex items-center gap-2">
             <TriggerActivationMenu projectId={projectId} />
             {canWrite ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                className="gap-1.5"
-                onClick={() => setCreateOpen(true)}
-              >
-                <PlusIcon className="size-4 shrink-0" />
-                {copy.createLabel}
-              </Button>
+              <NewEntityMenu
+                label={copy.createLabel}
+                pending={configure.pending}
+                onChat={() => configure.start(newConfigPrompt('trigger'))}
+                manual={{ onSelect: () => setCreateOpen(true) }}
+              />
             ) : null}
           </div>
         ) : undefined

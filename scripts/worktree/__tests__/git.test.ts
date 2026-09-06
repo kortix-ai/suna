@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { branchExists, remoteBranchExists, worktreeAddArgs } from '../lib';
+import { branchExists, remoteBranchExists, removeWorktree, worktreeAddArgs } from '../lib';
 
 const git = (cwd: string, ...args: string[]) => {
   const r = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'pipe' });
@@ -58,3 +58,50 @@ describe('worktreeAddArgs', () => {
     expect(git(wt, 'rev-parse', '--abbrev-ref', '@{upstream}')).toBe('origin/feature');
   });
 });
+
+describe('removeWorktree', () => {
+  /** `fixture()` clone plus a worktree at `<clone>/../wt-<n>` checked out on `feature`. */
+  function withWorktree() {
+    const root = fixture();
+    const path = join(root, '..', 'wt-removal');
+    git(root, 'worktree', 'add', '-q', path, 'origin/feature');
+    return { root, path };
+  }
+
+  test('a clean worktree is removed', () => {
+    const { root, path } = withWorktree();
+    removeWorktree(root, path, false);
+    expect(existsSync(path)).toBe(false);
+    expect(git(root, 'worktree', 'list')).not.toContain(path);
+  });
+
+  test('a dirty worktree throws instead of reporting a removal that did not happen', () => {
+    const { root, path } = withWorktree();
+    writeFileSync(join(path, 'tracked.txt'), 'edit');
+    git(path, 'add', 'tracked.txt');
+
+    expect(() => removeWorktree(root, path, false)).toThrow(/git worktree remove failed/);
+
+    // The whole point: the caller must not go on to drop the registry slot for a
+    // directory that is still on disk and still registered with git.
+    expect(existsSync(path)).toBe(true);
+    expect(git(root, 'worktree', 'list')).toContain(path);
+  });
+
+  test('the thrown message names the remedy', () => {
+    const { root, path } = withWorktree();
+    writeFileSync(join(path, 'tracked.txt'), 'edit');
+    git(path, 'add', 'tracked.txt');
+    expect(() => removeWorktree(root, path, false)).toThrow(/pass --force/);
+  });
+
+  test('--force removes the same dirty worktree', () => {
+    const { root, path } = withWorktree();
+    writeFileSync(join(path, 'tracked.txt'), 'edit');
+    git(path, 'add', 'tracked.txt');
+
+    removeWorktree(root, path, true);
+    expect(existsSync(path)).toBe(false);
+    expect(git(root, 'worktree', 'list')).not.toContain(path);
+  });
+})

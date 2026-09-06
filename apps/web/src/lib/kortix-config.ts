@@ -6,8 +6,7 @@
  * its UI sinks (toast / OS notifications) into the single config seam. Imported
  * for side-effect by the root provider so it runs before any SDK call.
  */
-import { configureKortix } from '@kortix/sdk';
-import { parseFlagOverride } from '@kortix/sdk/feature-flags';
+import { configureKortix, parseFlagOverride } from '@kortix/sdk';
 import { getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';

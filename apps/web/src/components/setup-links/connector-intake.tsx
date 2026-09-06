@@ -4,6 +4,12 @@ import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { cn } from '@/lib/utils';
 import {
+  finalizeConnectorSetupLink,
+  getConnectorSetupLink,
+  startConnectorSetupLink,
+  type ConnectorSetupLinkInfo,
+} from '@kortix/sdk';
+import {
   CheckIcon as Check,
   ArrowSquareOutIcon as ExternalLink,
   PlugIcon as Plug,
@@ -12,12 +18,6 @@ import { useTranslations } from 'next-intl';
 import { useEffect, useState } from 'react';
 import { nextConnectorPollDelay } from './connector-poll';
 import { setupLinkApiBase } from './util';
-import {
-  finalizeConnectorSetupLink,
-  getConnectorSetupLink,
-  startConnectorSetupLink,
-  type ConnectorSetupLinkInfo,
-} from '@kortix/sdk';
 
 type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected';
 
@@ -42,10 +42,20 @@ type Phase = 'loading' | 'error' | 'ready' | 'starting' | 'opened' | 'connected'
 export function ConnectorIntake({
   token,
   onOpened,
+  onConnected,
   compact,
 }: {
   token: string;
   onOpened?: () => void;
+  /**
+   * Fired once the poll confirms the connection landed.
+   *
+   * The parent cannot observe this on its own: the connect happens in
+   * Pipedream's hosted popup, and the only proof is the finalize poll below.
+   * `SetupLinkButton` uses it to flip its card from "Waiting for you" to
+   * "Connected" without reopening the modal.
+   */
+  onConnected?: () => void;
   compact?: boolean;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -136,12 +146,18 @@ export function ConnectorIntake({
       setPhase('opened');
       onOpened?.();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.');
+      setError(
+        cause instanceof Error ? cause.message : 'Could not start the connect flow. Try again.',
+      );
       setPhase('ready');
     }
   }
 
   const appLabel = info?.app || info?.slug || 'the app';
+
+  useEffect(() => {
+    if (phase === 'connected') onConnected?.();
+  }, [phase, onConnected]);
 
   if (phase === 'loading') {
     return (
@@ -210,11 +226,7 @@ export function ConnectorIntake({
       </p>
       {error ? <p className="text-destructive text-xs">{error}</p> : null}
       <Button className="w-full" onClick={connect} disabled={starting}>
-        {starting ? (
-          <Loading className="mr-2 h-4 w-4" />
-        ) : (
-          <Plug className="mr-2 h-4 w-4" />
-        )}
+        {starting ? <Loading className="mr-2 h-4 w-4" /> : <Plug className="mr-2 h-4 w-4" />}
         {starting ? 'Opening…' : `Connect ${appLabel}`}
       </Button>
     </div>

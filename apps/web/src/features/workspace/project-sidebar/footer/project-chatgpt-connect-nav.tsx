@@ -35,8 +35,7 @@ export function ProjectChatGptConnectNavItem({ projectId }: { projectId: string 
       <SidebarMenuItem>
         <SidebarMenuButton
           onClick={openDialog}
-
-          className="group/customize-button flex items-center justify-start text-sm! font-medium [&_svg]:size-4!"
+          className="group/customize-button text-sidebar-foreground relative flex items-center justify-start"
         >
           <OpenAI className="text-foreground" />
           Connect GPT subscription

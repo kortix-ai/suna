@@ -337,8 +337,7 @@ export const KIND_COPY: Record<TriggerKind, KindCopy> = {
   },
   webhook: {
     title: 'Webhooks',
-    description:
-      'Give another app a private address that starts an agent when it sends a request.',
+    description: 'Give another app a private address that starts an agent when it sends a request.',
     noun: 'webhook',
     createLabel: 'New webhook',
     searchPlaceholder: 'Search webhooks',

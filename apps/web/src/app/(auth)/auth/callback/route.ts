@@ -5,17 +5,19 @@ import {
   resolveAuthRedirectBaseUrl,
   resolveNewAccountReturnUrl,
   sanitizeAuthReturnUrl,
+  shouldDemoteReturnUrl,
 } from '@/lib/auth/return-url';
 import {
+  AUTH_BOUNCE_COOKIE,
   LAST_PROJECT_COOKIE,
   POST_AUTH_INTENT_COOKIE,
   POST_AUTH_INTENT_MAX_AGE,
   PROJECT_LANDING_PATH,
+  parseAuthBounceOwner,
   parseLastProjectForUser,
   projectPathFromId,
 } from '@/lib/onboarding/landing-destination';
-import { ACTIVE_INSTANCE_COOKIE } from '@kortix/sdk/instance-routes';
-import { fetchAccountStateWithToken } from '@kortix/sdk';
+import { ACTIVE_INSTANCE_COOKIE, fetchAccountStateWithToken } from '@kortix/sdk';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import type { NextRequest } from 'next/server';
@@ -181,7 +183,21 @@ export async function GET(request: NextRequest) {
         // created, so this is where a provider signup gets the rule the
         // email flows already applied when they minted their link: a return
         // URL the new account cannot own does not survive the signup.
-        if (isNewUser) finalDestination = resolveNewAccountReturnUrl(next);
+        //
+        // The same rule covers an EXISTING account that signed in on a screen
+        // the middleware bounced here for somebody else — an IdP hop keeps the
+        // browser, so the bounce cookie is still readable and the account is
+        // now known. No cookie, or one with no owner, means the bounce was
+        // unattributed and the return URL stands.
+        if (
+          shouldDemoteReturnUrl({
+            bouncedOwnerId: parseAuthBounceOwner(request.cookies.get(AUTH_BOUNCE_COOKIE)?.value),
+            signedInUserId: data.user.id,
+            isNewUser,
+          })
+        ) {
+          finalDestination = resolveNewAccountReturnUrl(next);
+        }
 
         const pendingReferralCode = request.cookies.get('pending-referral-code')?.value;
         if (pendingReferralCode) {
@@ -287,6 +303,10 @@ export async function GET(request: NextRequest) {
         path: '/',
         sameSite: 'lax',
       });
+
+      // The bounce is spent: its attribution has been used to resolve this
+      // destination and must not survive to demote the next sign-in.
+      response.cookies.set(AUTH_BOUNCE_COOKIE, '', { maxAge: 0, path: '/' });
 
       // Clear stale legacy instance cookie so repo-first sessions do not inherit it after login.
       response.cookies.set(ACTIVE_INSTANCE_COOKIE, '', { maxAge: 0, path: '/' });

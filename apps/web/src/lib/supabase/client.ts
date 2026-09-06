@@ -45,6 +45,15 @@ export function createClient() {
   const url = resolveBrowserSupabaseUrl(runtimeEnv.SUPABASE_URL)
   const key = runtimeEnv.SUPABASE_ANON_KEY
 
+  // `@supabase/ssr` never sets `secure` itself (confirmed against the
+  // installed package's `dist/` — zero matches for `secure`), so on
+  // production HTTPS the session cookie was written without it: readable over
+  // a plaintext downgrade or a same-network MITM. Mirrors
+  // `last-project-cookie.ts`'s `window.location.protocol === 'https:'` check
+  // — NOT `httpOnly`, which `createBrowserClient` needs JS read access to
+  // avoid (see the class doc on `@supabase/ssr`).
+  const secure = typeof window !== 'undefined' && window.location.protocol === 'https:'
+
   if (!url || !key) {
     if (typeof window !== 'undefined') {
       throw new Error('Missing Supabase browser environment variables');
@@ -55,6 +64,7 @@ export function createClient() {
         name: KORTIX_SUPABASE_AUTH_COOKIE,
         path: '/',
         sameSite: 'lax',
+        secure,
       },
     })
   }
@@ -64,6 +74,7 @@ export function createClient() {
       name: KORTIX_SUPABASE_AUTH_COOKIE,
       path: '/',
       sameSite: 'lax',
+      secure,
     },
   })
 }

@@ -46,3 +46,4 @@ c4283d9b3f477ebac6c0a7bed3cc57320e0824d8:apps/api/src/__tests__/unit-github-app-
 # longer appears in current source; this entry covers the historical commit
 # ce4201bd7b that introduced the contiguous marker. Reviewed 2026-08-19.
 ce4201bd7b55ec8bdb4d1feb6c4d57530578931b:apps/web/src/features/workspace/customize/sections/view/secret-delivery.test.ts:private-key:197
+721fee087a61b4f99df9a56107d6fc37691b97dc:apps/api/src/projects/lib/legacy-runtime-bootstrap.test.ts:generic-api-key:262

@@ -55,7 +55,7 @@ export default function UseCasesIndexPage() {
     publisher: {
       '@type': 'Organization',
       name: 'Kortix',
-      logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.png` },
+      logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.svg` },
     },
     mainEntity: {
       '@type': 'ItemList',

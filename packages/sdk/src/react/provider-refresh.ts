@@ -47,6 +47,20 @@ export function providerConnectedInSecrets(
 function invalidateProviderQueries(queryClient: QueryClient, projectId: string): void {
   const projectProviderKey = ['project-providers', projectId];
   clearProjectProviderCache(projectId);
+  // FIRST, and never optional: the gateway provider list is a PROJECTION of
+  // `/model-picker`, which lives under its own key at the `config` tier (60s)
+  // and is read through `fetchQuery` (use-opencode-sessions/providers.ts).
+  // `fetchQuery` skips the network for an entry that is neither stale nor
+  // invalidated, so refetching the projection alone re-served the pre-connect
+  // catalog and the session picker kept the old model list until a hard
+  // refresh. Marking the SOURCE invalidated is what makes the refetch below
+  // an actual request. `refetchType: 'all'` so a picker with no mounted
+  // observer is refreshed too — the projection's own `fetchQuery` then dedupes
+  // onto this in-flight read rather than adding a second one.
+  void queryClient.invalidateQueries({
+    queryKey: qk.project.modelPicker(projectId),
+    refetchType: 'all',
+  });
   void queryClient.invalidateQueries({ queryKey: projectProviderKey });
   void queryClient.invalidateQueries({ queryKey: qk.project.secrets(projectId) });
   void queryClient.refetchQueries({ queryKey: qk.project.secrets(projectId), type: 'all' });

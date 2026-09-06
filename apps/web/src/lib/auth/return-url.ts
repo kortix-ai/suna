@@ -5,6 +5,10 @@ import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 // UI, so no auth path has to block on the backend to build this redirect.
 const DEFAULT_AUTH_RETURN_URL = PROJECT_LANDING_PATH;
 const LEGACY_AUTH_RETURN_PREFIXES = [
+  // Not legacy — but the same rule applies: a sign-in must never RETURN here.
+  // `?redirect=/logout` would undo the sign-in that just happened, so it is
+  // replaced with the landing door. See `app/logout/page.tsx`.
+  '/logout',
   '/dashboard',
   '/instances',
   '/sessions',
@@ -134,6 +138,41 @@ export function resolveNewAccountReturnUrl(
 ): string {
   const sanitized = sanitizeAuthReturnUrl(returnUrl, fallback);
   return isSignupSafeReturnUrl(sanitized) ? sanitized : fallback;
+}
+
+/**
+ * Whether the visitor's return URL must be resolved through the new-account
+ * rule instead of replayed verbatim.
+ *
+ * Two cases, one answer:
+ *  - `isNewUser` — the account is seconds old and cannot own anything that
+ *    predates it. This is the rule that already shipped.
+ *  - an ATTRIBUTED bounce whose owner is not the user who just signed in. The
+ *    middleware wrote `/auth?redirect=<path>` for somebody else's session, and
+ *    replaying it drops this user on a stranger's "Request access" page. An
+ *    existing account is exactly the population the `isNewUser` rule excludes,
+ *    which is why a second account on the same browser kept landing there.
+ *
+ * An UNATTRIBUTED bounce (`bouncedOwnerId` empty) NEVER demotes. Middleware
+ * cannot always name an owner, and a pasted or bookmarked
+ * `/auth?redirect=<path>` link carries no bounce cookie at all — treating
+ * "unknown" as "foreign" would break both.
+ *
+ * A named owner with no known signer DOES demote: that is the fail-closed half.
+ */
+export function shouldDemoteReturnUrl({
+  bouncedOwnerId,
+  signedInUserId,
+  isNewUser,
+}: {
+  bouncedOwnerId?: string | null;
+  signedInUserId?: string | null;
+  isNewUser?: boolean | null;
+}): boolean {
+  if (isNewUser) return true;
+  const owner = typeof bouncedOwnerId === 'string' ? bouncedOwnerId : '';
+  if (owner.length === 0) return false;
+  return owner !== (typeof signedInUserId === 'string' ? signedInUserId : '');
 }
 
 /**

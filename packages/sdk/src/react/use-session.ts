@@ -52,7 +52,7 @@ import { RuntimeNotReadyError, getClient } from '../core/runtime/client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import { openSessionBundle } from '../core/session/open-bundle';
 import { messagesBeforeRewind } from '../core/session/rewind';
-import { extractGatewayErrorDetails } from '../core/turns/errors';
+import { extractGatewayErrorDetails, unwrapError } from '../core/turns/errors';
 import { clearStartStash, readStartStash } from './session-start-stash';
 import { reconcileHydratedSessionTitle } from './session-title-sync';
 import { useCanonicalOpenCodeSession } from './use-canonical-opencode-session';
@@ -588,7 +588,9 @@ export function classifySendError(error: unknown): KortixSendError {
     kind: 'runtime-error',
     // Prefer the gateway's own message (already human-written server-side per
     // status/cause) over opencode's raw runtime-error formatting when present.
-    message: gateway?.message || formatted.message,
+    // The fallback is unwrapped too: a thrown error's message is often an HTTP
+    // body (`{"message":…,"code":401}`), and a body is not a sentence.
+    message: gateway?.message || unwrapError(formatted.message),
     ...(gateway
       ? {
           gateway: {

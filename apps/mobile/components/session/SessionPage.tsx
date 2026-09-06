@@ -33,7 +33,7 @@ import { Text as RNText } from 'react-native';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
-import { groupMessagesIntoTurns } from '@kortix/sdk/turns';
+import { groupMessagesIntoTurns } from '@kortix/sdk';
 import type { Turn, QuestionRequest, ToolPart } from '@/lib/opencode/types';
 import { useSession, replyToQuestion, rejectQuestion, useRenameSession } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';

@@ -36,22 +36,24 @@ describe('ExperimentalTabView', () => {
   test('renders the header title and description', () => {
     const out = renderToStaticMarkup(<ExperimentalTabView />);
     // "Feature flags", not "Experimental": the pane moved to
-    // `/projects/[id]/config?section=feature-flags` and took the name the
+    // `/projects/[id]/customize/settings?section=feature-flags` and took the name the
     // `CustomizeSection` id has always used.
     expect(out).toContain('Feature flags');
     expect(out).toContain('Features you can switch on before they are generally available.');
   });
 
-  test('renders one row per feature, each with its name, description, and stability badge', () => {
+  test('renders one row per feature with its name and description — and no stability badge', () => {
     const out = renderToStaticMarkup(
       <ExperimentalTabView features={[betaFeature, experimentalFeature]} />,
     );
     expect(out).toContain('Review Center');
     expect(out).toContain('Review agent output.');
-    expect(out).toContain('Beta');
     expect(out).toContain('Apps');
     expect(out).toContain('Early-access app discovery.');
-    expect(out).toContain('Experimental');
+    // Experimental / Beta / Stable labels were removed (Marko, 2026-09-03).
+    expect(out).not.toContain('>Beta<');
+    expect(out).not.toContain('>Experimental<');
+    expect(out).not.toContain('>Stable<');
   });
 
   test('rows render in the same order as the features array', () => {
@@ -133,24 +135,6 @@ describe('ExperimentalTabView', () => {
     expect(out).toContain('Retry');
     expect(out).toContain('boom');
     expect(out).not.toContain('Review Center');
-  });
-
-  test('every stability the API can serve has its own badge, including stable', () => {
-    // Ported from `main`'s `feature-flags-view.test.ts`. `FeatureFlagStability`
-    // is experimental | beta | stable; the two-way ternary this replaced
-    // rendered a `stable` flag as "Experimental" — a wrong label, not a
-    // compile error.
-    const stable: FeatureFlagView = {
-      key: 'teams',
-      name: 'Teams',
-      description: 'Shipped, still behind a switch.',
-      stability: 'stable',
-      available: true,
-      enabled: true,
-      overridden: false,
-    };
-    const out = renderToStaticMarkup(<ExperimentalTabView features={[stable]} />);
-    expect(out).toContain('Stable');
   });
 
   test('each row states whether it is a default or a project override', () => {

@@ -196,16 +196,16 @@ async function createProjectForAccessTest(
 }
 
 /**
- * Repositories graduated out of the Settings overlay's rail into the
- * Customize bar's Settings tab (`/projects/[id]/config`), merged into the
- * General section as a "Git repo" subsection (`git-view.tsx`,
- * `SettingsSubsectionHeader title="Git repo"` — an `h3`, one level under the
- * page's own `h1`). Navigate straight there; the returned locator scopes
+ * Repositories merged into General as a "Git repo" subsection
+ * (`git-view.tsx`, `SettingsSubsectionHeader title="Git repo"` — an `h3`
+ * under the pane's own `h2`). General is the Settings overlay's `workspace`
+ * tab (2026-09-02; `/projects/[id]/config` is gone), reached through the
+ * overlay's `/settings/<tab>` deep-link route. The returned locator scopes
  * subsequent queries to the page, which is fine since there is exactly one
  * repo link on it.
  */
 async function openRepositoriesSection(page: Page, projectId: string) {
-  await page.goto(`/projects/${projectId}/config`, {
+  await page.goto(`/projects/${projectId}/settings/workspace`, {
     waitUntil: "domcontentloaded",
   });
   await dismissOnboarding(page);

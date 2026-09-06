@@ -17,7 +17,9 @@ mock.module('@tanstack/react-query', () => ({
   },
 }));
 
-const { useProjectName, useProjectAccountId } = await import('./use-project-name');
+const { useProjectName, useProjectAccountId, useProjectIcon } = await import(
+  './use-project-name'
+);
 const { qk } = await import('./query-keys');
 const { contract } = await import('./query-contracts');
 
@@ -83,5 +85,52 @@ describe('useProjectAccountId', () => {
   test('returns undefined when the detail cache is empty', () => {
     mockData = undefined;
     expect(useProjectAccountId('proj-1')).toBeUndefined();
+  });
+});
+
+describe('useProjectIcon', () => {
+  test('reads the SAME qk.project.detail key useProjectName does, on the config contract', () => {
+    useProjectIcon('proj-1');
+    expect(lastConfig?.queryKey).toEqual(qk.project.detail('proj-1'));
+    expect(lastConfig?.staleTime).toBe(contract('config').staleTime);
+    expect(lastConfig?.gcTime).toBe(contract('config').gcTime);
+    expect(lastConfig?.refetchOnMount).toBe(true);
+  });
+
+  test('is disabled without a projectId', () => {
+    useProjectIcon(undefined);
+    expect(lastConfig?.enabled).toBe(false);
+  });
+
+  test('is enabled once a projectId is supplied', () => {
+    useProjectIcon('proj-1');
+    expect(lastConfig?.enabled).toBe(true);
+  });
+
+  test('returns the emoji off the detail response', () => {
+    mockData = { project: { project_id: 'proj-1', icon: '🐢' } };
+    expect(useProjectIcon('proj-1')).toEqual({ icon: '🐢', icon_glyph: null });
+  });
+
+  test('returns the glyph off the detail response', () => {
+    mockData = { project: { project_id: 'proj-1', icon_glyph: { name: 'Heart', color: 'red' } } };
+    expect(useProjectIcon('proj-1')).toEqual({
+      icon: null,
+      icon_glyph: { name: 'Heart', color: 'red' },
+    });
+  });
+
+  // A project with no icon still resolves to a KNOWN pair rather than to
+  // `undefined` — a caller must be able to tell "this project has no icon"
+  // apart from "the cache has not answered yet", because those two render
+  // differently (the initial tile vs. nothing at all).
+  test('normalises an icon-less project to an explicit null pair', () => {
+    mockData = { project: { project_id: 'proj-1' } };
+    expect(useProjectIcon('proj-1')).toEqual({ icon: null, icon_glyph: null });
+  });
+
+  test('returns undefined when the detail cache is empty', () => {
+    mockData = undefined;
+    expect(useProjectIcon('proj-1')).toBeUndefined();
   });
 });

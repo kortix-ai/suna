@@ -39,6 +39,7 @@
  * off means the legacy body (no `name`, no header), unchanged from before.
  */
 
+import type { SandboxExecOptions, SandboxExecResult } from './index';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId, sandboxBelongsToThisInstance } from '../../projects/instance-scope';
@@ -503,6 +504,27 @@ export class PlatinumProvider implements SandboxProvider {
 
       if (Date.now() >= deadline) throw firstConflict;
     }
+  }
+
+  async exec(
+    externalId: string,
+    command: string[],
+    opts: SandboxExecOptions,
+  ): Promise<SandboxExecResult> {
+    const response = await platinumJson<PlatinumExecResponse>(`/v1/sandboxes/${externalId}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ cmd: command, timeout_ms: opts.timeoutMs }),
+      signal: AbortSignal.timeout(opts.timeoutMs + 30_000),
+    });
+    const result = response.result;
+    if (!result) {
+      throw new Error(`Platinum exec on ${externalId} returned no result: ${response.error ?? 'unknown'}`);
+    }
+    return {
+      exitCode: typeof result.exit_code === 'number' ? result.exit_code : -1,
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? result.error ?? '',
+    };
   }
 
   async renewLifecycle(externalId: string): Promise<void> {

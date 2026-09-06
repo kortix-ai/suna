@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
 import { Plus } from '@/features/icon/icons/plus';
+import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted, isBillingEnabled } from '@/lib/config';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
@@ -27,7 +28,7 @@ import { usePermission } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
 import { buildAccountSettingsHref } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts, type KortixAccount } from '@kortix/sdk';
+import { type KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import {
   CheckCircleIcon as CheckCircleSolid,
@@ -60,11 +61,9 @@ export function AccountSwitcher({ className }: { className?: string }) {
     if (!menuOpen) setQuery('');
   }, [menuOpen]);
 
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
+  // The exact key `accountsQuery` reads, for the create-account seed below.
+  const accountsQueryKey = useAccountsQueryKey();
 
   const activeAccount =
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
@@ -263,13 +262,15 @@ export function AccountSwitcher({ className }: { className?: string }) {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(account: KortixAccount) => {
-          queryClient.setQueryData<KortixAccount[]>(['accounts'], (accounts) => {
+          // The reader's OWN key — see the identical seed in
+          // `app/(app)/accounts/page.tsx`.
+          queryClient.setQueryData<KortixAccount[]>(accountsQueryKey, (accounts) => {
             const current = accounts ?? [];
             return current.some((item) => item.account_id === account.account_id)
               ? current.map((item) => (item.account_id === account.account_id ? account : item))
               : [account, ...current];
           });
-          void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+          void queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
           setSelectedAccountId(account.account_id);
           // qk.projects.scope(): reaches every account's list (and the
           // accountless slot), the same reach the old bare projects-literal

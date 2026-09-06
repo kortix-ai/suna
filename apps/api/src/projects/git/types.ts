@@ -37,6 +37,9 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** The agent's `model:` frontmatter (`provider/model`), null when it
+     *  follows the project default. */
+    model?: string | null;
     source: 'opencode' | 'kortix.yaml';
     enabled?: boolean;
     sandbox?: string | null;

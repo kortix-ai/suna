@@ -182,7 +182,11 @@ function identity(principal: AuthedPrincipal) {
   };
 }
 
-function refundHold(hooks: GatewayHooks, principal: AuthedPrincipal): void {
+function refundHold(
+  hooks: GatewayHooks,
+  principal: AuthedPrincipal,
+  logger: GatewayLogger,
+): void {
   if (!principal.billingHold) return;
   const event: UsageEvent = {
     ...EMPTY_USAGE,
@@ -199,7 +203,15 @@ function refundHold(hooks: GatewayHooks, principal: AuthedPrincipal): void {
     requestId: requestId(),
     billingHoldUsd: principal.billingHold.amountUsd,
   };
-  void hooks.recordUsage(event).catch(() => {});
+  // A failed refund leaves the caller's admission hold un-returned — small, but
+  // it is the customer's money and an empty `.catch(() => {})` is how the last
+  // billing blind spot stayed invisible for a whole period. Log it.
+  void hooks.recordUsage(event).catch((error: unknown) => {
+    logger.error('[gateway] admission-hold refund failed', {
+      accountId: principal.accountId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
 }
 
 // Cross-region inference profile prefixes to try, best first. `global.` serves
@@ -306,7 +318,7 @@ export async function handleChatCompletions(
     req.rawBody = '';
   } catch {
     req.rawBody = '';
-    refundHold(hooks, principal);
+    refundHold(hooks, principal, logger);
     return gatewayErrorResponse(400, {
       message: 'Invalid JSON body',
       code: 'invalid_json',
@@ -338,7 +350,7 @@ export async function handleChatCompletions(
     const defaults = route?.generationDefaultsForModel?.(routedModel) ?? route?.generationDefaults;
     body = applyGenerationDefaults(body, defaults);
   } catch (error) {
-    refundHold(hooks, principal);
+    refundHold(hooks, principal, logger);
     emit({
       ...identity(principal),
       requestedModel,
@@ -363,7 +375,7 @@ export async function handleChatCompletions(
   try {
     descriptor = (await hooks.resolveUpstream(principal, routedModel))[0];
   } catch (error) {
-    refundHold(hooks, principal);
+    refundHold(hooks, principal, logger);
     const resolution = error instanceof GatewayResolutionError ? error : null;
     return gatewayErrorResponse(400, {
       message: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
@@ -376,7 +388,7 @@ export async function handleChatCompletions(
     });
   }
   if (!descriptor) {
-    refundHold(hooks, principal);
+    refundHold(hooks, principal, logger);
     return gatewayErrorResponse(400, {
       message: `No provider is configured for model "${routedModel}"`,
       code: 'model_unavailable',
@@ -477,7 +489,7 @@ export async function handleChatCompletions(
     }
     retryWithoutEffort = null;
   } catch (error) {
-    refundHold(hooks, principal);
+    refundHold(hooks, principal, logger);
     emit({
       ...identity(principal),
       requestedModel,

@@ -36,6 +36,7 @@ import { PROJECT_ACTIONS, VALID_ACTIONS } from '../iam/actions';
 import type { GitBackedProject } from './git';
 import type { AgentGrant } from '@kortix/db';
 import {
+  DEPRECATED_KORTIX_CLI_ALIASES,
   resolveGrantSet,
   SLUG_RE,
   WORKSPACE_MODES_V2,
@@ -848,6 +849,12 @@ function parseGrantSet(
 /** Returns an error message if the action is not grantable to an agent, else null. */
 function validateKortixAction(action: string): string | null {
   if (GRANTABLE_KORTIX_CLI.has(action)) return null;
+  // A RENAMED action still resolves — `canonicalizeGrantActions` rewrites it to
+  // the live leaf. Accept it here: rejecting it would push the spec into
+  // `loaded.errors`, and an agent whose manifest failed to parse is given an
+  // EMPTY grant (see grantFromLoadedAgents), which strips every capability it
+  // holds over one outdated string.
+  if (action in DEPRECATED_KORTIX_CLI_ALIASES) return null;
   if (VALID_ACTIONS.has(action)) {
     return `\`kortix_cli\` action "${action}" is account-scoped and can never be granted to an agent — only project-scoped actions are allowed`;
   }

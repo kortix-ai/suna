@@ -21,15 +21,25 @@ import {
 export type LandingResolution =
   | { kind: 'project'; project: KortixProject; accountId: string }
   /** No project anywhere. `canCreate` (of the primary candidate account —
-   *  the user's active workspace context) feeds `classifyLandingTerminal`. */
-  | { kind: 'terminal'; canCreate: boolean };
+   *  the user's active workspace context) feeds `classifyLandingTerminal`.
+   *  `suppressed` is scoped to that SAME primary candidate — never "any
+   *  account this user owns" — see the doc comment above `creator` below. */
+  | { kind: 'terminal'; canCreate: boolean; suppressed: boolean };
 
 export async function resolveLandingDestination(input: {
   accounts: KortixAccount[];
   selectedAccountId: string | null;
   preferredProjectId?: string | null;
-  /** `isAutoProjectSuppressed()` — the user just archived their last project. */
-  suppressed: boolean;
+  /**
+   * `isAutoProjectSuppressed` — the user just archived THIS account's last
+   * project. Applied to the ONE `creator` account this resolution actually
+   * evaluates for auto-create (see below), never called for the others: a
+   * flag scoped to account A must not suppress creation in an unrelated
+   * account B just because the same user happens to own both. Pass
+   * `isAutoProjectSuppressed` from `ensure-first-project.ts` directly — its
+   * signature already matches.
+   */
+  isAccountSuppressed: (accountId: string) => boolean;
   /** `navigationMayCreateProject()` — this navigation proved create intent. */
   mayCreate: boolean;
   client?: EnsureFirstProjectClient;
@@ -83,7 +93,13 @@ export async function resolveLandingDestination(input: {
   // self-host without managed git would be a guaranteed 503 anyway).
   const primary = candidates[0];
   const creator = primary && canCreateIn(primary) ? primary : undefined;
-  if (creator && input.mayCreate && !input.suppressed) {
+  // Evaluated for `creator.account_id` ONLY. `isAccountSuppressed` is
+  // account-bound by design (`ensure-first-project.ts`), and this resolver
+  // itself only ever gates auto-create for this ONE candidate — checking any
+  // OTHER account here would suppress creation for an account nobody
+  // archived anything on, just because the caller happens to own both.
+  const suppressedForCreator = creator ? input.isAccountSuppressed(creator.account_id) : false;
+  if (creator && input.mayCreate && !suppressedForCreator) {
     const created = await ensureFirstProject(
       creator.account_id,
       { preferredProjectId, allowCreate: true },
@@ -92,7 +108,7 @@ export async function resolveLandingDestination(input: {
     if (created) return { kind: 'project', project: created, accountId: creator.account_id };
   }
 
-  return { kind: 'terminal', canCreate: creator !== undefined };
+  return { kind: 'terminal', canCreate: creator !== undefined, suppressed: suppressedForCreator };
 }
 
 /** Owners/admins may create projects (ACCOUNT_ACTIONS.PROJECT_CREATE). */

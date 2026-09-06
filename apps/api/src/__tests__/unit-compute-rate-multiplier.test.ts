@@ -47,10 +47,13 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 const debits: Array<{ amount: number; description: string }> = [];
-mock.module('../billing/services/credits', () => ({
-  deductCredits: async (_accountId: string, amount: number, description: string) => {
+// Compute SETTLES: the seconds are already consumed, so the debit must record
+// even against a drained wallet. Admission (deductCredits) is a different
+// question and a different module.
+mock.module('../billing/services/settle-credits', () => ({
+  settleCredits: async (_accountId: string, amount: number, description: string) => {
     debits.push({ amount, description });
-    return { success: true };
+    return { success: true, cost: amount, newBalance: 0, overdraft: false };
   },
 }));
 

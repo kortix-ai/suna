@@ -52,15 +52,6 @@ import {
   sortSessionsByLastActivity,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
 import {
-  buildWorkspacePaletteRows,
-  groupWorkspacePaletteRows,
-  recentWorkspaceRows,
-  rootWorkspaceResults,
-  workspacePageResults,
-  workspacePaletteValue,
-  type WorkspacePaletteRow,
-} from '@/features/workspace/workspace-palette';
-import {
   PALETTE_NO_PROJECT_DEFAULT_TAB,
   filterSettingsPaletteGroups,
   settingsPaletteGroups,
@@ -72,18 +63,27 @@ import {
   resolveSettingsOverlayHref,
 } from '@/features/workspace/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
+import {
+  type WorkspacePaletteRow,
+  buildWorkspacePaletteRows,
+  groupWorkspacePaletteRows,
+  recentWorkspaceRows,
+  rootWorkspaceResults,
+  workspacePageResults,
+  workspacePaletteValue,
+} from '@/features/workspace/workspace-palette';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
 import { type MenuItemDef, type SettingsTabId, getItemsForSurface } from '@/lib/menu-registry';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { createClient } from '@/lib/supabase/client';
 import { track } from '@/lib/track';
 import { useProjectCan } from '@/lib/use-project-can';
 import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
 import { cn } from '@/lib/utils';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
 import {
   buildWebProxyUrl,
@@ -110,24 +110,22 @@ import {
   type KortixProject,
   type ProjectDetail,
   type ProjectSession,
+  featureFlags,
   getProject,
   getProjectDetail,
-  listAccounts,
   listProjectSessions,
   listProjectsForAccount,
+  normalizeAppPathname,
   systemReload,
   updateFeatureFlag,
 } from '@kortix/sdk';
-import { featureFlags } from '@kortix/sdk/feature-flags';
-import { clearSessionIDBCache } from '@kortix/sdk/idb-sync-cache';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
 import {
+  agentScopedModelSelectionKey,
   contract,
   invalidateProject,
+  modelProviderMode,
   qk,
   refreshProjectProviderState,
-  agentScopedModelSelectionKey,
-  modelProviderMode,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
@@ -247,8 +245,11 @@ export const LEGACY_SETTINGS_TAB_MAP: Partial<Record<SettingsTabId, SettingsTab>
   // `kind: 'navigate'` rows pointed straight at the account page instead
   // (`account-billing`, `account-tokens`, `account-usage` in
   // `lib/menu-registry.ts`).
-  appearance: 'preferences',
-  sounds: 'preferences',
+  // Since 2026-09-02 each legacy id has a tab of its own name again:
+  // theme/wallpaper live on Appearance, sound packs on Sessions, and the
+  // shortcut list stayed on Preferences.
+  appearance: 'appearance',
+  sounds: 'sessions',
   shortcuts: 'preferences',
 };
 
@@ -314,10 +315,18 @@ export const SUBMENU_PAGE_BY_ID: Record<string, PalettePage> = {
   // `conversation-density`'s is — if this entry is ever removed the row still
   // opens the picker instead of dead-ending.
   'review-changes': 'changes',
-  // "Settings · Feature flags" lists every experimental feature with its
-  // stability and its switch, so a flag can be found and flipped by name
-  // without three navigations. The row's href is the routed fallback.
-  'proj-config-feature-flags': 'flags',
+};
+
+/**
+ * Same idea, for the rows the palette DERIVES from the Settings overlay's rail
+ * (`settingsPaletteGroups`) rather than reads from the registry. "Feature
+ * flags" opens the in-palette flag list — every experimental feature with its
+ * switch, so a flag can be found and flipped by name without
+ * three navigations. Selecting any other settings row opens the overlay on
+ * that tab, which is also this row's fallback if the map loses the key.
+ */
+export const SETTINGS_TAB_SUBMENU_PAGE: Partial<Record<SettingsTab, PalettePage>> = {
+  'feature-flags': 'flags',
 };
 
 /**
@@ -678,7 +687,7 @@ function ChangeRequestsPage({
 
 /**
  * The 'flags' page — every experimental feature this deployment exposes for
- * the current workspace, by name, with its stability and its switch.
+ * the current workspace, by name, with its switch.
  *
  * Same data, same route, same permission gate as the Feature flags section of
  * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
@@ -817,11 +826,6 @@ function FeatureFlagsPage({
                 {feature.key}
               </span>
             </div>
-            {feature.stability !== 'stable' && (
-              <Badge variant="kortix" size="sm" className="shrink-0">
-                {feature.stability}
-              </Badge>
-            )}
             {pending ? (
               <Loading className="text-muted-foreground size-3.5 shrink-0" />
             ) : (
@@ -852,6 +856,9 @@ export function CommandPalette() {
   /** The change request whose detail dialog is open, picked on the 'changes' page. */
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  // Never cleared: `performSignOut` ends on a document load, so this component
+  // is discarded rather than re-rendered.
+  const [loggingOut, setLoggingOut] = useState(false);
   const [backScale, setBackScale] = useState(false);
   const backScaleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -889,12 +896,7 @@ export function CommandPalette() {
   const { data: providers } = useRuntimeProviders();
 
   const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
-  const { data: accountsList } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    enabled: open,
-    staleTime: 60_000,
-  });
+  const { data: accountsList } = useAccountsList({ enabled: open });
   const activeAccount =
     accountsList?.find((account) => account.account_id === selectedAccountId) ??
     accountsList?.[0] ??
@@ -980,7 +982,7 @@ export function CommandPalette() {
   // panel rendered nothing unless it was ENABLED — a palette entry that opened
   // a blank pane. It now follows enablement like every other flag.
   // `projectFlags`, not `featureFlags` — the module-scope `featureFlags` import
-  // above is the DEPLOYMENT flag set (`@kortix/sdk/feature-flags`, build-time
+  // above is the DEPLOYMENT flag set (`featureFlags` from `@kortix/sdk`, build-time
   // capabilities like `enableProjects`), a different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
@@ -1342,9 +1344,9 @@ export function CommandPalette() {
     createSession
       .mutateAsync()
       .then((session) => {
-          // LEGACY, unreachable in the product: this branch runs only when
-          // there is NO projectId, and every authed route is `/projects/[id]/*`.
-          // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
+        // LEGACY, unreachable in the product: this branch runs only when
+        // there is NO projectId, and every authed route is `/projects/[id]/*`.
+        // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
           title: 'New session',
@@ -1455,9 +1457,10 @@ export function CommandPalette() {
     [accountsList, allWorkspaces, projectId],
   );
 
-  const rootSuggestionItems = useMemo(() => buildRootSuggestions(allPaletteItems), [
-    allPaletteItems,
-  ]);
+  const rootSuggestionItems = useMemo(
+    () => buildRootSuggestions(allPaletteItems),
+    [allPaletteItems],
+  );
 
   /** Whether a row should say which account it is in. One account, no noise. */
   const showWorkspaceAccount = (accountsList?.length ?? 0) > 1;
@@ -1595,9 +1598,6 @@ export function CommandPalette() {
     if (!open) return;
     if (page === 'accounts') router.prefetch(PROJECT_LANDING_PATH);
     if (page === 'files' && projectId) router.prefetch(`/projects/${projectId}/files`);
-    if (page === 'flags' && projectId) {
-      router.prefetch(`/projects/${projectId}/config?section=feature-flags`);
-    }
   }, [open, page, projectId, router]);
 
   // "Invite members" and "Workspace members". The account id arrives from
@@ -1608,13 +1608,6 @@ export function CommandPalette() {
     if (!open || !projectId || !inviteMembersAccountId) return;
     router.prefetch(`/accounts/${inviteMembersAccountId}?tab=access-projects&project=${projectId}`);
   }, [open, projectId, inviteMembersAccountId, router]);
-
-  // Sign out lands on /auth. Warm it while the confirm dialog is up — the push
-  // itself only runs after `signOut()` has resolved.
-  useEffect(() => {
-    if (!logoutConfirmOpen) return;
-    router.prefetch('/auth');
-  }, [logoutConfirmOpen, router]);
 
   const hasSessionResults = rootSessionResults.length > 0;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
@@ -1921,17 +1914,22 @@ export function CommandPalette() {
     setLogoutConfirmOpen(true);
   }, [close]);
 
-  const performLogout = useCallback(async () => {
+  // This used to clear `localStorage` and the IDB cache — two of the four
+  // things a logout owes, missing the React Query cache and the persisted
+  // account selection. It is `performSignOut` now, the same call every other
+  // logout control makes, and it leaves on a DOCUMENT load rather than a
+  // `router.push`: nothing else discards the App Router route cache across an
+  // identity change.
+  const performLogout = useCallback((event: React.MouseEvent) => {
+    // `preventDefault` keeps the confirm dialog UP. Radix closes it on click,
+    // which left the palette gone, the dialog gone, and the unchanged app on
+    // screen for as long as the sign-out took — up to the full step budget when
+    // the network is broken — with nothing saying anything was happening.
+    event.preventDefault();
     reopenPaletteRef.current = false;
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    clearUserLocalStorage();
-    await clearSessionIDBCache();
-    // nav-contract: prefetch-only — the push runs after `signOut()` resolves,
-    // so an anchor would leave before the session is cleared. The confirm-open
-    // effect warms /auth.
-    router.push('/auth');
-  }, [router]);
+    setLoggingOut(true);
+    void performSignOut();
+  }, []);
 
   const handleSetTheme = useCallback(
     (newTheme: string) => {
@@ -2038,14 +2036,12 @@ export function CommandPalette() {
     triggerBackScale();
   }, [triggerBackScale]);
 
-  /** The 'flags' page's fallback when the caller may not write feature flags. */
+  /** The 'flags' page's fallback when the caller may not write feature flags:
+   *  the Settings overlay's Feature flags tab, the pane the picker mirrors. */
   const handleOpenFeatureFlagsSection = useCallback(() => {
     if (!projectId) return;
-    // nav-contract: prefetch-only — a cmdk row activated by keyboard. The
-    // 'flags' page effect warms this one destination as the page opens.
-    router.push(`/projects/${projectId}/config?section=feature-flags`);
-    close();
-  }, [close, projectId, router]);
+    openSettingsTab('feature-flags');
+  }, [projectId, openSettingsTab]);
 
   const handleOverlayClose = useCallback(
     (set: (open: boolean) => void) => (overlayOpen: boolean) => {
@@ -2394,9 +2390,7 @@ export function CommandPalette() {
                                   {openChangeRequestCount}
                                 </span>
                               )}
-                              {item.shortcut && (
-                                <CommandShortcut>{item.shortcut}</CommandShortcut>
-                              )}
+                              {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
                               {submenuPage && (
                                 <ChevronRight className="text-muted-foreground/30 size-3" />
                               )}
@@ -2633,11 +2627,12 @@ export function CommandPalette() {
                     {filteredSettingsGroups.map((group) => (
                       <CommandGroup
                         key={group.label}
-                        heading={`Settings · ${group.label}`}
+                        heading={`Preferences · ${group.label}`}
                         forceMount
                       >
                         {group.items.map((item) => {
                           const SettingsIcon = item.icon;
+                          const submenuPage = SETTINGS_TAB_SUBMENU_PAGE[item.tab];
                           return (
                             <CommandItem
                               key={item.id}
@@ -2647,7 +2642,9 @@ export function CommandPalette() {
                               value={sanitizeCmdkValue(
                                 `settings ${settingsPaletteSearchText(item)}`,
                               )}
-                              onSelect={() => openSettingsTab(item.tab)}
+                              onSelect={() =>
+                                submenuPage ? goToPage(submenuPage) : openSettingsTab(item.tab)
+                              }
                             >
                               <SettingsIcon className="size-4" />
                               <span className="flex-1">{item.label}</span>
@@ -3208,8 +3205,9 @@ export function CommandPalette() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={performLogout}>
+            <AlertDialogCancel disabled={loggingOut}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={loggingOut} onClick={performLogout}>
+              {loggingOut ? <Loading className="size-4 shrink-0" /> : null}
               {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
             </AlertDialogAction>
           </AlertDialogFooter>

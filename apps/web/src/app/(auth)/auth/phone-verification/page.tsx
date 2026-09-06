@@ -1,6 +1,5 @@
 'use client';
 
-import { signOut } from '@/app/(auth)/auth/actions';
 import { Button } from '@/components/ui/button';
 import Loading from '@/components/ui/loading';
 import { errorToast } from '@/components/ui/toast';
@@ -15,12 +14,12 @@ import {
   useUnenrollFactor,
   useVerifyChallenge,
 } from '@/hooks/auth';
-import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { SignOutIcon as LogOut } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
 
 export default function PhoneVerificationPage() {
@@ -189,13 +188,18 @@ export default function PhoneVerificationPage() {
   };
 
   const signOutMutation = useMutation({
-    mutationFn: async () => {
-      // Clear local storage before sign out
-      clearUserLocalStorage();
-      await signOut().catch(() => void 0);
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Sign-out: the document load is the point, it drops every in-memory cache and provider.
-      window.location.href = '/';
-    },
+    // `performSignOut`, not the `signOut` SERVER ACTION this used to call.
+    // The action swallowed its own failure (`.catch(() => void 0)`), cleared
+    // only `localStorage` — leaving the React Query cache, the persisted
+    // account selection and the IDB session cache behind — and landed on `/`
+    // instead of `/auth`.
+    //
+    // Losing the action also, deliberately, stops this control deleting
+    // `kortix_last_project`. That cookie is owner-bound, and the middleware
+    // reads its owner half to attribute a bounce once identity resolution has
+    // already returned `user: null` — which is exactly what happens after a
+    // logout. Deleting it here un-attributed every post-logout bounce.
+    mutationFn: performSignOut,
   });
 
   const handleSignOut = () => {

@@ -888,14 +888,58 @@ export async function clearSandboxTurn(
  * Older daemons and command turns have no message ID; they remain scoped to the
  * root OpenCode session for rolling-deploy compatibility.
  */
+export type SandboxTurnCompletionOutcome =
+  | 'closed'
+  | 'already_closed'
+  | 'identity_mismatch'
+  | 'no_active_turn'
+  | 'non_terminal';
+
+export interface SandboxTurnCompletionResult {
+  outcome: SandboxTurnCompletionOutcome;
+  activeTurnCount: number;
+  closedTurnCount: number;
+}
+
+export function turnCompletionAllowsQueuePromotion(
+  result: Pick<SandboxTurnCompletionResult, 'outcome'>,
+): boolean {
+  return (
+    result.outcome === 'closed' ||
+    result.outcome === 'already_closed' ||
+    result.outcome === 'no_active_turn'
+  );
+}
+
+async function wasSandboxTurnAlreadyClosed(
+  sessionId: string,
+  identity?: Partial<SandboxTurnIdentity> | null,
+): Promise<boolean> {
+  if (!identity?.messageId) return false;
+  const result = await execute(sql`
+    SELECT EXISTS(
+      SELECT 1
+        FROM kortix.session_turns t
+       WHERE t.session_id = ${sessionId}
+         AND t.message_id = ${identity.messageId}
+         AND t.state = 'ended'
+         AND (${identity.opencodeSessionId ?? null}::text IS NULL
+           OR t.opencode_session_id IS NULL
+           OR t.opencode_session_id = ${identity.opencodeSessionId ?? null})
+    ) AS already_ended`);
+  return normalizeRows(result)?.[0]?.already_ended === true;
+}
+
 export async function completeSandboxTurn(
   sessionId: string,
   status: 'idle' | 'error',
   identity?: Partial<SandboxTurnIdentity> | null,
   error?: { isRetryable?: boolean } | null,
   graceMs = idleGraceMs(),
-): Promise<boolean> {
-  if (!isTerminalTurnEnd(status, error)) return false;
+): Promise<SandboxTurnCompletionResult> {
+  if (!isTerminalTurnEnd(status, error)) {
+    return { outcome: 'non_terminal', activeTurnCount: 0, closedTurnCount: 0 };
+  }
   const metadata = jsonbObject(sql`s.metadata`);
   const result = await execute(sql`
     WITH target AS (
@@ -905,6 +949,21 @@ export async function completeSandboxTurn(
        WHERE s.session_id = ${sessionId}
          AND s.status IN ('active', 'provisioning')
        FOR UPDATE OF s
+    ), all_active_turns AS (
+      SELECT target.sandbox_id,
+             coalesce(entry.value->>'token', entry.key) AS token
+        FROM target
+        CROSS JOIN LATERAL jsonb_each(CASE
+          WHEN jsonb_typeof(target.metadata->'activeTurns') = 'object'
+            THEN target.metadata->'activeTurns'
+          ELSE '{}'::jsonb
+        END) entry
+       WHERE entry.value->>'state' IN ('delivering', 'active')
+      UNION
+      SELECT target.sandbox_id,
+             target.metadata->'activeTurn'->>'token' AS token
+        FROM target
+       WHERE target.metadata->'activeTurn'->>'state' IN ('delivering', 'active')
     ), turn_candidates AS (
       SELECT target.sandbox_id,
              'activeTurns'::text AS source,
@@ -1015,16 +1074,36 @@ export async function completeSandboxTurn(
            updated_at = now()
       FROM next_state
      WHERE s.sandbox_id = next_state.sandbox_id
-    RETURNING next_state.ended_turns, s.session_id, s.sandbox_id, s.project_id, s.account_id,
+    RETURNING next_state.ended_turns,
+              (SELECT count(*)::int
+                 FROM all_active_turns candidate
+                WHERE candidate.sandbox_id = next_state.sandbox_id) AS active_turn_count,
+              s.session_id, s.sandbox_id, s.project_id, s.account_id,
               true AS completed`);
   const rows = normalizeRows(result);
-  const completed = (rows?.length ?? 0) > 0;
-  if (!completed) return false;
+  if (!rows || rows.length === 0) {
+    return { outcome: 'no_active_turn', activeTurnCount: 0, closedTurnCount: 0 };
+  }
 
   // The metadata entry is gone; the ledger row is not. `end_reason` is the only
   // record of HOW the turn ended once activeTurns has forgotten it existed.
   const owner = ledgerIdentity(rows?.[0]);
   const turns = endedLedgerTurns(rows?.[0]?.ended_turns);
+  const activeTurnCount = Number(rows[0]?.active_turn_count ?? 0);
+  if (turns.length === 0) {
+    if (await wasSandboxTurnAlreadyClosed(sessionId, identity)) {
+      return {
+        outcome: 'already_closed',
+        activeTurnCount,
+        closedTurnCount: 0,
+      };
+    }
+    return {
+      outcome: activeTurnCount > 0 ? 'identity_mismatch' : 'no_active_turn',
+      activeTurnCount,
+      closedTurnCount: 0,
+    };
+  }
   if (owner && turns.length > 0) {
     const endReason: SessionTurnEndReason = status === 'error' ? 'failed' : 'completed';
     await recordTurnLedger(
@@ -1040,7 +1119,11 @@ export async function completeSandboxTurn(
       await confirmInboxPromptConsumed(owner.sessionId, turn.messageId);
     }
   }
-  return true;
+  return {
+    outcome: 'closed',
+    activeTurnCount,
+    closedTurnCount: turns.length,
+  };
 }
 
 /**

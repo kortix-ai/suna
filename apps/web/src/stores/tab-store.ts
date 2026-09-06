@@ -2,8 +2,9 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk/instance-routes';
+import { getCurrentInstanceIdFromWindow, toInstanceAwarePath } from '@kortix/sdk';
 import { safeLocalStorage } from '@/lib/storage/managed-storage';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 // ============================================================================
 // Types
@@ -476,6 +477,10 @@ export const useTabStore = create<TabState>()(
     }
   )
 );
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+registerPersistedStore('kortix-tabs', () => resetPersistedStore(useTabStore));
 
 // ============================================================================
 // Utility: open + navigate in one shot

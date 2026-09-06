@@ -2935,10 +2935,14 @@ export async function relayTurnEndToApi(
   // session's completions: the 2026-08-18 Essentia incident was a CHILD session
   // re-answering the same standing prompt indefinitely, and with the guard
   // placed after the root filter it never saw a single one of those repeats.
-  const turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
-  const error = eventError ?? turn.error
-  const effectiveStatus = error ? 'error' : status
-  const isRoot = await isRootOpencodeSession(opencodeSessionId, opencode, cfg)
+  let turn = await readRootTurnState(opencodeSessionId, opencode, cfg)
+  let error = eventError ?? turn.error
+  let effectiveStatus = error ? 'error' : status
+  let rootClassification = await classifyOpencodeSession(opencodeSessionId, opencode, cfg)
+  for (let attempt = 2; rootClassification === 'unknown' && attempt <= 4; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100 * (attempt - 1)))
+    rootClassification = await classifyOpencodeSession(opencodeSessionId, opencode, cfg)
+  }
 
   // A genuinely new, non-duplicate `idle` completion — check it isn't the SAME
   // standing prompt answering itself again with no new user message in between
@@ -2968,7 +2972,7 @@ export async function relayTurnEndToApi(
   // observation of one child completion costs at most one extra tolerated
   // repeat (MAX_CONSECUTIVE_REPEATS absorbs it), never a false abort of a
   // healthy child.
-  if (!isRoot) {
+  if (rootClassification !== 'root') {
     runawayCheck()
     return
   }
@@ -2994,22 +2998,6 @@ export async function relayTurnEndToApi(
 
   const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  const payload = JSON.stringify({
-    session_id: sessionId,
-    kind: 'end',
-    status: effectiveStatus,
-    opencode_session_id: opencodeSessionId,
-    turn_message_id: turn.parentMessageId ?? undefined,
-    ...(error
-      ? {
-          error_name: error.name,
-          error_message: error.message,
-          error_status: error.statusCode,
-          error_retryable: error.isRetryable,
-          error_provider: error.providerID,
-        }
-      : {}),
-  })
   // This is the ONLY signal that finalizes a turn the agent ended without
   // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
   // best-effort: retry with backoff before giving up. A non-ok HTTP response is
@@ -3020,15 +3008,62 @@ export async function relayTurnEndToApi(
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: payload,
+        body: JSON.stringify({
+          session_id: sessionId,
+          kind: 'end',
+          status: effectiveStatus,
+          opencode_session_id: opencodeSessionId,
+          turn_message_id: turn.parentMessageId ?? undefined,
+          ...(error
+            ? {
+                error_name: error.name,
+                error_message: error.message,
+                error_status: error.statusCode,
+                error_retryable: error.isRetryable,
+                error_provider: error.providerID,
+              }
+            : {}),
+        }),
         signal: AbortSignal.timeout(15_000),
       })
       if (res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          ok?: boolean
+          turn_completion?: { outcome?: string; active_turn_count?: number }
+          queue_promoted?: boolean
+          promoted_prompt_id?: string | null
+        } | null
+        const outcome = data?.turn_completion?.outcome
+        const accepted =
+          outcome === undefined ||
+          outcome === 'closed' ||
+          outcome === 'already_closed' ||
+          outcome === 'no_active_turn'
+        if (!accepted) {
+          logger.warn('[opencode-events] turn-end relay was not settled', {
+            outcome: outcome ?? 'unknown',
+            opencodeSessionId,
+            turnMessageId: turn.parentMessageId,
+            activeTurnCount: data?.turn_completion?.active_turn_count,
+            queuePromoted: data?.queue_promoted,
+            promotedPromptId: data?.promoted_prompt_id,
+            attempt,
+          })
+          if (attempt < 4) {
+            const reread = await readRootTurnState(opencodeSessionId, opencode, cfg)
+            if (turn.completedAt == null || reread.completedAt === turn.completedAt) {
+              turn = reread
+              error = eventError ?? turn.error
+              effectiveStatus = error ? 'error' : status
+            }
+            await new Promise((r) => setTimeout(r, 1_000 * attempt))
+          }
+          continue
+        }
         // Record the dedup signature ONLY on a confirmed relay — a res.ok is a
         // definitive answer from apps/api (relayed, or already-finalized), so a
         // later observation of the same completed turn is a safe no-op to skip.
         if (dedupSig) relayedTurnSignatures.add(dedupSig)
-        const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
         return
       }
@@ -3178,14 +3213,22 @@ async function isRootOpencodeSession(
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
 ): Promise<boolean> {
+  return (await classifyOpencodeSession(opencodeSessionId, opencode, cfg)) === 'root'
+}
+
+async function classifyOpencodeSession(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<'root' | 'child' | 'unknown'> {
   try {
     const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(cfg.workspace)}`
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
-    if (!res.ok) return false
+    if (!res.ok) return 'unknown'
     const session = (await res.json()) as { parentID?: string | null }
-    return !session.parentID
+    return session.parentID ? 'child' : 'root'
   } catch {
-    return false
+    return 'unknown'
   }
 }
 

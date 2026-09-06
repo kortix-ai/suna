@@ -158,7 +158,6 @@ export const PERMISSION_KEY_HELP: Record<string, string> = {
  */
 export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
   { group: 'Project', actions: ['project.read', 'project.write', 'project.delete'] },
-  { group: 'Change requests', actions: ['project.cr.open', 'project.cr.merge'] },
   {
     group: 'Sessions',
     actions: [
@@ -203,9 +202,25 @@ export const KORTIX_CLI_CATALOG: { group: string; actions: string[] }[] = [
       'project.customize.write',
     ],
   },
+  // `project.cr.open` / `project.cr.merge` are deliberately NOT offered here.
+  // They still validate and still resolve — `canonicalizeGrantActions` rewrites
+  // them onto the two leaves below — but they are the pre-cutover spelling of
+  // the SAME capability (spec §2.4), and offering both let the editor grant one
+  // thing under two names in two different groups.
+  //
+  // `ref.any` / `ref.delete` widen a session's git authority beyond its own
+  // branch. A session is scoped to its own branch structurally, so these are the
+  // only way to say "this agent may touch other refs" — and saying it in
+  // kortix.yaml is the point: it is reviewed and merged, not a silent default.
   {
     group: 'Git',
-    actions: ['project.gitops.read', 'project.gitops.push', 'project.gitops.merge'],
+    actions: [
+      'project.gitops.read',
+      'project.gitops.push',
+      'project.gitops.merge',
+      'project.gitops.ref.any',
+      'project.gitops.ref.delete',
+    ],
   },
   { group: 'Secrets', actions: ['project.secret.read', 'project.secret.write'] },
   // Minting a project credential (a project CLI token, or a project-scoped PAT).

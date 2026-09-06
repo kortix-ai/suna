@@ -36,14 +36,15 @@
  * more attention than the shortcut is worth.
  */
 
-import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
 import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
 import { Skeleton } from '@/components/ui/skeleton';
-import { type KortixAccount, listAccounts } from '@kortix/sdk';
+import { type KortixAccount } from '@kortix/sdk';
+
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 
 /** Exactly the fields this list reads — nothing else from `KortixAccount`. */
 export type AccountMembership = Pick<KortixAccount, 'account_id' | 'name' | 'account_role'>;
@@ -125,17 +126,13 @@ export function AccountMembershipsSection({
 /**
  * The accounts the user belongs to.
  *
- * The SAME `['accounts']` key, `queryFn` and `staleTime` every other caller
- * uses (`use-ensure-selected-account.ts`, `workspace-menu-section.tsx`), so
- * React Query serves all of them from one fetch — opening this pane inside a
- * project shell costs no request at all, because `WorkspaceSwitcher` already
- * primed that entry on mount.
+ * Reads through `useAccountsList()`, the one definition of that query, so this
+ * pane, `use-ensure-selected-account.ts` and `workspace-menu-section.tsx` all
+ * share one user-scoped cache entry — opening this pane inside a project shell
+ * costs no request at all, because `WorkspaceSwitcher` already primed that
+ * entry on mount.
  */
 export function useAccountMemberships(): { accounts: AccountMembership[]; isLoading: boolean } {
-  const query = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const query = useAccountsList();
   return { accounts: query.data ?? [], isLoading: query.isLoading };
 }

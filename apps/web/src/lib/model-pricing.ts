@@ -1,7 +1,7 @@
 'use client';
 
 import type { ProviderListResponse } from '@kortix/sdk/react';
-import type { ModelCostRates, ModelPricingLookup } from '@kortix/sdk/turns';
+import type { ModelCostRates, ModelPricingLookup } from '@kortix/sdk';
 import { useEffect, useMemo, useState } from 'react';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';

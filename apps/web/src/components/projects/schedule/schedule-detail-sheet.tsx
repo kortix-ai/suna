@@ -46,6 +46,7 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { ModelSelector } from '@/features/session/model-selector';
 import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
 import { SharingPicker, type SharingSelection } from '@/features/workspace/shared/sharing-picker';
+import { storedModelRefToKey } from '@/lib/llm-gateway';
 import { cn } from '@/lib/utils';
 import {
   type ProjectTrigger,
@@ -58,11 +59,10 @@ import {
   contract,
   modelKeyToWire,
   qk,
+  useFeatureFlag,
   useRuntimeProviders,
   useVisibleAgents,
-  useFeatureFlag,
 } from '@kortix/sdk/react';
-import { storedModelRefToKey } from '@/lib/llm-gateway';
 import {
   CaretDownIcon,
   DotsThreeIcon,
@@ -75,6 +75,7 @@ import {
 } from '@phosphor-icons/react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
+import { TRIGGER_SESSION_ACCESS_COPY } from './trigger-session-access-copy';
 
 import {
   CUSTOM_TIMING_LABEL,
@@ -995,21 +996,7 @@ function AccessPanel({
         value={selection}
         onChange={setSelection}
         showHeading={false}
-        copy={{
-          heading: 'Who can access sessions created by this trigger',
-          private: {
-            label: 'Trigger agent and project Managers',
-            desc: 'Project Managers can always open trigger-created sessions.',
-          },
-          members: {
-            label: 'Selected teammates',
-            desc: 'Choose additional members and groups. Project Managers always have access.',
-          },
-          project: {
-            label: 'Whole project',
-            desc: 'Every project member can open these sessions.',
-          },
-        }}
+        copy={TRIGGER_SESSION_ACCESS_COPY}
       />
       {trigger.session_mode === 'pinned' ? (
         <InfoBanner tone="info" className="text-xs">

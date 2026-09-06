@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useAdminRole } from '@/hooks/admin/use-admin-role';
 import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';
 import { cn } from '@/lib/utils';
-import { normalizeAppPathname } from '@kortix/sdk/instance-routes';
+import { normalizeAppPathname } from '@kortix/sdk';
 import {
   WarningCircleIcon as AlertCircle,
   WarningIcon as AlertTriangle,

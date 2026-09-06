@@ -18,6 +18,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, relative, resolve } from 'node:path';
 import {
+  DEPRECATED_KORTIX_CLI_ALIASES,
   GRANTABLE_KORTIX_CLI_ACTIONS,
   type ManifestIssue,
   formatIssues,
@@ -125,6 +126,18 @@ export function runValidate(argv: string[]): number {
       `${C.dim}Grantable kortix_cli actions (project-scoped — account-level admin actions can never be granted to an agent):${C.reset}\n`,
     );
     for (const a of GRANTABLE_KORTIX_CLI_ACTIONS) process.stdout.write(`  ${a}\n`);
+    const renamed = Object.entries(DEPRECATED_KORTIX_CLI_ALIASES);
+    if (renamed.length > 0) {
+      // Not grantable any more, but still ACCEPTED in a manifest that has one.
+      // This list is what an agent reads to decide what to write, so it has to
+      // say what the old name maps to rather than pretend it never existed.
+      process.stdout.write(
+        `\n${C.dim}Renamed — still accepted, but write the new name:${C.reset}\n`,
+      );
+      for (const [was, now] of renamed) {
+        process.stdout.write(`  ${was}${C.dim} → ${now}${C.reset}\n`);
+      }
+    }
     return 0;
   }
 

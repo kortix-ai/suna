@@ -29,6 +29,7 @@ import {
 import type { AccountState, BillingState } from '@kortix/sdk';
 import {
   accountHasLiveSubscription,
+  billingModalCopy,
   billingStateNeedsTopUp,
   resolveBillingState,
 } from '@/lib/billing/billing-gate-state';
@@ -286,9 +287,14 @@ function CreditTopUpModal({
   accountLoading,
 }: CreditTopUpModalProps) {
   const createPortal = useCreatePortalSession();
-  // Never tell a customer whose payment is failing that their plan "is
-  // unaffected" — that was the same class of lie as the gate copy.
-  const paymentFailed = billingState === 'payment_failed';
+  // Copy is DERIVED, never written here. The title used to be hardcoded
+  // `'Out of credits'` with a single `payment_failed` branch, so this modal
+  // announced an emergency to every account that opened it — including one
+  // topping up voluntarily with a healthy balance — and promised "your Team
+  // plan and seats are unaffected" to accounts that have no seats.
+  const copy = billingModalCopy(billingState ?? null, {
+    isPerSeat: accountState?.billing_model === 'per_seat',
+  });
 
   // Trust the LIVE account state as the source of truth (same field the Plan
   // page reads) — the 402's `balance` is only a pre-load hint. Using `??` on the
@@ -314,12 +320,10 @@ function CreditTopUpModal({
             </span>
             <div className="space-y-0.5">
               <ModalTitle className="text-lg font-medium tracking-tight">
-                {paymentFailed ? 'Payment issue on your plan' : 'Out of credits'}
+                {copy.title}
               </ModalTitle>
               <ModalDescription className="text-sm text-balance">
-                {paymentFailed
-                  ? 'Your last payment didn’t go through. Update your payment method under Manage billing, or top up to keep running in the meantime.'
-                  : 'Top up to keep compute and the latest AI models running — your Team plan and seats are unaffected.'}
+                {copy.description}
               </ModalDescription>
             </div>
           </div>

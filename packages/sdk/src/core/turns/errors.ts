@@ -4,46 +4,187 @@
  * creating an index.ts <-> classify.ts import cycle.
  */
 
+const GENERIC_ERROR_MESSAGE = 'An error occurred';
+
 /**
- * Extract human-readable error message from a raw error value.
- * Matches SolidJS `unwrap()` function — session-turn.tsx:34-81
+ * How many serialized layers `unwrapError` will peel. Real rows nest two deep
+ * (OpenCode `UnknownError.data.message` → a JSON body → its `error.message`);
+ * four leaves headroom without letting a pathological body recurse forever.
  */
-export function unwrapError(raw: unknown): string {
-  if (!raw) return 'An error occurred';
+const MAX_UNWRAP_DEPTH = 4;
 
-  if (typeof raw === 'string') {
-    // Strip "Error: " prefix
-    let str = raw.startsWith('Error: ') ? raw.slice(7) : raw;
+/**
+ * Body keys that carry the human sentence, in the order providers use them.
+ * `message` is OpenAI/Anthropic/our gateway, `error` is the OpenAI-compatible
+ * nesting, `detail` is FastAPI, `error_description` is OAuth, `msg` is
+ * pydantic, `errors[]` is GraphQL/Google, `data` is OpenCode's own envelope.
+ */
+const MESSAGE_KEYS = [
+  'message',
+  'error',
+  'detail',
+  'error_description',
+  'msg',
+  'errors',
+  'data',
+] as const;
 
-    // Try JSON parsing (might be double-encoded)
-    try {
-      const parsed = JSON.parse(str);
-      if (typeof parsed === 'string') {
-        str = parsed; // double-encoded string
-        try {
-          const inner = JSON.parse(str);
-          return extractErrorFromObject(inner) || str;
-        } catch {
-          return str;
-        }
-      }
-      return extractErrorFromObject(parsed) || str;
-    } catch {
-      // Not directly parseable as JSON — router/connector errors commonly wrap
-      // a JSON body inside a plain-text prefix, e.g. router tool credit
-      // failures: `Error: 402 Error: {"error":true,"message":"Insufficient
-      // credits","status":402}`. Extract the outermost {...} substring (if
-      // any) and try that instead of surfacing the raw prefixed string.
-      const embedded = extractEmbeddedJsonMessage(str);
-      return embedded ?? str;
+/**
+ * `"Error: "`, `"AI_APICallError: "`, `"402 Error: "` — the prefixes `String(err)`
+ * and the AI SDK's `toString()` bolt on, which stack when a body is re-thrown
+ * (`Error: 402 Error: {…}`). Peeled repeatedly, so the caller sees the body.
+ */
+function stripErrorPrefixes(str: string): string {
+  let s = str.trim();
+  for (let i = 0; i < MAX_UNWRAP_DEPTH; i++) {
+    const next = s.replace(/^(?:\d{3}\s+)?(?:[A-Za-z_$][\w$]*)?Error:\s*/, '').trim();
+    if (next === s) break;
+    s = next;
+  }
+  return s;
+}
+
+function tryParseJson(value: unknown): unknown {
+  if (typeof value !== 'string' || !value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The first `"message": "…"` (or sibling key) inside a JSON-ish string that
+ * does NOT parse — an upstream body truncated by a log limit, or a body with
+ * trailing garbage. Unescapes the captured literal through `JSON.parse` so
+ * `\"` and `\n` come out as characters, not backslashes.
+ */
+function messageFieldFromJsonish(str: string): string | undefined {
+  const match = str.match(/"(?:message|detail|error_description|msg)"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!match) return undefined;
+  const literal = tryParseJson(`"${match[1]}"`);
+  return typeof literal === 'string' && literal.trim() ? literal.trim() : undefined;
+}
+
+/**
+ * A gateway or CDN error page (`<html><title>502 Bad Gateway</title>…`). The
+ * title is the sentence; failing that, the visible text, capped so a whole
+ * page never lands in a transcript row.
+ */
+function textFromHtml(str: string): string | undefined {
+  if (!/^\s*<(?:!doctype|html|head|body)\b/i.test(str)) return undefined;
+  const title = str.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim();
+  if (title) return title;
+  const text = str
+    .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text ? text.slice(0, 200) : undefined;
+}
+
+/** `overloaded_error` → `Overloaded error`; `rate_limit_exceeded` → `Rate limit exceeded`. */
+function humanizeCode(code: string): string {
+  const words = code.replace(/[_-]+/g, ' ').trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : words;
+}
+
+/**
+ * `depth` counts DESERIALIZATION layers (a string parsed into a body), not key
+ * hops inside one body — `error.error.message` is one layer, not three. Object
+ * nesting is bounded separately by `seen`, which also stops a cyclic
+ * `Error.cause` chain from recursing.
+ */
+function unwrapValue(value: unknown, depth: number, seen: WeakSet<object>): string | undefined {
+  if (typeof value === 'string') return unwrapString(value, depth, seen);
+  if (value && typeof value === 'object') return unwrapObject(value, depth, seen);
+  return undefined;
+}
+
+function unwrapString(
+  raw: string,
+  depth: number,
+  seen: WeakSet<object> = new WeakSet(),
+): string | undefined {
+  const str = stripErrorPrefixes(raw);
+  if (!str) return undefined;
+  if (depth >= MAX_UNWRAP_DEPTH) return str;
+
+  // The whole string is a body (possibly a double-encoded one).
+  const parsed = tryParseJson(str);
+  if (parsed !== undefined) {
+    if (typeof parsed === 'string') return unwrapString(parsed, depth + 1, seen);
+    if (parsed && typeof parsed === 'object') return unwrapObject(parsed, depth + 1, seen);
+    return String(parsed);
+  }
+
+  // A body wrapped in a plain-text prefix the regex above did not know —
+  // router/connector errors commonly do this. Extract the outermost {...}.
+  const embedded = embeddedJsonSubstring(str);
+  if (embedded) {
+    const parsedEmbedded = tryParseJson(embedded);
+    if (parsedEmbedded && typeof parsedEmbedded === 'object') {
+      const fromEmbedded = unwrapObject(parsedEmbedded, depth + 1, seen);
+      if (fromEmbedded) return fromEmbedded;
     }
   }
 
-  // (`!raw` at the top already excluded null — typeof alone suffices here.)
-  if (typeof raw === 'object') {
-    return extractErrorFromObject(raw) || 'An error occurred';
+  // JSON-ish but unparseable (truncated, trailing text): pull the sentence.
+  if (str.includes('{')) {
+    const field = messageFieldFromJsonish(str);
+    if (field) return unwrapString(field, depth + 1, seen) ?? field;
   }
 
+  return textFromHtml(str) ?? str;
+}
+
+function unwrapObject(
+  obj: object,
+  depth: number,
+  seen: WeakSet<object> = new WeakSet(),
+): string | undefined {
+  if (depth >= MAX_UNWRAP_DEPTH || seen.has(obj)) return undefined;
+  seen.add(obj);
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const fromItem = unwrapValue(item, depth, seen);
+      if (fromItem) return fromItem;
+    }
+    return undefined;
+  }
+  const record = obj as Record<string, unknown>;
+  for (const key of MESSAGE_KEYS) {
+    const fromKey = unwrapValue(record[key], depth, seen);
+    if (fromKey) return fromKey;
+  }
+  // No sentence anywhere. A code or a status is still more useful than
+  // "An error occurred" — say what the body did say.
+  const code = record.type ?? record.code;
+  if (typeof code === 'string' && code.trim()) return humanizeCode(code);
+  const status = record.status ?? record.statusCode ?? record.upstream_status;
+  if (typeof status === 'number' && Number.isFinite(status)) {
+    return `Request failed with status ${status}`;
+  }
+  return undefined;
+}
+
+/**
+ * Extract the human-readable sentence from a raw error value, however many
+ * layers of serialization it arrived in.
+ *
+ * OpenCode's `UnknownError` stores `String(err)` as `data.message`; when the
+ * thrown error's message was an HTTP body, that body reaches the transcript
+ * as a JSON string — `{"message":"Provided authentication token is
+ * expired.","code":401}` — unless it is unwrapped AGAIN. So every string this
+ * function extracts is fed back through the same unwrapping, bounded by
+ * `MAX_UNWRAP_DEPTH`, until a plain sentence falls out.
+ *
+ * Never returns raw JSON, an HTML page, `[object Object]`, or an empty string.
+ */
+export function unwrapError(raw: unknown): string {
+  if (!raw) return GENERIC_ERROR_MESSAGE;
+  if (typeof raw === 'string') return unwrapString(raw, 0) ?? GENERIC_ERROR_MESSAGE;
+  if (typeof raw === 'object') return unwrapObject(raw, 0) ?? GENERIC_ERROR_MESSAGE;
   return String(raw);
 }
 
@@ -51,8 +192,8 @@ export function unwrapError(raw: unknown): string {
  * Best-effort substring spanning the first `{` to the last `}` in a larger
  * non-JSON string — correct for the common single-object case (nested
  * double-wrapped errors don't nest braces inside the outer text). Shared by
- * `extractEmbeddedJsonMessage` (message-only) and `extractGatewayErrorDetails`
- * (full structured envelope) below.
+ * `unwrapString` (message-only) and `extractGatewayErrorDetails` (full
+ * structured envelope) below.
  */
 function embeddedJsonSubstring(str: string): string | undefined {
   const start = str.indexOf('{');
@@ -61,25 +202,10 @@ function embeddedJsonSubstring(str: string): string | undefined {
   return str.slice(start, end + 1);
 }
 
-/**
- * Best-effort extraction of a human message from a JSON object embedded
- * somewhere inside a larger non-JSON string. Cheap; falls back to `undefined`
- * (never throws) if that substring isn't valid JSON or has no recognizable
- * error shape.
- */
-function extractEmbeddedJsonMessage(str: string): string | undefined {
-  const substring = embeddedJsonSubstring(str);
-  if (!substring) return undefined;
-  try {
-    return extractErrorFromObject(JSON.parse(substring));
-  } catch {
-    return undefined;
-  }
-}
-
+/** The one-level `message`/`error`/`data.message`/`error.message` read the
+ *  gateway-envelope code below still uses for its own `message` field. */
 function extractErrorFromObject(obj: unknown): string | undefined {
   if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return undefined;
-  // Try common error shapes
   const record = obj as Record<string, unknown>;
   if (typeof record.message === 'string' && record.message) return record.message;
   if (typeof record.error === 'string' && record.error) return record.error;
@@ -172,15 +298,6 @@ function attemptFailuresFrom(value: unknown): GatewayAttemptFailure[] | undefine
   return failures.length > 0 ? failures : undefined;
 }
 
-function tryParseJson(value: unknown): unknown {
-  if (typeof value !== 'string' || !value) return undefined;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return undefined;
-  }
-}
-
 /** Pull the gateway envelope's fields off a single object level (no
  *  unwrapping of nested shapes — that's `extractGatewayErrorDetails`'s job).
  *  Returns `undefined` when NONE of the gateway-specific fields are present,
@@ -234,7 +351,7 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
   if (raw == null) return undefined;
 
   if (typeof raw === 'string') {
-    const str = raw.startsWith('Error: ') ? raw.slice(7) : raw;
+    const str = stripErrorPrefixes(raw);
     const parsed = tryParseJson(str) ?? tryParseJson(embeddedJsonSubstring(str));
     return parsed !== undefined ? extractGatewayErrorDetails(parsed) : undefined;
   }
@@ -258,6 +375,13 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
       const fromBody = extractGatewayErrorDetails(parsedBody);
       if (fromBody) return fromBody;
     }
+  }
+  // OpenCode's `UnknownError` has no `responseBody` — `String(err)` is all it
+  // keeps, in `data.message`. When that string IS the gateway body (a JSON
+  // string, possibly prefixed), the envelope is still in there.
+  if (data && typeof data.message === 'string') {
+    const fromMessage = extractGatewayErrorDetails(data.message);
+    if (fromMessage) return fromMessage;
   }
 
   const cause = record.cause;

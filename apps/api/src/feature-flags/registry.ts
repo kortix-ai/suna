@@ -264,14 +264,14 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'secrets_egress',
     name: 'Network-Enforced Secrets',
     description:
-      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment. Still in testing — enable it to try handle substitution across providers.',
+      'Let a secret be enforced at the network instead of loaded into the sandbox: the sandbox holds a handle and Kortix substitutes the real value only on requests to approved hosts. Off ⇒ every secret loads into the sandbox environment and the "Enforce at the network" option is hidden.',
     stability: 'experimental',
     available: () => true,
-    // Off by default. Until a project opts in, a new secret can only be an
-    // environment variable (the value loads into the sandbox) or disabled — the
-    // "Enforce at the network" option is hidden and the write routes refuse to
-    // move a secret into egress delivery.
-    platformDefault: () => false,
+    // On by default (Marko, 2026-09-03). The OPTION is available; a new secret
+    // still defaults to an environment variable — enforcing at the network is
+    // a per-secret choice. A project that turns the flag off hides the option
+    // and the write routes refuse to move a secret into egress delivery.
+    platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
       'No dedicated routes. The secret write paths (POST /secrets and PUT ' +

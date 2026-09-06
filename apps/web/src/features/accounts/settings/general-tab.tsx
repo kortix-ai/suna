@@ -42,14 +42,13 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { listAccounts } from '@kortix/sdk';
 import {
   ArrowUpRightIcon as ArrowUpRight,
   ClockIcon as Clock,
   WarningIcon as DangerTriangleSolid,
 } from '@phosphor-icons/react';
-import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, m, MotionConfig } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -62,11 +61,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
   const t = useTranslations('settings.general');
   const tCommon = useTranslations('common');
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
-  const accountsQuery = useQuery({
-    queryKey: ['accounts'],
-    queryFn: listAccounts,
-    staleTime: 60_000,
-  });
+  const accountsQuery = useAccountsList();
   const accountId = selectedAccountId ?? accountsQuery.data?.[0]?.account_id ?? null;
 
   useEffect(() => {

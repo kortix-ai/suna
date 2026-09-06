@@ -94,7 +94,7 @@ test.describe("23 — Composio managed connector", () => {
     await installBrowserSessionDirect(
       page,
       session,
-      `/projects/${project.id}/connectors`,
+      `/projects/${project.id}/customize/connectors`,
       authOptions,
     );
     await selectAccountForUi(page, accountId);
@@ -104,7 +104,7 @@ test.describe("23 — Composio managed connector", () => {
         response.url().endsWith("/v1/connectors/connect-status") &&
         response.request().method() === "GET",
     );
-    await page.goto(`/projects/${project.id}/connectors`, {
+    await page.goto(`/projects/${project.id}/customize/connectors`, {
       waitUntil: "domcontentloaded",
     });
     await dismissOnboarding(page);
@@ -170,20 +170,25 @@ test.describe("23 — Composio managed connector", () => {
     expect(createBody).toEqual(
       expect.objectContaining({
         name: "Composio Search",
-        slug: "composio-search",
         provider: "composio",
         app: "composio_search",
         authorization_strategy: "project",
         create_only: true,
       }),
     );
+    // A proposed connector slug is `<app>-<6 random base36>` since 7f6b8087f3
+    // (so two connections to one app never collide). The suffix is random, so
+    // read the slug the UI actually proposed and follow it for the rest of the
+    // journey instead of asserting a fixed one.
+    expect(createBody.slug).toMatch(/^composio-search-[a-z0-9]{6}$/);
+    const connectorSlug = createBody.slug as string;
     expect(JSON.stringify(createBody)).not.toMatch(
       /api[_-]?key|credential|secret/i,
     );
     expect((await createResponsePromise).status()).toBe(200);
 
     await expect(page).toHaveURL(new RegExp(`[?&]scope=connected(?:&|$)`));
-    await expect(page).toHaveURL(new RegExp(`[?&]c=composio-search(?:&|$)`));
+    await expect(page).toHaveURL(new RegExp(`[?&]c=${connectorSlug}(?:&|$)`));
     const detail = page.getByRole("dialog", { name: "Composio Search" });
     await expect(detail).toBeVisible();
     await expect(
@@ -195,7 +200,7 @@ test.describe("23 — Composio managed connector", () => {
         request
           .url()
           .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/composio-search/connect`,
+            `/v1/connectors/projects/${project.id}/connectors/${connectorSlug}/connect`,
           ) && request.method() === "POST",
     );
     const connectResponsePromise = page.waitForResponse(
@@ -203,7 +208,7 @@ test.describe("23 — Composio managed connector", () => {
         response
           .url()
           .endsWith(
-            `/v1/connectors/projects/${project.id}/connectors/composio-search/connect`,
+            `/v1/connectors/projects/${project.id}/connectors/${connectorSlug}/connect`,
           ) && response.request().method() === "POST",
     );
     await detail.getByRole("button", { name: "Connect", exact: true }).click();
@@ -240,7 +245,7 @@ test.describe("23 — Composio managed connector", () => {
     );
     const connection = connections.connections.find(
       (item) =>
-        item.connector_alias === "composio-search" &&
+        item.connector_alias === connectorSlug &&
         item.owner_type === "project" &&
         item.is_default,
     );

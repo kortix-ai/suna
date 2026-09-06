@@ -14,6 +14,13 @@
  * The kickoff text itself lives in `onboarding-profile.ts`
  * (`buildOnboardingKickoffPrompt`) so this preview and the actual send always
  * say the same thing.
+ *
+ * This is also the ONE place in the product that throws confetti made of the
+ * workspace's own icon (`components/ui/identity-confetti.tsx`). It belongs
+ * here and nowhere else for the same reason the check mark below does: it is
+ * the finish line, it happens once, and the thing being celebrated is a
+ * specific workspace — so the particles are that workspace's emoji, its glyph,
+ * or its chalk initial tile, never a generic rainbow.
  */
 
 import {
@@ -23,17 +30,24 @@ import {
 } from '@phosphor-icons/react';
 
 import { Button } from '@/components/ui/button';
+import { IdentityConfetti } from '@/components/ui/identity-confetti';
+import { getProject } from '@kortix/sdk';
+import { contract, qk } from '@kortix/sdk/react';
+import { useQuery } from '@tanstack/react-query';
 
 import { buildOnboardingKickoffPrompt } from '../onboarding-profile';
 import { StepShell } from '../step-shell';
 
 export function DoneStep({
+  projectId,
   domain,
   connectedCount,
   showFounderCall,
   onBookCall,
   onStart,
 }: {
+  /** Read only to learn what this workspace's icon IS, for the confetti. */
+  projectId: string;
   /** The company-step's domain field, trimmed. Empty when skipped. */
   domain: string;
   connectedCount: number;
@@ -45,8 +59,27 @@ export function DoneStep({
 }) {
   const kickoff = buildOnboardingKickoffPrompt(domain, connectedCount);
 
+  // The same key and fetcher workspace Settings' General tab uses, so the two
+  // share one cache entry rather than each holding a copy of the project.
+  // Idempotent GET, fired once, at the finish line — this step mounts only
+  // after everything else in the wizard is done.
+  const project = useQuery({
+    queryKey: qk.project.summary(projectId),
+    queryFn: () => getProject(projectId),
+    ...contract('config'),
+  }).data;
+
   return (
     <div className="flex flex-col gap-7">
+      {/* Gated on the project having ARRIVED, not merely on the step being
+          mounted. `IdentityConfetti` fires on its own mount, and mounting it
+          against an undefined project would throw the generic `?` tile a beat
+          before the real icon was known — the one outcome this feature exists
+          to avoid. */}
+      {project ? (
+        <IdentityConfetti emoji={project.icon} glyph={project.icon_glyph} label={project.name} />
+      ) : null}
+
       {/* The one celebratory beat in the flow, and it happens exactly once.
           Springs from 0.6 — never 0, because nothing appears out of nothing —
           with a trace of bounce that would be wrong anywhere else in the UI. */}

@@ -31,7 +31,7 @@ describe('buildStandaloneCapabilityNav', () => {
   test('navigate() to a sibling top-level Customize tab routes there', () => {
     const { nav, pushed } = navFor('members');
     nav.navigate('secrets');
-    expect(pushed).toEqual(['/projects/p1/secrets']);
+    expect(pushed).toEqual(['/projects/p1/customize/secrets']);
   });
 
   test('navigate() to the page it is already on is a no-op, not a self-route', () => {

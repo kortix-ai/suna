@@ -937,12 +937,7 @@ export function FileContentRenderer({
                   must not carry one archive's expansion onto another's paths.
                   Remounting is React's own reset, and it costs nothing — the
                   blob is already cached by the source. */}
-              <ZipRenderer
-                key={filePath}
-                blob={rawBlob}
-                fileName={fileName}
-                className="h-full"
-              />
+              <ZipRenderer key={filePath} blob={rawBlob} fileName={fileName} className="h-full" />
             </Suspense>
           )}
 
@@ -1101,7 +1096,7 @@ export function FileContentRenderer({
                   //
                   // The cap sits on an inner element so the scroll container
                   // stays full width and its scrollbar rides the panel edge.
-                  <div key={filePath} className="h-full w-full overflow-auto p-6">
+                  <div key={filePath} className="h-full w-full overflow-auto p-6 pb-40">
                     <div className="mx-auto w-full max-w-2xl">
                       <MarkdownWithFrontmatter
                         content={hasUnsavedChanges ? latestContentRef.current : displayContent}

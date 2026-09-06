@@ -90,6 +90,14 @@ jobs:
           cache: pnpm
       - name: Install runner dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
+        # Every other workflow that installs from this lockfile (tests.yml,
+        # deploy-prod, deploy-staging) already relaxes engine-strict here. The
+        # runner cache resolves `node-version: 22` to 22.22.0, and
+        # write-file-atomic@8.0.0 (via apps/web, since #7121) declares
+        # `^22.22.2`; with .npmrc engine-strict=true that killed every shard at
+        # install (run 33995649798, release/v0.13.11).
+        env:
+          npm_config_engine_strict: "false"
       # Bounded at the STEP so a slow sweep ends as a job *failure* (which
       # continue-on-error absorbs) — never as a job *cancelled*: on run
       # 32226539107 the 15-minute job cap fired while gc was still deleting a
@@ -222,6 +230,14 @@ jobs:
           cache: pnpm
       - name: Install deployed-target dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
+        # Every other workflow that installs from this lockfile (tests.yml,
+        # deploy-prod, deploy-staging) already relaxes engine-strict here. The
+        # runner cache resolves `node-version: 22` to 22.22.0, and
+        # write-file-atomic@8.0.0 (via apps/web, since #7121) declares
+        # `^22.22.2`; with .npmrc engine-strict=true that killed every shard at
+        # install (run 33995649798, release/v0.13.11).
+        env:
+          npm_config_engine_strict: "false"
       - name: Run this shard of the deployed staging API suite
         run: pnpm test -- --target-api-full --api-shard=${{ matrix.shard }}/6
       # A cancelled job is SIGKILLed before the runner's `finally` teardown, so
@@ -322,6 +338,9 @@ jobs:
         run: |
           pnpm install --frozen-lockfile --filter @kortix/tests...
           pnpm --dir tests exec playwright install --with-deps chromium
+        # See the same env on the API shard install above.
+        env:
+          npm_config_engine_strict: "false"
       - name: Run this shard of the deployed staging browser journeys
         run: pnpm test -- --target-browser-full --browser-shard=${{ matrix.shard }}/3
       # No --run-id sweep here: the Playwright specs mint their own Supabase
@@ -378,6 +397,14 @@ jobs:
           cache: pnpm
       - name: Install runner dependencies
         run: pnpm install --frozen-lockfile --filter @kortix/tests...
+        # Every other workflow that installs from this lockfile (tests.yml,
+        # deploy-prod, deploy-staging) already relaxes engine-strict here. The
+        # runner cache resolves `node-version: 22` to 22.22.0, and
+        # write-file-atomic@8.0.0 (via apps/web, since #7121) declares
+        # `^22.22.2`; with .npmrc engine-strict=true that killed every shard at
+        # install (run 33995649798, release/v0.13.11).
+        env:
+          npm_config_engine_strict: "false"
       - name: Reclaim this run's test accounts
         run: bun tests/bin/ke2e.ts gc --run-id ${{ github.run_id }}
 

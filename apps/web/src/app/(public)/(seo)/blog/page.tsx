@@ -52,7 +52,7 @@ export default function BlogIndexPage() {
     publisher: {
       '@type': 'Organization',
       name: 'Kortix',
-      logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.png` },
+      logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.svg` },
     },
     blogPost: posts.map((post) => ({
       '@type': 'BlogPosting',

@@ -1,20 +1,11 @@
 'use client';
 
-import {
-  ArrowDownIcon as ArrowDown,
-  ArrowUpIcon as ArrowUp,
-  CaretLeftIcon as ChevronLeft,
-  CaretRightIcon as ChevronRight,
-  ArrowSquareOutIcon as ExternalLink,
-  KanbanIcon as FolderKanban,
-  ArrowClockwiseIcon as RefreshCw,
-} from '@phosphor-icons/react';
+import { ArrowSquareOutIcon } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { useCallback, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { IconInbox } from '@/components/ui/kortix-icons';
-import { PageSearchBar } from '@/components/ui/page-search-bar';
 import {
   Select,
   SelectContent,
@@ -41,7 +32,10 @@ import { useDebounce } from '@/hooks/use-debounced-value';
 import { relativeTime } from '@/lib/relative-time';
 import { cn } from '@/lib/utils';
 
-import { SectionContainer, SectionHeader, StatPill, StatRow } from '../_components/section-header';
+import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
+import { AdminEmptyFrame, AdminTableFrame } from '../_components/admin-panel';
+import { AdminPagination, AdminSearch, AdminSortHeader } from '../_components/admin-table';
+import { StatGrid, StatTile } from '../_components/stat-tile';
 
 const PAGE_SIZE = 50;
 
@@ -111,7 +105,9 @@ export default function AdminProjectsPage() {
   // (newest / most sessions first, which is what an operator wants to see).
   const setSort = useCallback((column: AdminProjectsSortBy) => {
     setSortState((s) =>
-      s.by === column ? { by: column, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { by: column, dir: 'desc' },
+      s.by === column
+        ? { by: column, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+        : { by: column, dir: 'desc' },
     );
     setPage(1);
   }, []);
@@ -130,47 +126,40 @@ export default function AdminProjectsPage() {
   const filtered = search.length > 0 || status !== 'all';
 
   return (
-    <SectionContainer>
-      <SectionHeader
-        icon={FolderKanban}
-        title="Projects"
-        description="Every project across every account, most-active first. Activity is the newest session on the project, not the last row edit."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="gap-1.5"
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
-            Refresh
-          </Button>
-        }
-      />
-
-      <StatRow className="sm:grid-cols-2 lg:grid-cols-2">
-        <StatPill
+    <AdminPageShell
+      width="wide"
+      title="Projects"
+      description="Every project across every account, most-active first. Activity is the newest session on the project, not the last row edit."
+    >
+      {/* Two stat cards on their own row… */}
+      <StatGrid className="sm:grid-cols-2 lg:grid-cols-2">
+        <StatTile
           label="Total filtered"
           value={total.toLocaleString()}
-          hint={filtered ? 'Matches current filters' : 'All projects'}
+          hint={filtered ? 'Matches the current filters' : 'All projects'}
         />
-        <StatPill
+        <StatTile
           label="Live sessions"
           value={liveOnPage.toLocaleString()}
           tone={liveOnPage > 0 ? 'success' : 'default'}
           hint={`On this page (${projects.length} of ${total.toLocaleString()})`}
         />
-      </StatRow>
+      </StatGrid>
 
+      {/* …then one control line under them: search takes the width, the status
+          select and refresh sit at its end. All three are h-9, so the row is
+          level. Below `sm` they stack full-width — search, then select, then
+          refresh — which is the whole mobile response this page needs. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <PageSearchBar
-          value={searchInput}
-          onChange={setSearchInput}
-          placeholder="Search by project name, account name, or owner email"
-        />
+        <div className="min-w-0 flex-1">
+          <AdminSearch
+            value={searchInput}
+            onChange={setSearchInput}
+            placeholder="Search projects, accounts, owners"
+          />
+        </div>
         <Select value={status} onValueChange={(v) => applyStatus(v as StatusFilter)}>
-          <SelectTrigger className="h-9 w-[170px]">
+          <SelectTrigger className="w-full sm:w-44">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent align="end">
@@ -181,21 +170,19 @@ export default function AdminProjectsPage() {
             ))}
           </SelectContent>
         </Select>
+        <AdminRefreshButton busy={isFetching} onRefresh={() => void refetch()} />
       </div>
 
       {isLoading ? (
-        <div className="space-y-2">
-          {[...Array(8)].map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full rounded-2xl" />
-          ))}
-        </div>
+        <ProjectsTableSkeleton />
       ) : projects.length === 0 ? (
-        <div className="border-border/60 bg-card rounded-2xl border">
+        <AdminEmptyFrame>
           <EmptyState
             icon={IconInbox}
-            title={filtered ? 'No projects match your filters' : 'No projects yet'}
+            size="sm"
+            title={filtered ? 'No projects match these filters' : 'No projects yet'}
             description={
-              filtered ? 'Try adjusting the status filter or clearing the search.' : undefined
+              filtered ? 'Try a different status, or clear the search.' : undefined
             }
             action={
               filtered ? (
@@ -205,20 +192,15 @@ export default function AdminProjectsPage() {
               ) : undefined
             }
           />
-        </div>
+        </AdminEmptyFrame>
       ) : (
-        <div
-          className={cn(
-            'border-border/60 overflow-hidden rounded-2xl border transition-opacity',
-            isFetching && 'opacity-70',
-          )}
-        >
+        <AdminTableFrame busy={isFetching}>
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Project</TableHead>
                 <TableHead>Account</TableHead>
-                <SortHeader
+                <AdminSortHeader
                   label="Sessions"
                   column="sessions"
                   sortBy={sortBy}
@@ -226,14 +208,14 @@ export default function AdminProjectsPage() {
                   onSort={setSort}
                   align="right"
                 />
-                <SortHeader
+                <AdminSortHeader
                   label="Last activity"
                   column="activity"
                   sortBy={sortBy}
                   sortDir={sortDir}
                   onSort={setSort}
                 />
-                <SortHeader
+                <AdminSortHeader
                   label="Created"
                   column="created"
                   sortBy={sortBy}
@@ -254,13 +236,13 @@ export default function AdminProjectsPage() {
                         <span className="truncate group-hover:underline">
                           {project.name || 'Unnamed project'}
                         </span>
-                        <ExternalLink className="text-muted-foreground h-3 w-3 shrink-0" />
+                        <ArrowSquareOutIcon className="text-muted-foreground size-3 shrink-0" />
                       </Link>
                       <div className="text-muted-foreground truncate text-xs">
                         <span className="font-mono">{project.projectId.slice(0, 8)}</span>
                         {project.status === 'archived' && (
                           <>
-                            <span className="mx-1.5 opacity-50">·</span>
+                            <span className="text-muted-foreground/40 mx-1.5">·</span>
                             <span>Archived</span>
                           </>
                         )}
@@ -285,16 +267,18 @@ export default function AdminProjectsPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right text-sm tabular-nums">
+                    {/* Live count carries the hue; the total never does — a
+                        project with no live session is not a warning. */}
                     <span
                       className={cn(
                         project.activeSessionCount > 0
-                          ? 'text-emerald-600 dark:text-emerald-400'
+                          ? 'text-kortix-green'
                           : 'text-muted-foreground',
                       )}
                     >
                       {project.activeSessionCount}
                     </span>
-                    <span className="text-muted-foreground/50 mx-0.5">/</span>
+                    <span className="text-muted-foreground/40 mx-0.5">/</span>
                     <span>{project.sessionCount}</span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
@@ -307,79 +291,40 @@ export default function AdminProjectsPage() {
               ))}
             </TableBody>
           </Table>
-        </div>
+        </AdminTableFrame>
       )}
 
-      {pages > 1 && (
-        <div className="text-muted-foreground flex items-center justify-between text-sm">
-          <span>
-            Page {page} of {pages} · {total.toLocaleString()} projects
-          </span>
-          <div className="flex gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2.5"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-            >
-              <ChevronLeft className="h-3.5 w-3.5" />
-              Prev
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 px-2.5"
-              onClick={() => setPage((p) => Math.min(pages, p + 1))}
-              disabled={page === pages}
-            >
-              Next
-              <ChevronRight className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        </div>
-      )}
-    </SectionContainer>
+      <AdminPagination
+        page={page}
+        pages={pages}
+        total={total}
+        noun="projects"
+        onPageChange={setPage}
+      />
+    </AdminPageShell>
   );
 }
 
-function SortHeader({
-  label,
-  column,
-  sortBy,
-  sortDir,
-  onSort,
-  align = 'left',
-}: {
-  label: string;
-  column: AdminProjectsSortBy;
-  sortBy: AdminProjectsSortBy;
-  sortDir: AdminProjectsSortDir;
-  onSort: (col: AdminProjectsSortBy) => void;
-  align?: 'left' | 'right';
-}) {
-  const active = sortBy === column;
+/**
+ * Shape-matched placeholder: one header band plus eight row bands inside the
+ * table's own frame, so the page does not jump when the rows land.
+ */
+function ProjectsTableSkeleton() {
   return (
-    <TableHead className={align === 'right' ? 'text-right' : ''}>
-      <button
-        type="button"
-        onClick={() => onSort(column)}
-        className={cn(
-          'inline-flex items-center gap-1 text-xs font-medium tracking-wider uppercase transition-colors',
-          active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-        )}
-      >
-        {label}
-        {active ? (
-          sortDir === 'asc' ? (
-            <ArrowUp className="h-3 w-3" />
-          ) : (
-            <ArrowDown className="h-3 w-3" />
-          )
-        ) : (
-          <ArrowDown className="h-3 w-3 opacity-0" />
-        )}
-      </button>
-    </TableHead>
+    <div className="bg-popover overflow-hidden rounded-md border">
+      <div className="bg-accent border-b px-5 py-2">
+        <Skeleton className="h-4 w-40" />
+      </div>
+      <div className="divide-border divide-y">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="flex items-center gap-5 px-5 py-3">
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="h-4 w-48" />
+            <Skeleton className="ml-auto h-4 w-16" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

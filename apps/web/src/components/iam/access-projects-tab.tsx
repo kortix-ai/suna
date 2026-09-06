@@ -256,8 +256,15 @@ export function accessVia(
 
 /** "Agents: all" when nothing narrows them, else "Agents: 3 of 5" (or just
  *  "Agents: 3" when the project's agent roster is not readable here). */
-export function agentsMetaPart(granted: number, projectAgentCount: number | undefined): string {
-  if (granted === 0) return 'Agents: all';
+export function agentsMetaPart(
+  granted: number,
+  projectAgentCount: number | undefined,
+  /** Whether the row holds the manager tier (project admin, or an account
+   *  owner/admin). Agents are closed by default: zero grants means "every
+   *  agent" for that tier and "no agent" for a member. */
+  managerTier = true,
+): string {
+  if (granted === 0) return managerTier ? 'Agents: all' : 'Agents: none';
   if (projectAgentCount == null) return `Agents: ${granted}`;
   return `Agents: ${granted} of ${projectAgentCount}`;
 }
@@ -1123,7 +1130,11 @@ function MemberAccessRow({
           ? [...(via ? [via] : [])]
           : [
               ...(via ? [via] : []),
-              agentsMetaPart(agentGrants.length, projectAgentCount),
+              agentsMetaPart(
+                agentGrants.length,
+                projectAgentCount,
+                displayRole.kind === 'builtin' && displayRole.role === 'manager',
+              ),
               <ExpiryMeta key="expires" expiresAt={expiresAt} />,
             ]
       }
@@ -1210,7 +1221,11 @@ function GroupAccessRowView({
         </Badge>
       }
       metaParts={[
-        agentsMetaPart(agentGrants.length, projectAgentCount),
+        agentsMetaPart(
+          agentGrants.length,
+          projectAgentCount,
+          role.kind === 'builtin' && role.role === 'manager',
+        ),
         ...(policy ? [<ExpiryMeta key="expires" expiresAt={expiresAt} />] : []),
       ]}
       trailing={roleLabel}

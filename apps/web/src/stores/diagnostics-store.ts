@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { registerPersistedStore, resetPersistedStore } from '@/stores/persisted-store-registry';
 
 // ============================================================================
 // Types
@@ -415,6 +416,10 @@ export const useDiagnosticsStore = create<DiagnosticsState>()(
     partialize: (state) => ({ byFile: state.byFile }) as unknown as DiagnosticsState,
   },
 ));
+
+// Registers this store for `resetClientState()`'s sign-out sweep without
+// `reset-client-state.ts` importing this file — see `persisted-store-registry.ts`.
+registerPersistedStore('kortix-diagnostics', () => resetPersistedStore(useDiagnosticsStore));
 
 // Expose on window for console debugging
 if (typeof window !== 'undefined') {

@@ -6,6 +6,7 @@ import {
   isRetryableError,
   isTransportFailure,
   messageFor,
+  resolveTargetAccountId,
   RETRY_DELAY_MS,
   runCreate,
   runCreateAttempt,
@@ -92,21 +93,51 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: null },
       [OWNER_ACCOUNT],
       'key-1',
+      'user-1',
     );
     expect(payload.account_id).toBe('acct-owner');
   });
 
-  test('prefers the explicitly picked account over the creatableAccounts fallback', () => {
+  test('prefers the explicitly picked account over the default, when that pick is one of creatableAccounts', () => {
+    // `userId: 'acct-owner'` anchors this list to the viewer (matches
+    // `OWNER_ACCOUNT`) so it is a normal multi-account list, not a FOREIGN
+    // one — the user is explicitly picking the OTHER account they can also
+    // create in (e.g. personal account owned, team account picked).
+    const picked: KortixAccount = { account_id: 'acct-picked', name: 'Picked Co', account_role: 'owner' };
     const payload = buildCreatePayload(
       { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
-      [OWNER_ACCOUNT],
+      [OWNER_ACCOUNT, picked],
       'key-1',
+      'acct-owner',
     );
     expect(payload.account_id).toBe('acct-picked');
   });
 
+  test('Task 2 item 3 (G2 fail closed): throws rather than send when the resolved account is NOT one of creatableAccounts', () => {
+    // Was previously "prefers the explicitly picked account over the
+    // creatableAccounts fallback" and asserted `accountId: 'acct-picked'`
+    // resolved even though `'acct-picked'` was absent from `[OWNER_ACCOUNT]`
+    // — trusting `state.accountId` unconditionally, with no check that it is
+    // an account the current user can actually create in. That is precisely
+    // the shape a stale/foreign `accountId` would take, so `buildCreatePayload`
+    // (via `resolveTargetAccountId`) now refuses to send it at all.
+    expect(() =>
+      buildCreatePayload(
+        { ...INITIAL_FORM_STATE, name: 'suna-web', accountId: 'acct-picked' },
+        [OWNER_ACCOUNT],
+        'key-1',
+        'user-1',
+      ),
+    ).toThrow();
+  });
+
   test('always carries the passed idempotency_key', () => {
-    const payload = buildCreatePayload({ ...INITIAL_FORM_STATE, name: 'x' }, [OWNER_ACCOUNT], 'the-key');
+    const payload = buildCreatePayload(
+      { ...INITIAL_FORM_STATE, name: 'x' },
+      [OWNER_ACCOUNT],
+      'the-key',
+      'user-1',
+    );
     expect(payload.idempotency_key).toBe('the-key');
   });
 
@@ -115,9 +146,77 @@ describe('buildCreatePayload: account_id is always sent explicitly', () => {
       { ...INITIAL_FORM_STATE, name: '  suna-web  ' },
       [OWNER_ACCOUNT],
       'key-1',
+      'user-1',
     );
     expect(payload.name).toBe('suna-web');
     expect(payload.seed_starter).toBe(true);
+  });
+});
+
+describe('resolveTargetAccountId', () => {
+  test('an explicit pick present in creatableAccounts wins', () => {
+    expect(
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: 'acct-owner' },
+        [OWNER_ACCOUNT],
+        'user-1',
+      ),
+    ).toBe('acct-owner');
+  });
+
+  test('identity match resolves the default when nothing is explicitly picked', () => {
+    const personal: KortixAccount = { account_id: 'user-1', name: "me's Account", account_role: 'owner' };
+    const team: KortixAccount = { account_id: 'acct-team', name: 'Acme', account_role: 'owner' };
+    expect(
+      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [team, personal], 'user-1'),
+    ).toBe('user-1');
+  });
+
+  // Task 2's Tests section: "a member-only user with no owned account
+  // resolves to `undefined` rather than a stranger's account."
+  // `filterCreatableAccounts` excludes a member-role account entirely, so a
+  // member-only user's `creatableAccounts` is always `[]` — there is nothing
+  // to default into, and nothing was ever explicitly picked either.
+  test('a member-only user (empty creatableAccounts) resolves to undefined, never a stranger\'s account', () => {
+    expect(
+      resolveTargetAccountId({ ...INITIAL_FORM_STATE, accountId: null }, [], 'user-1'),
+    ).toBeUndefined();
+  });
+
+  test('G2 fail closed: throws when the resolved id is not one of creatableAccounts', () => {
+    expect(() =>
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: 'acct-stale' },
+        [OWNER_ACCOUNT],
+        'user-1',
+      ),
+    ).toThrow();
+  });
+
+  test('G2 fail closed: throws for a FOREIGN accounts list even when the resolved id IS technically in it', () => {
+    // The gap this closes: a 2+-account list with none owned by the viewer
+    // still has an `is_primary_owner`/first-creatable default that resolves
+    // to SOME entry — and that entry is trivially "in creatableAccounts",
+    // since it came from that exact list. The plain membership check above
+    // cannot catch this; only asking whether the list itself is FOREIGN can.
+    const foreign1: KortixAccount = { account_id: 'org-1', name: 'Acme Inc', account_role: 'admin' };
+    const foreign2: KortixAccount = { account_id: 'org-2', name: 'Widgets Co', account_role: 'admin' };
+    expect(() =>
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: null },
+        [foreign1, foreign2],
+        'user-1',
+      ),
+    ).toThrow();
+    // Even an EXPLICIT pick cannot escape a FOREIGN list — the whole list is
+    // untrustworthy, not just the default tier.
+    expect(() =>
+      resolveTargetAccountId(
+        { ...INITIAL_FORM_STATE, accountId: 'org-1' },
+        [foreign1, foreign2],
+        'user-1',
+      ),
+    ).toThrow();
   });
 });
 

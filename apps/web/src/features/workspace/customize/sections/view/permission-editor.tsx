@@ -3,8 +3,8 @@
 /** The tool-permission editor — a default action plus per-tool rules (a bare
  *  action, or a map of path/command patterns to actions). */
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
 import { Input } from '@/components/ui/input';
 import {
@@ -254,24 +254,16 @@ export function ToolsSection({
     <EditorSection
       title="Tools"
       description="Which tools this agent may call. Allow runs it straight away, Ask pauses for your approval, Deny blocks it."
+      trailing={
+        <Badge variant="outline" size="sm">
+          {summary}
+        </Badge>
+      }
     >
-      <div className="py-3.5">
-        <Disclosure variant="outline" className="overflow-hidden rounded-md">
-          <DisclosureTrigger variant="outline">
-            <Button
-              variant="popover"
-              className="flex w-full items-center justify-between gap-3 rounded-none text-sm font-normal"
-            >
-              <span className="truncate">{summary}</span>
-              <span className="text-muted-foreground shrink-0 text-xs">Open</span>
-            </Button>
-          </DisclosureTrigger>
-          <DisclosureContent variant="outline" contentClassName="border-border border-t">
-            <div className="p-3">
-              <PermissionEditor permission={permission} onChange={onChange} />
-            </div>
-          </DisclosureContent>
-        </Disclosure>
+      {/* Open, not behind a disclosure: the page gives Tools a full column
+          of its own (Marko, 2026-09-03). */}
+      <div className="py-4">
+        <PermissionEditor permission={permission} onChange={onChange} />
       </div>
     </EditorSection>
   );

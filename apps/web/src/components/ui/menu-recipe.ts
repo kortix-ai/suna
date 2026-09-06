@@ -98,11 +98,29 @@ export function menuRow(size: MenuRowSize, tone: MenuRowTone, className?: string
  * recoloured every row at once whenever the pointer entered, fighting the
  * per-row hover the rows define themselves. Colour is a row concern.
  */
-export const FLOATING_PANEL =
-  'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 border-border rounded-[10px] border shadow-md  ease-out';
+/**
+ * The surface itself — colour, hairline, radius, elevation. No motion.
+ *
+ * Split out from the motion classes so a panel that must appear INSTANTLY can
+ * take the surface without inheriting the enter/exit animation. A submenu is
+ * the case that needs it: it opens under a pointer that is already travelling
+ * toward its first row, so the 150ms `animate-in` is 150ms of the row sliding
+ * away from the cursor.
+ */
+export const FLOATING_PANEL_SURFACE =
+  'bg-popover text-popover-foreground border-border rounded-[10px] border shadow-md';
+
+/** Enter/exit for panels that appear away from the pointer's path. */
+export const FLOATING_PANEL_MOTION =
+  'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ease-out';
+
+export const FLOATING_PANEL = cn(FLOATING_PANEL_SURFACE, FLOATING_PANEL_MOTION);
 
 /** The floating surface holding a list of rows: dropdown, context menu, select. */
 export const MENU_PANEL = cn(FLOATING_PANEL, 'p-1');
+
+/** `MENU_PANEL` with no enter/exit animation — paints on the same frame it mounts. */
+export const MENU_PANEL_STATIC = cn(FLOATING_PANEL_SURFACE, 'p-1');
 
 /** Group label: `px-2.5` matches the sm row, so labels and rows share a left edge. */
 export const MENU_LABEL = 'text-muted-foreground px-2.5 py-1 text-xs font-medium tracking-normal';

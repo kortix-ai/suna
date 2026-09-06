@@ -4,9 +4,11 @@ import {
   accountHasLiveSubscription,
   billingDialogArgs,
   billingGateCopy,
+  billingModalCopy,
   billingStateAllowsRun,
   billingStateNeedsTopUp,
   resolveBillingState,
+  walletSeverity,
 } from './billing-gate-state';
 
 function accountState(overrides: Partial<AccountStateLike> = {}): AccountStateLike {
@@ -46,11 +48,32 @@ describe('resolveBillingState — the server state wins', () => {
 });
 
 describe('resolveBillingState — client fallback for an API without billing_state', () => {
-  test('Team account on an ACTIVE subscription with a drained wallet is active, never "no plan"', () => {
+  test('Team account on an ACTIVE subscription with a drained wallet is blocked, never "no plan"', () => {
+    // The fallback used to return `active` here — its own copy of the removed
+    // `subscriptionBypassesWalletFloor`. On a rolling deploy that is the worst
+    // possible answer: an old API sends no `billing_state`, this fallback runs,
+    // and the UI renders a drained Team account as runnable while the new API
+    // beside it is already 402ing every prompt.
+    //
+    // Note `can_run: false` — the server had ALREADY said no. The fallback's job
+    // is to agree with it and explain it, never to overrule it.
     const state = resolveBillingState(
       accountState({
         billing_model: 'per_seat',
         credits: { can_run: false, total: 0.0099614711 },
+        subscription: { subscription_id: 'sub_live', status: 'active' },
+      }),
+    );
+    expect(state).toBe('out_of_credits');
+    expect(billingStateAllowsRun(state)).toBe(false);
+    expect(state).not.toBe('no_subscription');
+  });
+
+  test('Team account on an ACTIVE subscription WITH credit is active', () => {
+    const state = resolveBillingState(
+      accountState({
+        billing_model: 'per_seat',
+        credits: { can_run: true, total: 25 },
         subscription: { subscription_id: 'sub_live', status: 'active' },
       }),
     );
@@ -237,5 +260,96 @@ describe('the client fallback cannot contradict the server on who bypasses the f
     expect(copy.dialogReason).toBe('insufficient_credits');
     expect(copy.title).not.toContain('Subscribe');
     expect(copy.ctaLabel).toBe('Fix payment');
+  });
+});
+
+describe('walletSeverity — the ONLY place a balance becomes an alert', () => {
+  test('a running account with a healthy wallet is silent', () => {
+    expect(walletSeverity(accountState({ billing_state: 'active', credits: { total: 25 } }))).toBe(
+      null,
+    );
+  });
+
+  test('a running account below the low-balance line gets the soft nudge', () => {
+    expect(walletSeverity(accountState({ billing_state: 'active', credits: { total: 4.99 } }))).toBe(
+      'low',
+    );
+  });
+
+  test('THE REGRESSION: a $0 wallet on an account the server calls `active` is NOT an alarm', () => {
+    // The whole bug in one assertion. The sidebar read `balance <= 0` and
+    // rendered a red "Out of credits" row on an account that was starting
+    // sessions perfectly well. Severity must follow the state machine.
+    //
+    // (`active` at exactly $0 is not reachable through the current server rules
+    // — the wallet floor blocks first — but the client must never assume the
+    // server's rules, which is precisely the assumption that produced the bug.)
+    expect(walletSeverity(accountState({ billing_state: 'active', credits: { total: 0 } }))).toBe(
+      'low',
+    );
+  });
+
+  test('a blocked account is `blocked`, whatever the number says', () => {
+    expect(
+      walletSeverity(accountState({ billing_state: 'out_of_credits', credits: { total: 0 } })),
+    ).toBe('blocked');
+    expect(
+      walletSeverity(accountState({ billing_state: 'payment_failed', credits: { total: -12 } })),
+    ).toBe('blocked');
+  });
+
+  test('an account with no plan is silent — the subscribe CTA owns that case, not a wallet alert', () => {
+    expect(
+      walletSeverity(accountState({ billing_state: 'no_subscription', credits: { total: 0 } })),
+    ).toBe(null);
+    expect(walletSeverity(accountState({ billing_state: 'no_account', credits: { total: 0 } }))).toBe(
+      null,
+    );
+  });
+
+  test('an unloaded account never renders an alarm', () => {
+    expect(walletSeverity(null)).toBe(null);
+    expect(walletSeverity(undefined)).toBe(null);
+  });
+});
+
+describe('billingModalCopy — no component writes billing prose', () => {
+  test('a voluntary top-up on a healthy account is not an emergency', () => {
+    const copy = billingModalCopy('active', { isPerSeat: true });
+    expect(copy.title).toBe('Add credits');
+    expect(copy.title).not.toBe('Out of credits');
+  });
+
+  test('a drained account is told it is out of credits and that its plan survives', () => {
+    const copy = billingModalCopy('out_of_credits', { isPerSeat: true });
+    expect(copy.title).toBe('Out of credits');
+    expect(copy.description).toContain('your Team plan and seats are unaffected');
+  });
+
+  test('a NON-per-seat account is never promised seats it does not have', () => {
+    const copy = billingModalCopy('out_of_credits', { isPerSeat: false });
+    expect(copy.description).not.toContain('seats');
+    expect(copy.description).toContain('your plan is unaffected');
+  });
+
+  test('a failing payment is never told its plan is unaffected', () => {
+    const copy = billingModalCopy('payment_failed', { isPerSeat: true });
+    expect(copy.title).toBe('Payment issue on your plan');
+    expect(copy.description).not.toContain('unaffected');
+  });
+
+  test('every state produces copy — no state falls through to an empty modal', () => {
+    for (const state of [
+      'active',
+      'out_of_credits',
+      'payment_failed',
+      'no_account',
+      'no_subscription',
+      null,
+    ] as const) {
+      const copy = billingModalCopy(state);
+      expect(copy.title.length).toBeGreaterThan(0);
+      expect(copy.description.length).toBeGreaterThan(0);
+    }
   });
 });

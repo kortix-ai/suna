@@ -187,6 +187,26 @@ describe('ONE prompt = ONE id = ONE bubble, from Enter', () => {
     expect(chat).toContain('transcriptMessageIds: transcriptUserMessageIds');
   });
 
+  test('the re-mint alias is announced from an EFFECT, never from the memo that reads it', () => {
+    // `registerOptimisticEcho` writes to the sync store: it retires the bubble
+    // the row names when the runtime's echo has already landed unmatched,
+    // which a burst of queued prompts makes the ordinary case. Called from a
+    // `useMemo`, that write lands during render and re-renders every
+    // subscriber mid-render.
+    const effect = between(
+      chat,
+      'const store = useSessionStateStore.getState();\n    for (const prompt of promptInbox.prompts) {',
+      '}, [promptInbox.prompts, sessionId]);',
+    );
+    expect(effect).toContain('store.registerOptimisticEcho(');
+    const rowsByMessageId = between(
+      chat,
+      'const inboxRowsByMessageId = useMemo(() => {',
+      'const queueRows = useMemo(',
+    );
+    expect(rowsByMessageId).not.toContain('registerOptimisticEcho');
+  });
+
   test('the turn is keyed by the id the bubble was FIRST painted under — uniquely', () => {
     // The origin key keeps one element across the re-mint swap; the
     // uniqueness pass keeps React sane when an old echo and its re-placed

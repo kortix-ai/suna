@@ -2,10 +2,16 @@
  * @kortix/sdk — the Kortix frontend data layer, in one package.
  *
  * THIS ROOT ENTRY IS CANONICAL: the whole framework-free surface (client,
- * session, turns, files, event stream, errors, REST clients) is exported
- * here. Configure once at startup, then use one import. Every host — web,
- * mobile, demo — shares this single implementation; nothing talks to the raw
- * API or OpenCode directly.
+ * session, turns, files, message queue, event stream, errors, REST clients)
+ * is exported here. Configure once at startup, then use one import. Every
+ * host — web, mobile, demo — shares this single implementation; nothing talks
+ * to the raw API or OpenCode directly.
+ *
+ * "Canonical" is asserted, not asserted-in-prose: `root-canonical.test.ts`
+ * fails if any name exported by an isomorphic subpath is missing here. The
+ * only names allowed to be absent are the browser-only zustand stores, which
+ * cannot live at the root because `zustand` is a forbidden import in the
+ * isomorphic-core tier (see `index.isomorphic.test.ts`).
  *
  * Only three subpaths exist beyond the root, each for a reason that fits in
  * one sentence:
@@ -67,12 +73,36 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
 export { generateSessionId } from './platform/session-id';
+
+/**
+ * The framework-free outbound message queue — a host's "type while the agent is
+ * still working" buffer, as pure reducers over a `SessionQueue` value (no
+ * store, no React, no timers). Previously reachable ONLY from
+ * `@kortix/sdk/message-queue`, which made the queue a fourth entry point you
+ * had to know existed. Re-exported here so the root really is canonical; the
+ * subpath keeps working as an alias.
+ */
+export {
+  claimNext,
+  completeInFlight,
+  createSessionQueue,
+  editQueued,
+  enqueue,
+  failInFlight,
+  removeQueued,
+  reorderQueued,
+  retryFailed,
+  type QueuedMessage,
+  type QueuedMessageInput,
+  type SessionQueue,
+} from './core/session/message-queue';
 
 /**
  * Session transcript formatting — pure `SessionInfo`/`MessageWithParts` →

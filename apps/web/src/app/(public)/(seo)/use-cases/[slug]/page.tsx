@@ -139,7 +139,7 @@ export default async function UseCasePage(props: PageProps) {
         publisher: {
           '@type': 'Organization',
           name: 'Kortix',
-          logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.png` },
+          logo: { '@type': 'ImageObject', url: `${siteMetadata.url}/favicon.svg` },
         },
         image: data.cover ? `${siteMetadata.url}${data.cover}` : `${siteMetadata.url}/banner.png`,
         url: postUrl,

@@ -70,7 +70,28 @@ export function validatePreviewRuntimeSecrets(
 }
 
 export function buildPreviewCaddyfile(publicHost: string): string {
-  return `:8080 {
+  // Ride out a redeploy instead of 502ing through it.
+  //
+  // A branch environment is REUSED in place: \`compose up -d\` recreates
+  // \`frontend\` and \`kortix-api\` while \`preview-edge\` keeps running. For the
+  // ~10-30s that takes, Caddy's dial to the upstream is refused and every
+  // request — the browser's own document included — answers 502. Observed on
+  // the pi-worker branch environment repeatedly: the edge started 19:08:58, the app containers
+  // were recreated at 22:12:45, and the 502 screenshot is stamped 22:12:52.
+  //
+  // \`lb_try_duration\` makes Caddy hold the request and re-dial until the new
+  // container listens, so a deploy costs latency rather than an error page. It
+  // retries CONNECTION failures only — a 502 the app itself returns is passed
+  // straight through, so this cannot mask a real upstream fault.
+  //
+  // A snippet is a TOP-LEVEL form: declaring it inside the site block fails the
+  // adapter with \`File to import not found: swap_tolerant\`.
+  return `(swap_tolerant) {
+  lb_try_duration 30s
+  lb_try_interval 250ms
+}
+
+:8080 {
   encode zstd gzip
 
   # A deployed environment gives the API a host of its own, so EVERY path it
@@ -80,16 +101,22 @@ export function buildPreviewCaddyfile(publicHost: string): string {
   # with the non-\`/v1\` mounts in \`apps/api/src/index.ts\`.
   @api path /v1* /health /health/* /metrics /scim/v2/* /internal/* /.well-known/oauth-authorization-server
   handle @api {
-    reverse_proxy kortix-api:8008
+    reverse_proxy kortix-api:8008 {
+      import swap_tolerant
+    }
   }
 
   @supabase path /auth/v1* /rest/v1* /storage/v1* /realtime/v1* /functions/v1* /graphql/v1*
   handle @supabase {
-    reverse_proxy supabase-kong:8000
+    reverse_proxy supabase-kong:8000 {
+      import swap_tolerant
+    }
   }
 
   handle_path /_gateway/* {
-    reverse_proxy llm-gateway:8090
+    reverse_proxy llm-gateway:8090 {
+      import swap_tolerant
+    }
   }
 
   handle_path /_tests/* {
@@ -98,7 +125,18 @@ export function buildPreviewCaddyfile(publicHost: string): string {
   }
 
   handle_path /_mailpit/* {
-    reverse_proxy mailpit:8025
+    reverse_proxy mailpit:8025 {
+      import swap_tolerant
+    }
+  }
+
+  # Only reached when the retry budget above is exhausted — i.e. the upstream is
+  # really gone, not merely restarting. A plain page beats the provider's raw
+  # 502, and \`Retry-After\` tells a client this is transient.
+  handle_errors {
+    header Retry-After 15
+    header Cache-Control "no-store"
+    respond "Deploying. This environment is restarting - retry in a few seconds." {http.error.status_code}
   }
 
   handle {
@@ -112,6 +150,7 @@ export function buildPreviewCaddyfile(publicHost: string): string {
       # host so the guard compares like with like.
       header_up X-Forwarded-Host ${publicHost}
       header_up X-Forwarded-Proto https
+      import swap_tolerant
     }
   }
 }
@@ -159,6 +198,28 @@ export function buildPreviewComposeOverlay(
   supabase-db:
     ports:
       - "127.0.0.1:15432:5432"
+  # The git mirror must outlive the container.
+  #
+  # \`cacheRoot()\` (apps/api/src/projects/git/mirror.ts) is
+  # \`/tmp/kortix/git-cache\`, and kortix-api runs with NO volumes — so every
+  # redeploy recreates the container and deletes every project's mirror. On a
+  # deployment whose managed repos exist on GitHub that is only a slow re-clone.
+  # On a PREVIEW it is data loss: the preview's GitHub App cannot create repos
+  # (403 \`Resource not accessible by integration\`), so a seeded project's
+  # history lives ONLY in that cache. Losing it leaves the project unopenable —
+  # \`POST /sessions\` answers 500 \`could not read Username for
+  # 'https://github.com'\` because the re-clone has no upstream to clone from.
+  #
+  # Measured on the pi-worker branch environment 2026-09-01: container restarted 10:14:06, and
+  # every session create for the branch's own test project failed from 10:12
+  # onward with that exact error; \`ls /tmp/kortix/git-cache\` -> no such
+  # directory, and the managed org held none of the preview's repos.
+  kortix-api:
+    volumes:
+      - "kortix-git-cache:/tmp/kortix"
+
+volumes:
+  kortix-git-cache:
 `;
 }
 

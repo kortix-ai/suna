@@ -19,7 +19,7 @@
  */
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
-  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs,
+  lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists, worktreeAddArgs, removeWorktree,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, supaWorkdir, slotDir, startTunnel, tunnelAnswers, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts, dbModeOf,
@@ -713,8 +713,11 @@ async function nukeOne(name: string, e: SlotEntry, flags: Record<string, string 
     sub('shared primary Supabase left untouched');
   }
   const root = repoRoot();
-  const force = flags.force ? ['--force'] : [];
-  if (existsSync(e.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e.path]); }
+  // Throws when the checkout is dirty and --force was not passed. That must abort
+  // the nuke: everything below (branch delete, slot dir, registry entry) assumes
+  // the worktree is gone, and dropping the slot for a directory that survived
+  // orphans it beyond the reach of every `pnpm worktree` command.
+  if (existsSync(e.path)) { sub('removing git worktree…'); removeWorktree(root, e.path, Boolean(flags.force)); }
   sh(['git', '-C', root, 'worktree', 'prune']);
   if (e.branch) {
     const del = sh(['git', '-C', root, 'branch', '-d', e.branch]);

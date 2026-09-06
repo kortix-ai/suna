@@ -72,37 +72,44 @@ interface RoleDescriptor {
  */
 export const ACCOUNT_ROLE_DESCRIPTORS: Record<AccountRole, RoleDescriptor> = {
   owner: {
-    label: 'Owner',
-    blurb: 'Full control. Can transfer ownership, delete the account, and manage billing.',
+    label: 'Account owner',
+    blurb: 'Full control of the account: billing, members, transfer or delete it.',
     summary:
-      'Full control of the account. Can transfer ownership, delete the account, and manage billing — and is Manager on every project.',
+      'Full control of the account — billing, members, transferring ownership, deleting it. Project admin on every project.',
   },
   admin: {
-    label: 'Admin',
+    label: 'Account admin',
     blurb: 'Everything except deleting the account or transferring ownership.',
     summary:
-      'Everything an owner can do except deleting the account or transferring ownership. Also Manager on every project.',
+      'Everything an owner can do except deleting the account or transferring ownership. Project admin on every project.',
   },
   member: {
-    label: 'Member',
-    blurb:
-      "No implicit project access. Sees only projects they've been added to (directly or via a group).",
+    label: 'Account member',
+    blurb: 'Sees only the projects they are added to, and only the agents granted there.',
     summary:
-      "The floor role for the account. No implicit project access — they see only the projects they've been added to, directly or via a group.",
+      'The floor role for the account. Sees only the projects they are added to, directly or through a group, and uses only the agents granted to them there.',
   },
 };
 
+/**
+ * The two project roles, and the whole difference between them (Marko,
+ * 2026-09-03): a member USES agents — the ones they are granted — and a
+ * project admin CONFIGURES the project, which is Customize. Nothing in
+ * between. The keys stay `member` / `manager` (they are the API's role
+ * keys and the URL vocabulary); only what a person reads changed.
+ */
 export const PROJECT_ROLE_DESCRIPTORS: Record<OfferedProjectRole, RoleDescriptor> = {
   member: {
-    label: 'Member',
-    blurb: 'Read, run sessions, and fire triggers — no editing or config.',
+    label: 'Project member',
+    blurb: 'Starts and works in sessions with the agents they are granted. No Customize.',
     summary:
-      'Read, run sessions, and fire triggers — no editing or config. The project floor role.',
+      'Starts and works in sessions with the agents they are granted — nothing else. No access to Customize. The project floor role.',
   },
   manager: {
-    label: 'Manager',
-    blurb: 'Full project control — edit, deploy, triggers, members, delete.',
-    summary: 'Full project control — edit, deploy, triggers, members, delete.',
+    label: 'Project admin',
+    blurb: 'Customize and everything in it — every agent, skill, connector, secret, trigger, and member.',
+    summary:
+      'Customize and everything in it — every agent, skill, connector, secret and trigger, plus members and the project itself.',
   },
 };
 

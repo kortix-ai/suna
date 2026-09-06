@@ -20,6 +20,9 @@ import { detectManifestVersion } from '@/features/workspace/customize/migrate-to
 import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
 import { ReviewView } from '@/features/workspace/customize/sections/view/review-view';
 import { ExperimentalTab } from '@/features/workspace/settings/tabs/experimental-tab';
+import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import { GeneralTab } from '@/features/workspace/settings/tabs/general-tab';
 import { SandboxTab } from '@/features/workspace/settings/tabs/sandbox-tab';
 import { SnapshotsTab } from '@/features/workspace/settings/tabs/snapshots-tab';
@@ -182,8 +185,12 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
       <div
         className={cn(
           'min-h-0 flex-1',
-          isMobile ? 'flex flex-col overflow-hidden' : 'grid grid-cols-[230px_1fr] overflow-hidden',
+          isMobile ? 'flex flex-col overflow-hidden' : 'grid overflow-hidden',
         )}
+        // The Preferences overlay's rail width (`settings-panel.tsx`), so the
+        // two settings surfaces a person meets are one shape (Marko,
+        // 2026-09-03).
+        style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
         {isMobile ? (
           <nav
@@ -218,9 +225,19 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
              same `md` size. Everything else is untouched — the 230px column,
              the `border-r`, its own scroller, `py-4`, the `Tabs` vertical
              list. */
-          <section className="bg-background flex min-h-0 flex-col overflow-y-auto border-r py-4">
-            <div className="min-h-0 flex-1 px-2.5">
-              <nav aria-label="Project settings" className="space-y-0.5">
+          /* The same aside the Preferences overlay draws
+             (`settings-panel.tsx`): `border-r`, `bg-inherit`, one nav that
+             scrolls itself with the scrollbar hidden, `px-2`, rows in the
+             overlay's trigger dialect (`size="md"`, `bg-active` when
+             selected). Identical on purpose — a person moving between the
+             two settings surfaces should not be able to tell them apart by
+             their rails. */
+          <aside className="flex min-h-0 flex-col border-r bg-inherit">
+            <nav
+              aria-label="Project settings"
+              className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-2 pt-3 pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
+              <div>
                 {/* ONE unlabeled nav group — the account rail's own
                     precedent for a cluster with nothing to split into (its
                     leading Settings/Git/Tokens group carries no label
@@ -244,9 +261,9 @@ export function ProjectSettingsPage({ projectId }: { projectId: string }) {
                     ))}
                   </TabsList>
                 </Tabs>
-              </nav>
-            </div>
-          </section>
+              </div>
+            </nav>
+          </aside>
         )}
 
         <main className="bg-background flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -285,17 +302,18 @@ function SectionTrigger({
     <TabsTrigger
       value={section.key}
       asChild
+      size={horizontal ? undefined : 'md'}
       className={
         horizontal
           ? 'w-auto shrink-0 gap-2.5 px-3 py-0.75 whitespace-nowrap'
           : cn(
-              // The account rail's exact nav-item dialect
-              // (`NAV_GROUPS.map` button classes in `accounts/[id]/page.tsx`):
-              // h-8 row, rounded-sm, `bg-primary/[0.06]` active fill, `hover:bg-accent`
-              // otherwise — not the Tabs primitive's default pill/pill-input classes.
-              'h-8 w-full justify-start gap-2.5 rounded-sm px-2.5 text-sm',
-              'data-[state=active]:bg-primary/[0.06] data-[state=active]:text-foreground data-[state=active]:font-medium',
-              'data-[state=inactive]:text-muted-foreground hover:data-[state=inactive]:bg-accent hover:data-[state=inactive]:text-foreground',
+              // The Preferences overlay's exact rail-row dialect
+              // (`settings-panel.tsx`'s `TabsTrigger` in its aside), so the
+              // two rails are one component in two places.
+              'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
+              'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
+              'data-[state=active]:bg-active data-[state=active]:font-medium',
+              '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
             )
       }
     >
@@ -343,6 +361,17 @@ function ProjectSettingsSectionPane({
   switch (sectionKey) {
     case 'general':
       return <GeneralTab projectId={projectId} />;
+    case 'git':
+      return (
+        <div className="mx-auto w-full max-w-2xl space-y-8">
+          <SettingsSectionHeader
+            title="Git repo"
+            description="The repository this workspace runs from, and who can reach it."
+            className="pb-1"
+          />
+          <GitView projectId={projectId} />
+        </div>
+      );
     case 'sandbox':
       return (
         <div className="space-y-8">

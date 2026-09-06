@@ -6,6 +6,7 @@ export {
   ToolActivateContext,
   ToolSurfaceContext,
   type ToolSurface,
+  TurnLiveContext,
   shouldShowToolPartInActionsPanel,
 } from '@/features/session/tool/shared/infrastructure';
 

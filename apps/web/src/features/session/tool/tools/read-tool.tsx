@@ -16,6 +16,7 @@ import {
   ToolSurfaceContext,
 } from '@/features/session/tool/shared/infrastructure';
 import { parseReadOutput } from '@/features/session/tool/shared/read-helpers';
+import { fileVerb, filePhase } from '@/features/session/tool/shared/file-verb';
 import { ToolRegistry } from '@/features/session/tool/shared/registry';
 import { ToolResultCard } from '@/features/session/tool/shared/result-card';
 import type { ToolProps } from '@/features/session/tool/shared/types';
@@ -47,6 +48,13 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const isStalePending = !running && !filename && (status === 'pending' || status === 'running');
 
+  // A read that returned its error must not be reported in the wording of one
+  // that opened the file — the same rule the write/edit rows now follow.
+  const isReadError = useMemo(
+    () => status === 'completed' && isErrorOutput(output),
+    [status, output],
+  );
+
   const loaded = useMemo(() => {
     if (status !== 'completed') return [];
     const val = metadata.loaded;
@@ -70,10 +78,14 @@ export function ReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
       <BasicTool
         icon={<ReadCvLogoIcon className="size-3.5 shrink-0" />}
         trigger={{
-          title: 'Read',
-          subtitle: isStalePending
-            ? undefined
-            : filename || (isStalePending ? 'Working...' : undefined),
+          // `Read` was a past tense the row had not earned while the call was
+          // still streaming. Same table, same three tenses as every other file
+          // row — see `file-verb.ts`.
+          title: fileVerb('read', filePhase(running, isReadError)),
+          // The old expression was `isStalePending ? undefined : filename ||
+          // (isStalePending ? 'Working...' : undefined)` — the inner branch is
+          // unreachable, so the `'Working...'` fallback had never once rendered.
+          subtitle: isStalePending ? undefined : filename || undefined,
         }}
         onSubtitleClick={filePath ? handleSubtitleClick : undefined}
         defaultOpen={defaultOpen}

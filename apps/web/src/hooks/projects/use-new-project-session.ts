@@ -33,12 +33,12 @@ import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import {
   createProjectSession,
   getProjectSessionScope,
-  setProjectSessionScope,
+  markSessionFresh,
   type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindingsInput,
+  setProjectSessionScope,
 } from '@kortix/sdk';
-import { markSessionFresh } from '@kortix/sdk/fresh-sessions';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 
 /**

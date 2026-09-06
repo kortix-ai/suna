@@ -155,32 +155,67 @@ export function AccountOverviewView({ state }: { state: AccountState }) {
   );
 }
 
+/**
+ * Where a plan stands, as strings — the name, its qualifier, the one line that
+ * says what happens next, and whether that state is live.
+ *
+ * Extracted from `PlanSummary` (2026-09-03) so the Plan tab's own plan card
+ * (`plan-card.tsx`) reads the SAME answer this balance card does. Two copies
+ * of "is it renewing, cancelling, or past due" would drift on the first Stripe
+ * status nobody thought about, and they would drift silently — both render a
+ * plausible sentence either way.
+ *
+ * Pure and exported so both call sites are testable against a fixed
+ * `AccountState`: the states worth pinning (cancel-at-period-end, `past_due`,
+ * no subscription) cannot be produced locally without Stripe.
+ */
+export interface PlanStatus {
+  /** Plan name as the product names it. Per-seat accounts carry the seat
+   *  count, which no plan label does. */
+  name: string;
+  /** Qualifier under the name, e.g. `$200/mo · grandfathered`. */
+  sublabel: string | null;
+  /** `Renews Sep 24` · `Cancels Sep 24` · `Active` · `past due`. */
+  detail: string;
+  /** A live subscription — drives the status dot, which is absent otherwise. */
+  isActive: boolean;
+  /** Winding down at period end: the dot goes orange rather than green. */
+  isWindingDown: boolean;
+}
+
+export function describePlanStatus(state: AccountState): PlanStatus {
+  const seatCount = state.seats?.count ?? 1;
+  const plan = resolvedPlan(state);
+  const isPerSeat = state.billing_model === 'per_seat';
+  const sub = state.subscription;
+  const periodEnd = sub?.current_period_end ? formatDate(sub.current_period_end) : null;
+  const isActive = sub?.status === 'active';
+
+  return {
+    name: isPerSeat ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}` : plan.label,
+    sublabel: isPerSeat ? null : plan.sublabel,
+    detail: sub?.cancel_at_period_end
+      ? periodEnd
+        ? `Cancels ${periodEnd}`
+        : 'Cancels at period end'
+      : isActive && periodEnd
+        ? `Renews ${periodEnd}`
+        : isActive
+          ? 'Active'
+          : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
+            // Shown to a person, so they read as words.
+            (sub?.status?.replace(/_/g, ' ') ?? 'No subscription'),
+    isActive,
+    isWindingDown: Boolean(sub?.cancel_at_period_end),
+  };
+}
+
 /** The right-hand column of the balance card: plan name, then the one line
  *  that says where that plan stands — renewal date when there is a live
  *  subscription, status otherwise. Per-seat accounts name the seat count,
  *  which no plan label carries. */
 function PlanSummary({ state }: { state: AccountState }) {
-  const seatCount = state.seats?.count ?? 1;
-  const plan = resolvedPlan(state);
-  const isPerSeat = state.billing_model === 'per_seat';
-  const name = isPerSeat ? `Team · ${seatCount} seat${seatCount === 1 ? '' : 's'}` : plan.label;
-  const sublabel = isPerSeat ? null : plan.sublabel;
-
-  const sub = state.subscription;
-  const periodEnd = sub?.current_period_end ? formatDate(sub.current_period_end) : null;
-  const isActive = sub?.status === 'active';
-
-  const detail = sub?.cancel_at_period_end
-    ? periodEnd
-      ? `Cancels ${periodEnd}`
-      : 'Cancels at period end'
-    : isActive && periodEnd
-      ? `Renews ${periodEnd}`
-      : isActive
-        ? 'Active'
-        : // Raw Stripe statuses are snake_case ('past_due', 'incomplete_expired').
-          // Shown to a person, so they read as words.
-          (sub?.status?.replace(/_/g, ' ') ?? 'No subscription');
+  const { name, sublabel, detail, isActive, isWindingDown } = describePlanStatus(state);
 
   return (
     // Right-aligned beside the balance; left-aligned once the row wraps under
@@ -195,7 +230,7 @@ function PlanSummary({ state }: { state: AccountState }) {
             aria-hidden
             className={cn(
               'mt-px size-1.5 shrink-0 rounded-full',
-              sub?.cancel_at_period_end ? 'bg-kortix-orange' : 'bg-kortix-green',
+              isWindingDown ? 'bg-kortix-orange' : 'bg-kortix-green',
             )}
           />
         ) : null}

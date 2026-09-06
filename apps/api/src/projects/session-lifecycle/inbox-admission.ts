@@ -1,28 +1,40 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, lt, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { inboxPrecedesRow } from './inbox-order';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 
 /**
  * The inbox's admission gate.
  *
- * A prompt sits in `session_lifecycle_commands` until the prior turn is idle
- * and every older prompt has left the delivery path. OpenCode's legacy
- * `/prompt_async` route interleaves inputs posted during a live turn. The inbox
- * must therefore serialize before that boundary instead of trusting runtime
- * placement to recover ownership afterwards.
+ * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
+ * A prompt sits in `session_lifecycle_commands` until the session's turn is
+ * over AND every older prompt has left the delivery path.
  *
- * What is left is ORDER, and only order: one prompt of a session on the wire at
- * a time, oldest first, so the user's own messages reach OpenCode in the order
- * they were typed.
+ * The turn half is not belt-and-braces on the order half — it is the whole
+ * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
+ * running turn, and it "parents each step on the newest user message and
+ * answers everything before it in that step" (`forwarded-placement.ts`). So
+ * every prompt forwarded into a live turn is merged into whatever step reaches
+ * it: two queued messages share one answer, and the earlier one is simply
+ * never spoken. Measured 2026-09-04 — a 13-step research turn with "tell me
+ * HI" and "tell me bye" queued behind it produced exactly one reply, "bye".
+ *
+ * Forwarding mid-turn was tried (`4ee30a9c3b`) to remove the gap between
+ * queued messages. It bought that merge. The gap it was removing is gone by
+ * other means: `promoteNextInboxRow` is AWAITED on the daemon's own
+ * `session.idle` relay (`routes/r4.ts`, "THE TURN ENDED — the session's next
+ * queued prompt is admissible NOW"), and the backoff below is now a 2s-capped
+ * fallback rather than the 30s ceiling that produced the measured dead air.
+ * A queued message therefore goes out on the turn-end event, not on a clock.
  *
  * WAITING IS NOT POLLING. A refused row does not sit out a backoff clock: the
- * instant the blocking delivery lands (engine) or a turn ends (turn-stream),
- * `promoteNextInboxRow` makes the session's next row due and drains it. The
- * backoff below only covers the gap a lost kick would leave, so it stays cheap
- * and capped — 30s here compounded to 27s / 45s / 75s of dead air behind ~1s
- * deliveries (dev, 2026-08-18).
+ * instant the turn ends, `promoteNextInboxRow` makes the session's next row due
+ * and drains it. The reaper is a recovery wake. The backoff below only covers
+ * the gap a lost kick would leave, so it stays cheap and capped — 30s here
+ * compounded to 27s / 45s / 75s of dead air behind ~1s deliveries (dev,
+ * 2026-08-18).
  *
  * A refusal is NOT a failure: see `requeueForAdmission`, which gives the claim's
  * attempt increment back so waiting cannot burn the 5-attempt dead-letter budget.
@@ -30,11 +42,12 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: the moment its sibling lands, `promoteNextInboxRow` (engine)
- * makes the session's next queued row due NOW and kicks a targeted drain, so
- * this backoff only ever covers the gap a lost kick would leave. 30s here was
- * the entire "queue does not send between turns" experience: three quick
- * messages compounded to 27s / 45s / 75s of dead air behind ~1s deliveries.
+ * boot any more: accepted delivery calls `promoteNextInboxRow` and makes the
+ * session's next queued row due NOW, then kicks a targeted drain. The terminal
+ * relay and reaper repeat that wake for recovery. This backoff only covers the
+ * gap a lost kick would leave. 30s here was the entire "queue does not send
+ * between turns" experience: three quick messages compounded to 27s / 45s /
+ * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
 export const INBOX_BACKOFF_FREE_REFUSALS = 4;
@@ -106,8 +119,7 @@ export interface InboxAdmissionDeps {
   ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
   hasOlderPendingPrompt: (
     sessionId: string,
-    before: Date,
-    exceptCommandId: string,
+    row: SessionLifecycleCommandRow,
   ) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
@@ -123,7 +135,7 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return box ?? null;
   },
-  async hasOlderPendingPrompt(sessionId, before, exceptCommandId) {
+  async hasOlderPendingPrompt(sessionId, row) {
     const [older] = await db
       .select({ commandId: sessionLifecycleCommands.commandId })
       .from(sessionLifecycleCommands)
@@ -136,12 +148,11 @@ const liveDeps: InboxAdmissionDeps = {
           // Counting it would wedge every prompt they send afterwards behind a
           // row that is, by construction, never due.
           sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
-          lt(sessionLifecycleCommands.createdAt, before),
-          // Explicitly not itself. `created_at < created_at` already excludes
-          // this row, but the caller's `before` comes from an in-memory copy of
-          // it — one that a concurrent writer can have moved — and a row that
-          // blocks on itself waits for ever.
-          ne(sessionLifecycleCommands.commandId, exceptCommandId),
+          inboxPrecedesRow(row),
+          // Explicitly not itself. The tuple predicate already excludes this
+          // row, but a row that blocks on itself waits for ever if a concurrent
+          // writer changes one of its ordering fields.
+          ne(sessionLifecycleCommands.commandId, row.commandId),
         ),
       )
       .limit(1);
@@ -179,6 +190,12 @@ export async function admitInboxPrompt(
     refusals,
   );
 
+  // A LIVE TURN HOLDS EVERY QUEUED PROMPT BACK — see the header. This is the
+  // one rule that makes a queued message its own turn with its own answer,
+  // and it binds a PROMOTED row too: "send now" reorders the line, it does not
+  // put a second message in front of a turn that is already running. The
+  // daemon's `session.idle` relay releases the next row the instant this turn
+  // is over, so the wait is an event, not a poll.
   if (sessionHoldsTurnAuthority(await deps.readSandbox(row.sessionId))) {
     return { admit: false, reason: 'turn_active', retryAfterMs: orderBackoffMs };
   }
@@ -200,7 +217,7 @@ export async function admitInboxPrompt(
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (
     !promoted &&
-    (await deps.hasOlderPendingPrompt(row.sessionId, row.createdAt, row.commandId))
+    (await deps.hasOlderPendingPrompt(row.sessionId, row))
   ) {
     return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
   }

@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   PROJECT_LANDING_PATH,
   isValidProjectId,
+  parseAuthBounceOwner,
+  parseLastProjectOwner,
   projectPathFromId,
   resolveDefaultLandingPath,
 } from './landing-destination';
@@ -86,6 +88,36 @@ describe('resolveDefaultLandingPath', () => {
       `${USER_A}:../../admin`,
     ]) {
       expect(resolveDefaultLandingPath(hostile, USER_A)).toBe(PROJECT_LANDING_PATH);
+    }
+  });
+});
+
+describe('parseAuthBounceOwner and parseLastProjectOwner must agree', () => {
+  // Byte-identical bodies today (both delegate to the same
+  // `ownerIdFromCookie`) kept as two exported names because
+  // `AUTH_BOUNCE_COOKIE` and `LAST_PROJECT_COOKIE` answer different
+  // questions — see `parseLastProjectOwner`'s own doc comment. This is the
+  // anti-drift guard that comment promises: a future edit to one function's
+  // owner-parsing rule that is not mirrored to the other fails HERE, on the
+  // next input either one is exercised with, instead of drifting silently
+  // until a bounce or a landing resolution disagrees about who owns a
+  // cookie.
+  test('return the SAME owner for the same cookie value, across real and edge-case inputs', () => {
+    for (const cookieValue of [
+      undefined,
+      null,
+      '',
+      'not-a-cookie',
+      `${VALID}:/projects/abc`,
+      `${VALID}:${encodeURIComponent('/projects/abc?x=1')}`,
+      'bare-legacy-value-no-colon',
+      ':missing-owner',
+      `${VALID}:`,
+    ]) {
+      expect({ cookieValue, result: parseLastProjectOwner(cookieValue) }).toEqual({
+        cookieValue,
+        result: parseAuthBounceOwner(cookieValue),
+      });
     }
   });
 });

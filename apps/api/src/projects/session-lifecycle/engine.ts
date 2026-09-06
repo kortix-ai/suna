@@ -32,6 +32,7 @@ import {
 } from '../instance-scope';
 import { loadSandboxMetadataForSessions, releaseCommandToOwningInstance } from './instance-release';
 import { db } from '../../shared/db';
+import { markTriggerRuntimeDelivered } from '../trigger-execution-store';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
 import {
@@ -56,7 +57,6 @@ import {
   markCommandFailed,
   parkPromptForUnreachableRuntime,
   markCommandForwarded,
-  promoteNextInboxRow,
   markCommandQueued,
   markCommandSucceeded,
   requeueForAdmission,
@@ -75,6 +75,7 @@ import {
   sessionHoldsLiveTurn,
 } from './inbox-admission';
 import { claimDueSessionInboxSiblings } from './inbox-rows';
+import { compareInboxSendOrder, inboxFollowsRow } from './inbox-order';
 import {
   type PlacementTipMessage,
   boxClockSkewMs,
@@ -778,7 +779,7 @@ export async function drainSessionLifecycleQueue(
       // siblings reproduced the exact failure this queue exists to prevent:
       // both rows reported delivered while the first answer rendered under
       // the second prompt. Remaining claimed siblings are returned to the
-      // queue. The turn-end promotion makes the next one due immediately.
+      // queue. Accepted delivery makes the next one due immediately.
       let i = 0;
       while (i < lane.length) {
         const row = lane[i];
@@ -789,16 +790,11 @@ export async function drainSessionLifecycleQueue(
         }
         let j = i + 1;
         while (j < lane.length && isInboxRow(lane[j])) j += 1;
-        const sendOrder = (row: SessionLifecycleCommandRow): number => {
-          const at = (row.payload as { clientSentAtMs?: unknown } | null)?.clientSentAtMs;
-          // The sender tab's Enter instant when it was supplied: the POSTs of
-          // two surfaces race across the boot-shell crossfade, and row
-          // creation order is the race's outcome, not the user's.
-          return typeof at === 'number' ? at : row.createdAt.getTime();
-        };
-        const batch = lane.slice(i, j).sort((a, b) => sendOrder(a) - sendOrder(b));
+        const batch = lane.slice(i, j).sort(compareInboxSendOrder);
         i = j;
-        await runRow(batch[0]);
+        // Claims mark every sibling `running`. Release the tail before the
+        // head reaches admission, or `hasInFlightPrompt` sees that tail and
+        // rejects the head as if another delivery were already on the wire.
         for (const sibling of batch.slice(1)) {
           await requeueForAdmission(
             sibling.commandId,
@@ -807,6 +803,7 @@ export async function drainSessionLifecycleQueue(
           );
           out.queued += 1;
         }
+        await runRow(batch[0]);
       }
     }),
   );
@@ -1263,7 +1260,7 @@ async function hasLaterForwardedSibling(row: SessionLifecycleCommandRow): Promis
           eq(sessionLifecycleCommands.sessionId, row.sessionId),
           eq(sessionLifecycleCommands.commandType, 'continue_session'),
           sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
-          sql`${sessionLifecycleCommands.createdAt} > ${row.createdAt.toISOString()}::timestamptz`,
+          inboxFollowsRow(row),
           or(
             inArray(sessionLifecycleCommands.status, ['queued', 'running']),
             sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
@@ -1477,7 +1474,7 @@ export async function executeQueuedContinue(
     typeof (row.result as { admission_reason?: unknown } | null)?.admission_reason === 'string';
   // `result.promoted` is written by `retryInboxPrompt` alone — the user pointed
   // at ONE row and pressed "send now". `requeueForAdmission` merges into
-  // `result`, so it survives the row waiting again behind a live turn.
+  // `result`, so it survives the row waiting again behind an in-flight sibling.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
 
   // WHICH ROW MAY COMMIT A STAGED REVERT.
@@ -1550,9 +1547,8 @@ export async function executeQueuedContinue(
   //    and the client's id is its browser's clock with no lift against anything
   //    (`ascendingId`), so a browser running behind the sandbox delivers an id
   //    that sorts BELOW them — which OpenCode accepts and silently never runs.
-  //    This is the flagship "type while it works" path. It used to re-mint by
-  //    being REFUSED admission (`turn_active` stamped `remintOnDelivery`); with
-  //    the refusal gone it has to ask the question directly;
+  //    This is the flagship "type while it works" path. Admission deliberately
+  //    ignores turn authority, so placement asks this question directly;
   //  - the prompt WAITED (`result.admission_reason` is stamped by every
   //    admission refusal), so something else held the wire while ids moved on;
   //  - the prompt is a REDELIVERY. The abandoned attempt may already have
@@ -1720,6 +1716,18 @@ export async function executeQueuedContinue(
         await markCommandSucceeded(row.commandId, { status: 'delivered' }, row.sessionId);
       }
       tl.mark('marked');
+      // The prompt is now on the wire for its target session. If it came from a
+      // trigger, flip that trigger's runtime row from the transient "queued" to
+      // "fired" so monitoring can tell a delivered reuse fire from a wedged one
+      // (see markTriggerRuntimeDelivered). Failure to write back must never break
+      // delivery, hence the swallow.
+      if (typeof payload.triggerSlug === 'string') {
+        await markTriggerRuntimeDelivered({
+          projectId: row.projectId,
+          slug: payload.triggerSlug,
+          when: new Date(),
+        }).catch(() => {});
+      }
       if (!placedIntoLiveTurn || !wireMessageId) break;
       // PROOF. One tip read after the insert answers exactly whether the box
       // created a newer assistant BEFORE this prompt landed (the strand
@@ -1791,14 +1799,23 @@ export async function executeQueuedContinue(
       wireMessageId = replaced;
     }
     if (delivery === 'delivered') {
-      // CHAIN. This row is on the wire, so the session's next queued row is
-      // admissible NOW — do not leave it to the scheduler tick or to whatever
-      // `requeueForAdmission` backoff it accrued while waiting on this one.
-      // Fire-and-forget: the drain re-runs admission itself, so a kick that
-      // loses a race is a no-op, and a lost kick falls back to the tick.
-      void promoteNextInboxRow(row.sessionId)
-        .then((key) => (key ? drainSessionLifecycleQueue({ idempotencyKey: key }) : null))
-        .catch(() => undefined);
+      // A successful POST starts a TURN, and the TERMINAL RELAY owns promotion
+      // of the next row — `routes/r4.ts`, "THE TURN ENDED — the session's next
+      // queued prompt is admissible NOW", which awaits `promoteNextInboxRow`
+      // before it acknowledges the daemon.
+      //
+      // Promoting here instead is what let a burst of queued messages share
+      // one answer: the next row was made due while this turn was still
+      // running, admission had no turn gate to stop it, and OpenCode merged
+      // every prompt it found into the step that reached them. Reported
+      // 2026-09-04 — "tell me HI" and "tell me bye" queued behind a 13-step
+      // turn produced exactly one reply, "bye".
+      //
+      // Promoting here is also a LOST WAKE even with the gate back: the row
+      // would be claimed mid-turn, refused by admission, and requeued — after
+      // the terminal relay has already checked the queue — so the next prompt
+      // waits out the admission backoff instead of going out on the turn-end
+      // event.
       tl.log({ sessionId: row.sessionId, source: row.source, outcome: delivery });
       return 'succeeded';
     }

@@ -55,7 +55,7 @@ describe('SecretsView page chrome', () => {
 
   test('search and the Add action are the shell’s slots, not inline', () => {
     expect(shellHeader).toContain('InputGroupSearchInput');
-    expect(shellHeader).toContain('onClick={openCreate}');
+    expect(shellHeader).toContain('onSelect: openCreate');
     expect(shellChildren).not.toContain('InputGroupSearchInput');
   });
 
@@ -68,7 +68,7 @@ describe('SecretsView page chrome', () => {
     const action = shellHeader.slice(shellHeader.indexOf('action={'));
     expect(action.indexOf('/docs/project/secrets')).toBeGreaterThan(-1);
     expect(action.indexOf('/docs/project/secrets')).toBeLessThan(
-      action.indexOf('onClick={openCreate}'),
+      action.indexOf('onSelect: openCreate'),
     );
   });
 

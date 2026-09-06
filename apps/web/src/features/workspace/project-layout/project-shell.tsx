@@ -9,6 +9,7 @@ import { ProjectOnboardingWizard } from '@/components/projects/project-onboardin
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import { SidebarEdgePeek, useSidebar } from '@/components/ui/sidebar';
+import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
 import { useBrandingScope } from '@/features/branding/branding-provider';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -101,9 +102,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     routeParams?.sessionId ?? null,
   );
 
-  useEffect(() => {
-    if (!authLoading && !user) router.replace('/auth');
-  }, [authLoading, user, router]);
+  useSignedOutRedirect();
 
   // Remember the project so the next `/` hit and the next sign-in land straight
   // back here instead of going through the id-free landing door. Gated on a

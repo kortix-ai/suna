@@ -89,7 +89,7 @@ describe('/new hosts the onboarding wizard', () => {
  * 'idle'`, so the page used to paint the live create FORM while
  * `getProjectDetail` was still in flight. The Name input carries `autoFocus`
  * and is fully interactive in that window: a user who reloads mid-onboarding
- * can start typing, and if `['accounts']` resolves first, Enter fires a SECOND
+ * can start typing, and if the account list resolves first, Enter fires a SECOND
  * `runCreate`.
  */
 describe('/new: the onboarding param owns the page', () => {

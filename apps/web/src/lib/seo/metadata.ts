@@ -72,8 +72,10 @@ export async function requestLocale(): Promise<Locale> {
   return locale && locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
 }
 
-// Metadata for the three locale-routed marketing pages (/, /legal, /support):
-// per-locale canonical plus a full hreflang set in the <head>.
+// Metadata for the locale-routed marketing pages (/, /legal, /support and the
+// articles under it): per-locale canonical plus a full hreflang set in the
+// <head>. MARKETING_ROUTES in middleware.ts matches by prefix, so anything
+// under /support is locale-routed without a further entry there.
 export async function localizedMarketingMetadata(pathname: string): Promise<Metadata> {
   const base = marketingMetadata(pathname);
   const locale = await requestLocale();
