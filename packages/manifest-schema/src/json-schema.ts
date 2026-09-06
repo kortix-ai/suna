@@ -662,29 +662,57 @@ function appsV2Schema(): JsonSchemaFragment {
   };
 }
 
-/** `subprojects.<slug>` (v2) — a project inside the project: standing
- *  instructions, context paths, a default agent. `agent` is cross-field
- *  (must name a declared agent) and left to the imperative validator. */
-function subprojectBlockV2Schema(): JsonSchemaFragment {
+/** `agents.<name>: { from: <subproject> }` — an agent borrowed from the
+ *  subproject that owns it. No other key in this version. Whether the target
+ *  exists and owns that agent is cross-file, left to `validateManifestSetV2`. */
+function agentReferenceV2Schema(): JsonSchemaFragment {
   return {
+    type: 'object',
+    properties: { from: NON_EMPTY_STRING },
+    required: ['from'],
+    additionalProperties: false,
+  };
+}
+
+/** `kortix-<slug>.yaml` — one subproject: standing instructions, context
+ *  paths, a default agent, and the agents it owns or borrows. Identity is the
+ *  FILENAME, so there is no `slug` key and no `kortix_version` (the root
+ *  manifest's version applies). `agent` is cross-file (must be usable here)
+ *  and left to the imperative validator. */
+export function buildSubprojectFileV2Schema(): JsonSchemaFragment {
+  return {
+    $schema: DRAFT,
+    $id: `${KORTIX_SCHEMA_BASE_URL}/kortix-subproject.v2.schema.json`,
+    title: 'Kortix subproject (kortix-<slug>.yaml)',
+    description:
+      'One subproject of a kortix_version 2 project — a file named `kortix-<slug>.yaml` beside ' +
+      '`kortix.yaml`, where `<slug>` is its identity. `agents` declares the agents it OWNS ' +
+      '(the same governance-only block the root manifest uses; they are usable only inside this ' +
+      'subproject and in the ones that reference them) or BORROWS from another subproject with ' +
+      '`{ from: <slug> }`. See docs/specs/2026-09-06-subproject-files-and-scoped-agents.md.',
     type: 'object',
     properties: {
       name: { type: 'string' },
       description: { type: 'string' },
       instructions: { type: 'string' },
       context: { type: 'array', items: relativePathSchema() },
-      agent: { type: 'string', minLength: 1 },
+      agent: NON_EMPTY_STRING,
+      // Literal, not the `SUBPROJECT_SESSIONS_MODES_V2` const: importing from
+      // `./index.v2` here would reopen the index.ts ⇄ json-schema.ts cycle
+      // this module's top-level `KORTIX_*_JSON_SCHEMA` eager builds cannot
+      // survive (see `constants.ts`'s header).
       sessions: { type: 'string', enum: ['private', 'shared'] },
+      agents: {
+        type: 'object',
+        propertyNames: { pattern: SLUG_RE.source },
+        additionalProperties: {
+          oneOf: [agentBlockV2Schema(), agentReferenceV2Schema()],
+        },
+      },
+      // The root manifest's version applies — never repeated here.
+      kortix_version: false,
     },
     additionalProperties: false,
-  };
-}
-
-function subprojectsV2Schema(): JsonSchemaFragment {
-  return {
-    type: 'object',
-    propertyNames: { pattern: SLUG_RE.source },
-    additionalProperties: subprojectBlockV2Schema(),
   };
 }
 
@@ -755,7 +783,8 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
         propertyNames: { pattern: SLUG_RE.source },
         additionalProperties: agentBlockV2Schema(),
       },
-      subprojects: subprojectsV2Schema(),
+      // No `subprojects` key: each subproject is its own `kortix-<slug>.yaml`
+      // (`kortix-subproject.v2.schema.json`), spec 2026-09-06 §2.
       ...sharedSectionProperties(2),
       // `[[channels]]` is removed outright in v2 (spec §2.5).
       channels: false,
@@ -810,12 +839,17 @@ export function buildManifestSchema(): JsonSchemaFragment {
 export const KORTIX_V1_JSON_SCHEMA: JsonSchemaFragment = buildManifestV1Schema();
 export const KORTIX_V2_JSON_SCHEMA: JsonSchemaFragment = buildManifestV2Schema();
 export const KORTIX_JSON_SCHEMA: JsonSchemaFragment = buildManifestSchema();
+export const KORTIX_SUBPROJECT_V2_JSON_SCHEMA: JsonSchemaFragment = buildSubprojectFileV2Schema();
 
 /** The one accessor every caller should use — "always return the correct,
  *  fully-valid schema for a given kortix_version." Pass no argument (or
- *  `'combined'`) for the single URL that dispatches on `kortix_version`. */
-export function manifestJsonSchema(version: 1 | 2 | 'combined' = 'combined'): JsonSchemaFragment {
+ *  `'combined'`) for the single URL that dispatches on `kortix_version`;
+ *  `'subproject'` for one `kortix-<slug>.yaml` (v2 only). */
+export function manifestJsonSchema(
+  version: 1 | 2 | 'combined' | 'subproject' = 'combined',
+): JsonSchemaFragment {
   if (version === 1) return KORTIX_V1_JSON_SCHEMA;
   if (version === 2) return KORTIX_V2_JSON_SCHEMA;
+  if (version === 'subproject') return KORTIX_SUBPROJECT_V2_JSON_SCHEMA;
   return KORTIX_JSON_SCHEMA;
 }

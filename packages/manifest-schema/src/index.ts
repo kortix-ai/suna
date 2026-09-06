@@ -51,12 +51,11 @@ import {
 // `@kortix/manifest-schema` backward compatibility.
 import {
   rejectChannelsV2,
+  rejectSubprojectsV2,
   validateAgentsV2,
   validateDefaultAgentV2,
   validateRuntimeV2,
-  validateSubprojectsV2,
   validateTriggerAgentRefsV2,
-  validateTriggerSubprojectRefsV2,
 } from './index.v2';
 
 export {
@@ -148,11 +147,19 @@ export {
   type AppBlockV2,
   type AppResourcesV2,
   type ManifestV2,
-  type SubprojectBlockV2,
+  type AgentReferenceV2,
+  type SubprojectFileV2,
+  type SubprojectFileAgentsV2,
   type SubprojectSessionsModeV2,
+  type ManifestSetV2,
   SUBPROJECT_SESSIONS_MODES_V2,
+  SUBPROJECT_FILE_RE,
+  isAgentReferenceV2,
+  subprojectFilePath,
+  subprojectSlugFromPath,
   resolveGrantSet,
-  validateSubprojectsV2,
+  validateSubprojectFileV2,
+  validateManifestSetV2,
   validateTriggerSubprojectRefsV2,
   validatePermissionConfig,
   validateAgentMdFrontmatter,
@@ -312,8 +319,10 @@ function validateManifestBodyV2(
   const { names: agentNames, disabledNames } = validateAgentsV2(parsed.agents, 'agents', issues);
   validateDefaultAgentV2(parsed.default_agent, 'default_agent', agentNames, disabledNames, issues);
   validateTriggerAgentRefsV2(parsed.triggers, 'triggers', agentNames, issues);
-  const subprojectNames = validateSubprojectsV2(parsed.subprojects, 'subprojects', agentNames, issues);
-  validateTriggerSubprojectRefsV2(parsed.triggers, 'triggers', subprojectNames, issues);
+  // Subprojects live in their own `kortix-<slug>.yaml` files, so the root
+  // validator can neither hold them nor cross-check `triggers[].subproject` —
+  // that is `validateManifestSetV2`'s job (spec 2026-09-06 §3).
+  rejectSubprojectsV2(parsed.subprojects, 'subprojects', issues);
 }
 
 /** Format issues into a colored, console-friendly multi-line string. */
@@ -1697,8 +1706,10 @@ export {
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
   KORTIX_JSON_SCHEMA,
+  KORTIX_SUBPROJECT_V2_JSON_SCHEMA,
   buildManifestV1Schema,
   buildManifestV2Schema,
   buildManifestSchema,
+  buildSubprojectFileV2Schema,
   manifestJsonSchema,
 } from './json-schema';

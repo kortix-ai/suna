@@ -16,6 +16,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   KORTIX_JSON_SCHEMA,
+  KORTIX_SUBPROJECT_V2_JSON_SCHEMA,
   KORTIX_V1_JSON_SCHEMA,
   KORTIX_V2_JSON_SCHEMA,
 } from '../src/json-schema';
@@ -27,6 +28,7 @@ export const SCHEMA_FILES: Record<string, unknown> = {
   'kortix.schema.json': KORTIX_JSON_SCHEMA,
   'kortix.v1.schema.json': KORTIX_V1_JSON_SCHEMA,
   'kortix.v2.schema.json': KORTIX_V2_JSON_SCHEMA,
+  'kortix-subproject.v2.schema.json': KORTIX_SUBPROJECT_V2_JSON_SCHEMA,
 };
 
 export function renderSchemaFile(schema: unknown): string {

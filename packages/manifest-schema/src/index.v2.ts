@@ -40,6 +40,7 @@ import {
   V2_RUNTIME_VALUES,
   WORKSPACE_MODES_V2,
 } from './constants';
+import { MANIFEST_FILENAME_YAML } from './format';
 import { expectStringOrAbsent, isTable, type ManifestIssue, validateGrantList } from './index';
 
 // ─── kortix_version 2 types ───────────────────────────────────────────────
@@ -154,14 +155,28 @@ export interface AgentBlockV2 {
 }
 
 /**
- * One entry of the v2 `subprojects:` map — a Claude/ChatGPT-style "project"
- * INSIDE a Kortix project. It groups sessions, carries its own standing
- * instructions and context files, may pin a default agent, and owns the
- * triggers that name it (`triggers[].subproject`). Authorization is an IAM
- * object grant (`object_type = 'subproject'`, closed by default, like agents)
- * and lives server-side — nothing here is a permission.
+ * An agent BORROWED from another subproject: `agents.<name>: { from: <slug> }`
+ * in a `kortix-<slug>.yaml`. It imports use, not governance — the target must
+ * be an agent OWNED by `<slug>` (never itself a reference), and the block may
+ * carry no other key in this version (spec 2026-09-06 §2). Grant-set
+ * narrowing is a later addendum.
  */
-export interface SubprojectBlockV2 {
+export interface AgentReferenceV2 {
+  from: string;
+}
+
+/**
+ * The body of one `kortix-<slug>.yaml` — a Claude/ChatGPT-style "project"
+ * INSIDE a Kortix project. It groups sessions, carries its own standing
+ * instructions and context files, may pin a default agent, owns the triggers
+ * that name it (`triggers[].subproject`), and declares the agents that are
+ * usable only inside it. Identity is the FILENAME, so there is no `slug` key
+ * and no `kortix_version` (the root manifest's version applies).
+ * Authorization is an IAM object grant (`object_type = 'subproject'`, closed
+ * by default, like agents) and lives server-side — nothing here is a
+ * permission.
+ */
+export interface SubprojectFileV2 {
   /** Display name. Defaults to the slug. */
   name?: string;
   description?: string;
@@ -170,14 +185,55 @@ export interface SubprojectBlockV2 {
   instructions?: string;
   /** Repo-relative files or directories the agent is told to read first. */
   context?: string[];
-  /** Default agent for sessions started inside this subproject. Must name a
-   *  declared agent; omit to fall back to `default_agent`. A default, not a
-   *  binding: the person may pick any other agent they hold. */
+  /** Default agent for sessions started inside this subproject. Must be
+   *  usable here (global, owned, or referenced); omit to fall back to
+   *  `default_agent`. A default, not a binding: the person may pick any
+   *  other agent they hold. */
   agent?: string;
   /** Session visibility inside the subproject. `private` (default): the
    *  ordinary model — a session is its creator's unless shared. `shared`:
    *  everyone granted the subproject may open every session in it. */
   sessions?: SubprojectSessionsModeV2;
+  /** Agents this subproject OWNS (a full block, same shape as the root's) or
+   *  BORROWS from another subproject (`{ from: <slug> }`). An owned agent is
+   *  usable only here and in the subprojects that reference it. */
+  agents?: Record<string, AgentBlockV2 | AgentReferenceV2>;
+}
+
+/** True for a table whose ONLY key is a non-empty `from` — the borrowed-agent
+ *  shape. Anything else is an agent block (or a shape error). */
+export function isAgentReferenceV2(entry: unknown): entry is AgentReferenceV2 {
+  if (!isTable(entry)) return false;
+  const keys = Object.keys(entry);
+  return (
+    keys.length === 1 &&
+    keys[0] === 'from' &&
+    typeof entry.from === 'string' &&
+    entry.from.trim() !== ''
+  );
+}
+
+/** The one place that knows the subproject filename convention: a BASENAME
+ *  `kortix-<slug>.yaml`, capture group 1 = the slug. `.yaml` only — a v1
+ *  (`kortix.toml`) project has no subprojects, and `kortix.yaml` itself is
+ *  the root manifest, never a subproject. */
+export const SUBPROJECT_FILE_RE = new RegExp(
+  `^kortix-(${SLUG_RE.source.replace(/^\^/, '').replace(/\$$/, '')})\\.yaml$`,
+);
+
+/** The path of `<slug>`'s file inside `dir` (the directory holding the
+ *  resolved root manifest; `''` for the repo root). */
+export function subprojectFilePath(dir: string, slug: string): string {
+  const base = `kortix-${slug}.yaml`;
+  const prefix = dir.replace(/\/+$/, '');
+  return prefix ? `${prefix}/${base}` : base;
+}
+
+/** The slug `path` declares, or `null` when its basename is not a subproject
+ *  file (`kortix.yaml`, `kortix-x.yml`, `kortix-Bad.yaml`, …). */
+export function subprojectSlugFromPath(path: string): string | null {
+  const base = path.split('/').pop() ?? '';
+  return base.match(SUBPROJECT_FILE_RE)?.[1] ?? null;
 }
 
 export const SUBPROJECT_SESSIONS_MODES_V2 = ['private', 'shared'] as const;
@@ -189,7 +245,6 @@ export interface ManifestV2 {
   default_agent: string;
   runtime?: RuntimeV2;
   agents: Record<string, AgentBlockV2>;
-  subprojects?: Record<string, SubprojectBlockV2>;
   project?: Record<string, unknown>;
   env?: Record<string, unknown>;
   opencode?: Record<string, unknown>;
@@ -703,15 +758,16 @@ export function rejectChannelsV2(node: unknown, path: string, issues: ManifestIs
   });
 }
 
-/** The keys a `subprojects.<slug>` block may carry. Anything else is an
- *  error, so a typo (`instruction:`) cannot silently become "no instructions". */
-const SUBPROJECT_BLOCK_KEYS_V2 = new Set([
+/** The keys a `kortix-<slug>.yaml` may carry. Anything else is an error, so a
+ *  typo (`instruction:`) cannot silently become "no instructions". */
+const SUBPROJECT_FILE_KEYS_V2 = new Set([
   'name',
   'description',
   'instructions',
   'context',
   'agent',
   'sessions',
+  'agents',
 ]);
 
 /** A repo-relative path: non-empty, not absolute, no `..` segment. */
@@ -722,99 +778,349 @@ function isRepoRelativePath(value: unknown): value is string {
   return !p.split(/[\\/]/).some((segment) => segment === '..');
 }
 
+/** The agents one subproject file declares: the ones it OWNS (a block) and the
+ *  ones it BORROWS (`{ from }`). Cross-file checks run on these — see
+ *  `validateManifestSetV2`. */
+export interface SubprojectFileAgentsV2 {
+  owned: string[];
+  referenced: Array<{ name: string; from: string }>;
+}
+
 /**
- * `subprojects:` — an optional slug → block map. Returns the declared slugs
- * so `triggers[].subproject` can be cross-validated. Dispatch: called from
- * `index.ts`'s `validateManifestBodyV2`.
+ * One `kortix-<slug>.yaml` — SHAPE ONLY (spec 2026-09-06 §3). Everything that
+ * needs to see another file (`from` targets, duplicate agent names, whether
+ * `agent:` is usable here) is `validateManifestSetV2`'s job.
+ *
+ * `opts.path` prefixes every issue path with the file it came from
+ * (`kortix-marketing.yaml:agents.writer`), so a set-wide report says which
+ * file each issue belongs to; without it the field path stands alone.
  */
-export function validateSubprojectsV2(
+export function validateSubprojectFileV2(
+  raw: unknown,
+  slug: string,
+  issues: ManifestIssue[],
+  opts?: { path?: string },
+): SubprojectFileAgentsV2 {
+  const file = opts?.path?.trim() ?? '';
+  const at = (field: string) => (field ? (file ? `${file}:${field}` : field) : file || slug);
+  const result: SubprojectFileAgentsV2 = { owned: [], referenced: [] };
+
+  if (!SLUG_RE.test(slug)) {
+    issues.push({
+      path: at(''),
+      message: `"${slug}" is not a valid subproject slug (lowercase letters, digits, dashes, underscores).`,
+      severity: 'error',
+    });
+  }
+
+  if (!isTable(raw)) {
+    issues.push({
+      path: at(''),
+      message: 'a subproject file must be a table of subproject fields (use `{}` for an empty one).',
+      severity: 'error',
+    });
+    return result;
+  }
+
+  if (raw.kortix_version !== undefined) {
+    issues.push({
+      path: at('kortix_version'),
+      message:
+        "a subproject file carries no `kortix_version` — the root manifest's version applies (and must be 2).",
+      severity: 'error',
+    });
+  }
+  for (const key of Object.keys(raw)) {
+    if (key === 'kortix_version' || SUBPROJECT_FILE_KEYS_V2.has(key)) continue;
+    issues.push({
+      path: at(key),
+      message: `"${key}" is not a subproject field (allowed: ${[...SUBPROJECT_FILE_KEYS_V2].join(', ')}).`,
+      severity: 'error',
+    });
+  }
+
+  expectStringOrAbsent(raw.name, at('name'), issues);
+  expectStringOrAbsent(raw.description, at('description'), issues);
+  expectStringOrAbsent(raw.instructions, at('instructions'), issues);
+
+  if (
+    raw.sessions !== undefined &&
+    !(SUBPROJECT_SESSIONS_MODES_V2 as readonly unknown[]).includes(raw.sessions)
+  ) {
+    issues.push({
+      path: at('sessions'),
+      message: `sessions must be one of ${SUBPROJECT_SESSIONS_MODES_V2.map((m) => `"${m}"`).join(', ')}.`,
+      severity: 'error',
+    });
+  }
+
+  if (raw.agent !== undefined && raw.agent !== null) {
+    const agent = typeof raw.agent === 'string' ? raw.agent.trim() : '';
+    if (!agent) {
+      issues.push({
+        path: at('agent'),
+        message:
+          'agent must be a non-empty string naming an agent usable in this subproject; omit it to fall back to `default_agent`.',
+        severity: 'error',
+      });
+    }
+  }
+
+  if (raw.context !== undefined && raw.context !== null) {
+    if (!Array.isArray(raw.context)) {
+      issues.push({
+        path: at('context'),
+        message: 'context must be a list of repo-relative paths.',
+        severity: 'error',
+      });
+    } else {
+      raw.context.forEach((item, i) => {
+        if (!isRepoRelativePath(item)) {
+          issues.push({
+            path: at(`context[${i}]`),
+            message:
+              'each context entry must be a non-empty repo-relative path (no leading "/" and no "..").',
+            severity: 'error',
+          });
+        }
+      });
+    }
+  }
+
+  if (raw.agents !== undefined && raw.agents !== null) {
+    validateSubprojectAgentsV2(raw.agents, at('agents'), at, result, issues);
+  }
+
+  return result;
+}
+
+/** `kortix-<slug>.yaml` → `agents:` — the same name→block map the root uses,
+ *  plus the `{ from: <slug> }` reference form. */
+function validateSubprojectAgentsV2(
   node: unknown,
   path: string,
-  agentNames: string[],
+  at: (field: string) => string,
+  result: SubprojectFileAgentsV2,
   issues: ManifestIssue[],
-): string[] {
-  const names: string[] = [];
-  if (node === undefined || node === null) return names;
+): void {
   if (Array.isArray(node) || !isTable(node)) {
     issues.push({
       path,
-      message: '`subprojects` must be a map of subproject slug → block.',
+      message:
+        '`agents` must be a map of agent name → agent block, or → `{ from: <subproject> }` to borrow one.',
       severity: 'error',
     });
-    return names;
+    return;
   }
-  for (const [slug, entry] of Object.entries(node)) {
-    const where = `${path}.${slug}`;
-    if (!SLUG_RE.test(slug)) {
+  for (const [name, entry] of Object.entries(node)) {
+    const where = at(`agents.${name}`);
+    if (!SLUG_RE.test(name)) {
       issues.push({
         path: where,
-        message: `"${slug}" is not a valid subproject slug (lowercase letters, digits, dashes, underscores).`,
+        message: `"${name}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`,
         severity: 'error',
       });
       continue;
     }
-    names.push(slug);
-    if (!isTable(entry)) {
-      issues.push({
-        path: where,
-        message: 'a subproject must be a table (use `{}` for an empty one).',
-        severity: 'error',
-      });
-      continue;
-    }
-    for (const key of Object.keys(entry)) {
-      if (!SUBPROJECT_BLOCK_KEYS_V2.has(key)) {
+    // `from` present at all ⇒ the author meant a reference; validate it as one
+    // rather than as a block with an unknown key.
+    if (isTable(entry) && 'from' in entry) {
+      const extra = Object.keys(entry).filter((key) => key !== 'from');
+      if (extra.length > 0) {
         issues.push({
-          path: `${where}.${key}`,
-          message: `"${key}" is not a subproject field (allowed: ${[...SUBPROJECT_BLOCK_KEYS_V2].join(', ')}).`,
+          path: where,
+          message: `a reference may carry no other key in this version (remove: ${extra.join(', ')}); declare the agent here to give it its own governance.`,
+          severity: 'error',
+        });
+        continue;
+      }
+      if (typeof entry.from !== 'string' || !entry.from.trim()) {
+        issues.push({
+          path: `${where}.from`,
+          message: 'from must be a non-empty string naming the subproject that owns the agent.',
+          severity: 'error',
+        });
+        continue;
+      }
+      result.referenced.push({ name, from: entry.from.trim() });
+      continue;
+    }
+    validateAgentBlockV2(entry, where, issues);
+    if (isTable(entry)) result.owned.push(name);
+  }
+}
+
+/** The root manifest plus every `kortix-<slug>.yaml` beside it. */
+export interface ManifestSetV2 {
+  root: Record<string, unknown>;
+  subprojects: Array<{ slug: string; path: string; raw: Record<string, unknown> }>;
+}
+
+/**
+ * The rules no single file can check (spec 2026-09-06 §3): duplicate agent
+ * names, `from` targets, and every default that names an agent — `agent:`,
+ * `default_agent`, `triggers[].agent` — against the usability rule ("global,
+ * owned by the subproject, or referenced by it"). Shape errors are NOT
+ * repeated here; run `validateManifest` on the root and
+ * `validateSubprojectFileV2` on each file for those.
+ */
+export function validateManifestSetV2(set: ManifestSetV2, issues: ManifestIssue[]): void {
+  const rootAgents = set.root?.agents;
+  const globals = isTable(rootAgents)
+    ? Object.keys(rootAgents).filter((name) => SLUG_RE.test(name))
+    : [];
+
+  const scratch: ManifestIssue[] = [];
+  const byPath = new Map<string, string>(); // slug → the file that declared it
+  const files: Array<{
+    slug: string;
+    path: string;
+    raw: Record<string, unknown>;
+    agents: SubprojectFileAgentsV2;
+  }> = [];
+  for (const entry of set.subprojects) {
+    const declared = byPath.get(entry.slug);
+    if (declared !== undefined) {
+      issues.push({
+        path: entry.path,
+        message: `subproject "${entry.slug}" is already declared in ${declared} — one file per subproject.`,
+        severity: 'error',
+      });
+      continue;
+    }
+    byPath.set(entry.slug, entry.path);
+    files.push({
+      ...entry,
+      agents: validateSubprojectFileV2(entry.raw, entry.slug, scratch, { path: entry.path }),
+    });
+  }
+
+  // 1. Agent names are project-unique across the root and every file.
+  const declaredIn = new Map<string, string>(globals.map((name) => [name, MANIFEST_FILENAME_YAML]));
+  for (const f of files) {
+    for (const name of f.agents.owned) {
+      const declared = declaredIn.get(name);
+      if (declared !== undefined) {
+        issues.push({
+          path: `${f.path}:agents.${name}`,
+          message: `agent "${name}" is already declared in ${declared} — agent names are unique across the root manifest and every subproject file.`,
+          severity: 'error',
+        });
+        continue;
+      }
+      declaredIn.set(name, f.path);
+    }
+  }
+
+  const ownedBy = new Map(files.map((f) => [f.slug, f.agents.owned]));
+  /** The usability rule: global, owned here, or referenced here. */
+  const usableIn = (slug: string): string[] => {
+    const f = files.find((entry) => entry.slug === slug);
+    if (!f) return globals;
+    return [...globals, ...f.agents.owned, ...f.agents.referenced.map((ref) => ref.name)];
+  };
+
+  // 2. Every `from` names another subproject that OWNS that agent.
+  for (const f of files) {
+    for (const ref of f.agents.referenced) {
+      const where = `${f.path}:agents.${ref.name}.from`;
+      if (ref.from === f.slug) {
+        issues.push({
+          path: where,
+          message: `a subproject cannot reference itself — declare "${ref.name}" here, or borrow it from another subproject.`,
+          severity: 'error',
+        });
+      } else if (!byPath.has(ref.from)) {
+        issues.push({
+          path: where,
+          message: `from "${ref.from}" does not match any subproject — expected ${subprojectFilePath('', ref.from)}.`,
+          severity: 'error',
+        });
+      } else if (!ownedBy.get(ref.from)?.includes(ref.name)) {
+        issues.push({
+          path: where,
+          message: `subproject "${ref.from}" does not declare an agent named "${ref.name}" — a reference must name an agent OWNED there, never a global agent or another reference.`,
           severity: 'error',
         });
       }
     }
-    expectStringOrAbsent(entry.name, `${where}.name`, issues);
-    expectStringOrAbsent(entry.description, `${where}.description`, issues);
-    expectStringOrAbsent(entry.instructions, `${where}.instructions`, issues);
-    if (
-      entry.sessions !== undefined &&
-      !(SUBPROJECT_SESSIONS_MODES_V2 as readonly unknown[]).includes(entry.sessions)
-    ) {
+  }
+
+  // 3. `agent:` must be usable in its own subproject.
+  for (const f of files) {
+    const agent = typeof f.raw.agent === 'string' ? f.raw.agent.trim() : '';
+    if (!agent) continue;
+    if (!usableIn(f.slug).includes(agent)) {
       issues.push({
-        path: `${where}.sessions`,
-        message: `sessions must be one of ${SUBPROJECT_SESSIONS_MODES_V2.map((m) => `"${m}"`).join(', ')}.`,
+        path: `${f.path}:agent`,
+        message: `agent "${agent}" is not usable in subproject "${f.slug}" — it must be a global agent, declared in ${f.path}, or borrowed there with \`{ from: <subproject> }\`.`,
         severity: 'error',
       });
     }
-    if (entry.agent !== undefined && entry.agent !== null) {
+  }
+
+  // 4. `default_agent` must be global. An UNDECLARED name is the root
+  //    validator's error (`validateDefaultAgentV2`); this adds the pointed
+  //    one it cannot produce — the name IS declared, just not globally.
+  const defaultAgent =
+    typeof set.root?.default_agent === 'string' ? set.root.default_agent.trim() : '';
+  if (defaultAgent && !globals.includes(defaultAgent)) {
+    const owner = files.find((f) => f.agents.owned.includes(defaultAgent));
+    if (owner) {
+      issues.push({
+        path: 'default_agent',
+        message: `default_agent "${defaultAgent}" is owned by subproject "${owner.slug}" (${owner.path}) — the project default must be a global agent declared in ${MANIFEST_FILENAME_YAML}.`,
+        severity: 'error',
+      });
+    }
+  }
+
+  // 5. Triggers: the subproject must exist, and the agent must be usable in it.
+  const triggers = set.root?.triggers;
+  validateTriggerSubprojectRefsV2(triggers, 'triggers', [...byPath.keys()], issues);
+  if (Array.isArray(triggers)) {
+    triggers.forEach((entry, i) => {
+      if (!isTable(entry)) return;
       const agent = typeof entry.agent === 'string' ? entry.agent.trim() : '';
-      if (!agent || !agentNames.includes(agent)) {
+      if (!agent) return;
+      const slug = typeof entry.subproject === 'string' ? entry.subproject.trim() : '';
+      if (!slug) {
+        // A project-level trigger may use global agents only. As with
+        // `default_agent`, an undeclared name is the root validator's error.
+        const owner = files.find((f) => f.agents.owned.includes(agent));
+        if (owner && !globals.includes(agent)) {
+          issues.push({
+            path: `triggers[${i}].agent`,
+            message: `agent "${agent}" is owned by subproject "${owner.slug}" (${owner.path}) — a trigger with no \`subproject\` may use global agents only.`,
+            severity: 'error',
+          });
+        }
+        return;
+      }
+      // An undeclared subproject is already reported above.
+      if (!byPath.has(slug)) return;
+      if (!usableIn(slug).includes(agent)) {
         issues.push({
-          path: `${where}.agent`,
-          message: `agent "${String(entry.agent)}" does not match any declared agent in \`agents\`; omit it to fall back to \`default_agent\`.`,
+          path: `triggers[${i}].agent`,
+          message: `agent "${agent}" is not usable in subproject "${slug}" — it must be a global agent, declared in ${byPath.get(slug)}, or borrowed there with \`{ from: <subproject> }\`.`,
           severity: 'error',
         });
       }
-    }
-    if (entry.context !== undefined && entry.context !== null) {
-      if (!Array.isArray(entry.context)) {
-        issues.push({
-          path: `${where}.context`,
-          message: 'context must be a list of repo-relative paths.',
-          severity: 'error',
-        });
-      } else {
-        entry.context.forEach((item, i) => {
-          if (!isRepoRelativePath(item)) {
-            issues.push({
-              path: `${where}.context[${i}]`,
-              message: 'each context entry must be a non-empty repo-relative path (no leading "/" and no "..").',
-              severity: 'error',
-            });
-          }
-        });
-      }
-    }
+    });
   }
-  return names;
+}
+
+/** v2 moves every subproject into its own file — an inline `subprojects:` map
+ *  is an error that names the convention (spec 2026-09-06 §2). Nothing
+ *  shipped with the map, so there is no migration. */
+export function rejectSubprojectsV2(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node === undefined) return;
+  issues.push({
+    path,
+    message:
+      '`subprojects` is not a manifest key — each subproject lives in its own `kortix-<slug>.yaml` file beside kortix.yaml, one file per subproject.',
+    severity: 'error',
+  });
 }
 
 /**
@@ -847,6 +1153,10 @@ export function validateTriggerSubprojectRefsV2(
  * agent, or be omitted to fall back to `default_agent` (spec §2.1, closing
  * trigger seam 7(a)). Layered on top of `validateTriggers`' structural checks,
  * which stay identical between v1 and v2.
+ *
+ * A trigger that carries a `subproject` is SKIPPED here: its agent may be one
+ * the subproject owns or borrows, which lives in a file this validator never
+ * sees. `validateManifestSetV2` checks those against the usability rule.
  */
 export function validateTriggerAgentRefsV2(
   node: unknown,
@@ -857,6 +1167,7 @@ export function validateTriggerAgentRefsV2(
   if (!Array.isArray(node)) return;
   node.forEach((entry, i) => {
     if (!isTable(entry) || entry.agent === undefined || entry.agent === null) return;
+    if (typeof entry.subproject === 'string' && entry.subproject.trim()) return;
     const where = `${path}[${i}].agent`;
     if (typeof entry.agent !== 'string' || !entry.agent.trim()) {
       issues.push({
