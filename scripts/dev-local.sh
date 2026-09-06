@@ -73,9 +73,12 @@ load_local_env() {
   # this machine's localhost — so they need a public tunnel URL. The dashboard
   # keeps talking to the API on localhost via NEXT_PUBLIC_BACKEND_URL, so only
   # the sandbox -> API direction goes through the tunnel.
-  export NEXT_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
-  export KORTIX_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
-  export BACKEND_URL="http://localhost:8008/v1"
+  # Follows PORT and honours a pre-set value, so a worktree booted on its own
+  # api port bakes ITS port into the web bundle. Hardcoding 8008 sent every
+  # hand-booted worktree's browser to the primary api (2026-09-06).
+  export NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://localhost:${PORT:-8008}/v1}"
+  export KORTIX_PUBLIC_BACKEND_URL="${KORTIX_PUBLIC_BACKEND_URL:-http://localhost:${PORT:-8008}/v1}"
+  export BACKEND_URL="${BACKEND_URL:-http://localhost:${PORT:-8008}/v1}"
 
   # Route sandbox model calls through the local standalone gateway. Proxy mode
   # (empty BASE_URL): the API reverse-proxies /v1/llm-gateway/* to the gateway.

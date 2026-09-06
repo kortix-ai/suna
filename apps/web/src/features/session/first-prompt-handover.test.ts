@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { transcriptCarriesFirstPrompt } from './first-prompt-handover';
+import { resolveFirstPromptHandover, transcriptCarriesFirstPrompt } from './first-prompt-handover';
 
 const text = (t: string) => ({ type: 'text', text: t });
 const file = (name: string) => ({ type: 'file', mime: 'image/png', filename: name, url: 'data:x' });
@@ -47,5 +47,43 @@ describe('transcriptCarriesFirstPrompt', () => {
   // stale bubble over a finished turn.
   test('releases once the turn is answered, even short of the promise', () => {
     expect(transcriptCarriesFirstPrompt([turn([text('x'), file('a.png')], true)], 3)).toBe(true);
+  });
+});
+
+describe('resolveFirstPromptHandover', () => {
+  const base = { hasPreview: true, transcriptShowsText: false, transcriptCarriesFiles: false, releasedBefore: false };
+
+  test('the stand-in draws until the transcript shows the text', () => {
+    expect(resolveFirstPromptHandover(base)).toEqual({ showStandIn: true, handOverToRealTurn: false, released: false });
+  });
+
+  test('the frame the text shows, the stand-in steps aside and the real turn takes over', () => {
+    expect(resolveFirstPromptHandover({ ...base, transcriptShowsText: true })).toEqual({
+      showStandIn: false,
+      handOverToRealTurn: true,
+      released: true,
+    });
+  });
+
+  // The glitch (2026-09-06, on video): the transcript\'s first message loses
+  // its parts for ~176 ms while the store swaps in the runtime\'s echo. A live
+  // boolean brought the stand-in back at full opacity over the dimmed real
+  // turn, then dropped it again — "the same message twice, then it vanishes".
+  test('a release is a latch — the stand-in never comes back', () => {
+    const out = resolveFirstPromptHandover({ ...base, transcriptShowsText: false, releasedBefore: true });
+    expect(out.showStandIn).toBe(false);
+    expect(out.handOverToRealTurn).toBe(true);
+    expect(out.released).toBe(true);
+  });
+
+  test('once the files have landed the real turn needs nothing handed over', () => {
+    expect(
+      resolveFirstPromptHandover({ ...base, transcriptShowsText: true, transcriptCarriesFiles: true, releasedBefore: true }),
+    ).toEqual({ showStandIn: false, handOverToRealTurn: false, released: true });
+  });
+
+  test('no preview, nothing to hand over', () => {
+    expect(resolveFirstPromptHandover({ ...base, hasPreview: false }).showStandIn).toBe(false);
+    expect(resolveFirstPromptHandover({ ...base, hasPreview: false }).handOverToRealTurn).toBe(false);
   });
 });

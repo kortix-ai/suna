@@ -56,3 +56,48 @@ export function transcriptCarriesFirstPrompt(
     return messageAttachmentCount(parts) >= expectedAttachments;
   });
 }
+
+/**
+ * The whole first-prompt handover, as one decision.
+ *
+ * The stand-in steps aside the frame the transcript shows the prompt's text —
+ * and then it STAYS aside. It used to be a live boolean, and the transcript's
+ * first message briefly has no parts while the store swaps the optimistic copy
+ * for the runtime's echo (measured 2026-09-06: ~176 ms as the file parts
+ * landed). For those frames the text was gone, the stand-in re-mounted at full
+ * opacity over the dimmed real turn, and the real turn drew nothing: the
+ * message flashed bright, then blank. A release is a latch.
+ *
+ * After release the REAL turn owns the prompt, and is handed everything the
+ * stand-in knew — text and file names — so it keeps drawing the bubble and the
+ * pending tiles through any frame where its own parts are still streaming.
+ */
+export interface FirstPromptHandoverInput {
+  /** The producer's copy exists (the boot preview store has this session). */
+  hasPreview: boolean;
+  /** The transcript's first user message carries its text right now. */
+  transcriptShowsText: boolean;
+  /** …and the attachments the preview promised. */
+  transcriptCarriesFiles: boolean;
+  /** The stand-in already stepped aside on an earlier frame. */
+  releasedBefore: boolean;
+}
+
+export interface FirstPromptHandover {
+  /** Draw the stand-in bubble. */
+  showStandIn: boolean;
+  /** Hand the preview's text + file names to the real first turn. */
+  handOverToRealTurn: boolean;
+  /** The latch value to keep for the next frame. */
+  released: boolean;
+}
+
+export function resolveFirstPromptHandover(input: FirstPromptHandoverInput): FirstPromptHandover {
+  if (!input.hasPreview) return { showStandIn: false, handOverToRealTurn: false, released: true };
+  const released = input.releasedBefore || input.transcriptShowsText;
+  return {
+    showStandIn: !released,
+    handOverToRealTurn: released && !input.transcriptCarriesFiles,
+    released,
+  };
+}

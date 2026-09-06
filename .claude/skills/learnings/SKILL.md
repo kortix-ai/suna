@@ -21,6 +21,45 @@ linked, not inlined.
 
 ## Register
 
+### One attachment tile, translated to tokens — never a mockup's pixels (2026-09-06)
+
+**When:** a reference screenshot arrives for a surface that two places render
+(the composer's attachment preview and the sent message). Build ONE component
+(`features/session/attachment-tile.tsx` → `AttachmentTile`) and make both
+surfaces consume it; two hand-kept copies drifted into an 80px image square
+beside a 120px file rectangle, and every message got a ragged right edge.
+Translate, don't trace: the reference's ~108px tile became `size-24` (the
+0.23rem scale), its ~12px corner became `rounded-md`, its lifted fill became
+`bg-popover`, its uppercase `MD` badge became the design system's `Badge`
+`size="xs"` lowercased (all-caps eyebrows are a rejected default), and its
+"faint text peek" — the one value that had no token (`text-[7px]`) — was
+dropped rather than kept. A long name is an ellipsized head plus its verbatim
+ten-character tail on line two, because the tail carries the extension.
+Verify in BOTH themes with the real bundle pointed at the branch API — a
+`NEXT_PUBLIC_*` value is inlined at compile, and `dev-local.sh` used to
+hardcode the primary api port into it. *Enforcer:* `attachment-tile.test.tsx`,
+`composer/attachment-tiles.test.tsx` ("image and file tiles are ONE square"),
+`optimistic-turn.test.tsx` (shell and chat ship the same surface), and
+`audit.sh` clean on the tile.
+
+### A placeholder's release is a LATCH, and the real thing must draw through the swap (2026-09-06)
+
+**When:** an optimistic stand-in hands over to the transcript's own copy of a
+message. The transcript's first message briefly has NO parts while the store
+swaps the optimistic copy for the runtime's echo (~176 ms as the file parts
+land, on video). A live boolean ("show the stand-in unless the transcript has
+text") flipped back: the stand-in re-mounted at full opacity over the dimmed
+real turn, then dropped again — "the same message twice for a millisecond,
+then it vanishes". **The rule:** once a placeholder steps aside it never
+returns (latch the release), and the real turn is handed everything the
+placeholder knew — text and file names — so it keeps drawing through frames
+where its own parts are still streaming. Measure handovers with a per-mutation
+DOM observer plus a video recording, and count only VISIBLE copies (walk
+ancestors for opacity/display): DOM counts alone flagged the aligned 300 ms
+crossfade as a duplicate the eye never sees. *Enforcer:*
+`first-prompt-handover.test.ts` ("a release is a latch"), `user-message.test.tsx`
+("keeps the bubble and the promised tiles through a frame with no parts").
+
 ### Verify a browser fix through the app's OWN API, not a proxy to another stack (2026-09-05)
 
 **When:** browser-verifying a worktree's web change. `NEXT_PUBLIC_BACKEND_URL`

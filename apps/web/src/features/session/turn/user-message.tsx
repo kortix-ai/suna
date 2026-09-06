@@ -44,10 +44,10 @@ import {
   type TextPart,
 } from '@/ui';
 import {
-  FILE_TILE_SURFACE,
-  FileTileBody,
+  AttachmentTile,
   TILE_INTERACTIVE,
   TILE_SURFACE,
+  isPreviewableImage,
 } from '../attachment-tile';
 import { MentionChip } from '../mention-chip';
 import { buildMentionSegments, type MentionSourceRef } from '../mention-segments';
@@ -607,12 +607,11 @@ export function planAttachmentGrid(
 
 /** True when we can actually paint this attachment rather than name it. */
 const isImageAttachment = (file: NormalizedAttachment) =>
-  Boolean(file.mime?.startsWith('image/') && file.src);
+  Boolean(file.src && isPreviewableImage(file.filename, file.mime));
 
-// TILE_SURFACE, TILE_INTERACTIVE and FileTileBody (icon top-left, filename
-// two-line-clamped along the bottom) live in `../attachment-tile` — shared
-// with the composer's preview tiles so the two can never drift apart. See
-// that module for why.
+// `AttachmentTile` (name top-left, extension badge bottom-left, or the picture
+// itself) lives in `../attachment-tile` — shared with the composer's preview so
+// the two can never drift apart. See that module for why.
 
 /**
  * An image attachment: a square tile that opens full-size on click.
@@ -645,9 +644,12 @@ function AttachmentImage({
     // Both used to render an empty box; now the first spins and the second
     // falls back to the named tile, so the tile always says which it is.
     return (
-      <span title={file.filename} className={className}>
-        <FileTileBody filename={file.filename} pending={pending || isLoading || file.pending} />
-      </span>
+      <AttachmentTile
+        filename={file.filename}
+        mime={file.mime}
+        pending={pending || isLoading || file.pending}
+        className={className}
+      />
     );
   }
 
@@ -658,10 +660,14 @@ function AttachmentImage({
           type="button"
           title={file.filename}
           onClick={(e) => e.stopPropagation()}
-          className={className}
+          className={cn(TILE_SURFACE, TILE_INTERACTIVE, className)}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={resolvedSrc} alt={file.filename} className="size-full object-cover" />
+          <AttachmentTile
+            filename={file.filename}
+            mime={file.mime}
+            imageSrc={resolvedSrc}
+            className="border-0 bg-transparent"
+          />
         </button>
       </PreviewImageTrigger>
       <PreviewImageContent fileContent={resolvedSrc} fileName={file.filename} fullscreen />
@@ -714,16 +720,14 @@ export function MessageAttachments({
   if (visible.length === 0) return null;
   const hasPendingAttachment = Boolean(pending) || attachments.some((file) => file.pending);
 
-  const caption =
-    status?.state === 'failed'
-      ? (status.message ?? 'Upload failed')
-      : status?.state === 'uploading' || hasPendingAttachment
-        ? `Uploading ${attachments.length} file${attachments.length === 1 ? '' : 's'}…`
-        : null;
+  // Only a FAILURE gets a line: it is the one state a tile cannot show on its
+  // own. Uploading is already on every tile as its spinner — a second
+  // "Uploading N files…" line said the same thing twice (Jay, 2026-09-06).
+  const caption = status?.state === 'failed' ? (status.message ?? 'Upload failed') : null;
 
   return (
     <div className="flex flex-col items-end gap-1.5">
-      <ul className="flex max-w-[21.5rem] flex-wrap justify-end gap-2">
+      <ul className="flex max-w-md flex-wrap justify-end gap-2">
         {visible.map((file, index) => {
           // The LAST visible tile carries the overflow count over its own
           // contents, so the grid never shows a blank slot — the count is an
@@ -752,36 +756,26 @@ export function MessageAttachments({
             );
           }
 
-          if (isImageAttachment(file)) {
-            return (
-              <li key={file.key} className="contents">
-                <AttachmentImage
-                  file={file}
-                  pending={pending}
-                  className={cn(TILE_SURFACE, TILE_INTERACTIVE)}
-                />
-              </li>
-            );
-          }
-
-          const canOpen = Boolean(file.path);
+        if (isImageAttachment(file)) {
           return (
             <li key={file.key} className="contents">
-              <button
-                type="button"
-                disabled={!canOpen}
-                title={file.filename}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (file.path) openFileInComputer(file.path);
-                }}
-                className={cn(FILE_TILE_SURFACE, canOpen && TILE_INTERACTIVE)}
-              >
-                <FileTileBody filename={file.filename} pending={pending || file.pending} />
-              </button>
+              <AttachmentImage file={file} pending={pending} />
             </li>
           );
-        })}
+        }
+
+        const canOpen = Boolean(file.path);
+        return (
+          <li key={file.key} className="contents">
+            <AttachmentTile
+              filename={file.filename}
+              mime={file.mime}
+              pending={pending || file.pending}
+              onOpen={canOpen ? () => openFileInComputer(file.path!) : undefined}
+            />
+          </li>
+        );
+      })}
       </ul>
       {caption && (
         // Right-aligned under the strip, on the same rail as the tiles. One
@@ -789,7 +783,7 @@ export function MessageAttachments({
         // reuses the same rung — the WORDS carry the difference, so a failed
         // upload never needs a colour the palette does not have.
         <p
-          className="text-muted-foreground max-w-[21.5rem] text-right text-xs leading-tight"
+          className="text-muted-foreground max-w-md text-right text-xs leading-tight"
           role={status?.state === 'failed' ? 'alert' : 'status'}
         >
           {caption}
@@ -1194,6 +1188,7 @@ export function UserMessage({
   actionsAlwaysVisible = false,
   pendingAttachments,
   uploadStatus,
+  pendingText,
 }: {
   message: MessageWithParts;
   agentNames?: string[];
@@ -1240,6 +1235,13 @@ export function UserMessage({
   pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
   /** What the strip says while `pendingAttachments` are in flight. */
   uploadStatus?: AttachmentUploadStatus;
+  /**
+   * The prompt's text as the sender knew it, for the frames where this
+   * message has no text part of its own — the store swaps the optimistic copy
+   * for the runtime's echo and the parts stream back in over ~176 ms. Without
+   * it the bubble blanked for that window (2026-09-06).
+   */
+  pendingText?: string;
 }) {
   const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const { attachments, stickyParts } = useMemo(
@@ -1347,7 +1349,9 @@ export function UserMessage({
     ? commandSplit
       ? commandSplit.after
       : (effectiveCommandInfo.args ?? '')
-    : text;
+    : // While this message has no text part of its own (the store is swapping
+      // in the runtime's echo), the sender's copy keeps the bubble on screen.
+      text || (pendingText ?? '');
 
   const copyText = useMemo(() => {
     const lines: string[] = [];

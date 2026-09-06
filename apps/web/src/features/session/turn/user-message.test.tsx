@@ -358,7 +358,7 @@ describe('UserMessage persisted attachments', () => {
     expect(html).toContain('bundle.zip');
     expect(html).toContain('README.md');
     expect(html).toContain('shot.png');
-    expect(html.match(/rounded-sm border/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(html.match(/rounded-md border/g)?.length).toBeGreaterThanOrEqual(3);
     expect(html).toMatch(/datetime="2026-09-01T18:58:54.410Z"/i);
     expect(html.indexOf('bundle.zip')).toBeLessThan(html.indexOf('README.md'));
     expect(html.indexOf('README.md')).toBeLessThan(html.indexOf('shot.png'));
@@ -458,7 +458,44 @@ describe('UserMessage persisted attachments', () => {
         </QueryClientProvider>,
       ).split('tiny.png').length - 1,
     );
-    expect(html).toContain('Uploading 3 files');
+    expect(html).not.toContain('Uploading');
+    expect(html).toContain('animate-spinner-orbit');
+  });
+
+  // The store swaps the optimistic copy for the runtime's echo and the parts
+  // stream back in over ~176 ms; for those frames this message has NO parts.
+  // Once the boot stand-in has stepped aside (a latch — see
+  // `resolveFirstPromptHandover`), this component is the only thing on screen
+  // for the prompt, so it draws what the sender knew: the text and the files.
+  // Left to its own parts it blanked, and the stand-in popped back in front
+  // at full opacity — "the same message twice, then it vanishes" (2026-09-06).
+  test('keeps the bubble and the promised tiles through a frame with no parts', () => {
+    const swapping = {
+      info: { id: 'message-swapping', role: 'user', time: { created: Date.parse('2026-09-06T00:00:00.000Z') } },
+      parts: [],
+    } as unknown as MessageWithParts;
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+          <UserMessage
+            message={swapping}
+            sessionId="s"
+            ownsPlan={false}
+            pendingText="FLICKER"
+            pendingAttachments={[
+              { filename: 'tiny.png', mime: 'image/png' },
+              { filename: 'doc.pdf', mime: 'application/pdf' },
+            ]}
+            uploadStatus={{ state: 'uploading' }}
+          />
+        </NextIntlClientProvider>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('FLICKER');
+    expect(html).toContain('tiny.png');
+    expect(html).toContain('doc.pdf');
+    expect(html).not.toContain('Uploading');
+    expect(html).toContain('animate-spinner-orbit');
   });
 
   test('keeps workspace references before a later native file after reload', () => {

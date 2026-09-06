@@ -83,7 +83,10 @@ import {
   type ModelDefaultControls,
 } from '@/features/session/model-selector';
 import { OptimisticTurn } from '@/features/session/optimistic-turn';
-import { transcriptCarriesFirstPrompt } from '@/features/session/first-prompt-handover';
+import {
+  resolveFirstPromptHandover,
+  transcriptCarriesFirstPrompt,
+} from '@/features/session/first-prompt-handover';
 import type { AttachmentUploadStatus } from '@/features/session/turn/user-message';
 import { type TurnSpan } from '@/features/session/outcomes/anchor-outcomes';
 import type { Outcome } from '@/features/session/outcomes/outcome-types';
@@ -706,6 +709,8 @@ interface SessionTurnProps {
   /** Files this turn is known to carry that its parts do not show yet — see `UserMessage`. */
   pendingAttachments?: ReadonlyArray<{ filename: string; mime: string }>;
   uploadStatus?: AttachmentUploadStatus;
+  /** The prompt's text as the sender knew it — see `UserMessage`. */
+  pendingText?: string;
   queueHeld?: boolean;
   onQueueRemove?: (promptId: string) => void;
   onQueueSendNow?: (promptId: string) => void;
@@ -830,6 +835,7 @@ function SessionTurnImpl({
   queueRow,
   pendingAttachments,
   uploadStatus,
+  pendingText,
   queueHeld,
   onQueueRemove,
   onQueueSendNow,
@@ -1637,6 +1643,7 @@ function SessionTurnImpl({
             message={turn.userMessage}
             pendingAttachments={pendingAttachments}
             uploadStatus={uploadStatus}
+            pendingText={pendingText}
             agentNames={agentNames}
             commandInfo={commandMessages?.get(turn.userMessage.info.id)}
             commands={commands}
@@ -3326,24 +3333,42 @@ export function SessionChat({
     () => transcriptCarriesFirstPrompt(turns, previewAttachmentCount),
     [turns, previewAttachmentCount],
   );
-  const showFirstPromptPreview = !!firstPromptPreview && !transcriptShowsFirstPrompt;
+  // A RELEASE IS A LATCH. The transcript's first message briefly has no parts
+  // while the store swaps the optimistic copy for the runtime's echo (~176 ms
+  // as the file parts land, on video 2026-09-06); a live boolean brought the
+  // stand-in back at full opacity over the dimmed real turn for those frames.
+  // Once released, the real turn owns the prompt — see
+  // `resolveFirstPromptHandover`.
+  const [firstPromptReleased, setFirstPromptReleased] = useState(false);
+  const handover = resolveFirstPromptHandover({
+    hasPreview: !!firstPromptPreview,
+    transcriptShowsText: transcriptShowsFirstPrompt,
+    transcriptCarriesFiles: transcriptCarriesFirstPromptFiles,
+    releasedBefore: firstPromptReleased,
+  });
+  useEffect(() => {
+    if (handover.released && !firstPromptReleased) setFirstPromptReleased(true);
+  }, [handover.released, firstPromptReleased]);
+  const showFirstPromptPreview = handover.showStandIn;
   useEffect(() => {
     if (!projectSessionId || !firstPromptPreview) return;
     if (transcriptCarriesFirstPromptFiles) clearFirstPromptPreview(projectSessionId);
   }, [projectSessionId, firstPromptPreview, transcriptCarriesFirstPromptFiles, clearFirstPromptPreview]);
-  /** The first prompt's promised files, by name, for the real turn to draw as
-   *  pending tiles while its own file parts are still streaming in. */
-  const firstTurnPendingAttachments = useMemo(
-    (): ReadonlyArray<{ filename: string; mime: string }> | undefined => {
-      if (!firstPromptPreview || transcriptCarriesFirstPromptFiles) return undefined;
-      const names = firstPromptPreview.files.map((file) =>
+  /** What the real first turn is handed once the stand-in has stepped aside:
+   *  the prompt's text and its files' names, so it keeps drawing the bubble
+   *  and the pending tiles through any frame where its own parts are still
+   *  streaming. Nothing once the transcript carries the files itself. */
+  const firstTurnHandover = useMemo(
+    (): { text: string; attachments: ReadonlyArray<{ filename: string; mime: string }> } | undefined => {
+      if (!firstPromptPreview || !handover.handOverToRealTurn) return undefined;
+      const attachments = firstPromptPreview.files.map((file) =>
         file.kind === 'local'
           ? { filename: file.file.name, mime: file.file.type || 'application/octet-stream' }
           : { filename: file.filename, mime: file.mime },
       );
-      return names.length > 0 ? names : undefined;
+      return { text: firstPromptPreview.text, attachments };
     },
-    [firstPromptPreview, transcriptCarriesFirstPromptFiles],
+    [firstPromptPreview, handover.handOverToRealTurn],
   );
 
   /**
@@ -5398,11 +5423,16 @@ export function SessionChat({
                                   questions={pendingQuestions}
                                   agentNames={agentNames}
                                   isFirstTurn={turnIndex === 0}
+                                  // Handed over only once the stand-in has stepped
+                                  // aside — while it is up it draws these itself.
+                                  pendingText={turnIndex === 0 ? firstTurnHandover?.text : undefined}
                                   pendingAttachments={
-                                    turnIndex === 0 ? firstTurnPendingAttachments : undefined
+                                    turnIndex === 0 && firstTurnHandover?.attachments.length
+                                      ? firstTurnHandover.attachments
+                                      : undefined
                                   }
                                   uploadStatus={
-                                    turnIndex === 0 && firstTurnPendingAttachments
+                                    turnIndex === 0 && firstTurnHandover?.attachments.length
                                       ? (firstPromptUploadStatus ?? { state: 'uploading' })
                                       : undefined
                                   }

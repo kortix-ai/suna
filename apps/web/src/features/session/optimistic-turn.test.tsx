@@ -86,14 +86,14 @@ describe('OptimisticTurn', () => {
     ]);
     const shell = render(<OptimisticTurn text={text} deferPreview />);
     const chat = render(<OptimisticTurn text={text} />);
-    // `rounded-sm border` is what `TILE_SURFACE` (`../attachment-tile`) ships.
-    for (const box of ['size-20', 'max-w-[21.5rem]', 'rounded-sm border']) {
+    // `size-28` + `rounded-md border` is what `TILE_SURFACE` (`../attachment-tile`) ships.
+    for (const box of ['size-28', 'max-w-md', 'rounded-md border']) {
       expect(shell).toContain(box);
       expect(chat).toContain(box);
     }
     // Both still open with the same bubble and close with the same waiting row.
-    expect(shell.slice(0, shell.indexOf('size-20'))).toBe(
-      chat.slice(0, chat.indexOf('size-20')),
+    expect(shell.slice(0, shell.indexOf('size-28'))).toBe(
+      chat.slice(0, chat.indexOf('size-28')),
     );
     expect(shell).toContain('Thinking');
     expect(chat).toContain('Thinking');
@@ -181,7 +181,9 @@ describe('OptimisticTurn upload status', () => {
   // proper file upload state." The bytes reach the box BEFORE the runtime
   // creates the message, so this bubble is the only thing on screen for the
   // whole upload — it has to say what is happening.
-  test('says how many files are still going up', () => {
+  // No "Uploading N files…" line: every tile already spins while its bytes
+  // are on their way, and a second line said the same thing (Jay, 2026-09-06).
+  test('while uploading, the tiles spin and nothing is written under them', () => {
     const markup = render(
       <OptimisticTurn
         text="YO BRO"
@@ -193,21 +195,10 @@ describe('OptimisticTurn upload status', () => {
         uploadStatus={{ state: 'uploading' }}
       />,
     );
-    expect(markup).toContain('Uploading 3 files');
+    expect(markup).not.toContain('Uploading');
+    expect(markup).toContain('animate-spinner-orbit');
     expect(markup).toContain('a.jpg');
     expect(markup).toContain('c.svg');
-  });
-
-  test('says it in the singular for one file', () => {
-    const markup = render(
-      <OptimisticTurn
-        text="x"
-        attachments={[{ filename: 'only.png', mime: 'image/png' }]}
-        uploadStatus={{ state: 'uploading' }}
-      />,
-    );
-    expect(markup).toContain('Uploading 1 file');
-    expect(markup).not.toContain('1 files');
   });
 
   // A failed upload must READ as failed. Left as a spinner it is
@@ -225,10 +216,11 @@ describe('OptimisticTurn upload status', () => {
     expect(markup).not.toContain('Uploading');
   });
 
-  test('derives the upload status from pending files in a running-session turn', () => {
+  test('a staged file in a running-session turn spins, with no line under it', () => {
     const pending = render(
       <OptimisticTurn text="x" attachments={[{ filename: 'a.png', mime: 'image/png' }]} />,
     );
-    expect(pending).toContain('Uploading 1 file');
+    expect(pending).toContain('animate-spinner-orbit');
+    expect(pending).not.toContain('Uploading');
   });
 });

@@ -18,7 +18,7 @@ describe('QueuedPromptBubbles attachments', () => {
   // The warm-box gap, measured in a real browser on 2026-09-04: the transcript
   // mounted at +6s, the queued row stood in for the prompt, and it drew the
   // text alone — three attached files, no tiles, no word about an upload.
-  test('draws every attachment as a pending tile with the upload line', () => {
+  test('draws every attachment as a spinning pending tile', () => {
     const markup = render(
       <QueuedPromptBubbles
         queued={[
@@ -39,7 +39,8 @@ describe('QueuedPromptBubbles attachments', () => {
     expect(markup).toContain('tiny.png');
     expect(markup).toContain('logo.svg');
     expect(markup).toContain('doc.pdf');
-    expect(markup).toContain('Uploading 3 files');
+    expect(markup).toContain('animate-spinner-orbit');
+    expect(markup).not.toContain('Uploading');
   });
 
   test('a failed row names the failure instead of spinning', () => {
