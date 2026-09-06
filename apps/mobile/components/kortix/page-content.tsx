@@ -25,14 +25,14 @@ export function PageContent({
   return (
     <View
       {...viewProps}
-      className={backgroundColor ? undefined : 'bg-background'}
-      style={[{ flex: 1 }, backgroundColor ? { backgroundColor } : null, style]}
+      className={backgroundColor ? 'flex-1' : 'flex-1 bg-background'}
+      style={[backgroundColor ? { backgroundColor } : null, style]}
     >
       {/* Top breathing room between the header and the first piece of
           content — 4 here + the header's 12 bottom padding = a uniform 16pt
           gap on every page. Pages that manage their own scroll/list padding
           should override via the `style` prop. */}
-      <View style={{ paddingTop: 4, flex: 1 }}>{children}</View>
+      <View className="flex-1 pt-1">{children}</View>
     </View>
   );
 }

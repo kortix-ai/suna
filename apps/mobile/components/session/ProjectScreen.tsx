@@ -59,7 +59,7 @@ import {
   type ChatActionGates,
   type ChatActionId,
 } from '@/lib/session/dock-menu';
-import type { SheetRef } from '@/components/ui/sheet';
+import type { SheetRef } from '@/components/kortix/sheet';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 import {

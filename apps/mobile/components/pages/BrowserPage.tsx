@@ -18,9 +18,10 @@ import { getSandboxPortUrl } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { API_URL, getAuthToken } from '@/api/config';
 import * as Linking from 'expo-linking';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { ViewStyle } from 'react-native';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface BrowserPageProps {
   page: PageTab;
@@ -36,7 +37,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<React.ElementRef<typeof WebView>>(null);
 
   // Restore persisted state from tab store
   const savedState = useTabStore((s) => s.tabStateById[page.id]) as { savedUrl?: string; savedDisplay?: string } | undefined;
@@ -172,10 +173,9 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     }
   }, []);
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#999';
-  const barBg = isDark ? '#1E1E22' : '#F4F4F5';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const inputBg = withAlpha(fgColor, isDark ? 0.06 : 0.04);
 
   // URL bar + inline nav buttons, passed into PageHeader's title slot so
   // the browser toolbar inherits the standard `bg-muted` header chrome

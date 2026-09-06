@@ -15,18 +15,18 @@ import React, {
 } from 'react';
 import { View, ActivityIndicator, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+// Use react-native-gesture-handler's Pressable (not RN's own) for correct
+// Android touch handling nested inside a BottomSheet's pan gesture — the
+// same underlying gesture system @gorhom/bottom-sheet's legacy touchables
+// module re-exported, without importing that retired module.
+import { Pressable } from 'react-native-gesture-handler';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { haptics } from '@/lib/haptics';
 import {
   setProjectSessionSharing,
@@ -34,6 +34,7 @@ import {
   type SessionSharing,
 } from '@/lib/projects/projects-client';
 import { projectKeys, useProjectAccess } from '@/lib/projects/hooks';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 type ShareMode = 'project' | 'private' | 'members';
 
@@ -70,6 +71,7 @@ interface SessionShareSheetProps {
 
 export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetProps>(
   function SessionShareSheet({ projectId, session }, ref) {
+    const sheetBg = useSheetBackground();
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
@@ -92,9 +94,9 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
     const members = access.data?.members ?? [];
     const viewerUserId = access.data?.viewer_user_id;
 
-    const fgColor = isDark ? '#F8F8F8' : '#121215';
-    const mutedColor = isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)';
-    const border = isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.08)';
+    const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+    const mutedColor = isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4);
+    const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
     const sheetPadding = insets.bottom + 16;
 
     // Selected members first, like the web picker.
@@ -188,35 +190,24 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
       );
     }, []);
 
-    const renderBackdrop = useCallback(
-      (props: BottomSheetBackdropProps) => (
-        <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
-      ),
-      [],
-    );
 
     return (
       <BottomSheetModal
         ref={sheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
         onChange={(index) => setOpen(index >= 0)}
         onAnimate={(from, to) => {
           if (from === -1 && to === 0) seedFromSession();
         }}
         onDismiss={seedFromSession}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}>
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}>
         {/* Single scrollable child — required for enableDynamicSizing to size
             correctly and keep the primary action visible at the bottom. */}
         <BottomSheetScrollView
@@ -232,7 +223,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
             <View
               className="mr-3 h-10 w-10 items-center justify-center rounded-xl"
               style={{
-                backgroundColor: isDark ? 'rgba(248, 248, 248, 0.08)' : 'rgba(18, 18, 21, 0.05)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05),
               }}>
               <Ionicons name="share-outline" size={20} color={fgColor} />
             </View>
@@ -252,29 +243,28 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
           {/* Mode options */}
           {MODE_OPTIONS.map((opt) => {
             const on = mode === opt.mode;
+            const optionBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.03);
             return (
-              <BottomSheetTouchable
+              <Pressable
                 key={opt.mode}
                 onPress={() => {
                   haptics.selection();
                   setMode(opt.mode);
                 }}
-                activeOpacity={0.7}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  borderRadius: 16,
-                  paddingHorizontal: 16,
-                  paddingVertical: 12,
-                  marginBottom: 8,
-                  borderWidth: 1,
-                  borderColor: on ? theme.primary : border,
-                  backgroundColor: on
-                    ? isDark
-                      ? 'rgba(248, 248, 248, 0.06)'
-                      : 'rgba(18, 18, 21, 0.03)'
-                    : 'transparent',
-                }}>
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    borderRadius: 16,
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    marginBottom: 8,
+                    borderWidth: 1,
+                    borderColor: on ? theme.primary : border,
+                    backgroundColor: on ? optionBg : 'transparent',
+                  },
+                  pressed && { opacity: 0.7 },
+                ]}>
                 <Ionicons name={opt.icon} size={19} color={on ? theme.primary : mutedColor} />
                 <View style={{ marginLeft: 12, flex: 1 }}>
                   <Text className="font-roobert-medium text-[15px]" style={{ color: fgColor }}>
@@ -285,7 +275,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                   </Text>
                 </View>
                 {on && <Ionicons name="checkmark" size={18} color={theme.primary} />}
-              </BottomSheetTouchable>
+              </Pressable>
             );
           })}
 
@@ -309,24 +299,26 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                   const on = memberIds.includes(m.user_id);
                   const isViewer = m.user_id === viewerUserId;
                   return (
-                    <BottomSheetTouchable
+                    <Pressable
                       key={m.user_id}
                       onPress={() => toggleMember(m.user_id)}
-                      activeOpacity={0.7}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 16,
-                        paddingVertical: 12,
-                        borderBottomWidth: 1,
-                        borderBottomColor: border,
-                      }}>
+                      style={({ pressed }) => [
+                        {
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 16,
+                          paddingVertical: 12,
+                          borderBottomWidth: 1,
+                          borderBottomColor: border,
+                        },
+                        pressed && { opacity: 0.7 },
+                      ]}>
                       <View
                         className="mr-3 h-8 w-8 items-center justify-center rounded-full"
                         style={{
                           backgroundColor: isDark
-                            ? 'rgba(248, 248, 248, 0.08)'
-                            : 'rgba(18, 18, 21, 0.06)',
+                            ? withAlpha(THEME.dark.foreground, 0.08)
+                            : withAlpha(THEME.light.foreground, 0.06),
                         }}>
                         <Text className="font-roobert-medium text-xs" style={{ color: fgColor }}>
                           {(m.email ?? m.user_id).slice(0, 1).toUpperCase()}
@@ -344,7 +336,7 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
                         size={20}
                         color={on ? theme.primary : mutedColor}
                       />
-                    </BottomSheetTouchable>
+                    </Pressable>
                   );
                 })
               )}
@@ -354,34 +346,36 @@ export const SessionShareSheet = forwardRef<BottomSheetModal, SessionShareSheetP
           {incomplete && (
             <Text
               className="mb-2 font-roobert text-xs"
-              style={{ color: '#ef4444', paddingLeft: 4 }}>
+              style={{ color: isDark ? THEME.dark.destructive : THEME.light.destructive, paddingLeft: 4 }}>
               Pick at least one member, or choose another option.
             </Text>
           )}
 
-          <BottomSheetTouchable
+          <Pressable
             onPress={handleSave}
             disabled={save.isPending || incomplete}
-            activeOpacity={0.7}
-            style={{
-              marginTop: 8,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 9999,
-              paddingVertical: 14,
-              backgroundColor: isDark ? '#F8F8F8' : '#121215',
-              opacity: save.isPending || incomplete ? 0.5 : 1,
-            }}>
+            style={({ pressed }) => [
+              {
+                marginTop: 8,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 9999,
+                paddingVertical: 14,
+                backgroundColor: theme.primary,
+                opacity: save.isPending || incomplete ? 0.5 : 1,
+              },
+              pressed && { opacity: 0.7 },
+            ]}>
             {save.isPending ? (
-              <ActivityIndicator size="small" color={isDark ? '#121215' : '#F8F8F8'} />
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
             ) : (
               <Text
                 className="font-roobert-medium text-[15px]"
-                style={{ color: isDark ? '#121215' : '#F8F8F8' }}>
+                style={{ color: theme.primaryForeground }}>
                 Done
               </Text>
             )}
-          </BottomSheetTouchable>
+          </Pressable>
         </BottomSheetScrollView>
       </BottomSheetModal>
     );

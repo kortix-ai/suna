@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { Pressable, View, Keyboard } from 'react-native';
+import { View, Keyboard } from 'react-native';
 import { Search, X } from 'lucide-react-native';
-import { Icon } from './icon';
-import { Input } from './input';
+import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { log } from '@/lib/logger';
 
 interface SearchBarProps {
@@ -15,7 +16,7 @@ interface SearchBarProps {
 
 /**
  * SearchBar Component - Reusable search input with clear functionality
- * 
+ *
  * Features:
  * - Compact design with search icon
  * - Clear button appears when text is entered
@@ -52,15 +53,16 @@ export function SearchBar({
         onChangeText={onChangeText}
         placeholder={placeholder}
         returnKeyType="search"
-        className="flex-1 mx-2 h-full rounded-none bg-transparent px-0 text-base shadow-none"
+        className="flex-1 mx-2 h-full rounded-none border-0 bg-transparent px-0 text-base shadow-none"
         accessibilityLabel={`Search ${placeholder.toLowerCase()}`}
         accessibilityHint={`Type to search through your ${placeholder.toLowerCase()}`}
       />
       {value.length > 0 && (
-        <Pressable
+        <Button
+          variant="ghost"
+          size="icon"
           onPress={handleClear}
-          className="w-8 h-8 items-center justify-center"
-          accessibilityRole="button"
+          className="h-8 w-8"
           accessibilityLabel="Clear search"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
@@ -70,7 +72,7 @@ export function SearchBar({
             className="text-muted-foreground"
             strokeWidth={2}
           />
-        </Pressable>
+        </Button>
       )}
     </View>
   );

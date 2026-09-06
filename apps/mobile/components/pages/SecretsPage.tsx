@@ -9,7 +9,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  TouchableOpacity,
   ScrollView,
   Alert,
   RefreshControl,
@@ -18,7 +17,10 @@ import {
   TextInput,
   Pressable,
 } from 'react-native';
+import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import {
   Plus,
   Trash2,
@@ -34,23 +36,24 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetTextInput,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+
+// `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
+// legacy touchable, which itself just proxies react-native-gesture-handler's
+// touchable on Android (and RN's own on iOS) for correct gesture arbitration
+// inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
+const BottomSheetTouchable = GestureHandlerPressable;
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 
@@ -127,9 +130,10 @@ function SecretRow({
 }) {
   const isVisible = visibleKeys.has(secretKey);
   const hasValue = !!value;
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const borderColor = withAlpha(fgColor, 0.06);
+  const dimColor = isDark ? withAlpha(THEME.dark.mutedForeground, 0.5) : withAlpha(THEME.light.mutedForeground, 0.5);
   const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
   return (
@@ -145,23 +149,23 @@ function SecretRow({
       {/* Value + actions */}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <Text
-          style={{ flex: 1, fontSize: 12, fontFamily: monoFont, color: hasValue ? mutedColor : (isDark ? '#52525b' : '#d4d4d8') }}
+          style={{ flex: 1, fontSize: 12, fontFamily: monoFont, color: hasValue ? mutedColor : dimColor }}
           numberOfLines={1}
         >
           {!hasValue ? 'empty' : isVisible ? value : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
         </Text>
         <View style={{ flexDirection: 'row', gap: 4 }}>
           {hasValue && (
-            <TouchableOpacity onPress={() => onToggleVisibility(secretKey)} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              {isVisible ? <EyeOff size={15} color={mutedColor} /> : <Eye size={15} color={mutedColor} />}
-            </TouchableOpacity>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => onToggleVisibility(secretKey)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Icon as={isVisible ? EyeOff : Eye} size={15} color={mutedColor} />
+            </Button>
           )}
-          <TouchableOpacity onPress={() => onEdit(secretKey, value)} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Pencil size={15} color={mutedColor} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => onDelete(secretKey)} style={{ padding: 6 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Trash2 size={15} color={mutedColor} />
-          </TouchableOpacity>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => onEdit(secretKey, value)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Icon as={Pencil} size={15} color={mutedColor} />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onPress={() => onDelete(secretKey)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Icon as={Trash2} size={15} color={mutedColor} />
+          </Button>
         </View>
       </View>
     </View>
@@ -186,12 +190,13 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const bgColor = isDark ? '#121215' : '#F8F8F8';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = getSheetBg(isDark);
-  const inputBorder = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const borderColor = withAlpha(fgColor, 0.06);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const sheetBg = useSheetBackground();
+  const inputBorder = withAlpha(fgColor, isDark ? 0.1 : 0.08);
   const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
   const themeColors = useThemeColors();
 
@@ -232,16 +237,10 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   }, [secrets, searchQuery]);
 
   // Shared backdrop
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} pressBehavior="close" />
-    ),
-    [],
-  );
 
   const sheetStyles = useMemo(() => ({
     backgroundStyle: { backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-    handleIndicatorStyle: { backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 },
+    handleIndicatorStyle: sheetHandleIndicatorStyle(isDark),
   }), [sheetBg, isDark]);
 
   // ── Add ──
@@ -346,7 +345,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             flex: 1,
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+            backgroundColor: withAlpha(fgColor, isDark ? 0.06 : 0.04),
             borderRadius: 9999,
             paddingHorizontal: 16,
             height: 42,
@@ -397,7 +396,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         )}
         {error && (
           <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: isDark ? '#f87171' : '#dc2626', textAlign: 'center' }}>{error}</Text>
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: isDark ? THEME.dark.destructive : THEME.light.destructive, textAlign: 'center' }}>{error}</Text>
           </View>
         )}
         {!isLoading && !error && rows.length === 0 && (
@@ -431,7 +430,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         ref={addSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -441,7 +440,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: withAlpha(fgColor, isDark ? 0.06 : 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
               <Plus size={20} color={fgColor} />
             </View>
             <View style={{ flex: 1 }}>
@@ -487,7 +486,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             onPress={handleAdd}
             disabled={!newKey.trim() || isSaving}
             style={{
-              backgroundColor: newKey.trim() ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
+              backgroundColor: newKey.trim() ? themeColors.primary : withAlpha(fgColor, isDark ? 0.08 : 0.06),
               borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
               opacity: newKey.trim() && !isSaving ? 1 : 0.5,
             }}
@@ -504,7 +503,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         ref={editSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
@@ -514,7 +513,7 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: withAlpha(fgColor, isDark ? 0.06 : 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
               <Pencil size={20} color={fgColor} />
             </View>
             <View style={{ flex: 1 }}>
@@ -561,15 +560,15 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         ref={deleteSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         onDismiss={() => setDeleteKey('')}
         {...sheetStyles}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Trash2 size={20} color={isDark ? '#f87171' : '#dc2626'} />
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: withAlpha(destructiveColor, isDark ? 0.1 : 0.06), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Trash2 size={20} color={destructiveColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Delete Secret</Text>
@@ -580,11 +579,11 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           {/* Warning */}
           <View style={{
             flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 12, marginBottom: 20,
-            backgroundColor: isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.04)',
-            borderWidth: 1, borderColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
+            backgroundColor: withAlpha(destructiveColor, isDark ? 0.08 : 0.04),
+            borderWidth: 1, borderColor: withAlpha(destructiveColor, isDark ? 0.15 : 0.1),
           }}>
-            <AlertTriangle size={16} color={isDark ? '#f87171' : '#dc2626'} style={{ marginRight: 8 }} />
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: isDark ? '#fca5a5' : '#b91c1c', flex: 1, lineHeight: 18 }}>
+            <AlertTriangle size={16} color={destructiveColor} style={{ marginRight: 8 }} />
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: destructiveColor, flex: 1, lineHeight: 18 }}>
               This will permanently remove this environment variable.
             </Text>
           </View>
@@ -605,10 +604,10 @@ export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               disabled={isDeleting}
               style={{
                 flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center',
-                backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1,
+                backgroundColor: destructiveColor, opacity: isDeleting ? 0.5 : 1,
               }}
             >
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: THEME.light.primaryForeground /* hex-allowlist: fixed near-white (hsl(60 0% 98%)) text on solid destructive red, matches Button's own destructive text-white */ }}>
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </Text>
             </BottomSheetTouchable>

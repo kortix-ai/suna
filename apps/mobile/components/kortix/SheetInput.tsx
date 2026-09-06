@@ -9,7 +9,7 @@
 import React from 'react';
 import { BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
-import { accountColors } from '@/components/accounts/account-shared';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 type BottomSheetTextInputProps = React.ComponentProps<typeof BottomSheetTextInput>;
 
@@ -21,21 +21,31 @@ export interface SheetTextInputProps extends BottomSheetTextInputProps {
 export function SheetTextInput({ mono, style, placeholderTextColor, ...props }: SheetTextInputProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const c = accountColors(isDark);
+  // BottomSheetTextInput isn't imported from 'react-native' directly, so
+  // NativeWind never patches it with className support the way `<Input>`
+  // gets it (confirmed by every other BottomSheetTextInput call site in this
+  // app — all style it inline via a `style` prop). Colors below mirror
+  // exactly what `<Input>` itself resolves to (`border-input`,
+  // `bg-background` in light / `dark:bg-input/30` in dark, `text-foreground`,
+  // `placeholder:text-muted-foreground`) — read from THEME, the hex-free
+  // "className can't reach this prop" source (same contract documented in
+  // lib/theme-colors.ts's header) instead of a local hex palette.
+  const c = isDark ? THEME.dark : THEME.light;
+  const inputBackground = isDark ? withAlpha(THEME.dark.input, 0.3) : THEME.light.background;
   return (
     <BottomSheetTextInput
-      placeholderTextColor={placeholderTextColor ?? c.muted}
+      placeholderTextColor={placeholderTextColor ?? c.mutedForeground}
       {...props}
       style={[
         {
           height: 48,
           borderRadius: 9999,
           borderWidth: 1,
-          borderColor: c.inputBorder,
-          backgroundColor: c.inputBg,
+          borderColor: c.input,
+          backgroundColor: inputBackground,
           paddingHorizontal: 18,
           fontSize: 15,
-          color: c.fg,
+          color: c.foreground,
           fontFamily: mono ? 'Menlo' : 'Roobert',
         },
         style,

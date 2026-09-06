@@ -7,8 +7,10 @@
  */
 
 import * as React from 'react';
-import { View, Text } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 
 // SVG imports — direct so the bundler tree-shakes correctly.
 import Anthropic from '@/assets/provider-icons/anthropic.svg';
@@ -145,7 +147,7 @@ export function ProviderLogo({ providerID, name, size = 36 }: ProviderLogoProps)
   // All provider SVGs use `fill="currentColor"`, so passing `color` tints them
   // uniformly per theme — no more "DeepInfra invisible on dark" issue.
   if (Icon) {
-    const tint = isDark ? '#F4F4F5' : '#18181B';
+    const tint = isDark ? THEME.dark.foreground : THEME.light.foreground;
     return (
       <View
         style={{
@@ -162,20 +164,18 @@ export function ProviderLogo({ providerID, name, size = 36 }: ProviderLogoProps)
 
   return (
     <View
+      className="bg-muted items-center justify-center"
       style={{
         width: size,
         height: size,
         borderRadius: 8,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-        alignItems: 'center',
-        justifyContent: 'center',
       }}
     >
       <Text
+        className="text-muted-foreground"
         style={{
           fontSize: Math.round(size * 0.32),
           fontFamily: 'Roobert-SemiBold',
-          color: isDark ? '#E4E4E7' : '#52525B',
           letterSpacing: 0.5,
         }}
       >

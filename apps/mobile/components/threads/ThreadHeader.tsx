@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
@@ -19,6 +19,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { ThreadActionsDrawer } from './ThreadActionsDrawer';
 import { log } from '@/lib/logger';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -160,7 +161,7 @@ export function ThreadHeader({
                 onSubmitEditing={handleTitleBlur}
                 className="flex-1 text-xl font-roobert-medium text-foreground tracking-tight"
                 placeholder={t('threadHeader.enterTitle')}
-                placeholderTextColor={isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)'}
+                placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4)}
                 selectTextOnFocus
                 maxLength={50}
                 returnKeyType="done"

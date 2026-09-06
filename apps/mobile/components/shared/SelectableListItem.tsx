@@ -31,8 +31,12 @@ import { Text } from '@/components/ui/text';
 import { Check, ChevronRight } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { cn } from '@/lib';
-// Use @gorhom/bottom-sheet touchable for proper Android gesture handling inside bottom sheets
-import { TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
+// Use react-native-gesture-handler's Pressable (not RN's own) for correct
+// Android touch handling nested inside a BottomSheet's pan gesture — the
+// same underlying gesture system @gorhom/bottom-sheet's legacy touchables
+// module re-exported, without importing that retired module.
+import { Pressable } from 'react-native-gesture-handler';
+import { THEME } from '@/lib/utils/theme';
 
 export interface SelectableListItemProps {
   /** Avatar component (AgentAvatar, ModelAvatar, etc.) */
@@ -86,6 +90,8 @@ export function SelectableListItem({
   rightIcon,
 }: SelectableListItemProps) {
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const c = isDark ? THEME.dark : THEME.light;
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -93,9 +99,12 @@ export function SelectableListItem({
   };
 
   return (
-    <BottomSheetTouchable
+    <Pressable
       onPress={handlePress}
-      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      style={({ pressed }) => [
+        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+        pressed && { opacity: 0.7 },
+      ]}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || `Select ${title}`}>
       {/* Left: Avatar + Text */}
@@ -108,8 +117,7 @@ export function SelectableListItem({
           <View className="flex-row items-center gap-2">
             {typeof title === 'string' ? (
               <Text
-                style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                className="font-roobert-medium text-base"
+                className="font-roobert-medium text-base text-foreground"
                 numberOfLines={1}>
                 {title}
               </Text>
@@ -120,22 +128,16 @@ export function SelectableListItem({
             {/* Inactive badge */}
             {!isActive && (
               <Text
-                style={{
-                  color:
-                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-                }}
-                className="mt-0.5 font-roobert text-xs">
+                className="mt-0.5 font-roobert text-muted-foreground"
+                style={{ fontSize: 12, lineHeight: 16 }}>
                 Inactive
               </Text>
             )}
           </View>
           {subtitle && (
             <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-              }}
-              className="mt-0.5 font-roobert text-xs"
+              className="mt-0.5 font-roobert text-muted-foreground"
+              style={{ fontSize: 12, lineHeight: 16 }}
               numberOfLines={1}>
               {subtitle}
             </Text>
@@ -145,10 +147,8 @@ export function SelectableListItem({
         {/* Optional Meta (right side of text) */}
         {meta && (
           <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-            }}
-            className="ml-2 font-roobert-medium text-xs">
+            className="ml-2 font-roobert-medium text-muted-foreground"
+            style={{ fontSize: 12, lineHeight: 16 }}>
             {meta}
           </Text>
         )}
@@ -159,23 +159,16 @@ export function SelectableListItem({
       {!hideIndicator && (
         <View className="w-6 items-center justify-center">
           {showChevron ? (
-            <ChevronRight
-              size={18}
-              color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'}
-            />
+            <ChevronRight size={18} color={c.mutedForeground} />
           ) : isSelected ? (
             <View
-              style={{ backgroundColor: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              style={{ backgroundColor: c.foreground }}
               className="h-5 w-5 items-center justify-center rounded-full">
-              <Check
-                size={12}
-                color={colorScheme === 'dark' ? '#121215' : '#f8f8f8'}
-                strokeWidth={3}
-              />
+              <Check size={12} color={c.background} strokeWidth={3} />
             </View>
           ) : null}
         </View>
       )}
-    </BottomSheetTouchable>
+    </Pressable>
   );
 }

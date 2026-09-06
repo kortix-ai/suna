@@ -17,26 +17,28 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import {
   View,
-  TouchableOpacity,
   ActivityIndicator,
   Platform,
   Keyboard,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
+import type { WebViewErrorEvent } from 'react-native-webview/lib/WebViewTypes';
 import * as Haptics from 'expo-haptics';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -127,9 +129,12 @@ function buildTerminalHtml(params: {
   ptyId: string;
 }): string {
   const { wsUrl } = params;
-  // Terminal is always dark, matching the web frontend
-  const isDark = true;
-  const bg = '#0f0f14';
+  // Terminal is always dark, matching the web frontend. This HTML/CSS/JS
+  // string is delivered to an isolated WebView document — it has no access
+  // to the app's NativeWind classes or global.css custom properties, so the
+  // terminal-surface/terminal-fg values are inlined here as their resolved
+  // hsl() strings (matching --terminal-surface / --terminal-fg exactly).
+  const bg = 'hsl(0 0% 5.9%)'; // --terminal-surface
 
   // Escape for safe JS string embedding
   const safeWsUrl = wsUrl.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
@@ -151,7 +156,7 @@ function buildTerminalHtml(params: {
       width: 100%;
       height: 100%;
       padding: 8px 4px;
-      color: #e4e4e7;
+      color: hsl(0 0% 89.8%); /* --terminal-fg */
       background: ${bg};
       font: 14px/1.25 Menlo, Monaco, Consolas, monospace;
       white-space: pre-wrap;
@@ -161,7 +166,7 @@ function buildTerminalHtml(params: {
     }
     #terminal::-webkit-scrollbar { width: 4px; }
     #terminal::-webkit-scrollbar-thumb {
-      background: ${isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)'};
+      background: hsl(0 0% 100% / 0.15);
       border-radius: 2px;
     }
   </style>
@@ -207,15 +212,21 @@ function buildTerminalHtml(params: {
         var PENDING_MAX = 8192;  // cap for buffered incomplete escape sequences
         var CURSOR_TOKEN = '{"cursor":';
 
-        // 16-color ANSI palette (dark theme). Index 0-7 normal, 8-15 bright.
+        // Fixed 16-color ANSI palette (dark theme; standard terminal-emulator
+        // semantics — black/red/green/yellow/blue/magenta/cyan/white, then
+        // their bright variants). Index 0-7 normal, 8-15 bright. Genuinely
+        // fixed: not the app's brand accents (THEME.accent.* would render
+        // unreadable or break programs that rely on conventional ANSI hues),
+        // and this string is embedded in the WebView's own document, with no
+        // access to the app's THEME/CSS tokens.
         var PALETTE = [
-          '#1a1a22', '#f87171', '#4ade80', '#fbbf24',
-          '#60a5fa', '#c084fc', '#22d3ee', '#d4d4d8',
-          '#52525b', '#fca5a5', '#86efac', '#fde68a',
-          '#93c5fd', '#d8b4fe', '#67e8f9', '#fafafa'
+          '#1a1a22', '#f87171', '#4ade80', '#fbbf24', // hex-allowlist: black, red, green, yellow (normal)
+          '#60a5fa', '#c084fc', '#22d3ee', '#d4d4d8', // hex-allowlist: blue, magenta, cyan, white (normal)
+          '#52525b', '#fca5a5', '#86efac', '#fde68a', // hex-allowlist: black, red, green, yellow (bright)
+          '#93c5fd', '#d8b4fe', '#67e8f9', '#fafafa' // hex-allowlist: blue, magenta, cyan, white (bright)
         ];
-        var DEFAULT_FG = '#e4e4e7';
-        var DEFAULT_BG = '#0f0f14';
+        var DEFAULT_FG = 'hsl(0 0% 89.8%)'; // --terminal-fg
+        var DEFAULT_BG = 'hsl(0 0% 5.9%)'; // --terminal-surface
 
         // Rendering contract: the renderer needs pre whitespace + vertical scroll.
         // Enforce it here so the JS is self-contained (host CSS had pre-wrap).
@@ -1088,7 +1099,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   const insets = useSafeAreaInsets();
   const { sandboxUrl } = useSandboxContext();
 
-  const webViewRef = useRef<WebView>(null);
+  const webViewRef = useRef<React.ElementRef<typeof WebView>>(null);
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [webViewReady, setWebViewReady] = useState(false);
   const [terminalHtml, setTerminalHtml] = useState<string | null>(null);
@@ -1099,12 +1110,14 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   const ptyRef = useRef<{ id: string; sandboxUrl: string } | null>(null);
 
   // Header follows system theme; terminal body is always dark
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const headerBg = isDark ? '#121215' : '#F8F8F8';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  // Terminal area is always dark
-  const terminalBg = '#0f0f14';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  // Icon/status grey renders opposite the theme's own mutedForeground (dark
+  // mode shows the lighter light-mode value and vice versa) — preserved
+  // as-is to match the original rendered appearance.
+  const mutedColor = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  // Terminal area is always dark — matches --terminal-surface from global.css.
+  const terminalBg = 'hsl(0 0% 5.9%)';
   const themeColors = useThemeColors();
 
   // Create PTY, build HTML with baked-in connection params
@@ -1234,11 +1247,11 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   // Status indicator
   const statusColor =
     status === 'connected'
-      ? '#4ade80'
+      ? THEME.accent.green
       : status === 'connecting'
-        ? '#fbbf24'
+        ? THEME.accent.orange
         : status === 'error'
-          ? '#f87171'
+          ? destructiveColor
           : mutedColor;
 
   const statusLabel =
@@ -1251,7 +1264,7 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
           : 'Disconnected';
 
   return (
-    <View style={{ flex: 1, backgroundColor: terminalBg }}>
+    <View className="flex-1 bg-terminal-surface">
       <PageHeader
         title="Terminal"
         onOpenDrawer={onOpenDrawer}
@@ -1276,13 +1289,15 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
               </Text>
             </View>
             {/* Reconnect button */}
-            <TouchableOpacity
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
               onPress={handleReconnect}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={{ padding: 6 }}
             >
               <Ionicons name="refresh-outline" size={18} color={fgColor} />
-            </TouchableOpacity>
+            </Button>
           </View>
         }
       />
@@ -1298,27 +1313,17 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
         </View>
       ) : error ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Ionicons name="alert-circle-outline" size={32} color="#f87171" style={{ marginBottom: 12 }} />
+          <Ionicons name="alert-circle-outline" size={32} color={destructiveColor} style={{ marginBottom: 12 }} />
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fgColor, marginBottom: 4, textAlign: 'center' }}>
             Terminal Error
           </Text>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, textAlign: 'center', marginBottom: 16 }}>
             {error}
           </Text>
-          <TouchableOpacity
-            onPress={handleReconnect}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              backgroundColor: themeColors.primary,
-              borderRadius: 8,
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-            }}
-          >
+          <Button onPress={handleReconnect} className="flex-row items-center rounded-lg px-4 py-2">
             <Ionicons name="refresh-outline" size={14} color={themeColors.primaryForeground} style={{ marginRight: 6 }} />
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: themeColors.primaryForeground }}>Retry</Text>
-          </TouchableOpacity>
+          </Button>
         </View>
       ) : !terminalHtml ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -1349,19 +1354,19 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
             allowsInlineMediaPlayback
             mixedContentMode="always"
             allowUniversalAccessFromFileURLs
-            onError={(syntheticEvent) => {
+            onError={(syntheticEvent: WebViewErrorEvent) => {
               log.error('[TerminalPage] WebView error:', syntheticEvent.nativeEvent.description);
               setError('WebView failed to load');
             }}
           />
           {!webViewReady && (
             <View
+              className="bg-terminal-surface"
               style={{
                 position: 'absolute',
                 top: 0, left: 0, right: 0, bottom: 0,
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: terminalBg,
               }}
             >
               <ActivityIndicator size="large" color={mutedColor} />

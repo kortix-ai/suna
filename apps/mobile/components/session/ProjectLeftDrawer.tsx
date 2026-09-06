@@ -8,14 +8,13 @@
  * ProjectSessionListItem) and SessionStatusDot are intentional duplicates of the
  * legacy copies; the duplication is resolved when Task 12 deletes the legacy file.
  *
- * The JSX below is legacy: raw Ionicons + inline `isDark ? '#hex' : '#hex'` colors.
- * That is preserved as-is on purpose — a token/primitive reskin is out of scope here.
+ * The JSX below is legacy: raw Ionicons + `isDark ? THEME.dark.x : THEME.light.x`
+ * color lookups replace the old inline hex literals (RNR migration, Task 27).
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   View,
-  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Alert,
@@ -23,6 +22,8 @@ import {
   InteractionManager,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { THEME } from '@/lib/utils/theme';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -41,7 +42,7 @@ import { useTabStore } from '@/stores/tab-store';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
 import { CommandPalette } from '@/components/session/CommandPalette';
 import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { haptics } from '@/lib/haptics';
 import { log } from '@/lib/logger';
 
@@ -133,12 +134,6 @@ function AnimatedChevron({
 
 // ─── Session status dot (dependency of ProjectSessionListItem) ───────────────
 
-const SESSION_STATUS_COLORS = {
-  yellow: 'hsl(48, 100%, 40%)',
-  green: 'hsl(135, 100%, 28.5%)',
-  red: 'hsl(360, 85.3%, 62%)',
-} as const;
-
 function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -167,16 +162,16 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
   });
 
   const color = isProvisioning
-    ? SESSION_STATUS_COLORS.yellow
+    ? THEME.accent.yellow
     : status === 'running'
-      ? SESSION_STATUS_COLORS.green
+      ? THEME.accent.green
       : status === 'stopped'
         ? isDark
-          ? '#999999'
-          : '#6e6e6e'
+          ? THEME.dark.mutedForeground
+          : THEME.light.mutedForeground
         : status === 'completed'
-          ? SESSION_STATUS_COLORS.green
-          : SESSION_STATUS_COLORS.red;
+          ? THEME.accent.green
+          : THEME.accent.red;
 
   return (
     <View className="h-4 w-4 shrink-0 items-center justify-center">
@@ -212,10 +207,10 @@ function ProjectSessionListItem({
   const title = item.name || item.branch_name || 'New session';
 
   return (
-    <TouchableOpacity
+    <Button
+      variant="ghost"
       onPress={() => onPress(item)}
-      className={`mb-1 rounded-2xl px-3 py-2.5 ${isActive ? 'bg-muted' : ''}`}
-      activeOpacity={0.6}>
+      className={`h-auto w-auto flex-row items-center justify-start mb-1 rounded-2xl px-3 py-2.5 active:opacity-70 ${isActive ? 'bg-muted' : ''}`}>
       <View className="flex-row items-center gap-2">
         <SessionStatusDot status={item.status} />
         <Text
@@ -224,7 +219,7 @@ function ProjectSessionListItem({
           {title}
         </Text>
       </View>
-    </TouchableOpacity>
+    </Button>
   );
 }
 
@@ -351,91 +346,92 @@ export function ProjectLeftDrawer({
     ]);
   }, [signOut, isSigningOut, onClose]);
 
-  const iconColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#999999' : '#6e6e6e';
+  const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
   return (
     <>
       <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
         {/* Kortix wordmark — tap to go back to the projects list */}
         <View className="flex-row items-center justify-between px-5 pb-4 pt-3">
-          <TouchableOpacity
+          <Button
+            variant="ghost"
             onPress={goToProjects}
-            activeOpacity={0.6}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 12 }}>
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 12 }}
+            className="h-auto w-auto p-0 active:bg-transparent active:opacity-70">
             <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
-          </TouchableOpacity>
+          </Button>
         </View>
 
         {/* Top-level actions: New session / Search / Projects */}
         <View className="mb-2 px-2">
-          <TouchableOpacity
+          <Button
+            variant="ghost"
             onPress={() => {
               haptics.tap();
               handleNewSession();
             }}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}>
+            className="h-auto w-auto flex-row items-center justify-start rounded-lg px-3 py-2.5 active:opacity-70">
             <Ionicons name="create-outline" size={18} color={iconColor} />
             <Text className="ml-3 flex-1 text-sm font-medium text-foreground">New session</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Button>
+          <Button
+            variant="ghost"
             onPress={() => {
               haptics.tap();
               onClose();
               setPaletteOpen(true);
             }}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}>
+            className="h-auto w-auto flex-row items-center justify-start rounded-lg px-3 py-2.5 active:opacity-70">
             <Ionicons name="search-outline" size={18} color={iconColor} />
             <Text className="ml-3 flex-1 text-sm font-medium text-foreground">Search</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Button>
+          <Button
+            variant="ghost"
             onPress={goToProjects}
-            className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}>
+            className="h-auto w-auto flex-row items-center justify-start rounded-lg px-3 py-2.5 active:opacity-70">
             <Ionicons name="albums-outline" size={18} color={iconColor} />
             <Text className="ml-3 flex-1 text-sm font-medium text-foreground">All projects</Text>
-          </TouchableOpacity>
+          </Button>
         </View>
 
         {/* Projects header (collapsible) — above Sessions, matches web sidebar */}
         {sortedProjects.length > 0 && (
           <>
             <View className="flex-row items-center justify-between px-5 py-2.5">
-              <TouchableOpacity
+              <Button
+                variant="ghost"
                 onPress={goToProjects}
-                className="flex-1 flex-row items-center"
-                activeOpacity={0.6}>
+                className="h-auto w-auto flex-1 flex-row items-center justify-start p-0 active:bg-transparent active:opacity-70">
                 <Ionicons name="folder-outline" size={18} color={iconColor} />
                 <Text className="ml-3 text-sm font-medium text-foreground">Projects</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Button>
+              <Button
+                variant="ghost"
                 onPress={() => {
                   haptics.selection();
                   setProjectsExpanded((v) => !v);
                 }}
-                className="flex-row items-center"
-                activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="h-auto w-auto flex-row items-center p-0 active:bg-transparent active:opacity-70">
                 <View className="mr-1 rounded-full bg-muted px-2 py-0.5">
                   <Text className="text-xs text-muted-foreground">{sortedProjects.length}</Text>
                 </View>
                 <AnimatedChevron expanded={projectsExpanded} color={mutedColor} size={16} />
-              </TouchableOpacity>
+              </Button>
             </View>
 
             <AnimatedCollapsible expanded={projectsExpanded}>
               <View className="px-2 pb-2">
                 {sortedProjects.map((project: KortixProject) => (
-                  <TouchableOpacity
+                  <Button
                     key={project.id}
+                    variant="ghost"
                     onPress={() => {
                       haptics.tap();
                       handleProjectPress(project);
                     }}
-                    className="mb-0.5 flex-row items-center rounded-lg px-4 py-2"
-                    activeOpacity={0.6}>
+                    className="h-auto w-auto flex-row items-center justify-start mb-0.5 rounded-lg px-4 py-2 active:opacity-70">
                     <Ionicons
                       name="folder-outline"
                       size={14}
@@ -450,7 +446,7 @@ export function ProjectLeftDrawer({
                         {project.sessionCount}
                       </Text>
                     )}
-                  </TouchableOpacity>
+                  </Button>
                 ))}
               </View>
             </AnimatedCollapsible>
@@ -458,19 +454,19 @@ export function ProjectLeftDrawer({
         )}
 
         {/* Sessions header (collapsible) */}
-        <TouchableOpacity
+        <Button
+          variant="ghost"
           onPress={() => {
             haptics.selection();
             setSessionsExpanded((v) => !v);
           }}
-          className="flex-row items-center justify-between px-5 py-2.5"
-          activeOpacity={0.6}>
+          className="h-auto w-auto flex-row items-center justify-between rounded-none px-5 py-2.5 active:opacity-70">
           <View className="flex-row items-center">
             <Ionicons name="list-outline" size={18} color={iconColor} />
             <Text className="ml-3 text-sm font-medium text-foreground">Sessions</Text>
           </View>
           <AnimatedChevron expanded={sessionsExpanded} color={mutedColor} size={16} />
-        </TouchableOpacity>
+        </Button>
 
         {/* Session list — the project's repo-first sessions */}
         <View style={{ flex: 1, minHeight: 0 }}>
@@ -509,18 +505,18 @@ export function ProjectLeftDrawer({
 
           {/* Bottom: user info — card style matching desktop */}
           <View className="px-3 pt-2" style={{ paddingBottom: insets.bottom + 8 }}>
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={() => {
                 haptics.tap();
                 handleUserMenuOpen();
               }}
-              activeOpacity={0.8}
-              className="flex-row items-center rounded-xl border border-border"
+              className="h-auto w-auto flex-row items-center justify-start rounded-xl border border-border active:opacity-85"
               style={{
                 height: 48,
                 paddingHorizontal: 8,
                 gap: 8,
-                backgroundColor: isDark ? 'rgba(45, 45, 45, 0.4)' : 'rgba(229, 229, 229, 0.4)',
+                backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
               }}>
               <View className="relative">
                 <View
@@ -536,7 +532,7 @@ export function ProjectLeftDrawer({
                   </Text>
                 </View>
                 {hasUpdate && (
-                  <View className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-background bg-red-500" />
+                  <View className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-background bg-destructive" />
                 )}
               </View>
               <View className="flex-1" style={{ gap: 2 }}>
@@ -554,7 +550,7 @@ export function ProjectLeftDrawer({
                 </Text>
               </View>
               <ChevronsUpDown size={14} color={mutedColor} />
-            </TouchableOpacity>
+            </Button>
           </View>
         </View>
       </View>

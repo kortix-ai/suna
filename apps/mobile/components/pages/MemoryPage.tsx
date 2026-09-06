@@ -11,7 +11,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   Alert,
   RefreshControl,
@@ -19,7 +19,10 @@ import {
   Platform,
   LayoutAnimation,
 } from 'react-native';
+import { Pressable as GestureHandlerPressable } from 'react-native-gesture-handler';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Icon } from '@/components/ui/icon';
 import {
   Brain,
   BookOpen,
@@ -36,23 +39,24 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  TouchableOpacity as BottomSheetTouchable,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
-import { SearchBar } from '@/components/ui/SearchBar';
+import { SearchBar } from '@/components/kortix/SearchBar';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { getSheetBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+
+// `BottomSheetTouchable` used to come from `@gorhom/bottom-sheet`'s re-exported
+// legacy touchable, which itself just proxies react-native-gesture-handler's
+// touchable on Android (and RN's own on iOS) for correct gesture arbitration
+// inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
+const BottomSheetTouchable = GestureHandlerPressable;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,20 +84,23 @@ interface MemoryStats {
 
 // ─── Type config ─────────────────────────────────────────────────────────────
 
+// Kortix's accent palette has 6 colors (blue/yellow/orange/green/purple/red);
+// several of the original design's hues (indigo, sky, teal) have no direct
+// token and are mapped to their closest accent by rendered appearance.
 const TYPE_CONFIG: Record<string, { icon: LucideIcon; color: string; label: string }> = {
-  episodic: { icon: BookOpen, label: 'Episodic', color: '#8b5cf6' },
-  semantic: { icon: Brain, label: 'Semantic', color: '#3b82f6' },
-  procedural: { icon: Wrench, label: 'Procedural', color: '#f59e0b' },
-  observation: { icon: Eye, label: 'Observation', color: '#10b981' },
-  file_read: { icon: FileText, label: 'File Read', color: '#6366f1' },
-  file_edit: { icon: FileText, label: 'File Edit', color: '#ec4899' },
-  command: { icon: Wrench, label: 'Command', color: '#71717a' },
-  code_search: { icon: SearchIcon, label: 'Code Search', color: '#0ea5e9' },
-  web: { icon: SearchIcon, label: 'Web', color: '#14b8a6' },
+  episodic: { icon: BookOpen, label: 'Episodic', color: THEME.accent.purple }, // was violet
+  semantic: { icon: Brain, label: 'Semantic', color: THEME.accent.blue }, // was blue
+  procedural: { icon: Wrench, label: 'Procedural', color: THEME.accent.orange }, // was amber
+  observation: { icon: Eye, label: 'Observation', color: THEME.accent.green }, // was emerald
+  file_read: { icon: FileText, label: 'File Read', color: THEME.accent.blue }, // was indigo, closest accent
+  file_edit: { icon: FileText, label: 'File Edit', color: THEME.accent.red }, // was pink, closest accent
+  command: { icon: Wrench, label: 'Command', color: THEME.light.mutedForeground }, // was neutral zinc gray
+  code_search: { icon: SearchIcon, label: 'Code Search', color: THEME.accent.blue }, // was sky
+  web: { icon: SearchIcon, label: 'Web', color: THEME.accent.blue }, // was teal, closest accent
 };
 
 function getTypeConfig(type: string) {
-  return TYPE_CONFIG[type] || { icon: Brain, label: type.replace(/_/g, ' '), color: '#71717a' };
+  return TYPE_CONFIG[type] || { icon: Brain, label: type.replace(/_/g, ' '), color: THEME.light.mutedForeground };
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────
@@ -200,10 +207,11 @@ function MemoryCard({
   const config = getTypeConfig(entry.type);
   const IconComp = config.icon;
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const cardBg = isDark ? 'rgba(255,255,255,0.02)' : '#FFFFFF';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const borderColor = withAlpha(fgColor, 0.06);
+  const cardBg = isDark ? withAlpha(fgColor, 0.02) : THEME.light.background;
 
   const title = entry.title || entry.content.slice(0, 80);
   const preview = entry.content.slice(0, 200);
@@ -219,16 +227,18 @@ function MemoryCard({
   }, []);
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.7}
+    <Pressable
       onPress={handlePress}
-      style={{
-        backgroundColor: cardBg,
-        borderBottomWidth: 1,
-        borderBottomColor: borderColor,
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-      }}
+      style={({ pressed }) => [
+        {
+          backgroundColor: cardBg,
+          borderBottomWidth: 1,
+          borderBottomColor: borderColor,
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+        },
+        pressed && { opacity: 0.7 },
+      ]}
     >
       {/* Header row */}
       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -236,7 +246,7 @@ function MemoryCard({
 
         {/* Type badge */}
         <View style={{
-          backgroundColor: config.color + '15',
+          backgroundColor: withAlpha(config.color, 0.08),
           borderRadius: 6,
           paddingHorizontal: 6,
           paddingVertical: 1,
@@ -250,15 +260,15 @@ function MemoryCard({
         {/* Source badge */}
         <View style={{
           backgroundColor: entry.source === 'ltm'
-            ? (isDark ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)')
-            : (isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)'),
+            ? withAlpha(THEME.accent.blue, isDark ? 0.12 : 0.08)
+            : withAlpha(THEME.accent.green, isDark ? 0.12 : 0.08),
           borderRadius: 6,
           paddingHorizontal: 6,
           paddingVertical: 1,
         }}>
           <Text style={{
             fontSize: 9, fontFamily: 'Roobert-Medium',
-            color: entry.source === 'ltm' ? '#3b82f6' : '#10b981',
+            color: entry.source === 'ltm' ? THEME.accent.blue : THEME.accent.green,
           }}>
             {entry.source === 'ltm' ? 'LTM' : 'OBS'}
           </Text>
@@ -286,7 +296,7 @@ function MemoryCard({
       ) : (
         <View>
           {/* Full content */}
-          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: isDark ? '#d4d4d8' : '#3f3f46', lineHeight: 18, marginBottom: 8 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: fgColor, lineHeight: 18, marginBottom: 8 }}>
             {entry.content}
           </Text>
 
@@ -296,7 +306,7 @@ function MemoryCard({
               <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: mutedColor, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Facts</Text>
               {entry.facts.map((fact, i) => (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 2 }}>
-                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: '#10b981', marginTop: 5, marginRight: 6 }} />
+                  <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: THEME.accent.green, marginTop: 5, marginRight: 6 }} />
                   <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: fgColor, lineHeight: 17, flex: 1 }}>{fact}</Text>
                 </View>
               ))}
@@ -308,7 +318,7 @@ function MemoryCard({
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
               <Tag size={11} color={mutedColor} style={{ marginRight: 2, marginTop: 2 }} />
               {entry.tags.map((tag, i) => (
-                <View key={i} style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
+                <View key={i} style={{ backgroundColor: withAlpha(fgColor, isDark ? 0.06 : 0.04), borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1 }}>
                   <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: mutedColor }}>{tag}</Text>
                 </View>
               ))}
@@ -330,7 +340,7 @@ function MemoryCard({
           {/* Metadata row */}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             {entry.toolName && (
-              <Text style={{ fontSize: 9, fontFamily: monoFont, color: mutedColor, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
+              <Text style={{ fontSize: 9, fontFamily: monoFont, color: mutedColor, backgroundColor: withAlpha(fgColor, isDark ? 0.05 : 0.03), borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 }}>
                 {entry.toolName}
               </Text>
             )}
@@ -343,16 +353,18 @@ function MemoryCard({
           </View>
 
           {/* Delete button */}
-          <TouchableOpacity
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2.5 self-end px-2"
             onPress={(e) => { e.stopPropagation?.(); onDelete(entry); }}
-            style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, alignSelf: 'flex-end' }}
           >
-            <Trash2 size={13} color={isDark ? '#f87171' : '#dc2626'} style={{ marginRight: 4 }} />
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? '#f87171' : '#dc2626' }}>Delete</Text>
-          </TouchableOpacity>
+            <Icon as={Trash2} size={13} color={destructiveColor} />
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: destructiveColor }}>Delete</Text>
+          </Button>
         </View>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -374,11 +386,12 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const bgColor = isDark ? '#121215' : '#F8F8F8';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = getSheetBg(isDark);
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const borderColor = withAlpha(fgColor, 0.06);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const sheetBg = useSheetBackground();
 
   const { entries, stats, isLoading, error, fetchEntries, fetchStats, deleteEntry } = useMemory(sandboxUrl);
 
@@ -392,12 +405,6 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
   // Delete sheet
   const deleteSheetRef = useRef<BottomSheetModal>(null);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} pressBehavior="close" />
-    ),
-    [],
-  );
 
   // Initial fetch
   useEffect(() => {
@@ -459,24 +466,9 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
   const FilterButton = ({ label, value, count }: { label: string; value: SourceFilter; count?: number }) => {
     const active = sourceFilter === value;
     return (
-      <TouchableOpacity
-        onPress={() => handleSourceChange(value)}
-        style={{
-          paddingHorizontal: 12,
-          paddingVertical: 6,
-          borderRadius: 8,
-          backgroundColor: active ? fgColor : 'transparent',
-          borderWidth: active ? 0 : 1,
-          borderColor: borderColor,
-        }}
-      >
-        <Text style={{
-          fontSize: 12, fontFamily: 'Roobert-Medium',
-          color: active ? bgColor : mutedColor,
-        }}>
-          {label}{count !== undefined ? ` (${count})` : ''}
-        </Text>
-      </TouchableOpacity>
+      <Button variant={active ? 'default' : 'outline'} size="sm" onPress={() => handleSourceChange(value)}>
+        <Text>{label}{count !== undefined ? ` (${count})` : ''}</Text>
+      </Button>
     );
   };
 
@@ -533,7 +525,7 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
         )}
         {error && (
           <View style={{ padding: 20, alignItems: 'center' }}>
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: isDark ? '#f87171' : '#dc2626', textAlign: 'center' }}>{error}</Text>
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: destructiveColor, textAlign: 'center' }}>{error}</Text>
           </View>
         )}
         {!isLoading && !error && entries.length === 0 && (
@@ -558,15 +550,15 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
         ref={deleteSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         onDismiss={() => setDeleteTarget(null)}
         backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-              <Trash2 size={20} color={isDark ? '#f87171' : '#dc2626'} />
+            <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: withAlpha(destructiveColor, isDark ? 0.1 : 0.06), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+              <Trash2 size={20} color={destructiveColor} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: fgColor }}>Delete Memory</Text>
@@ -579,7 +571,7 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
           {deleteTarget && (
             <View style={{
               padding: 12, borderRadius: 12, marginBottom: 20,
-              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+              backgroundColor: withAlpha(fgColor, isDark ? 0.03 : 0.02),
               borderWidth: 1, borderColor: borderColor,
             }}>
               <Text numberOfLines={3} style={{ fontSize: 12, fontFamily: 'Roobert', color: mutedColor, lineHeight: 17 }}>
@@ -598,9 +590,9 @@ export function MemoryPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen
             <BottomSheetTouchable
               onPress={handleDelete}
               disabled={isDeleting}
-              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: isDark ? '#dc2626' : '#ef4444', opacity: isDeleting ? 0.5 : 1 }}
+              style={{ flex: 1, borderRadius: 9999, paddingVertical: 15, alignItems: 'center', backgroundColor: destructiveColor, opacity: isDeleting ? 0.5 : 1 }}
             >
-              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: '#FFFFFF' }}>
+              <Text style={{ fontSize: 16, fontFamily: 'Roobert-SemiBold', color: THEME.light.primaryForeground /* hex-allowlist: fixed near-white (hsl(60 0% 98%)) text on solid destructive red, matches Button's own destructive text-white */ }}>
                 {isDeleting ? 'Deleting...' : 'Delete'}
               </Text>
             </BottomSheetTouchable>

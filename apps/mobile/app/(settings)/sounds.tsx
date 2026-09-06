@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { Pressable, ScrollView, Switch, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+import { Switch } from '@/components/ui/switch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import {
   Check,
@@ -39,15 +39,12 @@ const EVENTS: { id: SoundEvent; label: string; description: string; icon: typeof
 
 export default function SoundsScreen() {
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
 
   const preferences = useSoundStore((s) => s.preferences);
   const setPack = useSoundStore((s) => s.setPack);
   const setEventEnabled = useSoundStore((s) => s.setEventEnabled);
   const setHapticsEnabled = useSoundStore((s) => s.setHapticsEnabled);
 
-  const trackOff = isDark ? '#3A3A3C' : '#E5E7EB';
   const isOff = preferences.pack === 'off';
 
   const handlePackSelect = React.useCallback((pack: SoundPack) => {
@@ -156,11 +153,8 @@ export default function SoundsScreen() {
                           </View>
                         </Pressable>
                         <Switch
-                          value={enabled}
-                          onValueChange={(v) => handleEventToggle(event.id, v)}
-                          trackColor={{ false: trackOff, true: '#34C759' }}
-                          thumbColor="#FFFFFF"
-                          ios_backgroundColor={trackOff}
+                          checked={enabled}
+                          onCheckedChange={(v) => handleEventToggle(event.id, v)}
                         />
                       </View>
                     </View>
@@ -189,11 +183,8 @@ export default function SoundsScreen() {
                 </Text>
               </View>
               <Switch
-                value={preferences.hapticsEnabled}
-                onValueChange={handleHapticsToggle}
-                trackColor={{ false: trackOff, true: '#34C759' }}
-                thumbColor="#FFFFFF"
-                ios_backgroundColor={trackOff}
+                checked={preferences.hapticsEnabled}
+                onCheckedChange={handleHapticsToggle}
               />
             </View>
           </View>

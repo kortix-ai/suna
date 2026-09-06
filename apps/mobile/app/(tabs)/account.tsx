@@ -15,8 +15,8 @@ import {
 import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Avatar } from '@/components/ui/Avatar';
-import { ListRow } from '@/components/ui/list-row';
+import { Avatar } from '@/components/kortix/avatar';
+import { ListRow } from '@/components/kortix/list-row';
 import { haptics } from '@/lib/haptics';
 import { useTabBarClearance } from '@/components/navigation/FloatingTabBar';
 

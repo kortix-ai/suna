@@ -15,6 +15,7 @@ import { ArrowLeftRight, CircleAlert } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useElapsedSince,
   useSandboxReachability,
@@ -54,12 +55,12 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
 
   if (!show) return null;
 
-  const bg = isDark ? 'rgba(24,24,27,0.95)' : 'rgba(255,255,255,0.95)';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.55)' : 'rgba(18,18,21,0.55)';
-  const mutedFaint = isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)';
-  const buttonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const bg = isDark ? withAlpha(THEME.dark.popover, 0.95) : withAlpha(THEME.light.popover, 0.95);
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.55) : withAlpha(THEME.light.foreground, 0.55);
+  const mutedFaint = isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3);
+  const buttonBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
 
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] });
@@ -77,7 +78,7 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
           borderWidth: 1,
           borderColor: border,
           backgroundColor: bg,
-          shadowColor: '#000',
+          shadowColor: '#000', // hex-allowlist: universal shadow ink, not a themed surface color
           shadowOffset: { width: 0, height: 4 },
           shadowOpacity: isDark ? 0.25 : 0.1,
           shadowRadius: 12,
@@ -100,7 +101,7 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
             width: 8,
             height: 8,
             borderRadius: 4,
-            backgroundColor: '#F59E0B',
+            backgroundColor: THEME.accent.orange,
             opacity: pingOpacity,
             transform: [{ scale: pingScale }],
           }}
@@ -110,7 +111,7 @@ export function SandboxHealthPill({ onSwitch, onHealth }: SandboxHealthPillProps
             width: 8,
             height: 8,
             borderRadius: 4,
-            backgroundColor: '#F59E0B',
+            backgroundColor: THEME.accent.orange,
           }}
         />
       </View>

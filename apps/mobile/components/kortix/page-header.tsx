@@ -11,12 +11,13 @@
  */
 
 import * as React from 'react';
-import { TouchableOpacity, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
-import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
+import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
+import { THEME } from '@/lib/utils/theme';
 
 export interface PageHeaderProps {
   /** The title shown in the center. String, or a custom React node (e.g. an
@@ -65,7 +66,11 @@ export function PageHeader({
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const iconColor = isDark ? '#F8F8F8' : '#121215';
+  // AnimatedToggleIcon takes a raw `color` prop (Reanimated/Ionicons can't
+  // resolve a className), so the foreground token is read from THEME — the
+  // hex-free source of truth for exactly this "className can't reach it"
+  // case (see lib/theme-colors.ts's header comment for the same pattern).
+  const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   const titleNode =
     typeof title === 'string' ? (
@@ -116,9 +121,11 @@ export function PageHeader({
           <View className="flex-row items-center">{rightActions}</View>
         )}
         {showRightDrawer && (
-          <TouchableOpacity
+          <Button
+            variant="ghost"
             onPress={onOpenRightDrawer}
-            className="ml-3 p-1"
+            accessibilityLabel="More options"
+            className="ml-3 h-auto w-auto p-1"
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <AnimatedToggleIcon
@@ -127,7 +134,7 @@ export function PageHeader({
               icon="ellipsis-horizontal"
               size={ICON_SIZE}
             />
-          </TouchableOpacity>
+          </Button>
         )}
       </View>
     </View>

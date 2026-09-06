@@ -5,13 +5,14 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Download, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { haptics } from '@/lib/haptics';
 import { API_URL, getAuthToken } from '@/api/config';
 import { useAuthContext } from '@/contexts';
@@ -19,7 +20,8 @@ import { useAccountMembers } from '@/lib/accounts/hooks';
 import { listAuditEvents } from '@/lib/accounts/accounts-client';
 import type { AccountDetail, AuditEvent } from '@/lib/accounts/accounts-client';
 import { humanizeAuditAction, formatResourcePill, KIND_DOT_COLOR } from '@/lib/accounts/audit-display';
-import { accountColors, SkeletonList } from './account-shared';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { accountColors, destructiveColor, SkeletonList } from './account-shared';
 
 const MONO = 'Menlo';
 
@@ -109,22 +111,36 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
       <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
           <Text style={{ flex: 1, fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Audit log</Text>
-          <TouchableOpacity onPress={() => { if (exporting) return; haptics.tap(); Alert.alert('Export audit log', 'Choose a format', [
-            { text: 'CSV', onPress: () => exportEvents('csv') },
-            { text: 'JSONL', onPress: () => exportEvents('jsonl') },
-            { text: 'Cancel', style: 'cancel' },
-          ]); }} disabled={exporting} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={() => { if (exporting) return; haptics.tap(); Alert.alert('Export audit log', 'Choose a format', [
+              { text: 'CSV', onPress: () => exportEvents('csv') },
+              { text: 'JSONL', onPress: () => exportEvents('jsonl') },
+              { text: 'Cancel', style: 'cancel' },
+            ]); }}
+            disabled={exporting}
+            className="h-[30px] flex-row items-center gap-1.5 rounded-full px-[11px]"
+            style={{ borderWidth: 1, borderColor: c.border }}
+          >
             {exporting ? <ActivityIndicator size="small" color={c.muted} /> : <Download size={13} color={c.muted} />}
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Export</Text>
-          </TouchableOpacity>
+            <Text style={{ color: c.fg }}>Export</Text>
+          </Button>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12, gap: 7 }}>
           {QUICK_FILTERS.map((f, i) => {
             const on = filterIndex === i;
             return (
-              <TouchableOpacity key={f.label} onPress={() => { haptics.selection(); setFilterIndex(i); }} activeOpacity={0.7} style={{ paddingHorizontal: 12, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: on ? (isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)') : c.border, backgroundColor: on ? c.avatarBg : 'transparent', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: on ? c.fg : c.muted }}>{f.label}</Text>
-              </TouchableOpacity>
+              <Button
+                key={f.label}
+                variant="ghost"
+                size="sm"
+                onPress={() => { haptics.selection(); setFilterIndex(i); }}
+                className="h-[30px] justify-center rounded-full px-3"
+                style={{ borderWidth: 1, borderColor: on ? withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.3) : c.border, backgroundColor: on ? c.avatarBg : 'transparent' }}
+              >
+                <Text style={{ color: on ? c.fg : c.muted }}>{f.label}</Text>
+              </Button>
             );
           })}
         </ScrollView>
@@ -140,8 +156,8 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
           <View style={{ padding: 16 }}><SkeletonList count={6} isDark={isDark} avatar={false} /></View>
         ) : query.isError ? (
           <View style={{ padding: 20, gap: 10 }}>
-            <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load audit events'}</Text>
-            <TouchableOpacity onPress={() => { haptics.tap(); query.refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+            <Text style={{ fontSize: 13.5, color: destructiveColor(isDark) }}>{(query.error as Error)?.message || 'Failed to load audit events'}</Text>
+            <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); query.refetch(); }} className="h-auto self-start rounded-full px-3.5 py-2" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Retry</Text></Button>
           </View>
         ) : events.length === 0 ? (
           <View style={{ paddingVertical: 48, alignItems: 'center', gap: 4 }}>
@@ -155,10 +171,17 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
             ))}
             {query.hasNextPage && (
               <View style={{ alignItems: 'center', paddingVertical: 14 }}>
-                <TouchableOpacity onPress={() => { haptics.tap(); query.fetchNextPage(); }} disabled={query.isFetchingNextPage} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => { haptics.tap(); query.fetchNextPage(); }}
+                  disabled={query.isFetchingNextPage}
+                  className="h-9 flex-row items-center gap-1.5 rounded-full px-4"
+                  style={{ borderWidth: 1, borderColor: c.border }}
+                >
                   {query.isFetchingNextPage && <ActivityIndicator size="small" color={c.muted} />}
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Load more</Text>
-                </TouchableOpacity>
+                  <Text style={{ color: c.fg }}>Load more</Text>
+                </Button>
               </View>
             )}
           </>
@@ -181,7 +204,11 @@ function AuditRow({ event, actorEmail, isSelf, isDark, border }: { event: AuditE
 
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: border }}>
-      <TouchableOpacity onPress={() => { if (canExpand) { haptics.selection(); setExpanded((v) => !v); } }} disabled={!canExpand} activeOpacity={canExpand ? 0.6 : 1} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <Pressable
+        onPress={() => { if (canExpand) { haptics.selection(); setExpanded((v) => !v); } }}
+        disabled={!canExpand}
+        style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 16, paddingVertical: 12 }, pressed && canExpand && { opacity: 0.6 }]}
+      >
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: KIND_DOT_COLOR[human.kind] }} />
@@ -196,9 +223,9 @@ function AuditRow({ event, actorEmail, isSelf, isDark, border }: { event: AuditE
           </View>
         </View>
         {canExpand && (expanded ? <ChevronDown size={15} color={c.muted} style={{ marginTop: 2 }} /> : <ChevronRight size={15} color={c.muted} style={{ marginTop: 2 }} />)}
-      </TouchableOpacity>
+      </Pressable>
       {expanded && canExpand && (
-        <View style={{ paddingHorizontal: 16, paddingBottom: 14, gap: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)' }}>
+        <View style={{ paddingHorizontal: 16, paddingBottom: 14, gap: 12, backgroundColor: c.cardBg }}>
           <View style={{ gap: 4, paddingTop: 12 }}>
             <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Raw request</Text>
             <View style={{ borderRadius: 8, borderWidth: 1, borderColor: border, padding: 8 }}><Text style={{ fontSize: 11, fontFamily: MONO, color: c.fg }}>{event.action}</Text></View>

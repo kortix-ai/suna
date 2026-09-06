@@ -1,12 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowRight, Asterisk, UserPlus } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -19,9 +14,11 @@ import { haptics } from '@/lib/haptics';
 import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
 import { getUpgradeSheetTransition } from '@/lib/billing/upgrade-sheet-lifecycle';
 import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
-import { getSheetBg } from '@/lib/theme-colors';
 import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
-import { Badge, Button } from '../ui';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME } from '@/lib/utils/theme';
 
 
 
@@ -44,6 +41,7 @@ export function SandboxUpgradeGateListener() {
 
 /** Global native counterpart to the web upgrade modal. */
 export function GlobalUpgradeSheet() {
+  const sheetBg = useSheetBackground();
   const sheetRef = useRef<BottomSheetModal>(null);
   const wasPresentedRef = useRef(false);
   const router = useRouter();
@@ -82,12 +80,6 @@ export function GlobalUpgradeSheet() {
     closeUpgradeSheet();
   }, [closeUpgradeSheet]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.5} />
-    ),
-    [],
-  );
 
   const handleViewPlans = useCallback(() => {
     haptics.medium();
@@ -102,18 +94,13 @@ export function GlobalUpgradeSheet() {
       enableDynamicSizing={false}
       enablePanDownToClose
       onDismiss={handleDismiss}
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 12, paddingBottom: insets.bottom + 20 }}
@@ -150,10 +137,7 @@ export function GlobalUpgradeSheet() {
           ))}
         </View>
 
-        <View
-          className="mt-7 border-t pt-5"
-          style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(18,18,21,0.1)' }}
-        >
+        <View className="mt-7 border-t border-border pt-5">
           {offer.hasSeatMath && (
             <View className="mb-4 flex-row items-center justify-between">
               <Text className="text-sm text-muted-foreground">
@@ -173,19 +157,19 @@ export function GlobalUpgradeSheet() {
                 </Text>
                 <Icon as={ArrowRight} size={17} className="text-primary-foreground" strokeWidth={2.2} />
               </Button>
-              <Text className="mt-3 text-center text-xs text-muted-foreground">
+              <Text
+                className="mt-3 text-center text-muted-foreground"
+                style={{ fontSize: 12, lineHeight: 16 }}
+              >
                 Auto-prorated · cancel anytime · billed monthly
               </Text>
             </>
           ) : (
-            <View
-              className="flex-row gap-3 rounded-xl border p-4"
-              style={{ borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(18,18,21,0.12)' }}
-            >
-              <Icon as={UserPlus} size={19} color={isDark ? '#FFFFFF' : '#000000'} strokeWidth={2.1} />
+            <View className="flex-row gap-3 rounded-xl border border-border p-4">
+              <Icon as={UserPlus} size={19} color={isDark ? THEME.dark.foreground : THEME.light.foreground} strokeWidth={2.1} />
               <View className="flex-1">
                 <Text className="font-roobert-medium text-sm text-foreground">Ask an account owner for a seat</Text>
-                <Text className="mt-1 text-xs leading-4 text-muted-foreground">
+                <Text className="mt-1 leading-4 text-muted-foreground" style={{ fontSize: 12 }}>
                   Only account owners can subscribe. Your seat activates automatically once they do.
                 </Text>
               </View>
@@ -193,7 +177,7 @@ export function GlobalUpgradeSheet() {
           )}
 
           {message && (
-            <Text className="mt-4 text-center text-xs leading-4 text-muted-foreground">{message}</Text>
+            <Text className="mt-4 text-center leading-4 text-muted-foreground" style={{ fontSize: 12 }}>{message}</Text>
           )}
           <Pressable
             onPress={closeUpgradeSheet}

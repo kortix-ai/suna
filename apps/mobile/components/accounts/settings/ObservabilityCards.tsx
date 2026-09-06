@@ -5,20 +5,17 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
-import { Plus, Trash2, TriangleAlert, Copy, Check, X } from 'lucide-react-native';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { Plus, Trash2, TriangleAlert, Copy, Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
+import { withAlpha } from '@/lib/utils/theme';
 import {
   listAuditWebhooks,
   createAuditWebhook,
@@ -27,7 +24,8 @@ import {
   type AuditWebhook,
   type CreatedAuditWebhook,
 } from '@/lib/accounts/iam-client';
-import { Card, Pill, PrimaryButton, accountColors } from '../account-shared';
+import { Card, Pill, PrimaryButton, SheetCloseButton, accountColors, destructiveColor } from '../account-shared';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 const MONO = 'Menlo';
 const PRESETS: { label: string; prefix: string }[] = [
@@ -56,6 +54,7 @@ function relative(iso: string | null): string {
 type Sheet = { kind: 'create' } | { kind: 'secret'; hook: CreatedAuditWebhook } | null;
 
 export function ObservabilityCards({ accountId, canManage, isDark }: { accountId: string; canManage: boolean; isDark: boolean }) {
+  const sheetBg = useSheetBackground();
   const c = accountColors(isDark);
   const theme = useThemeColors();
   const queryClient = useQueryClient();
@@ -92,10 +91,15 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
           <Text style={{ fontSize: 12, color: c.muted, marginTop: 3 }}>Ship every audit event to your SIEM or log pipeline.</Text>
         </View>
         {canManage && (
-          <TouchableOpacity onPress={() => open({ kind: 'create' })} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
+          <Button
+            size="sm"
+            onPress={() => open({ kind: 'create' })}
+            className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
+            style={{ backgroundColor: theme.primary }}
+          >
             <Plus size={14} color={theme.primaryForeground} />
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New</Text>
-          </TouchableOpacity>
+            <Text>New</Text>
+          </Button>
         )}
       </View>
 
@@ -121,17 +125,23 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
                     <Text style={{ fontSize: 11, color: c.muted, marginTop: 2 }}>Last delivered {relative(h.last_delivered_at)}</Text>
                     {h.last_error && (
                       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 5 }}>
-                        <TriangleAlert size={12} color="#ef4444" style={{ marginTop: 1 }} />
-                        <Text style={{ flex: 1, fontSize: 11, color: '#ef4444' }}>{relative(h.last_error_at)}: {h.last_error}</Text>
+                        <TriangleAlert size={12} color={destructiveColor(isDark)} style={{ marginTop: 1 }} />
+                        <Text style={{ flex: 1, fontSize: 11, color: destructiveColor(isDark) }}>{relative(h.last_error_at)}: {h.last_error}</Text>
                       </View>
                     )}
                   </View>
                   {canManage && (busyId === h.webhook_id ? <ActivityIndicator size="small" color={c.muted} /> : (
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <TouchableOpacity onPress={() => { haptics.tap(); setBusyId(h.webhook_id); toggle.mutate({ id: h.webhook_id, enabled: !h.enabled }); }} style={{ paddingHorizontal: 10, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: c.border, justifyContent: 'center' }}>
-                        <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.fg }}>{h.enabled ? 'Disable' : 'Enable'}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => confirmDelete(h)} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={13} color="#ef4444" /></TouchableOpacity>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onPress={() => { haptics.tap(); setBusyId(h.webhook_id); toggle.mutate({ id: h.webhook_id, enabled: !h.enabled }); }}
+                        className="h-[30px] justify-center rounded-full px-2.5"
+                        style={{ borderWidth: 1, borderColor: c.border }}
+                      >
+                        <Text style={{ color: c.fg }}>{h.enabled ? 'Disable' : 'Enable'}</Text>
+                      </Button>
+                      <Button variant="ghost" size="icon" onPress={() => confirmDelete(h)} hitSlop={6} className="h-[30px] w-[30px] rounded-full" style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.35) }}><Trash2 size={13} color={destructiveColor(isDark)} /></Button>
                     </View>
                   ))}
                 </View>
@@ -146,11 +156,11 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
         snapPoints={sheet?.kind === 'secret' ? ['52%'] : ['78%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         {sheet?.kind === 'create' ? (
           <CreateSheet accountId={accountId} onClose={() => sheetRef.current?.dismiss()} isDark={isDark}
@@ -184,7 +194,7 @@ function CreateSheet({ accountId, onCreated, onClose, isDark }: { accountId: str
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
         <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>New audit webhook</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
+        <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
       </View>
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 12.5, lineHeight: 18, color: c.muted, marginBottom: 16 }}>Each event is POSTed to the URL with an X-Kortix-Signature header (HMAC-SHA256 of the body).</Text>
@@ -198,9 +208,16 @@ function CreateSheet({ accountId, onCreated, onClose, isDark }: { accountId: str
           {PRESETS.map((p) => {
             const on = prefix === p.prefix;
             return (
-              <TouchableOpacity key={p.label} onPress={() => { haptics.tap(); setPrefix(p.prefix); }} style={{ paddingHorizontal: 10, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: on ? theme.primary : c.border, backgroundColor: on ? theme.primaryLight : 'transparent', justifyContent: 'center' }}>
-                <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: on ? c.fg : c.muted }}>{p.label}</Text>
-              </TouchableOpacity>
+              <Button
+                key={p.label}
+                variant="ghost"
+                size="sm"
+                onPress={() => { haptics.tap(); setPrefix(p.prefix); }}
+                className="h-[30px] justify-center rounded-full px-2.5"
+                style={{ borderWidth: 1, borderColor: on ? theme.primary : c.border, backgroundColor: on ? theme.primaryLight : 'transparent' }}
+              >
+                <Text style={{ color: on ? c.fg : c.muted }}>{p.label}</Text>
+              </Button>
             );
           })}
         </View>
@@ -223,7 +240,7 @@ function SecretSheet({ hook, onClose, isDark }: { hook: CreatedAuditWebhook; onC
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
         <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>Webhook created</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
+        <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
       </View>
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: 12.5, lineHeight: 18, color: c.muted, marginBottom: 14 }}>Save the signing secret now — you won't see it again. To rotate, delete this webhook and create a new one.</Text>
@@ -231,10 +248,15 @@ function SecretSheet({ hook, onClose, isDark }: { hook: CreatedAuditWebhook; onC
         <View style={{ borderRadius: 12, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, padding: 12 }}>
           <Text style={{ fontSize: 12.5, lineHeight: 18, fontFamily: MONO, color: c.fg }} selectable>{hook.secret}</Text>
         </View>
-        <TouchableOpacity onPress={copy} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 14, height: 38, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+        <Button
+          variant="ghost"
+          onPress={copy}
+          className="h-[38px] flex-row items-center self-start gap-1.5 rounded-full px-3.5 mt-3"
+          style={{ borderWidth: 1, borderColor: c.border }}
+        >
           {copied ? <Check size={14} color={theme.primary} /> : <Copy size={14} color={c.muted} />}
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: copied ? theme.primary : c.fg }}>{copied ? 'Copied' : 'Copy secret'}</Text>
-        </TouchableOpacity>
+          <Text style={{ color: copied ? theme.primary : c.fg }}>{copied ? 'Copied' : 'Copy secret'}</Text>
+        </Button>
       </BottomSheetScrollView>
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <PrimaryButton label="Done" onPress={onClose} />

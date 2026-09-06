@@ -22,8 +22,8 @@ import { chalkColors } from '@kortix/shared';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
-import { Composer } from '@/components/ui/composer';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { Composer } from '@/components/kortix/composer';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 
 export interface ProjectHomeProps {

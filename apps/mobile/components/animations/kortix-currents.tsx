@@ -39,11 +39,16 @@ import { useSharedValue } from 'react-native-reanimated';
 import { KORTIX_SYMBOL_PATH, SYMBOL_ASPECT, SYMBOL_HEIGHT, clamp01, flowAngle } from '@/lib/effects/mark-math';
 
 // ── Palette — mirrors the web effect ─────────────────────────────────────────
-const INK = '#0A0A0A';
-const AMBIENT = 'rgba(232,232,232,0.42)';
-const AMBIENT_ORANGE = 'rgba(224,138,51,0.80)';
-const GLOW_ORANGE = 'rgba(240,150,62,0.46)';
-const GLOW_WHITE = 'rgba(255,255,255,0.38)';
+// Every value below is hex-allowlist: always-dark decorative Skia canvas
+// (fixed ink background + ambient/glow particle colors) — a brand animation,
+// never a themed UI surface, so none of these route through THEME.
+const palette = {
+  ink: '#0A0A0A', // hex-allowlist: always-dark canvas background
+  ambient: 'rgba(232,232,232,0.42)', // hex-allowlist: fixed particle glow, not themed
+  ambientOrange: 'rgba(224,138,51,0.80)', // hex-allowlist: fixed particle glow, not themed
+  glowOrange: 'rgba(240,150,62,0.46)', // hex-allowlist: fixed particle glow, not themed
+  glowWhite: 'rgba(255,255,255,0.38)', // hex-allowlist: fixed particle glow, not themed
+};
 
 // ── Simulation constants ─────────────────────────────────────────────────────
 // COUNT is 1200 vs the web's 2400: each particle costs one JSI write into the
@@ -117,7 +122,7 @@ function makeSpriteSheet(): SkImage | null {
       Skia.Shader.MakeLinearGradient(
         Skia.Point(x0, 0),
         Skia.Point(x1, 0),
-        [Skia.Color('rgba(0,0,0,0)'), Skia.Color(color)],
+        [Skia.Color('rgba(0,0,0,0)'), Skia.Color(color)], // hex-allowlist: transparent gradient stop, not themed
         [0, 1],
         TileMode.Clamp
       )
@@ -136,7 +141,7 @@ function makeSpriteSheet(): SkImage | null {
       Skia.Shader.MakeRadialGradient(
         Skia.Point(cx, CELL / 2),
         CELL / 2,
-        [Skia.Color(color), Skia.Color('rgba(0,0,0,0)')],
+        [Skia.Color(color), Skia.Color('rgba(0,0,0,0)')], // hex-allowlist: transparent gradient stop, not themed
         [0, 1],
         TileMode.Clamp
       )
@@ -144,10 +149,10 @@ function makeSpriteSheet(): SkImage | null {
     canvas.drawRect(Skia.XYWHRect(cell * CELL, 0, CELL, CELL), paint);
   };
 
-  drawStreak(CELL_AMBIENT, AMBIENT);
-  drawStreak(CELL_AMBIENT_ORANGE, AMBIENT_ORANGE);
-  drawGlow(CELL_GLOW_ORANGE, GLOW_ORANGE);
-  drawGlow(CELL_GLOW_WHITE, GLOW_WHITE);
+  drawStreak(CELL_AMBIENT, palette.ambient);
+  drawStreak(CELL_AMBIENT_ORANGE, palette.ambientOrange);
+  drawGlow(CELL_GLOW_ORANGE, palette.glowOrange);
+  drawGlow(CELL_GLOW_WHITE, palette.glowWhite);
 
   return surface.makeImageSnapshot();
 }
@@ -317,7 +322,7 @@ function CurrentsField({
 
   return (
     <Canvas style={{ flex: 1 }}>
-      <Fill color={INK} />
+      <Fill color={palette.ink} />
       <Atlas image={image} sprites={sprites} transforms={transforms} blendMode="plus" />
     </Canvas>
   );
@@ -351,7 +356,7 @@ function StaticField({
 
   return (
     <Canvas style={{ flex: 1 }}>
-      <Fill color={INK} />
+      <Fill color={palette.ink} />
       <Atlas image={image} sprites={sprites} transforms={transforms} blendMode="plus" />
     </Canvas>
   );
@@ -393,7 +398,7 @@ export function KortixCurrents({ style, markCenterY = 0.5 }: KortixCurrentsProps
   }, []);
 
   return (
-    <View style={[{ flex: 1, backgroundColor: INK }, style]} onLayout={onLayout}>
+    <View style={[{ flex: 1, backgroundColor: palette.ink }, style]} onLayout={onLayout}>
       {width > 0 && height > 0 ? (
         reduceMotion ? (
           <StaticField width={width} height={height} markCenterY={markCenterY} />

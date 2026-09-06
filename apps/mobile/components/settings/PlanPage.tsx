@@ -17,7 +17,7 @@ import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { PRICING_PLANS, type PricingPlan } from '@/lib/billing/pricing';
 import { openExternalUrl } from '@/lib/billing/checkout';
 import { getFrontendUrl } from '@/api/config';

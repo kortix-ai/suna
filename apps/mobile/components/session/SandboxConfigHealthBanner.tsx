@@ -17,13 +17,16 @@ import { useColorScheme } from 'nativewind';
 import { CheckCircle2, Copy, Loader, ShieldAlert, SquarePen } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { useSandboxConfigStatus } from '@/hooks/useSandboxConfigStatus';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export function SandboxConfigHealthBanner() {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const toast = useToast();
+  const theme = useThemeColors();
 
   const {
     hasProblem,
@@ -95,17 +98,17 @@ export function SandboxConfigHealthBanner() {
 
   // Tokens mirror the web: amber border/18, sidebar-accent/45 background,
   // emerald pill, foreground-on-background primary button.
-  const amber = '#F59E0B';
-  const amberSoft = 'rgba(245,158,11,0.8)';
-  const borderColor = isDark ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)';
-  const cardBg = isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.025)';
-  const emeraldBorder = isDark ? 'rgba(16,185,129,0.25)' : 'rgba(16,185,129,0.3)';
-  const emeraldBg = isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.1)';
-  const emeraldFg = isDark ? '#34D399' : '#059669';
-  const primaryBg = isDark ? '#F8F8F8' : '#121215';
-  const primaryFg = isDark ? '#121215' : '#F8F8F8';
-  const outlineBg = isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.03)';
-  const outlineBorder = isDark ? 'rgba(248,248,248,0.12)' : 'rgba(18,18,21,0.12)';
+  const amber = THEME.accent.orange;
+  const amberSoft = withAlpha(THEME.accent.orange, 0.8);
+  const borderColor = isDark ? withAlpha(THEME.accent.orange, 0.22) : withAlpha(THEME.accent.orange, 0.28);
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.025);
+  const emeraldBorder = isDark ? withAlpha(THEME.accent.green, 0.25) : withAlpha(THEME.accent.green, 0.3);
+  const emeraldBg = isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.1);
+  const emeraldFg = THEME.accent.green;
+  const primaryBg = theme.primary;
+  const primaryFg = theme.primaryForeground;
+  const outlineBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
+  const outlineBorder = isDark ? withAlpha(THEME.dark.foreground, 0.12) : withAlpha(THEME.light.foreground, 0.12);
 
   const pingScale = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 2.2] });
   const pingOpacity = pingAnim.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] });

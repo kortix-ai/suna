@@ -13,7 +13,6 @@ import {
   FlatList,
   ScrollView,
   TextInput,
-  TouchableOpacity,
   useWindowDimensions,
   Animated,
   Easing,
@@ -32,6 +31,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
 import { Icon } from '@/components/ui/icon';
 import { Text as RNText } from 'react-native';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { useSessionSync } from '@/lib/opencode/session-sync';
@@ -62,13 +62,13 @@ import { QuestionPrompt } from './QuestionPrompt';
 import { useSessions } from '@/lib/platform/hooks';
 import { FileViewer } from '@/components/files/FileViewer';
 import type { SandboxFile } from '@/api/types';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
 
-// AnimatedToggleIcon was extracted to components/ui/animated-toggle-icon.tsx
+// AnimatedToggleIcon was extracted to components/kortix/animated-toggle-icon.tsx
 // so it can be shared with PageHeader and page-level headers across the app.
-import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
+import { AnimatedToggleIcon } from '@/components/kortix/animated-toggle-icon';
 
 interface SessionPageProps {
   sessionId: string;
@@ -722,7 +722,7 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
                 className="mr-3"
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="menu-lucide" size={20} />
+                <AnimatedToggleIcon open={!!isDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon="menu-lucide" size={20} />
               </Button>
             )}
             <View className="flex-1 flex-row items-center">
@@ -735,7 +735,7 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
                     width: 6,
                     height: 6,
                     borderRadius: 3,
-                    backgroundColor: pendingQuestions.length > 0 ? '#F59E0B' : '#10B981',
+                    backgroundColor: pendingQuestions.length > 0 ? THEME.accent.orange : THEME.accent.green,
                     marginRight: 8,
                   }}
                 />
@@ -751,22 +751,22 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
                   blurOnSubmit
                   maxLength={200}
                   placeholder="Session title"
-                  placeholderTextColor={isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)'}
+                  placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)}
                   style={{
                     flex: 1,
                     fontSize: 16,
                     fontFamily: 'Roobert-Medium',
-                    color: isDark ? '#F8F8F8' : '#121215',
+                    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                     padding: 0,
                     margin: 0,
                   }}
                 />
               ) : (
-                <TouchableOpacity
+                <Button
+                  variant="ghost"
                   onPress={beginTitleEdit}
                   disabled={onboardingMode}
-                  activeOpacity={onboardingMode ? 1 : 0.7}
-                  className="flex-1"
+                  className={`h-auto w-auto flex-1 justify-start p-0 active:bg-transparent ${onboardingMode ? 'active:opacity-100' : 'active:opacity-70'}`}
                   hitSlop={{ top: 8, bottom: 8 }}
                 >
                   <Text
@@ -775,28 +775,30 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
                   >
                     {title}
                   </Text>
-                </TouchableOpacity>
+                </Button>
               )}
             </View>
             {!onboardingMode && (
-              <TouchableOpacity
+              <Button
+                variant="ghost"
                 onPress={onOpenRightDrawer}
-                className="ml-3 p-1"
+                className="h-auto w-auto ml-3 p-1 active:bg-transparent active:opacity-70"
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? '#F8F8F8' : '#121215'} icon="ellipsis-horizontal" size={20} />
-              </TouchableOpacity>
+                <AnimatedToggleIcon open={!!isRightDrawerOpen} color={isDark ? THEME.dark.foreground : THEME.light.foreground} icon="ellipsis-horizontal" size={20} />
+              </Button>
             )}
             {onboardingMode && onSkipOnboarding && (
-              <TouchableOpacity
+              <Button
+                variant="ghost"
                 onPress={onSkipOnboarding}
-                className="ml-3 py-1 px-3"
+                className="h-auto w-auto ml-3 py-1 px-3 active:bg-transparent active:opacity-70"
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.4)' }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.4) }}>
                   Skip
                 </Text>
-              </TouchableOpacity>
+              </Button>
             )}
           </View>
         </View>
@@ -837,21 +839,21 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
                 <View style={{ paddingHorizontal: 20, paddingVertical: 16 }}>
                   {/* Divider with Compaction badge */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }} />
+                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }} />
                     <View style={{
                       flexDirection: 'row', alignItems: 'center', gap: 6,
                       paddingHorizontal: 10, paddingVertical: 4,
                       borderRadius: 6,
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                       borderWidth: 1,
-                      borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                     }}>
-                      <Ionicons name="layers-outline" size={12} color={isDark ? '#888' : '#666'} />
-                      <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: isDark ? '#888' : '#666', letterSpacing: 0.3 }}>
+                      <Ionicons name="layers-outline" size={12} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+                      <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, letterSpacing: 0.3 }}>
                         Compaction
                       </RNText>
                     </View>
-                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }} />
+                    <View style={{ flex: 1, height: 1, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }} />
                   </View>
                   {/* Compacting indicator */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -860,7 +862,7 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
                     ) : (
                       <KortixSymbolBlack width={14} height={14} />
                     )}
-                    <RNText style={{ fontSize: 14, fontFamily: 'Roobert', color: isDark ? '#888' : '#666' }}>
+                    <RNText style={{ fontSize: 14, fontFamily: 'Roobert', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
                       Compacting session...
                     </RNText>
                   </View>
@@ -903,7 +905,7 @@ export function SessionPage({ sessionId, projectName, onBack, onOpenDrawer, onOp
       {/* Fade gradient above input — only when textarea is shown */}
       {!hasQuestion && (
         <LinearGradient
-          colors={isDark ? ['rgba(13,13,13,0)', 'rgba(13,13,13,1)'] : ['rgba(255,255,255,0)', 'rgba(255,255,255,1)']}
+          colors={isDark ? [withAlpha(THEME.dark.background, 0), withAlpha(THEME.dark.background, 1)] : [withAlpha(THEME.light.background, 0), withAlpha(THEME.light.background, 1)]}
           style={{ height: 24, marginTop: -24, zIndex: 1 }}
           pointerEvents="none"
         />
@@ -1080,10 +1082,12 @@ function QueuePanel({
   onSendNow: (id: string) => void;
   isDark: boolean;
 }) {
-  const bgColor = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const mutedText = isDark ? '#888' : '#999';
-  const fgText = isDark ? '#ccc' : '#444';
+  const bgColor = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  // Original literals (`#888`/`#999`) had their light/dark branches swapped
+  // relative to their own lightness — same finding as CommandPalette/task 26.
+  const mutedText = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
+  const fgText = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   return (
     <View
@@ -1097,12 +1101,11 @@ function QueuePanel({
       }}
     >
       {/* Header — tap to expand/collapse */}
-      <TouchableOpacity
+      <Button
+        variant="ghost"
         onPress={onToggle}
-        activeOpacity={0.7}
+        className="h-auto w-auto flex-row items-center justify-start rounded-none active:opacity-70"
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
           paddingHorizontal: 12,
           paddingVertical: 10,
         }}
@@ -1128,20 +1131,22 @@ function QueuePanel({
             : ''}
         </RNText>
         {/* Clear all */}
-        <TouchableOpacity
+        <Button
+          variant="ghost"
+          size="icon"
           onPress={() => onClear()}
           hitSlop={8}
-          style={{ marginRight: 8 }}
+          className="h-auto w-auto mr-2 p-0 active:bg-transparent active:opacity-70"
         >
           <Ionicons name="close" size={14} color={mutedText} />
-        </TouchableOpacity>
+        </Button>
         {/* Expand/collapse chevron */}
         <Ionicons
           name={expanded ? 'chevron-up' : 'chevron-down'}
           size={14}
           color={mutedText}
         />
-      </TouchableOpacity>
+      </Button>
 
       {/* Expanded list */}
       {expanded && messages.length > 0 && (
@@ -1191,41 +1196,49 @@ function QueuePanel({
                 {/* Action buttons */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   {/* Send now */}
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => onSendNow(qm.id)}
                     hitSlop={6}
-                    style={{ padding: 4 }}
+                    className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                   >
-                    <Ionicons name="send" size={12} color={isDark ? '#60a5fa' : '#3b82f6'} />
-                  </TouchableOpacity>
+                    <Ionicons name="send" size={12} color={THEME.accent.blue} />
+                  </Button>
                   {/* Move up */}
                   {idx > 0 && (
-                    <TouchableOpacity
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onPress={() => onMoveUp(qm.id)}
                       hitSlop={6}
-                      style={{ padding: 4 }}
+                      className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                     >
                       <Ionicons name="arrow-up" size={12} color={mutedText} />
-                    </TouchableOpacity>
+                    </Button>
                   )}
                   {/* Move down */}
                   {idx < messages.length - 1 && (
-                    <TouchableOpacity
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onPress={() => onMoveDown(qm.id)}
                       hitSlop={6}
-                      style={{ padding: 4 }}
+                      className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                     >
                       <Ionicons name="arrow-down" size={12} color={mutedText} />
-                    </TouchableOpacity>
+                    </Button>
                   )}
                   {/* Remove */}
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onPress={() => onRemove(qm.id)}
                     hitSlop={6}
-                    style={{ padding: 4 }}
+                    className="h-auto w-auto p-1 active:bg-transparent active:opacity-70"
                   >
                     <Ionicons name="close" size={12} color={mutedText} />
-                  </TouchableOpacity>
+                  </Button>
                 </View>
               </View>
             ))}

@@ -13,6 +13,7 @@ import { useColorScheme } from 'nativewind';
 import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/utils/trigger-utils';
 import { Clock, Check, AlertCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface CronExpressionPickerProps {
   value?: string;
@@ -33,11 +34,13 @@ export function CronExpressionPicker({
   const presets = getCronPresets();
   
   // Design system colors
-  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
-  const borderColor = colorScheme === 'dark' ? '#232324' : '#DCDCDC';
-  const bgColor = colorScheme === 'dark' ? '#161618' : '#FFFFFF';
-  const previewBg = colorScheme === 'dark' ? '#161618' : '#F5F5F5';
-  const mutedTextColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const isDark = colorScheme === 'dark';
+  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const borderColor = isDark ? THEME.dark.border : THEME.light.border;
+  const bgColor = isDark ? THEME.dark.popover : THEME.light.popover;
+  const previewBg = isDark ? THEME.dark.muted : THEME.light.muted;
+  const mutedTextColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   const handlePresetSelect = (presetValue: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -138,14 +141,14 @@ export function CronExpressionPicker({
               value={customCron}
               onChangeText={handleCustomCronChange}
               placeholder="0 9 * * 1-5"
-              placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+              placeholderTextColor={mutedTextColor}
               style={{
                 paddingHorizontal: 16,
                 paddingVertical: 16,
                 borderRadius: 16,
                 borderWidth: 1.5,
-                borderColor: error || !isValid ? '#EF4444' : borderColor,
-                backgroundColor: error || !isValid ? '#FEE2E2' : bgColor,
+                borderColor: error || !isValid ? destructiveColor : borderColor,
+                backgroundColor: error || !isValid ? withAlpha(destructiveColor, 0.1) : bgColor,
                 fontFamily: 'monospace',
                 fontSize: 16,
                 color: textColor,
@@ -153,20 +156,20 @@ export function CronExpressionPicker({
               autoCapitalize="none"
               autoCorrect={false}
             />
-            
+
             {customCron && (
               <View style={{ position: 'absolute', right: 12, top: 12 }}>
                 {isValid ? (
-                  <Icon as={Check} size={16} color="#22c55e" />
+                  <Icon as={Check} size={16} color={THEME.accent.green} />
                 ) : (
-                  <Icon as={AlertCircle} size={16} color="#ef4444" />
+                  <Icon as={AlertCircle} size={16} color={destructiveColor} />
                 )}
               </View>
             )}
           </View>
-          
+
           {customCron && !isValid && (
-            <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '400' }}>
+            <Text style={{ color: destructiveColor, fontSize: 12, fontWeight: '400' }}>
               Invalid cron expression format
             </Text>
           )}
@@ -177,8 +180,8 @@ export function CronExpressionPicker({
       {displayValue && (
         <View style={{ padding: 12, backgroundColor: previewBg, borderRadius: 12 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-            <Icon as={Clock} size={16} color="#666" />
-            <Text style={{ color: mutedTextColor, opacity: 0.6, fontSize: 14, fontWeight: '500', marginLeft: 8 }}>
+            <Icon as={Clock} size={16} color={mutedTextColor} />
+            <Text style={{ color: mutedTextColor, fontSize: 14, fontWeight: '500', marginLeft: 8 }}>
               Schedule Preview
             </Text>
           </View>
@@ -187,7 +190,7 @@ export function CronExpressionPicker({
             {humanReadable}
           </Text>
           
-          <Text style={{ color: mutedTextColor, opacity: 0.6, fontSize: 12, fontFamily: 'monospace', marginTop: 4 }}>
+          <Text style={{ color: mutedTextColor, fontSize: 12, fontFamily: 'monospace', marginTop: 4 }}>
             {displayValue}
           </Text>
         </View>
@@ -195,9 +198,9 @@ export function CronExpressionPicker({
 
       {/* Error Message */}
       {error && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#FEE2E2', borderRadius: 12 }}>
-          <Icon as={AlertCircle} size={16} color="#ef4444" />
-          <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '400', marginLeft: 8 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: withAlpha(destructiveColor, 0.1), borderRadius: 12 }}>
+          <Icon as={AlertCircle} size={16} color={destructiveColor} />
+          <Text style={{ color: destructiveColor, fontSize: 14, fontWeight: '400', marginLeft: 8 }}>
             {error}
           </Text>
         </View>

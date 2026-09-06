@@ -2,8 +2,7 @@ import React, { forwardRef, useMemo } from 'react';
 import { ActivityIndicator, Pressable, View, useWindowDimensions } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useInstanceProgress } from '@/stores/instance-progress';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
@@ -20,7 +19,9 @@ import {
   Sun,
   X,
 } from 'lucide-react-native';
-import { getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { getToggleTrackBg, getToggleActiveBg, useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 type ThemeOption = 'light' | 'dark' | 'system';
 
@@ -58,12 +59,15 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   },
   ref,
 ) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const { height: screenHeight } = useWindowDimensions();
   const isDark = colorScheme === 'dark';
+  const theme = useThemeColors();
   // Subtle hairline divider — explicit rgba because NativeWind v4 doesn't
   // support `/X` alpha on legacy hsl(var(--border)) tokens.
-  const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const dividerColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   // Theme-toggle pill colors via the shared helper so this matches the
   // appearance settings page and any other toggle in the app.
   const toggleTrackBg = getToggleTrackBg(isDark);
@@ -71,12 +75,6 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   const creatingProgress = useInstanceProgress();
   const { updateAvailable, latestVersion, changelog: latestChangelog, isUpdating, phase: updatePhase, phaseProgress, updateResult, updateError } = useGlobalSandboxUpdate();
 
-  const renderBackdrop = useMemo(
-    () => (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-    ),
-    [],
-  );
 
   return (
     <BottomSheetModal
@@ -85,18 +83,13 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
       maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
       enableOverDrag={false}
       enablePanDownToClose
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      backdropComponent={renderBackdrop}
+      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24 }}
@@ -107,7 +100,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
           {/* Active instance */}
           <View className="py-3.5">
             <View className="flex-row items-center">
-              <View className="h-2.5 w-2.5 rounded-full bg-emerald-400 mr-3" />
+              <View className="h-2.5 w-2.5 rounded-full bg-kortix-green mr-3" />
               <View className="flex-1">
                 <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
                   {sandboxLabel || 'sandbox'}
@@ -118,8 +111,8 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   </Text>
                 )}
               </View>
-              <View className="rounded-full bg-emerald-400/15 px-2 py-0.5">
-                <Text className="text-[10px] font-roobert-medium text-emerald-600 dark:text-emerald-400">
+              <View className="rounded-full bg-kortix-green/15 px-2 py-0.5">
+                <Text className="text-[10px] font-roobert-medium text-kortix-green">
                   Active
                 </Text>
               </View>
@@ -131,7 +124,7 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
             <>
               <View className="py-3.5">
                 <View className="flex-row items-center mb-2">
-                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
+                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: THEME.accent.orange }} />
                   <View className="flex-1">
                     <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
                       Sandbox
@@ -146,13 +139,13 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                 </View>
                 <View
                   className="h-1.5 rounded-full overflow-hidden"
-                  style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                  style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
                 >
                   <View
                     className="h-full rounded-full"
                     style={{
                       width: `${Math.max(creatingProgress.percent, 2)}%`,
-                      backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                      backgroundColor: theme.primary,
                     }}
                   />
                 </View>
@@ -184,27 +177,27 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
             <View style={{ height: 1, backgroundColor: dividerColor, marginVertical: 12 }} />
             {isUpdating ? (
               /* Updating — show progress */
-              <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3.5 active:opacity-90" style={{ borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)' }}>
+              <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3.5 active:opacity-90" style={{ borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
                 <View className="flex-row items-center mb-2">
                   <ActivityIndicator size={14} />
                   <Text className="ml-2 font-roobert-medium text-[14px] text-foreground flex-1" numberOfLines={1}>Updating to v{latestVersion}</Text>
                   <Text className="font-roobert text-xs tabular-nums text-muted-foreground">{Math.round(phaseProgress)}%</Text>
                 </View>
-                <View className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}>
-                  <View className="h-full rounded-full" style={{ width: `${Math.max(phaseProgress, 2)}%`, backgroundColor: isDark ? '#F8F8F8' : '#121215' }} />
+                <View className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}>
+                  <View className="h-full rounded-full" style={{ width: `${Math.max(phaseProgress, 2)}%`, backgroundColor: theme.primary }} />
                 </View>
               </Pressable>
             ) : updateResult?.success ? (
               /* Success */
-              <View className="rounded-2xl border px-4 py-3 border-emerald-500/20 bg-emerald-500/5">
+              <View className="rounded-2xl border px-4 py-3 border-kortix-green/20 bg-kortix-green/5">
                 <View className="flex-row items-center">
-                  <Icon as={Check} size={16} style={{ color: '#10B981' }} strokeWidth={2.5} />
-                  <Text className="ml-2 font-roobert-medium text-[14px] text-emerald-500 flex-1">Updated to v{updateResult.currentVersion}</Text>
+                  <Icon as={Check} size={16} color={THEME.accent.green} strokeWidth={2.5} />
+                  <Text className="ml-2 font-roobert-medium text-[14px] text-kortix-green flex-1">Updated to v{updateResult.currentVersion}</Text>
                 </View>
               </View>
             ) : updateError ? (
               /* Error */
-              <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3 active:opacity-90" style={{ borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)', backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)' }}>
+              <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3 active:opacity-90" style={{ borderColor: withAlpha(destructiveColor, isDark ? 0.2 : 0.15), backgroundColor: withAlpha(destructiveColor, isDark ? 0.05 : 0.03) }}>
                 <View className="flex-row items-center">
                   <Icon as={X} size={16} className="text-destructive" strokeWidth={2.5} />
                   <Text className="ml-2 font-roobert-medium text-[14px] text-destructive flex-1">Update failed</Text>
@@ -216,12 +209,12 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
               <View
                 className="rounded-2xl border px-4 py-3.5"
                 style={{
-                  borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)',
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)',
+                  borderColor: withAlpha(destructiveColor, isDark ? 0.2 : 0.15),
+                  backgroundColor: withAlpha(destructiveColor, isDark ? 0.05 : 0.03),
                 }}
               >
                 <View className="flex-row items-center">
-                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#EF4444' }} />
+                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: destructiveColor }} />
                   <View className="flex-1">
                     <View className="flex-row items-center">
                       <Text className="font-roobert-medium text-[15px] text-foreground">
@@ -251,10 +244,10 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
                   <Pressable
                     onPress={onOpenChangelog}
                     className="flex-row items-center justify-center rounded-full px-4 py-2 active:opacity-90"
-                    style={{ backgroundColor: isDark ? '#F8F8F8' : '#121215' }}
+                    style={{ backgroundColor: theme.primary }}
                   >
-                    <Icon as={ArrowDownToLine} size={13} className={isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'} strokeWidth={2.5} />
-                    <Text className={`ml-1.5 font-roobert-semibold text-xs ${isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'}`}>
+                    <Icon as={ArrowDownToLine} size={13} color={theme.primaryForeground} strokeWidth={2.5} />
+                    <Text className="ml-1.5 font-roobert-semibold text-xs" style={{ color: theme.primaryForeground }}>
                       Update
                     </Text>
                   </Pressable>

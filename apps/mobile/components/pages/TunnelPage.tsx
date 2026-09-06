@@ -11,7 +11,6 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
-  TouchableOpacity,
   RefreshControl,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -39,17 +38,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
 import { buildTunnelConnectCommand } from '@/lib/tunnel-connect-command';
 import * as Clipboard from 'expo-clipboard';
-import {
-  BottomSheetModal,
-  BottomSheetView,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { useThemeColors, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import {
   useTunnelConnections,
   useTunnelConnection,
@@ -65,6 +60,7 @@ import {
   type ScopeInfo,
 } from '@/hooks/useTunnel';
 import { API_URL } from '@/api/config';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Tab Page Wrapper ────────────────────────────────────────────────────────
 
@@ -88,10 +84,9 @@ export function TunnelTabPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? THEME.light.foreground : THEME.dark.foreground }}>
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
@@ -135,18 +130,14 @@ function TunnelContent() {
   const createSheetRef = useRef<BottomSheetModal>(null);
   const detailSheetRef = useRef<BottomSheetModal>(null);
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const cardBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const subtleBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.01);
   const accent = theme.primary;
   const accentBg = theme.primaryLight;
 
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
-    [],
-  );
 
   const handleOpenCreate = useCallback(() => {
     haptics.medium();
@@ -235,7 +226,7 @@ function TunnelContent() {
                 width: 64,
                 height: 64,
                 borderRadius: 20,
-                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginBottom: 16,
@@ -285,7 +276,7 @@ function TunnelContent() {
                   width: 36,
                   height: 36,
                   borderRadius: 10,
-                  backgroundColor: (item.isLive ?? item.status === 'online') ? accentBg : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                  backgroundColor: (item.isLive ?? item.status === 'online') ? accentBg : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
                   alignItems: 'center',
                   justifyContent: 'center',
                   marginRight: 12,
@@ -318,22 +309,22 @@ function TunnelContent() {
             {/* Machine info */}
             {item.machineInfo && (
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {item.machineInfo.hostname && (
-                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                {Boolean(item.machineInfo.hostname) && (
+                  <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {String(item.machineInfo.hostname)}
                     </RNText>
                   </View>
                 )}
-                {item.machineInfo.platform && (
-                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                {Boolean(item.machineInfo.platform) && (
+                  <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {String(item.machineInfo.platform)}
                     </RNText>
                   </View>
                 )}
                 {item.lastHeartbeatAt && (
-                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
+                  <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {formatRelativeTime(item.lastHeartbeatAt)}
                     </RNText>
@@ -347,13 +338,12 @@ function TunnelContent() {
 
 
       {/* Create Sheet */}
-      <CreateTunnelSheet ref={createSheetRef} renderBackdrop={renderBackdrop} />
+      <CreateTunnelSheet ref={createSheetRef} />
 
       {/* Detail Sheet */}
       <TunnelDetailSheet
         ref={detailSheetRef}
         tunnel={selectedTunnel}
-        renderBackdrop={renderBackdrop}
         onDelete={handleDelete}
         onDismiss={() => setSelectedTunnel(null)}
       />
@@ -363,19 +353,16 @@ function TunnelContent() {
 
 // ─── Create Tunnel Sheet ────────────────────────────────────────────────────
 
-const CreateTunnelSheet = React.forwardRef<
-  BottomSheetModal,
-  { renderBackdrop: (props: any) => JSX.Element }
->(function CreateTunnelSheet({ renderBackdrop }, ref) {
+const CreateTunnelSheet = React.forwardRef<BottomSheetModal, object>(function CreateTunnelSheet(_props, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-  const sheetBg = getSheetBg(isDark);
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+  const sheetBg = useSheetBackground();
 
   const [copied, setCopied] = useState(false);
 
@@ -393,15 +380,15 @@ const CreateTunnelSheet = React.forwardRef<
       ref={ref}
       enableDynamicSizing
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       onDismiss={() => setCopied(false)}
       backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             <Terminal size={20} color={fg} />
           </View>
           <View style={{ flex: 1 }}>
@@ -416,7 +403,7 @@ const CreateTunnelSheet = React.forwardRef<
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03),
             borderWidth: 1,
             borderColor,
             borderRadius: 12,
@@ -425,11 +412,11 @@ const CreateTunnelSheet = React.forwardRef<
             gap: 10,
           }}
         >
-          <RNText style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', color: isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)', lineHeight: 16 }} selectable>
+          <RNText style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', color: isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8), lineHeight: 16 }} selectable>
             {command}
           </RNText>
           {copied ? (
-            <Check size={16} color="#34d399" />
+            <Check size={16} color={THEME.accent.green} />
           ) : (
             <Copy size={16} color={muted} />
           )}
@@ -438,9 +425,9 @@ const CreateTunnelSheet = React.forwardRef<
         {/* Steps */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 20 }}>
           <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>1. Run the command</RNText>
-          <RNText style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>|</RNText>
+          <RNText style={{ fontSize: 12, color: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1) }}>|</RNText>
           <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>2. Approve in browser</RNText>
-          <RNText style={{ fontSize: 12, color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>|</RNText>
+          <RNText style={{ fontSize: 12, color: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1) }}>|</RNText>
           <RNText style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>3. Connected</RNText>
         </View>
 
@@ -480,29 +467,28 @@ type DetailTab = 'permissions' | 'audit' | 'connection';
 
 interface TunnelDetailSheetProps {
   tunnel: TunnelConnection | null;
-  renderBackdrop: (props: any) => JSX.Element;
   onDelete: (tunnel: TunnelConnection) => void;
   onDismiss: () => void;
 }
 
 const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetProps>(
-  function TunnelDetailSheet({ tunnel, renderBackdrop, onDelete, onDismiss }, ref) {
+  function TunnelDetailSheet({ tunnel, onDelete, onDismiss }, ref) {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
     const insets = useSafeAreaInsets();
     const theme = useThemeColors();
 
-    const fg = isDark ? '#f8f8f8' : '#121215';
-    const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-    const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
-    const sheetBg = getSheetBg(isDark);
+    const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+    const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+    const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06);
+    const sheetBg = useSheetBackground();
     const accent = theme.primary;
     const accentBg = theme.primaryLight;
-    const dangerBg = isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.05)';
-    const dangerBorder = isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)';
-    const tabActiveBg = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
-    const tabBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-    const rowBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)';
+    const dangerBg = isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.08) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.05);
+    const dangerBorder = isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.2) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.15);
+    const tabActiveBg = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.06);
+    const tabBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03);
+    const rowBg = isDark ? withAlpha(THEME.dark.foreground, 0.03) : withAlpha(THEME.light.foreground, 0.02);
 
     const [activeTab, setActiveTab] = useState<DetailTab>('permissions');
     const [copiedId, setCopiedId] = useState(false);
@@ -572,10 +558,10 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
         ref={ref}
         snapPoints={['85%']}
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={SheetBackdrop}
         onDismiss={() => { setActiveTab('permissions'); setAuditPage(1); onDismiss(); }}
         backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <View style={{ paddingHorizontal: 24, paddingTop: 4 }}>
           {/* Header */}
@@ -583,8 +569,8 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
             <View
               style={{
                 width: 44, height: 44, borderRadius: 14, marginRight: 14,
-                backgroundColor: isOnline ? accentBg : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
-                borderWidth: 1, borderColor: isOnline ? accent + '30' : borderColor,
+                backgroundColor: isOnline ? accentBg : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
+                borderWidth: 1, borderColor: isOnline ? withAlpha(accent, 0.19) : borderColor,
                 alignItems: 'center', justifyContent: 'center',
               }}
             >
@@ -607,8 +593,8 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
               flexDirection: 'row', alignItems: 'center', gap: 5,
               paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9999,
               borderWidth: 1,
-              backgroundColor: isOnline ? accentBg : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'),
-              borderColor: isOnline ? accent + '40' : borderColor,
+              backgroundColor: isOnline ? accentBg : (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02)),
+              borderColor: isOnline ? withAlpha(accent, 0.25) : borderColor,
             }}>
               <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: isOnline ? accent : muted }} />
               <RNText style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isOnline ? accent : muted }}>
@@ -667,7 +653,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                           paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 4,
                           backgroundColor: isActive ? accentBg : rowBg,
                           borderWidth: 1,
-                          borderColor: isActive ? accent + '25' : borderColor,
+                          borderColor: isActive ? withAlpha(accent, 0.15) : borderColor,
                           opacity: isPending ? 0.5 : 1,
                         }}
                       >
@@ -676,7 +662,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                           width: 22, height: 22, borderRadius: 11, marginRight: 12,
                           backgroundColor: isActive ? accent : 'transparent',
                           borderWidth: 2,
-                          borderColor: isActive ? accent : (isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)'),
+                          borderColor: isActive ? accent : (isDark ? withAlpha(THEME.dark.foreground, 0.2) : withAlpha(THEME.light.foreground, 0.15)),
                           alignItems: 'center', justifyContent: 'center',
                         }}>
                           {isActive && <Check size={12} color={theme.primaryForeground} />}
@@ -697,19 +683,19 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
               {/* Delete in permissions tab */}
               <View style={{ backgroundColor: dangerBg, borderWidth: 1, borderColor: dangerBorder, borderRadius: 14, padding: 14, marginTop: 8 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                  <AlertTriangle size={14} color="#ef4444" style={{ marginRight: 8 }} />
-                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert-SemiBold', color: '#ef4444' }}>Danger Zone</RNText>
+                  <AlertTriangle size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} style={{ marginRight: 8 }} />
+                  <RNText style={{ fontSize: 13, fontFamily: 'Roobert-SemiBold', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Danger Zone</RNText>
                 </View>
                 <Pressable
                   onPress={() => onDelete(conn)}
                   style={{
                     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
                     paddingVertical: 12, borderRadius: 9999,
-                    backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
+                    backgroundColor: isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.15) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.1),
                   }}
                 >
-                  <Trash2 size={14} color="#ef4444" style={{ marginRight: 6 }} />
-                  <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete Connection</RNText>
+                  <Trash2 size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} style={{ marginRight: 6 }} />
+                  <RNText style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Delete Connection</RNText>
                 </Pressable>
               </View>
             </View>
@@ -731,14 +717,14 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                         flexDirection: 'row', alignItems: 'center', gap: 10,
                         paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, marginBottom: 4,
                         borderWidth: 1,
-                        borderColor: log.success ? borderColor : (isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)'),
+                        borderColor: log.success ? borderColor : (isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.2) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.15)),
                         backgroundColor: log.success ? rowBg : dangerBg,
                       }}
                     >
                       {log.success ? (
                         <Check size={14} color={accent} />
                       ) : (
-                        <AlertTriangle size={14} color="#ef4444" />
+                        <AlertTriangle size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
                       )}
                       <View style={{ flex: 1 }}>
                         <RNText style={{ fontSize: 12, fontFamily: 'monospace', color: fg }} numberOfLines={1}>{log.operation}</RNText>
@@ -746,7 +732,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                           <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 2 }}>{log.durationMs}ms</RNText>
                         )}
                       </View>
-                      <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
+                      <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 }}>
                         <RNText style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: muted }}>{log.capability}</RNText>
                       </View>
                       <RNText style={{ fontSize: 10, fontFamily: 'Roobert', color: muted }}>
@@ -801,7 +787,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
               <View style={{
                 borderRadius: 16, overflow: 'hidden',
                 borderWidth: 1, borderColor,
-                backgroundColor: isDark ? '#1a1a1c' : '#FFFFFF',
+                backgroundColor: isDark ? THEME.dark.card : THEME.light.background,
               }}>
                 {rows.map((row, i) => (
                   <View key={row.label}>
@@ -823,7 +809,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                           <View style={{
                             flexDirection: 'row', alignItems: 'center', gap: 6,
                             paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8,
-                            backgroundColor: isOnline ? accentBg : (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'),
+                            backgroundColor: isOnline ? accentBg : (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02)),
                           }}>
                             {isOnline ? <Wifi size={12} color={accent} /> : <WifiOff size={12} color={muted} />}
                             <RNText style={{ fontSize: 13, fontFamily: 'Roobert-SemiBold', color: isOnline ? accent : muted }}>
@@ -834,7 +820,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                           <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 }}>
                             {conn.capabilities.length > 0 ? conn.capabilities.map((cap) => (
                               <View key={cap} style={{
-                                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05),
                                 borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4,
                               }}>
                                 <RNText style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>{cap}</RNText>
@@ -863,7 +849,7 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
                             style={{
                               width: 30, height: 30, borderRadius: 8,
                               alignItems: 'center', justifyContent: 'center',
-                              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                             }}
                           >
                             {copiedId ? <Check size={14} color={accent} /> : <Copy size={14} color={muted} />}

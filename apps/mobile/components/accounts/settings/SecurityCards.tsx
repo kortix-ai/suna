@@ -5,11 +5,12 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch, LayoutAnimation, Platform, UIManager } from 'react-native';
-import { useColorScheme } from 'nativewind';
+import { View, Pressable, TextInput, ActivityIndicator, Alert, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, ShieldCheck, ChevronDown, LogOut, Clock } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { useAccountMembers } from '@/lib/accounts/hooks';
@@ -23,7 +24,7 @@ import {
   revokeAccountSession,
   type ActiveSession,
 } from '@/lib/accounts/iam-client';
-import { Card, Pill, Divider, accountColors } from '../account-shared';
+import { Card, Pill, Divider, accountColors, destructiveColor } from '../account-shared';
 
 const MONO = 'Menlo';
 const MAX_MINUTES = 10080;
@@ -42,17 +43,16 @@ export function SecurityCards({ accountId, canManage, isDark }: { accountId: str
 
       <Divider isDark={isDark} my={16} />
 
-      <TouchableOpacity
+      <Pressable
         onPress={() => { haptics.tap(); LayoutAnimation.configureNext(LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)); setAdvanced((v) => !v); }}
-        activeOpacity={0.7}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+        style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 10 }, pressed && { opacity: 0.7 }]}
       >
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Advanced security</Text>
           <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Session lifetimes, idle timeouts, and force-logout.</Text>
         </View>
         <ChevronDown size={18} color={c.muted} style={{ transform: [{ rotate: advanced ? '180deg' : '0deg' }] }} />
-      </TouchableOpacity>
+      </Pressable>
 
       {advanced && <View style={{ marginTop: 16 }}><SessionControlsCard accountId={accountId} canManage={canManage} isDark={isDark} /></View>}
     </View>
@@ -60,7 +60,6 @@ export function SecurityCards({ accountId, canManage, isDark }: { accountId: str
 }
 
 function MfaCard({ accountId, canManage, isDark }: { accountId: string; canManage: boolean; isDark: boolean }) {
-  const { colorScheme } = useColorScheme();
   const c = accountColors(isDark);
   const queryClient = useQueryClient();
   const statusQuery = useQuery({ queryKey: ['iam-mfa-required', accountId], queryFn: () => getMfaRequired(accountId), staleTime: 30_000 });
@@ -115,12 +114,9 @@ function MfaCard({ accountId, canManage, isDark }: { accountId: string; canManag
           <ActivityIndicator size="small" color={c.muted} />
         ) : (
           <Switch
-            value={enabled}
+            checked={enabled}
             disabled={!canManage || flip.isPending}
-            onValueChange={onToggle}
-            trackColor={{ false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7', true: '#34C759' }}
-            thumbColor="#FFFFFF"
-            ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
+            onCheckedChange={onToggle}
           />
         )}
       </View>
@@ -216,12 +212,17 @@ function SessionControlsCard({ accountId, canManage, isDark }: { accountId: stri
           <TextInput value={idleTimeout} onChangeText={(t) => setIdleTimeout(t.replace(/[^0-9]/g, ''))} editable={canManage && !save.isPending} keyboardType="number-pad" placeholder="No gate" placeholderTextColor={c.muted} style={input} />
         </View>
       </View>
-      {error && <Text style={{ fontSize: 11.5, color: '#ef4444', marginTop: 8 }}>{error}</Text>}
+      {error && <Text style={{ fontSize: 11.5, color: destructiveColor(isDark), marginTop: 8 }}>{error}</Text>}
       {canManage && (
-        <TouchableOpacity onPress={handleSave} disabled={save.isPending} activeOpacity={0.85} style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, marginTop: 12 }}>
+        <Button
+          onPress={handleSave}
+          disabled={save.isPending}
+          className="h-10 flex-row items-center self-end gap-1.5 rounded-full px-[18px] mt-3"
+          style={{ backgroundColor: theme.primary }}
+        >
           {save.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
-        </TouchableOpacity>
+          <Text>Save</Text>
+        </Button>
       )}
 
       {/* Active sessions */}
@@ -260,9 +261,9 @@ function SessionRow({ s, label, canManage, pending, isDark, onRevoke }: { s: Act
         <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>{relative(s.last_seen_at)}{s.ip ? ` · ${s.ip}` : ''}</Text>
       </View>
       {canManage && (
-        <TouchableOpacity onPress={onRevoke} disabled={pending} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}>
-          <LogOut size={15} color="#ef4444" />
-        </TouchableOpacity>
+        <Button variant="ghost" size="icon" onPress={onRevoke} disabled={pending} hitSlop={8} className="h-8 w-8 rounded-full">
+          <LogOut size={15} color={destructiveColor(isDark)} />
+        </Button>
       )}
     </View>
   );

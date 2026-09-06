@@ -92,6 +92,7 @@ import { SvgUri } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 interface ToolsScreenProps {
   agentId: string;
@@ -498,7 +499,7 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
   if (isLoading || isLoadingMetadata) {
     return (
       <View className="items-center justify-center py-12">
-        <ActivityIndicator size="small" color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} />
+        <ActivityIndicator size="small" color={colorScheme === 'dark' ? THEME.dark.foreground : THEME.light.foreground} />
         <Text className="mt-4 font-roobert text-sm text-muted-foreground">
           {t('workers.loadingTools')}
         </Text>
@@ -531,13 +532,13 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
           <View className="space-y-4">
             {!areToolsEditable && (
-              <View className="mb-4 flex-row items-start gap-2 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+              <View className="mb-4 flex-row items-start gap-2 rounded-xl border border-kortix-orange/20 bg-kortix-orange/10 p-3">
                 <Icon
                   as={AlertCircle}
                   size={16}
-                  className="mt-0.5 text-yellow-600 dark:text-yellow-400"
+                  className="mt-0.5 text-kortix-orange"
                 />
-                <Text className="flex-1 font-roobert text-sm text-yellow-600 dark:text-yellow-400">
+                <Text className="flex-1 font-roobert text-sm text-kortix-orange">
                   {isSunaAgent ? t('workers.sunaToolsManaged') : t('workers.toolsNotEditable')}
                 </Text>
               </View>
@@ -726,7 +727,10 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
                   : 'bg-primary active:opacity-80'
               }`}>
               {updateAgentMutation.isPending ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator
+                  size="small"
+                  color={colorScheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground}
+                />
               ) : (
                 <Icon as={Save} size={18} className="text-primary-foreground" />
               )}

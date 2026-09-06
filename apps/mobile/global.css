@@ -56,6 +56,24 @@
     --kortix-green: 135 100% 28.5%; /* oklch(0.571 0.181 145) */
     --kortix-purple: 270 51.3% 67.1%; /* oklch(0.675 0.131 306.212) */
     --kortix-red: 360 85.3% 62%; /* oklch(0.648 0.202 24.745) */
+
+    /* Task 7 (M2) — ported from apps/web/src/app/globals.css :root */
+    --pane: 0 0% 100%; /* oklch(1 0 0) */
+    --surface: 0 0% 98.8%; /* oklch(0.9911 0 0) */
+    --hover: 0 0% 0% / 0.045; /* oklch(0 0 0 / 0.045) */
+    --active: 0 0% 0% / 0.075; /* oklch(0 0 0 / 0.075) */
+    --focus-ring: var(--ring); /* var(--ring) */
+    --foreground-strong: var(--foreground); /* var(--foreground) */
+    --foreground-weak: var(--muted-foreground); /* var(--muted-foreground) */
+    /* Length, not a color — not registered under theme.extend.colors. See
+       scratchpad/rnr-fork-delta.md for the full justification. */
+    --border-width: 1.5px;
+    /* Terminal surface — theme-invariant in web (declared once under :root,
+       never re-declared under .dark). Mobile duplicates the identical value
+       into both blocks so hsl(var(--terminal-*)) resolves in both themes. */
+    --terminal-surface: 0 0% 5.9%; /* #0f0f0f */
+    --terminal-fg: 0 0% 89.8%; /* #e5e5e5 */
+    --terminal-border: 0 0% 100% / 0.1; /* rgb(255 255 255 / 0.1) */
   }
 
   /* Dark mode — aligned with apps/web/src/app/globals.css .dark */
@@ -107,6 +125,24 @@
     --kortix-green: 135 100% 28.5%; /* oklch(0.571 0.181 145) */
     --kortix-purple: 270 51.3% 67.1%; /* oklch(0.675 0.131 306.212) */
     --kortix-red: 360 85.3% 62%; /* oklch(0.648 0.202 24.745) */
+
+    /* Task 7 (M2) — ported from apps/web/src/app/globals.css .dark */
+    --pane: 0 0% 4.7%; /* oklch(0.1543 0 0) */
+    --surface: 0 0% 7.8%; /* oklch(0.1913 0 0) */
+    --hover: 0 0% 100% / 0.06; /* oklch(1 0 0 / 0.06) */
+    --active: 0 0% 100% / 0.1; /* oklch(1 0 0 / 0.1) */
+    --focus-ring: var(--ring); /* var(--ring) */
+    --foreground-strong: var(--foreground); /* var(--foreground) */
+    --foreground-weak: var(--muted-foreground); /* var(--muted-foreground) */
+    /* Length, not a color — not registered under theme.extend.colors. See
+       scratchpad/rnr-fork-delta.md for the full justification. */
+    --border-width: 1.5px;
+    /* Terminal surface — theme-invariant in web (declared once under :root,
+       never re-declared under .dark). Mobile duplicates the identical value
+       into both blocks so hsl(var(--terminal-*)) resolves in both themes. */
+    --terminal-surface: 0 0% 5.9%; /* #0f0f0f */
+    --terminal-fg: 0 0% 89.8%; /* #e5e5e5 */
+    --terminal-border: 0 0% 100% / 0.1; /* rgb(255 255 255 / 0.1) */
   }
 }
 

@@ -12,7 +12,6 @@
 import React, { useState, useMemo, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
-  TouchableOpacity,
   FlatList,
   TextInput,
   Pressable,
@@ -46,18 +45,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import { Icon } from '@/components/ui/icon';
-import {
-  BottomSheetModal,
-  BottomSheetView,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import {
   useOpenCodeAgents,
   useOpenCodeCommands,
@@ -73,6 +68,7 @@ import {
 } from '@/lib/opencode/hooks/use-opencode-data';
 import { useKortixConnectors, type KortixConnector } from '@/lib/kortix';
 import { WorkspaceSettingsSheet, type WorkspaceSettingsSheetRef } from './WorkspaceSettingsSheet';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -183,19 +179,22 @@ interface WorkspacePageProps {
 // ─── Component ──────────────────────────────────────────────────────────────
 
 export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt, onRequestMenu }, ref) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const { sandboxUrl } = useSandboxContext();
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const bg = isDark ? '#121215' : '#F8F8F8';
-  const muted = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-  const cardBg = isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const bg = isDark ? THEME.dark.background : THEME.light.background;
+  const muted = withAlpha(fg, 0.4);
+  const inputBg = withAlpha(fg, isDark ? 0.04 : 0.03);
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.03) : THEME.light.background;
+  const borderColor = withAlpha(fg, 0.06);
+  const chipBg = withAlpha(fg, isDark ? 0.06 : 0.04);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const mutedIcon = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
   const chipActiveBg = theme.primary;
   const chipActiveFg = theme.primaryForeground;
 
@@ -322,10 +321,6 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
     detailSheetRef.current?.present();
   }, []);
 
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
-    [],
-  );
 
   // ─── Render item card ───────────────────────────────────────────────
   const renderItem = useCallback(({ item }: { item: WorkspaceItem }) => {
@@ -333,7 +328,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
     const kindLabel = KIND_CONFIG[item.kind].label;
 
     const statusColor = item.kind === 'mcp'
-      ? item.meta === 'Connected' ? '#22C55E' : item.meta === 'Failed' ? '#EF4444' : muted
+      ? item.meta === 'Connected' ? THEME.accent.green : item.meta === 'Failed' ? destructiveColor : muted
       : undefined;
 
     return (
@@ -622,17 +617,17 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
             height: 42,
           }}
         >
-          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
+          <Search size={16} color={mutedIcon} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search workspace..."
-            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+            placeholderTextColor={mutedIcon}
             style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg, paddingVertical: 0 }}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => { haptics.tap(); setSearchQuery(''); }} hitSlop={10}>
-              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
+              <X size={16} color={mutedIcon} />
             </Pressable>
           )}
         </View>
@@ -694,7 +689,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
           <RNText style={{ fontSize: 11, fontFamily: 'Roobert-SemiBold', color: muted, letterSpacing: 1, textTransform: 'uppercase' }}>
             {kindFilter === 'all' ? 'All items' : kindFilter === 'mcp' ? 'MCP Servers' : `${KIND_CONFIG[kindFilter as ItemKind].label}s`}
             {'  '}
-            <RNText style={{ color: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}>{filteredItems.length}</RNText>
+            <RNText style={{ color: withAlpha(fg, 0.2) }}>{filteredItems.length}</RNText>
           </RNText>
         </View>
       )}
@@ -706,7 +701,7 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         </View>
       ) : filteredItems.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 60, paddingHorizontal: 40 }}>
-          <Blocks size={32} color={isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'} />
+          <Blocks size={32} color={withAlpha(fg, isDark ? 0.15 : 0.12)} />
           <RNText style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg, marginTop: 12, textAlign: 'center' }}>
             {searchQuery.trim() || kindFilter !== 'all' ? 'No items match your filters' : 'Nothing here yet'}
           </RNText>
@@ -749,9 +744,9 @@ export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(fu
         enableDynamicSizing
         enablePanDownToClose
         maxDynamicContentSize={600}
-        backdropComponent={renderBackdrop}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderRadius: 24 }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)', width: 36 }}
+        backdropComponent={SheetBackdrop}
+        backgroundStyle={{ backgroundColor: sheetBg, borderRadius: 24 }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         onDismiss={() => setSelectedItem(null)}
       >
         <BottomSheetScrollView showsVerticalScrollIndicator={false}>

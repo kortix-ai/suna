@@ -11,7 +11,6 @@
 import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import {
   View,
-  TouchableOpacity,
   ScrollView,
   Alert,
   Image,
@@ -19,15 +18,17 @@ import {
 } from 'react-native';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, Easing } from 'react-native-reanimated';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { Session } from '@/lib/opencode/types';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 import { useSyncStore } from '@/lib/opencode/sync-store';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME } from '@/lib/utils/theme';
 
 interface TabsOverviewProps {
   sessions: Session[];
@@ -50,12 +51,14 @@ export function TabsOverview({
   onNewSession,
   onDismiss,
 }: TabsOverviewProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const { width, height: screenHeight } = useWindowDimensions();
-  const iconColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#999999' : '#6e6e6e';
+  const iconColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   const editSheetRef = useRef<BottomSheetModal>(null);
 
@@ -67,17 +70,6 @@ export function TabsOverview({
   const screenshots = useTabScreenshotStore((s) => s.screenshots);
   const allMessages = useSyncStore((s) => s.messages);
 
-  const renderBackdrop = useCallback(
-    (props: any) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.4}
-      />
-    ),
-    [],
-  );
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -253,14 +245,14 @@ export function TabsOverview({
         {totalCount === 0 ? (
           <View className="flex-1 items-center justify-center py-20" style={{ width: '100%' }}>
             <Text className="text-sm text-muted-foreground mb-4">No open tabs</Text>
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={onNewSession}
-              className="flex-row items-center rounded-xl bg-card border border-border px-5 py-3"
-              activeOpacity={0.6}
+              className="h-auto w-auto flex-row items-center rounded-xl bg-card border border-border px-5 py-3 active:opacity-70"
             >
               <Ionicons name="add" size={18} color={iconColor} />
               <Text className="text-sm ml-2 text-foreground">New Session</Text>
-            </TouchableOpacity>
+            </Button>
           </View>
         ) : (
           allTabIds.map((tabId) => {
@@ -285,8 +277,9 @@ export function TabsOverview({
               : '';
 
             return (
-              <TouchableOpacity
+              <Button
                 key={tabId}
+                variant="ghost"
                 onLayout={(e) => {
                   if (tabId === activeId && !hasScrolled.current) {
                     hasScrolled.current = true;
@@ -306,7 +299,7 @@ export function TabsOverview({
                     onSelectTab(tabId);
                   }
                 }}
-                activeOpacity={0.7}
+                className="h-auto w-auto items-stretch justify-start rounded-none p-0 active:bg-transparent active:opacity-80"
                 style={{
                   width: cardWidth,
                   marginHorizontal: 6,
@@ -322,7 +315,7 @@ export function TabsOverview({
                         : 'border border-border'
                   }`}
                   style={{
-                    backgroundColor: isDark ? '#161618' : '#FFFFFF',
+                    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
                     opacity: selecting && !isSelected ? 0.5 : 1,
                   }}
                 >
@@ -339,28 +332,29 @@ export function TabsOverview({
                         isSelected ? 'bg-primary' : 'border border-border'
                       }`}>
                         {isSelected && (
-                          <Ionicons name="checkmark" size={12} color={isDark ? '#121215' : '#F8F8F8'} />
+                          <Ionicons name="checkmark" size={12} color={isDark ? THEME.dark.primaryForeground : THEME.light.primaryForeground} />
                         )}
                       </View>
                     ) : (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         onPress={(e) => {
                           e.stopPropagation?.();
                           onCloseTab(tabId);
                         }}
-                        className="ml-1 p-0.5"
+                        className="h-auto w-auto ml-1 p-0.5 active:bg-transparent active:opacity-70"
                         hitSlop={8}
-                        activeOpacity={0.6}
                       >
                         <Ionicons name="close" size={14} color={mutedColor} />
-                      </TouchableOpacity>
+                      </Button>
                     )}
                   </View>
 
                   {/* Card body — screenshot, text preview, or icon fallback */}
                   <View style={{ height: cardBodyHeight, paddingHorizontal: 8, paddingBottom: 8 }}>
                     {screenshotUri ? (
-                      <View className="flex-1 rounded-lg overflow-hidden" style={{ backgroundColor: isDark ? '#1a1a1e' : '#f4f4f5' }}>
+                      <View className="flex-1 rounded-lg overflow-hidden" style={{ backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted }}>
                         <Image
                           source={{ uri: screenshotUri }}
                           style={{
@@ -375,7 +369,7 @@ export function TabsOverview({
                       <View
                         className="flex-1 rounded-lg overflow-hidden"
                         style={{
-                          backgroundColor: isDark ? '#1a1a1e' : '#f4f4f5',
+                          backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
                           padding: 8,
                         }}
                       >
@@ -383,7 +377,7 @@ export function TabsOverview({
                           style={{
                             fontSize: 8,
                             lineHeight: 11,
-                            color: isDark ? '#a1a1aa' : '#52525b',
+                            color: mutedColor,
                             fontFamily: 'Roobert',
                           }}
                           numberOfLines={12}
@@ -398,7 +392,7 @@ export function TabsOverview({
                     )}
                   </View>
                 </View>
-              </TouchableOpacity>
+              </Button>
             );
           })
         )}
@@ -411,53 +405,56 @@ export function TabsOverview({
       >
         {selecting ? (
           <View className="flex-row items-center">
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={handleCloseSelected}
               disabled={selectedIds.size === 0}
-              activeOpacity={0.6}
               hitSlop={8}
+              className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
             >
               <Text className={`text-sm ${
                 selectedIds.size > 0 ? 'text-destructive' : 'text-muted-foreground/40'
               }`}>
                 Close ({selectedIds.size})
               </Text>
-            </TouchableOpacity>
+            </Button>
           </View>
         ) : (
-          <TouchableOpacity
+          <Button
+            variant="ghost"
             onPress={() => {
               if (totalCount > 0) editSheetRef.current?.present();
             }}
             disabled={totalCount === 0}
-            activeOpacity={0.6}
             hitSlop={8}
+            className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
           >
             <Text className={`text-sm ${
               totalCount > 0 ? 'text-foreground' : 'text-muted-foreground/40'
             }`}>
               Edit
             </Text>
-          </TouchableOpacity>
+          </Button>
         )}
 
-        <TouchableOpacity
+        <Button
+          variant="ghost"
           onPress={onNewSession}
-          className="items-center justify-center h-9 w-9 rounded-full bg-muted"
-          activeOpacity={0.6}
+          className="h-9 w-9 items-center justify-center rounded-full bg-muted p-0 active:opacity-70"
         >
           <Ionicons name="add" size={24} color={iconColor} />
-        </TouchableOpacity>
+        </Button>
 
-        <TouchableOpacity
+        <Button
+          variant="ghost"
           onPress={selecting ? exitSelecting : onDismiss}
-          activeOpacity={0.6}
           hitSlop={8}
+          className="h-auto w-auto p-0 active:bg-transparent active:opacity-70"
         >
           <Text className="text-sm font-medium text-foreground">
             {selecting ? 'Cancel' : 'Done'}
           </Text>
-        </TouchableOpacity>
+        </Button>
       </View>
 
       {/* Edit sheet */}
@@ -465,42 +462,39 @@ export function TabsOverview({
         ref={editSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3f3f46' : '#d4d4d8',
-          width: 40,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView style={{ paddingBottom: insets.bottom + 12 }}>
-          <TouchableOpacity
+          <Button
+            variant="ghost"
             onPress={() => {
               editSheetRef.current?.dismiss();
               setSelecting(true);
             }}
-            className="flex-row items-center px-6 py-3.5"
-            activeOpacity={0.6}
+            className="h-auto w-auto flex-row items-center justify-start rounded-none px-6 py-3.5 active:opacity-70"
           >
             <Ionicons name="checkmark-circle-outline" size={20} color={iconColor} />
             <Text className="text-[15px] ml-4 text-foreground">Select Tabs</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Button>
+          <Button
+            variant="ghost"
             onPress={() => {
               editSheetRef.current?.dismiss();
               handleCloseAll();
             }}
-            className="flex-row items-center px-6 py-3.5"
-            activeOpacity={0.6}
+            className="h-auto w-auto flex-row items-center justify-start rounded-none px-6 py-3.5 active:opacity-70"
           >
-            <Ionicons name="close-circle-outline" size={20} color={isDark ? '#F87171' : '#DC2626'} />
-            <Text className="text-[15px] ml-4" style={{ color: isDark ? '#F87171' : '#DC2626' }}>
+            <Ionicons name="close-circle-outline" size={20} color={destructiveColor} />
+            <Text className="text-[15px] ml-4" style={{ color: destructiveColor }}>
               Close All Tabs
             </Text>
-          </TouchableOpacity>
+          </Button>
         </BottomSheetView>
       </BottomSheetModal>
     </Reanimated.View>

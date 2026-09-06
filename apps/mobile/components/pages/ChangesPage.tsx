@@ -11,19 +11,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   GitPullRequest,
   GitMerge,
@@ -42,9 +37,10 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { MarkdownRenderer } from '@/components/shared/MarkdownRenderer';
 import { parsePatch, DiffFile } from '@/components/diff/PatchDiffView';
 import { relativeTime } from '@/lib/projects/triggers-format';
@@ -68,6 +64,7 @@ import type {
   ProjectBranch,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 interface PageTabLike {
   id: string;
@@ -89,11 +86,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
 const shortSha = (sha: string | null) => (sha ? sha.slice(0, 7) : '');
 
-const STATUS_META: Record<ChangeRequestStatus, { label: string; color: string; icon: LucideIcon }> = {
-  open: { label: 'Open', color: '#22c55e', icon: GitPullRequest },
-  merged: { label: 'Merged', color: '#8b5cf6', icon: GitMerge },
-  closed: { label: 'Closed', color: '#9ca3af', icon: GitPullRequestClosed },
-};
+function getStatusMeta(status: ChangeRequestStatus, isDark: boolean): { label: string; color: string; icon: LucideIcon } {
+  switch (status) {
+    case 'open':
+      return { label: 'Open', color: THEME.accent.green, icon: GitPullRequest };
+    case 'merged':
+      return { label: 'Merged', color: THEME.accent.purple, icon: GitMerge };
+    case 'closed':
+      return { label: 'Closed', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, icon: GitPullRequestClosed };
+  }
+}
 
 function statusTime(cr: ChangeRequest): string {
   if (cr.status === 'merged') return `merged ${relativeTime(cr.merged_at)}`;
@@ -104,8 +106,8 @@ function statusTime(cr: ChangeRequest): string {
 // ─── Merge-preview banner ─────────────────────────────────────────────────────
 
 function MergeBanner({ cr, projectId, isDark }: { cr: ChangeRequest; projectId: string; isDark: boolean }) {
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
   const preview = useChangeRequestMergePreview(projectId, cr.cr_id, cr.status === 'open');
 
   if (cr.status === 'merged') {
@@ -129,8 +131,8 @@ function MergeBanner({ cr, projectId, isDark }: { cr: ChangeRequest; projectId: 
   if (p.can_merge) {
     return (
       <Banner tone="success" isDark={isDark}>
-        <CircleCheck size={15} color="#16a34a" />
-        <Text style={{ flex: 1, fontSize: 12.5, color: '#16a34a', marginLeft: 8 }}>
+        <CircleCheck size={15} color={THEME.accent.green} />
+        <Text style={{ flex: 1, fontSize: 12.5, color: THEME.accent.green, marginLeft: 8 }}>
           Mergeable cleanly ({p.can_fast_forward ? 'fast-forward' : '3-way merge'})
         </Text>
       </Banner>
@@ -139,13 +141,13 @@ function MergeBanner({ cr, projectId, isDark }: { cr: ChangeRequest; projectId: 
   return (
     <Banner tone="warn" isDark={isDark} column>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <TriangleAlert size={15} color="#d97706" />
-        <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: '#d97706' }}>
+        <TriangleAlert size={15} color={THEME.accent.orange} />
+        <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: THEME.accent.orange }}>
           Conflicts in {p.conflicts.length} {p.conflicts.length === 1 ? 'file' : 'files'}
         </Text>
       </View>
       {p.conflicts.map((c) => (
-        <Text key={c} style={{ fontSize: 11.5, fontFamily: MONO, color: '#d97706', marginTop: 3 }} numberOfLines={1}>{c}</Text>
+        <Text key={c} style={{ fontSize: 11.5, fontFamily: MONO, color: THEME.accent.orange, marginTop: 3 }} numberOfLines={1}>{c}</Text>
       ))}
     </Banner>
   );
@@ -153,10 +155,10 @@ function MergeBanner({ cr, projectId, isDark }: { cr: ChangeRequest; projectId: 
 
 function Banner({ tone, isDark, column, children }: { tone: 'success' | 'warn' | 'neutral' | 'info'; isDark: boolean; column?: boolean; children: React.ReactNode }) {
   const bg =
-    tone === 'success' ? 'rgba(34,197,94,0.08)' :
-    tone === 'warn' ? 'rgba(217,119,6,0.08)' :
-    tone === 'info' ? 'rgba(139,92,246,0.08)' :
-    (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)');
+    tone === 'success' ? withAlpha(THEME.accent.green, 0.08) :
+    tone === 'warn' ? withAlpha(THEME.accent.orange, 0.08) :
+    tone === 'info' ? withAlpha(THEME.accent.purple, 0.08) :
+    (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03));
   return (
     <View style={{ flexDirection: column ? 'column' : 'row', alignItems: column ? 'flex-start' : 'center', borderRadius: 12, padding: 12, backgroundColor: bg, marginBottom: 14 }}>
       {children}
@@ -186,10 +188,10 @@ function CRDetailSheet({
   const closeMut = useCloseChangeRequest(projectId);
   const reopenMut = useReopenChangeRequest(projectId);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const closeBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   const cr = crQuery.data;
   const parsed = useMemo(() => (diffQuery.data ? parsePatch(diffQuery.data.patch) : null), [diffQuery.data]);
@@ -226,7 +228,7 @@ function CRDetailSheet({
     );
   }
 
-  const sm = STATUS_META[cr.status];
+  const sm = getStatusMeta(cr.status, isDark);
   const SIcon = sm.icon;
   const mergeBlocked = cr.status === 'open' && preview.data ? !preview.data.can_merge : false;
   const busy = mergeMut.isPending || closeMut.isPending || reopenMut.isPending;
@@ -238,7 +240,7 @@ function CRDetailSheet({
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: `${sm.color}22` }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: withAlpha(sm.color, 0.13) }}>
               <SIcon size={12} color={sm.color} />
               <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: sm.color }}>{sm.label}</Text>
             </View>
@@ -249,9 +251,9 @@ function CRDetailSheet({
             {shortRef(cr.head_ref)} → {shortRef(cr.base_ref)} · {statusTime(cr)}
           </Text>
         </View>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 16 }} showsVerticalScrollIndicator={false}>
@@ -275,8 +277,8 @@ function CRDetailSheet({
                 {diff.files_changed} {diff.files_changed === 1 ? 'file' : 'files'} changed
               </Text>
               <View style={{ flex: 1 }} />
-              {diff.additions > 0 && <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#22c55e' }}>+{diff.additions}</Text>}
-              {diff.deletions > 0 && <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>−{diff.deletions}</Text>}
+              {diff.additions > 0 && <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>+{diff.additions}</Text>}
+              {diff.deletions > 0 && <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.destructive : THEME.light.destructive }}>−{diff.deletions}</Text>}
             </View>
             {diff.files.map((f) => (
               <DiffFile key={f.path} file={f} parsed={parsed?.byPath.get(f.path)} isDark={isDark} />
@@ -297,35 +299,32 @@ function CRDetailSheet({
         <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: border }}>
           {cr.status === 'open' ? (
             <>
-              <TouchableOpacity
+              <Pressable
                 onPress={doClose}
                 disabled={busy}
-                activeOpacity={0.7}
                 style={{ flex: 1, height: 44, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: border, opacity: busy ? 0.5 : 1 }}
               >
                 {closeMut.isPending ? <ActivityIndicator size="small" color={muted} /> : <X size={15} color={muted} />}
                 <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted }}>Reject</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 onPress={doMerge}
                 disabled={busy || mergeBlocked}
-                activeOpacity={0.85}
                 style={{ flex: 1.4, height: 44, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, backgroundColor: theme.primary, opacity: busy || mergeBlocked ? 0.5 : 1 }}
               >
                 {mergeMut.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <GitMerge size={15} color={theme.primaryForeground} />}
                 <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Merge</Text>
-              </TouchableOpacity>
+              </Pressable>
             </>
           ) : (
-            <TouchableOpacity
+            <Pressable
               onPress={doReopen}
               disabled={busy}
-              activeOpacity={0.85}
               style={{ flex: 1, height: 44, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: border, opacity: busy ? 0.5 : 1 }}
             >
               {reopenMut.isPending ? <ActivityIndicator size="small" color={fg} /> : <GitPullRequest size={15} color={fg} />}
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Reopen</Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       )}
@@ -353,13 +352,13 @@ function CRRow({
   isDark: boolean;
 }) {
   const theme = useThemeColors();
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
-  const sm = STATUS_META[cr.status];
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.12) : withAlpha(THEME.light.foreground, 0.12);
+  const sm = getStatusMeta(cr.status, isDark);
   const Icon = sm.icon;
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 10 }}>
+    <Pressable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 10 }}>
       <Icon size={20} color={sm.color} />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
@@ -376,13 +375,13 @@ function CRRow({
             <ActivityIndicator size="small" color={muted} />
           ) : (
             <>
-              <TouchableOpacity onPress={onReject} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
+              <Pressable onPress={onReject} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
                 <X size={15} color={muted} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={onMerge} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 30, borderRadius: 9999, backgroundColor: theme.primary }}>
+              </Pressable>
+              <Pressable onPress={onMerge} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 30, borderRadius: 9999, backgroundColor: theme.primary }}>
                 <GitMerge size={13} color={theme.primaryForeground} />
                 <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Merge</Text>
-              </TouchableOpacity>
+              </Pressable>
             </>
           )}
         </View>
@@ -390,21 +389,21 @@ function CRRow({
         busy ? (
           <ActivityIndicator size="small" color={muted} />
         ) : (
-          <TouchableOpacity onPress={onReopen} activeOpacity={0.7} style={{ paddingHorizontal: 12, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
+          <Pressable onPress={onReopen} style={{ paddingHorizontal: 12, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: fg }}>Reopen</Text>
-          </TouchableOpacity>
+          </Pressable>
         )
       ) : (
         <ChevronRight size={18} color={muted} />
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 function BranchRow({ branch, isDark }: { branch: ProjectBranch; isDark: boolean }) {
   const theme = useThemeColors();
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
       <GitBranch size={18} color={muted} />
@@ -423,8 +422,8 @@ function BranchRow({ branch, isDark }: { branch: ProjectBranch; isDark: boolean 
       </View>
       {!branch.is_default && (branch.ahead != null || branch.behind != null) && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {branch.ahead ? <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#22c55e' }}>↑{branch.ahead}</Text> : null}
-          {branch.behind ? <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>↓{branch.behind}</Text> : null}
+          {branch.ahead ? <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>↑{branch.ahead}</Text> : null}
+          {branch.behind ? <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.destructive : THEME.light.destructive }}>↓{branch.behind}</Text> : null}
         </View>
       )}
     </View>
@@ -445,9 +444,9 @@ function BranchPills({
   isDark: boolean;
 }) {
   const theme = useThemeColors();
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.12) : withAlpha(THEME.light.foreground, 0.12);
   if (options.length === 0) {
     return <Text style={{ fontSize: 13, color: muted }}>No other versions.</Text>;
   }
@@ -456,16 +455,15 @@ function BranchPills({
       {options.map((b) => {
         const on = value === b.name;
         return (
-          <TouchableOpacity
+          <Pressable
             key={b.name}
             onPress={() => { haptics.selection(); onSelect(b.name); }}
-            activeOpacity={0.7}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9999, borderWidth: 1.5, borderColor: on ? theme.primary : border, backgroundColor: on ? theme.primaryLight : 'transparent' }}
           >
             <GitBranch size={13} color={on ? theme.primary : muted} />
             <Text style={{ fontSize: 13, fontFamily: MONO, color: on ? theme.primary : fg }}>{shortRef(b.name)}</Text>
             {b.is_default && <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: muted }}>default</Text>}
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </ScrollView>
@@ -525,11 +523,11 @@ export function OpenCRSheet({
   const hasChanges = !!preview && !preview.is_same_ref && !preview.is_up_to_date && preview.files_changed > 0;
   const canSubmit = title.trim().length > 0 && !!headRef && !!baseRef && headRef !== baseRef && !vdiff.isLoading && hasChanges && !createMut.isPending;
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
+  const closeBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
 
   const submit = () => {
     if (!canSubmit || !headRef || !baseRef) return;
@@ -545,11 +543,11 @@ export function OpenCRSheet({
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
         <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Open a change request</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -580,8 +578,8 @@ export function OpenCRSheet({
                 ) : (
                   <Text style={{ fontSize: 12.5, color: fg }}>
                     {preview!.files_changed} {preview!.files_changed === 1 ? 'file' : 'files'} changed{'  '}
-                    <Text style={{ color: '#22c55e', fontFamily: 'Roobert-Medium' }}>+{preview!.additions}</Text>{' '}
-                    <Text style={{ color: '#ef4444', fontFamily: 'Roobert-Medium' }}>−{preview!.deletions}</Text>
+                    <Text style={{ color: THEME.accent.green, fontFamily: 'Roobert-Medium' }}>+{preview!.additions}</Text>{' '}
+                    <Text style={{ color: isDark ? THEME.dark.destructive : THEME.light.destructive, fontFamily: 'Roobert-Medium' }}>−{preview!.deletions}</Text>
                   </Text>
                 )}
               </View>
@@ -609,16 +607,15 @@ export function OpenCRSheet({
         )}
       </BottomSheetScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable
           onPress={submit}
           disabled={!canSubmit}
-          activeOpacity={0.85}
           style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}
         >
           {createMut.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Open change request</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -636,6 +633,7 @@ export function ChangesPage({
   isDrawerOpen,
   isRightDrawerOpen,
 }: ChangesPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -672,12 +670,12 @@ export function ChangesPage({
     reopenMut.mutate(cr.cr_id, { onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not reopen.') });
   };
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const segBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-  const segOn = isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const segBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
+  const segOn = isDark ? withAlpha(THEME.dark.foreground, 0.12) : THEME.light.background;
 
   const list = crs.data?.change_requests ?? [];
 
@@ -697,9 +695,9 @@ export function ChangesPage({
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           tab === 'requests' ? (
-            <TouchableOpacity onPress={() => { haptics.tap(); createSheetRef.current?.present(); }} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Plus size={20} color={isDark ? '#F8F8F8' : '#121215'} />
-            </TouchableOpacity>
+            <Pressable onPress={() => { haptics.tap(); createSheetRef.current?.present(); }} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Plus size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
+            </Pressable>
           ) : undefined
         }
       />
@@ -711,12 +709,11 @@ export function ChangesPage({
             {(['requests', 'versions'] as const).map((t) => {
               const on = tab === t;
               return (
-                <TouchableOpacity key={t} onPress={() => { haptics.selection(); setTab(t); }} activeOpacity={0.7}
-                  style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: on ? segOn : 'transparent' }}>
+                <Pressable key={t} onPress={() => { haptics.selection(); setTab(t); }} style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: on ? segOn : 'transparent' }}>
                   <Text style={{ fontSize: 13, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>
                     {t === 'requests' ? 'Change requests' : 'Versions'}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
@@ -728,12 +725,11 @@ export function ChangesPage({
             <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
               {STATUS_FILTERS.map((s) => {
                 const on = status === s;
-                const sm = STATUS_META[s];
+                const sm = getStatusMeta(s, isDark);
                 return (
-                  <TouchableOpacity key={s} onPress={() => { haptics.selection(); setStatus(s); }} activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9999, borderWidth: 1.5, borderColor: on ? sm.color : border, backgroundColor: on ? `${sm.color}1a` : 'transparent' }}>
+                  <Pressable key={s} onPress={() => { haptics.selection(); setStatus(s); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9999, borderWidth: 1.5, borderColor: on ? sm.color : border, backgroundColor: on ? withAlpha(sm.color, 0.1) : 'transparent' }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: on ? sm.color : muted }}>{sm.label}</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               })}
             </View>
@@ -744,9 +740,9 @@ export function ChangesPage({
               ) : crs.isError ? (
                 <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
                   <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(crs.error as Error)?.message ?? 'Failed to load change requests'}</Text>
-                  <TouchableOpacity onPress={() => crs.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                  <Pressable onPress={() => crs.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 </View>
               ) : list.length === 0 ? (
                 <View style={{ padding: 40, alignItems: 'center', gap: 10 }}>
@@ -783,9 +779,9 @@ export function ChangesPage({
             ) : branches.isError ? (
               <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(branches.error as Error)?.message ?? 'Failed to load versions'}</Text>
-                <TouchableOpacity onPress={() => branches.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <Pressable onPress={() => branches.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             ) : (branches.data?.branches.length ?? 0) === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 10 }}>
@@ -810,9 +806,9 @@ export function ChangesPage({
         snapPoints={['94%']}
         enableDynamicSizing={false}
         onDismiss={() => setSelectedCrId(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
+        backdropComponent={SheetBackdrop}
       >
         {selectedCrId ? (
           <CRDetailSheet projectId={projectId} crId={selectedCrId} onClose={() => detailSheetRef.current?.dismiss()} isDark={isDark} />
@@ -826,11 +822,11 @@ export function ChangesPage({
         ref={createSheetRef}
         snapPoints={['88%']}
         enableDynamicSizing={false}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         <OpenCRSheet
           projectId={projectId}

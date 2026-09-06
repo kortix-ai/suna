@@ -14,12 +14,14 @@
  */
 
 import React from 'react';
-import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { RotateCcw } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { ShimmerText } from '@/components/ui/ShimmerText';
+import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { ShimmerText } from '@/components/kortix/ShimmerText';
+import { THEME } from '@/lib/utils/theme';
 
 export interface SessionConnectError {
   title: string;
@@ -61,22 +63,21 @@ export function SessionConnecting({
             </View>
           ) : null}
           {onRestart ? (
-            <TouchableOpacity
+            <Button
+              variant="ghost"
               onPress={onRestart}
               disabled={restarting}
-              activeOpacity={0.7}
-              className="mt-1 flex-row items-center rounded-full border border-border px-4 py-2.5"
-              style={{ gap: 8, opacity: restarting ? 0.5 : 1 }}
+              className="mt-1 h-auto flex-row items-center gap-2 rounded-full border border-border px-4 py-2.5 active:bg-transparent active:opacity-70"
             >
               {restarting ? (
-                <ActivityIndicator size="small" color={isDark ? '#F8F8F8' : '#121215'} />
+                <ActivityIndicator size="small" color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               ) : (
-                <RotateCcw size={15} color={isDark ? '#F8F8F8' : '#121215'} />
+                <RotateCcw size={15} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
               )}
               <Text className="text-[13px] font-roobert-medium text-foreground">
                 {restarting ? 'Restarting…' : 'Restart session'}
               </Text>
-            </TouchableOpacity>
+            </Button>
           ) : null}
         </View>
       </View>

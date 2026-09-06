@@ -8,9 +8,10 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { useUpdateAccountName } from '@/lib/accounts/hooks';
@@ -60,10 +61,15 @@ function GeneralSection({ account, canWrite, isDark }: { account: AccountDetail;
         style={{ height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' }} />
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
         <Text style={{ flex: 1, fontSize: 11.5, color: c.muted }}>Created {formatDate(account.created_at)}</Text>
-        <TouchableOpacity onPress={save} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
+        <Button
+          onPress={save}
+          disabled={!dirty || update.isPending}
+          className="h-10 flex-row items-center gap-1.5 rounded-full px-[18px]"
+          style={{ backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}
+        >
           {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
-        </TouchableOpacity>
+          <Text>Save</Text>
+        </Button>
       </View>
     </View>
   );

@@ -20,9 +20,10 @@ import {
   type VersionChannel,
 } from '@/lib/platform/client';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { UpdateDialog } from '@/components/updates/UpdateDialog';
 
@@ -84,7 +85,7 @@ function normalizeReleaseBody(body: string | undefined, version: string, title?:
   return body;
 }
 
-function detectChannel(version: string | undefined): VersionChannel {
+function detectChannel(version: string | null | undefined): VersionChannel {
   if (!version) return 'stable';
   return version.startsWith('dev-') ? 'dev' : 'stable';
 }
@@ -219,9 +220,10 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
     });
   }, []);
 
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#777';
-  const borderColor = isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const inverseFgColor = isDark ? THEME.light.foreground : THEME.dark.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const borderColor = withAlpha(fgColor, 0.08);
 
   return (
     <View className="flex-1 bg-muted">
@@ -253,7 +255,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                   {currentVersion ? (currentVersion.startsWith('dev-') ? currentVersion : `v${currentVersion}`) : '...'}
                 </Text>
                 {currentChannel === 'dev' && (
-                  <Text className="font-roobert-medium text-[10px] text-amber-500"> dev</Text>
+                  <Text className="font-roobert-medium text-[10px] text-kortix-orange"> dev</Text>
                 )}
               </Text>
               {latestVersion && currentVersion && latestVersion !== currentVersion && (
@@ -269,7 +271,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             {/* Dev toggle */}
             {hasDevBuilds && (
               <Pressable onPress={toggleDev} hitSlop={8} className="mt-0.5">
-                <Text className="font-roobert text-[12px]" style={{ color: isDark ? '#666' : '#999' }}>
+                <Text className="font-roobert text-[12px]" style={{ color: mutedColor }}>
                   {showDev ? 'Hide dev builds' : 'Dev builds'}
                 </Text>
               </Pressable>
@@ -283,7 +285,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               className="mt-4 self-start"
               style={{ backgroundColor: themeColors.primary }}
             >
-              <Icon as={ArrowDownToLine} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+              <Icon as={ArrowDownToLine} size={15} color={themeColors.primaryForeground} strokeWidth={2.5} />
               <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
                 Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
               </Text>
@@ -302,7 +304,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                     key={key}
                     onPress={() => { haptics.selection(); setFilter(key); }}
                     style={{
-                      backgroundColor: active ? fgColor : isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                      backgroundColor: active ? fgColor : withAlpha(fgColor, isDark ? 0.06 : 0.04),
                       borderRadius: 20,
                       paddingHorizontal: 14,
                       paddingVertical: 6,
@@ -310,7 +312,7 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
                   >
                     <Text
                       className="text-[12px] font-roobert-medium"
-                      style={{ color: active ? (isDark ? '#121215' : '#f8f8f8') : mutedColor }}
+                      style={{ color: active ? inverseFgColor : mutedColor }}
                     >
                       {key.charAt(0).toUpperCase() + key.slice(1)}
                     </Text>
@@ -416,21 +418,23 @@ function VersionEntryCard({
   const displayBody = normalizeReleaseBody(entry.body, entry.version, entry.title);
   const canExpandBody = Boolean(displayBody && displayBody.length > (isDev ? 220 : 420));
 
+  const foreground = isDark ? THEME.dark.foreground : THEME.light.foreground;
+
   // Card border/bg based on status
   const cardBorderColor = isMajor
-    ? isDark ? 'rgba(139,92,246,0.3)' : 'rgba(139,92,246,0.2)'
+    ? withAlpha(THEME.accent.purple, isDark ? 0.3 : 0.2)
     : isCurrent
-      ? isDark ? 'rgba(52,211,153,0.3)' : 'rgba(52,211,153,0.2)'
+      ? withAlpha(THEME.accent.green, isDark ? 0.3 : 0.2)
       : isDev && !isLatestInChannel
-        ? isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.05)'
+        ? withAlpha(foreground, isDark ? 0.04 : 0.05)
         : defaultBorderColor;
 
   const cardBgColor = isMajor
-    ? isDark ? 'rgba(139,92,246,0.03)' : 'rgba(139,92,246,0.02)'
+    ? withAlpha(THEME.accent.purple, isDark ? 0.03 : 0.02)
     : isCurrent
-      ? isDark ? 'rgba(52,211,153,0.03)' : 'rgba(52,211,153,0.02)'
+      ? withAlpha(THEME.accent.green, isDark ? 0.03 : 0.02)
       : isDev && !isLatestInChannel
-        ? isDark ? 'rgba(248,248,248,0.015)' : 'rgba(18,18,21,0.01)'
+        ? withAlpha(foreground, isDark ? 0.015 : 0.01)
         : undefined;
 
   // Left border accent for major releases
@@ -455,7 +459,7 @@ function VersionEntryCard({
           <Icon
             as={isDev ? GitCommit : Tag}
             size={13}
-            color={isDark ? 'rgba(248,248,248,0.35)' : 'rgba(18,18,21,0.3)'}
+            color={withAlpha(foreground, isDark ? 0.35 : 0.3)}
             strokeWidth={2}
           />
           <Text
@@ -469,14 +473,14 @@ function VersionEntryCard({
             className="rounded-full px-1.5 py-0.5"
             style={{
               backgroundColor: entry.channel === 'dev'
-                ? isDark ? 'rgba(245,158,11,0.12)' : 'rgba(245,158,11,0.1)'
-                : isDark ? 'rgba(52,211,153,0.12)' : 'rgba(52,211,153,0.1)',
+                ? withAlpha(THEME.accent.orange, isDark ? 0.12 : 0.1)
+                : withAlpha(THEME.accent.green, isDark ? 0.12 : 0.1),
             }}
           >
             <Text
               className="text-[9px] font-roobert-semibold"
               style={{
-                color: entry.channel === 'dev' ? '#F59E0B' : '#34D399',
+                color: entry.channel === 'dev' ? THEME.accent.orange : THEME.accent.green,
               }}
             >
               {entry.channel}
@@ -487,16 +491,16 @@ function VersionEntryCard({
           {isMajor && (
             <View
               className="rounded-full px-1.5 py-0.5"
-              style={{ backgroundColor: isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.1)' }}
+              style={{ backgroundColor: withAlpha(THEME.accent.purple, isDark ? 0.15 : 0.1) }}
             >
-              <Text className="text-[9px] font-roobert-semibold" style={{ color: '#8B5CF6' }}>Major</Text>
+              <Text className="text-[9px] font-roobert-semibold" style={{ color: THEME.accent.purple }}>Major</Text>
             </View>
           )}
 
           {/* Current badge */}
           {isCurrent && (
-            <View className="rounded-full bg-emerald-400/15 px-1.5 py-0.5">
-              <Text className="text-[9px] font-roobert-semibold text-emerald-500">Current</Text>
+            <View className="rounded-full bg-kortix-green/15 px-1.5 py-0.5">
+              <Text className="text-[9px] font-roobert-semibold text-kortix-green">Current</Text>
             </View>
           )}
 
@@ -504,9 +508,9 @@ function VersionEntryCard({
           {isLatestInChannel && !isCurrent && (
             <View
               className="rounded-full px-1.5 py-0.5"
-              style={{ backgroundColor: isDark ? 'rgba(96,165,250,0.12)' : 'rgba(96,165,250,0.1)' }}
+              style={{ backgroundColor: withAlpha(THEME.accent.blue, isDark ? 0.12 : 0.1) }}
             >
-              <Text className="text-[9px] font-roobert-semibold" style={{ color: '#60A5FA' }}>Latest</Text>
+              <Text className="text-[9px] font-roobert-semibold" style={{ color: THEME.accent.blue }}>Latest</Text>
             </View>
           )}
 
@@ -555,7 +559,7 @@ function VersionEntryCard({
         {/* Dev SHA link */}
         {isDev && entry.sha && (
           <View className="flex-row items-center mt-2" style={{ gap: 4 }}>
-            <Icon as={GitCommit} size={11} color={isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.25)'} strokeWidth={2} />
+            <Icon as={GitCommit} size={11} color={withAlpha(foreground, isDark ? 0.3 : 0.25)} strokeWidth={2} />
             <Text className="font-mono text-[11px] text-muted-foreground/50">{entry.sha.substring(0, 8)}</Text>
           </View>
         )}

@@ -2,8 +2,9 @@ import { Stack, useRouter, Redirect } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
 import { View } from 'react-native';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { log } from '@/lib/logger';
+import { THEME } from '@/lib/utils/theme';
 
 /**
  * Auth Layout
@@ -22,7 +23,7 @@ export default function AuthLayout() {
       <View 
         style={{ 
           flex: 1, 
-          backgroundColor: colorScheme === 'dark' ? '#09090B' : '#FFFFFF',
+          backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -44,7 +45,7 @@ export default function AuthLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: {
-          backgroundColor: colorScheme === 'dark' ? '#09090B' : '#FFFFFF',
+          backgroundColor: colorScheme === 'dark' ? THEME.dark.background : THEME.light.background,
         },
         animation: 'slide_from_right',
       }}

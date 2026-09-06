@@ -8,7 +8,7 @@
  */
 
 import * as React from 'react';
-import { Alert, Animated, FlatList, Pressable, RefreshControl, ScrollView, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, FlatList, Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,11 +16,11 @@ import { AlertCircle, FolderPlus, MoreVertical, Plus, Search, Sparkles, X } from
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Avatar } from '@/components/ui/Avatar';
+import { Avatar } from '@/components/kortix/avatar';
 import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { AccountSwitcherSheet } from '@/components/projects/AccountSwitcherSheet';
 import { NewProjectSheet } from '@/components/projects/NewProjectSheet';
 import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
@@ -34,9 +34,7 @@ import { haptics } from '@/lib/haptics';
 import { projectToRow } from '@/lib/ui/format';
 import { chalkColors } from '@kortix/shared';
 import type { KortixProject } from '@/lib/projects/projects-client';
-
-/** Muted tint for pull-to-refresh spinners — matches the original's `subtle` token. */
-const REFRESH_TINT_COLOR = '#9A9A9A';
+import { THEME } from '@/lib/utils/theme';
 
 function SkeletonRow() {
   const opacity = React.useRef(new Animated.Value(0.5)).current;
@@ -269,18 +267,19 @@ export default function ProjectsTab() {
                 <Text className="font-medium text-sm">New</Text>
               </Button>
             )}
-            <TouchableOpacity
+            <Button
+              variant="ghost"
+              size="icon"
               onPress={() => {
                 haptics.selection();
                 setAccountMenuOpen(true);
               }}
-              activeOpacity={0.85}
               hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              className="h-8 w-8 items-center justify-center rounded-full bg-foreground/10">
+              className="h-8 w-8 items-center justify-center rounded-full bg-foreground/10 active:bg-foreground/10 active:opacity-85">
               <Text className="font-semibold text-sm text-foreground">
                 {(user?.email?.trim()?.[0] || '?').toUpperCase()}
               </Text>
-            </TouchableOpacity>
+            </Button>
           </View>
         </View>
       </SafeAreaView>
@@ -310,7 +309,7 @@ export default function ProjectsTab() {
       {loading ? (
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <SkeletonRow key={i} />
@@ -320,7 +319,7 @@ export default function ProjectsTab() {
       ) : projectsQuery.isError ? (
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
               icon={AlertCircle}
@@ -334,7 +333,7 @@ export default function ProjectsTab() {
       ) : showEmpty ? (
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
               icon={FolderPlus}
@@ -355,7 +354,7 @@ export default function ProjectsTab() {
       ) : showNoResults ? (
         <ScrollView
           contentContainerStyle={{ flexGrow: 1, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}>
           <View className="flex-1 px-4 pt-4">
             <EmptyState
               icon={Search}
@@ -370,7 +369,7 @@ export default function ProjectsTab() {
           keyExtractor={(item) => item.project_id}
           renderItem={renderItem}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={REFRESH_TINT_COLOR} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />}
           keyboardShouldPersistTaps="handled"
         />
       )}

@@ -9,6 +9,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withTiming, Eas
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const ReAnimated = Animated;
 
@@ -35,8 +36,11 @@ export function ShimmerText({ text, size = 'sm' }: ShimmerTextProps) {
     return { transform: [{ translateX }] };
   });
 
-  const textColor = isDark ? '#a1a1aa' : '#71717a';
-  const shimmerColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.35)';
+  const textColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  // The sweep is a WHITE highlight in BOTH themes -- deliberate, not a theme bug.
+  // `THEME.light.background` is the only token that is exactly `hsl(0 0% 100%)`,
+  // so it is the white base here; the two alpha steps are unchanged.
+  const shimmerColor = withAlpha(THEME.light.background, isDark ? 0.2 : 0.35);
   const fontSize = size === 'xs' ? 12 : 14;
   const lineHeight = size === 'xs' ? 16 : 20;
 
@@ -49,7 +53,7 @@ export function ShimmerText({ text, size = 'sm' }: ShimmerTextProps) {
               fontSize,
               lineHeight,
               fontFamily: 'Roobert',
-              color: '#000',
+              color: '#000', // hex-allowlist: MaskedView stencil, never rendered -- only the mask's alpha channel is read, so any opaque value works.
             }}
           >
             {text}

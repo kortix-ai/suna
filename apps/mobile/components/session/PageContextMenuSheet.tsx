@@ -33,9 +33,9 @@ import type { SandboxFile } from '@/api/types';
 import type { FilesPageRef } from '@/components/pages/FilesPage';
 import type { WorkspacePageRef } from '@/components/pages/WorkspacePage';
 import { Icon } from '@/components/ui/icon';
-import { ListRow } from '@/components/ui/list-row';
+import { ListRow } from '@/components/kortix/list-row';
 import { Separator } from '@/components/ui/separator';
-import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/kortix/sheet';
 import { DOCK_ICONS } from './dock-icons';
 
 export type PageContextMenuTarget = { page: 'workspace' } | { page: 'files' };

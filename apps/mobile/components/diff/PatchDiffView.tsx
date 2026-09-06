@@ -12,6 +12,7 @@ import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { FilePlus, FileMinus, FilePen, type LucideIcon } from 'lucide-react-native';
 import type { ProjectCommitFile } from '@/lib/projects/projects-client';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const MONO = 'Menlo';
 const MAX_DIFF_ROWS = 2000;
@@ -22,10 +23,10 @@ export interface DiffRow {
   text: string;
 }
 
-export function fileStatusMeta(status: ProjectCommitFile['status']): { icon: LucideIcon; color: string } {
-  if (status === 'added') return { icon: FilePlus, color: '#22c55e' };
-  if (status === 'deleted') return { icon: FileMinus, color: '#ef4444' };
-  return { icon: FilePen, color: '#3b82f6' };
+export function fileStatusMeta(status: ProjectCommitFile['status'], isDark = false): { icon: LucideIcon; color: string } {
+  if (status === 'added') return { icon: FilePlus, color: THEME.accent.green };
+  if (status === 'deleted') return { icon: FileMinus, color: isDark ? THEME.dark.destructive : THEME.light.destructive };
+  return { icon: FilePen, color: THEME.accent.blue };
 }
 
 /** Split the concatenated git patch per-file and parse each into renderable rows. */
@@ -113,14 +114,14 @@ export function DiffFile({
   parsed: { binary: boolean; rows: DiffRow[] } | undefined;
   isDark: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const codeBg = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)';
-  const addBg = isDark ? 'rgba(34,197,94,0.14)' : 'rgba(34,197,94,0.12)';
-  const delBg = isDark ? 'rgba(239,68,68,0.14)' : 'rgba(239,68,68,0.10)';
-  const hunkBg = isDark ? 'rgba(139,92,246,0.12)' : 'rgba(139,92,246,0.08)';
-  const meta = fileStatusMeta(file.status);
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? THEME.dark.border : THEME.light.border;
+  const codeBg = isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015);
+  const addBg = isDark ? withAlpha(THEME.accent.green, 0.14) : withAlpha(THEME.accent.green, 0.12);
+  const delBg = isDark ? withAlpha(THEME.dark.destructive, 0.14) : withAlpha(THEME.light.destructive, 0.10);
+  const hunkBg = isDark ? withAlpha(THEME.accent.purple, 0.12) : withAlpha(THEME.accent.purple, 0.08);
+  const meta = fileStatusMeta(file.status, isDark);
   const Icon = meta.icon;
 
   return (
@@ -131,8 +132,8 @@ export function DiffFile({
         <Text style={{ flex: 1, fontSize: 12.5, fontFamily: MONO, color: fg }} numberOfLines={1}>
           {file.old_path && file.old_path !== file.path ? `${file.old_path} → ${file.path}` : file.path}
         </Text>
-        {file.additions > 0 && <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: '#22c55e' }}>+{file.additions}</Text>}
-        {file.deletions > 0 && <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>−{file.deletions}</Text>}
+        {file.additions > 0 && <Text className="text-kortix-green" style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium' }}>+{file.additions}</Text>}
+        {file.deletions > 0 && <Text className="text-destructive" style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium' }}>−{file.deletions}</Text>}
       </View>
 
       {parsed?.binary ? (
@@ -142,7 +143,13 @@ export function DiffFile({
           <View>
             {parsed.rows.map((row, i) => {
               const bg = row.kind === 'add' ? addBg : row.kind === 'del' ? delBg : row.kind === 'hunk' ? hunkBg : 'transparent';
-              const color = row.kind === 'hunk' ? '#8b5cf6' : row.kind === 'add' ? (isDark ? '#86efac' : '#15803d') : row.kind === 'del' ? (isDark ? '#fca5a5' : '#b91c1c') : fg;
+              const color = row.kind === 'hunk'
+                ? THEME.accent.purple
+                : row.kind === 'add'
+                  ? THEME.accent.green
+                  : row.kind === 'del'
+                    ? (isDark ? THEME.dark.destructive : THEME.light.destructive)
+                    : fg;
               const sign = row.kind === 'add' ? '+' : row.kind === 'del' ? '−' : row.kind === 'hunk' ? '' : ' ';
               return (
                 <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: bg, minHeight: 18 }}>
@@ -164,7 +171,7 @@ export function DiffFile({
 
 /** Render a whole standalone git patch (e.g. a commit's diff). */
 export function PatchDiffView({ patch, isDark }: { patch: string; isDark: boolean }) {
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
   const { byPath, truncated } = useMemo(() => parsePatch(patch), [patch]);
 
   if (byPath.size === 0) {

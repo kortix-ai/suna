@@ -1,7 +1,7 @@
 import * as React from 'react';
-import { Alert, Linking, Pressable, ScrollView, Switch, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Switch } from '@/components/ui/switch';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import {
   AlertTriangle,
@@ -21,8 +21,6 @@ import { useNotificationStore, type NotificationPreferences } from '@/stores/not
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const { expoPushToken } = usePushNotifications();
   const [isUnregistering, setIsUnregistering] = React.useState(false);
 
@@ -30,7 +28,6 @@ export default function NotificationsScreen() {
   const setPreference = useNotificationStore((s) => s.setPreference);
   const toggleEnabled = useNotificationStore((s) => s.toggleEnabled);
 
-  const trackOff = isDark ? '#3A3A3C' : '#E5E7EB';
 
   const handleToggleEnabled = React.useCallback(() => {
     haptics.selection();
@@ -90,11 +87,8 @@ export default function NotificationsScreen() {
                 </Text>
               </View>
               <Switch
-                value={preferences.enabled}
-                onValueChange={handleToggleEnabled}
-                trackColor={{ false: trackOff, true: '#34C759' }}
-                thumbColor="#FFFFFF"
-                ios_backgroundColor={trackOff}
+                checked={preferences.enabled}
+                onCheckedChange={handleToggleEnabled}
               />
             </View>
           </View>
@@ -113,7 +107,6 @@ export default function NotificationsScreen() {
                 description="When a session finishes its task"
                 value={preferences.onCompletion}
                 onValueChange={(v) => handleToggle('onCompletion', v)}
-                trackOff={trackOff}
                 showDivider
               />
               <ToggleRow
@@ -122,7 +115,6 @@ export default function NotificationsScreen() {
                 description="When a session encounters an error"
                 value={preferences.onError}
                 onValueChange={(v) => handleToggle('onError', v)}
-                trackOff={trackOff}
                 showDivider
               />
               <ToggleRow
@@ -131,7 +123,6 @@ export default function NotificationsScreen() {
                 description="When Kortix needs your input to continue"
                 value={preferences.onQuestion}
                 onValueChange={(v) => handleToggle('onQuestion', v)}
-                trackOff={trackOff}
                 showDivider
               />
               <ToggleRow
@@ -140,7 +131,6 @@ export default function NotificationsScreen() {
                 description="When Kortix needs permission to use a tool"
                 value={preferences.onPermission}
                 onValueChange={(v) => handleToggle('onPermission', v)}
-                trackOff={trackOff}
               />
             </View>
           </View>
@@ -159,7 +149,6 @@ export default function NotificationsScreen() {
                 description="Play a sound when a notification is sent"
                 value={preferences.playSound}
                 onValueChange={(v) => handleToggle('playSound', v)}
-                trackOff={trackOff}
               />
             </View>
           </View>
@@ -222,7 +211,6 @@ function ToggleRow({
   description,
   value,
   onValueChange,
-  trackOff,
   showDivider = false,
 }: {
   icon: typeof Bell;
@@ -230,7 +218,6 @@ function ToggleRow({
   description: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
-  trackOff: string;
   showDivider?: boolean;
 }) {
   return (
@@ -243,11 +230,8 @@ function ToggleRow({
             <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{description}</Text>
           </View>
           <Switch
-            value={value}
-            onValueChange={onValueChange}
-            trackColor={{ false: trackOff, true: '#34C759' }}
-            thumbColor="#FFFFFF"
-            ios_backgroundColor={trackOff}
+            checked={value}
+            onCheckedChange={onValueChange}
           />
         </View>
       </View>

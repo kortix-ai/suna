@@ -98,12 +98,12 @@ export default function PlansScreen() {
         {alertTitle && (
           <AnimatedView 
             entering={FadeIn.duration(400)}
-            className="w-full max-w-md mb-6 p-4 rounded-xl bg-warning/10 dark:bg-warning/20 border border-warning/30">
+            className="w-full max-w-md mb-6 p-4 rounded-xl bg-kortix-orange/10 border border-kortix-orange/30">
             <View className="flex-row items-start gap-3">
               <Icon 
                 as={AlertCircle} 
                 size={20} 
-                className="text-warning mt-0.5 flex-shrink-0" 
+                className="text-kortix-orange mt-0.5 flex-shrink-0" 
                 strokeWidth={2} 
               />
               <View className="flex-1 gap-1">

@@ -27,7 +27,7 @@ import {
   BarChart3,
   Plug,
 } from 'lucide-react-native';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
 import { NameEditPage } from './NameEditPage';

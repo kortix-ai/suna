@@ -12,23 +12,19 @@ import * as ImagePicker from 'expo-image-picker';
 import { haptics } from '@/lib/haptics';
 import { ProfilePicture } from '@/components/settings/ProfilePicture';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetTextInput,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
-import { getSheetBg } from '@/lib/theme-colors';
+import { BottomSheetModal, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export default function GeneralSettingsScreen() {
+  const sheetBg = useSheetBackground();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
   const { t } = useLanguage();
   const isDark = colorScheme === 'dark';
-  const fgColor = isDark ? '#f8f8f8' : '#121215';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   const currentName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || '';
   const currentAvatar = user?.user_metadata?.avatar_url || '';
@@ -154,12 +150,6 @@ export default function GeneralSettingsScreen() {
     }
   }, [avatarUrl, editName, t, user?.id]);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-    ),
-    [],
-  );
 
   return (
     <>
@@ -248,18 +238,13 @@ export default function GeneralSettingsScreen() {
         index={0}
         snapPoints={snapPoints}
         enablePanDownToClose
-        backdropComponent={renderBackdrop}
+        backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
@@ -277,7 +262,7 @@ export default function GeneralSettingsScreen() {
           <Text
             className="mt-0.5 text-xs font-roobert"
             style={{
-              color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)',
+              color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
             }}
           >
             Set your display name
@@ -287,7 +272,7 @@ export default function GeneralSettingsScreen() {
             value={editName}
             onChangeText={setEditName}
             placeholder={t('nameEdit.yourNamePlaceholder')}
-            placeholderTextColor={isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             autoCapitalize="words"
             autoCorrect={false}
             maxLength={100}
@@ -297,13 +282,9 @@ export default function GeneralSettingsScreen() {
             style={{
               marginTop: 16,
               marginBottom: 20,
-              backgroundColor: isDark
-                ? 'rgba(248, 248, 248, 0.06)'
-                : 'rgba(18, 18, 21, 0.04)',
+              backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
               borderWidth: 1,
-              borderColor: isDark
-                ? 'rgba(248, 248, 248, 0.1)'
-                : 'rgba(18, 18, 21, 0.08)',
+              borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
               borderRadius: 14,
               paddingHorizontal: 16,
               paddingVertical: 14,
@@ -319,11 +300,11 @@ export default function GeneralSettingsScreen() {
             style={{
               backgroundColor: canSaveName
                 ? isDark
-                  ? '#f8f8f8'
-                  : '#121215'
+                  ? THEME.dark.foreground
+                  : THEME.light.foreground
                 : isDark
-                  ? 'rgba(248, 248, 248, 0.08)'
-                  : 'rgba(18, 18, 21, 0.06)',
+                  ? withAlpha(THEME.dark.foreground, 0.08)
+                  : withAlpha(THEME.light.foreground, 0.06),
               borderRadius: 14,
               paddingVertical: 15,
               alignItems: 'center',
@@ -333,13 +314,15 @@ export default function GeneralSettingsScreen() {
             <Text
               className="text-[15px] font-roobert-semibold"
               style={{
-                color: canSaveName
+                color: // Sits on the filled (foreground-colored) button — invert vs. the
+                // usual isDark mapping so it reads dark-on-light / light-on-dark.
+                canSaveName
                   ? isDark
-                    ? '#121215'
-                    : '#f8f8f8'
+                    ? THEME.light.foreground
+                    : THEME.dark.foreground
                   : isDark
-                    ? 'rgba(248, 248, 248, 0.3)'
-                    : 'rgba(18, 18, 21, 0.3)',
+                    ? withAlpha(THEME.dark.foreground, 0.3)
+                    : withAlpha(THEME.light.foreground, 0.3),
               }}
             >
               {isSavingName ? t('nameEdit.saving') : t('nameEdit.saveChanges')}

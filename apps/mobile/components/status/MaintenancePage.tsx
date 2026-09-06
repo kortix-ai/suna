@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { RefreshCw } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 

@@ -11,7 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import { startPlanCheckout, startCreditPurchase, openBillingPortal } from '@/lib/billing/checkout';
 import { invalidateAccountState } from '@/lib/billing/hooks';
-import { useToast } from '@/components/ui/toast-provider';
+import { useToast } from '@/components/kortix/toast-provider';
 import { log } from '@/lib/logger';
 
 type Commitment = 'monthly' | 'yearly' | 'yearly_commitment';

@@ -11,7 +11,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  Text as RNText,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
@@ -22,9 +21,10 @@ import { Search, X, FolderGit2, Clock, MessageSquare, ChevronRight } from 'lucid
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { useTabStore, type PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -63,12 +63,16 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   const { data: projects, isLoading, refetch } = useKortixProjects(sandboxUrl);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const subtle = isDark ? '#a1a1aa' : '#71717a';
-  const faint = isDark ? '#52525b' : '#a1a1aa';
-  const cardBg = isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF';
-  const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const subtle = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const faint = withAlpha(fg, 0.4);
+  // Icon/placeholder grey renders opposite the theme's own mutedForeground
+  // (dark mode shows the lighter light-mode value and vice versa) — preserved
+  // as-is to match the original rendered appearance.
+  const mutedIcon = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.03) : THEME.light.background;
+  const border = withAlpha(fg, 0.06);
+  const inputBg = withAlpha(fg, isDark ? 0.06 : 0.04);
 
   const filtered: KortixProject[] = useMemo(() => {
     if (!projects) return [];
@@ -90,7 +94,7 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
@@ -113,12 +117,12 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
             height: 42,
           }}
         >
-          <Search size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
+          <Search size={16} color={mutedIcon} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search projects..."
-            placeholderTextColor={isDark ? '#71717a' : '#a1a1aa'}
+            placeholderTextColor={mutedIcon}
             style={{ flex: 1, marginLeft: 8, fontSize: 15, fontFamily: 'Roobert', color: fg }}
             returnKeyType="search"
             autoCorrect={false}
@@ -126,7 +130,7 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <X size={16} color={isDark ? '#71717a' : '#a1a1aa'} />
+              <X size={16} color={mutedIcon} />
             </Pressable>
           )}
         </View>
@@ -147,13 +151,13 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
 
         {!isLoading && filtered.length === 0 && (
           <View style={{ padding: 40, alignItems: 'center' }}>
-            <FolderGit2 size={40} color={isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'} style={{ marginBottom: 12 }} />
-            <RNText style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
+            <FolderGit2 size={40} color={withAlpha(fg, isDark ? 0.08 : 0.06)} style={{ marginBottom: 12 }} />
+            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: subtle, marginBottom: 4 }}>
               {searchQuery ? 'No projects found' : 'No projects yet'}
-            </RNText>
-            <RNText style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
+            </Text>
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: faint, textAlign: 'center' }}>
               {searchQuery ? 'Try a different search term' : 'Projects will appear here when created by the agent'}
-            </RNText>
+            </Text>
           </View>
         )}
 
@@ -196,18 +200,18 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
                 <View style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
                   {/* Title + chevron row */}
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <RNText
+                    <Text
                       numberOfLines={1}
                       style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}
                     >
                       {project.name}
-                    </RNText>
+                    </Text>
                     <ChevronRight size={16} color={faint} style={{ marginLeft: 8 }} />
                   </View>
 
                   {/* Path */}
                   {hasPath && (
-                    <RNText
+                    <Text
                       numberOfLines={1}
                       style={{
                         fontSize: 12,
@@ -217,12 +221,12 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
                       }}
                     >
                       {project.path}
-                    </RNText>
+                    </Text>
                   )}
 
                   {/* Description */}
                   {!!project.description && (
-                    <RNText
+                    <Text
                       numberOfLines={2}
                       style={{
                         fontSize: 13,
@@ -233,7 +237,7 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
                       }}
                     >
                       {project.description}
-                    </RNText>
+                    </Text>
                   )}
 
                   {/* Meta row */}
@@ -248,9 +252,9 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
                       {sessions > 0 && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                           <MessageSquare size={11} color={faint} />
-                          <RNText style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: subtle }}>
+                          <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: subtle }}>
                             {sessions} {sessions === 1 ? 'session' : 'sessions'}
-                          </RNText>
+                          </Text>
                         </View>
                       )}
                       {sessions > 0 && !!project.created_at && (
@@ -268,9 +272,9 @@ export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
                       {!!project.created_at && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                           <Clock size={11} color={faint} />
-                          <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: subtle }}>
+                          <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: subtle }}>
                             {ago(project.created_at)}
-                          </RNText>
+                          </Text>
                         </View>
                       )}
                     </View>

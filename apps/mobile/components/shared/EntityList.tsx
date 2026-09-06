@@ -14,8 +14,7 @@
 import React, { ReactNode } from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui';
-import { useColorScheme } from 'nativewind';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 
 export interface EntityListProps<T> {
   /** Array of entities to display */
@@ -65,8 +64,6 @@ export function EntityList<T>({
   errorMessage = 'Failed to load items',
   onRetry,
 }: EntityListProps<T>) {
-  const { colorScheme } = useColorScheme();
-  
   const gapClass = `gap-${gap}`;
   
   // Loading State
@@ -74,10 +71,7 @@ export function EntityList<T>({
     return (
       <View className="flex-1 items-center justify-center" style={{ minHeight: 200 }}>
         <KortixLoader size="small" />
-        <Text 
-          style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-          className="text-sm font-roobert mt-2"
-        >
+        <Text className="text-sm font-roobert mt-2 text-muted-foreground">
           {loadingMessage}
         </Text>
       </View>
@@ -88,17 +82,13 @@ export function EntityList<T>({
   if (error) {
     return (
       <View className="py-8 items-center">
-        <Text 
-          style={{ color: colorScheme === 'dark' ? '#EF4444' : '#DC2626' }}
-          className="text-sm font-roobert text-center mb-2"
-        >
+        <Text className="text-sm font-roobert text-center mb-2 text-destructive">
           {errorMessage}
         </Text>
         {onRetry && (
-          <Text 
+          <Text
             onPress={onRetry}
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="text-sm font-roobert-medium underline"
+            className="text-sm font-roobert-medium underline text-foreground"
           >
             Retry
           </Text>
@@ -111,10 +101,7 @@ export function EntityList<T>({
   if (entities.length === 0) {
     return (
       <View className="py-8 items-center">
-        <Text 
-          style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
-          className="text-sm font-roobert text-center"
-        >
+        <Text className="text-sm font-roobert text-center text-muted-foreground">
           {searchQuery ? noResultsMessage : emptyMessage}
         </Text>
       </View>

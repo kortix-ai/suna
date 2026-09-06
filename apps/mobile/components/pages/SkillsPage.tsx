@@ -11,7 +11,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
@@ -28,14 +28,16 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { SearchListHeader } from '@/components/ui/search-list-header';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { Button } from '@/components/ui/button';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
 import type { ProjectConfigEntry } from '@/lib/projects/projects-client';
 import { newConfigPrompt, editConfigPrompt } from '@/lib/projects/configure-prompts';
 import { haptics } from '@/lib/haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 interface PageTabLike {
   id: string;
@@ -84,9 +86,10 @@ function SkillDetail({
     [fileQuery.data?.content],
   );
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   const handleCopy = useCallback(async () => {
     if (!fileQuery.data?.content) return;
@@ -98,48 +101,42 @@ function SkillDetail({
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity
+      <Pressable
         onPress={() => { haptics.tap(); onBack(); }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
+        style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4, opacity: pressed ? 0.6 : 1 })}
       >
         <ChevronLeft size={18} color={muted} />
         <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Skills</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ flex: 1, fontSize: 19, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
             {skill.name}
           </Text>
-          <TouchableOpacity
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
             onPress={handleCopy}
             disabled={!fileQuery.data?.content}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
-              borderWidth: 1, borderColor: border,
-              opacity: fileQuery.data?.content ? 1 : 0.4,
-            }}
+            style={{ borderColor: border, opacity: fileQuery.data?.content ? 1 : 0.4 }}
           >
-            {copied ? <Check size={13} color="#22C55E" /> : <Copy size={13} color={muted} />}
+            {copied ? <Check size={13} color={THEME.accent.green} /> : <Copy size={13} color={muted} />}
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>
               {copied ? 'Copied' : 'Copy'}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-full"
             onPress={() => { haptics.tap(); onConfigure(editConfigPrompt('skill', skill.name, skill.path)); }}
-            activeOpacity={0.7}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 5,
-              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
-              borderWidth: 1, borderColor: border,
-            }}
+            style={{ borderColor: border }}
           >
             <Pencil size={13} color={muted} />
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Edit</Text>
-          </TouchableOpacity>
+          </Button>
         </View>
 
         <Text style={{ fontSize: 11, fontFamily: 'Menlo', color: muted, marginTop: 8 }} numberOfLines={1}>
@@ -165,7 +162,7 @@ function SkillDetail({
             <ActivityIndicator size="small" color={muted} />
           </View>
         ) : fileQuery.isError ? (
-          <Text style={{ fontSize: 13, color: '#ef4444' }}>
+          <Text style={{ fontSize: 13, color: destructiveColor }}>
             {(fileQuery.error as Error)?.message ?? 'Failed to read skill source'}
           </Text>
         ) : body ? (
@@ -189,15 +186,14 @@ function SkillRow({
   onPress: () => void;
   isDark: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const iconBg = withAlpha(fg, isDark ? 0.06 : 0.04);
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={onPress}
-      activeOpacity={0.6}
-      style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}
+      style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12, opacity: pressed ? 0.6 : 1 })}
     >
       <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
         <Sparkles size={18} color={muted} />
@@ -215,7 +211,7 @@ function SkillRow({
       </View>
 
       <ChevronRight size={18} color={muted} />
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -238,10 +234,10 @@ export function SkillsPage({
 
   const { data, isLoading, isError, error, refetch } = useProjectDetail(projectId);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = withAlpha(fg, 0.08);
 
   const skills = data?.config?.skills ?? [];
 
@@ -292,9 +288,9 @@ export function SkillsPage({
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {(error as Error)?.message ?? 'Failed to load skills'}
                 </Text>
-                <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <Button variant="outline" size="sm" className="rounded-full" onPress={() => { haptics.tap(); refetch(); }} style={{ borderColor: border }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-                </TouchableOpacity>
+                </Button>
               </View>
             ) : filtered.length === 0 ? (
               <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
@@ -302,14 +298,16 @@ export function SkillsPage({
                   {skills.length === 0 ? 'No skills in this project yet.' : 'No skills match your search.'}
                 </Text>
                 {skills.length === 0 && (
-                  <TouchableOpacity
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full"
                     onPress={() => { haptics.tap(); onConfigure(newConfigPrompt('skill')); }}
-                    activeOpacity={0.7}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
+                    style={{ borderColor: border }}
                   >
                     <Plus size={15} color={fg} />
                     <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>New skill</Text>
-                  </TouchableOpacity>
+                  </Button>
                 )}
               </View>
             ) : (

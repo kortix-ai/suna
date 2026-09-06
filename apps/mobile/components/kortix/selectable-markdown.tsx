@@ -25,14 +25,12 @@ import {
   Dimensions,
   Linking,
   TextInput,
-  TouchableOpacity,
   ScrollView,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown from 'react-native-markdown-display';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { Copy, X } from 'lucide-react-native';
 import {
@@ -41,10 +39,11 @@ import {
   darkMarkdownStyle,
 } from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { log } from '@/lib/logger';
-import { getSheetBg } from '@/lib/theme-colors';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -195,7 +194,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
   link: (node: any, children: any, parent: any, styles: any) => (
     <RNText
       key={node.key}
-      style={[styles.link, { color: isDark ? '#3b82f6' : '#2563eb' }]}
+      style={[styles.link, { color: THEME.accent.blue }]}
       selectable={true}
       onPress={() => {
         if (node.attributes?.href) {
@@ -211,8 +210,8 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
     <RNText 
       key={node.key} 
       style={[styles.code_inline, { 
-        backgroundColor: isDark ? '#27272a' : '#f4f4f5',
-        color: isDark ? '#fca5a5' : '#dc2626',
+        backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
+        color: isDark ? THEME.dark.destructive : THEME.light.destructive,
       }]}
       selectable={true}
     >
@@ -290,8 +289,8 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
             <RNText key={i} style={{
               fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
               fontSize: isHeader ? 10 : 12,
-              backgroundColor: isDark ? '#27272a' : '#f4f4f5',
-              color: isDark ? '#fca5a5' : '#dc2626',
+              backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
+              color: isDark ? THEME.dark.destructive : THEME.light.destructive,
             }}>
               {n.content}
             </RNText>
@@ -299,7 +298,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
         }
         if (n.type === 'link') {
           return (
-            <RNText key={i} style={{ color: isDark ? '#3b82f6' : '#2563eb' }}
+            <RNText key={i} style={{ color: THEME.accent.blue }}
               onPress={() => n.attributes?.href && Linking.openURL(n.attributes.href)}
             >
               {extractText(n)}
@@ -344,7 +343,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
       colWidths.push(Math.max(maxLen * 7.5 + 20, 44));
     }
 
-    const borderColor = isDark ? '#3f3f46' : '#e4e4e7';
+    const borderColor = isDark ? THEME.dark.border : THEME.light.border;
 
     return (
       <View
@@ -367,7 +366,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
                     flexDirection: 'row',
                     borderBottomWidth: 1,
                     borderBottomColor: borderColor,
-                    ...(section.isHeader ? { backgroundColor: isDark ? '#27272a' : '#f4f4f5' } : {}),
+                    ...(section.isHeader ? { backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted } : {}),
                   }}
                 >
                   {cells.map((cell: any, cIdx: number) => (
@@ -386,8 +385,8 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
                           lineHeight: section.isHeader ? undefined : 17,
                           letterSpacing: section.isHeader ? 0.3 : undefined,
                           color: section.isHeader
-                            ? (isDark ? '#a1a1aa' : '#71717a')
-                            : (isDark ? '#fafafa' : '#18181b'),
+                            ? (isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground)
+                            : (isDark ? THEME.dark.foreground : THEME.light.foreground),
                           textAlign: 'left',
                         }}
                         selectable
@@ -411,17 +410,17 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
  */
 const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   body: {
-    color: isDark ? '#fafafa' : '#18181b',
+    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
     fontSize: MARKDOWN_FONT_SIZE,
     lineHeight: MARKDOWN_LINE_HEIGHT,
     fontFamily: 'Roobert-Regular',
   },
   text: {
-    color: isDark ? '#fafafa' : '#18181b',
+    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
     // Don't set fontFamily here - let it inherit from parent (strong, em, etc.)
   },
   textgroup: {
-    color: isDark ? '#fafafa' : '#18181b',
+    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
     // Don't set fontFamily here - let children inherit from their specific styles (strong, em, etc.)
   },
   paragraph: {
@@ -448,16 +447,18 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: 4,
     borderRadius: 4,
-    backgroundColor: isDark ? '#27272a' : '#f4f4f5',
-    color: isDark ? '#fca5a5' : '#dc2626',
+    backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
+    color: isDark ? THEME.dark.destructive : THEME.light.destructive,
   },
+  // Fenced/indented code sits on `card`, one step darker than the `muted`
+  // inline-code chip, so a fence stays distinguishable from inline code.
   fence: {
-    backgroundColor: isDark ? '#1e1e20' : '#f4f4f5',
+    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
     borderRadius: 8,
     padding: 12,
   },
   code_block: {
-    backgroundColor: isDark ? '#1e1e20' : '#f4f4f5',
+    backgroundColor: isDark ? THEME.dark.card : THEME.light.card,
     borderRadius: 8,
     padding: 12,
     fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
@@ -480,7 +481,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   blockquote: {
     borderLeftWidth: 4,
-    borderLeftColor: isDark ? '#a1a1aa' : '#71717a',
+    borderLeftColor: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
     paddingLeft: 12,
     marginLeft: 0,
     backgroundColor: 'transparent',
@@ -497,7 +498,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   hr: {
     height: 1,
-    backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
+    backgroundColor: isDark ? THEME.dark.border : THEME.light.border,
     marginVertical: 12,
   },
   // Table styles - proper column widths
@@ -505,7 +506,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     borderWidth: 0,
   },
   thead: {
-    backgroundColor: isDark ? '#27272a' : '#f4f4f5',
+    backgroundColor: isDark ? THEME.dark.muted : THEME.light.muted,
   },
   tbody: {
     backgroundColor: 'transparent',
@@ -513,7 +514,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   tr: {
     flexDirection: 'row',
     borderBottomWidth: 1,
-    borderBottomColor: isDark ? '#3f3f46' : '#e4e4e7',
+    borderBottomColor: isDark ? THEME.dark.border : THEME.light.border,
   },
   th: {
     width: 140,
@@ -524,7 +525,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     fontSize: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    color: isDark ? '#fafafa' : '#18181b',
+    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
     textAlign: 'left',
   },
   td: {
@@ -533,7 +534,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     paddingHorizontal: 14,
     fontFamily: 'Roobert-Regular',
     fontSize: 14,
-    color: isDark ? '#fafafa' : '#18181b',
+    color: isDark ? THEME.dark.foreground : THEME.light.foreground,
     textAlign: 'left',
   },
 });
@@ -581,6 +582,7 @@ interface TextSelectionModalProps {
 }
 
 function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelectionModalProps) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const snapPoints = useMemo(() => ['70%', '95%'], []);
   const [copied, setCopied] = useState(false);
@@ -598,24 +600,12 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
   }, []);
 
   const colors = {
-    bg: isDark ? '#161618' : '#FFFFFF',
-    text: isDark ? '#f8f8f8' : '#121215',
-    muted: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-    card: isDark ? '#1e1e20' : '#f5f5f5',
+    bg: isDark ? THEME.dark.background : THEME.light.background,
+    text: isDark ? THEME.dark.foreground : THEME.light.foreground,
+    muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
+    card: isDark ? THEME.dark.card : THEME.light.card,
   };
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    []
-  );
 
   const handleCopyAll = useCallback(async () => {
     try {
@@ -637,19 +627,13 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
       enableDynamicSizing={false}
       onChange={handleSheetChange}
       onDismiss={onDismiss}
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-        marginTop: 8,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       style={{
         zIndex: 999,
         elevation: Platform.OS === 'android' ? 50 : undefined,
@@ -665,7 +649,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
             onPress={handleCopyAll} 
             style={[drawerStyles.copyButton, { 
               backgroundColor: 'transparent',
-              borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)',
+              borderColor: isDark ? THEME.dark.border : THEME.light.border,
             }]}
           >
             <Copy size={16} color={colors.text} strokeWidth={2} />
@@ -783,7 +767,7 @@ function CodeBlock({
 
   return (
     <View style={[styles.codeBlock, isDark ? styles.codeBlockDark : styles.codeBlockLight]}>
-      <View style={[styles.codeBlockHeader, { borderBottomColor: isDark ? '#3f3f46' : '#e4e4e7' }]}>
+      <View style={[styles.codeBlockHeader, { borderBottomColor: isDark ? THEME.dark.border : THEME.light.border }]}>
         <RNText style={[styles.codeBlockLanguage, isDark ? styles.darkText : styles.lightText]}>
           {language || 'Code Block'}
         </RNText>
@@ -929,7 +913,7 @@ function Separator({ isDark }: { isDark: boolean }) {
     <View
       style={{
         height: 1,
-        backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
+        backgroundColor: isDark ? THEME.dark.border : THEME.light.border,
         marginVertical: 8,
       }}
     />
@@ -1207,17 +1191,17 @@ function MarkdownWithLinkHandling({
     );
   };
 
-  // On iOS: wrap in TouchableOpacity for double-tap detection (no visual feedback)
+  // On iOS: wrap in a Pressable for double-tap detection (no visual feedback).
+  // `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
+  // text, so it must have no press animation at all. Pressable has no default
+  // opacity ramp, which is what the old `activeOpacity={1}` bought.
   // On Android: just render content directly (text is natively selectable)
   if (Platform.OS === 'ios') {
     return (
       <>
-        <TouchableOpacity 
-          onPress={handlePress} 
-          activeOpacity={1}
-        >
+        <Pressable onPress={handlePress}>
           {renderContent()}
-        </TouchableOpacity>
+        </Pressable>
         <TextSelectionModal
           sheetRef={bottomSheetRef}
           text={text}
@@ -1434,10 +1418,10 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   } as any, // Cast to any because getters aren't in StyleSheet types
   lightText: {
-    color: '#18181b', // zinc-900
+    color: THEME.light.foreground,
   },
   darkText: {
-    color: '#fafafa', // zinc-50
+    color: THEME.dark.foreground,
   },
   table: {
     borderWidth: 1,
@@ -1445,23 +1429,26 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginVertical: 8,
   },
+  // Light and dark tables are deliberately asymmetric, as they were before:
+  // the light table sits flush on the page (`background`), the dark table is a
+  // raised surface (`card`) so it reads against the near-black page.
   tableLight: {
-    borderColor: '#e4e4e7', // zinc-200
-    backgroundColor: '#ffffff',
+    borderColor: THEME.light.border,
+    backgroundColor: THEME.light.background,
   },
   tableDark: {
-    borderColor: '#3f3f46', // zinc-700
-    backgroundColor: '#27272a', // zinc-800
+    borderColor: THEME.dark.border,
+    backgroundColor: THEME.dark.card,
   },
   tableRow: {
     flexDirection: 'row',
     borderBottomWidth: 1,
   },
   tableRowLight: {
-    borderBottomColor: '#e4e4e7', // zinc-200
+    borderBottomColor: THEME.light.border,
   },
   tableRowDark: {
-    borderBottomColor: '#3f3f46', // zinc-700
+    borderBottomColor: THEME.dark.border,
   },
   tableCell: {
     flex: 1,
@@ -1469,19 +1456,22 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
   },
   tableCellLight: {
-    borderRightColor: '#e4e4e7', // zinc-200
+    borderRightColor: THEME.light.border,
   },
   tableCellDark: {
-    borderRightColor: '#3f3f46', // zinc-700
+    borderRightColor: THEME.dark.border,
   },
   tableHeaderCell: {
     paddingVertical: 10,
   },
+  // Header fill is one step off the table fill in each theme, so a header row
+  // stays distinguishable from the body: lighter->`muted` in light mode,
+  // `card`->`muted` (i.e. lighter) in dark mode.
   tableHeaderCellLight: {
-    backgroundColor: '#f4f4f5', // zinc-100
+    backgroundColor: THEME.light.muted,
   },
   tableHeaderCellDark: {
-    backgroundColor: '#3f3f46', // zinc-700
+    backgroundColor: THEME.dark.muted,
   },
   tableCellText: {
     fontSize: 14,
@@ -1497,13 +1487,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginVertical: 8,
   },
+  // Same `card` surface the markdown `fence`/`code_block` styles use, so both
+  // code-block renderers agree on one token.
   codeBlockLight: {
-    borderColor: '#DCDDDE',
-    backgroundColor: '#DCDDDE80',
+    borderColor: THEME.light.border,
+    backgroundColor: THEME.light.card,
   },
   codeBlockDark: {
-    borderColor: '#232324',
-    backgroundColor: '#232324',
+    borderColor: THEME.dark.border,
+    backgroundColor: THEME.dark.card,
   },
   codeBlockHeader: {
     flexDirection: 'row',
@@ -1525,11 +1517,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
+  // `--hover` is exactly this: a black overlay in light mode, a white overlay
+  // in dark mode, at the app's own hover alpha step.
   copyButtonLight: {
-    backgroundColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: THEME.light.hover,
   },
   copyButtonDark: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: THEME.dark.hover,
   },
   copyButtonText: {
     fontSize: 12,

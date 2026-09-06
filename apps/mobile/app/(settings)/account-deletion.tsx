@@ -9,7 +9,8 @@ import { Icon } from '@/components/ui/icon';
 import { Trash2, Calendar, AlertTriangle, CheckCircle, Zap, Clock, Info } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { haptics } from '@/lib/haptics';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
+import { THEME } from '@/lib/utils/theme';
 import {
   useAccountDeletionStatus,
   useRequestAccountDeletion,
@@ -319,7 +320,7 @@ export default function AccountDeletionScreen() {
                 value={confirmText}
                 onChangeText={(text) => setConfirmText(text.toUpperCase())}
                 placeholder={t('accountDeletion.deletePlaceholder')}
-                placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                placeholderTextColor={colorScheme === 'dark' ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                 className="bg-card border border-border/40 rounded-2xl p-4 text-foreground font-roobert-semibold text-base tracking-wide"
                 autoCapitalize="characters"
                 autoCorrect={false}

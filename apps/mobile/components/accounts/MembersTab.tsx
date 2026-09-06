@@ -6,17 +6,11 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert, RefreshControl } from 'react-native';
+import { View, Pressable, ScrollView, ActivityIndicator, TextInput, Alert, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   Search,
   UserPlus,
@@ -34,8 +28,10 @@ import {
   CircleCheck,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useAccountGroups } from '@/lib/projects/hooks';
 import {
   useAccountMembers,
@@ -52,14 +48,17 @@ import type { AccountDetail, AccountMember, AccountInvitation } from '@/lib/acco
 import type { AccountRole } from '@/lib/projects/projects-client';
 import {
   accountColors,
+  destructiveColor,
   ACCOUNT_ROLE_LABEL,
   InitialsAvatar,
   Pill,
   RolePill,
   PrimaryButton,
+  SheetCloseButton,
   SkeletonList,
   type AccountCaps,
 } from './account-shared';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 const ACCOUNT_ROLES: AccountRole[] = ['owner', 'admin', 'member'];
 const ROLE_BLURB: Record<AccountRole, string> = {
@@ -86,6 +85,7 @@ type SheetState =
   | null;
 
 export function MembersTab({ account, currentUserId, can, isDark }: { account: AccountDetail; currentUserId: string; can: AccountCaps; isDark: boolean }) {
+  const sheetBg = useSheetBackground();
   const c = accountColors(isDark);
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
@@ -175,15 +175,20 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
             Members <Text style={{ color: c.muted, fontFamily: 'Roobert' }}>{account.member_count}</Text>
           </Text>
           {canBulk && bulkEligible.length > 0 && (
-            <TouchableOpacity onPress={() => { haptics.tap(); setSelectMode((v) => !v); if (selectMode) setSelectedIds(new Set()); }} hitSlop={6}>
-              <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: selectMode ? '#ef4444' : c.muted }}>{selectMode ? 'Cancel' : 'Select'}</Text>
-            </TouchableOpacity>
+            <Pressable onPress={() => { haptics.tap(); setSelectMode((v) => !v); if (selectMode) setSelectedIds(new Set()); }} hitSlop={6}>
+              <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: selectMode ? destructiveColor(isDark) : c.muted }}>{selectMode ? 'Cancel' : 'Select'}</Text>
+            </Pressable>
           )}
           {canInvite && !selectMode && (
-            <TouchableOpacity onPress={() => { haptics.tap(); openSheet({ kind: 'invite' }); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
+            <Button
+              size="sm"
+              onPress={() => { haptics.tap(); openSheet({ kind: 'invite' }); }}
+              className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
+              style={{ backgroundColor: theme.primary }}
+            >
               <UserPlus size={14} color={theme.primaryForeground} />
-              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Invite</Text>
-            </TouchableOpacity>
+              <Text>Invite</Text>
+            </Button>
           )}
         </View>
 
@@ -191,7 +196,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, marginBottom: 16 }}>
           <Search size={15} color={c.muted} />
           <TextInput value={search} onChangeText={setSearch} placeholder="Search by email…" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
-          {search.length > 0 && <TouchableOpacity onPress={() => { haptics.tap(); setSearch(''); }} hitSlop={8}><X size={15} color={c.muted} /></TouchableOpacity>}
+          {search.length > 0 && <Pressable onPress={() => { haptics.tap(); setSearch(''); }} hitSlop={8}><X size={15} color={c.muted} /></Pressable>}
         </View>
 
         {/* Pending invites */}
@@ -202,15 +207,14 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
               {invites.map((inv, i) => {
                 const busy = busyId === inv.invite_id;
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={inv.invite_id}
                     disabled={!canInvite}
-                    activeOpacity={0.6}
                     onPress={() => { haptics.tap(); openSheet({ kind: 'invite-actions', invite: inv }); }}
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}
+                    style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }, pressed && canInvite && { opacity: 0.6 }]}
                   >
-                    <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}>
-                      <Mail size={15} color="#d97706" />
+                    <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: withAlpha(THEME.accent.orange, 0.14), alignItems: 'center', justifyContent: 'center' }}>
+                      <Mail size={15} color={THEME.accent.orange} />
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inv.email}</Text>
@@ -221,7 +225,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                     </View>
                     <RolePill role={inv.initial_role} isDark={isDark} />
                     {busy ? <ActivityIndicator size="small" color={c.muted} /> : canInvite ? <ChevronRight size={16} color={c.muted} /> : null}
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               })}
             </View>
@@ -238,8 +242,8 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
           <SkeletonList count={5} isDark={isDark} bare />
         ) : membersQuery.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
-            <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(membersQuery.error as Error)?.message || 'Failed to load members'}</Text>
-            <TouchableOpacity onPress={() => { haptics.tap(); membersQuery.refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+            <Text style={{ fontSize: 13.5, color: destructiveColor(isDark) }}>{(membersQuery.error as Error)?.message || 'Failed to load members'}</Text>
+            <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); membersQuery.refetch(); }} className="h-auto self-start rounded-full px-3.5 py-2" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Retry</Text></Button>
           </View>
         ) : sorted.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 32, gap: 10 }}>
@@ -258,7 +262,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                 haptics.tap(); openSheet({ kind: 'member', member: m });
               };
               return (
-                <TouchableOpacity key={m.user_id} onPress={onRow} activeOpacity={0.6} disabled={selectMode && !selectable} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+                <Pressable key={m.user_id} onPress={onRow} disabled={selectMode && !selectable} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }, pressed && { opacity: 0.6 }]}>
                   {selectMode && (
                     <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectable ? (selected ? theme.primary : c.inputBorder) : 'transparent', backgroundColor: selected ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                       {selected && <Check size={14} color={theme.primaryForeground} />}
@@ -281,7 +285,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                   </View>
                   <RolePill role={m.account_role} isDark={isDark} />
                   {!selectMode && <ChevronRight size={16} color={c.muted} />}
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>
@@ -290,12 +294,12 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
       {/* Bulk action bar */}
       {selectMode && selectedCount > 0 && (
-        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: c.border, backgroundColor: isDark ? THEME.dark.background : THEME.light.background, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>{selectedCount} selected</Text>
           <View style={{ flex: 1 }} />
-          {canInvite && <TouchableOpacity onPress={() => { haptics.tap(); openSheet({ kind: 'bulkGroup' }); }} style={{ paddingHorizontal: 12, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: c.border, justifyContent: 'center' }}><Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Group</Text></TouchableOpacity>}
-          {canUpdateRole && <TouchableOpacity onPress={() => { haptics.tap(); openSheet({ kind: 'bulkRole' }); }} style={{ paddingHorizontal: 12, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: c.border, justifyContent: 'center' }}><Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Role</Text></TouchableOpacity>}
-          {canRemove && <TouchableOpacity onPress={() => { haptics.tap(); bulkRemove(); }} style={{ paddingHorizontal: 12, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', justifyContent: 'center' }}><Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove</Text></TouchableOpacity>}
+          {canInvite && <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); openSheet({ kind: 'bulkGroup' }); }} className="h-9 justify-center rounded-full px-3" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Group</Text></Button>}
+          {canUpdateRole && <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); openSheet({ kind: 'bulkRole' }); }} className="h-9 justify-center rounded-full px-3" style={{ borderWidth: 1, borderColor: c.border }}><Text style={{ color: c.fg }}>Role</Text></Button>}
+          {canRemove && <Button variant="ghost" size="sm" onPress={() => { haptics.tap(); bulkRemove(); }} className="h-9 justify-center rounded-full px-3" style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4) }}><Text style={{ color: destructiveColor(isDark) }}>Remove</Text></Button>}
         </View>
       )}
 
@@ -304,11 +308,11 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
         snapPoints={sheet?.kind === 'member' ? ['62%'] : sheet?.kind === 'invite-actions' ? ['42%'] : ['52%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         {sheet?.kind === 'invite' ? (
           <InviteSheet accountId={accountId} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
@@ -351,14 +355,11 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
 function SheetHeader({ title, onClose, isDark, leading }: { title: string; onClose: () => void; isDark: boolean; leading?: React.ReactNode }) {
   const c = accountColors(isDark);
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
       {leading}
       <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{title}</Text>
-      <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
-        <X size={17} color={c.muted} />
-      </TouchableOpacity>
+      <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
     </View>
   );
 }
@@ -371,7 +372,7 @@ function RolePicker({ value, onChange, roles, isDark }: { value: AccountRole; on
       {roles.map((r, i) => {
         const sel = value === r;
         return (
-          <TouchableOpacity key={r} onPress={() => { haptics.tap(); onChange(r); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+          <Pressable key={r} onPress={() => { haptics.tap(); onChange(r); }} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }, pressed && { opacity: 0.7 }]}>
             <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: sel ? theme.primary : c.inputBorder, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
               {sel && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: theme.primary }} />}
             </View>
@@ -379,7 +380,7 @@ function RolePicker({ value, onChange, roles, isDark }: { value: AccountRole; on
               <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>{ACCOUNT_ROLE_LABEL[r]}</Text>
               <Text style={{ fontSize: 12, lineHeight: 17, color: c.muted, marginTop: 2 }}>{ROLE_BLURB[r]}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         );
       })}
     </View>
@@ -421,7 +422,7 @@ function InviteSheet({ accountId, onClose, isDark }: { accountId: string; onClos
         </View>
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 16, marginBottom: 2 }}>Role</Text>
         <RolePicker value={role} onChange={setRole} roles={['member', 'admin']} isDark={isDark} />
-        {err && <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}><Text style={{ fontSize: 13, color: '#ef4444' }}>{err}</Text></View>}
+        {err && <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: withAlpha(destructiveColor(isDark), 0.08), borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.3) }}><Text style={{ fontSize: 13, color: destructiveColor(isDark) }}>{err}</Text></View>}
       </BottomSheetScrollView>
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <PrimaryButton label="Invite" onPress={() => { haptics.tap(); submit(); }} disabled={!email.trim() || invite.isPending} pending={invite.isPending} icon={<UserPlus size={15} color={theme.primaryForeground} />} />
@@ -437,13 +438,13 @@ function InviteActionsSheet({ invite, onResend, onCopy, onCancel, onClose, isDar
   const insets = useSafeAreaInsets();
 
   const row = (key: string, icon: React.ReactNode, label: string, sub: string | null, onPress: () => void, destructive: boolean, first: boolean) => (
-    <TouchableOpacity key={key} onPress={onPress} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.border }}>
-      <View style={{ width: 34, height: 34, borderRadius: 9999, backgroundColor: destructive ? 'rgba(239,68,68,0.1)' : c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
+    <Pressable key={key} onPress={onPress} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.border }, pressed && { opacity: 0.6 }]}>
+      <View style={{ width: 34, height: 34, borderRadius: 9999, backgroundColor: destructive ? withAlpha(destructiveColor(isDark), 0.1) : c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: destructive ? '#ef4444' : c.fg }}>{label}</Text>
+        <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: destructive ? destructiveColor(isDark) : c.fg }}>{label}</Text>
         {sub && <Text style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{sub}</Text>}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 
   return (
@@ -452,12 +453,12 @@ function InviteActionsSheet({ invite, onResend, onCopy, onCancel, onClose, isDar
         title={invite.email}
         onClose={onClose}
         isDark={isDark}
-        leading={<View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}><Mail size={16} color="#d97706" /></View>}
+        leading={<View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: withAlpha(THEME.accent.orange, 0.14), alignItems: 'center', justifyContent: 'center' }}><Mail size={16} color={THEME.accent.orange} /></View>}
       />
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
         {row('resend', <RefreshCw size={16} color={c.muted} />, 'Resend invite', 'Send the email again and extend the link', onResend, false, true)}
         {row('copy', <LinkIcon size={16} color={c.muted} />, 'Copy invite link', 'Share it manually', onCopy, false, false)}
-        {row('cancel', <X size={16} color="#ef4444" />, 'Cancel invite', "Revoke it — they'll need a new one", onCancel, true, false)}
+        {row('cancel', <X size={16} color={destructiveColor(isDark)} />, 'Cancel invite', "Revoke it — they'll need a new one", onCancel, true, false)}
       </BottomSheetScrollView>
     </View>
   );
@@ -502,11 +503,11 @@ function MemberSheet({ account, member, isSelf, can, sorted, onClose, isDark }: 
     <View style={{ flex: 1 }}>
       <SheetHeader title={memberLabel(member)} onClose={onClose} isDark={isDark} leading={<InitialsAvatar label={member.email} isDark={isDark} size={34} />} />
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 24 }} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); router.push(`/accounts/${account.account_id}/members/${member.user_id}`); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13 }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); router.push(`/accounts/${account.account_id}/members/${member.user_id}`); }} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13 }, pressed && { opacity: 0.7 }]}>
           <KeyRound size={16} color={c.muted} />
           <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>View & edit permission policies</Text>
           <ChevronRight size={16} color={c.muted} />
-        </TouchableOpacity>
+        </Pressable>
 
         {canUpdateRole && (
           <>
@@ -516,16 +517,28 @@ function MemberSheet({ account, member, isSelf, can, sorted, onClose, isDark }: 
         )}
 
         {canRemove && (
-          <TouchableOpacity onPress={doRemove} disabled={isLastOwner} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', marginTop: 16, opacity: isLastOwner ? 0.4 : 1 }}>
-            <Trash2 size={15} color="#ef4444" />
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove from team</Text>
-          </TouchableOpacity>
+          <Button
+            variant="ghost"
+            onPress={doRemove}
+            disabled={isLastOwner}
+            className="h-[46px] flex-row items-center justify-center gap-2 rounded-full mt-4"
+            style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4), opacity: isLastOwner ? 0.4 : 1 }}
+          >
+            <Trash2 size={15} color={destructiveColor(isDark)} />
+            <Text style={{ color: destructiveColor(isDark) }}>Remove from team</Text>
+          </Button>
         )}
         {isSelf && (
-          <TouchableOpacity onPress={doLeave} disabled={isLastOwner} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', marginTop: 16, opacity: isLastOwner ? 0.4 : 1 }}>
-            <Trash2 size={15} color="#ef4444" />
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Leave team</Text>
-          </TouchableOpacity>
+          <Button
+            variant="ghost"
+            onPress={doLeave}
+            disabled={isLastOwner}
+            className="h-[46px] flex-row items-center justify-center gap-2 rounded-full mt-4"
+            style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.4), opacity: isLastOwner ? 0.4 : 1 }}
+          >
+            <Trash2 size={15} color={destructiveColor(isDark)} />
+            <Text style={{ color: destructiveColor(isDark) }}>Leave team</Text>
+          </Button>
         )}
         {isLastOwner && <Text style={{ fontSize: 11.5, color: c.muted, textAlign: 'center', marginTop: 8 }}>The last owner can't be removed.</Text>}
       </BottomSheetScrollView>
@@ -566,11 +579,11 @@ function BulkGroupSheet({ accountId, count, userIds, onDone, onClose, isDark }: 
             {groups.map((g, i) => {
               const sel = groupId === g.group_id;
               return (
-                <TouchableOpacity key={g.group_id} onPress={() => { haptics.tap(); setGroupId(g.group_id); }} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }}>
+                <Pressable key={g.group_id} onPress={() => { haptics.tap(); setGroupId(g.group_id); }} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border, backgroundColor: sel ? theme.primaryLight : 'transparent' }, pressed && { opacity: 0.7 }]}>
                   <Users size={15} color={sel ? theme.primary : c.muted} />
                   <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.name}</Text>
                   {sel && <CircleCheck size={17} color={theme.primary} />}
-                </TouchableOpacity>
+                </Pressable>
               );
             })}
           </View>

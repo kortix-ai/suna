@@ -49,3 +49,5 @@ loc.env.local
 
 expo-env.d.ts
 # @end expo-cli
+scratchpad/registry/
+scratchpad/wvtest/

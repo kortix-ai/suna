@@ -7,7 +7,6 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   View,
   FlatList,
-  TextInput,
   Pressable,
   Alert,
   ActivityIndicator,
@@ -16,7 +15,7 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { SearchListHeader } from '@/components/ui/search-list-header';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
 import {
   ArrowLeft,
   Search,
@@ -46,20 +45,14 @@ import { ManageConnectionSheet } from './connections/ManageConnectionSheet';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
 import { log } from '@/lib/logger';
 import {
   usePipedreamCredentialStatus,
   useSavePipedreamCredentials,
   useDeletePipedreamCredentials,
 } from '@/hooks/usePipedreamCredentials';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import {
@@ -71,8 +64,11 @@ import {
   type ConnectorApp,
   type ConnectorConnection,
 } from '@/hooks/useConnections';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 
 // ─── Main Page (wrapper) ────────────────────────────────────────────────────
 
@@ -131,6 +127,7 @@ function ConnectionsContent({
   onNavigate,
   onUpgradePress,
 }: ConnectionsContentProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -155,12 +152,6 @@ function ConnectionsContent({
   const isCustomCreds = credStatus?.configured && credStatus?.source === 'account';
   const canSaveCreds = credValues.client_id.trim() && credValues.client_secret.trim() && credValues.project_id.trim();
 
-  const renderCredBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    ),
-    [],
-  );
 
   const handleSaveCreds = useCallback(async () => {
     if (!canSaveCreds) return;
@@ -307,10 +298,15 @@ function ConnectionsContent({
   );
 
   // ── Colors ──
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  // fg/muted mirror the app-wide "old near-black-on-white / near-white-on-black"
+  // literal pair — same derivation as lib/theme-colors.ts's `theme.primary`
+  // (light -> THEME.light.primary, dark -> THEME.dark.foreground, NOT
+  // THEME.dark.primary, which would visibly dim this text/icon in dark mode).
+  const fg = themeColors.primary;
+  const muted = withAlpha(themeColors.primary, 0.5);
+  const hoverBg = isDark ? THEME.dark.hover : THEME.light.hover;
+  const activeBg = isDark ? THEME.dark.active : THEME.light.active;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
 
   // ── Sticky search bar (rendered outside FlatList) ──
   const SearchBar = (
@@ -330,14 +326,26 @@ function ConnectionsContent({
             borderRadius: 9999,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+            backgroundColor: hoverBg,
             borderWidth: 1,
-            borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+            borderColor: activeBg,
           }}
         >
           <Icon as={Settings} size={16} color={muted} />
           {isCustomCreds && (
-            <View style={{ position: 'absolute', top: -2, right: -2, width: 10, height: 10, borderRadius: 5, backgroundColor: '#10b981', borderWidth: 2, borderColor: isDark ? '#121215' : '#F8F8F8' }} />
+            <View
+              style={{
+                position: 'absolute',
+                top: -2,
+                right: -2,
+                width: 10,
+                height: 10,
+                borderRadius: 5,
+                backgroundColor: THEME.accent.green,
+                borderWidth: 2,
+                borderColor: isDark ? THEME.dark.background : THEME.light.background,
+              }}
+            />
           )}
         </Pressable>
       )}
@@ -351,7 +359,7 @@ function ConnectionsContent({
       {onBack && (
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
           <Pressable onPress={onBack} style={{ marginRight: 12 }}>
-            <ArrowLeft size={20} color={fg} />
+            <Icon as={ArrowLeft} size={20} color={fg} />
           </Pressable>
           <Text style={{ fontSize: 20, fontFamily: 'Roobert-Semibold', color: fg }}>
             {t('connections.title', 'Connections')}
@@ -448,7 +456,7 @@ function ConnectionsContent({
             </View>
           ) : appsError ? (
             <View style={{ padding: 40, alignItems: 'center' }}>
-              <Text style={{ color: '#ef4444', fontSize: 14, fontFamily: 'Roobert', textAlign: 'center' }}>
+              <Text style={{ color: destructiveColor, fontSize: 14, fontFamily: 'Roobert', textAlign: 'center' }}>
                 Failed to load apps. Check that Pipedream credentials are configured.
               </Text>
             </View>
@@ -474,22 +482,17 @@ function ConnectionsContent({
         ref={credSheetRef}
         enableDynamicSizing
         enablePanDownToClose
-        backdropComponent={renderCredBackdrop}
+        backdropComponent={SheetBackdrop}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
         android_keyboardInputMode="adjustResize"
         onDismiss={() => { setCredValues({ client_id: '', client_secret: '', project_id: '' }); setShowSecrets(false); }}
         backgroundStyle={{
-          backgroundColor: getSheetBg(isDark),
+          backgroundColor: sheetBg,
           borderTopLeftRadius: 24,
           borderTopRightRadius: 24,
         }}
-        handleIndicatorStyle={{
-          backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-          width: 36,
-          height: 5,
-          borderRadius: 3,
-        }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       >
         <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
@@ -497,7 +500,7 @@ function ConnectionsContent({
             <View
               style={{
                 width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12,
-                backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.05)',
+                backgroundColor: hoverBg,
               }}
             >
               <Icon as={KeyRound} size={20} color={fg} strokeWidth={1.8} />
@@ -513,18 +516,18 @@ function ConnectionsContent({
           {/* Status badge */}
           <View style={{
             flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            backgroundColor: isDark ? 'rgba(248,248,248,0.04)' : 'rgba(18,18,21,0.02)',
-            borderWidth: 1, borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+            backgroundColor: hoverBg,
+            borderWidth: 1, borderColor: activeBg,
             borderRadius: 12, padding: 12, marginBottom: 16,
           }}>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Current source</Text>
             <View style={{
               flexDirection: 'row', alignItems: 'center',
-              backgroundColor: isCustomCreds ? 'rgba(16,185,129,0.12)' : (isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)'),
+              backgroundColor: isCustomCreds ? withAlpha(THEME.accent.green, 0.12) : hoverBg,
               paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
             }}>
-              <Icon as={isCustomCreds ? Check : Shield} size={10} color={isCustomCreds ? '#10b981' : muted} strokeWidth={2} />
-              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isCustomCreds ? '#10b981' : muted, marginLeft: 4 }}>
+              <Icon as={isCustomCreds ? Check : Shield} size={10} color={isCustomCreds ? THEME.accent.green : muted} strokeWidth={2} />
+              <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: isCustomCreds ? THEME.accent.green : muted, marginLeft: 4 }}>
                 {isCustomCreds ? 'Your credentials' : 'Kortix Default'}
               </Text>
             </View>
@@ -544,14 +547,14 @@ function ConnectionsContent({
                 value={credValues[field.key]}
                 onChangeText={(text) => setCredValues((v) => ({ ...v, [field.key]: text }))}
                 placeholder={isCustomCreds ? '••••••••  (keep existing)' : field.placeholder}
-                placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+                placeholderTextColor={withAlpha(themeColors.primary, isDark ? 0.25 : 0.3)}
                 secureTextEntry={!showSecrets}
                 autoCapitalize="none"
                 autoCorrect={false}
                 style={{
-                  backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                  backgroundColor: hoverBg,
                   borderWidth: 1,
-                  borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                  borderColor: activeBg,
                   borderRadius: 12,
                   paddingHorizontal: 14,
                   paddingVertical: 12,
@@ -569,7 +572,7 @@ function ConnectionsContent({
               onPress={handleSaveCreds}
               disabled={!canSaveCreds || saveCreds.isPending}
               style={{
-                backgroundColor: canSaveCreds ? themeColors.primary : (isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)'),
+                backgroundColor: canSaveCreds ? themeColors.primary : hoverBg,
                 borderRadius: 9999,
                 paddingVertical: 12,
                 paddingHorizontal: 20,
@@ -585,7 +588,7 @@ function ConnectionsContent({
               onPress={() => { haptics.selection(); setShowSecrets(!showSecrets); }}
               style={{
                 width: 40, height: 40, borderRadius: 9999, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                backgroundColor: hoverBg,
               }}
             >
               <Icon as={showSecrets ? EyeOff : Eye} size={16} color={muted} />
@@ -600,8 +603,8 @@ function ConnectionsContent({
                   paddingVertical: 8, paddingHorizontal: 14, borderRadius: 9999,
                 }}
               >
-                <Icon as={Trash2} size={14} color="#ef4444" strokeWidth={1.8} />
-                <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#ef4444', marginLeft: 4 }}>
+                <Icon as={Trash2} size={14} color={destructiveColor} strokeWidth={1.8} />
+                <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: destructiveColor, marginLeft: 4 }}>
                   {deleteCreds.isPending ? 'Reverting...' : 'Revert'}
                 </Text>
               </Pressable>
@@ -627,8 +630,12 @@ function ConnectedRow({
   isDark: boolean;
   onPress: () => void;
 }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const theme = useThemeColors();
+  const fg = theme.primary;
+  const muted = withAlpha(theme.primary, 0.5);
+  const faint = withAlpha(theme.primary, isDark ? 0.25 : 0.2);
+  const hoverBg = isDark ? THEME.dark.hover : THEME.light.hover;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   const iconUrl = imgSrc || (connection.metadata as any)?.imgSrc;
 
   return (
@@ -640,7 +647,7 @@ function ConnectedRow({
         paddingVertical: 12,
         gap: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+        borderBottomColor: hoverBg,
       }}
     >
       <AppIcon
@@ -658,7 +665,7 @@ function ConnectedRow({
               width: 6,
               height: 6,
               borderRadius: 3,
-              backgroundColor: connection.status === 'active' ? '#34d399' : '#ef4444',
+              backgroundColor: connection.status === 'active' ? THEME.accent.green : destructiveColor,
             }}
           />
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>
@@ -666,7 +673,7 @@ function ConnectedRow({
           </Text>
         </View>
       </View>
-      <ChevronRight size={16} color={isDark ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)'} />
+      <Icon as={ChevronRight} size={16} color={faint} />
     </Pressable>
   );
 }
@@ -689,9 +696,9 @@ function AppRow({
   onManage: (conn: ConnectorConnection) => void;
 }) {
   const isConnected = connections && connections.length > 0;
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const theme = useThemeColors();
+  const fg = theme.primary;
+  const muted = withAlpha(theme.primary, 0.5);
   const categoryText = app.categories?.slice(0, 2).join(' · ') || '';
 
   return (
@@ -723,8 +730,8 @@ function AppRow({
         <ActivityIndicator size="small" color={fg} />
       ) : isConnected ? (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Check size={14} color="#34d399" strokeWidth={2.5} />
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: '#34d399' }}>
+          <Icon as={Check} size={14} color={THEME.accent.green} strokeWidth={2.5} />
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: THEME.accent.green }}>
             Connected
           </Text>
         </View>

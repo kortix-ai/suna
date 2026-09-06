@@ -8,19 +8,18 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
   View,
   FlatList,
-  TextInput,
   Pressable,
   Alert,
   ActivityIndicator,
-  Switch,
   StyleSheet,
   Keyboard,
-  TouchableOpacity,
   ScrollView,
   Linking,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { Text as RNText } from 'react-native';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import {
   Plus,
   Search,
@@ -39,21 +38,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetView,
-  BottomSheetTextInput,
-  BottomSheetScrollView,
-} from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
-import { SearchListHeader } from '@/components/ui/search-list-header';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SearchListHeader } from '@/components/kortix/search-list-header';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import type { PageTab } from '@/stores/tab-store';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
 import {
   useChannels,
   useUpdateChannel,
@@ -71,6 +65,7 @@ import {
 } from '@/hooks/useChannelWizards';
 import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestModels } from '@/lib/opencode/hooks/use-opencode-data';
 import { SlackIcon } from '@/components/icons/slack-icon';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Channel Type Icons ─────────────────────────────────────────────────────
 
@@ -146,10 +141,10 @@ export function ChannelsTabPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? THEME.light.foreground : THEME.dark.foreground }}>
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
@@ -186,9 +181,9 @@ function ChannelsContent() {
   const addSheetRef = useRef<BottomSheetModal>(null);
 
   // Colors
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
 
   // Filter + sort channels
   const filteredChannels = useMemo(() => {
@@ -253,10 +248,6 @@ function ChannelsContent() {
     addSheetRef.current?.present();
   }, []);
 
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
-    [],
-  );
 
   const renderItem = useCallback(
     ({ item }: { item: ChannelConfig }) => (
@@ -287,7 +278,7 @@ function ChannelsContent() {
           </Text>
           <Pressable
             onPress={() => { haptics.tap(); refetch(); }}
-            style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}
+            style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
           >
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Try Again</Text>
           </Pressable>
@@ -347,7 +338,6 @@ function ChannelsContent() {
         sheetRef={addSheetRef}
         isDark={isDark}
         theme={theme}
-        renderBackdrop={renderBackdrop}
         sandboxUrl={sandboxUrl}
         sandboxUuid={sandboxUuid}
         onCreate={async () => {
@@ -369,18 +359,18 @@ function ChannelsContent() {
 // ─── Channel Row ─────────────────────────────────────────────────────────────
 
 function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDark: boolean; onPress: () => void }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
   const platform = channel.platform || channel.channelType!;
   const modelShort = channel.default_model ? channel.default_model.split('/').pop() : null;
   const isTelegram = platform === 'telegram';
 
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: borderColor }}>
-      <TouchableOpacity
+      <Pressable
         onPress={onPress}
-        activeOpacity={0.7}
+        className="active:opacity-70"
         style={{
           flexDirection: 'row', alignItems: 'center', gap: 12,
           paddingVertical: 12, paddingHorizontal: 16,
@@ -391,7 +381,7 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
           <ChannelTypeIcon
             type={platform}
             size={24}
-            color={isTelegram ? '#29B6F6' : fg}
+            color={isTelegram ? THEME.accent.blue : fg}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -401,13 +391,13 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
               flexDirection: 'row', alignItems: 'center',
               paddingHorizontal: 7, paddingVertical: 2, borderRadius: 9999,
               backgroundColor: channel.enabled
-                ? (isDark ? 'rgba(16,185,129,0.12)' : 'rgba(16,185,129,0.08)')
-                : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                ? (isDark ? withAlpha(THEME.accent.green, 0.12) : withAlpha(THEME.accent.green, 0.08))
+                : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
             }}>
               {channel.enabled && (
-                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: '#10b981', marginRight: 4 }} />
+                <View style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: THEME.accent.green, marginRight: 4 }} />
               )}
-              <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: channel.enabled ? '#10b981' : muted }}>
+              <Text style={{ fontSize: 9, fontFamily: 'Roobert-Medium', color: channel.enabled ? THEME.accent.green : muted }}>
                 {channel.enabled ? 'Live' : 'Off'}
               </Text>
             </View>
@@ -419,7 +409,7 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
           </Text>
         </View>
         <ChevronRight size={16} color={muted} />
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 }
@@ -439,6 +429,7 @@ function ChannelDetailSheet({
   onDelete: (channel: ChannelConfig) => void;
   onClose: () => void;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
@@ -453,11 +444,11 @@ function ChannelDetailSheet({
   const [saving, setSaving] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
-  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
+  const subtleBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02);
 
   // Load agents & models
   const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
@@ -521,10 +512,6 @@ function ChannelDetailSheet({
     setTimeout(() => setWebhookCopied(false), 2000);
   };
 
-  const renderBackdrop = useCallback(
-    (props: any) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />,
-    [],
-  );
 
   const platform = channel ? (channel.platform || channel.channelType!) : 'telegram';
   const webhookUrl = channel?.webhook_url || (channel?.platformConfig?.webhook_url as string) || '';
@@ -535,15 +522,15 @@ function ChannelDetailSheet({
       snapPoints={['85%']}
       enablePanDownToClose
       onDismiss={onClose}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backdropComponent={SheetBackdrop}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       {channel ? (
       <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: sheetPadding }} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             <ChannelTypeIcon type={platform} size={20} color={fg} />
           </View>
           <View style={{ flex: 1 }}>
@@ -559,21 +546,20 @@ function ChannelDetailSheet({
             <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 1 }}>Receive and respond to messages</Text>
           </View>
           <Switch
-            value={channel.enabled}
-            onValueChange={(val) => { haptics.selection(); onToggle(channel, val); }}
-            trackColor={{ false: isDark ? '#3F3F46' : '#D4D4D8', true: theme.primary }}
-            thumbColor="#fff"
+            checked={channel.enabled}
+            onCheckedChange={(val) => { haptics.selection(); onToggle(channel, val); }}
           />
         </View>
 
         {/* Channel Name */}
         <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Channel Name</Text>
-        <TextInput
+        <Input
           value={editName}
           onChangeText={(text) => { setEditName(text); markDirty(); }}
           placeholder="Channel name"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-          style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, fontFamily: 'Roobert', color: fg, marginBottom: 16 }}
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
+          className="h-auto rounded-[14px] shadow-none"
+          style={{ backgroundColor: inputBg, borderColor, paddingHorizontal: 16, paddingVertical: 12, fontSize: 15, fontFamily: 'Roobert', color: fg, marginBottom: 16 }}
         />
 
         {/* Agent */}
@@ -583,7 +569,7 @@ function ChannelDetailSheet({
             {agents.filter((a) => a.mode !== 'subagent').map((agent) => {
               const active = agentName === agent.name;
               return (
-                <Pressable key={agent.name} onPress={() => { haptics.selection(); setAgentName(agent.name); markDirty(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                <Pressable key={agent.name} onPress={() => { haptics.selection(); setAgentName(agent.name); markDirty(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)) }}>
                   <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
                 </Pressable>
               );
@@ -598,7 +584,7 @@ function ChannelDetailSheet({
             {filteredModels.map((m, i) => {
               const active = selectedModelIdx === i;
               return (
-                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { haptics.selection(); setSelectedModelIdx(i); markDirty(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}>
+                <Pressable key={`${m.providerID}:${m.modelID}`} onPress={() => { haptics.selection(); setSelectedModelIdx(i); markDirty(); }} style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 9999, backgroundColor: active ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)) }}>
                   <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
                 </Pressable>
               );
@@ -608,32 +594,32 @@ function ChannelDetailSheet({
 
         {/* Bridge Instructions (ported from web c6b83f1) */}
         <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Bridge Instructions</Text>
-        <TextInput
+        <Textarea
           value={bridgeInstructions}
           onChangeText={(text) => { setBridgeInstructions(text); markDirty(); }}
           placeholder="Optional per-channel delivery instructions..."
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-          multiline
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
           numberOfLines={3}
-          style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, textAlignVertical: 'top', marginBottom: 4 }}
+          className="rounded-[14px] shadow-none"
+          style={{ backgroundColor: inputBg, borderColor, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, marginBottom: 4 }}
         />
         <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Appended to the built-in platform bridge instructions on every incoming message.</Text>
 
         {/* System Instructions */}
         <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>System Instructions</Text>
-        <TextInput
+        <Textarea
           value={instructions}
           onChangeText={(text) => { setInstructions(text); markDirty(); }}
           placeholder="Optional system prompt for this channel's sessions..."
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-          multiline
+          placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
           numberOfLines={3}
-          style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, textAlignVertical: 'top', marginBottom: 4 }}
+          className="rounded-[14px] shadow-none"
+          style={{ backgroundColor: inputBg, borderColor, paddingHorizontal: 16, paddingVertical: 12, fontSize: 14, fontFamily: 'Roobert', color: fg, height: 80, marginBottom: 4 }}
         />
         <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Used as the system prompt for sessions started from this channel. Saving resets active channel sessions so changes apply on the next message.</Text>
 
         {/* Webhook URL */}
-        <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', padding: 14, marginBottom: 20 }}>
+        <View style={{ borderRadius: 14, backgroundColor: subtleBg, borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06), padding: 14, marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <ExternalLink size={14} color={muted} />
@@ -641,15 +627,15 @@ function ChannelDetailSheet({
             </View>
             {!!webhookUrl && (
               <Pressable onPress={handleCopyWebhook} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                <Copy size={11} color={webhookCopied ? '#34d399' : muted} />
-                <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: webhookCopied ? '#34d399' : muted }}>{webhookCopied ? 'Copied' : 'Copy'}</Text>
+                <Copy size={11} color={webhookCopied ? THEME.accent.green : muted} />
+                <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: webhookCopied ? THEME.accent.green : muted }}>{webhookCopied ? 'Copied' : 'Copy'}</Text>
               </Pressable>
             )}
           </View>
           {webhookUrl ? (
             <Text style={{ fontSize: 11, fontFamily: 'monospace', color: muted, lineHeight: 16 }} numberOfLines={2} selectable>{webhookUrl}</Text>
           ) : (
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: '#d97706' }}>Public URL not resolved. Set PUBLIC_BASE_URL.</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: THEME.accent.orange }}>Public URL not resolved. Set PUBLIC_BASE_URL.</Text>
           )}
           <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 6 }}>
             {platform === 'telegram'
@@ -674,15 +660,15 @@ function ChannelDetailSheet({
         )}
 
         {/* Danger Zone */}
-        <View style={{ padding: 14, borderRadius: 14, backgroundColor: isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.04)', borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)' }}>
+        <View style={{ padding: 14, borderRadius: 14, backgroundColor: isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.08) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.04), borderWidth: StyleSheet.hairlineWidth, borderColor: isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.2) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.15) }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete Channel</Text>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? 'rgba(239,68,68,0.7)' : 'rgba(239,68,68,0.6)', marginTop: 2 }}>Permanently remove this channel</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Delete Channel</Text>
+              <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.7) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.6), marginTop: 2 }}>Permanently remove this channel</Text>
             </View>
-            <Pressable onPress={() => onDelete(channel)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }}>
-              <Trash2 size={14} color="#ef4444" />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete</Text>
+            <Pressable onPress={() => onDelete(channel)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 9999, backgroundColor: isDark ? withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.15) : withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.1) }}>
+              <Trash2 size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Delete</Text>
             </Pressable>
           </View>
         </View>
@@ -702,7 +688,7 @@ function DetailRow({ label, value, isDark, fg, muted, last, mono }: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       paddingHorizontal: 14, paddingVertical: 11,
       borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
-      borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
     }}>
       <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>{label}</Text>
       <Text style={{ fontSize: 13, fontFamily: mono ? 'monospace' : 'Roobert-Medium', color: fg, maxWidth: '60%' }} numberOfLines={1}>{value}</Text>
@@ -715,29 +701,29 @@ function DetailRow({ label, value, isDark, fg, muted, last, mono }: {
 type WizardView = 'type-select' | 'telegram-wizard' | 'slack-wizard' | 'generic-config';
 
 function AddChannelSheet({
-  sheetRef, isDark, theme, renderBackdrop, sandboxUrl, sandboxUuid,
+  sheetRef, isDark, theme, sandboxUrl, sandboxUuid,
   onCreate, onCreated, isCreating,
 }: {
   sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
-  renderBackdrop: (props: any) => React.ReactElement;
   sandboxUrl?: string;
   sandboxUuid?: string;
   onCreate: (data: { name: string; channel_type: ChannelType }) => void;
   onCreated: () => void;
   isCreating: boolean;
 }) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [view, setView] = useState<WizardView>('type-select');
   const [selectedType, setSelectedType] = useState<ChannelType | null>(null);
   const [channelName, setChannelName] = useState('');
 
-  const fg = isDark ? '#f8f8f8' : '#121215';
-  const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
-  const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
 
   const reset = () => { setView('type-select'); setSelectedType(null); setChannelName(''); };
 
@@ -774,13 +760,13 @@ function AddChannelSheet({
       ref={sheetRef}
       {...(isWizard ? { snapPoints: ['90%'] } : { enableDynamicSizing: true })}
       enablePanDownToClose
-      backdropComponent={renderBackdrop}
+      backdropComponent={SheetBackdrop}
       keyboardBehavior="interactive"
       keyboardBlurBehavior="restore"
       android_keyboardInputMode="adjustResize"
       onDismiss={reset}
-      backgroundStyle={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
-      handleIndicatorStyle={{ backgroundColor: isDark ? '#3F3F46' : '#D4D4D8', width: 36, height: 5, borderRadius: 3 }}
+      backgroundStyle={{ backgroundColor: sheetBg, borderTopLeftRadius: 24, borderTopRightRadius: 24 }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
     >
       <BottomSheetScrollView
         contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}
@@ -788,7 +774,7 @@ function AddChannelSheet({
       >
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             {selectedType ? (
               <ChannelTypeIcon type={selectedType} size={20} color={fg} />
             ) : (
@@ -812,16 +798,16 @@ function AddChannelSheet({
                   disabled={!isSupported}
                   style={{
                     width: '48%' as any, flexGrow: 1, padding: 14, borderRadius: 14,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+                    backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02),
                     borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                    borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                     alignItems: 'center', gap: 8, opacity: isSupported ? 1 : 0.5,
                   }}
                 >
                   <ChannelTypeIcon type={ct.type} size={24} color={isSupported ? fg : muted} muted={!isSupported} />
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isSupported ? fg : muted }}>{ct.label}</Text>
                   {!isSupported && (
-                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}>
                       <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: muted }}>Coming Soon</Text>
                     </View>
                   )}
@@ -872,14 +858,14 @@ function AddChannelSheet({
               value={channelName}
               onChangeText={setChannelName}
               placeholder={`e.g. My ${selectedType ? getChannelTypeLabel(selectedType) : ''} Bot`}
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoFocus
               style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontFamily: 'Roobert', color: fg, marginBottom: 20 }}
             />
             <Pressable
               onPress={handleCreate}
               disabled={!channelName.trim() || isCreating}
-              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999, backgroundColor: !channelName.trim() ? (isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06)) : theme.primary }}
             >
               {isCreating ? (
                 <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -982,7 +968,7 @@ function TelegramWizard({
   return (
     <>
       {/* Instructions */}
-      <View style={{ borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)', padding: 14, marginBottom: 16 }}>
+      <View style={{ borderRadius: 14, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02), padding: 14, marginBottom: 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>1.</Text>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Open</Text>
@@ -995,7 +981,7 @@ function TelegramWizard({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>2.</Text>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Send</Text>
-          <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+          <View style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05), borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
             <Text style={{ fontSize: 11, fontFamily: 'monospace', color: fg }}>/newbot</Text>
           </View>
           <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>and follow the prompts</Text>
@@ -1012,7 +998,7 @@ function TelegramWizard({
         value={botToken}
         onChangeText={(t) => { setBotToken(t); setBotInfo(null); }}
         placeholder="123456789:ABCdefGhIJKlmnOPQRstUVWxyz..."
-        placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+        placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
         secureTextEntry
         textContentType="none"
         autoComplete="off"
@@ -1023,15 +1009,15 @@ function TelegramWizard({
 
       {/* Verified badge */}
       {botInfo && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? 'rgba(190,24,93,0.15)' : 'rgba(190,24,93,0.1)', backgroundColor: isDark ? 'rgba(190,24,93,0.05)' : 'rgba(190,24,93,0.03)', marginBottom: 16 }}>
-          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: isDark ? 'rgba(190,24,93,0.15)' : 'rgba(190,24,93,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? withAlpha(theme.primary, 0.15) : withAlpha(theme.primary, 0.1), backgroundColor: isDark ? withAlpha(theme.primary, 0.05) : withAlpha(theme.primary, 0.03), marginBottom: 16 }}>
+          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: isDark ? withAlpha(theme.primary, 0.15) : withAlpha(theme.primary, 0.1), alignItems: 'center', justifyContent: 'center' }}>
             <Check size={12} color={theme.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>@{botInfo.username}</Text>
             <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{botInfo.firstName}</Text>
           </View>
-          <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? 'rgba(190,24,93,0.1)' : 'rgba(190,24,93,0.06)' }}>
+          <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? withAlpha(theme.primary, 0.1) : withAlpha(theme.primary, 0.06) }}>
             <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: theme.primary }}>Verified</Text>
           </View>
         </View>
@@ -1049,7 +1035,7 @@ function TelegramWizard({
                   <Pressable
                     key={agent.name}
                     onPress={() => { haptics.selection(); setAgentName(agent.name); }}
-                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)) }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
                   </Pressable>
@@ -1067,7 +1053,7 @@ function TelegramWizard({
                   <Pressable
                     key={`${m.providerID}:${m.modelID}`}
                     onPress={() => { haptics.selection(); setSelectedModelIdx(i); }}
-                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)) }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
                   </Pressable>
@@ -1088,7 +1074,7 @@ function TelegramWizard({
           <Pressable
             onPress={handleVerify}
             disabled={!botToken.trim() || isWorking}
-            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: !botToken.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: !botToken.trim() ? (isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06)) : theme.primary }}
           >
             {verifyMutation.isPending ? (
               <ActivityIndicator size="small" color={theme.primaryForeground} />
@@ -1231,7 +1217,7 @@ function SlackWizard({
             value={botName}
             onChangeText={setBotName}
             placeholder="Kortix Agent"
-            placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             style={{ ...inputStyle, marginBottom: 4 }}
           />
           <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginBottom: 16 }}>Display name in Slack.</Text>
@@ -1248,7 +1234,7 @@ function SlackWizard({
                     onPress={() => { haptics.selection(); setAgentName(agent.name); }}
                     style={{
                       paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
-                      backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                      backgroundColor: active ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
                     }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>
@@ -1272,7 +1258,7 @@ function SlackWizard({
                     onPress={() => { haptics.selection(); setSelectedModelIdx(i); }}
                     style={{
                       paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
-                      backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'),
+                      backgroundColor: active ? theme.primary : (isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04)),
                     }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>
@@ -1305,7 +1291,7 @@ function SlackWizard({
       {/* ─── Step 2: Create App ─── */}
       {step === 2 && (
         <>
-          <View style={{ borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)', padding: 14, marginBottom: 16 }}>
+          <View style={{ borderRadius: 14, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02), padding: 14, marginBottom: 16 }}>
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg, marginBottom: 8 }}>Create your Slack app:</Text>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, lineHeight: 20 }}>
               {'1. Go to api.slack.com/apps → Create New App → From an app manifest\n2. Select your workspace, paste the manifest below\n3. After creating, Install to Workspace from OAuth & Permissions'}
@@ -1317,14 +1303,14 @@ function SlackWizard({
           </View>
 
           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>App Manifest (JSON)</Text>
-          <View style={{ borderRadius: 12, backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.04)', padding: 12, marginBottom: 8, maxHeight: 120 }}>
+          <View style={{ borderRadius: 12, backgroundColor: isDark ? withAlpha(THEME.light.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.04), padding: 12, marginBottom: 8, maxHeight: 120 }}>
             <ScrollView horizontal={false} showsVerticalScrollIndicator>
               <Text style={{ fontSize: 11, fontFamily: 'monospace', color: muted }} selectable>{manifestJson}</Text>
             </ScrollView>
           </View>
-          <Pressable onPress={handleCopyManifest} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', marginBottom: 16 }}>
-            {copied ? <Check size={14} color="#34d399" /> : <Copy size={14} color={fg} />}
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: copied ? '#34d399' : fg }}>{copied ? 'Copied!' : 'Copy Manifest'}</Text>
+          <Pressable onPress={handleCopyManifest} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04), marginBottom: 16 }}>
+            {copied ? <Check size={14} color={THEME.accent.green} /> : <Copy size={14} color={fg} />}
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: copied ? THEME.accent.green : fg }}>{copied ? 'Copied!' : 'Copy Manifest'}</Text>
           </Pressable>
 
           <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -1343,7 +1329,7 @@ function SlackWizard({
       {/* ─── Step 3: Connect ─── */}
       {step === 3 && (
         <>
-          <View style={{ borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)', padding: 14, marginBottom: 16 }}>
+          <View style={{ borderRadius: 14, backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.02), padding: 14, marginBottom: 16 }}>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, lineHeight: 18 }}>
               Go to your app on api.slack.com → OAuth & Permissions to find the Bot Token, and Basic Information → Signing Secret.
             </Text>
@@ -1354,7 +1340,7 @@ function SlackWizard({
             value={botToken}
             onChangeText={setBotToken}
             placeholder="xoxb-..."
-            placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             secureTextEntry
             textContentType="none"
             autoComplete="off"
@@ -1368,7 +1354,7 @@ function SlackWizard({
             value={signingSecret}
             onChangeText={setSigningSecret}
             placeholder="Enter signing secret"
-            placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+            placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
             secureTextEntry
             textContentType="none"
             autoComplete="off"
@@ -1387,7 +1373,7 @@ function SlackWizard({
               disabled={!botToken.trim() || !signingSecret.trim() || connectMutation.isPending}
               style={{
                 flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999,
-                backgroundColor: (!botToken.trim() || !signingSecret.trim()) ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary,
+                backgroundColor: (!botToken.trim() || !signingSecret.trim()) ? (isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06)) : theme.primary,
               }}
             >
               {connectMutation.isPending ? (
@@ -1425,7 +1411,7 @@ function StepIndicator({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <View style={{
                 width: 24, height: 24, borderRadius: 12,
-                backgroundColor: isActive ? theme.primary : isComplete ? `${theme.primary}33` : 'rgba(128,128,128,0.15)',
+                backgroundColor: isActive ? theme.primary : isComplete ? withAlpha(theme.primary, 0.2) : withAlpha(muted, 0.15),
                 alignItems: 'center', justifyContent: 'center',
               }}>
                 {isComplete ? (
@@ -1437,7 +1423,7 @@ function StepIndicator({
               <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isActive ? fg : muted }}>{label}</Text>
             </View>
             {i < steps.length - 1 && (
-              <View style={{ width: 20, height: 1, backgroundColor: isComplete ? `${theme.primary}66` : 'rgba(128,128,128,0.15)', marginHorizontal: 6 }} />
+              <View style={{ width: 20, height: 1, backgroundColor: isComplete ? withAlpha(theme.primary, 0.4) : withAlpha(muted, 0.15), marginHorizontal: 6 }} />
             )}
           </React.Fragment>
         );

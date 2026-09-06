@@ -9,9 +9,9 @@ import * as React from 'react';
 import { ChevronDown, MoreHorizontal } from 'lucide-react-native';
 
 import { Icon } from '@/components/ui/icon';
-import { ListRow } from '@/components/ui/list-row';
+import { ListRow } from '@/components/kortix/list-row';
 import { Separator } from '@/components/ui/separator';
-import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/ui/sheet';
+import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/kortix/sheet';
 import {
   chatActionItems,
   type ChatActionGates,

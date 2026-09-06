@@ -23,6 +23,7 @@ import {
 import { haptics } from '@/lib/haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -163,7 +164,7 @@ export default function SettingsScreen() {
     },
   ];
 
-  const subtitleColor = colorScheme === 'dark' ? 'rgba(248,248,248,0.55)' : 'rgba(18,18,21,0.55)';
+  const subtitleColor = colorScheme === 'dark' ? withAlpha(THEME.dark.foreground, 0.55) : withAlpha(THEME.light.foreground, 0.55);
 
   return (
     <ScrollView

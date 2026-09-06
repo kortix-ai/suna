@@ -10,13 +10,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
-import {
-  BottomSheetBackdrop,
-  BottomSheetModal,
-  BottomSheetTextInput,
-  BottomSheetView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetTextInput, BottomSheetView } from '@gorhom/bottom-sheet';
 import {
   Check,
   Globe,
@@ -33,8 +27,10 @@ import {
 } from '@/lib/platform/hooks';
 import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
 import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { useThemeColors } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -42,12 +38,14 @@ function providerLabel(provider: SandboxProviderName): string {
   return provider.toUpperCase();
 }
 
-function statusColor(status: string): string {
+function statusColor(status: string, isDark: boolean): string {
   switch (status) {
-    case 'running': case 'ready': case 'active': return '#34D399';
-    case 'stopped': case 'archived': return '#9CA3AF';
-    case 'error': case 'failed': return '#EF4444';
-    default: return '#FBBF24';
+    case 'running': case 'ready': case 'active': return THEME.accent.green;
+    case 'stopped': case 'archived':
+      return isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+    case 'error': case 'failed':
+      return isDark ? THEME.dark.destructive : THEME.light.destructive;
+    default: return THEME.accent.orange;
   }
 }
 
@@ -150,7 +148,7 @@ export default function InstancesScreen() {
                   <>
                     <View className="py-3.5">
                       <View className="flex-row items-center mb-2">
-                        <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
+                        <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: THEME.accent.orange }} />
                         <View className="flex-1">
                           <Text className="font-roobert-medium text-[15px] text-foreground">Sandbox</Text>
                           <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
@@ -163,13 +161,13 @@ export default function InstancesScreen() {
                       </View>
                       <View
                         className="h-1.5 rounded-full overflow-hidden"
-                        style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                        style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
                       >
                         <View
                           className="h-full rounded-full"
                           style={{
                             width: `${Math.max(creatingProgress.percent, 2)}%`,
-                            backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                            backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                           }}
                         />
                       </View>
@@ -191,7 +189,7 @@ export default function InstancesScreen() {
                         <View className="flex-row items-center">
                           <View
                             className="h-2.5 w-2.5 rounded-full mr-3"
-                            style={{ backgroundColor: isProvisioning ? '#FBBF24' : statusColor(instance.status) }}
+                            style={{ backgroundColor: isProvisioning ? THEME.accent.orange : statusColor(instance.status, isDark) }}
                           />
                           <View className="flex-1">
                             <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
@@ -213,11 +211,11 @@ export default function InstancesScreen() {
                         {isProvisioning && (
                           <View
                             className="mt-2 h-1 rounded-full overflow-hidden"
-                            style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                            style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
                           >
                             <View
                               className="h-full rounded-full"
-                              style={{ width: '30%', backgroundColor: '#FBBF24' }}
+                              style={{ width: '30%', backgroundColor: THEME.accent.orange }}
                             />
                           </View>
                         )}
@@ -250,7 +248,7 @@ export default function InstancesScreen() {
           className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
           style={{ backgroundColor: themeColors.primary }}
         >
-          <Icon as={Plus} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+          <Icon as={Plus} size={16} color={themeColors.primaryForeground} strokeWidth={2.5} />
           <Text className="ml-2 font-roobert-semibold text-[15px]" style={{ color: themeColors.primaryForeground }}>
             New Instance
           </Text>
@@ -270,6 +268,7 @@ const AddInstanceSheet = React.forwardRef<
   BottomSheetModal,
   { isDark: boolean; onCreated: () => void; onProgress: (p: { percent: number; message: string } | null) => void }
 >(function AddInstanceSheet({ isDark, onCreated, onProgress }, ref) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const [step, setStep] = React.useState<AddStep>('select');
   const [customUrl, setCustomUrl] = React.useState('');
@@ -277,19 +276,13 @@ const AddInstanceSheet = React.forwardRef<
   const [isCreating, setIsCreating] = React.useState(false);
   const [progress, setProgress] = React.useState<{ percent: number; message: string } | null>(null);
 
-  const fgColor = isDark ? '#f8f8f8' : '#121215';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
 
   const snapPoints = React.useMemo(() => {
     if (isCreating && progress) return [300];
     return step === 'custom' ? [370] : [260];
   }, [step, isCreating, progress]);
 
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-    ),
-    [],
-  );
 
   const resetState = React.useCallback(() => {
     setStep('select');
@@ -326,14 +319,11 @@ const AddInstanceSheet = React.forwardRef<
       index={0}
       snapPoints={snapPoints}
       enablePanDownToClose={!isCreating}
-      backdropComponent={renderBackdrop}
+      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.35} />}
       onDismiss={resetState}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36, height: 5, borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24, borderTopRightRadius: 24,
       }}
     >
@@ -356,13 +346,13 @@ const AddInstanceSheet = React.forwardRef<
               </View>
               <View
                 className="h-1.5 rounded-full overflow-hidden"
-                style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                style={{ backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06) }}
               >
                 <View
                   className="h-full rounded-full"
                   style={{
                     width: `${Math.max(progress.percent, 2)}%`,
-                    backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                    backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
                   }}
                 />
               </View>
@@ -406,14 +396,14 @@ const AddInstanceSheet = React.forwardRef<
               value={customUrl}
               onChangeText={setCustomUrl}
               placeholder="http://localhost:8008/v1/p/sandbox/8000"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
               style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                 borderWidth: 1,
-                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
                 borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                 fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 10,
               }}
@@ -423,13 +413,13 @@ const AddInstanceSheet = React.forwardRef<
               value={customLabel}
               onChangeText={setCustomLabel}
               placeholder="Display name (optional)"
-              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              placeholderTextColor={isDark ? withAlpha(THEME.dark.foreground, 0.25) : withAlpha(THEME.light.foreground, 0.3)}
               autoCapitalize="words"
               autoCorrect={false}
               style={{
-                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                 borderWidth: 1,
-                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08),
                 borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                 fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 16,
               }}
@@ -441,17 +431,24 @@ const AddInstanceSheet = React.forwardRef<
               className="items-center rounded-full py-3.5 active:opacity-90"
               style={{
                 backgroundColor: customUrl.trim()
-                  ? isDark ? '#f8f8f8' : '#121215'
-                  : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+                  ? isDark ? THEME.dark.foreground : THEME.light.foreground
+                  : isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                 opacity: customUrl.trim() ? 1 : 0.5,
               }}
             >
               {isCreating ? (
-                <ActivityIndicator size="small" color={isDark ? '#121215' : '#f8f8f8'} />
+                // Spinner sits on the filled (foreground-colored) button — invert vs.
+                // the usual isDark mapping so it reads dark-on-light / light-on-dark.
+                <ActivityIndicator size="small" color={isDark ? THEME.light.foreground : THEME.dark.foreground} />
               ) : (
                 <Text
                   className="font-roobert-semibold text-[15px]"
-                  style={{ color: customUrl.trim() ? (isDark ? '#121215' : '#f8f8f8') : (isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)') }}
+                  style={{
+                    // Same inversion as the spinner above when the button is filled.
+                    color: customUrl.trim()
+                      ? (isDark ? THEME.light.foreground : THEME.dark.foreground)
+                      : (isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)),
+                  }}
                 >
                   Connect
                 </Text>

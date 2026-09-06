@@ -12,7 +12,6 @@ import React, { forwardRef, useState, useRef, useCallback, useEffect, useMemo } 
 import {
   View,
   TextInput,
-  TouchableOpacity,
   ScrollView,
   Platform,
   Animated,
@@ -26,6 +25,7 @@ import {
   type TextInputSelectionChangeEventData,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -39,13 +39,7 @@ import {
   ChevronRight as ChevronRightIcon,
 } from 'lucide-react-native';
 import { Icon } from '@/components/ui/icon';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetView,
-  BottomSheetScrollView,
-  type BottomSheetBackdropProps,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -56,7 +50,9 @@ import type { Session } from '@/lib/platform/types';
 import { MentionSuggestions } from './MentionSuggestions';
 import { useMentions, type TrackedMention, type MentionItem } from './useMentions';
 import { Text as RNText } from 'react-native';
-import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
+import { useThemeColors, getToggleTrackBg, getToggleActiveBg, getSheetBg } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -708,7 +704,7 @@ export function SessionChatInput({
                       position: 'relative',
                       borderRadius: 8,
                       overflow: 'hidden',
-                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                      backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                     }}
                   >
                     {f.isImage ? (
@@ -719,17 +715,19 @@ export function SessionChatInput({
                       />
                     ) : (
                       <View style={{ width: 52, height: 52, alignItems: 'center', justifyContent: 'center', padding: 4 }}>
-                        <Ionicons name="document-outline" size={22} color={isDark ? '#a1a1aa' : '#71717a'} />
+                        <Ionicons name="document-outline" size={22} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
                         <RNText
                           numberOfLines={2}
-                          style={{ fontSize: 9, color: isDark ? '#a1a1aa' : '#71717a', textAlign: 'center', marginTop: 2 }}
+                          style={{ fontSize: 9, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, textAlign: 'center', marginTop: 2 }}
                         >
                           {f.name}
                         </RNText>
                       </View>
                     )}
                     {/* Remove button */}
-                    <TouchableOpacity
+                    <Button
+                      variant="ghost"
+                      className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
                       onPress={() => removeAttachedFile(idx)}
                       style={{
                         position: 'absolute',
@@ -738,14 +736,17 @@ export function SessionChatInput({
                         width: 16,
                         height: 16,
                         borderRadius: 8,
-                        backgroundColor: 'rgba(0,0,0,0.55)',
+                        // Fixed dark scrim + light icon regardless of app
+                        // theme — this overlay sits on top of an arbitrary
+                        // user photo/file thumbnail, not a themed surface.
+                        backgroundColor: withAlpha(THEME.light.foreground, 0.55),
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                       hitSlop={4}
                     >
-                      <XIcon size={9} color="#fff" strokeWidth={3} />
-                    </TouchableOpacity>
+                      <XIcon size={9} color={THEME.dark.foreground} strokeWidth={3} />
+                    </Button>
                   </View>
                 ))}
               </ScrollView>
@@ -768,35 +769,37 @@ export function SessionChatInput({
                     paddingHorizontal: 10,
                     paddingVertical: 5,
                     borderRadius: 8,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                    backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                     borderWidth: 1,
-                    borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                    borderColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                   }}
                 >
                   <Ionicons
                     name="terminal-outline"
                     size={12}
-                    color={isDark ? '#a1a1aa' : '#71717a'}
+                    color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground}
                     style={{ marginRight: 6 }}
                   />
                   <RNText
                     style={{
                       fontSize: 13,
                       fontFamily: 'Roobert-Medium',
-                      color: isDark ? '#F8F8F8' : '#121215',
+                      color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       maxWidth: 220,
                     }}
                     numberOfLines={1}
                   >
                     /{stagedCommand.name}
                   </RNText>
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
+                    className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
                     onPress={() => { setStagedCommand(null); setText(''); }}
                     hitSlop={8}
                     style={{ marginLeft: 6 }}
                   >
-                    <Ionicons name="close" size={12} color={isDark ? '#71717a' : '#a1a1aa'} />
-                  </TouchableOpacity>
+                    <Ionicons name="close" size={12} color={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground} />
+                  </Button>
                 </View>
                 {stagedCommand.description && (
                   <RNText
@@ -804,7 +807,7 @@ export function SessionChatInput({
                     style={{
                       fontSize: 11,
                       fontFamily: 'Roobert',
-                      color: isDark ? '#71717a' : '#a1a1aa',
+                      color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                       flex: 1,
                     }}
                   >
@@ -825,7 +828,7 @@ export function SessionChatInput({
                         left: 0,
                         top: Platform.OS === 'ios' ? 5 : 3,
                         fontSize: 14,
-                        color: isDark ? '#999999' : '#6e6e6e',
+                        color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
                         opacity: fadeAnim,
                         transform: [{ translateY: slideAnim }],
                         zIndex: 1,
@@ -840,14 +843,14 @@ export function SessionChatInput({
                     onChangeText={handleTextChange}
                     onSelectionChange={handleSelectionChange}
                     placeholder={stagedCommand ? 'Enter details and press send, or tap X to cancel' : ''}
-                    placeholderTextColor={isDark ? '#555' : '#aaa'}
+                    placeholderTextColor={isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground}
                     multiline
                     maxLength={10000}
                     style={{
                       maxHeight: 100,
                       fontSize: 14,
                       lineHeight: 20,
-                      color: isDark ? '#F8F8F8' : '#121215',
+                      color: isDark ? THEME.dark.foreground : THEME.light.foreground,
                       paddingTop: Platform.OS === 'ios' ? 5 : 3,
                       paddingBottom: Platform.OS === 'ios' ? 5 : 3,
                       minHeight: 32,
@@ -864,9 +867,10 @@ export function SessionChatInput({
                   {/* Left: "+" button + compact context indicators */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                     {!onboardingMode && (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
                         onPress={() => setShowActionsSheet(true)}
-                        activeOpacity={0.7}
                         hitSlop={6}
                         style={{
                           width: 26,
@@ -874,17 +878,18 @@ export function SessionChatInput({
                           alignItems: 'center',
                           justifyContent: 'center',
                           borderRadius: 13,
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.04),
                         }}
                       >
-                        <PlusIcon size={14} color={isDark ? '#a1a1aa' : '#71717a'} strokeWidth={2} />
-                      </TouchableOpacity>
+                        <PlusIcon size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} strokeWidth={2} />
+                      </Button>
                     )}
 
                     {/* Compact config label */}
-                    <TouchableOpacity
+                    <Button
+                      variant="ghost"
+                      className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
                       onPress={openConfigSheet}
-                      activeOpacity={0.7}
                       hitSlop={6}
                       style={{
                         flexDirection: 'row',
@@ -899,7 +904,7 @@ export function SessionChatInput({
                         style={{
                           fontSize: 13,
                           fontFamily: 'Roobert',
-                          color: isDark ? '#71717a' : '#a1a1aa',
+                          color: isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground,
                           maxWidth: 140,
                         }}
                       >
@@ -910,16 +915,17 @@ export function SessionChatInput({
                       <Ionicons
                         name="chevron-down"
                         size={9}
-                        color={isDark ? '#52525b' : '#d4d4d8'}
+                        color={isDark ? THEME.dark.border : THEME.light.border}
                         style={{ marginLeft: 2 }}
                       />
-                    </TouchableOpacity>
+                    </Button>
 
                     {/* Compact autocontinue indicator — only when mode is active */}
                     {!!autocontinueMode && currentAutoAlgorithm && (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
                         onPress={() => setShowAutoSheet(true)}
-                        activeOpacity={0.7}
                         hitSlop={6}
                         style={{
                           flexDirection: 'row',
@@ -927,55 +933,57 @@ export function SessionChatInput({
                           paddingHorizontal: 6,
                           paddingVertical: 3,
                           borderRadius: 10,
-                          backgroundColor: isDark ? 'rgba(109,40,217,0.15)' : 'rgba(99,102,241,0.12)',
+                          backgroundColor: withAlpha(THEME.accent.purple, isDark ? 0.15 : 0.12),
                         }}
                       >
                         <View style={{
                           width: 5,
                           height: 5,
                           borderRadius: 2.5,
-                          backgroundColor: isDark ? '#c4b5fd' : '#6366f1',
+                          backgroundColor: THEME.accent.purple,
                           marginRight: 4,
                         }} />
                         <Text
                           style={{
                             fontSize: 11,
                             fontFamily: 'Roobert-Medium',
-                            color: isDark ? '#c4b5fd' : '#4c1d95',
+                            color: THEME.accent.purple,
                           }}
                           numberOfLines={1}
                         >
                           {currentAutoAlgorithm.label}
                         </Text>
-                      </TouchableOpacity>
+                      </Button>
                     )}
                   </View>
 
                   {/* Right: queue + send/stop */}
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {isBusy && canSend && onEnqueue && (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
                         onPress={handleSubmit}
-                        activeOpacity={0.7}
                         style={{
                           flexDirection: 'row',
                           alignItems: 'center',
                           paddingHorizontal: 8,
                           paddingVertical: 3,
                           borderRadius: 12,
-                          backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                          backgroundColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
                         }}
                       >
-                        <Ionicons name="list-outline" size={11} color={isDark ? '#a1a1aa' : '#71717a'} style={{ marginRight: 3 }} />
-                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? '#a1a1aa' : '#71717a' }}>
+                        <Ionicons name="list-outline" size={11} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} style={{ marginRight: 3 }} />
+                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
                           Queue
                         </Text>
-                      </TouchableOpacity>
+                      </Button>
                     )}
                     {isBusy ? (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
                         onPress={onStop}
-                        activeOpacity={0.7}
                         style={{
                           width: 26,
                           height: 26,
@@ -986,43 +994,45 @@ export function SessionChatInput({
                         }}
                       >
                         <Ionicons name="stop" size={12} color={themeColors.primaryForeground} />
-                      </TouchableOpacity>
+                      </Button>
                     ) : hasContent ? (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-auto gap-0 rounded-full p-0 opacity-100 active:bg-transparent active:opacity-70"
                         onPress={handleSubmit}
                         disabled={!canSend}
-                        activeOpacity={0.7}
                         style={{
                           width: 26,
                           height: 26,
                           alignItems: 'center',
                           justifyContent: 'center',
                           borderRadius: 13,
-                          backgroundColor: canSend ? themeColors.primary : (isDark ? '#232324' : '#E5E7EB'),
+                          backgroundColor: canSend ? themeColors.primary : (isDark ? THEME.dark.border : THEME.light.border),
                         }}
                       >
                         <Ionicons
                           name="arrow-up"
                           size={14}
-                          color={canSend ? themeColors.primaryForeground : (isDark ? '#999999' : '#6e6e6e')}
+                          color={canSend ? themeColors.primaryForeground : (isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground)}
                         />
-                      </TouchableOpacity>
+                      </Button>
                     ) : (
-                      <TouchableOpacity
+                      <Button
+                        variant="ghost"
+                        className="h-auto w-auto gap-0 rounded-full p-0 opacity-100 active:bg-transparent active:opacity-70"
                         onPress={handleSubmit}
                         disabled={true}
-                        activeOpacity={0.7}
                         style={{
                           width: 26,
                           height: 26,
                           alignItems: 'center',
                           justifyContent: 'center',
                           borderRadius: 13,
-                          backgroundColor: isDark ? '#232324' : '#E5E7EB',
+                          backgroundColor: isDark ? THEME.dark.border : THEME.light.border,
                         }}
                       >
-                        <Ionicons name="arrow-up" size={14} color={isDark ? '#999999' : '#6e6e6e'} />
-                      </TouchableOpacity>
+                        <Ionicons name="arrow-up" size={14} color={isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground} />
+                      </Button>
                     )}
                   </View>
                 </View>
@@ -1085,15 +1095,16 @@ function AutoContinueButton({
   label: string;
   onPress: () => void;
 }) {
-  const activeBg = isDark ? 'rgba(109,40,217,0.18)' : 'rgba(99,102,241,0.16)';
-  const inactiveBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-  const activeColor = isDark ? '#C4B5FD' : '#4C1D95';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
+  const activeBg = withAlpha(THEME.accent.purple, isDark ? 0.18 : 0.16);
+  const inactiveBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
+  const activeColor = THEME.accent.purple;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
 
   return (
-    <TouchableOpacity
+    <Button
+      variant="ghost"
+      className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-80"
       onPress={onPress}
-      activeOpacity={0.8}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
@@ -1102,7 +1113,7 @@ function AutoContinueButton({
         borderRadius: 20,
         backgroundColor: isActive ? activeBg : inactiveBg,
         borderWidth: isActive ? 1 : 0,
-        borderColor: isActive ? (isDark ? 'rgba(192,132,252,0.4)' : 'rgba(99,102,241,0.4)') : 'transparent',
+        borderColor: isActive ? withAlpha(THEME.accent.purple, 0.4) : 'transparent',
       }}
       hitSlop={6}
     >
@@ -1110,7 +1121,7 @@ function AutoContinueButton({
         style={{
           fontSize: 12,
           fontFamily: 'Roobert-Medium',
-          color: isActive ? (isDark ? '#F8F8F8' : '#1f2937') : mutedColor,
+          color: isActive ? (isDark ? THEME.dark.foreground : THEME.light.foreground) : mutedColor,
           marginLeft: 0,
         }}
         numberOfLines={1}
@@ -1120,10 +1131,10 @@ function AutoContinueButton({
       <Ionicons
         name="chevron-down"
         size={10}
-        color={isActive ? (isDark ? '#c4b5fd' : '#4c1d95') : mutedColor}
+        color={isActive ? (THEME.accent.purple) : mutedColor}
         style={{ marginLeft: 4 }}
       />
-    </TouchableOpacity>
+    </Button>
   );
 }
 
@@ -1154,10 +1165,11 @@ function ActionsSheet({
   configLabel,
   onboardingMode,
 }: ActionsSheetProps) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
-  const muted = isDark ? '#a1a1aa' : '#71717a';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const bg = isDark ? '#1a1a1d' : '#FFFFFF';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const bg = getSheetBg(isDark);
 
   // Sync `visible` prop to the imperative BottomSheetModal API so the caller
   // API stays unchanged. Dismiss originating from user gesture flows back
@@ -1180,18 +1192,6 @@ function ActionsSheet({
     dismissingRef.current = false;
   }, [onClose]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   const rows: Array<{
     key: string;
@@ -1236,18 +1236,13 @@ function ActionsSheet({
       enablePanDownToClose
       enableOverDrag={false}
       onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      backdropComponent={renderBackdrop}
+      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
     >
       <BottomSheetView style={{ paddingBottom: insets.bottom + 8 }}>
         {/* Header — drag handle is the only affordance; swipe down or tap
@@ -1271,9 +1266,10 @@ function ActionsSheet({
             const isLast = idx === rows.length - 1;
             return (
               <React.Fragment key={row.key}>
-                <TouchableOpacity
+                <Button
+                  variant="ghost"
+                  className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
                   onPress={row.onPress}
-                  activeOpacity={0.7}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -1283,7 +1279,7 @@ function ActionsSheet({
                   <Icon
                     as={row.icon}
                     size={18}
-                    color={isDark ? 'rgba(248,248,248,0.8)' : 'rgba(18,18,21,0.8)'}
+                    color={isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8)}
                     strokeWidth={2.2}
                   />
                   <View style={{ marginLeft: 16, flex: 1 }}>
@@ -1311,17 +1307,17 @@ function ActionsSheet({
                   <Icon
                     as={ChevronRightIcon}
                     size={16}
-                    color={isDark ? 'rgba(248,248,248,0.35)' : 'rgba(18,18,21,0.35)'}
+                    color={isDark ? withAlpha(THEME.dark.foreground, 0.35) : withAlpha(THEME.light.foreground, 0.35)}
                     strokeWidth={2.2}
                   />
-                </TouchableOpacity>
+                </Button>
                 {!isLast && (
                   <View
                     style={{
                       height: 1,
                       backgroundColor: isDark
-                        ? 'rgba(248,248,248,0.08)'
-                        : 'rgba(18,18,21,0.08)',
+                        ? withAlpha(THEME.dark.foreground, 0.08)
+                        : withAlpha(THEME.light.foreground, 0.08),
                     }}
                   />
                 )}
@@ -1365,6 +1361,7 @@ function AutoContinueSheet({
   algorithms,
   isDark,
 }: AutoContinueSheetProps) {
+  const sheetBg = useSheetBackground();
   const insets = useSafeAreaInsets();
   const [detailAlg, setDetailAlg] = useState<AutoContinueAlgorithm | null>(null);
   const isActive = selected !== null;
@@ -1375,9 +1372,9 @@ function AutoContinueSheet({
   }, [algorithms]);
 
   const { height: screenHeight } = useWindowDimensions();
-  const muted = isDark ? '#a1a1aa' : '#71717a';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-  const bg = isDark ? '#121215' : '#FFFFFF';
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
+  const bg = getSheetBg(isDark);
 
   // Bridge `visible` prop to the imperative BottomSheetModal API.
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -1398,18 +1395,6 @@ function AutoContinueSheet({
     dismissingRef.current = false;
   }, [onClose]);
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   useEffect(() => {
     if (!visible) {
@@ -1427,18 +1412,13 @@ function AutoContinueSheet({
       enablePanDownToClose={!detailAlg}
       enableOverDrag={false}
       onDismiss={handleSheetDismiss}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: sheetBg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      backdropComponent={renderBackdrop}
+      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
     >
       {detailAlg ? (
         /* Detail view — algorithm deep-dive with its own scroller. */
@@ -1447,13 +1427,21 @@ function AutoContinueSheet({
           showsVerticalScrollIndicator={false}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingTop: 6, paddingHorizontal: 20, paddingBottom: 12 }}>
-            <TouchableOpacity onPress={() => setDetailAlg(null)} hitSlop={12} style={{ marginRight: 12 }}>
+            <Button
+              variant="ghost"
+              className="h-auto w-auto gap-0 rounded-full p-0 active:bg-transparent active:opacity-20"
+              onPress={() => setDetailAlg(null)}
+              hitSlop={12}
+              style={{ marginRight: 12 }}
+            >
               <Ionicons name="chevron-back" size={22} color={muted} />
-            </TouchableOpacity>
-            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+            </Button>
+            <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
               {detailAlg.label}
             </Text>
-            <TouchableOpacity
+            <Button
+              variant="ghost"
+              className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
               onPress={() => {
                 onSelect(detailAlg.id);
                 setDetailAlg(null);
@@ -1462,32 +1450,32 @@ function AutoContinueSheet({
               style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 4 }}
               hitSlop={10}
             >
-              <Text style={{ color: isDark ? '#c4b5fd' : '#4c1d95', fontFamily: 'Roobert-Medium', fontSize: 13 }}>
+              <Text style={{ color: THEME.accent.purple, fontFamily: 'Roobert-Medium', fontSize: 13 }}>
                 Use
               </Text>
-              <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />
-            </TouchableOpacity>
+              <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />
+            </Button>
           </View>
 
           <View style={{ paddingHorizontal: 20 }}>
             <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Role
             </Text>
-            <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? '#F8F8F8' : '#121215' }}>
+            <Text style={{ fontSize: 14, marginBottom: 16, color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
               {detailAlg.role}
             </Text>
 
             <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Description
             </Text>
-            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginBottom: 16 }}>
               {detailAlg.description}
             </Text>
 
             <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
               Best for
             </Text>
-            <Text style={{ fontSize: 14, color: isDark ? '#d4d4d8' : '#374151', marginBottom: 16 }}>
+            <Text style={{ fontSize: 14, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginBottom: 16 }}>
               {detailAlg.bestFor}
             </Text>
 
@@ -1497,7 +1485,7 @@ function AutoContinueSheet({
                   Strengths
                 </Text>
                 {detailAlg.strengths.map((s, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#bbf7d0' : '#166534', marginBottom: 6 }}>
+                  <Text key={idx} style={{ fontSize: 13, color: THEME.accent.green, marginBottom: 6 }}>
                     • {s}
                   </Text>
                 ))}
@@ -1507,7 +1495,7 @@ function AutoContinueSheet({
                   Weaknesses
                 </Text>
                 {detailAlg.weaknesses.map((s, idx) => (
-                  <Text key={idx} style={{ fontSize: 13, color: isDark ? '#fed7aa' : '#9a3412', marginBottom: 6 }}>
+                  <Text key={idx} style={{ fontSize: 13, color: THEME.accent.orange, marginBottom: 6 }}>
                     • {s}
                   </Text>
                 ))}
@@ -1517,7 +1505,7 @@ function AutoContinueSheet({
             <Text style={{ color: muted, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginTop: 20, marginBottom: 8 }}>
               How it works
             </Text>
-            <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? '#e4e4e7' : '#1f2937' }}>
+            <Text style={{ fontSize: 13, lineHeight: 20, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground }}>
               {detailAlg.howItWorks}
             </Text>
           </View>
@@ -1531,54 +1519,56 @@ function AutoContinueSheet({
         >
         {/* Header — drag handle + backdrop tap dismiss, no explicit close. */}
         <View style={{ paddingHorizontal: 20, paddingTop: 6, paddingBottom: 12 }}>
-          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? '#F8F8F8' : '#121215' }}>
+          <Text style={{ fontSize: 18, fontFamily: 'Roobert-SemiBold', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
             AutoContinue
           </Text>
         </View>
 
         <View>
           <View>
-            <TouchableOpacity
+            <Button
+              variant="ghost"
+              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
               onPress={() => { onSelect(null); onClose(); }}
-              activeOpacity={0.7}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
                 paddingVertical: 14,
                 paddingHorizontal: 20,
-                backgroundColor: !isActive ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)') : 'transparent',
+                backgroundColor: !isActive ? (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.03)) : 'transparent',
               }}
             >
               <InfinityOffIcon color={muted} size={18} />
               <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                   Off
                 </Text>
                 <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
                   Manual — you send each message
                 </Text>
               </View>
-              {!isActive && <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />}
-            </TouchableOpacity>
+              {!isActive && <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />}
+            </Button>
 
-            <TouchableOpacity
+            <Button
+              variant="ghost"
+              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
               onPress={() => {
                 if (!isActive && defaultMode) {
                   onSelect(defaultMode);
                 }
               }}
-              activeOpacity={0.7}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
                 paddingVertical: 14,
                 paddingHorizontal: 20,
-                backgroundColor: isActive ? 'rgba(99,102,241,0.08)' : 'transparent',
+                backgroundColor: isActive ? withAlpha(THEME.accent.purple, 0.08) : 'transparent',
               }}
             >
-              <InfinityIcon color={isActive ? (isDark ? '#c4b5fd' : '#4c1d95') : muted} strokeWidth={2.2} size={18} />
+              <InfinityIcon color={isActive ? (THEME.accent.purple) : muted} strokeWidth={2.2} size={18} />
               <View style={{ marginLeft: 12, flex: 1 }}>
-                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#121215' }}>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                   On
                 </Text>
                 <Text style={{ fontSize: 12, color: muted, marginTop: 2 }}>
@@ -1587,8 +1577,8 @@ function AutoContinueSheet({
                     : 'Pick an algorithm and the agent will continue on its own'}
                 </Text>
               </View>
-              {isActive && <Ionicons name="checkmark" size={18} color={isDark ? '#c4b5fd' : '#4c1d95'} />}
-            </TouchableOpacity>
+              {isActive && <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />}
+            </Button>
           </View>
 
           <View style={{ marginTop: 20, paddingHorizontal: 20 }}>
@@ -1600,45 +1590,48 @@ function AutoContinueSheet({
           {algorithms.map((alg, idx) => {
             const isSelected = selected === alg.id;
             return (
-              <TouchableOpacity
+              <Button
                 key={alg.id}
+                variant="ghost"
+                className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-70"
                 onPress={() => {
                   onSelect(alg.id);
                   onClose();
                 }}
-                activeOpacity={0.7}
                 style={{
                   paddingVertical: 14,
                   paddingHorizontal: 20,
                   borderBottomWidth: idx < algorithms.length - 1 ? StyleSheet.hairlineWidth : 0,
                   borderBottomColor: border,
-                  backgroundColor: isSelected ? (isDark ? 'rgba(255,255,255,0.04)' : 'rgba(99,102,241,0.07)') : 'transparent',
+                  backgroundColor: isSelected ? (isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.accent.purple, 0.07)) : 'transparent',
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? '#F8F8F8' : '#111827' }}>
+                    <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: isDark ? THEME.dark.foreground : THEME.light.foreground }}>
                       {alg.label}
                     </Text>
                     <Text style={{ fontSize: 11, color: muted, marginTop: 1 }}>
                       {alg.role}
                     </Text>
-                    <Text style={{ fontSize: 12, color: isDark ? '#d4d4d8' : '#4b5563', marginTop: 6 }} numberOfLines={1}>
+                    <Text style={{ fontSize: 12, color: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground, marginTop: 6 }} numberOfLines={1}>
                       {alg.description}
                     </Text>
                   </View>
-                  <TouchableOpacity
+                  <Button
+                    variant="ghost"
+                    className="h-auto w-auto gap-0 rounded-md p-0 active:bg-transparent active:opacity-20"
                     hitSlop={10}
                     onPress={() => setDetailAlg(alg)}
                     style={{ padding: 6, marginHorizontal: 4 }}
                   >
                     <InfoIcon size={18} color={muted} />
-                  </TouchableOpacity>
+                  </Button>
                   {isSelected && (
-                    <Ionicons name="checkmark" size={18} color={isDark ? '#C4B5FD' : '#4C1D95'} />
+                    <Ionicons name="checkmark" size={18} color={THEME.accent.purple} />
                   )}
                 </View>
-              </TouchableOpacity>
+              </Button>
             );
           })}
         </View>
@@ -1661,11 +1654,14 @@ function SlashCommandSuggestions({
   onSelect: (cmd: Command) => void;
   isDark: boolean;
 }) {
-  const bgColor = isDark ? '#1e1e20' : '#FFFFFF';
-  const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-  const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#888' : '#999';
+  const bgColor = getSheetBg(isDark);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.08);
+  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  // Original literal pair (#888 dark / #999 light) put dark mode's value
+  // *below* light mode's in lightness — the inverted "muted()" shape, not
+  // the direct mutedStrong() shape used elsewhere in this file.
+  const mutedColor = isDark ? THEME.light.mutedForeground : THEME.dark.mutedForeground;
 
   return (
     <View
@@ -1685,10 +1681,11 @@ function SlashCommandSuggestions({
         showsVerticalScrollIndicator={false}
       >
         {commands.map((cmd, i) => (
-          <TouchableOpacity
+          <Button
             key={cmd.name}
+            variant="ghost"
+            className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
             onPress={() => onSelect(cmd)}
-            activeOpacity={0.6}
             style={{
               paddingHorizontal: 14,
               paddingVertical: 10,
@@ -1719,7 +1716,7 @@ function SlashCommandSuggestions({
                 {cmd.description}
               </RNText>
             )}
-          </TouchableOpacity>
+          </Button>
         ))}
       </ScrollView>
     </View>
@@ -1766,27 +1763,15 @@ const ConfigSheet = forwardRef<
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
-  const selectedBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const fgColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const mutedColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const selectedBg = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.05);
   const tabBg = getToggleTrackBg(isDark);
   const tabActiveBg = getToggleActiveBg(isDark);
   // Sticky header bg must match the sheet bg so the area above the tabs
   // (around the drag handle) doesn't look like a different shade.
-  const bg = getSheetBg(isDark);
+  const bg = useSheetBackground();
 
-  const renderBackdrop = useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        opacity={0.4}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   // Filter tabs to only show ones with content
   const visibleTabs = TAB_CONFIG.filter((t) => {
@@ -1815,18 +1800,13 @@ const ConfigSheet = forwardRef<
       enablePanDownToClose
       enableOverDrag={false}
       onChange={handleSheetChange}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-      }}
+      handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
       backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
+        backgroundColor: bg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
-      backdropComponent={renderBackdrop}
+      backdropComponent={(p) => <SheetBackdrop {...p} opacity={0.4} />}
     >
       {/* Top-level BottomSheetScrollView so scroll gestures work. Header +
           tabs are wrapped in a single sticky block (index 0) so they stay
@@ -1860,10 +1840,11 @@ const ConfigSheet = forwardRef<
           {visibleTabs.map((tab) => {
             const isActive = activeTab === tab.key;
             return (
-              <TouchableOpacity
+              <Button
                 key={tab.key}
+                variant="ghost"
+                className="h-auto flex-1 shrink gap-0 rounded-full p-0 active:bg-transparent active:opacity-70"
                 onPress={() => setActiveTab(tab.key)}
-                activeOpacity={0.7}
                 style={{
                   flex: 1,
                   flexDirection: 'row',
@@ -1889,7 +1870,7 @@ const ConfigSheet = forwardRef<
                 >
                   {tab.label}
                 </Text>
-              </TouchableOpacity>
+              </Button>
             );
           })}
         </View>
@@ -1901,10 +1882,11 @@ const ConfigSheet = forwardRef<
         {activeTab === 'agent' && agents.filter((a) => !a.hidden).map((a) => {
           const isSelected = selectedAgent?.name === a.name;
           return (
-            <TouchableOpacity
+            <Button
               key={a.name}
+              variant="ghost"
+              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
               onPress={() => onAgentChange(a.name)}
-              activeOpacity={0.6}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -1936,7 +1918,7 @@ const ConfigSheet = forwardRef<
               {isSelected && (
                 <Ionicons name="checkmark" size={20} color={fgColor} />
               )}
-            </TouchableOpacity>
+            </Button>
           );
         })}
 
@@ -1983,7 +1965,7 @@ const ConfigSheet = forwardRef<
                   style={{
                     fontSize: 11,
                     fontFamily: 'Roobert-Medium',
-                    color: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
+                    color: isDark ? withAlpha(THEME.dark.foreground, 0.2) : withAlpha(THEME.light.foreground, 0.2),
                   }}
                 >
                   {group.models.length}
@@ -1995,10 +1977,11 @@ const ConfigSheet = forwardRef<
                   selectedModel?.providerID === m.providerID &&
                   selectedModel?.modelID === m.modelID;
                 return (
-                  <TouchableOpacity
+                  <Button
                     key={`${m.providerID}/${m.modelID}`}
+                    variant="ghost"
+                    className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
                     onPress={() => onModelChange(m.providerID, m.modelID)}
-                    activeOpacity={0.6}
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
@@ -2028,7 +2011,7 @@ const ConfigSheet = forwardRef<
                     {isSelected && (
                       <Ionicons name="checkmark" size={20} color={fgColor} />
                     )}
-                  </TouchableOpacity>
+                  </Button>
                 );
               })}
             </View>
@@ -2038,9 +2021,10 @@ const ConfigSheet = forwardRef<
         {/* Thinking tab */}
         {activeTab === 'thinking' && (
           <>
-            <TouchableOpacity
+            <Button
+              variant="ghost"
+              className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
               onPress={() => onVariantSet(null)}
-              activeOpacity={0.6}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -2066,14 +2050,15 @@ const ConfigSheet = forwardRef<
               {!selectedVariant && (
                 <Ionicons name="checkmark" size={20} color={fgColor} />
               )}
-            </TouchableOpacity>
+            </Button>
             {variants.map((v) => {
               const isSelected = selectedVariant === v;
               return (
-                <TouchableOpacity
+                <Button
                   key={v}
+                  variant="ghost"
+                  className="h-auto w-full gap-0 rounded-none justify-start p-0 active:bg-transparent active:opacity-60"
                   onPress={() => onVariantSet(v)}
-                  activeOpacity={0.6}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -2100,7 +2085,7 @@ const ConfigSheet = forwardRef<
                   {isSelected && (
                     <Ionicons name="checkmark" size={20} color={fgColor} />
                   )}
-                </TouchableOpacity>
+                </Button>
               );
             })}
           </>

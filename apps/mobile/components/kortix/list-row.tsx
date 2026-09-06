@@ -1,9 +1,10 @@
-// apps/mobile/components/ui/list-row.tsx
+// apps/mobile/components/kortix/list-row.tsx
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
-import { Text } from './text';
-import { Icon } from './icon';
+import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils/utils';
 
 interface ListRowProps {
@@ -43,7 +44,13 @@ export function ListRow({
         : onPress && !destructive
           ? <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
           : null}
-      {divider ? <View className="absolute left-4 right-0 bottom-0 h-px bg-border" /> : null}
+      {/* Inset hairline divider — a row inside its own MenuGroup/sheet card
+          framing, so this stays a bare Separator rather than a wrapping
+          Card (Card's own border/radius/shadow/padding belong to the
+          surrounding group, not to each row). w-auto cancels Separator's
+          default w-full so left+right absolute offsets compute the width,
+          matching the original inset-from-icon, full-to-edge hairline. */}
+      {divider ? <Separator className="absolute left-4 right-0 bottom-0 w-auto" /> : null}
     </Pressable>
   );
 }

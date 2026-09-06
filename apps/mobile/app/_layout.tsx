@@ -1,7 +1,7 @@
 import '@/global.css';
 
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
-import { NAV_THEME } from '@/lib/utils/theme';
+import { NAV_THEME, THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
 import {
@@ -19,8 +19,8 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
-import { ToastProvider } from '@/components/ui/toast-provider';
-import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import { ToastProvider } from '@/components/kortix/toast-provider';
+import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import {
   GlobalUpgradeSheet,
   SandboxUpgradeGateListener,
@@ -168,7 +168,10 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'ios') {
       const activeScheme = colorScheme ?? 'light';
-      const backgroundColor = activeScheme === 'dark' ? '#121215' : '#F5F5F5';
+      // Nearest THEME tokens to the old literals (light: --muted L=96.1% is an
+      // exact match for F5F5F5; the dark surface token (L=7.8%) is the closest achromatic
+      // match to 121215's ~18,18,21 — see the (settings) layout for the same pair).
+      const backgroundColor = activeScheme === 'dark' ? THEME.dark.surface : THEME.light.muted;
       SystemUI.setBackgroundColorAsync(backgroundColor);
     }
   }, [colorScheme]);

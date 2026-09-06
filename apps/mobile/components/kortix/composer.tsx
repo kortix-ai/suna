@@ -1,8 +1,8 @@
-// apps/mobile/components/ui/composer.tsx
+// apps/mobile/components/kortix/composer.tsx
 import * as React from 'react';
 import { View, TextInput, Pressable } from 'react-native';
 import { ArrowUp } from 'lucide-react-native';
-import { Icon } from './icon';
+import { Icon } from '@/components/ui/icon';
 import { StopIcon } from './StopIcon';
 import { cn } from '@/lib/utils/utils';
 

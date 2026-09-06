@@ -8,8 +8,8 @@ import { View } from 'react-native';
 
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
-import { ListRow } from '@/components/ui/list-row';
-import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/ui/sheet';
+import { ListRow } from '@/components/kortix/list-row';
+import { Sheet, SheetBody, SheetHeader, type SheetRef } from '@/components/kortix/sheet';
 import { Text } from '@/components/ui/text';
 import { MORE_SHEET_GROUPS } from '@/lib/session/dock-menu';
 import { DOCK_ICONS } from './dock-icons';
@@ -42,7 +42,7 @@ export const ProjectMoreSheet = React.forwardRef<SheetRef, ProjectMoreSheetProps
         <SheetBody className="px-0 pb-2">
           {MORE_SHEET_GROUPS.map((group) => (
             <View key={group.title}>
-              <Text variant="label" className="px-4 pb-1 pt-3 text-muted-foreground">
+              <Text className="px-4 pb-1 pt-3 text-xs font-medium leading-none text-muted-foreground">
                 {group.title}
               </Text>
               {group.items.map((item) => (

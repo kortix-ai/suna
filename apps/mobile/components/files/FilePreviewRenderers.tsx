@@ -8,14 +8,15 @@ import { View, Image, ScrollView, Dimensions, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import { autoLinkUrls } from '@kortix/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -191,7 +192,7 @@ function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: strin
       className="flex-1"
       contentContainerStyle={{ padding: 16 }}
       showsVerticalScrollIndicator={false}
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       {hasError ? (
         <View className="items-center justify-center p-8">
@@ -253,7 +254,7 @@ function MarkdownPreview({ content }: { content: string }) {
     <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <SelectableMarkdownText isDark={isDark}>
         {autoLinkUrls(content)}
@@ -286,7 +287,7 @@ function JsonPreview({ content }: { content: string }) {
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}>
       <WebView
         source={{ html }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
@@ -300,7 +301,7 @@ function JsonPreview({ content }: { content: string }) {
         renderLoading={() => (
           <View
             className="absolute inset-0 items-center justify-center"
-            style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}
+            style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
             <KortixLoader size="large" />
           </View>
@@ -310,19 +311,15 @@ function JsonPreview({ content }: { content: string }) {
       <View
         className="px-4 pt-2 border-t"
         style={{
-          borderTopColor: isDark
-            ? 'rgba(248, 248, 248, 0.08)'
-            : 'rgba(18, 18, 21, 0.06)',
-          backgroundColor: isDark ? '#121215' : '#ffffff',
+          borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+          backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
         <Text
           className="text-xs font-roobert-medium"
           style={{
-            color: isDark
-              ? 'rgba(248, 248, 248, 0.4)'
-              : 'rgba(18, 18, 21, 0.4)',
+            color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
           }}
         >
           JSON
@@ -340,10 +337,10 @@ function generateHighlightedCodeHtml(
   language: string,
   isDark: boolean,
 ): string {
-  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+  const bgColor = isDark ? THEME.dark.card : THEME.light.card;
   const theme = isDark ? 'github-dark' : 'github';
-  const lineNumColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
-  const lineNumBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const lineNumColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.2);
+  const lineNumBorder = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
   // Escape HTML entities in code
   const escaped = code
     .replace(/&/g, '&amp;')
@@ -463,7 +460,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
   );
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}>
       {/* Highlighted code */}
       <WebView
         source={{ html }}
@@ -478,7 +475,7 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
         renderLoading={() => (
           <View
             className="absolute inset-0 items-center justify-center"
-            style={{ backgroundColor: isDark ? '#1e1e1e' : '#ffffff' }}
+            style={{ backgroundColor: isDark ? THEME.dark.card : THEME.light.card }}
           >
             <KortixLoader size="large" />
           </View>
@@ -488,19 +485,15 @@ function CodePreview({ content, fileName }: { content: string; fileName: string 
       <View
         className="px-4 pt-2 border-t"
         style={{
-          borderTopColor: isDark
-            ? 'rgba(248, 248, 248, 0.08)'
-            : 'rgba(18, 18, 21, 0.06)',
-          backgroundColor: isDark ? '#121215' : '#ffffff',
+          borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.06),
+          backgroundColor: isDark ? THEME.dark.background : THEME.light.background,
           paddingBottom: Math.max(insets.bottom, 8),
         }}
       >
         <Text
           className="text-xs font-roobert-medium"
           style={{
-            color: isDark
-              ? 'rgba(248, 248, 248, 0.4)'
-              : 'rgba(18, 18, 21, 0.4)',
+            color: isDark ? withAlpha(THEME.dark.foreground, 0.4) : withAlpha(THEME.light.foreground, 0.4),
           }}
         >
           {language.toUpperCase()}
@@ -532,7 +525,7 @@ function HtmlPreview({
       <View className="flex-1">
         <WebView
           source={{ uri: htmlPreviewUrl }}
-          style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#ffffff' }}
+          style={{ flex: 1, backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
           originWhitelist={['*']}
           javaScriptEnabled={true}
           domStorageEnabled={true}
@@ -542,7 +535,7 @@ function HtmlPreview({
               <KortixLoader size="large" />
               <Text
                 className="text-sm mt-4 font-roobert"
-                style={{ color: isDark ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+                style={{ color: isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5) }}
               >
                 Loading preview...
               </Text>
@@ -568,11 +561,11 @@ function TextPreview({ content }: { content: string }) {
     <ScrollView
       className="flex-1 px-4 py-4"
       showsVerticalScrollIndicator={true}
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <Text
         style={{
-          color: isDark ? '#f8f8f8' : '#121215',
+          color: isDark ? THEME.dark.foreground : THEME.light.foreground,
           fontFamily: 'monospace',
           fontSize: 13,
           lineHeight: 20,
@@ -602,17 +595,17 @@ function CsvPreview({ content }: { content: string }) {
       horizontal
       showsHorizontalScrollIndicator={true}
       className="flex-1"
-      style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+      style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
     >
       <ScrollView
         showsVerticalScrollIndicator={true}
         className="px-4 py-4"
-        style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+        style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}
       >
         {/* Headers */}
         <View className="flex-row border-b pb-2 mb-2"
           style={{
-            borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+            borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1),
           }}
         >
           {headers.map((header, index) => (
@@ -621,7 +614,7 @@ function CsvPreview({ content }: { content: string }) {
               style={{ width: 120, marginRight: 12 }}
             >
               <Text
-                style={{ color: isDark ? '#f8f8f8' : '#121215' }}
+                style={{ color: isDark ? THEME.dark.foreground : THEME.light.foreground }}
                 className="text-xs font-roobert-semibold"
                 numberOfLines={1}
               >
@@ -639,7 +632,7 @@ function CsvPreview({ content }: { content: string }) {
               key={rowIndex}
               className="flex-row py-2 border-b"
               style={{
-                borderBottomColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.05)',
+                borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.05),
               }}
             >
               {cells.map((cell, cellIndex) => (
@@ -648,7 +641,7 @@ function CsvPreview({ content }: { content: string }) {
                   style={{ width: 120, marginRight: 12 }}
                 >
                   <Text
-                    style={{ color: isDark ? 'rgba(248, 248, 248, 0.8)' : 'rgba(18, 18, 21, 0.8)' }}
+                    style={{ color: isDark ? withAlpha(THEME.dark.foreground, 0.8) : withAlpha(THEME.light.foreground, 0.8) }}
                     className="text-xs font-roobert"
                     numberOfLines={2}
                   >
@@ -675,8 +668,9 @@ function CsvPreview({ content }: { content: string }) {
  * Android WebView doesn't support native PDF rendering, so we use pdf.js
  */
 function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? '#121215' : '#ffffff';
-  const textColor = isDark ? '#f8f8f8' : '#121215';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
   
   return `
 <!DOCTYPE html>
@@ -704,8 +698,8 @@ function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
     canvas {
       max-width: 100%;
       height: auto;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      background: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15); /* hex-allowlist: fixed black drop-shadow, theme-independent (matches app's shadowColor:'#000' convention) */
+      background: white; /* hex-allowlist: rendered PDF page is always paper-white, independent of app theme */
     }
     #loading, #error {
       position: fixed;
@@ -717,9 +711,9 @@ function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 14px;
     }
-    #error { color: #ef4444; display: none; }
+    #error { color: ${destructiveColor}; display: none; }
     .page-num {
-      color: ${isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)'};
+      color: ${isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5)};
       font-size: 12px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       margin-top: 4px;
@@ -860,7 +854,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         <KortixLoader size="large" />
         <Text className="text-sm text-muted-foreground mt-4">
           Preparing PDF...
@@ -891,7 +885,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   // Android: Use pdf.js HTML
   if (isAndroid && pdfHtml) {
     return (
-      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         <WebView
           source={{ html: pdfHtml }}
           style={{ flex: 1, backgroundColor: 'transparent' }}
@@ -902,7 +896,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           allowFileAccess={true}
           startInLoadingState={true}
           renderLoading={() => (
-            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
               <KortixLoader size="large" />
               <Text className="text-sm text-muted-foreground mt-4">
                 Rendering PDF...
@@ -920,7 +914,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
 
   // iOS: Use native file:// URL rendering
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       <WebView
         source={{ uri: pdfFileUri! }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
@@ -932,7 +926,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
         allowUniversalAccessFromFileURLs={true}
         startInLoadingState={true}
         renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
             <KortixLoader size="large" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering PDF...
@@ -957,8 +951,13 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
  * mammoth.js works reliably in WebView and converts DOCX to clean HTML
  */
 function generateDocxHtml(base64Data: string, isDark: boolean): string {
-  const bgColor = isDark ? '#121215' : '#ffffff';
-  const textColor = isDark ? '#f8f8f8' : '#121215';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const textColor = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const destructiveColor = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const borderColor = isDark ? THEME.dark.border : THEME.light.border;
+  const mutedBgColor = isDark ? THEME.dark.muted : THEME.light.muted;
+  const mutedForegroundColor = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const zebraStripeColor = withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.03 : 0.02);
 
   return `
 <!DOCTYPE html>
@@ -993,7 +992,7 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       left: 50%;
       transform: translate(-50%, -50%);
       text-align: center;
-      color: #ef4444;
+      color: ${destructiveColor};
       display: none;
       padding: 20px;
     }
@@ -1043,17 +1042,17 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       font-size: 14px;
     }
     #container th, #container td {
-      border: 1px solid ${isDark ? 'rgba(248,248,248,0.3)' : '#d1d5db'};
+      border: 1px solid ${borderColor};
       padding: 10px 12px;
       text-align: left;
       vertical-align: top;
     }
     #container th {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
+      background: ${mutedBgColor};
       font-weight: 600;
     }
     #container tr:nth-child(even) {
-      background: ${isDark ? 'rgba(248,248,248,0.03)' : '#f9fafb'};
+      background: ${zebraStripeColor};
     }
     #container img {
       max-width: 100%;
@@ -1061,14 +1060,14 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       margin: 1em 0;
     }
     #container a {
-      color: ${isDark ? '#60a5fa' : '#2563eb'};
+      color: ${THEME.accent.blue};
       text-decoration: underline;
     }
     #container blockquote {
-      border-left: 4px solid ${isDark ? 'rgba(248,248,248,0.3)' : '#d1d5db'};
+      border-left: 4px solid ${borderColor};
       padding-left: 1em;
       margin: 1em 0;
-      color: ${isDark ? 'rgba(248,248,248,0.7)' : '#6b7280'};
+      color: ${mutedForegroundColor};
       font-style: italic;
     }
     #container strong, #container b {
@@ -1081,14 +1080,14 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
       text-decoration: underline;
     }
     #container code {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
+      background: ${mutedBgColor};
       padding: 2px 6px;
       border-radius: 4px;
       font-family: ui-monospace, monospace;
       font-size: 0.9em;
     }
     #container pre {
-      background: ${isDark ? 'rgba(248,248,248,0.1)' : '#f3f4f6'};
+      background: ${mutedBgColor};
       padding: 12px;
       border-radius: 6px;
       overflow-x: auto;
@@ -1096,7 +1095,7 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
     }
     #container hr {
       border: none;
-      border-top: 1px solid ${isDark ? 'rgba(248,248,248,0.2)' : '#e5e7eb'};
+      border-top: 1px solid ${borderColor};
       margin: 2em 0;
     }
   </style>
@@ -1214,7 +1213,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
 
   if (isLoading) {
     return (
-      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
         <KortixLoader size="large" />
         <Text className="text-sm text-muted-foreground mt-4">
           Preparing document...
@@ -1243,7 +1242,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
       <WebView
         source={{ html: docxHtml }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
@@ -1253,7 +1252,7 @@ function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string
         mixedContentMode="compatibility"
         startInLoadingState={true}
         renderLoading={() => (
-          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? THEME.dark.background : THEME.light.background }}>
             <KortixLoader size="large" />
             <Text className="text-sm text-muted-foreground mt-4">
               Rendering document...
@@ -1286,7 +1285,7 @@ function FallbackPreview({ fileName, previewType }: { fileName: string; previewT
       <Icon
         as={FileText}
         size={48}
-        color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
+        color={isDark ? withAlpha(THEME.dark.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.3)}
         strokeWidth={1.5}
         className="mb-4"
       />

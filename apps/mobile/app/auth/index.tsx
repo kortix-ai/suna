@@ -12,7 +12,7 @@
  */
 
 import * as React from 'react';
-import { View, Dimensions, Platform, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Dimensions, Platform, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,17 +23,18 @@ import * as Haptics from 'expo-haptics';
 
 import { KortixCurrents } from '@/components/animations/kortix-currents';
 import { AppleIcon, GoogleIcon } from '@/components/icons/auth-icons';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Sheet, SheetBody, type SheetRef } from '@/components/ui/sheet';
+import { Sheet, SheetBody, type SheetRef } from '@/components/kortix/sheet';
 import { useAuthContext } from '@/contexts';
 import { supabase } from '@/api/supabase';
 import { log } from '@/lib/logger';
 import { magicLinkEnabled, passwordEnabled, type AuthMethod } from '@/lib/auth/auth-config';
 import { useThemeStore } from '@/stores/theme-store';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 
 const friendlySignInError = (msg?: string): string => {
   if (!msg) return 'Could not sign in';
@@ -51,10 +52,9 @@ const friendlyMagicError = (msg?: string): string => {
   return msg;
 };
 
-// ── Lock-screen palette (fixed — always dark) ────────────────────────────────
-const BG_DARK = '#000000';
-const PILL_LIGHT_TEXT = '#0A0A0A'; // ActivityIndicator + Apple glyph on white pills
-const TEXT_ON_DARK = '#FFFFFF'; // ActivityIndicator on dark pills
+// This screen is a lock screen: always dark, independent of the app theme —
+// see file header. `THEME.dark.background` (rendered ~10,10,10) is the
+// closest reachable token to the old literal pure black (delta imperceptible).
 
 const SCREEN_H = Dimensions.get('window').height;
 const HERO_H = Math.round(SCREEN_H * 0.8);
@@ -70,7 +70,7 @@ function AuthPill({
   disabled,
   loading,
   leading,
-  variant = 'white',
+  variant = 'default',
 }: {
   label: string;
   onPress: () => void;
@@ -81,7 +81,10 @@ function AuthPill({
 }) {
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
   // Inverted: light mode = dark fill → light glyph; dark mode = light fill → dark glyph
-  const onInverted = resolvedTheme === 'dark' ? PILL_LIGHT_TEXT : TEXT_ON_DARK;
+  // Matches the Button `default` variant's own bg-primary/text-primary-foreground
+  // pairing: dark-mode fill is near-white so the foreground is dark.primaryForeground
+  // (near-black), and vice versa in light mode.
+  const onInverted = resolvedTheme === 'dark' ? THEME.dark.primaryForeground : THEME.light.primaryForeground;
 
   return (
     <Button
@@ -361,7 +364,7 @@ export default function AuthScreen() {
   const statusBanner = errorMessage ? (
     <View
       className="mb-3 w-full rounded-2xl px-4 py-3"
-      style={{ backgroundColor: 'rgba(255,69,58,0.16)' }}>
+      style={{ backgroundColor: withAlpha(THEME.dark.destructive, 0.16) }}>
       <Text variant="small" className="text-center text-destructive">
         {errorMessage}
       </Text>
@@ -369,7 +372,7 @@ export default function AuthScreen() {
   ) : info ? (
     <View
       className="mb-3 w-full rounded-2xl px-4 py-3"
-      style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+      style={{ backgroundColor: withAlpha(THEME.dark.foreground, 0.08) }}>
       <Text variant="muted" className="text-center">
         {info}
       </Text>
@@ -380,7 +383,7 @@ export default function AuthScreen() {
     <>
       <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
       <StatusBar style="light" />
-      <View style={{ flex: 1, backgroundColor: BG_DARK }}>
+      <View style={{ flex: 1, backgroundColor: THEME.dark.background }}>
         {/* Hero — the Kortix mark forming out of a flow field (top half) */}
         <View style={{ height: HERO_H, width: '100%' }}>
           {/* The hero runs 80% of the screen, so a centred mark lands near the
@@ -388,7 +391,12 @@ export default function AuthScreen() {
           <KortixCurrents markCenterY={0.4} />
           {/* Fade the field into the dark base */}
           <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.35)', 'rgba(0,0,0,0.85)', BG_DARK]}
+            colors={[
+              'transparent',
+              withAlpha(THEME.dark.background, 0.35),
+              withAlpha(THEME.dark.background, 0.85),
+              THEME.dark.background,
+            ]}
             locations={[0, 0.35, 0.78, 1]}
             style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: HERO_H * 0.5 }}
             pointerEvents="none"
@@ -421,7 +429,7 @@ export default function AuthScreen() {
                   loading={oauthLoading === 'apple'}
                   disabled={!!oauthLoading}
                   onPress={() => handleOAuth('apple')}
-                  leading={<AppleIcon size={19} color={PILL_LIGHT_TEXT} />}
+                  leading={<AppleIcon size={19} color={THEME.dark.primaryForeground} />}
                 />
               )}
 
@@ -455,16 +463,26 @@ export default function AuthScreen() {
                 justifyContent: 'center',
                 gap: 28,
               }}>
-              <TouchableOpacity onPress={() => openLegal('privacy')} hitSlop={8}>
-                <Text variant="muted" className="text-white/50">
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto px-0 py-0"
+                onPress={() => openLegal('privacy')}
+                hitSlop={8}>
+                <Text variant="muted" style={{ color: withAlpha(THEME.dark.foreground, 0.5) }}>
                   Privacy policy
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => openLegal('terms')} hitSlop={8}>
-                <Text variant="muted" className="text-white/50">
+              </Button>
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto px-0 py-0"
+                onPress={() => openLegal('terms')}
+                hitSlop={8}>
+                <Text variant="muted" style={{ color: withAlpha(THEME.dark.foreground, 0.5) }}>
                   Terms of service
                 </Text>
-              </TouchableOpacity>
+              </Button>
             </View>
           </View>
         </View>
@@ -501,7 +519,7 @@ export default function AuthScreen() {
                 autoComplete="one-time-code"
                 returnKeyType="go"
                 onSubmitEditing={handleVerifyOtp}
-                className="mt-8 bg-card text-center dark:bg-input"
+                className="mt-8 bg-card text-center"
               />
 
               <View className="flex-1" />
@@ -512,15 +530,15 @@ export default function AuthScreen() {
                 className="h-14 w-full"
                 onPress={handleVerifyOtp}
                 disabled={verifying || otpCode.trim().length < 6}>
-                {verifying && <ActivityIndicator size="small" color="#FFFFFF" />}
+                {verifying && <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />}
                 <Text>{verifying ? 'Verifying...' : 'Continue'}</Text>
               </Button>
 
               <View className="mt-4 flex-row items-center justify-center gap-6">
-                <Button variant="transparent" onPress={handleSubmit} disabled={loading}>
+                <Button variant="ghost" onPress={handleSubmit} disabled={loading}>
                   <Text>Resend code</Text>
                 </Button>
-                <Button variant="transparent" onPress={resetTransient}>
+                <Button variant="ghost" onPress={resetTransient}>
                   <Text>Use a different email</Text>
                 </Button>
               </View>
@@ -554,7 +572,7 @@ export default function AuthScreen() {
                   onSubmitEditing={() => {
                     if (!showPasswordField) handleSubmit();
                   }}
-                  className="bg-card dark:bg-input"
+                  className="bg-card"
                 />
 
                 {showPasswordField && (
@@ -568,7 +586,7 @@ export default function AuthScreen() {
                     onSubmitEditing={() => {
                       if (!isSignup) handleSubmit();
                     }}
-                    className="bg-card dark:bg-input"
+                    className="bg-card"
                   />
                 )}
 
@@ -581,7 +599,7 @@ export default function AuthScreen() {
                     autoComplete="new-password"
                     returnKeyType="go"
                     onSubmitEditing={handleSignUp}
-                    className="bg-card dark:bg-input"
+                    className="bg-card"
                   />
                 )}
               </View>
@@ -589,7 +607,7 @@ export default function AuthScreen() {
               {/* Recovery belongs to the password field it sits under. */}
               {!isSignup && showPasswordField && (
                 <Button
-                  variant="transparent"
+                  variant="ghost"
                   size="sm"
                   className="mt-1 self-end"
                   onPress={handleForgotPassword}>
@@ -606,7 +624,7 @@ export default function AuthScreen() {
                 className="h-14 w-full"
                 onPress={isSignup ? handleSignUp : handleSubmit}
                 disabled={loading || !canSubmit}>
-                {loading && <ActivityIndicator size="small" color="#FFFFFF" />}
+                {loading && <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />}
                 <Text>
                   {isSignup
                     ? loading
@@ -622,7 +640,7 @@ export default function AuthScreen() {
                   that is where it lives — not floating among the inputs. */}
               {canSwitchMethod && (
                 <Button
-                  variant="transparent"
+                  variant="ghost"
                   className="mt-2 self-center"
                   disabled={loading}
                   onPress={toggleMethod}>
@@ -638,7 +656,7 @@ export default function AuthScreen() {
                   {isSignup ? 'Already have an account?' : 'New to Kortix?'}
                 </Text>
                 <Button
-                  variant="transparent"
+                  variant="ghost"
                   size="sm"
                   className="px-1"
                   disabled={loading}

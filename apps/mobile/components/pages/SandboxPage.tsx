@@ -15,19 +15,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
-  TouchableOpacity,
+  Pressable,
   ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 import {
   Container,
   Package,
@@ -46,9 +41,10 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { PageHeader } from '@/components/ui/page-header';
-import { PageContent } from '@/components/ui/page-content';
-import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { PageHeader } from '@/components/kortix/page-header';
+import { PageContent } from '@/components/kortix/page-content';
+import { useThemeColors } from '@/lib/theme-colors';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   useProject,
   useProjectSnapshots,
@@ -66,6 +62,7 @@ import type {
   SnapshotErrorCategory,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 const MONO = 'Menlo';
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -89,11 +86,17 @@ interface SandboxPageProps {
 
 // ─── labels / helpers (web parity) ────────────────────────────────────────────
 
-const STATUS_STYLE: Record<ProjectSnapshotStatus, { label: string; color: string; bg: string; icon: LucideIcon; spin?: boolean }> = {
-  ready: { label: 'Ready', color: '#16a34a', bg: 'rgba(34,197,94,0.12)', icon: CircleCheck },
-  building: { label: 'Building', color: '#2563eb', bg: 'rgba(59,130,246,0.12)', icon: Loader, spin: true },
-  failed: { label: 'Failed', color: '#ef4444', bg: 'rgba(239,68,68,0.12)', icon: CircleX },
-};
+function getStatusStyle(status: ProjectSnapshotStatus, isDark: boolean): { label: string; color: string; bg: string; icon: LucideIcon; spin?: boolean } {
+  const destructive = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  switch (status) {
+    case 'ready':
+      return { label: 'Ready', color: THEME.accent.green, bg: withAlpha(THEME.accent.green, 0.12), icon: CircleCheck };
+    case 'building':
+      return { label: 'Building', color: THEME.accent.blue, bg: withAlpha(THEME.accent.blue, 0.12), icon: Loader, spin: true };
+    case 'failed':
+      return { label: 'Failed', color: destructive, bg: withAlpha(destructive, 0.12), icon: CircleX };
+  }
+}
 
 const CATEGORY_LABEL: Record<SnapshotErrorCategory, string> = {
   quota: 'Snapshot quota reached',
@@ -141,8 +144,8 @@ function slugify(name: string): string {
 
 // ─── small UI pieces ──────────────────────────────────────────────────────────
 
-function StatusPill({ status }: { status: ProjectSnapshotStatus }) {
-  const s = STATUS_STYLE[status];
+function StatusPill({ status, isDark }: { status: ProjectSnapshotStatus; isDark: boolean }) {
+  const s = getStatusStyle(status, isDark);
   const Icon = s.icon;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999, backgroundColor: s.bg }}>
@@ -152,10 +155,12 @@ function StatusPill({ status }: { status: ProjectSnapshotStatus }) {
   );
 }
 
-function StateBadge({ state }: { state: string }) {
+function StateBadge({ state, isDark }: { state: string; isDark: boolean }) {
   const info = describeState(state);
-  const color = info.tone === 'ok' ? '#16a34a' : info.tone === 'busy' ? '#2563eb' : info.tone === 'fail' ? '#ef4444' : '#9b9b9b';
-  const bg = info.tone === 'ok' ? 'rgba(34,197,94,0.12)' : info.tone === 'busy' ? 'rgba(59,130,246,0.12)' : info.tone === 'fail' ? 'rgba(239,68,68,0.12)' : 'rgba(156,163,175,0.16)';
+  const destructive = isDark ? THEME.dark.destructive : THEME.light.destructive;
+  const mutedForeground = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const color = info.tone === 'ok' ? THEME.accent.green : info.tone === 'busy' ? THEME.accent.blue : info.tone === 'fail' ? destructive : mutedForeground;
+  const bg = info.tone === 'ok' ? withAlpha(THEME.accent.green, 0.12) : info.tone === 'busy' ? withAlpha(THEME.accent.blue, 0.12) : info.tone === 'fail' ? withAlpha(destructive, 0.12) : withAlpha(mutedForeground, 0.16);
   const Icon = info.tone === 'ok' ? CircleCheck : info.tone === 'fail' ? CircleX : Clock;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2.5, borderRadius: 999, backgroundColor: bg }}>
@@ -196,10 +201,10 @@ function TemplateRow({
   rebuilding: boolean;
   deleting: boolean;
 }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const chipBg = isDark ? withAlpha(THEME.dark.foreground, 0.06) : withAlpha(THEME.light.foreground, 0.05);
 
   const Icon = template.is_default ? Container : template.has_image ? Package : FileCode;
   const source = template.is_default
@@ -227,22 +232,22 @@ function TemplateRow({
             {source} · {template.cpu} vCPU · {template.memory_gb} GiB · {template.disk_gb} GiB disk
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-            <StateBadge state={template.daytona_state} />
+            <StateBadge state={template.daytona_state} isDark={isDark} />
             {editable && (
               <>
-                <TouchableOpacity onPress={() => { haptics.tap(); onEdit(template); }} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
+                <Pressable onPress={() => { haptics.tap(); onEdit(template); }} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
                   <SquarePen size={14} color={muted} />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => { haptics.tap(); onDelete(template); }} disabled={deleting} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}>
-                  {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={14} color="#ef4444" />}
-                </TouchableOpacity>
+                </Pressable>
+                <Pressable onPress={() => { haptics.tap(); onDelete(template); }} disabled={deleting} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.35), alignItems: 'center', justifyContent: 'center' }}>
+                  {deleting ? <ActivityIndicator size="small" color={isDark ? THEME.dark.destructive : THEME.light.destructive} /> : <Trash2 size={14} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />}
+                </Pressable>
               </>
             )}
             {buildable && (
-              <TouchableOpacity onPress={() => { haptics.tap(); onRebuild(template); }} disabled={rebuilding} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: border }}>
+              <Pressable onPress={() => { haptics.tap(); onRebuild(template); }} disabled={rebuilding} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: border }}>
                 {rebuilding ? <ActivityIndicator size="small" color={muted} /> : <RefreshCw size={13} color={muted} />}
                 <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: fg }}>Rebuild</Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
         </View>
@@ -256,10 +261,10 @@ function TemplateRow({
 type Mode = 'image' | 'dockerfile';
 
 function NumField({ label, value, onChange, isDark }: { label: string; value: string; onChange: (v: string) => void; isDark: boolean }) {
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
   return (
     <View style={{ flex: 1 }}>
       <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>{label}</Text>
@@ -307,11 +312,11 @@ function SandboxTemplateSheet({
     if (!slugEdited) setSlug(slugify(name));
   }, [name, slugEdited]);
 
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
-  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.12);
+  const inputBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.03);
+  const closeBg = isDark ? withAlpha(THEME.dark.foreground, 0.05) : withAlpha(THEME.light.foreground, 0.04);
   const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' as const };
 
   const slugError = useMemo(() => {
@@ -373,9 +378,8 @@ function SandboxTemplateSheet({
   const ModeButton = ({ m, icon: Icon, title, sub }: { m: Mode; icon: LucideIcon; title: string; sub: string }) => {
     const active = mode === m;
     return (
-      <TouchableOpacity
+      <Pressable
         onPress={() => { haptics.tap(); setMode(m); }}
-        activeOpacity={0.8}
         style={{ flex: 1, borderRadius: 12, borderWidth: 1, borderColor: active ? theme.primary : border, backgroundColor: active ? theme.primaryLight : 'transparent', padding: 12, gap: 4 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -383,20 +387,20 @@ function SandboxTemplateSheet({
           <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: active ? fg : muted }}>{title}</Text>
         </View>
         <Text style={{ fontSize: 11.5, color: muted }}>{sub}</Text>
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
         <Container size={18} color={fg} />
         <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
           {isEdit ? `Edit "${template?.name}"` : 'New sandbox template'}
         </Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
+        <Pressable onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}>
           <X size={17} color={muted} />
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -423,7 +427,7 @@ function SandboxTemplateSheet({
             />
           </View>
         </View>
-        {slugError && <Text style={{ fontSize: 11.5, color: '#ef4444', marginTop: 6 }}>{slugError}</Text>}
+        {slugError && <Text style={{ fontSize: 11.5, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), marginTop: 6 }}>{slugError}</Text>}
 
         <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: muted, marginTop: 16, marginBottom: 8 }}>Image source</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -445,7 +449,7 @@ function SandboxTemplateSheet({
               <Text style={{ fontSize: 11.5, color: muted, marginTop: 6 }}>Relative to the repository root.</Text>
             </>
           )}
-          {sourceError && <Text style={{ fontSize: 11.5, color: '#ef4444', marginTop: 6 }}>{sourceError}</Text>}
+          {sourceError && <Text style={{ fontSize: 11.5, color: (isDark ? THEME.dark.destructive : THEME.light.destructive), marginTop: 6 }}>{sourceError}</Text>}
         </View>
 
         <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: muted, marginTop: 16, marginBottom: 8 }}>Resources</Text>
@@ -470,17 +474,17 @@ function SandboxTemplateSheet({
         />
 
         {err && (
-          <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}>
-            <Text style={{ fontSize: 13, color: '#ef4444' }}>{err}</Text>
+          <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.08), borderWidth: 1, borderColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.3) }}>
+            <Text style={{ fontSize: 13, color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>{err}</Text>
           </View>
         )}
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
-        <TouchableOpacity onPress={handleSubmit} disabled={!canSubmit} activeOpacity={0.85} style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08) }}>
+        <Pressable onPress={handleSubmit} disabled={!canSubmit} style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
           {submitting && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{isEdit ? 'Save changes' : 'Create template'}</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -497,6 +501,7 @@ export function SandboxPage({
   isRightDrawerOpen,
   onOpenSession,
 }: SandboxPageProps) {
+  const sheetBg = useSheetBackground();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const theme = useThemeColors();
@@ -515,12 +520,12 @@ export function SandboxPage({
   const [busyTemplate, setBusyTemplate] = useState<string | null>(null);
   const formSheetRef = React.useRef<BottomSheetModal>(null);
 
-  const bgColor = isDark ? '#090909' : '#FFFFFF';
-  const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const cardBg = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)';
-  const codeBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+  const bgColor = isDark ? THEME.dark.background : THEME.light.background;
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  const muted = isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground;
+  const border = isDark ? withAlpha(THEME.dark.foreground, 0.08) : withAlpha(THEME.light.foreground, 0.08);
+  const cardBg = isDark ? withAlpha(THEME.dark.foreground, 0.02) : withAlpha(THEME.light.foreground, 0.015);
+  const codeBg = isDark ? withAlpha(THEME.dark.foreground, 0.04) : withAlpha(THEME.light.foreground, 0.04);
 
   const builds = useMemo(() => (Array.isArray(data?.builds) ? data!.builds : []), [data]);
   const templates = useMemo(() => (Array.isArray(data?.templates) ? data!.templates : []), [data]);
@@ -592,10 +597,10 @@ export function SandboxPage({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 }}>
             <Text style={{ flex: 1, fontSize: 19, fontFamily: 'Roobert-Medium', color: fg }}>Sandbox templates</Text>
             {canManage && (
-              <TouchableOpacity onPress={openNew} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 12, paddingRight: 14, height: 36, borderRadius: 9999, backgroundColor: theme.primary }}>
+              <Pressable onPress={openNew} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 12, paddingRight: 14, height: 36, borderRadius: 9999, backgroundColor: theme.primary }}>
                 <Plus size={15} color={theme.primaryForeground} />
                 <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New template</Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
           <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 18 }}>
@@ -605,19 +610,19 @@ export function SandboxPage({
           {isLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : isError ? (
-            <View style={{ padding: 20, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.05)', gap: 12 }}>
-              <Text style={{ fontSize: 13.5, color: '#ef4444' }}>Failed to load sandbox templates: {(error as Error)?.message}</Text>
-              <TouchableOpacity onPress={() => refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+            <View style={{ padding: 20, borderRadius: 14, borderWidth: 1, borderColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.3), backgroundColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.05), gap: 12 }}>
+              <Text style={{ fontSize: 13.5, color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Failed to load sandbox templates: {(error as Error)?.message}</Text>
+              <Pressable onPress={() => refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           ) : (
             <>
               {data?.templates_error && (
-                <View style={{ marginBottom: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(217,119,6,0.08)' }}>
+                <View style={{ marginBottom: 14, padding: 12, borderRadius: 11, backgroundColor: withAlpha(THEME.accent.orange, 0.08) }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <TriangleAlert size={14} color="#d97706" />
-                    <Text style={{ fontSize: 12.5, color: '#d97706', flex: 1 }}>Couldn't read project sandbox config: {data.templates_error}</Text>
+                    <TriangleAlert size={14} color={THEME.accent.orange} />
+                    <Text style={{ fontSize: 12.5, color: THEME.accent.orange, flex: 1 }}>Couldn't read project sandbox config: {data.templates_error}</Text>
                   </View>
                 </View>
               )}
@@ -648,13 +653,13 @@ export function SandboxPage({
 
               {/* Latest failure */}
               {latestFailure && (
-                <View style={{ marginTop: 20, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.05)', padding: 14 }}>
+                <View style={{ marginTop: 20, borderRadius: 14, borderWidth: 1, borderColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.3), backgroundColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.05), padding: 14 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <CircleX size={15} color="#ef4444" />
-                    <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Latest build failed</Text>
+                    <CircleX size={15} color={isDark ? THEME.dark.destructive : THEME.light.destructive} />
+                    <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>Latest build failed</Text>
                     {latestFailure.error_category && (
-                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: 'rgba(239,68,68,0.12)' }}>
-                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>{CATEGORY_LABEL[latestFailure.error_category] ?? latestFailure.error_category}</Text>
+                      <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.12) }}>
+                        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }}>{CATEGORY_LABEL[latestFailure.error_category] ?? latestFailure.error_category}</Text>
                       </View>
                     )}
                   </View>
@@ -665,21 +670,21 @@ export function SandboxPage({
                     <Text style={{ fontSize: 11.5, color: muted }}>{formatRelative(latestFailure.finished_at ?? latestFailure.started_at)}</Text>
                   </View>
                   {latestFailure.error && (
-                    <ScrollView style={{ maxHeight: 140, marginTop: 10, borderRadius: 9, backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.04)' }} contentContainerStyle={{ padding: 10 }} showsVerticalScrollIndicator={false}>
+                    <ScrollView style={{ maxHeight: 140, marginTop: 10, borderRadius: 9, backgroundColor: isDark ? withAlpha(THEME.light.foreground, 0.3) : withAlpha(THEME.light.foreground, 0.04) }} contentContainerStyle={{ padding: 10 }} showsVerticalScrollIndicator={false}>
                       <Text style={{ fontSize: 11.5, lineHeight: 17, fontFamily: MONO, color: muted }}>{latestFailure.error}</Text>
                     </ScrollView>
                   )}
                   {canManage && (
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                      <TouchableOpacity onPress={handleRetry} disabled={rebuildMut.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                      <Pressable onPress={handleRetry} disabled={rebuildMut.isPending} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                         {rebuildMut.isPending ? <ActivityIndicator size="small" color={fg} /> : <RefreshCw size={14} color={fg} />}
                         <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry build</Text>
-                      </TouchableOpacity>
+                      </Pressable>
                       {canFixWithAgent && (
-                        <TouchableOpacity onPress={handleFixWithAgent} disabled={fixMut.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 999, backgroundColor: theme.primary }}>
+                        <Pressable onPress={handleFixWithAgent} disabled={fixMut.isPending} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 999, backgroundColor: theme.primary }}>
                           {fixMut.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <Sparkles size={14} color={theme.primaryForeground} />}
                           <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Fix with agent</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       )}
                     </View>
                   )}
@@ -701,13 +706,13 @@ export function SandboxPage({
                           <View style={{ paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 5, backgroundColor: codeBg }}>
                             <Text style={{ fontSize: 11, fontFamily: MONO, color: muted }}>{b.slug}</Text>
                           </View>
-                          <StatusPill status={b.status} />
+                          <StatusPill status={b.status} isDark={isDark} />
                           {b.source && <Text style={{ fontSize: 11.5, color: muted }}>via {b.source}</Text>}
                           <Text style={{ marginLeft: 'auto', fontSize: 11.5, color: muted }}>{formatRelative(b.finished_at ?? b.started_at)}</Text>
                         </View>
                         {b.status === 'failed' && b.error && (
-                          <View style={{ marginTop: 8, borderRadius: 8, backgroundColor: 'rgba(239,68,68,0.06)', padding: 8 }}>
-                            <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: MONO, color: '#ef4444' }} numberOfLines={6}>{b.error}</Text>
+                          <View style={{ marginTop: 8, borderRadius: 8, backgroundColor: withAlpha(isDark ? THEME.dark.destructive : THEME.light.destructive, 0.06), padding: 8 }}>
+                            <Text style={{ fontSize: 11, lineHeight: 16, fontFamily: MONO, color: (isDark ? THEME.dark.destructive : THEME.light.destructive) }} numberOfLines={6}>{b.error}</Text>
                           </View>
                         )}
                       </View>
@@ -726,11 +731,11 @@ export function SandboxPage({
         snapPoints={['92%']}
         enableDynamicSizing={false}
         onDismiss={() => setEditing(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         <SandboxTemplateSheet projectId={projectId} template={editing} onClose={() => formSheetRef.current?.dismiss()} isDark={isDark} />
       </BottomSheetModal>

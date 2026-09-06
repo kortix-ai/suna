@@ -26,11 +26,11 @@ import {
   Sun,
 } from 'lucide-react-native';
 
-import { Sheet, SheetBody, type SheetRef } from '@/components/ui/sheet';
+import { Sheet, SheetBody, type SheetRef } from '@/components/kortix/sheet';
 import { ToggleGroup, ToggleGroupIcon, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { ListRow } from '@/components/ui/list-row';
+import { ListRow } from '@/components/kortix/list-row';
 import { Icon } from '@/components/ui/icon';
-import { Avatar } from '@/components/ui/Avatar';
+import { Avatar } from '@/components/kortix/avatar';
 import { getFrontendUrl } from '@/api/config';
 import { useThemeStore, type ThemePreference } from '@/stores/theme-store';
 import { haptics } from '@/lib/haptics';

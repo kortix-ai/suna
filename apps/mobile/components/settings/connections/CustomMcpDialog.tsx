@@ -5,13 +5,14 @@ import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Globe, CheckCircle2, AlertCircle, Info } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useDiscoverCustomMcpTools, type CustomMcpResponse } from '@/hooks/useCustomMcp';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { CustomMcpToolsSelector } from './CustomMcpToolsSelector';
 import { log } from '@/lib/logger';
+import { useColorScheme } from 'nativewind';
+import { THEME } from '@/lib/utils/theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -45,7 +46,6 @@ export function CustomMcpContent({
   onDiscoverToolsReady,
 }: CustomMcpContentProps) {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const { mutate: discoverTools, isPending: internalIsValidating } = useDiscoverCustomMcpTools();
   const isValidating =
     externalIsValidating !== undefined ? externalIsValidating : internalIsValidating;
@@ -181,21 +181,14 @@ export function CustomMcpContent({
             <View className="mb-4 flex-row items-center">
               {onBack && (
                 <Pressable onPress={onBack} className="flex-row items-center active:opacity-70">
-                  <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                  <Icon as={ArrowLeft} size={20} className="text-foreground" />
                 </Pressable>
               )}
               <View className="ml-3 flex-1">
-                <Text
-                  style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                  className="font-roobert-semibold text-xl">
+                <Text className="font-roobert-semibold text-xl text-foreground">
                   {t('connections.customMcp.title')}
                 </Text>
-                <Text
-                  style={{
-                    color:
-                      colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-                  }}
-                  className="font-roobert text-sm">
+                <Text className="font-roobert text-sm text-muted-foreground">
                   {t('connections.customMcp.description')}
                 </Text>
               </View>
@@ -233,7 +226,7 @@ export function CustomMcpContent({
 
               {validationError && (
                 <View className="mb-6 mt-3">
-                  <Text className="mb-2 font-roobert text-sm text-red-600">{validationError}</Text>
+                  <Text className="mb-2 font-roobert text-sm text-destructive">{validationError}</Text>
                 </View>
               )}
 
@@ -265,7 +258,6 @@ export function CustomMcpContent({
 
 export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogProps) {
   const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
   const { mutate: discoverTools, isPending: isValidating } = useDiscoverCustomMcpTools();
 
   const [step, setStep] = React.useState<'config' | 'tools'>('config');
@@ -407,22 +399,13 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
                   <Pressable
                     onPress={handleClose}
                     className="flex-row items-center active:opacity-70">
-                    <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                    <Icon as={ArrowLeft} size={20} className="text-foreground" />
                   </Pressable>
                   <View className="ml-3 flex-1">
-                    <Text
-                      style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-                      className="font-roobert-semibold text-xl">
+                    <Text className="font-roobert-semibold text-xl text-foreground">
                       {t('connections.customMcp.title')}
                     </Text>
-                    <Text
-                      style={{
-                        color:
-                          colorScheme === 'dark'
-                            ? 'rgba(248, 248, 248, 0.6)'
-                            : 'rgba(18, 18, 21, 0.6)',
-                      }}
-                      className="font-roobert text-sm">
+                    <Text className="font-roobert text-sm text-muted-foreground">
                       {t('connections.customMcp.description')}
                     </Text>
                   </View>
@@ -458,7 +441,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
 
                   {validationError && (
                     <View className="mt-3">
-                      <Text className="mb-2 font-roobert text-sm text-red-600">
+                      <Text className="mb-2 font-roobert text-sm text-destructive">
                         {validationError}
                       </Text>
                     </View>
@@ -502,6 +485,7 @@ const ContinueButton = React.memo(
     isLoading = false,
     rounded = 'full',
   }: ContinueButtonProps) => {
+    const { colorScheme } = useColorScheme();
     const scale = useSharedValue(1);
 
     const animatedStyle = useAnimatedStyle(() => ({
@@ -529,7 +513,16 @@ const ContinueButton = React.memo(
           disabled ? 'bg-muted/20' : 'bg-foreground'
         }`}>
         <View className="flex-row items-center gap-2">
-          {isLoading && <ActivityIndicator size="small" color="#fff" />}
+          {/* The button fill is `bg-foreground`, which is near-black in light mode and
+              near-white in dark mode. A hardcoded white spinner vanished in dark mode.
+              `background` is the token that inverts with it, matching the label's
+              `text-background` below. */}
+          {isLoading && (
+            <ActivityIndicator
+              size="small"
+              color={colorScheme === 'dark' ? THEME.dark.background : THEME.light.background}
+            />
+          )}
           <Text
             className={`font-roobert-semibold text-base ${
               disabled ? 'text-muted-foreground' : 'text-background'

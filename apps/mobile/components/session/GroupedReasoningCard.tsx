@@ -15,9 +15,10 @@
  */
 
 import { Icon } from '@/components/ui/icon';
-import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
+import { SelectableMarkdownText } from '@/components/kortix/selectable-markdown';
 import type { ReasoningPart } from '@/lib/opencode/types';
 import { Brain, ChevronRight, Loader2 } from 'lucide-react-native';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import { useColorScheme } from 'nativewind';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -170,9 +171,9 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
 
   if (nonEmptyParts.length === 0) return null;
 
-  const mutedColor = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const mutedStrongColor = isDark ? 'rgba(248,248,248,0.7)' : 'rgba(18,18,21,0.7)';
-  const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  const mutedColor = isDark ? withAlpha(THEME.dark.foreground, 0.5) : withAlpha(THEME.light.foreground, 0.5);
+  const mutedStrongColor = isDark ? withAlpha(THEME.dark.foreground, 0.7) : withAlpha(THEME.light.foreground, 0.7);
+  const borderColor = isDark ? withAlpha(THEME.dark.foreground, 0.1) : withAlpha(THEME.light.foreground, 0.1);
 
   const handleToggle = () => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);

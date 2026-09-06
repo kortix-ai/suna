@@ -28,6 +28,7 @@ import Reanimated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import { useColorScheme } from 'nativewind';
 
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
@@ -103,6 +104,8 @@ function TabItem({
 export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const [segmentWidth, setSegmentWidth] = React.useState(0);
   const thumbX = useSharedValue(0);
@@ -141,7 +144,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
           {segmentWidth > 0 ? (
             <Reanimated.View
               style={[thumbStyle, { width: segmentWidth }]}
-              className="absolute bottom-0 left-0 top-0 rounded-full border border-border/70 bg-background dark:bg-secondary"
+              className={`absolute bottom-0 left-0 top-0 rounded-full border border-border/70 ${isDark ? 'bg-secondary' : 'bg-background'}`}
             />
           ) : null}
 

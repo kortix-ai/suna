@@ -5,21 +5,18 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, TouchableOpacity, TextInput, ActivityIndicator, Alert, Switch } from 'react-native';
-import { useColorScheme } from 'nativewind';
+import { View, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
-import {
-  BottomSheetModal,
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from '@gorhom/bottom-sheet';
-import { KeyRound, Bot, Plus, CirclePause, Trash2, Copy, Check, X } from 'lucide-react-native';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { KeyRound, Bot, Plus, CirclePause, Trash2, Copy, Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
-import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
+import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
+import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
   getPatPolicy,
   updatePatPolicy,
@@ -31,7 +28,8 @@ import {
   type ServiceAccount,
   type CreatedServiceAccount,
 } from '@/lib/accounts/iam-client';
-import { Card, Pill, PrimaryButton, Divider, accountColors } from '../account-shared';
+import { Card, Pill, PrimaryButton, SheetCloseButton, Divider, accountColors, destructiveColor } from '../account-shared';
+import { SheetBackdrop, sheetHandleIndicatorStyle, useSheetBackground } from '@/components/kortix/sheet';
 
 const MONO = 'Menlo';
 const MAX_LIFETIME = 365 * 2;
@@ -60,7 +58,6 @@ export function TokensCards({ accountId, canManage, isDark }: { accountId: strin
 }
 
 function PatPolicyCard({ accountId, canManage, isDark }: { accountId: string; canManage: boolean; isDark: boolean }) {
-  const { colorScheme } = useColorScheme();
   const c = accountColors(isDark);
   const theme = useThemeColors();
   const queryClient = useQueryClient();
@@ -120,8 +117,7 @@ function PatPolicyCard({ accountId, canManage, isDark }: { accountId: string; ca
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>Require expiry on every PAT</Text>
               <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }}>Refuses minting tokens without an expires_at.</Text>
             </View>
-            <Switch value={requireExpiry} disabled={!canManage || save.isPending} onValueChange={(v) => { haptics.tap(); setRequireExpiry(v); }}
-              trackColor={{ false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7', true: '#34C759' }} thumbColor="#FFFFFF" ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'} />
+            <Switch checked={requireExpiry} disabled={!canManage || save.isPending} onCheckedChange={(v) => { haptics.tap(); setRequireExpiry(v); }} />
           </View>
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 14 }}>
             <View style={{ flex: 1 }}>
@@ -133,12 +129,17 @@ function PatPolicyCard({ accountId, canManage, isDark }: { accountId: string; ca
               <TextInput value={idleRevoke} onChangeText={(t) => setIdleRevoke(t.replace(/[^0-9]/g, ''))} editable={canManage && !save.isPending} keyboardType="number-pad" placeholder="Never" placeholderTextColor={c.muted} style={input} />
             </View>
           </View>
-          {error && <Text style={{ fontSize: 11.5, color: '#ef4444', marginTop: 8 }}>{error}</Text>}
+          {error && <Text style={{ fontSize: 11.5, color: destructiveColor(isDark), marginTop: 8 }}>{error}</Text>}
           {canManage && (
-            <TouchableOpacity onPress={handleSave} disabled={save.isPending} activeOpacity={0.85} style={{ alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, marginTop: 12 }}>
+            <Button
+              onPress={handleSave}
+              disabled={save.isPending}
+              className="h-10 flex-row items-center self-end gap-1.5 rounded-full px-[18px] mt-3"
+              style={{ backgroundColor: theme.primary }}
+            >
               {save.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policy</Text>
-            </TouchableOpacity>
+              <Text>Save policy</Text>
+            </Button>
           )}
         </>
       )}
@@ -149,6 +150,7 @@ function PatPolicyCard({ accountId, canManage, isDark }: { accountId: string; ca
 type SaSheet = { kind: 'create' } | { kind: 'bearer'; sa: CreatedServiceAccount } | null;
 
 function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: string; canManage: boolean; isDark: boolean }) {
+  const sheetBg = useSheetBackground();
   const c = accountColors(isDark);
   const theme = useThemeColors();
   const queryClient = useQueryClient();
@@ -191,10 +193,15 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
           <Text style={{ fontSize: 12, color: c.muted, marginTop: 3 }}>Machine identities for CI/CD and connections.</Text>
         </View>
         {canManage && (
-          <TouchableOpacity onPress={() => open({ kind: 'create' })} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
+          <Button
+            size="sm"
+            onPress={() => open({ kind: 'create' })}
+            className="h-[34px] flex-row items-center gap-1.5 rounded-full pl-[11px] pr-[13px]"
+            style={{ backgroundColor: theme.primary }}
+          >
             <Plus size={14} color={theme.primaryForeground} />
-            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New</Text>
-          </TouchableOpacity>
+            <Text>New</Text>
+          </Button>
         )}
       </View>
 
@@ -217,9 +224,9 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
                 {canManage && (busyId === sa.service_account_id ? <ActivityIndicator size="small" color={c.muted} /> : (
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     {sa.status === 'active' && (
-                      <TouchableOpacity onPress={() => confirmDisable(sa)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}><CirclePause size={14} color="#d97706" /></TouchableOpacity>
+                      <Button variant="ghost" size="icon" onPress={() => confirmDisable(sa)} hitSlop={6} className="h-8 w-8 rounded-full" style={{ borderWidth: 1, borderColor: c.border }}><CirclePause size={14} color={THEME.accent.orange} /></Button>
                     )}
-                    <TouchableOpacity onPress={() => confirmDelete(sa)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
+                    <Button variant="ghost" size="icon" onPress={() => confirmDelete(sa)} hitSlop={6} className="h-8 w-8 rounded-full" style={{ borderWidth: 1, borderColor: withAlpha(destructiveColor(isDark), 0.35) }}><Trash2 size={14} color={destructiveColor(isDark)} /></Button>
                   </View>
                 ))}
               </View>
@@ -233,11 +240,11 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
         snapPoints={sheet?.kind === 'bearer' ? ['50%'] : ['56%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
-        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
-        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        backgroundStyle={{ backgroundColor: sheetBg }}
+        handleIndicatorStyle={sheetHandleIndicatorStyle(isDark)}
         keyboardBehavior="interactive"
         keyboardBlurBehavior="restore"
-        backdropComponent={(props) => <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />}
+        backdropComponent={SheetBackdrop}
       >
         {sheet?.kind === 'create' ? (
           <CreateSaSheet accountId={accountId} onClose={() => sheetRef.current?.dismiss()} isDark={isDark}
@@ -269,7 +276,7 @@ function CreateSaSheet({ accountId, onCreated, onClose, isDark }: { accountId: s
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
         <Bot size={18} color={c.fg} />
         <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>New service account</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
+        <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
       </View>
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 16 }}>A bearer token will be shown once, right after creation.</Text>
@@ -297,17 +304,22 @@ function BearerSheet({ sa, onClose, isDark }: { sa: CreatedServiceAccount; onClo
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: c.border }}>
         <KeyRound size={18} color={c.fg} />
         <Text style={{ flex: 1, fontSize: 17, fontFamily: 'Roobert-Medium', color: c.fg }}>Save this bearer now</Text>
-        <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center' }}><X size={17} color={c.muted} /></TouchableOpacity>
+        <SheetCloseButton onPress={() => { haptics.tap(); onClose(); }} isDark={isDark} />
       </View>
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
         <Text style={{ fontSize: 12.5, lineHeight: 18, color: c.muted, marginBottom: 14 }}>This is the only time we'll show <Text style={{ fontFamily: 'Roobert-Medium', color: c.fg }}>{sa.name}</Text>'s secret. Store it in your secrets manager.</Text>
         <View style={{ borderRadius: 12, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, padding: 12 }}>
           <Text style={{ fontSize: 12.5, lineHeight: 18, fontFamily: MONO, color: c.fg }} selectable>{sa.secret}</Text>
         </View>
-        <TouchableOpacity onPress={copy} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: 12, paddingHorizontal: 14, height: 38, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+        <Button
+          variant="ghost"
+          onPress={copy}
+          className="h-[38px] flex-row items-center self-start gap-1.5 rounded-full px-3.5 mt-3"
+          style={{ borderWidth: 1, borderColor: c.border }}
+        >
           {copied ? <Check size={14} color={theme.primary} /> : <Copy size={14} color={c.muted} />}
-          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: copied ? theme.primary : c.fg }}>{copied ? 'Copied' : 'Copy bearer'}</Text>
-        </TouchableOpacity>
+          <Text style={{ color: copied ? theme.primary : c.fg }}>{copied ? 'Copied' : 'Copy bearer'}</Text>
+        </Button>
       </BottomSheetScrollView>
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <PrimaryButton label="Done" onPress={onClose} />

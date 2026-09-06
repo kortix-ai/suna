@@ -9,6 +9,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
 import { haptics } from '@/lib/haptics';
+import { THEME } from '@/lib/utils/theme';
 
 function SettingsIndexHeader({ title }: { title: string }) {
   const router = useRouter();
@@ -98,9 +99,9 @@ export default function SettingsLayout() {
     }, [router]),
   );
 
-  // Match the theme background colors from global.css
-  // Light: #F6F6F6, Dark: #121215
-  const backgroundColor = colorScheme === 'dark' ? '#121215' : '#F6F6F6';
+  // Closest THEME tokens to the settings stack's grouped-list background
+  // (light uses --muted, L=96.1%; dark uses --surface, L=7.8% — nearest achromatic match).
+  const backgroundColor = colorScheme === 'dark' ? THEME.dark.surface : THEME.light.muted;
 
   return (
     <Stack

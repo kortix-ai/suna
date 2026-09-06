@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { type ViewProps } from 'react-native';
-import { Avatar } from '@/components/ui/Avatar';
+import { Avatar } from '@/components/kortix/avatar';
 import type { LucideIcon } from 'lucide-react-native';
 
 interface ThreadAvatarProps extends ViewProps {

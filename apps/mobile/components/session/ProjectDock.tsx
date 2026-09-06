@@ -24,7 +24,7 @@ import { useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller
 import { Plus, type LucideIcon } from 'lucide-react-native';
 
 import { Icon } from '@/components/ui/icon';
-import { ListRow } from '@/components/ui/list-row';
+import { ListRow } from '@/components/kortix/list-row';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
