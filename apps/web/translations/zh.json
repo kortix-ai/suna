@@ -4607,7 +4607,17 @@
       "line1729JsxTextWeImplementPhysicalBusinessAndTechnicalSecurityMeasures": "我们实施物理、业务和技术安全措施，以保护您的个人信息。如果发生安全漏洞，我们会通知您，以便您采取适当的保护措施。我们仅在实现收集目的所需的期限内保留您的个人信息。之后，除非法律要求保留，否则我们会将其销毁。",
       "line1739JsxTextContactUs": "联系我们",
       "line1742JsxTextYouCanGetInTouchByEmailingUs": "您可以通过电子邮件联系我们：",
-      "line1747JsxTextInfoKortixCom": "info@kortix.com"
+      "line1747JsxTextInfoKortixCom": "info@kortix.com",
+      "serviceProvidersLead": "The service providers that process personal information on our behalf, and what they do for us:",
+      "serviceProvidersHosting": "Hosting and infrastructure: Vercel (web application) and Amazon Web Services (API and data storage), located in the United States.",
+      "serviceProvidersAuthDb": "Database and authentication: Supabase.",
+      "serviceProvidersPayments": "Payments: Stripe. We never store card numbers ourselves.",
+      "serviceProvidersSandboxes": "Agent sandboxes: Daytona and Platinum, which run the isolated environments your sessions execute in.",
+      "serviceProvidersErrors": "Error monitoring: Better Stack, through the Sentry SDK, configured not to send personal identifiers.",
+      "serviceProvidersAnalytics": "Product analytics: PostHog. It records how the product is used (pages viewed, features used, and events such as starting a session or sending a prompt) tied to your account id. We do not send your email address, prompts, files, or secrets. On the public website it runs only after you accept analytics cookies.",
+      "serviceProvidersMarketing": "Website analytics and cookie consent: Google Tag Manager, Google Analytics, and CookieYes, on the public website only and subject to your cookie choices.",
+      "serviceProvidersModels": "Model providers and connectors you choose to use (for example OpenAI, Anthropic, Amazon Bedrock, OpenRouter, or Composio) receive the data needed to perform the work you ask for, under their own terms.",
+      "serviceProvidersObject": "You can object to product analytics, or ask us to delete the analytics data held about you, by emailing info@kortix.com."
     },
     "appMaintenancePage": {
       "line54JsxTextCheckSystemStatus": "检查系统状态 →",
