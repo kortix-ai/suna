@@ -699,15 +699,53 @@ export class AgentCell {
     // Deliberately NOT aliases in a table: each one answers in the shape the
     // session expects, which is not always the shape this cell returns.
     if (url.pathname === "/kortix/health") {
+      // THE FIELDS THE SESSION ACTUALLY READS, not the ones a cell would
+      // naturally report. Kortix classifies a box from this body
+      // (apps/api/src/projects/lib/legacy-runtime-bootstrap.ts): `daemon` must
+      // be the string "ok" or the box is `not-ok`, and `runtime` must be an
+      // OBJECT or the box is `legacy` and gets put through a convergence path
+      // a cell has no use for.
+      //
+      // This used to answer `{ok, agent, sessionId, runtime: "ready", ...}`.
+      // Every field of that is true and none of it is what is read: `ok` is not
+      // `daemon`, and `runtime` as a STRING is not a runtime block. Measured on
+      // dev 2026-09-06, session 708ea3ca: the cell answered /kortix/health 200
+      // with runtime "ready" throughout while the session sat in
+      // `open-session:starting` for 181 s and never opened.
+      //
+      // The shape is kortix-worker's (apps/kortix-worker/src/worker.ts), because
+      // that is the contract the session speaks and parity with it is the point.
+      const turns = this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n;
       return Response.json({
+        daemon: "ok",
+        status: "ok",
+        runtimeReady: true,
+        workload: "session",
+        // A cell runs no OpenCode. The session must not wait for one, so this
+        // says the component it asks after is fine rather than absent.
+        opencode: "ok",
+        engine: "pi",
+        uptime_s: Math.floor((Date.now() - this.bornAt) / 1000),
+        repo_required: false,
+        repo_ready: true,
+        boot_error: null,
+        store_error: null,
+        model_mode: this.env?.MODEL_API_KEY ? "live" : "scripted",
+        model_error: null,
+        opencode_session_id: sessionId,
+        opencode_session_required: false,
+        agent_config_etag: null,
+        commit_sha: null,
+        branch: null,
+        runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
+        // The cell's own facts, kept alongside rather than instead of the
+        // contract: a caller that knows about cells can still use them.
         ok: true,
         agent: "pi-in-a-cell",
         sessionId,
-        // `runtime` is what the session polls for readiness: a cell is ready as
-        // soon as it can answer, because there is no daemon to come up.
-        runtime: "ready",
         busy: !!this.running,
-        turns: this.sql.exec("SELECT COUNT(*) AS n FROM turns").toArray()[0].n,
+        turns,
+        instance: this.instance,
       });
     }
     // Env sync. The session pushes the environment a turn must run with; a cell
@@ -1104,7 +1142,18 @@ export default {
     // The session polls readiness BEFORE it has a session to name, so this one
     // answers at the worker, not in a cell.
     if (url.pathname === "/kortix/health" && !url.searchParams.get("c")) {
-      return Response.json({ ok: true, agent: "pi-in-a-cell", runtime: "ready" });
+      // Same contract as the in-cell answer: the session polls readiness
+      // BEFORE it has a session to name, and a body this one cannot classify
+      // leaves it waiting exactly as long as an unreachable box would.
+      return Response.json({
+        daemon: "ok", status: "ok", runtimeReady: true, workload: "session",
+        opencode: "ok", engine: "pi", repo_required: false, repo_ready: true,
+        boot_error: null, store_error: null, model_error: null,
+        opencode_session_required: false, opencode_session_id: null,
+        agent_config_etag: null, commit_sha: null, branch: null,
+        runtime: { build: null, at: null, components: {}, agentSwapPending: false, pinned: false },
+        ok: true, agent: "pi-in-a-cell",
+      });
     }
     const name = url.searchParams.get("c") ?? "default";
     return env.AGENT.get(env.AGENT.idFromName(name)).fetch(req);

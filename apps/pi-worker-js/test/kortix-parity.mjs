@@ -9,7 +9,7 @@
 //
 // In-process against the real bundle, like cell-logic.mjs: no Docker, no celld.
 // Read by test/all.sh.
-// EXPECTED_PASSES=12
+// EXPECTED_PASSES=17
 import { makeCell, installWorkerGlobals } from "./cell-harness.mjs";
 import { watchClaims } from "../../tools/crash-reporter.mjs";
 installWorkerGlobals();
@@ -30,7 +30,30 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   // the moment it can answer — there is no daemon to wait for, which is the
   // whole point of the worker path.
   const health = await (await h.fetch("/kortix/health?c=s")).json();
-  check("GET /kortix/health answers ready, for this session", health.ok === true && health.runtime === "ready" && health.sessionId === "s", JSON.stringify(health));
+  check("GET /kortix/health answers ready, for this session", health.ok === true && health.sessionId === "s", JSON.stringify(health));
+
+  // THE FIELDS KORTIX ACTUALLY CLASSIFIES THE BOX FROM.
+  //
+  // classifyDaemonHealth (apps/api/src/projects/lib/legacy-runtime-bootstrap.ts)
+  // reads `daemon` and `runtime` and nothing else to decide what this box is:
+  // `daemon !== "ok"` is not-ok, and a `runtime` that is not an OBJECT is a
+  // pre-convergence box put through a path a cell has no use for. This answered
+  // `{ok: true, runtime: "ready"}` — every word true, none of it read.
+  //
+  // Measured on dev 2026-09-06, session 708ea3ca: the cell answered 200 on
+  // /kortix/health throughout while the session sat in `open-session:starting`
+  // for 181 s and never opened.
+  check("health says daemon:'ok' — anything else classifies the box as not-ok",
+    health.daemon === "ok", JSON.stringify(health.daemon));
+  check("and `runtime` is an OBJECT — a string classifies the box as legacy",
+    health.runtime !== null && typeof health.runtime === "object" && !Array.isArray(health.runtime),
+    `runtime=${JSON.stringify(health.runtime)}`);
+  check("and it does not make the session wait for an OpenCode a cell never runs",
+    health.opencode === "ok" && health.opencode_session_required === false && health.repo_required === false,
+    JSON.stringify({ opencode: health.opencode, req: health.opencode_session_required, repo: health.repo_required }));
+  check("and it declares itself ready and healthy in the session's own words",
+    health.runtimeReady === true && health.status === "ok" && health.engine === "pi",
+    JSON.stringify({ runtimeReady: health.runtimeReady, status: health.status, engine: health.engine }));
   check("…and says whether a turn is running", health.busy === false, JSON.stringify(health));
 
   // Env sync: the session pushes the environment a turn runs with.
@@ -74,6 +97,12 @@ const ENV = { SCRIPT: "[]", TOOL_DAEMON_URL: "http://127.0.0.1:9", TOOL_DAEMON_T
   const worker = mod.default;
   const r = await worker.fetch(new Request("http://cell/kortix/health"), { AGENT: null });
   const body = await r.json();
-  check("the worker answers /kortix/health with no session named", r.status === 200 && body.runtime === "ready", JSON.stringify(body));
+  check("the worker answers /kortix/health with no session named", r.status === 200 && body.ok === true, JSON.stringify(body));
+  // The session polls readiness BEFORE it has a session to name, so this body
+  // has to classify too — an unclassifiable one leaves it waiting exactly as
+  // long as an unreachable box would.
+  check("and that answer classifies the same way as the in-cell one",
+    body.daemon === "ok" && typeof body.runtime === "object" && body.runtime !== null && body.runtimeReady === true,
+    JSON.stringify(body));
 }
 process.exit(bad ? 1 : 0);
