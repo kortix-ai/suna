@@ -1371,6 +1371,18 @@ export async function createProjectSession(input: {
         piWorkerSha = sha;
         piWorkerBoot = true;
         sandboxSlug = PI_WORKER_SANDBOX_SLUG;
+      } else {
+        // SAY WHY, because every way this declines is silent otherwise.
+        // resolveManifestRuntime swallows a missing file, an unreadable ref and
+        // a parse error alike and answers null, and the catch below only fires
+        // when the whole resolution throws. So a project with the flag ON that
+        // quietly boots the OpenCode path looks identical to one without the
+        // flag, and the only symptom is a session that takes seconds longer
+        // than it should. Measured 2026-09-06: two sessions on a flagged
+        // project booted the OpenCode path and nothing in the log said so.
+        console.warn(
+          `[sessions] pi worker boot declined for ${projectId}: manifest at ${sha.slice(0, 8)} (ref ${ref}, path ${project.manifestPath ?? 'default'}) resolves runtime=${runtime ?? 'null'}, not 'pi'`,
+        );
       }
     } catch (err) {
       console.warn(

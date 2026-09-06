@@ -349,7 +349,13 @@ export class PlatinumProvider implements SandboxProvider {
     // its own. Everything below this point (dedup name, idempotency key, expose,
     // baseUrl) is identical — only the body differs, because the lifecycle a
     // cell takes is the same four host commands a microVM takes.
-    if (opts.piWorker) {
+    // `!bodyOverride` is what makes this terminate. The recursive call carries
+    // the SAME opts, so `opts.piWorker` is still true on the way back in — and
+    // without this second condition the branch takes itself, forever. Measured
+    // on dev 2026-09-06: every pi session failed with `RangeError: Maximum call
+    // stack size exceeded` before the sandbox was created, which surfaced to
+    // the user as a session stuck at `failed` with no box and no explanation.
+    if (opts.piWorker && !bodyOverride) {
       const cellBody = buildCellCreateBody({
         name: dedup?.name ?? `kortix-cell-${opts.sandboxId ?? Date.now()}`,
         envVars,
