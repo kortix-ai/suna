@@ -164,6 +164,7 @@ import {
   findProjectTriggerBySlug,
 } from '../triggers';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
+import { requestSource, track } from '../../lib/analytics';
 import {
   abandonSandboxTurn,
   acceptSandboxTurn,
@@ -1285,6 +1286,13 @@ projectsApp.openapi(
       pinnedSessionId: draft.pinnedSessionId,
     });
 
+    track({
+      event: 'trigger_created',
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      properties: { slug: draft.slug, source: requestSource(c) },
+    });
     return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
   },
 );
@@ -2712,6 +2720,9 @@ projectsApp.openapi(
         errorInfo,
         childSession ? childIdleGraceMs() : undefined,
       );
+      // `turn_completed` is emitted by the turn ledger itself
+      // (sandbox-turn-lifecycle.ts emitTurnEnded): this daemon `end` is only one
+      // of the ways a turn ends, and older daemons never post it.
       // Prompts forwarded INTO the turn that just ended: close the ones the
       // step answered (older than the ended message), and re-queue any that
       // the loop stranded below a newer assistant — see
@@ -3879,6 +3890,14 @@ projectsApp.openapi(
 
     if (result.status === 'queued') {
       await markGitTriggerFired(projectId, slug, now);
+      track({
+        event: 'trigger_fired',
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId: result.sessionId ?? null,
+        properties: { slug, fire_source: 'manual', deduped: result.deduped ?? false, source: requestSource(c) },
+      });
       return c.json(
         {
           status: 'queued',

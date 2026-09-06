@@ -18,6 +18,8 @@ import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-sn
 import { resumeStoppedSandboxByExternalId } from '../../projects/routes/shared';
 import { classifyPtyWebSocketPath } from '../../platform/providers/pty-ingress';
 import { recordSessionActivity } from '../../projects/session-activity';
+import { track } from '../../lib/analytics';
+import { normalizeAuditClientSource } from '../../shared/audit-client-source';
 import {
   createExtendThrottle,
   extendSandboxDeadline,
@@ -820,6 +822,32 @@ export function isProxiedBaseReset(
   return new URLSearchParams(queryString).get('base') === '1';
 }
 
+/**
+ * Analytics facts about an OpenCode prompt body: the model ref and how many
+ * file parts it carries. Kinds and counts only — never the text or file names.
+ */
+function promptFacts(body: ArrayBuffer | ArrayBufferView | undefined): {
+  model: string | null;
+  attachment_count: number;
+} {
+  try {
+    const parsed = body
+      ? (JSON.parse(new TextDecoder().decode(body)) as {
+          model?: { providerID?: unknown; modelID?: unknown };
+          parts?: Array<{ type?: unknown }>;
+        })
+      : null;
+    const providerID = parsed?.model?.providerID;
+    const modelID = parsed?.model?.modelID;
+    return {
+      model: typeof providerID === 'string' && typeof modelID === 'string' ? `${providerID}/${modelID}` : null,
+      attachment_count: Array.isArray(parsed?.parts) ? parsed.parts.filter((p) => p?.type === 'file').length : 0,
+    };
+  } catch {
+    return { model: null, attachment_count: 0 };
+  }
+}
+
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
@@ -1050,6 +1078,19 @@ export async function forwardToSandbox(
     void recordSessionActivity({
       sessionId: record.sessionId,
       projectId: record.projectId,
+    });
+    track({
+      event: 'prompt_sent',
+      userId,
+      accountId: record.accountId,
+      projectId: record.projectId,
+      sessionId: record.sessionId,
+      properties: {
+        source:
+          normalizeAuditClientSource(incomingHeaders.get('x-kortix-client')) ??
+          (sandboxAuthored ? 'agent' : 'api'),
+        ...promptFacts(requestBody),
+      },
     });
   }
 

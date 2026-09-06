@@ -27,6 +27,8 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     SANDBOX_ID: read('SANDBOX_ID') || undefined,
     AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,
     AUTH_METHODS: read('AUTH_METHODS') || undefined,
+    POSTHOG_KEY: read('POSTHOG_KEY') || undefined,
+    POSTHOG_HOST: read('POSTHOG_HOST') || undefined,
     VERSION:
       read('VERSION') ||
       (Reflect.get(process.env, 'NEXT_PUBLIC_KORTIX_VERSION') as string | undefined) ||

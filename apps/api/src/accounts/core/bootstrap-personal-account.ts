@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
+import { track } from '../../lib/analytics';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { db } from '../../shared/db';
 import { defaultAccountName } from './app';
@@ -60,6 +61,8 @@ export async function bootstrapPersonalAccount(
     void syncSignupContactToMailtrap(email).catch((err) =>
       console.warn(`[accounts] Mailtrap contact sync failed for ${userId}:`, err),
     );
+    // The one place every surface (web, CLI, mobile, OAuth) creates a NEW user.
+    track({ event: 'user_signed_up', userId, accountId: userId });
 
     return { accountId: userId, created: true };
   }

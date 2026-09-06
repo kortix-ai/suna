@@ -230,6 +230,9 @@ importers:
       postgres:
         specifier: ^3.4.8
         version: 3.4.9
+      posthog-node:
+        specifier: 5.51.6
+        version: 5.51.6
       re2js:
         specifier: 2.8.6
         version: 2.8.6
@@ -7883,8 +7886,18 @@ packages:
       '@posthog/types': 1.392.1
     dev: false
 
+  /@posthog/core@1.50.5:
+    resolution: {integrity: sha512-afEchuShDaVIoxAIj76kDZQ1DhfesDmgfVp+mtTzsA3wlc8DF5uoz8YjuTjnxOicWkpP5HCDqYidK/1kT125Cg==}
+    dependencies:
+      '@posthog/types': 1.409.0
+    dev: false
+
   /@posthog/types@1.392.1:
     resolution: {integrity: sha512-Qg6Gl7/1vlr8+gPtBi5gwnLgAgiyFoKOVmTvTtDcvya9cpTwZfna7rQmkGQ4B63CunUYNNbOlqcwiUwUDyTK6w==}
+    dev: false
+
+  /@posthog/types@1.409.0:
+    resolution: {integrity: sha512-239umoaZVb2GBaXeEyJpwFvjhrrChJH8NHCwiao23EBSu3NA6EN0MTMoaHSmMEf4yjiXEFFoYJA6FjJAXF5HGA==}
     dev: false
 
   /@protobufjs/aspromise@1.1.2:
@@ -26322,6 +26335,18 @@ packages:
       preact: 10.29.4
       query-selector-shadow-dom: 1.0.1
       web-vitals: 5.3.0
+    dev: false
+
+  /posthog-node@5.51.6:
+    resolution: {integrity: sha512-r+Ge3p0OnOcOWeTnvKZmAtDwECeIoyNTyxBxuZc8wM6RHCQ9j2Xrhogrf39HSq1Y2gIOpWLqIDRmWDcu7xmqcA==}
+    engines: {node: ^20.20.0 || >=22.22.0}
+    peerDependencies:
+      rxjs: ^7.0.0
+    peerDependenciesMeta:
+      rxjs:
+        optional: true
+    dependencies:
+      '@posthog/core': 1.50.5
     dev: false
 
   /pptx-react-viewer@1.25.5(fast-xml-parser@5.10.1)(framer-motion@12.43.0)(i18next@26.3.6)(jspdf@4.2.1)(jszip@3.10.1)(lucide-react@1.28.0)(react-dom@19.2.8)(react-i18next@17.0.11)(react-icons@5.7.0)(react@19.2.8):

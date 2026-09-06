@@ -27,6 +27,7 @@ import { validateGatewayKey } from './gateway-keys';
 import { resolveDefaultModelForPrincipal } from './resolution/default-model';
 import { resolveCandidates } from './resolution/resolve-candidates';
 import { resolveGatewayRoute } from './routing';
+import { track } from '../lib/analytics';
 
 // ─── Canonical gateway control plane ────────────────────────────────────────
 //
@@ -140,6 +141,16 @@ export async function authorizeRequest(token: string): Promise<AuthorizeResult> 
     const billing = await assertLlmBillingActive(principal.accountId);
     if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
   } catch (err) {
+    track({
+      event: 'billing_gate_hit',
+      userId: principal.userId,
+      accountId: principal.accountId,
+      projectId: principal.projectId,
+      properties: {
+        reason: err instanceof BillingGateError ? err.reason : 'subscription_required',
+        where: 'llm_gateway',
+      },
+    });
     return {
       ok: false,
       status: 402,

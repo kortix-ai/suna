@@ -48,6 +48,7 @@ import {
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
 import { getProjectGitConnection, getProjectGitRemote, hasServerManagedGitAuth, loadGitProject, upsertProjectGitConnection, upsertProjectGitCredential, withProjectGitAuth } from '../lib/git';
 import { CODEX_AUTH_JSON_SECRET_NAME, isSystemProjectSecretName, loadSecretViewsForUser, normalizeString, readBody, serializeProjectGitConnection, type SecretAgentGrantConfig } from '../lib/serializers';
+import { providerForSecretName, requestSource, track } from '../../lib/analytics';
 
 type ProjectSecretConsumer = z.infer<typeof SecretConsumerSchema>;
 
@@ -846,6 +847,30 @@ projectsApp.openapi(
     );
   } else {
     void propagateProjectSecretsToActiveSandboxes(projectId, { refreshModels: isGatewayManagedEnv(name) });
+  }
+  if (!existing) {
+    const provider = providerForSecretName(name);
+    const analyticsBase = {
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+    };
+    track({
+      ...analyticsBase,
+      event: 'secret_created',
+      properties: {
+        name_kind: provider ? 'provider' : 'other',
+        strategy: explicitStrategy ?? 'runtime',
+        source: requestSource(c),
+      },
+    });
+    if (provider) {
+      track({
+        ...analyticsBase,
+        event: 'provider_configured',
+        properties: { provider, method: 'api_key', source: requestSource(c) },
+      });
+    }
   }
 
   // First provider connect on a default-less project → seed a sensible project

@@ -95,6 +95,12 @@ const RuntimeEnvSchema = z.object({
   AUTH_METHODS: z.string().optional().default('magic,password'),
   /** Unified platform version (root VERSION file) — surfaced for the UI footer / about. */
   VERSION: z.string().optional().default('dev'),
+  /** PostHog project token (public, write-only). Empty = product analytics off.
+   *  Set via KORTIX_PUBLIC_POSTHOG_KEY / NEXT_PUBLIC_POSTHOG_KEY. */
+  POSTHOG_KEY: z.string().default(''),
+  /** PostHog ingest host, i.e. the data region. Set via
+   *  KORTIX_PUBLIC_POSTHOG_HOST / NEXT_PUBLIC_POSTHOG_HOST. Default EU. */
+  POSTHOG_HOST: z.string().url().default('https://eu.i.posthog.com'),
 });
 
 export type RuntimeEnv = z.infer<typeof RuntimeEnvSchema>;

@@ -20,6 +20,7 @@ import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { syncSeatQuantity } from '../services/seat-management';
 import { maybeMigrateLegacyAccount } from '../services/legacy-account-migration';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { identifyAccount, requestSource, track } from '../../lib/analytics';
 
 export const subscriptionsRouter = makeOpenApiApp<AppEnv>();
 
@@ -93,6 +94,12 @@ subscriptionsRouter.openapi(
       serverType: body.server_type,
       location: body.location,
     });
+    track({
+      event: 'checkout_started',
+      userId: c.get('userId'),
+      accountId,
+      properties: { kind: 'subscription', tier: String(body.tier_key ?? ''), source: requestSource(c) },
+    });
 
     return c.json(result);
   },
@@ -121,6 +128,12 @@ subscriptionsRouter.openapi(
       successUrl: body.success_url,
       cancelUrl: body.cancel_url,
       locale: body.locale,
+    });
+    track({
+      event: 'checkout_started',
+      userId: c.get('userId'),
+      accountId,
+      properties: { kind: 'subscription', tier: 'per_seat', source: requestSource(c) },
     });
 
     return c.json(result);
@@ -169,6 +182,12 @@ subscriptionsRouter.openapi(
       billingPeriod: body.billing_period,
       promoCode: body.promo_code,
     });
+    track({
+      event: 'checkout_started',
+      userId: c.get('userId'),
+      accountId,
+      properties: { kind: 'subscription_inline', tier: String(body.tier_key ?? ''), source: requestSource(c) },
+    });
 
     return c.json(result);
   },
@@ -193,6 +212,15 @@ subscriptionsRouter.openapi(
       subscriptionId: body.subscription_id,
       tierKey: body.tier_key,
     });
+    if (result.success) {
+      track({
+        event: 'subscription_activated',
+        userId: c.get('userId'),
+        accountId,
+        properties: { tier: result.tier, via: 'inline_checkout', source: requestSource(c) },
+      });
+      identifyAccount(accountId, { tier: result.tier });
+    }
 
     return c.json(result);
   },
@@ -231,6 +259,14 @@ subscriptionsRouter.openapi(
     const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json().catch(() => ({}));
     const result = await cancelSubscription(accountId, body.feedback);
+    if (result.success) {
+      track({
+        event: 'subscription_cancelled',
+        userId: c.get('userId'),
+        accountId,
+        properties: { source: requestSource(c) },
+      });
+    }
     return c.json(result);
   },
 );
@@ -372,6 +408,16 @@ subscriptionsRouter.openapi(
       accountId,
       sessionId: body.session_id,
     });
+    const confirmed = result as { success?: boolean; tier?: string };
+    if (confirmed.success) {
+      track({
+        event: 'subscription_activated',
+        userId: c.get('userId'),
+        accountId,
+        properties: { tier: confirmed.tier ?? null, via: 'checkout_session', source: requestSource(c) },
+      });
+      if (confirmed.tier) identifyAccount(accountId, { tier: confirmed.tier });
+    }
 
     return c.json(result);
   },

@@ -156,3 +156,10 @@ botkube-comm-real.yaml
 
 # Playwright MCP session artifacts (console logs, page snapshots)
 .playwright-mcp/
+
+# PostHog dashboards-as-code (infra/posthog). Lock file stays committed.
+infra/posthog/.terraform/
+infra/posthog/*.tfplan
+infra/posthog/*.tfstate
+infra/posthog/*.tfstate.*
+infra/posthog/*.tfvars

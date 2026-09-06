@@ -9,7 +9,13 @@ import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
+import { posthogHosts } from './scripts/posthog-hosts.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
+
+// PostHog reverse proxy target. Fixed at BUILD time (rewrites are compiled into
+// the routes manifest); instrumentation-client.ts falls back to the direct host
+// when the runtime region differs. Default EU.
+const posthog = posthogHosts(process.env.NEXT_PUBLIC_POSTHOG_HOST);
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -565,15 +571,15 @@ const nextConfig = (): NextConfig => ({
         : []),
       {
         source: '/ingest/static/:path*',
-        destination: 'https://eu-assets.i.posthog.com/static/:path*',
+        destination: `${posthog.assets}/static/:path*`,
       },
       {
         source: '/ingest/:path*',
-        destination: 'https://eu.i.posthog.com/:path*',
+        destination: `${posthog.ingest}/:path*`,
       },
       {
         source: '/ingest/flags',
-        destination: 'https://eu.i.posthog.com/flags',
+        destination: `${posthog.ingest}/flags`,
       },
       // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
       // directories, and Next's static handler does not resolve a directory index,

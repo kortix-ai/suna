@@ -71,6 +71,10 @@ function readRawEnv(): Partial<RuntimeEnv> {
       undefined,
     AUTH_METHODS:
       process.env.KORTIX_PUBLIC_AUTH_METHODS || process.env.NEXT_PUBLIC_AUTH_METHODS || undefined,
+    POSTHOG_KEY:
+      process.env.KORTIX_PUBLIC_POSTHOG_KEY || process.env.NEXT_PUBLIC_POSTHOG_KEY || undefined,
+    POSTHOG_HOST:
+      process.env.KORTIX_PUBLIC_POSTHOG_HOST || process.env.NEXT_PUBLIC_POSTHOG_HOST || undefined,
   };
 }
 

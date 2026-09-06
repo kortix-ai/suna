@@ -125,6 +125,7 @@ write_env "apps/web/.env" \
   "" \
   "$(kv NEXT_PUBLIC_GOOGLE_CLIENT_ID)" \
   "$(kv NEXT_PUBLIC_POSTHOG_KEY)" \
+  "$(kv NEXT_PUBLIC_POSTHOG_HOST https://eu.i.posthog.com)" \
   "$(kv KORTIX_ADMIN_API_KEY)" \
   "" \
 

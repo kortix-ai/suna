@@ -18,6 +18,17 @@ import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { auditLoginFail } from '../shared/auth-audit';
 import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
+import { requestSource, track } from '../lib/analytics';
+
+/** `user_logged_in` for the headless (CLI / mobile) sign-in routes. */
+function trackLogin(c: any, body: Record<string, unknown>, method: 'password' | 'otp' | 'oauth'): void {
+  const user = body.user as { id?: unknown } | undefined;
+  track({
+    event: 'user_logged_in',
+    userId: typeof user?.id === 'string' ? user.id : null,
+    properties: { method, source: requestSource(c) },
+  });
+}
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
@@ -152,6 +163,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `password_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
+    trackLogin(c, result.body, 'password');
     return sessionResponse(c, result.body);
   },
 );
@@ -225,6 +237,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `otp_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
+    trackLogin(c, result.body, 'otp');
     return sessionResponse(c, result.body);
   },
 );
@@ -303,6 +316,7 @@ headlessAuthRouter.openapi(
       auditLoginFail({ c, reason: `oauth_exchange_rejected:${result.body.error ?? result.status}`, authType: 'supabase' });
       return upstreamError(c, result);
     }
+    trackLogin(c, result.body, 'oauth');
     return sessionResponse(c, result.body);
   },
 );

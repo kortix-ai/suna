@@ -117,6 +117,7 @@ import {
   resolvePlatformMetaSandbox,
 } from './platform-meta-agent';
 import { prebuildCompiledBootArtifacts } from '../../git-proxy/compiled-prebuild';
+import { track } from '../../lib/analytics';
 
 export type SessionCreateError = {
   status: number;
@@ -1438,6 +1439,12 @@ export async function createProjectSession(input: {
     if (capResult.error) return { error: capResult.error };
   }
   if (!billingCheck.ok) {
+    track({
+      event: 'billing_gate_hit',
+      userId,
+      accountId,
+      properties: { reason: billingCheck.reason, where: 'session_create' },
+    });
     return {
       error: {
         status: 402,

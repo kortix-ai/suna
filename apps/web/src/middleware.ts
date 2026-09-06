@@ -307,7 +307,8 @@ export async function middleware(request: NextRequest) {
     pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
-    pathname.startsWith('/_betterstack') // Better Stack browser telemetry proxy
+    pathname.startsWith('/_betterstack') || // Better Stack browser telemetry proxy
+    pathname.startsWith('/ingest/') // PostHog reverse proxy (next.config rewrites) — an auth redirect here 307s every event batch
   ) {
     return finalizeEnvironmentAccess(NextResponse.next());
   }
@@ -688,7 +689,8 @@ export const config = {
      * - public folder assets
      * - monitoring (Sentry/Better Stack error tracking tunnel)
      * - _betterstack (Better Stack browser telemetry proxy)
+     * - ingest (PostHog reverse proxy)
      */
-    '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|monitoring|_betterstack|ingest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

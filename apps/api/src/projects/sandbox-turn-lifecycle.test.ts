@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { WIRE_MESSAGE_ID } from './wire-message-id';
+import { setAnalyticsClientForTests } from '../lib/analytics';
 
 let executed: string[] = [];
 let executeResults: unknown[] = [];
@@ -780,5 +781,82 @@ describe('session_turns ledger dual-write', () => {
     await clearSandboxTurn('sb-1', 'turn-token', 60_000);
 
     expect(executed[0]).toContain('60');
+  });
+});
+
+describe('turn_completed analytics', () => {
+  const OWNER = {
+    sandbox_id: '11111111-1111-4111-8111-111111111111',
+    session_id: 'sess-1',
+    project_id: '22222222-2222-4222-8222-222222222222',
+    account_id: '33333333-3333-4333-8333-333333333333',
+  };
+  const endedRow = () => ({
+    ...OWNER,
+    ended_turns: [
+      {
+        token: 'turn-token',
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+        startedAtMs: Date.now() - 5_000,
+      },
+    ],
+    active_turn_count: 0,
+    completed: true,
+  });
+
+  test('a completed turn emits one turn_completed from the ledger path, keyed by the session owner', async () => {
+    const captured: Array<Record<string, unknown>> = [];
+    setAnalyticsClientForTests({
+      capture: (payload: unknown) => {
+        captured.push(payload as Record<string, unknown>);
+      },
+      groupIdentify: () => {},
+      shutdown: async () => {},
+    } as never);
+    try {
+      // First result: the authority write. Every later execute (ledger insert,
+      // inbox confirmation, the created_by lookup) reads the same row; only the
+      // lookup cares about its shape.
+      const user = [{ created_by: 'user-1' }];
+      executeResults = [[endedRow()], user, user, user];
+      const outcome = await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+      });
+      expect(outcome.outcome).toBe('closed');
+      for (let i = 0; i < 100 && captured.length === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(captured).toHaveLength(1);
+      expect(captured[0]).toMatchObject({
+        distinctId: 'user-1',
+        event: 'turn_completed',
+        groups: { account: OWNER.account_id, project: OWNER.project_id },
+      });
+      const properties = captured[0]!.properties as Record<string, unknown>;
+      expect(properties.status).toBe('idle');
+      expect(properties.end_reason).toBe('completed');
+      expect(properties.session_id).toBe('sess-1');
+      expect(typeof properties.duration_ms).toBe('number');
+      expect(executed.some((query) => query.includes('created_by'))).toBe(true);
+    } finally {
+      setAnalyticsClientForTests(undefined);
+    }
+  });
+
+  test('without an analytics client the ledger path does no extra read and emits nothing', async () => {
+    setAnalyticsClientForTests(null);
+    try {
+      executeResults = [[endedRow()]];
+      await completeSandboxTurn('sess-1', 'idle', {
+        opencodeSessionId: 'ses_root',
+        messageId: 'msg_turn_1',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(executed.some((query) => query.includes('created_by'))).toBe(false);
+    } finally {
+      setAnalyticsClientForTests(undefined);
+    }
   });
 });

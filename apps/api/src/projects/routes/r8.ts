@@ -2,6 +2,7 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
+import { requestSource, track } from '../../lib/analytics';
 import { db } from '../../shared/db';
 import {
   getCrById,
@@ -130,7 +131,8 @@ projectsApp.openapi(
     // Independent of billing/provisioning below: it is a metadata fact about
     // this row, not a spend, so it lands even if the billing gate rejects the
     // resume that follows.
-    if (isWarmProjectSession(visible.row.metadata)) {
+    const warmHit = isWarmProjectSession(visible.row.metadata);
+    if (warmHit) {
       await dropWarmSessionMarkerOnAdopt(sessionId);
       stl.mark('warm-adopted');
     }
@@ -139,6 +141,14 @@ projectsApp.openapi(
     const billing = await checkBillingActive(loaded.row.accountId);
     stl.mark('billing-checked');
     if (!billing.ok) {
+      track({
+        event: 'billing_gate_hit',
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        properties: { reason: billing.reason, where: 'session_start', source: requestSource(c) },
+      });
       return c.json(
         {
           error: billing.message,
@@ -170,7 +180,22 @@ projectsApp.openapi(
       waitMs,
     });
     stl.mark(`open-session:${result.start.stage}`);
-    stl.log({ waitMs });
+    const timeline = stl.log({ waitMs });
+    track({
+      event: 'session_started',
+      userId: loaded.userId,
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      properties: {
+        stage: result.start.stage,
+        action: result.start.action ?? null,
+        warm_hit: warmHit,
+        provider: visible.row.sandboxProvider,
+        boot_ms: timeline.totalMs,
+        source: requestSource(c),
+      },
+    });
     return c.json(
       {
         ...result.start,
@@ -233,6 +258,16 @@ projectsApp.openapi(
       projectId,
       sessionId,
     });
+    if (result.status < 300) {
+      track({
+        event: 'session_restarted',
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        properties: { provider: visible.row.sandboxProvider, source: requestSource(c) },
+      });
+    }
     return c.json(result.body, result.status as any);
   },
 );
@@ -576,6 +611,14 @@ projectsApp.openapi(
     // Same gate as start/wake: a prompt spends compute.
     const billing = await checkBillingActive(loaded.row.accountId);
     if (!billing.ok) {
+      track({
+        event: 'billing_gate_hit',
+        userId: loaded.userId,
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        properties: { reason: billing.reason, where: 'prompt', source: requestSource(c) },
+      });
       return c.json(
         {
           error: billing.message,
