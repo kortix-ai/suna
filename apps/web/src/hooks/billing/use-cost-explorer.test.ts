@@ -4,7 +4,8 @@ import { buildCostByProjectQuery, buildCostSummaryQuery } from './use-cost-explo
 
 const sources = {
   summary: async () => ({ totals: {}, previous: {}, series: [], models: [] }) as never,
-  byProject: async () => ({ projects: [], total: 0, limit: 25, offset: 0, next_offset: null }) as never,
+  byProject: async () =>
+    ({ projects: [], total: 0, limit: 25, offset: 0, next_offset: null }) as never,
 };
 
 describe('buildCostSummaryQuery', () => {

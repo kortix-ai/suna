@@ -9,7 +9,7 @@ import {
   PlayIcon as Play,
   ShieldWarningIcon as ShieldAlert,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -19,8 +19,8 @@ import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { getAuthToken } from '@/lib/auth-token';
-import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { getEnv } from '@/lib/env-config';
+import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { getPublicShareByToken, startSessionWithToken } from '@kortix/sdk';
 import { PublicFileShareView } from './public-file-share-view';
 import { downloadFileFromUrl, fileNameFromPath } from './share-file';
@@ -187,7 +187,7 @@ export default function PublicSessionSharePage() {
             {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextShareLink6d642641')}
           </h1>
           <p className="text-muted-foreground mt-2 text-sm">
-            {error ?? 'This link cannot be opened.'}
+            {error ?? tI18nHardcoded.raw('i18nComplete.text489314dd2a13')}
           </p>
         </div>
       </main>
@@ -218,7 +218,7 @@ export default function PublicSessionSharePage() {
           h-12, gap-2, px-3, name left, actions right. No border-b — the pane
           below draws the seam with its own top border. */}
       {!fullscreen && (
-        <header className="flex py-2 shrink-0 items-center gap-2 px-3.5 pr-3">
+        <header className="flex shrink-0 items-center gap-2 px-3.5 py-2 pr-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <KortixLogo variant="symbol" size={16} className="shrink-0" />
             <h1 className="truncate text-sm font-medium">{title}</h1>
@@ -227,15 +227,15 @@ export default function PublicSessionSharePage() {
             {offline && hasAuth && (
               <Button size="sm" onClick={startSession} disabled={starting}>
                 {starting ? <Loading /> : <Play />}
-                Start
+                {tI18nHardcoded.raw('i18nComplete.texte4bb9f1ece9a')}
               </Button>
             )}
             {isFileShare && !offline && fileSrc && (
-              <Hint label="Download" side="bottom">
+              <Hint label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')} side="bottom">
                 <Button
                   variant="ghost"
                   size="icon-base"
-                  aria-label="Download"
+                  aria-label={tI18nHardcoded.raw('i18nComplete.textd6eafe823591')}
                   onClick={handleDownload}
                 >
                   <DownloadSimpleIcon />
@@ -262,11 +262,11 @@ export default function PublicSessionSharePage() {
                 {tI18nHardcoded.raw('autoAppPublicShareSessionTokenPageJsxTextOpenIn2fdbf464')}
               </Link>
             </Button>
-            <Hint label="Full screen" side="bottom">
+            <Hint label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')} side="bottom">
               <Button
                 variant="ghost"
                 size="icon-base"
-                aria-label="Full screen"
+                aria-label={tI18nHardcoded.raw('i18nComplete.text674fe2acd0d5')}
                 onClick={() => setFullscreen(true)}
               >
                 <ArrowsOutSimple />
@@ -279,11 +279,11 @@ export default function PublicSessionSharePage() {
           parent document — so the way out has to be visible. `secondary` is
           opaque: this floats over content whose colours we do not control. */}
       {fullscreen && (
-        <Hint label="Exit full screen (Esc)" side="left">
+        <Hint label={tI18nHardcoded.raw('i18nComplete.textdc5229faa653')} side="left">
           <Button
             variant="secondary"
             size="icon-base"
-            aria-label="Exit full screen"
+            aria-label={tI18nHardcoded.raw('i18nComplete.text897e0cf78b80')}
             className="fixed top-2 right-3 z-50 shadow-md"
             onClick={() => setFullscreen(false)}
           >
@@ -295,7 +295,7 @@ export default function PublicSessionSharePage() {
           iframe paints its square background over the corners. `clip` rather
           than `hidden` so this never becomes a scrollable box — the scrolling
           belongs to the child. */}
-      <section className="bg-background border-border relative min-h-0 h-dvh flex-1 overflow-clip rounded-t-md border-x border-t">
+      <section className="bg-background border-border relative h-dvh min-h-0 flex-1 overflow-clip rounded-t-md border-x border-t">
         {offline ? (
           <div className="flex h-full items-center justify-center px-6 text-center">
             <div className="max-w-sm">

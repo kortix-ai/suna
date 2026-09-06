@@ -7,6 +7,7 @@ import {
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
 import { SparkleIcon as Sparkles } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 
 type Skill = ConfigEntity;
 
@@ -26,6 +27,7 @@ function groupForSkill(skill: Skill): string {
 }
 
 export function SkillsView({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const canWrite = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SKILL_WRITE).allowed === true;
   return (
     <ConfigEntityView<Skill>
@@ -34,13 +36,13 @@ export function SkillsView({ projectId }: { projectId: string }) {
       noun="skill"
       layout="grid"
       canWrite={canWrite}
-      title="Skills"
-      searchPlaceholder="Search skills"
+      title={tI18nComplete.raw('text66d0f523a379')}
+      searchPlaceholder={tI18nComplete.raw('text76c02b7eddca')}
       emptyIcon={Sparkles}
-      emptyTitle="No skills yet"
-      emptyDescription="Create a skill to give agents reusable capabilities."
+      emptyTitle={tI18nComplete.raw('text32ae9b80f832')}
+      emptyDescription={tI18nComplete.raw('text031b8fd1f46a')}
       emptyDocsHref="https://opencode.ai/docs/skills/"
-      emptyBodyLabel="Skill body is empty. Add content below the frontmatter."
+      emptyBodyLabel={tI18nComplete.raw('textd2970d5a365f')}
       select={(config) => config.skills}
       groupBy={groupForSkill}
       groupOrder={[PROJECT_GROUP, KORTIX_GROUP]}

@@ -13,6 +13,26 @@ const headings = (html: string): string[] =>
 const html = () => renderToStaticMarkup(<ProfileTabView />);
 
 describe('ProfileTabView', () => {
+  test('renders injected locale copy instead of fixed English labels', () => {
+    const out = renderToStaticMarkup(
+      <ProfileTabView
+        copy={{
+          profilePicture: 'Профилна слика',
+          email: 'Имејл',
+          name: 'Име',
+          dangerZone: 'Опасна зона',
+          deleteAccount: 'Обриши налог',
+        }}
+      />,
+    );
+
+    for (const label of ['Профилна слика', 'Имејл', 'Име', 'Опасна зона', 'Обриши налог']) {
+      expect(out).toContain(label);
+    }
+    expect(out).not.toContain('>Profile picture<');
+    expect(out).not.toContain('>Danger zone<');
+  });
+
   test('renders the pane heading and each section label, in order', () => {
     expect(headings(html())).toEqual(['Profile', 'Danger zone']);
   });

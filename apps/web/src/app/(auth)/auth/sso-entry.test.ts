@@ -16,7 +16,7 @@ describe('sign-in SSO entry points', () => {
   });
 
   test('a visible SSO action exists and is gated on SAML being enabled', () => {
-    expect(source).toContain('Use single sign-on (SSO)');
+    expect(source).toContain("t('sso.use')");
     expect(source).toContain('samlEnabled && (');
   });
 
@@ -28,7 +28,7 @@ describe('sign-in SSO entry points', () => {
   });
 
   test('the explicit door surfaces a real error instead of silently falling through', () => {
-    expect(source).toContain(`Single sign-on isn't set up for`);
+    expect(source).toContain("t('sso.notConfigured', { domain })");
   });
 
   test('the explicit door skips the consumer-domain gate (intent beats heuristics)', () => {

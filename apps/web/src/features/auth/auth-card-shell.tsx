@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * Shared quiet surface for the auth sub-flows (forgot / reset password).
@@ -25,6 +25,7 @@ export type AuthLegalFooterVariant = 'default' | 'signup' | 'continue';
 
 /** Tiny legal line pinned to the bottom of every auth surface. */
 export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFooterVariant }) {
+  const t = useTranslations('auth');
   const onLegalClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
     if (openExternalRoute(href)) event.preventDefault();
   };
@@ -34,7 +35,7 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
       onClick={(event) => onLegalClick(event, '/legal/terms')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
-      Terms of Service
+      {t('termsOfService')}
     </Link>
   );
   const privacy = (
@@ -43,25 +44,26 @@ export function AuthLegalFooter({ variant = 'default' }: { variant?: AuthLegalFo
       onClick={(event) => onLegalClick(event, '/legal?tab=privacy')}
       className="hover:text-muted-foreground underline-offset-4 transition-colors hover:underline"
     >
-      Privacy Policy
+      {t('privacyPolicy')}
     </Link>
   );
 
   return (
     <footer className="text-muted-foreground/60 mx-auto max-w-[380px] px-6 pb-10 text-center text-sm text-balance">
-      {variant === 'continue' ? (
-        <>
-          By continuing, you agree to the {terms} and {privacy}
-        </>
-      ) : variant === 'signup' ? (
-        <>
-          By creating an account, you agree to the {terms} and {privacy}
-        </>
-      ) : (
-        <>
-          {terms} and {privacy}
-        </>
-      )}
+      {variant === 'continue'
+        ? t.rich('byContinuingYouAgree', {
+            termsOfService: () => terms,
+            privacyPolicy: () => privacy,
+          })
+        : variant === 'signup'
+          ? t.rich('unified.legal.signup', {
+              termsOfService: () => terms,
+              privacyPolicy: () => privacy,
+            })
+          : t.rich('unified.legal.default', {
+              termsOfService: () => terms,
+              privacyPolicy: () => privacy,
+            })}
     </footer>
   );
 }
@@ -131,14 +133,14 @@ export function AuthCardShell({
 
 /** Consistent "Back to sign in" link used across the auth sub-flows. */
 export function BackToSignIn() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const t = useTranslations('auth');
   return (
     <Link
       href="/auth"
       className="text-muted-foreground hover:text-foreground -m-2 inline-flex items-center gap-1 rounded-sm p-2 text-sm transition-colors"
     >
       <ChevronLeft className="size-4" />
-      {tHardcodedUi.raw('componentsAuthAuthCardShell.line67JsxTextBackToSignIn')}
+      {t('backToSignIn')}
     </Link>
   );
 }

@@ -5,6 +5,7 @@ import {
   type SidebarAlertTone,
 } from '@/features/workspace/project-sidebar/footer/sidebar-alert';
 import { useAccountState } from '@/hooks/billing';
+import type { UiTranslator } from '@/i18n/translator';
 import {
   billingDialogArgs,
   resolveBillingState,
@@ -14,9 +15,10 @@ import {
 import { isBillingEnabled } from '@/lib/config';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { WarningIcon as AlertTriangle, CreditCardIcon as CreditCard } from '@phosphor-icons/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback } from 'react';
 
-function useBalanceWarning(accountId?: string) {
+function useBalanceWarning(accountId: string | undefined, tI18nComplete: UiTranslator) {
   const { data: accountState } = useAccountState({ accountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
@@ -28,9 +30,14 @@ function useBalanceWarning(accountId?: string) {
   const handleClick = useCallback(
     () =>
       openUpgradeDialog(
-        billingDialogArgs(resolveBillingState(accountState), accountState, accountId),
+        billingDialogArgs(
+          resolveBillingState(accountState),
+          accountState,
+          accountId,
+          tI18nComplete,
+        ),
       ),
-    [openUpgradeDialog, accountId, accountState],
+    [openUpgradeDialog, accountId, accountState, tI18nComplete],
   );
 
   if (!isBillingEnabled() || !accountState || !canTopUp) {
@@ -53,12 +60,13 @@ function useBalanceWarning(accountId?: string) {
  * with every other row in the sidebar.
  */
 export function SidebarBalanceWarning({ accountId }: { accountId?: string }) {
-  const { severity, handleClick } = useBalanceWarning(accountId);
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { severity, handleClick } = useBalanceWarning(accountId, tI18nComplete);
   if (!severity) return null;
 
   const isBlocked = severity === 'blocked';
   const tone: SidebarAlertTone = isBlocked ? 'critical' : 'warning';
-  const copy = walletAlertCopy(severity);
+  const copy = walletAlertCopy(severity, tI18nComplete);
 
   return (
     <SidebarAlertRow

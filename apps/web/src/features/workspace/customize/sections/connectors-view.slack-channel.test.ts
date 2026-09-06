@@ -1,6 +1,6 @@
+import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 const sourcePath = join(import.meta.dir, 'connectors-view.tsx');
 const source = [
@@ -29,27 +29,29 @@ describe('Slack channel connector catalogue', () => {
   });
 
   test('keeps the full custom Slack app manifest setup before token fields', () => {
-    expect(source).toContain('Use custom Slack app');
-    expect(source).toContain('Bring your own Slack app');
-    expect(source).toContain('App manifest');
+    expect(source).toContain("raw('textaed3545ea8e4')");
+    expect(source).toContain("raw('text6e3fcca472c5')");
+    expect(source).toContain("raw('textcc6e921330d3')");
     expect(source).toContain('copyManifest');
     expect(source).toContain('https://api.slack.com/apps?new_app=1');
-    expect(source).toContain('Click Open Slack, choose "From a manifest", paste the JSON, confirm.');
-    expect(source).toContain('On the next screen, click Install to Workspace and approve.');
-    expect(source).toContain('Copy the Bot User OAuth Token (xoxb-...) and Signing Secret.');
+    expect(source).toContain("raw('texta89d28175307')");
+    expect(source).toContain("raw('text690ee10ca19e')");
+    expect(source).toContain("raw('text2cf7a6e21f7e')");
   });
 });
 
 describe('Email channel connector catalogue', () => {
   test('keeps Email connections behind the experimental flag', () => {
-    expect(source).toContain('{emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}');
+    expect(source).toContain(
+      '{emailChannelEnabled && <AddEmailConnectionCard projectId={projectId} onAdded={onAdded} />}',
+    );
   });
 
   test('supports managed inbox creation and attaching an existing AgentMail inbox', () => {
-    expect(source).toContain('Create managed Email inbox');
-    expect(source).toContain('Use custom AgentMail key');
-    expect(source).toContain('Attach existing AgentMail inbox');
-    expect(source).toContain('Existing inbox ID');
-    expect(source).toContain('Existing inbox email');
+    expect(source).toContain("raw('texte654b63c8098')");
+    expect(source).toContain("raw('text1bb320d9db5d')");
+    expect(source).toContain("raw('textd7cc97510eb3')");
+    expect(source).toContain("raw('texta35f4f3f0587')");
+    expect(source).toContain("raw('text2fcfd290b610')");
   });
 });

@@ -8,6 +8,7 @@ import {
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import { useTranslations } from '@/i18n/use-translations';
 import { PRESENTATION_WITH_MODALS_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { cn } from '@/lib/utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -23,7 +24,6 @@ import {
   SkipForwardIcon as SkipForward,
   XIcon as X,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DownloadFormat,
@@ -63,6 +63,7 @@ export function FullScreenPresentationViewer({
   sandboxUrl,
   initialSlide = 1,
 }: FullScreenPresentationViewerProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { subdomainOpts } = useSandboxProxy();
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
@@ -340,6 +341,15 @@ export function FullScreenPresentationViewer({
         const result = await handleGoogleSlidesUpload(
           sandboxUrl,
           `/workspace/presentations/${sanitizedName}`,
+          {
+            authFailed: tHardcodedUi.raw('i18nComplete.textbb39b2467568'),
+            redirecting: tHardcodedUi.raw('i18nComplete.text1b65f45d0347'),
+            uploaded: tHardcodedUi.raw('i18nComplete.text438f7a2e19eb'),
+            openInSlides: tHardcodedUi.raw('i18nComplete.text59f65a8a6575'),
+            authenticateFirst: tHardcodedUi.raw('i18nComplete.text258060e32b20'),
+            uploadFailed: tHardcodedUi.raw('i18nComplete.textac1f3393cb4c'),
+          },
+          tI18nComplete,
         );
         // If redirected to auth, don't show error
         if (result?.redirected_to_auth) {
@@ -351,6 +361,7 @@ export function FullScreenPresentationViewer({
           sandboxUrl,
           `/workspace/presentations/${sanitizedName}`,
           presentationName,
+          tI18nComplete,
         );
       }
     } catch (error) {
@@ -442,7 +453,10 @@ export function FullScreenPresentationViewer({
                     ? `${sandboxUrl}/api/html/${slide.file_path}/editor`
                     : slideUrlWithCacheBust
                 }
-                title={`Slide ${slide.number}: ${slide.title}`}
+                title={tI18nComplete('text871475cb411c', {
+                  value0: slide.number,
+                  value1: slide.title,
+                })}
                 className="rounded-xl border-0"
                 sandbox={PRESENTATION_WITH_MODALS_IFRAME_SANDBOX}
                 style={{
@@ -474,7 +488,7 @@ export function FullScreenPresentationViewer({
 
     SlideIframeComponent.displayName = 'SlideIframeComponent';
     return SlideIframeComponent;
-  }, [sandboxUrl, refreshTimestamp, showEditor, subdomainOpts]);
+  }, [sandboxUrl, refreshTimestamp, showEditor, subdomainOpts, tHardcodedUi]);
 
   if (!isOpen) return null;
 
@@ -498,7 +512,8 @@ export function FullScreenPresentationViewer({
                   {metadata.title || metadata.presentation_name}
                 </h1>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Slide {currentSlide} of {totalSlides}
+                  {tHardcodedUi.raw('i18nComplete.text6bb4c1177681')} {currentSlide}{' '}
+                  {tHardcodedUi.raw('i18nComplete.text28391d3bc64e')} {totalSlides}
                 </p>
               </div>
             )}
@@ -510,7 +525,11 @@ export function FullScreenPresentationViewer({
               variant="ghost"
               size="sm"
               className="w-8 p-0"
-              title={showEditor ? 'Close editor' : 'Edit presentation'}
+              title={
+                showEditor
+                  ? tHardcodedUi.raw('i18nComplete.textbd0b7be215ce')
+                  : tHardcodedUi.raw('i18nComplete.text8268dd9ea939')
+              }
               onClick={() => setShowEditor(!showEditor)}
             >
               {showEditor ? (
@@ -592,8 +611,8 @@ export function FullScreenPresentationViewer({
             <KortixLoader size="large" className="mx-auto mb-4" />
             <p className="text-zinc-700 dark:text-zinc-300">
               {retryAttempt > 0
-                ? `Retrying... (attempt ${retryAttempt + 1})`
-                : 'Loading presentation...'}
+                ? tI18nComplete('text3df439a7a73b', { value0: retryAttempt + 1 })
+                : tHardcodedUi.raw('i18nComplete.text1ac9fe8126fa')}
             </p>
           </div>
         ) : currentSlideData ? (

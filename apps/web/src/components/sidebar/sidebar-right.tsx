@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 
 import {
   Sheet,
@@ -15,13 +15,13 @@ import {
   useRightSidebar,
 } from '@/components/ui/sidebar-right-provider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useCreatePty } from '@kortix/sdk/react';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
-import { normalizeAppPathname, SANDBOX_PORTS } from '@kortix/sdk';
 import {
   getNavItemsClustered,
   isItemActive,
   navSubGroupLabels,
+  translateMenuItem,
+  translateMenuText,
   type MenuItemDef,
   type NavSubGroup,
 } from '@/lib/menu-registry';
@@ -30,6 +30,8 @@ import { cn } from '@/lib/utils';
 import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
 import { useProviderModalStore } from '@/stores/provider-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
+import { normalizeAppPathname, SANDBOX_PORTS } from '@kortix/sdk';
+import { useCreatePty } from '@kortix/sdk/react';
 import { SidebarSimpleIcon as PanelRight } from '@phosphor-icons/react';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useCallback } from 'react';
@@ -41,6 +43,7 @@ import { Button } from '../ui/button';
 
 export function SidebarRight() {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { state, open, openMobile, setOpenMobile, toggleSidebar, isMobile } = useRightSidebar();
 
   const router = useRouter();
@@ -161,10 +164,14 @@ export function SidebarRight() {
     },
     [flagAllows],
   );
-  const quickActionClusters = filterClusters(
-    getNavItemsClustered('rightSidebar', 'quickActions'),
+  const localizeClusters = (clusters: MenuItemDef[][]) =>
+    clusters.map((cluster) => cluster.map((item) => translateMenuItem(item, tI18nComplete)));
+  const quickActionClusters = localizeClusters(
+    filterClusters(getNavItemsClustered('rightSidebar', 'quickActions')),
   );
-  const navClusters = filterClusters(getNavItemsClustered('rightSidebar', 'navigation'));
+  const navClusters = localizeClusters(
+    filterClusters(getNavItemsClustered('rightSidebar', 'navigation')),
+  );
 
   const obHide = useOnboardingModeStore((s) => s.active && !s.morphing);
 
@@ -207,7 +214,9 @@ export function SidebarRight() {
                   {/* Quick action clusters with section labels */}
                   {quickActionClusters.map((cluster, clusterIdx) => {
                     const subGroup = cluster[0]?.subGroup as NavSubGroup | undefined;
-                    const label = subGroup ? navSubGroupLabels[subGroup] : undefined;
+                    const label = subGroup
+                      ? translateMenuText(navSubGroupLabels[subGroup], tI18nComplete)
+                      : undefined;
                     return (
                       <div
                         key={subGroup ?? clusterIdx}
@@ -226,7 +235,9 @@ export function SidebarRight() {
                             const isTerminal = item.actionId === 'newTerminal';
                             const isDisabled = isTerminal && createPty.isPending;
                             const label =
-                              isTerminal && createPty.isPending ? 'Creating...' : item.label;
+                              isTerminal && createPty.isPending
+                                ? tI18nComplete.raw('textdef70944c9bb')
+                                : item.label;
                             return (
                               <Button
                                 key={item.id}
@@ -247,7 +258,9 @@ export function SidebarRight() {
                   {/* Navigation clusters with section labels */}
                   {navClusters.map((cluster, clusterIdx) => {
                     const subGroup = cluster[0]?.subGroup as NavSubGroup | undefined;
-                    const label = subGroup ? navSubGroupLabels[subGroup] : undefined;
+                    const label = subGroup
+                      ? translateMenuText(navSubGroupLabels[subGroup], tI18nComplete)
+                      : undefined;
                     return (
                       <div key={subGroup ?? clusterIdx} className="mt-3">
                         {label && (
@@ -356,7 +369,11 @@ export function SidebarRight() {
             <button
               className="text-muted-foreground/70 hover:text-foreground hover:bg-sidebar-accent flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150"
               onClick={toggleSidebar}
-              aria-label={state === 'expanded' ? 'Collapse sidebar' : 'Expand sidebar'}
+              aria-label={
+                state === 'expanded'
+                  ? tHardcodedUi.raw('i18nComplete.textaab31cde23ba')
+                  : tHardcodedUi.raw('i18nComplete.text37a5d6485e10')
+              }
             >
               <PanelRight className="h-4 w-4" mirrored />
             </button>
@@ -461,7 +478,9 @@ export function SidebarRight() {
                 {/* Quick action clusters with section labels */}
                 {quickActionClusters.map((cluster, clusterIdx) => {
                   const subGroup = cluster[0]?.subGroup as NavSubGroup | undefined;
-                  const label = subGroup ? navSubGroupLabels[subGroup] : undefined;
+                  const label = subGroup
+                    ? translateMenuText(navSubGroupLabels[subGroup], tI18nComplete)
+                    : undefined;
                   return (
                     <div
                       key={subGroup ?? clusterIdx}
@@ -480,7 +499,9 @@ export function SidebarRight() {
                           const isTerminal = item.actionId === 'newTerminal';
                           const isDisabled = isTerminal && createPty.isPending;
                           const label =
-                            isTerminal && createPty.isPending ? 'Creating...' : item.label;
+                            isTerminal && createPty.isPending
+                              ? tI18nComplete.raw('textdef70944c9bb')
+                              : item.label;
                           return (
                             <Button
                               key={item.id}
@@ -502,7 +523,9 @@ export function SidebarRight() {
                 {/* Navigation clusters with section labels */}
                 {navClusters.map((cluster, clusterIdx) => {
                   const subGroup = cluster[0]?.subGroup as NavSubGroup | undefined;
-                  const label = subGroup ? navSubGroupLabels[subGroup] : undefined;
+                  const label = subGroup
+                    ? translateMenuText(navSubGroupLabels[subGroup], tI18nComplete)
+                    : undefined;
                   return (
                     <div key={subGroup ?? clusterIdx} className="mt-3">
                       {label && (

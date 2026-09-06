@@ -6,7 +6,7 @@ import {
 import { settingsPaletteGroups } from '@/features/workspace/settings-palette-items';
 import { FEATURE_FLAG_KEYS } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join, resolve } from 'node:path';
 import { menuRegistry } from './menu-registry';
 
@@ -101,8 +101,9 @@ describe('menu registry feature-flag gating', () => {
     expect(sidebarSource).toContain(
       '(item: MenuItemDef) => !item.requiresFlag || featureFlags[item.requiresFlag]',
     );
-    expect(sidebarSource).toContain('const quickActionClusters = filterClusters(');
-    expect(sidebarSource).toContain('const navClusters = filterClusters(');
+    expect(sidebarSource).toContain('filterClusters(getNavItemsClustered(');
+    expect(sidebarSource).toContain('const quickActionClusters = localizeClusters(');
+    expect(sidebarSource).toContain('const navClusters = localizeClusters(');
   });
 });
 

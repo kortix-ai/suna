@@ -10,8 +10,8 @@
  * Serve:  any static server; drive with Playwright.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 
 import { ComposerEditor, type ComposerEditorHandle } from '../editor/composer-editor';
 
@@ -35,7 +35,11 @@ const SESSIONS = [
 ] as never[];
 
 const COMMANDS = [
-  { name: 'company-initiation-report', description: 'Create an initiation report', source: 'skill' },
+  {
+    name: 'company-initiation-report',
+    description: 'Create an initiation report',
+    source: 'skill',
+  },
   { name: 'finance-screener-workflow-fast', description: 'Screen finances fast', source: 'skill' },
   { name: 'deploy', description: 'Deploy the current branch', source: 'command' },
 ] as never[];

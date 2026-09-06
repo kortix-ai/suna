@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-  ACCOUNT_SCOPED_SETTINGS_TABS,
-  isSettingsTabAllowed,
-} from './settings-panel';
+import { ACCOUNT_SCOPED_SETTINGS_TABS, isSettingsTabAllowed } from './settings-panel';
 import { DEFAULT_SETTINGS_TAB } from './settings-tabs';
 import {
   resolveSettingsExitPath,
@@ -50,9 +47,7 @@ describe('STANDALONE_DEFAULT_SETTINGS_TAB', () => {
     // A project-scoped default would be filtered straight out of the rail and
     // the panel would bounce off it on the first frame.
     expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(STANDALONE_DEFAULT_SETTINGS_TAB);
-    expect(
-      isSettingsTabAllowed(STANDALONE_DEFAULT_SETTINGS_TAB, { hasProject: false }),
-    ).toBe(true);
+    expect(isSettingsTabAllowed(STANDALONE_DEFAULT_SETTINGS_TAB, { hasProject: false })).toBe(true);
   });
 
   test('the project-scoped default is reachable with no project too', () => {

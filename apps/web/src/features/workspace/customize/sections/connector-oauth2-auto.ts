@@ -83,8 +83,7 @@ export function buildClientRegistrationInput(
     ...(metadata.revocation_url ? { revocation_url: metadata.revocation_url } : {}),
     ...(discovery.token_endpoint_auth_methods_supported?.length
       ? {
-          token_endpoint_auth_methods_supported:
-            discovery.token_endpoint_auth_methods_supported,
+          token_endpoint_auth_methods_supported: discovery.token_endpoint_auth_methods_supported,
         }
       : {}),
     ...(discovery.scopes.length ? { scopes: discovery.scopes } : {}),
@@ -103,8 +102,7 @@ export function mergeResourceDiscoveryIntoForm(
     discoveryUrl: form.discoveryUrl || metadata.discovery_url || '',
     authorizationUrl: form.authorizationUrl || metadata.authorization_url || '',
     tokenUrl: form.tokenUrl || metadata.token_url || '',
-    deviceAuthorizationUrl:
-      form.deviceAuthorizationUrl || metadata.device_authorization_url || '',
+    deviceAuthorizationUrl: form.deviceAuthorizationUrl || metadata.device_authorization_url || '',
     revocationUrl: form.revocationUrl || metadata.revocation_url || '',
     scopes: form.scopes || discovery.scopes.join(' '),
     resource: form.resource || discovery.resource || '',

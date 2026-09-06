@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'bun:test';
 import type { MessageWithParts, ToolPart } from '@/ui';
+import { describe, expect, it } from 'bun:test';
 import { collectAllToolParts, collectToolParts } from './collect-tool-parts';
 
-function part(tool: string, status: 'pending' | 'running' | 'completed' | 'error' = 'completed'): ToolPart {
+function part(
+  tool: string,
+  status: 'pending' | 'running' | 'completed' | 'error' = 'completed',
+): ToolPart {
   return {
     type: 'tool',
     tool,

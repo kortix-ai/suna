@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
 
 const page = readFileSync(join(import.meta.dir, 'connectors-page.tsx'), 'utf8');
@@ -146,12 +146,12 @@ describe('connectors page without a Connect provider', () => {
     // "Browse the catalogue" sets `scope` to `discover`. With no catalogue
     // that is a button to a hidden tab, and the forced `scope` would swallow
     // the click — a control that visibly does nothing.
-    const start = page.indexOf('title="No connectors yet"');
+    const start = page.indexOf("raw('text51ae0a7e3783')");
     const end = page.indexOf('</CatalogGrid>');
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const emptyState = page.slice(start, end);
     expect(emptyState).toContain('catalogueAvailable ? (');
-    expect(emptyState).toContain('Browse the catalogue');
+    expect(emptyState).toContain("raw('text45bfe4f17af7')");
   });
 });

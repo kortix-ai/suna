@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // SCIM provisioning card on the Settings tab. Two things:
 //   1. Surface the per-account SCIM base URL the IdP needs to configure.
 //   2. Manage long-lived SCIM bearer tokens (create / list / revoke).
@@ -14,8 +15,8 @@ import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
 import { cn } from '@/lib/utils';
 import { listAccountMembers } from '@kortix/sdk';
 import {
-  CaretDownIcon as ChevronDown,
   CheckIcon as Check,
+  CaretDownIcon as ChevronDown,
   KeyIcon as KeyRound,
   PlusIcon as Plus,
   ArrowClockwiseIcon as RefreshCw,
@@ -46,9 +47,10 @@ import {
   ModalTitle,
 } from '@/components/ui/modal';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CopyRow, formatRelative } from '@/features/workspace/shared/access';
 import { EmptyState } from '@/features/layout/section/empty-state';
 import { ErrorState } from '@/features/layout/section/error-state';
+import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
+import { CopyRow, formatRelative } from '@/features/workspace/shared/access';
 import {
   type CreatedScimToken,
   type ScimToken,
@@ -58,11 +60,10 @@ import {
   listScimTokens,
   revokeScimToken,
 } from '@/lib/iam-client';
-import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
+import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 // Static registry — filter once at module load instead of on every render.
 const START_SYNC_GUIDES = SCIM_PROVIDER_GUIDES.filter((g) => g.config.startSyncHint);
-import { latestScimSyncAt, scimSyncFreshness } from '@/lib/scim-sync';
 
 interface ScimCardProps {
   accountId: string;
@@ -84,6 +85,7 @@ function ProvisioningHealthPanel({
   /** Newest last_used_at across active SCIM tokens — when the IdP last called us. */
   lastSyncAt: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const membersQuery = useQuery({
     queryKey: ['scim-verify-members', accountId],
     queryFn: () => listAccountMembers(accountId),
@@ -107,13 +109,13 @@ function ProvisioningHealthPanel({
       <div className="flex items-center justify-between gap-2">
         <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
           <ShieldCheck className="size-3.5 shrink-0" />
-          Provisioning health
+          {tI18nComplete.raw('textee676c94b629')}
         </p>
         <Button
           variant="ghost"
           size="icon"
           className="size-6"
-          aria-label="Refresh provisioning health"
+          aria-label={tI18nComplete.raw('text01b50fe973da')}
           onClick={() => {
             membersQuery.refetch();
             groupsQuery.refetch();
@@ -129,8 +131,10 @@ function ProvisioningHealthPanel({
           <Users className="text-muted-foreground size-3.5 shrink-0" />
           <span className="font-medium tabular-nums">{scimMemberCount}</span>
           <span className="text-muted-foreground">
-            member{scimMemberCount === 1 ? '' : 's'} across {scimGroups.length} SCIM-provisioned
-            group{scimGroups.length === 1 ? '' : 's'}
+            {tI18nComplete.raw('texte31ab643c44f')}
+            {scimMemberCount === 1 ? '' : 's'} {tI18nComplete.raw('textdeb538b50cb6')}{' '}
+            {scimGroups.length} {tI18nComplete.raw('text6ec62587abb7')}
+            {scimGroups.length === 1 ? '' : 's'}
           </span>
         </p>
       )}
@@ -145,18 +149,20 @@ function ProvisioningHealthPanel({
               freshness === 'live' && 'bg-kortix-green',
               freshness === 'recent' && 'bg-kortix-green/60',
               freshness === 'quiet' && 'bg-muted-foreground/40',
-              freshness === 'never' && 'bg-amber-500',
+              freshness === 'never' && 'bg-kortix-orange',
             )}
           />
-          <span className="text-muted-foreground whitespace-nowrap">Last sync activity</span>
-          <span className="text-foreground whitespace-nowrap font-medium">
-            {lastSyncAt ? formatRelative(lastSyncAt) : 'none yet'}
+          <span className="text-muted-foreground whitespace-nowrap">
+            {tI18nComplete.raw('text97df9d6eae8f')}
+          </span>
+          <span className="text-foreground font-medium whitespace-nowrap">
+            {lastSyncAt ? formatRelative(lastSyncAt) : tI18nComplete.raw('text98ca0d518997')}
           </span>
         </p>
         <p className="text-muted-foreground pl-3">
           {freshness === 'never'
-            ? 'Your IdP hasn’t connected — check provisioning is running there.'
-            : 'Your IdP pushes on its own schedule — Entra ~every 40 min; most others as changes happen.'}
+            ? tI18nComplete.raw('text60872f0408fe')
+            : tI18nComplete.raw('text8f619950b088')}
         </p>
       </div>
     </div>
@@ -164,6 +170,7 @@ function ProvisioningHealthPanel({
 }
 
 export function ScimCard({ accountId, canManage }: ScimCardProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [createOpen, setCreateOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ScimToken | null>(null);
   const queryClient = useQueryClient();
@@ -189,11 +196,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
   const revokeMutation = useMutation({
     mutationFn: (tokenId: string) => revokeScimToken(accountId, tokenId),
     onSuccess: () => {
-      successToast('SCIM token revoked');
+      successToast(tI18nComplete.raw('text692fef338a3d'));
       queryClient.invalidateQueries({ queryKey: ['scim-tokens', accountId] });
       setRevokeTarget(null);
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to revoke token'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('text7f8760fd80df')),
   });
 
   const tokens = tokensQuery.data ?? [];
@@ -220,40 +227,38 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
           <p className="text-foreground flex items-center gap-2 text-sm font-medium">
-            Directory Sync
+            {tI18nComplete.raw('textea18bba8cbdb')}
             {tokens.length > 0 &&
               (freshness === 'never' ? (
                 <Badge variant="warning" size="sm">
-                  waiting for IdP
+                  {tI18nComplete.raw('text6b40213b7726')}
                 </Badge>
               ) : freshness === 'quiet' ? (
                 <Badge variant="outline" size="sm">
-                  connected
+                  {tI18nComplete.raw('text12a7bd86e0a4')}
                 </Badge>
               ) : (
                 <Badge variant="success" size="sm">
-                  active
+                  {tI18nComplete.raw('text96879611650f')}
                 </Badge>
               ))}
           </p>
-          <p className="text-muted-foreground text-xs">
-            Sync users and groups from Microsoft Entra, Okta, OneLogin, JumpCloud, PingOne, or any
-            SCIM 2.0 provider.
-          </p>
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text1e54b8e6af96')}</p>
         </div>
         {canManage && (
           // Step-by-step Directory Sync setup per IdP (mirrors the SSO
           // wizard) — mints the token and hands over the Tenant URL inline.
           <Button asChild variant="outline" size="sm" className="shrink-0">
-            <Link href={`/accounts/${accountId}/scim-setup`}>Guided setup</Link>
+            <Link href={`/accounts/${accountId}/scim-setup`}>
+              {tI18nComplete.raw('text8ef7823ca89b')}
+            </Link>
           </Button>
         )}
       </div>
 
       {!providerQuery.isLoading && !providerQuery.data && (
-        <InfoBanner tone="info" title="Connect SAML SSO first">
-          Directory Sync provisions accounts, but without SSO those users have no way to sign in.
-          Connect the SAML SSO card above before you configure your IdP here.
+        <InfoBanner tone="info" title={tI18nComplete.raw('text74be9df9fd88')}>
+          {tI18nComplete.raw('text711cf5ef692d')}
         </InfoBanner>
       )}
 
@@ -266,11 +271,13 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
           ) : tokensQuery.isError ? (
             <ErrorState
               size="sm"
-              title="Couldn't load SCIM status"
-              description={tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined}
+              title={tI18nComplete.raw('text580e68173156')}
+              description={
+                tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
+              }
               action={
                 <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
-                  Retry
+                  {tI18nComplete.raw('text942087cc2d41')}
                 </Button>
               }
             />
@@ -280,8 +287,8 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             <EmptyState
               icon={KeyRound}
               size="sm"
-              title="Not connected yet"
-              description="Run the guided setup — it mints the bearer token and walks your IdP's provisioning config step by step."
+              title={tI18nComplete.raw('text898569356612')}
+              description={tI18nComplete.raw('text6fc62e5b11d6')}
             />
           )}
         </div>
@@ -305,10 +312,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
             <DisclosureTrigger>
               <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <p className="text-foreground text-sm font-medium">Setup values</p>
+                  <p className="text-foreground text-sm font-medium">
+                    {tI18nComplete.raw('text59a5ff1b6b64')}
+                  </p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
-                    The SCIM base URL, what to enter on the IdP side, and how each provider starts
-                    automatic sync.
+                    {tI18nComplete.raw('text1ee88a995467')}
                   </p>
                 </div>
                 <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
@@ -319,19 +327,22 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 {/* Endpoint URL */}
                 <div className="space-y-1.5">
                   <CopyRow
-                    label="SCIM base URL"
+                    label={tI18nComplete.raw('textbe8fb61fbc84')}
                     value={scimBaseUrl}
-                    successMessage="SCIM URL copied"
+                    successMessage={tI18nComplete.raw('text871ec26813da')}
                   />
                   <p className="text-muted-foreground text-xs">
                     {scimBaseIsAbsolute ? (
                       <>
-                        Your IdP appends <code>/Users</code> and <code>/Groups</code>.
+                        {tI18nComplete.raw('text250ab151e9cc')} <code>/Users</code>{' '}
+                        {tI18nComplete.raw('text6201111b83a0')} <code>/Groups</code>.
                       </>
                     ) : (
                       <>
-                        Prepend your API origin (e.g. <code>https://api.kortix.com</code>). The IdP
-                        appends <code>/Users</code> and <code>/Groups</code>.
+                        {tI18nComplete.raw('text7f63d46d6462')} <code>https://api.kortix.com</code>
+                        {tI18nComplete.raw('textab5f961f00e8')}
+                        <code>/Users</code> {tI18nComplete.raw('text6201111b83a0')}{' '}
+                        <code>/Groups</code>.
                       </>
                     )}
                   </p>
@@ -340,23 +351,23 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 {/* IdP setup hint — what to fill in on the Okta / Azure side, so admins
                     don't have to guess the identifier + auth from docs. */}
                 <div className="bg-muted/20 text-muted-foreground space-y-1.5 rounded-md border px-3 py-2.5 text-xs">
-                  <p className="text-foreground text-xs font-medium">Configure your IdP with</p>
+                  <p className="text-foreground text-xs font-medium">
+                    {tI18nComplete.raw('text7a7a526cc8d6')}
+                  </p>
                   <div className="flex gap-2">
-                    <span className="w-24 shrink-0">Identifier</span>
+                    <span className="w-24 shrink-0">{tI18nComplete.raw('text9b10587f84a2')}</span>
                     <span className="text-foreground">
-                      <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code> —
-                      the user's email
+                      <code className="bg-muted/60 rounded px-1 py-0.5 font-mono">userName</code>{' '}
+                      {tI18nComplete.raw('text3ba60eb0a910')}
                     </span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="w-24 shrink-0">Auth</span>
-                    <span className="text-foreground">Bearer token — Okta HTTP Header mode</span>
+                    <span className="w-24 shrink-0">{tI18nComplete.raw('text8eb3ea9bbde6')}</span>
+                    <span className="text-foreground">{tI18nComplete.raw('text945491ab1fc3')}</span>
                   </div>
                   <div className="flex gap-2">
-                    <span className="w-24 shrink-0">Actions</span>
-                    <span className="text-foreground">
-                      Push users &amp; groups; deactivation deprovisions
-                    </span>
+                    <span className="w-24 shrink-0">{tI18nComplete.raw('textff8059dc6752')}</span>
+                    <span className="text-foreground">{tI18nComplete.raw('textc60816cbaae1')}</span>
                   </div>
                 </div>
 
@@ -367,7 +378,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                     on without re-entering the wizard. */}
                 <div className="bg-muted/20 text-muted-foreground space-y-2 rounded-md border px-3 py-2.5 text-xs">
                   <p className="text-foreground text-xs font-medium">
-                    Start automatic sync in your IdP
+                    {tI18nComplete.raw('textc8f3dd364de4')}
                   </p>
                   {START_SYNC_GUIDES.map((g) => (
                     <div key={g.id} className="flex gap-2">
@@ -378,12 +389,12 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                           href={`/accounts/${accountId}/scim-setup?provider=${g.id}`}
                           className="text-muted-foreground hover:text-foreground underline underline-offset-2"
                         >
-                          Guide
+                          {tI18nComplete.raw('text8dd65d0952ed')}
                         </Link>
                       </span>
                     </div>
                   ))}
-                  <p>Once enabled, users and groups sync on their own — no manual pushing.</p>
+                  <p>{tI18nComplete.raw('text4e57226ad8a2')}</p>
                 </div>
               </div>
             </DisclosureContent>
@@ -396,16 +407,15 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
               <div className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <p className="text-foreground flex items-center gap-2 text-sm font-medium">
-                    Bearer tokens
+                    {tI18nComplete.raw('text3759abe4b19b')}
                     {activeTokenCount > 0 && (
                       <Badge variant="muted" size="sm">
-                        {activeTokenCount} active
+                        {activeTokenCount} {tI18nComplete.raw('text96879611650f')}
                       </Badge>
                     )}
                   </p>
                   <p className="text-muted-foreground mt-0.5 text-xs">
-                    Each token authenticates a single IdP connection — rotate by minting a new one
-                    and revoking the old.
+                    {tI18nComplete.raw('text86a9a827d7f4')}
                   </p>
                 </div>
                 <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
@@ -421,7 +431,7 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                     className="shrink-0 gap-1.5"
                   >
                     <Plus className="size-4 shrink-0" />
-                    New SCIM token
+                    {tI18nComplete.raw('text6e0317352d63')}
                   </Button>
                 </div>
               )}
@@ -437,13 +447,13 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                 <div className="px-4 py-4">
                   <ErrorState
                     size="sm"
-                    title="Couldn't load SCIM tokens"
+                    title={tI18nComplete.raw('text964a40d78cbf')}
                     description={
                       tokensQuery.error instanceof Error ? tokensQuery.error.message : undefined
                     }
                     action={
                       <Button variant="outline" size="sm" onClick={() => tokensQuery.refetch()}>
-                        Retry
+                        {tI18nComplete.raw('text942087cc2d41')}
                       </Button>
                     }
                   />
@@ -455,8 +465,8 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                   <EmptyState
                     icon={KeyRound}
                     size="sm"
-                    title="No SCIM tokens yet"
-                    description="Create one to connect your IdP."
+                    title={tI18nComplete.raw('textb13bbdebd165')}
+                    description={tI18nComplete.raw('textf1750835530d')}
                   />
                 </div>
               )}
@@ -475,9 +485,13 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
                         <div className="text-muted-foreground mt-0.5 flex items-center gap-3 text-xs">
                           <code className="font-mono">{t.public_prefix}</code>
                           <span>·</span>
-                          <span>Last used {formatRelative(t.last_used_at)}</span>
+                          <span>
+                            {tI18nComplete.raw('text830ec7f812f9')} {formatRelative(t.last_used_at)}
+                          </span>
                           <span>·</span>
-                          <span>Created {formatRelative(t.created_at)}</span>
+                          <span>
+                            {tI18nComplete.raw('textd70b9e24bca2')} {formatRelative(t.created_at)}
+                          </span>
                         </div>
                       </div>
                       {canManage && t.status === 'active' && (
@@ -507,13 +521,11 @@ export function ScimCard({ accountId, canManage }: ScimCardProps) {
         onOpenChange={(o) => {
           if (!o) setRevokeTarget(null);
         }}
-        title="Revoke SCIM token"
+        title={tI18nComplete.raw('texte57912d50189')}
         description={
-          revokeTarget
-            ? `Any IdP using "${revokeTarget.name}" will lose access immediately. This cannot be undone — you'll need to mint a new token to reconnect.`
-            : ''
+          revokeTarget ? tI18nComplete('texte47b85588c7c', { value0: revokeTarget.name }) : ''
         }
-        confirmLabel="Revoke token"
+        confirmLabel={tI18nComplete.raw('text14683b379324')}
         confirmVariant="destructive"
         isPending={revokeMutation.isPending}
         onConfirm={() => {
@@ -535,6 +547,7 @@ function CreateScimTokenDialog({
   onOpenChange: (v: boolean) => void;
   accountId: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [created, setCreated] = useState<CreatedScimToken | null>(null);
@@ -552,7 +565,7 @@ function CreateScimTokenDialog({
       setCreated(token);
       queryClient.invalidateQueries({ queryKey: ['scim-tokens', accountId] });
     },
-    onError: (err: Error) => errorToast(err.message || 'Failed to create token'),
+    onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textf8a44ba9cc41')),
   });
 
   function handleClose(next: boolean) {
@@ -576,24 +589,36 @@ function CreateScimTokenDialog({
     <Modal open={open} onOpenChange={handleClose}>
       <ModalContent className="lg:max-w-lg">
         <ModalHeader>
-          <ModalTitle>{created ? 'SCIM token created' : 'Create SCIM token'}</ModalTitle>
+          <ModalTitle>
+            {created
+              ? tI18nComplete.raw('text6759c496ac63')
+              : tI18nComplete.raw('texte550c4aaeecf')}
+          </ModalTitle>
           <ModalDescription>
             {created
-              ? 'Copy the token now — it will not be shown again. Then configure it in your IdP.'
-              : 'Mint a bearer token for an IdP connection. Each connection should get its own token so revocation is targeted.'}
+              ? tI18nComplete.raw('textc187d313e143')
+              : tI18nComplete.raw('text9574f64a20a6')}
           </ModalDescription>
         </ModalHeader>
 
         {created ? (
           <>
             <ModalBody className="min-w-0 space-y-4">
-              <CopyRow label="Token" value={created.secret} successMessage="Token copied" />
-              <CopyRow label="SCIM base URL" value={scimBaseUrl} successMessage="URL copied" />
+              <CopyRow
+                label={tI18nComplete.raw('textd2089be67295')}
+                value={created.secret}
+                successMessage={tI18nComplete.raw('textc9feac7acc32')}
+              />
+              <CopyRow
+                label={tI18nComplete.raw('textbe8fb61fbc84')}
+                value={scimBaseUrl}
+                successMessage={tI18nComplete.raw('text0017bda47853')}
+              />
             </ModalBody>
             <ModalFooter>
               <Button size="sm" onClick={() => handleClose(false)} className="gap-1.5">
                 <Check className="size-3.5 shrink-0" />
-                Done
+                {tI18nComplete.raw('text11a6767d5674')}
               </Button>
             </ModalFooter>
           </>
@@ -601,12 +626,12 @@ function CreateScimTokenDialog({
           <form onSubmit={handleSubmit}>
             <ModalBody className="min-w-0 space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="scim-token-name">Name</Label>
+                <Label htmlFor="scim-token-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>
                 <Input
                   id="scim-token-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Okta production"
+                  placeholder={tI18nComplete.raw('text33d39c4cbb53')}
                   maxLength={128}
                   autoFocus
                   required
@@ -614,7 +639,7 @@ function CreateScimTokenDialog({
                   variant="popover"
                 />
                 <p className="text-muted-foreground text-xs">
-                  Used only to recognise this token later.
+                  {tI18nComplete.raw('textece695b31ede')}
                 </p>
               </div>
             </ModalBody>
@@ -626,7 +651,7 @@ function CreateScimTokenDialog({
                 onClick={() => handleClose(false)}
                 disabled={mutation.isPending}
               >
-                Cancel
+                {tI18nComplete.raw('text19766ed6ccb2')}
               </Button>
               <Button
                 type="submit"
@@ -635,7 +660,7 @@ function CreateScimTokenDialog({
                 className="gap-1.5"
               >
                 {mutation.isPending && <Loading className="size-3.5 shrink-0" />}
-                Mint token
+                {tI18nComplete.raw('text4f4003ab9539')}
               </Button>
             </ModalFooter>
           </form>

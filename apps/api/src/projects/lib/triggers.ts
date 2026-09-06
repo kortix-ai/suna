@@ -1211,6 +1211,20 @@ async function executeTriggerExecution(
     );
     const completedAt = new Date();
     if (result.status === 'fired' || result.status === 'queued') {
+      // `queued` means two different things to `fireGitTrigger`. A reuse/keyed/
+      // pinned fire that hands the prompt to an EXISTING session (`reason:
+      // 'prompt queued for delivery'`) is a COMPLETE fire — the session exists
+      // and the prompt is durably queued. Recording that as `last_status:
+      // 'queued'` left a healthy fire indistinguishable from a create still
+      // waiting on backpressure, so the reliability operator's
+      // `QUEUED_OVER_15M` attention flagged every `session_mode: reuse`
+      // trigger permanently. Only a create that is genuinely still pending
+      // (no session yet) stays `queued`; the delivery handoff is `fired`, the
+      // same status the webhook fire path records for the identical outcome.
+      const runtimeStatus =
+        result.status === 'queued' && result.reason === 'prompt queued for delivery'
+          ? 'fired'
+          : result.status;
       await Promise.all([
         markTriggerExecutionSucceeded({
           row,
@@ -1218,12 +1232,7 @@ async function executeTriggerExecution(
           sessionId: result.sessionId,
           commandId: result.commandId,
         }),
-        markGitTriggerFired(
-          row.projectId,
-          row.slug,
-          completedAt,
-          result.status === 'queued' ? 'queued' : 'fired',
-        ),
+        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus),
       ]);
       return result.status;
     }

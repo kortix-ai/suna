@@ -19,6 +19,8 @@ import {
   getSessionDisplayTitle,
   shortRelative,
 } from '@/features/workspace/project-sidebar/project-session-list-helpers';
+import type { UiTranslator } from '@/i18n/translator';
+import { useTranslations } from '@/i18n/use-translations';
 import { cn } from '@/lib/utils';
 import type { ProjectSession, ProjectSessionStatus } from '@kortix/sdk';
 import {
@@ -70,29 +72,54 @@ const SECONDARY_TILE: Pick<StatusTile, 'tile' | 'icon'> = {
 function sessionStatusTile(
   status: ProjectSessionStatus,
   options: { deleted: boolean; metadataOnly: boolean },
+  tI18nComplete: UiTranslator,
 ): StatusTile {
   if (options.deleted) {
-    return { label: 'Deleted', tile: 'bg-kortix-red/15', icon: 'text-kortix-red' };
+    return {
+      label: tI18nComplete.raw('textb48ff39c2e0f'),
+      tile: 'bg-kortix-red/15',
+      icon: 'text-kortix-red',
+    };
   }
   if (options.metadataOnly) {
-    return { label: 'Metadata only', ...SECONDARY_TILE };
+    return { label: tI18nComplete.raw('textdf0453d185c4'), ...SECONDARY_TILE };
   }
 
   switch (status) {
     case 'running':
-      return { label: 'Running', tile: 'bg-kortix-green/15', icon: 'text-kortix-green' };
+      return {
+        label: tI18nComplete.raw('textf4ccae29e1bb'),
+        tile: 'bg-kortix-green/15',
+        icon: 'text-kortix-green',
+      };
     case 'queued':
-      return { label: 'Queued', tile: 'bg-kortix-yellow/15', icon: 'text-kortix-yellow' };
+      return {
+        label: tI18nComplete.raw('text661ff40a07e0'),
+        tile: 'bg-kortix-yellow/15',
+        icon: 'text-kortix-yellow',
+      };
     case 'branching':
-      return { label: 'Branching', tile: 'bg-kortix-yellow/15', icon: 'text-kortix-yellow' };
+      return {
+        label: tI18nComplete.raw('text9aa73337127b'),
+        tile: 'bg-kortix-yellow/15',
+        icon: 'text-kortix-yellow',
+      };
     case 'provisioning':
-      return { label: 'Provisioning', tile: 'bg-kortix-yellow/15', icon: 'text-kortix-yellow' };
+      return {
+        label: tI18nComplete.raw('textc2b1b8e2e039'),
+        tile: 'bg-kortix-yellow/15',
+        icon: 'text-kortix-yellow',
+      };
     case 'failed':
-      return { label: 'Failed', tile: 'bg-kortix-red/15', icon: 'text-kortix-red' };
+      return {
+        label: tI18nComplete.raw('text031a8f0f659d'),
+        tile: 'bg-kortix-red/15',
+        icon: 'text-kortix-red',
+      };
     case 'completed':
-      return { label: 'Completed', ...SECONDARY_TILE };
+      return { label: tI18nComplete.raw('text22a970d2e5b1'), ...SECONDARY_TILE };
     case 'stopped':
-      return { label: 'Stopped', ...SECONDARY_TILE };
+      return { label: tI18nComplete.raw('text1a4f630ac1b6'), ...SECONDARY_TILE };
     default: {
       const _exhaustive: never = status;
       throw new Error(`Unhandled session status: ${String(_exhaustive)}`);
@@ -141,11 +168,12 @@ function SessionRowImpl({
   actions,
   children,
 }: SessionRowProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [menuOpen, setMenuOpen] = useState(false);
   const title = getSessionDisplayTitle(session);
-  const source = sessionSource(session);
+  const source = sessionSource(session, tI18nComplete);
   const SourceIcon = SOURCE_ICONS[source.kind];
-  const access = sessionAccessMeta(session);
+  const access = sessionAccessMeta(session, tI18nComplete);
   const isDeleted = Boolean(session.deleted_at);
   // `can_manage_sharing` answers ONE question — may this viewer change who can
   // open the session — and it is the owner's call, not a manager's. It does not
@@ -156,10 +184,14 @@ function SessionRowImpl({
   const showAccessEntry = hasLifecycleActions;
   const hasActions = hasLifecycleActions;
   const relativeLabel = time.relative ? shortRelative(time.relative) : '';
-  const statusTile = sessionStatusTile(session.status, {
-    deleted: isDeleted,
-    metadataOnly: session.can_access === false,
-  });
+  const statusTile = sessionStatusTile(
+    session.status,
+    {
+      deleted: isDeleted,
+      metadataOnly: session.can_access === false,
+    },
+    tI18nComplete,
+  );
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -220,7 +252,7 @@ function SessionRowImpl({
           <time
             className={SESSION_RELATIVE_TIME_CLASS}
             dateTime={time.exact}
-            title={`Last activity: ${time.exact}`}
+            title={tI18nComplete('texta680491a9229', { value0: time.exact })}
           >
             {relativeLabel}
           </time>
@@ -241,7 +273,10 @@ function SessionRowImpl({
             role="button" + tabIndex itself. Nesting a real button here would
             produce button-in-button. */}
         <div
-          aria-label={`${open ? 'Hide' : 'Show'} details for ${title}`}
+          aria-label={tI18nComplete('text1c8c818388dd', {
+            value0: open ? 'Hide' : 'Show',
+            value1: title,
+          })}
           className="hover:bg-muted/40 group/row flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-none"
         >
           {identity}
@@ -262,8 +297,8 @@ function SessionRowImpl({
                     ),
                 )}
                 dateTime={time.exact}
-                title={`Last activity: ${time.exact}`}
-                aria-label={`Last activity: ${relativeLabel}`}
+                title={tI18nComplete('texta680491a9229', { value0: time.exact })}
+                aria-label={tI18nComplete('texta680491a9229', { value0: relativeLabel })}
               >
                 {relativeLabel}
               </time>
@@ -281,7 +316,7 @@ function SessionRowImpl({
                       type="button"
                       variant="ghost"
                       size="icon-sm"
-                      aria-label={`Actions for ${title}`}
+                      aria-label={tI18nComplete('text33da220b1a34', { value0: title })}
                       className={cn(
                         'absolute top-1/2 right-0.5 -translate-y-1/2 transition-opacity duration-150',
                         'focus:ring-0 focus-visible:ring-0 active:scale-[0.96]',
@@ -312,7 +347,7 @@ function SessionRowImpl({
                         }
                       >
                         <PencilSimpleIcon />
-                        Rename
+                        {tI18nComplete.raw('text3064d79a295c')}
                       </DropdownMenuItem>
                     ) : null}
                     {showAccessEntry ? (
@@ -321,7 +356,7 @@ function SessionRowImpl({
                         onSelect={() => deferAfterClose(() => actions.onShare(session))}
                       >
                         <ShareNetworkIcon />
-                        {canManageSharing ? 'Share' : 'Who has access'}
+                        {canManageSharing ? 'Share' : tI18nComplete.raw('textadc01d813da0')}
                       </DropdownMenuItem>
                     ) : null}
                     {hasLifecycleActions ? (
@@ -337,7 +372,7 @@ function SessionRowImpl({
                         ) : (
                           <ArrowCounterClockwiseIcon />
                         )}
-                        Restart
+                        {tI18nComplete.raw('text6b983a81e5e8')}
                       </DropdownMenuItem>
                     ) : null}
                     {session.status === 'running' && hasLifecycleActions ? (
@@ -349,7 +384,7 @@ function SessionRowImpl({
                         }
                       >
                         {stopping ? <Loading className="size-4 shrink-0" /> : <SquareIcon />}
-                        Stop
+                        {tI18nComplete.raw('textcae7d57bc067')}
                       </DropdownMenuItem>
                     ) : null}
                     {hasLifecycleActions ? (
@@ -361,7 +396,7 @@ function SessionRowImpl({
                         }
                       >
                         <TrashIcon />
-                        Delete
+                        {tI18nComplete.raw('texte2d0a54968ea')}
                       </DropdownMenuItem>
                     ) : null}
                   </DropdownMenuContent>

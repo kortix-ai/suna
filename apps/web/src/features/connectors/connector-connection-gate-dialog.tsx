@@ -1,8 +1,9 @@
 'use client';
 
-import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { qk } from '@kortix/sdk/react';
 import { CheckIcon as Check, LockIcon as Lock, UsersIcon as Users } from '@phosphor-icons/react';
+import { useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -43,18 +44,19 @@ export function ConnectorConnectionGateContent({
   ) => ReactNode;
   onCancel: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <>
       <ModalHeader>
         <ModalTitle className="flex items-center gap-2">
           <Lock className="size-4" />
-          Create required connections
+          {tI18nComplete.raw('text74d125ba84d7')}
         </ModalTitle>
         <ModalDescription>
           {connections.length === 1
-            ? 'This session needs one connection.'
-            : `This session needs ${connections.length} connections.`}{' '}
-          Create every connection before the session starts.
+            ? tI18nComplete.raw('text11219246b5be')
+            : tI18nComplete('textf64643109eeb', { value0: connections.length })}{' '}
+          {tI18nComplete.raw('text4f216a751951')}
         </ModalDescription>
       </ModalHeader>
 
@@ -78,22 +80,22 @@ export function ConnectorConnectionGateContent({
                 </div>
                 <p className="text-muted-foreground mt-0.5 text-xs">
                   {managerRequired
-                    ? 'A project manager must create this connection.'
+                    ? tI18nComplete.raw('text1a6053abeabe')
                     : connection.authorization_strategy === 'user'
-                      ? 'Only your private sessions can use this connection.'
-                      : 'Eligible project members can use this connection.'}
+                      ? tI18nComplete.raw('text2bb92b550fe0')
+                      : tI18nComplete.raw('text910f24c520e1')}
                 </p>
               </div>
 
               {connected ? (
                 <Badge variant="success" size="sm">
                   <Check className="size-3" />
-                  Connected
+                  {tI18nComplete.raw('text22965568d22a')}
                 </Badge>
               ) : managerRequired ? (
                 <Badge variant="warning" size="sm">
                   <Users className="size-3" />
-                  Manager required
+                  {tI18nComplete.raw('textd6fe75582a5e')}
                 </Badge>
               ) : renderConnectAction ? (
                 renderConnectAction(connection, pending, pendingId !== null)
@@ -107,7 +109,7 @@ export function ConnectorConnectionGateContent({
                   aria-label={`Connect ${connection.name}`}
                 >
                   {pending ? <Loading className="size-3.5" /> : <Lock className="size-3.5" />}
-                  Connect
+                  {tI18nComplete.raw('text1a2303ede074')}
                 </Button>
               )}
             </div>
@@ -117,7 +119,7 @@ export function ConnectorConnectionGateContent({
 
       <ModalFooter>
         <Button variant="ghost" onClick={onCancel} disabled={pendingId !== null}>
-          Cancel
+          {tI18nComplete.raw('text19766ed6ccb2')}
         </Button>
       </ModalFooter>
     </>
@@ -139,6 +141,7 @@ function ConnectorConnectionAction({
   onPending: (id: string | null) => void;
   onConnected: (id: string) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const connected = useCallback(() => onConnected(connection.id), [onConnected, connection.id]);
   const member = usePipedreamConnectMember(projectId, connection.slug, connected);
   const project = usePipedreamConnectProject(projectId, connection.slug, connected);
@@ -157,7 +160,7 @@ function ConnectorConnectionAction({
       aria-label={`Connect ${connection.name}`}
     >
       {pending ? <Loading className="size-3.5" /> : <Lock className="size-3.5" />}
-      Connect
+      {tI18nComplete.raw('text1a2303ede074')}
     </Button>
   );
 }
@@ -209,7 +212,15 @@ export function ConnectorConnectionGateDialog() {
     const run = retry;
     closeConnectorGate();
     run?.();
-  }, [closeConnectorGate, connectedIds, connectorConnections, isOpen, projectId, queryClient, retry]);
+  }, [
+    closeConnectorGate,
+    connectedIds,
+    connectorConnections,
+    isOpen,
+    projectId,
+    queryClient,
+    retry,
+  ]);
 
   return (
     <Modal open={isOpen} onOpenChange={(open) => !open && closeConnectorGate()}>

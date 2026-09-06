@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
 import type { Agent } from '@kortix/sdk/react';
+import { describe, expect, test } from 'bun:test';
 
 import {
   composerSelectableAgents,
@@ -116,7 +116,7 @@ describe('resolveComposerAgent — the default is accessible', () => {
     expect(resolved.selected).toBe('kortix');
   });
 
-  test("an explicit pick outranks the default — switching agents still works", () => {
+  test('an explicit pick outranks the default — switching agents still works', () => {
     const resolved = resolveComposerAgent({
       agents: [agent('kortix'), agent('support')],
       defaultAgent: 'kortix',

@@ -1,13 +1,14 @@
-"use client";
+'use client';
 
-import { useMemo } from "react";
+import { useMemo } from 'react';
 
-import { DotMatrixBase } from "@/lib/dotmatrix-core";
-import { useDotMatrixPhases } from "@/lib/dotmatrix-hooks";
-import { rowMajorIndex } from "@/lib/dotmatrix-core";
-import { usePrefersReducedMotion } from "@/lib/dotmatrix-hooks";
-import { useSteppedCycle } from "@/lib/dotmatrix-hooks";
-import type { DotAnimationResolver, DotMatrixCommonProps } from "@/lib/dotmatrix-core";
+import type { DotAnimationResolver, DotMatrixCommonProps } from '@/lib/dotmatrix-core';
+import { DotMatrixBase, rowMajorIndex } from '@/lib/dotmatrix-core';
+import {
+  useDotMatrixPhases,
+  usePrefersReducedMotion,
+  useSteppedCycle,
+} from '@/lib/dotmatrix-hooks';
 
 export type DotmSquare20Props = DotMatrixCommonProps;
 
@@ -28,7 +29,7 @@ const PERIMETER_PATH: readonly number[] = [
   rowMajorIndex(4, 0),
   rowMajorIndex(3, 0),
   rowMajorIndex(2, 0),
-  rowMajorIndex(1, 0)
+  rowMajorIndex(1, 0),
 ];
 
 const LOOP_LEN = PERIMETER_PATH.length;
@@ -45,7 +46,7 @@ const TWIST_INNER_BY_HEAD_STEP: ReadonlyMap<number, number> = new Map([
   [0, rowMajorIndex(1, 1)],
   [4, rowMajorIndex(1, 3)],
   [8, rowMajorIndex(3, 3)],
-  [12, rowMajorIndex(3, 1)]
+  [12, rowMajorIndex(3, 1)],
 ]);
 
 function pathStepForCellIndex(cellIndex: number): number {
@@ -62,19 +63,23 @@ function opacityFromTail(distance: number, tail: readonly number[]): number {
 
 export function DotmSquare20({
   speed = 1.45,
-  pattern = "full",
+  pattern = 'full',
   animated = true,
   hoverAnimated = false,
   ...rest
 }: DotmSquare20Props) {
   const reducedMotion = usePrefersReducedMotion();
-  const { phase: matrixPhase, onMouseEnter, onMouseLeave } = useDotMatrixPhases({
+  const {
+    phase: matrixPhase,
+    onMouseEnter,
+    onMouseLeave,
+  } = useDotMatrixPhases({
     animated: Boolean(animated && !reducedMotion),
     hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-    speed
+    speed,
   });
   const headStep = useSteppedCycle({
-    active: !reducedMotion && matrixPhase !== "idle",
+    active: !reducedMotion && matrixPhase !== 'idle',
     cycleMsBase: 1600,
     steps: LOOP_LEN,
     speed,
@@ -83,13 +88,13 @@ export function DotmSquare20({
   const resolver = useMemo<DotAnimationResolver>(() => {
     return ({ isActive, index, phase }) => {
       if (!isActive) {
-        return { className: "dmx-inactive" };
+        return { className: 'dmx-inactive' };
       }
 
       const onLoop = pathStepForCellIndex(index);
       const backHead = (headStep + Math.floor(LOOP_LEN / 2)) % LOOP_LEN;
 
-      if (reducedMotion || phase === "idle") {
+      if (reducedMotion || phase === 'idle') {
         if (onLoop >= 0) {
           return { style: { opacity: IDLE_RING_OPACITY } };
         }
@@ -107,7 +112,7 @@ export function DotmSquare20({
         opacity = Math.max(
           opacity,
           opacityFromTail(forward, TAIL_BRIGHT),
-          opacityFromTail(alongBack, BACK_TAIL_BRIGHT)
+          opacityFromTail(alongBack, BACK_TAIL_BRIGHT),
         );
       }
 

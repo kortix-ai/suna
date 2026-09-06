@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Shared error card for in-app fallbacks (ClientErrorBoundary + route-segment
  * `error.tsx`). Mirrors the error surface of the top-level `global-error.tsx`:
@@ -7,27 +8,28 @@
  * `<details>`. Uses theme tokens so it reads correctly in light and dark.
  */
 export function ErrorDetails({ error }: { error: Error & { digest?: string } }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const message = error.message || 'An unexpected error occurred.';
   const stack = (error.stack || '').split('\n').slice(0, 6).join('\n').trim();
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-border bg-muted/30 p-3 text-left">
+    <div className="border-border bg-muted/30 w-full max-w-md rounded-2xl border p-3 text-left">
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-          Error
+        <span className="text-muted-foreground/70 text-[10px] font-semibold tracking-wider uppercase">
+          {tI18nComplete.raw('text54a0e8c17ebb')}
         </span>
-        <span className="font-mono text-[10px] text-muted-foreground/60">
+        <span className="text-muted-foreground/60 font-mono text-[10px]">
           {error.name || 'Error'}
           {error.digest ? ` · ${error.digest}` : ''}
         </span>
       </div>
-      <div className="wrap-break-word text-sm leading-snug text-foreground/90">{message}</div>
+      <div className="text-foreground/90 text-sm leading-snug wrap-break-word">{message}</div>
       {stack && (
         <details className="group mt-2">
-          <summary className="cursor-pointer select-none text-[10px] uppercase tracking-wide text-muted-foreground/60 outline-none">
-            Stack
+          <summary className="text-muted-foreground/60 cursor-pointer text-[10px] tracking-wide uppercase outline-none select-none">
+            {tI18nComplete.raw('texte551641242ce')}
           </summary>
-          <pre className="mt-1.5 max-h-36 overflow-auto whitespace-pre-wrap wrap-break-word rounded-2xl border border-border/60 bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+          <pre className="border-border/60 bg-background/60 text-muted-foreground mt-1.5 max-h-36 overflow-auto rounded-2xl border p-2 font-mono text-[10px] leading-relaxed wrap-break-word whitespace-pre-wrap">
             {stack}
           </pre>
         </details>

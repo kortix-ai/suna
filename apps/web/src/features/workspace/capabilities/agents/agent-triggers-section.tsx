@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 /**
  * The Triggers section of the agent page — every project trigger that starts
  * THIS agent, and the way to add one.
@@ -19,20 +20,20 @@
  * the same query key, so a run started here shows up there.
  */
 
+import {
+  describeWhen,
+  isTriggerKind,
+  KIND_COPY,
+  triggerName,
+  type TriggerKind,
+} from '@/components/projects/schedule/schedule-copy';
+import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
+import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { ScheduleCreateModal } from '@/components/projects/schedule/schedule-create-modal';
-import {
-  KIND_COPY,
-  type TriggerKind,
-  describeWhen,
-  isTriggerKind,
-  triggerName,
-} from '@/components/projects/schedule/schedule-copy';
-import { ScheduleDetailSheet } from '@/components/projects/schedule/schedule-detail-sheet';
 import { EditorSection } from '@/features/workspace/customize/sections/view/agent-editor-primitives';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCan } from '@/lib/use-project-can';
@@ -89,6 +90,7 @@ export function AgentTriggersSection({
   /** The project's default agent name — see `triggerStartsAgent`. */
   defaultAgent?: string | null;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const canCreate =
     useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE).allowed === true;
@@ -120,34 +122,45 @@ export function AgentTriggersSection({
     mutationFn: (trigger: ProjectTrigger) => fireProjectTrigger(projectId, trigger.slug),
     onSuccess: (res) => {
       if (res.status === 'fired') {
-        successToast('Started', {
+        successToast(tI18nComplete.raw('textecbc89cd37a0'), {
           description: res.session_id
             ? `Session ${res.session_id.slice(0, 8)}…`
             : 'Getting a session ready',
         });
       } else if (res.status === 'queued') {
-        successToast('Queued', { description: res.reason ?? 'Busy right now — it will retry' });
+        successToast(tI18nComplete.raw('text661ff40a07e0'), {
+          description: res.reason ?? 'Busy right now — it will retry',
+        });
       } else {
-        errorToast('It could not start', { description: res.error });
+        errorToast(tI18nComplete.raw('textfc56800b00af'), { description: res.error });
       }
       void invalidate();
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'It could not start'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('textfc56800b00af')),
   });
   const remove = useMutation({
     mutationFn: (trigger: ProjectTrigger) => deleteProjectTrigger(projectId, trigger.slug),
     onSuccess: (_data, trigger) => {
-      const noun = isTriggerKind(trigger.type) ? KIND_COPY[trigger.type as TriggerKind].noun : 'trigger';
-      successToast(`${noun[0].toUpperCase()}${noun.slice(1)} deleted`);
+      const noun = isTriggerKind(trigger.type)
+        ? KIND_COPY[trigger.type as TriggerKind].noun
+        : 'trigger';
+      successToast(
+        tI18nComplete('text65e31e8628a9', { value0: noun[0].toUpperCase(), value1: noun.slice(1) }),
+      );
       setDeleteTarget(null);
       setSelectedSlug(null);
       void invalidate();
     },
-    onError: (err) => errorToast(err instanceof Error ? err.message : 'Could not delete it'),
+    onError: (err) =>
+      errorToast(err instanceof Error ? err.message : tI18nComplete.raw('text76bf191d6426')),
   });
 
   return (
-    <EditorSection title="Triggers" description="When this agent starts on its own.">
+    <EditorSection
+      title={tI18nComplete.raw('texte62f2148a64d')}
+      description={tI18nComplete.raw('text1a1e4d549e85')}
+    >
       <div className="space-y-3 py-3.5">
         {triggersQuery.isLoading ? (
           <div className="space-y-2">
@@ -156,7 +169,7 @@ export function AgentTriggersSection({
           </div>
         ) : mine.length === 0 ? (
           <p className="text-muted-foreground text-xs text-pretty">
-            Nothing starts this agent automatically yet.
+            {tI18nComplete.raw('textb254c6e02e1a')}
           </p>
         ) : (
           <ul className="space-y-2">
@@ -169,7 +182,7 @@ export function AgentTriggersSection({
                     onClick={() => setSelectedSlug(trigger.slug)}
                     className={cn(
                       'group bg-popover flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left',
-                      'hover:border-border transition-[background-color,border-color] hover:bg-accent',
+                      'hover:border-border hover:bg-accent transition-[background-color,border-color]',
                       'focus-visible:ring-ring/50 focus-visible:ring-2 focus-visible:outline-none',
                     )}
                   >
@@ -197,7 +210,7 @@ export function AgentTriggersSection({
                     </span>
                     {!trigger.enabled ? (
                       <Badge variant="muted" size="xs">
-                        Paused
+                        {tI18nComplete.raw('texte159b06187d3')}
                       </Badge>
                     ) : null}
                   </button>
@@ -215,7 +228,7 @@ export function AgentTriggersSection({
             onClick={() => setCreateOpen(true)}
           >
             <PlusIcon className="size-3.5 shrink-0" />
-            Add trigger
+            {tI18nComplete.raw('text58fd308928dd')}
           </Button>
         ) : null}
       </div>
@@ -229,7 +242,7 @@ export function AgentTriggersSection({
           onCreated={(slug) => {
             setCreateOpen(false);
             void invalidate();
-            successToast('Trigger created');
+            successToast(tI18nComplete.raw('textffdc6918b359'));
             // Straight into the new entry, as the Triggers tab does.
             setSelectedSlug(slug);
           }}
@@ -255,16 +268,17 @@ export function AgentTriggersSection({
         onOpenChange={(next) => {
           if (!next) setDeleteTarget(null);
         }}
-        title="Delete this trigger?"
+        title={tI18nComplete.raw('text08a462df4350')}
         description={
           deleteTarget ? (
             <>
               <span className="text-foreground font-medium">{triggerName(deleteTarget)}</span> (
-              {describeWhen(deleteTarget).toLowerCase()}) stops running and is removed.
+              {describeWhen(deleteTarget).toLowerCase()}
+              {tI18nComplete.raw('text3109205d1fc7')}
             </>
           ) : undefined
         }
-        confirmLabel="Delete"
+        confirmLabel={tI18nComplete.raw('texte2d0a54968ea')}
         confirmVariant="destructive"
         onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
       />

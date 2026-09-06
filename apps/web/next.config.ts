@@ -3,8 +3,10 @@ import { withSentryConfig } from '@sentry/nextjs';
 import fs from 'fs';
 import { createMDX } from 'fumadocs-mdx/next';
 import type { NextConfig } from 'next';
+import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
+import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
@@ -89,6 +91,61 @@ if (missingEmojibaseOutputs.length > 0) {
     `[next.config.ts] Could not refresh the emoji dataset (${(emojibaseCopyError as Error).message}), ` +
       `but all expected outputs already exist in public/ — continuing.`,
   );
+}
+
+// --- Blume docs build guarantee -------------------------------------------
+// /docs is a Blume (Astro) static build served out of public/. It cannot be an
+// npm script: vercel.json's buildCommand is the bare `next build`, which never
+// invokes one (see scripts/generate-fumadocs-source.mjs for the same trap).
+// So it runs here, as a side effect of loading this config, on the same
+// belt-and-suspenders pattern as the viewer wasm and emoji dataset above.
+//
+// Gated to the production build phase only. `blume build` takes tens of
+// seconds; running it on every `next dev` config reload would make local dev
+// startup pay that cost on every restart for no reason. On `next dev`, /docs
+// resolves only if `public/docs/` already exists from a prior production
+// build — there is no separate dev-mode docs server wired up here.
+//
+// This CANNOT be a bare top-level `if` keyed on `process.env.NEXT_PHASE`, the
+// pattern used elsewhere in Next's own docs: verified against this repo's
+// pinned Next 16.3.3 that `next build` never actually sets that env var
+// before the FIRST config load (only deep inside `next/dist/build/index.js`,
+// well after page compilation starts) — a phase check there always reads
+// `undefined` and the guarantee silently no-ops, shipping a build with no
+// `public/docs/`. The phase Next.js actually guarantees is the `phase`
+// argument passed to a function-form config export (see
+// node_modules/next/dist/docs/.../next-config-js/index.md, "Configuration as
+// a Function"), so the default export below is that function form and this
+// runs from inside it, gated on the real `phase` parameter.
+function ensureBlumeDocsBuilt(phase: string) {
+  // Runs for BOTH `next build` and `next dev`. /docs is served by THIS app out
+  // of public/docs/ in every environment — there is deliberately no second
+  // server. buildBlumeDocs() no-ops when public/docs/ is already newer than
+  // content/docs/ and blume.config.ts, so a warm `next dev` pays nothing; a
+  // cold one pays a single ~6s Astro build instead of serving a 404.
+  // Editing a doc while `next dev` is running does NOT hot-reload: run
+  // `pnpm docs:build` (or restart) to refresh public/docs/.
+  const isBuild = phase === PHASE_PRODUCTION_BUILD;
+  let blumeDocsError: unknown = null;
+  try {
+    buildBlumeDocs();
+  } catch (err) {
+    blumeDocsError = err;
+  }
+  const missingBlumeDocsOutputs = getBlumeDocsOutputPaths().filter(
+    (output) => !fs.existsSync(output),
+  );
+  if (missingBlumeDocsOutputs.length > 0) {
+    const message =
+      `[next.config.ts] scripts/blume-docs.mjs failed to produce the docs site: ` +
+        `${missingBlumeDocsOutputs.join(', ')}` +
+        (blumeDocsError ? ` (${(blumeDocsError as Error).message})` : '') +
+        `. Run \`npx blume build\` in apps/web to diagnose.`;
+    // Fatal for a release build; in dev only /docs is affected, so warn and let
+    // the rest of the app come up rather than blocking every other route.
+    if (isBuild) throw new Error(message);
+    console.warn(message);
+  }
 }
 
 // Unified platform version. Prefer the explicit build env (CI passes
@@ -403,20 +460,18 @@ const nextConfig = (): NextConfig => ({
         destination: '/presentations/platform',
         permanent: false,
       },
-      // Canonical self-host doc lives at /docs/self-hosting (fumadocs derives
-      // the slug from content/docs/self-hosting.mdx). The CLI, README, and
-      // most people say "self-host" (no -ing) out loud and in links, which
-      // 404'd here before this redirect existed. Keep this even if the CLI
-      // copy changes — it's cheap insurance against the shorter form living
-      // on in bookmarks, chat history, and muscle memory.
+      // The canonical self-host doc is content/docs/host/index.mdx, served at
+      // /docs/host. These two aliases previously pointed at
+      // /docs/guides/self-hosting, a path that has never existed, so both
+      // 404'd. The CLI, README and external links still use the old spellings.
       {
         source: '/docs/self-hosting',
-        destination: '/docs/guides/self-hosting',
+        destination: '/docs/host',
         permanent: true,
       },
       {
         source: '/docs/self-host',
-        destination: '/docs/guides/self-hosting',
+        destination: '/docs/host',
         permanent: true,
       },
       // The help centre was a second support surface: it wore the app sidebar
@@ -520,6 +575,18 @@ const nextConfig = (): NextConfig => ({
         source: '/ingest/flags',
         destination: 'https://eu.i.posthog.com/flags',
       },
+      // /docs is a Blume static build in public/docs/. Astro writes clean URLs as
+      // directories, and Next's static handler does not resolve a directory index,
+      // so map them explicitly. These are afterFiles rules (a flat array is), so an
+      // existing file such as /docs/_astro/app.css is served before they ever fire.
+      {
+        source: '/docs',
+        destination: '/docs/index.html',
+      },
+      {
+        source: '/docs/:path*',
+        destination: '/docs/:path*/index.html',
+      },
     ];
   },
 
@@ -610,24 +677,32 @@ const withMDX = createMDX();
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 // Compose config wrappers: next-intl → MDX → Better Stack (structured logs) → Sentry (error tracking)
-export default withSentryConfig(withBetterStack(withMDX(withNextIntl(nextConfig()))), {
-  // Suppresses source map uploading logs during build
-  silent: true,
+//
+// Function form (not a plain object) so Next hands us the real build `phase`
+// — see ensureBlumeDocsBuilt above for why that, not `process.env.NEXT_PHASE`,
+// is the only reliable signal that this is a production build.
+export default function config(phase: string) {
+  ensureBlumeDocsBuilt(phase);
 
-  // Don't upload source maps during build (we can enable this later)
-  sourcemaps: {
-    disable: true,
-  },
+  return withSentryConfig(withBetterStack(withMDX(withNextIntl(nextConfig()))), {
+    // Suppresses source map uploading logs during build
+    silent: true,
 
-  // Disable Sentry CLI telemetry
-  telemetry: false,
+    // Don't upload source maps during build (we can enable this later)
+    sourcemaps: {
+      disable: true,
+    },
 
-  // Tree-shake Sentry debug logger statements to reduce bundle size
-  bundleSizeOptimizations: {
-    excludeDebugStatements: true,
-  },
+    // Disable Sentry CLI telemetry
+    telemetry: false,
 
-  // Route Sentry envelopes through our server to bypass ad-blockers.
-  // Creates an auto-generated route at /monitoring that forwards to the DSN host.
-  tunnelRoute: '/monitoring',
-});
+    // Tree-shake Sentry debug logger statements to reduce bundle size
+    bundleSizeOptimizations: {
+      excludeDebugStatements: true,
+    },
+
+    // Route Sentry envelopes through our server to bypass ad-blockers.
+    // Creates an auto-generated route at /monitoring that forwards to the DSN host.
+    tunnelRoute: '/monitoring',
+  });
+}

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Gateway — a `kortix_gw_…` key, and the endpoints it opens.
  *
@@ -73,6 +74,7 @@ export function GatewayAccessTab({
   /** Jump to the Models tab — the reference and the reveal dialog both offer it. */
   onViewModels: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   // The gateway origin the reference prints. Only this tab needs it, and the
   // tab only renders while it is the active one, so a read-only member never
   // eats the manage-keys 403 while reading some other tab.
@@ -87,11 +89,10 @@ export function GatewayAccessTab({
   return (
     <div className="w-full space-y-5">
       <KeySection
-        title="Gateway keys"
+        title={tI18nComplete.raw('textbaf049ac2b9e')}
         description={
           <>
-            A <code className="font-mono">kortix_gw_…</code> key lets an app outside Kortix call
-            this project&apos;s gateway, using the provider keys on the Providers tab.
+            A <code className="font-mono">kortix_gw_…</code> {tI18nComplete.raw('textf8b2bba36e29')}
           </>
         }
       >
@@ -99,8 +100,8 @@ export function GatewayAccessTab({
       </KeySection>
 
       <KeySection
-        title="Calling the gateway"
-        description="Drop-in OpenAI- and Anthropic-compatible endpoints. Use a gateway key from the section above."
+        title={tI18nComplete.raw('textd4f8eac607e5')}
+        description={tI18nComplete.raw('text9a6b697e6d4c')}
       >
         <GatewayApiReference
           apiKey="kortix_gw_..."

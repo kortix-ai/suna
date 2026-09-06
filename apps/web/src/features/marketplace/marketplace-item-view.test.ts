@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client';
 import {
   emptyDescriptionCopy,
@@ -65,7 +66,11 @@ describe('itemCountLabel', () => {
   });
 
   test('a non-bundle type counts files, ignoring dependencies', () => {
-    const result = itemCountLabel({ type: 'registry:skill', dependencies: ['a', 'b'], fileCount: 5 });
+    const result = itemCountLabel({
+      type: 'registry:skill',
+      dependencies: ['a', 'b'],
+      fileCount: 5,
+    });
 
     expect(result).toEqual({ count: 5, unit: 'files' });
   });
@@ -82,7 +87,13 @@ describe('resolveBundleMembers', () => {
 
   test('joins each dependency name against its resolved metadata', () => {
     const dependencyItems: DependencyItem[] = [
-      { id: 'kortix:review', name: 'review', type: 'registry:skill', title: 'Review', description: null },
+      {
+        id: 'kortix:review',
+        name: 'review',
+        type: 'registry:skill',
+        title: 'Review',
+        description: null,
+      },
     ];
 
     const members = resolveBundleMembers({
@@ -125,7 +136,13 @@ describe('resolveBundleMembers', () => {
     });
 
     expect(members).toEqual([
-      { key: 'unresolved-item', title: 'unresolved-item', type: null, description: null, href: null },
+      {
+        key: 'unresolved-item',
+        title: 'unresolved-item',
+        type: null,
+        description: null,
+        href: null,
+      },
     ]);
   });
 
@@ -144,12 +161,15 @@ describe('groupBundleMembersByType', () => {
   });
 
   test('buckets members by type in a stable order (skills, agents, tools, …)', () => {
-    const groups = groupBundleMembersByType([
-      m('t1', 'registry:tool'),
-      m('s1', 'registry:skill'),
-      m('a1', 'registry:agent'),
-      m('s2', 'registry:skill'),
-    ]);
+    const groups = groupBundleMembersByType(
+      [
+        m('t1', 'registry:tool'),
+        m('s1', 'registry:skill'),
+        m('a1', 'registry:agent'),
+        m('s2', 'registry:skill'),
+      ],
+      testUiTranslator,
+    );
     expect(groups.map((g) => [g.label, g.members.map((x) => x.key)])).toEqual([
       ['Skills', ['s1', 's2']],
       ['Agents', ['a1']],
@@ -158,11 +178,10 @@ describe('groupBundleMembersByType', () => {
   });
 
   test('collects null/unrecognized types into an "Other" bucket at the end', () => {
-    const groups = groupBundleMembersByType([
-      m('s1', 'registry:skill'),
-      m('x', null),
-      m('y', 'registry:mystery'),
-    ]);
+    const groups = groupBundleMembersByType(
+      [m('s1', 'registry:skill'), m('x', null), m('y', 'registry:mystery')],
+      testUiTranslator,
+    );
     expect(groups[0].label).toBe('Skills');
     const other = groups[groups.length - 1];
     expect(other.label).toBe('Other');
@@ -170,7 +189,7 @@ describe('groupBundleMembersByType', () => {
   });
 
   test('empty input produces no groups', () => {
-    expect(groupBundleMembersByType([])).toEqual([]);
+    expect(groupBundleMembersByType([], testUiTranslator)).toEqual([]);
   });
 });
 
@@ -181,7 +200,13 @@ describe('groupCapabilities', () => {
 
   test('includes network alongside secrets, connectors, and tools', () => {
     const groups = groupCapabilities(
-      caps({ secrets: ['API_KEY'], connectors: ['slack'], tools: ['search'], network: ['api.example.com'] }),
+      caps({
+        secrets: ['API_KEY'],
+        connectors: ['slack'],
+        tools: ['search'],
+        network: ['api.example.com'],
+      }),
+      testUiTranslator,
     );
 
     expect(groups).toEqual([
@@ -193,18 +218,18 @@ describe('groupCapabilities', () => {
   });
 
   test('drops groups with no items', () => {
-    const groups = groupCapabilities(caps({ secrets: ['API_KEY'] }));
+    const groups = groupCapabilities(caps({ secrets: ['API_KEY'] }), testUiTranslator);
 
     expect(groups).toEqual([{ kind: 'secret', label: 'Secrets', items: ['API_KEY'] }]);
   });
 
   test('an item with no capabilities produces no groups', () => {
-    expect(groupCapabilities(caps({}))).toEqual([]);
+    expect(groupCapabilities(caps({}), testUiTranslator)).toEqual([]);
   });
 
   test('null/undefined capabilities produce no groups', () => {
-    expect(groupCapabilities(null)).toEqual([]);
-    expect(groupCapabilities(undefined)).toEqual([]);
+    expect(groupCapabilities(null, testUiTranslator)).toEqual([]);
+    expect(groupCapabilities(undefined, testUiTranslator)).toEqual([]);
   });
 });
 

@@ -5,13 +5,14 @@ import type { Agent, Command, Session } from '@kortix/sdk/react';
 import type { Editor, JSONContent } from '@tiptap/core';
 import type { EditorView } from '@tiptap/pm/view';
 import { EditorContent, useEditor } from '@tiptap/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 
 import { textToParagraphs } from '../composer-logic';
 import { COMPOSER_TEXT_METRICS } from '../composer-text-metrics';
 import { createMentionSuggestion } from '../menus/mention-controller';
 import type { SlashAction } from '../menus/slash-actions';
-import { SLASH_ACTIONS } from '../menus/slash-actions';
+import { localizedSlashActions } from '../menus/slash-actions';
 import { createSlashSuggestion } from '../menus/slash-controller';
 import type { SlashFile } from '../menus/slash-files';
 import type { TrackedMention } from '../types';
@@ -355,6 +356,9 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     },
     ref,
   ) {
+    const t = useTranslations('threads');
+    const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+    const defaultActions = useMemo(() => localizedSlashActions(tI18nComplete), [tI18nComplete]);
     // Mirrors use-composer-focus.ts's onTypeAheadRef: @tiptap/react only
     // resyncs `onUpdate`/other callback options when some OTHER option also
     // changed (it explicitly ignores their identity in its own option
@@ -415,10 +419,10 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
     // (buildSlashSections' own default, made explicit here rather than left
     // implicit) so an unset `actions` prop is byte-identical to before this
     // prop existed.
-    const actionsRef = useRef(actions ?? SLASH_ACTIONS);
+    const actionsRef = useRef(actions ?? defaultActions);
     useEffect(() => {
-      actionsRef.current = actions ?? SLASH_ACTIONS;
-    }, [actions]);
+      actionsRef.current = actions ?? defaultActions;
+    }, [actions, defaultActions]);
 
     // Same live-getter reasoning again, and it matters MORE here than for any
     // ref above: this list grows while the user watches. The agent finishes a
@@ -566,6 +570,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
             getCommands: () => commandsRef.current,
             getActions: () => actionsRef.current,
             getFiles: () => filesRef.current,
+            actionsHeading: tI18nComplete.raw('textff8059dc6752'),
             // NOT read through a ref, unlike every getter around it. This is
             // frozen at construction on purpose: it is a per-instance
             // selector string that identifies this composer's dock element
@@ -589,7 +594,7 @@ export const ComposerEditor = forwardRef<ComposerEditorHandle, ComposerEditorPro
         attributes: {
           role: 'textbox',
           'aria-multiline': 'true',
-          'aria-label': 'Message input',
+          'aria-label': t('messageInput'),
           /**
            * `min-h-[3.5em]` — taller than one line by design. History: was
            * `1.5em` (exactly one line) on the reasoning that a taller floor

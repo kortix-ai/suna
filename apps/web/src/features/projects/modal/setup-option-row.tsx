@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 export function SetupOptionRow({
@@ -22,6 +23,7 @@ export function SetupOptionRow({
   disabled?: boolean;
   onToggle: (next: boolean) => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <label
       className={cn(
@@ -41,11 +43,11 @@ export function SetupOptionRow({
           ) : null}
           {selected ? (
             <Badge variant="outline" size="sm" className="shrink-0">
-              Included
+              {tI18nComplete.raw('textba829a98b799')}
             </Badge>
           ) : null}
         </div>
-        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-pretty text-xs leading-relaxed">
+        <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed text-pretty">
           {description}
         </p>
       </div>

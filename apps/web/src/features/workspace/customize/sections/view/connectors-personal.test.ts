@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { expandI18nSource } from '@/i18n/test-source';
 import { pruneRequiredConnectors } from './connectors-personal';
 
 describe('pruneRequiredConnectors', () => {
@@ -27,9 +28,9 @@ describe('pruneRequiredConnectors', () => {
   });
 
   test('the editor uses canonical required terminology', async () => {
-    const source = await Bun.file(
-      new URL('./agent-editor-access-fields.tsx', import.meta.url),
-    ).text();
+    const source = expandI18nSource(
+      await Bun.file(new URL('./agent-editor-access-fields.tsx', import.meta.url)).text(),
+    );
     expect(source).toContain('RequiredConnectorToggle');
     expect(source).toContain('Required before session start');
     expect(source).not.toContain('PersonalConnectorToggle');

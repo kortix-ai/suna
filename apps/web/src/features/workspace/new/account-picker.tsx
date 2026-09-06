@@ -4,6 +4,7 @@ import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import type { KortixAccount } from '@kortix/sdk';
+import { useTranslations } from '@/i18n/use-translations';
 
 /**
  * What `AccountPicker` paints below two creatable accounts: the caller's own
@@ -99,6 +100,8 @@ export function AccountPicker({
    *  specific rendering, regardless of `accounts.length`. */
   showAccountLine?: boolean;
 }) {
+  const t = useTranslations('newWorkspace');
+
   if (!showAccountLine || accounts.length < 2) {
     const { identityLabel, accountLabel } = resolveAccountPickerIdentity({
       accounts,
@@ -114,7 +117,7 @@ export function AccountPicker({
         ) : null}
         {accountLabel ? (
           <span className="text-muted-foreground/70 min-w-0 truncate text-xs">
-            Create in {accountLabel}
+            {t('account.createIn', { account: accountLabel })}
           </span>
         ) : null}
       </span>
@@ -129,7 +132,7 @@ export function AccountPicker({
         id="workspace-account"
         variant="transparent"
         size="sm"
-        aria-label="Account"
+        aria-label={t('account.label')}
         className={cn(
           'text-muted-foreground hover:text-foreground h-8 max-w-[min(100%,16rem)] min-w-0 px-2',
           className,
@@ -140,7 +143,7 @@ export function AccountPicker({
             {selectedByValue.name}
           </span>
         ) : (
-          <span className="text-muted-foreground truncate text-sm">Choose an account</span>
+          <span className="text-muted-foreground truncate text-sm">{t('account.choose')}</span>
         )}
       </SelectTrigger>
       <SelectContent align="start">

@@ -7,6 +7,9 @@ import {
   PrincipalPicker,
   type PrincipalKind,
 } from '@/features/workspace/shared/access';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { useTranslations } from '@/i18n/use-translations';
 import { useMemo } from 'react';
 import {
   DEFAULT_COPY,
@@ -88,12 +91,17 @@ export function SharingPicker({
    */
   hideMembers?: boolean;
 }) {
-  const c: SharingCopy = {
-    heading: copy?.heading ?? DEFAULT_COPY.heading,
-    project: copy?.project ?? DEFAULT_COPY.project,
-    private: copy?.private ?? DEFAULT_COPY.private,
-    members: copy?.members ?? DEFAULT_COPY.members,
-  };
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const c = localizeUiCatalog<SharingCopy>(
+    {
+      heading: copy?.heading ?? DEFAULT_COPY.heading,
+      project: copy?.project ?? DEFAULT_COPY.project,
+      private: copy?.private ?? DEFAULT_COPY.private,
+      members: copy?.members ?? DEFAULT_COPY.members,
+    },
+    tI18nComplete,
+    REMAINING_UI_TRANSLATION_KEYS,
+  );
   // An older secret/connector still stored as a direct member share — surface it
   // (read-only-ish) so it isn't silently broken; the user migrates it to
   // Project-wide/Private or moves the people onto an agent.
@@ -139,15 +147,16 @@ export function SharingPicker({
       )}
       {hideMembers && !legacyMembers && (
         <p className="text-muted-foreground text-xs leading-relaxed">
-          To give specific people access, assign them (or a group) to an{' '}
-          <span className="text-foreground/80 font-medium">agent</span> that uses this — they
-          inherit it automatically. Manage that in the project's Members tab.
+          {tI18nComplete.raw('text558b36e065df')}{' '}
+          <span className="text-foreground/80 font-medium">
+            {tI18nComplete.raw('textd4f0bc5a29de')}
+          </span>{' '}
+          {tI18nComplete.raw('text3a71ebb2d593')}
         </p>
       )}
       {legacyMembers && (
         <p className="text-xs leading-relaxed text-amber-600 dark:text-amber-400">
-          This is still shared with specific members directly (legacy). Switch it to Project-wide or
-          Private — targeted access now flows through agent assignment.
+          {tI18nComplete.raw('text64f4c4bd39c9')}
         </p>
       )}
     </div>

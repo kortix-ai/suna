@@ -1,3 +1,7 @@
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
+
 /**
  * Copy for /a1o — "all in one". Six layers of the Kortix stack, one per face of
  * a die you roll around the table. Whichever face lands up is the layer shown.
@@ -80,3 +84,10 @@ export const COPY = {
   /** Shown when SOC 2 wording could otherwise imply certification. */
   footnote: 'SOC 2 Type II audit in progress. Controls already live.',
 } as const;
+
+export function localizedA1oContent(tI18nComplete: UiTranslator) {
+  return {
+    layers: localizeUiCatalog(LAYERS, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+    copy: localizeUiCatalog(COPY, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+  };
+}

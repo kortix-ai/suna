@@ -14,7 +14,7 @@ import {
   ArrowClockwiseIcon as RefreshCw,
   CloudSlashIcon as ServerOff,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useState, type ElementType, type ReactNode } from 'react';
 import { useServerHealth } from './hooks';
 import { sandboxExplorerSource } from './sandbox-explorer-source';
@@ -112,7 +112,7 @@ function SandboxServerGate({
           action={
             <Button variant="outline" size="sm" className="gap-1.5" onClick={retry}>
               <RefreshCw className="size-3.5 shrink-0" />
-              Retry
+              {tHardcodedUi.raw('i18nComplete.text942087cc2d41')}
             </Button>
           }
         />

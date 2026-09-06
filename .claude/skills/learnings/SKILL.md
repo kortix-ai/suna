@@ -94,6 +94,40 @@ requeue + dead-letter), `user-message.test.tsx` (pending tiles without doubling)
 These seven defects were found by an adversarial multi-agent review of the first
 fix set — review your own fixes before shipping.
 
+### Edge middleware imports locale constants from a leaf module (2026-09-05)
+
+**When:** adding locale routing or other i18n behavior to Next.js middleware.
+Import locale constants from `i18n/catalog.mjs`. Do not import `i18n/config.ts`,
+because its dynamic message loader makes every translation catalog reachable
+from the Edge bundle. *Near-miss:* PR #7109 built locally, but Vercel rejected
+the 4.76 MB middleware above its 4.02 MB plan limit. *Enforcer:*
+`middleware-public-routes.test.ts`; verify the production middleware manifest.
+
+### Preview bootstrap secrets must derive from the runtime allowlist (2026-09-05)
+
+**When:** adding a preview runtime secret. Build the forwarded secret object from
+`PREVIEW_RUNTIME_SECRET_ALLOWLIST`; do not duplicate its keys in the default-branch
+controller. *Incident:* PR #7109 received `PREVIEW_MANAGED_GIT_GITHUB_TOKEN` in Actions,
+but the preview API kept using an under-permissioned App because the controller omitted
+the PAT. *Enforcer:* `preview-stack.test.ts` checks every allowlisted key.
+
+### Every streamed transcript mutation refreshes runtime activity (2026-09-05)
+
+**When:** adding or changing a wire event that mutates visible assistant output.
+Refresh `sessionActivityAt` after the mutation applies. Do not cover only full
+part snapshots; delta-only streams can run past the 45-second observation bound.
+Ignore replayed event IDs because history is not current activity. *Incident:*
+reasoning text kept growing while the composer changed from Stop to Send and the
+turn busy indicator disappeared. *Enforcer:* `sync-store.test.ts`.
+
+### Do not co-schedule process-heavy Bun package suites (2026-09-05)
+
+**When:** scheduling package tests in the root gate. Run the CLI and sandbox-agent
+suites as separate bounded steps. Their concurrent isolated Bun workers can spin at
+100% CPU and stall the gate. *Near-miss:* two full runs exceeded 9 minutes in the CLI
+worker; the same CLI suite passed alone in 40.80 seconds. *Enforcer:*
+`test-runner-contract.test.ts` and the serialized `package-quality.ts` wave.
+
 ### A streamed message is "there" when its LAST promised part lands, not its first (2026-09-04)
 
 **When:** swapping an optimistic/placeholder render for the runtime's own copy
@@ -187,6 +221,35 @@ composer's own upload allowlist. *Enforcer:* `prompt-attachments.test.ts`
 ("renders the undecodable-image batch that used to delete the message").
 *Open:* delivery still has no read-back proof — a runtime-side throw is still
 recorded as `delivered`.
+
+### Protocol adapters emit the target vocabulary; consumers fail active-safe (2026-09-04)
+
+**When:** adapting runtime lifecycle events into the OpenCode session protocol.
+Emit only `idle`, `busy`, or `retry`. Treat only explicit `idle` as idle when
+reading an untrusted status discriminator. *Incident:* the pi worker emitted
+`running`; the SDK converted it to `idle`, so the composer and sidebar hid their
+busy indicators while parts continued to stream. *Enforcer:*
+`session-status.test.ts` and `use-session-working.test.ts`.
+
+### Preview fixtures must use installed libraries and forwarded secrets (2026-09-04)
+
+**When:** adding preview browser setup or a runtime secret allowlist. Use the shared `pg`
+client with parameterized SQL. Do not spawn a host CLI that the test image does not install.
+Build the runtime-secret object from the allowlist so an allowlisted workflow secret cannot be
+silently omitted. *Incident:* PR #7109 target-full stopped at `spawnSync psql ENOENT`; managed
+Git calls also returned `403` because `MANAGED_GIT_GITHUB_TOKEN` never entered the runtime
+object. *Enforcers:* `preview-stack.test.ts` and the preview target-full browser census.
+
+### A green synchronize preview does not prove that target-full ran (2026-09-04)
+
+**When:** using a persistent branch preview as deployed-test evidence. Push-triggered
+preview runs set `PREVIEW_RUN_TESTS=0`; inspect the log for the executed test command,
+not the green job name or sticky comment. Trigger `deploy-preview.yml` with
+`workflow_dispatch` for the final SHA, then require an actual `[test] PASS target-full`
+line. *Near-miss:* PR #7109 published “target-full passed” while its bootstrap printed
+“suite skipped”; caught before merge. *Enforcer TODO:* make the workflow result and
+sticky comment distinguish a skipped suite from a passed suite.
+
 
 ### A durable FIFO has one order key and advances at one boundary (2026-09-03)
 
@@ -4308,19 +4371,26 @@ days, each time for a reason the deploy could not repair once it had returned:
    (`ERR_PNPM_NO_OFFLINE_TARBALL` on `@earendil-works/pi-agent-core`).
 
 The part that made every one of these last for hours: **fixes committed on the
-branch did nothing.** `deploy-preview.yml` is `pull_request_target`, and its
-deploy job checks out the DEFAULT branch, so the bootstrap, the Caddyfile and
-the compose overlay always come from `main`'s `tests/`. Four fixes for exactly
-these failures sat on `pi-worker` and `ino/preview-parity` — prune before
-pull, Caddy swap tolerance, the git-cache volume, the offline fallback — each
-verified in a unit test, none ever executed by a deploy.
+branch did nothing where it mattered.** `deploy-preview.yml` is
+`pull_request_target`, and its deploy job checks out the DEFAULT branch, so the
+BOOTSTRAP (`buildPreviewBootstrapScript`, written to the box as
+`run-kortix-preview.sh`) always comes from `main`'s `tests/`. The bootstrap
+then runs `bun tests/bin/preview-stack.ts` INSIDE the box, from the PR-head
+checkout at `/workspace/suna` — so the Caddyfile and the compose overlay come
+from the BRANCH. Two provenances, verified on the first deploy after this
+landed: the guard install and `disk before pull` (bootstrap, main) ran, while
+the generated Caddyfile still lacked `swap_tolerant` (preview-stack, branch)
+until the guard patched it 60 s later. Know which file you are changing:
+`sandbox-preview.ts` → main; `preview-stack.ts` → the branch under test, and
+main only after the branch merges main.
 
 **The rules.**
 
-1. **A change to `tests/src/core/preview-stack.ts`, `sandbox-preview.ts` or
-   `deploy-preview.yml` reaches a preview only from `main`.** Land it there
-   first, in its own PR; a branch preview cannot test it and will keep failing
-   in the way the branch already fixed.
+1. **A change to `sandbox-preview.ts` or `deploy-preview.yml` reaches a
+   preview only from `main`; a change to `preview-stack.ts` reaches it from
+   the branch being deployed.** Land bootstrap and workflow fixes on `main`
+   first, in their own PR; put Caddyfile and overlay fixes on the branch (and
+   on `main`, or the next branch loses them).
 2. **A persistent environment carries its own watcher.** The deploy is on the
    box for ~14 minutes a day; the environment is expected to serve for the
    other 1,426. `tests/src/core/preview-guard.ts` runs as a container on the
@@ -4345,3 +4415,77 @@ preview-parity ports. *Enforcer:* `tests/unit/preview-guard.test.ts`
 (`sh -n` on the guard, never `-v`, deploy-in-flight gate, hash-keyed install)
 and `tests/unit/sandbox-preview.test.ts` (prune before pull, fallback install,
 rollback after the health check, guard before configure).
+
+## A failed content-addressed template must change the next create idempotency key (2026-09-05)
+
+PR #7109 could not deploy its branch preview. Platinum returned two failed
+records for `kortix-ci-v11-03a0eb30070ddb14-base`. The controller correctly
+rejected both records as reusable, but retried `POST /v1/templates/from-spec`
+with the original idempotency key. Platinum returned the same failed create
+result. The branch environment could not fall back to Daytona because that
+would change its stable origin.
+
+**The rule.** A content-addressed resource can reuse its normal idempotency key
+until the provider records a terminal failure. The next create key must include
+a deterministic fingerprint of the known failed resource IDs. Concurrent
+retries for the same failure set still deduplicate. A newly failed retry changes
+the failure set and therefore changes the next create key.
+
+*Fix:* `platinumTemplateCreateIdempotencyKey()` fingerprints failed template
+IDs for base and warm template creation. *Enforcer:*
+`tests/unit/platinum-ci.test.ts` verifies stable concurrent retry keys and a new
+key after another terminal failure.
+
+## An explicit fallback preview must not inherit the persistent provider identity (2026-09-05)
+
+PR #7109 needed Daytona after Platinum failed twice while building its base
+template. The manual dispatch selected `daytona`, but the workflow still set
+`PREVIEW_BRANCH_ENV` to the pull request branch. The provider guard rejected
+Daytona before sandbox creation because that value reserves the stable branch
+origin for Platinum.
+
+**The rule.** A manual Daytona fallback verifies the exact pull request SHA on
+an ephemeral provider origin. It must leave `PREVIEW_BRANCH_ENV` empty. Normal
+automatic and Platinum runs must keep the persistent branch identity.
+
+*Fix:* `deploy-preview.yml` emits an empty `persistent_branch` only for an
+explicit workflow-dispatch Daytona run. *Enforcer:*
+`tests/unit/web-ecs-workflow.test.ts` asserts both the selection condition and
+the deploy environment output.
+
+## A dependency engine floor must invalidate the preview base image (2026-09-05)
+
+PR #7109 failed to build both Platinum and Daytona base caches. The preview
+base image pinned Node `22.22.0`. The resolved `write-file-atomic@8.0.0`
+package requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`. The exact provider
+command exited at `pnpm install --frozen-lockfile` with
+`ERR_PNPM_UNSUPPORTED_ENGINE`.
+
+**The rule.** The preview base image Node version must satisfy every resolved
+package engine. A Node image change must also increment the Platinum and
+Daytona base-cache versions. Failed caches must never retain the old runtime.
+
+*Fix:* the shared preview image now pins the multi-platform digest for Node
+`22.22.2-bookworm`. Platinum base cache `v12` and Daytona base cache `v4`
+force fresh builds. *Enforcer:* `tests/unit/platinum-ci.test.ts` and
+`tests/unit/daytona-ci.test.ts` assert both new cache names and the exact image
+digest.
+
+## A persistent sandbox does not inherit a replacement template runtime (2026-09-05)
+
+PR #7109 selected the ready Node `22.22.2` Platinum template. The workflow then
+reused the branch sandbox created with Node `22.22.0`. The sandbox rootfs did
+not change. Every checkout after the dependency floor change failed at
+`pnpm install --frozen-lockfile` with `ERR_PNPM_UNSUPPORTED_ENGINE`. The worker
+then reported stale test output from an earlier commit.
+
+**The rule.** A bootstrap that reuses a persistent sandbox must enforce its
+runtime floor inside that sandbox before it runs the package manager. A new
+template only affects newly created sandboxes. Runtime repair must use a pinned
+version and a verified checksum.
+
+*Fix:* `buildPreviewBootstrapScript()` installs the official Node `22.22.2`
+Linux x64 archive when the sandbox reports another version. It verifies the
+official SHA-256 before extraction. *Enforcer:*
+`tests/unit/sandbox-preview.test.ts` requires the repair before the first pnpm
+install and asserts the exact version and checksum.

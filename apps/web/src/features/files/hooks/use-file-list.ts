@@ -1,11 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRuntimeStore } from '@kortix/sdk/react';
-import { listFiles } from '../api/runtime-files';
 import { useFilesStore } from '@/features/file-browser/store/files-store';
 import type { FileNode } from '@/features/file-browser/types';
+import { useRuntimeStore } from '@kortix/sdk/react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { listFiles } from '../api/runtime-files';
 
 export const fileListKeys = {
   all: ['runtime-files', 'list'] as const,
@@ -19,10 +19,7 @@ export const fileListKeys = {
  * Uses GET /file?path=<path> which returns FileNode[].
  * Hidden (dot) files are filtered out unless showHidden is enabled in the store.
  */
-export function useFileList(
-  dirPath: string,
-  options?: { enabled?: boolean },
-) {
+export function useFileList(dirPath: string, options?: { enabled?: boolean }) {
   const serverUrl = useRuntimeStore((s) => s.getActiveServerUrl());
   const showHidden = useFilesStore((s) => s.showHidden);
 
@@ -52,10 +49,7 @@ export function useFileList(
     if (!query.data) return query.data;
     if (showHidden) return query.data;
     return query.data.filter(
-      (node) =>
-        !node.name.startsWith('.') ||
-        node.name === '.kortix' ||
-        node.name === '.opencode',
+      (node) => !node.name.startsWith('.') || node.name === '.kortix' || node.name === '.opencode',
     );
   }, [query.data, showHidden]);
 

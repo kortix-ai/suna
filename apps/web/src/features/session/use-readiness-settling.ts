@@ -20,7 +20,10 @@ export const READINESS_SETTLE_MS = 1_500;
  * otherwise assert "Waking this session up…" the instant a page loads — the
  * one claim nothing had checked. See that input's docstring.
  */
-export function useReadinessSettling(uncontacted: boolean, windowMs = READINESS_SETTLE_MS): boolean {
+export function useReadinessSettling(
+  uncontacted: boolean,
+  windowMs = READINESS_SETTLE_MS,
+): boolean {
   // The window is identified by WHEN it opened, and that instant is state, not a
   // ref: an earlier cut bumped a ref inside the effect and compared it during
   // render, so on the first render of each window the ref still held the

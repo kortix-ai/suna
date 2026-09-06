@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { SidebarProvider } from '@/components/ui/sidebar';
+import messages from '../../../../../translations/en.json';
 import { ProjectManifestUpgradeAlertView } from './project-manifest-upgrade-alert';
 
 // The view renders sidebar primitives (SidebarMenuItem/Button), so every case
@@ -15,9 +17,16 @@ function render(props: {
   defaultOpen?: boolean;
 }) {
   return renderToStaticMarkup(
-    <SidebarProvider defaultOpen>
-      <ProjectManifestUpgradeAlertView {...props} />
-    </SidebarProvider>,
+    <NextIntlClientProvider
+      locale="en"
+      messages={{ sidebar: messages.sidebar }}
+      timeZone="UTC"
+      onError={() => {}}
+    >
+      <SidebarProvider defaultOpen>
+        <ProjectManifestUpgradeAlertView {...props} />
+      </SidebarProvider>
+    </NextIntlClientProvider>,
   );
 }
 

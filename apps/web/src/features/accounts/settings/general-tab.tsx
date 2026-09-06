@@ -39,10 +39,10 @@ import {
   useDeleteAccountImmediately,
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
+import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { isBillingEnabled } from '@/lib/config';
 import { createClient } from '@/lib/supabase/client';
 import { cn } from '@/lib/utils';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
   ArrowUpRightIcon as ArrowUpRight,
@@ -50,7 +50,7 @@ import {
   WarningIcon as DangerTriangleSolid,
 } from '@phosphor-icons/react';
 import { AnimatePresence, m, MotionConfig } from 'motion/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -146,11 +146,11 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
     const file = e.target.files?.[0];
     if (file) {
       if (!file.type.startsWith('image/')) {
-        errorToast(t('profilePicture.invalidType'));
+        errorToast(tHardcodedUi.raw('i18nComplete.text13553d2cc867'));
         return;
       }
       if (file.size > 5 * 1024 * 1024) {
-        errorToast(t('profilePicture.tooLarge'));
+        errorToast(tHardcodedUi.raw('i18nComplete.text92548af349d1'));
         return;
       }
       // Picking a second file before saving replaces avatarPreview without
@@ -218,11 +218,11 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
       setAvatarFile(null);
       setAvatarUrl(newAvatarUrl);
 
-      successToast(t('profileUpdated'));
+      successToast(tHardcodedUi.raw('i18nComplete.text91a8ab20e938'));
     } catch (error) {
       console.error('Error updating profile:', error);
       const message = error instanceof Error && error.message ? error.message : '';
-      errorToast(message || t('profileUpdateFailed'));
+      errorToast(message || tHardcodedUi.raw('i18nComplete.text5c768dee3757'));
     } finally {
       setIsSaving(false);
     }

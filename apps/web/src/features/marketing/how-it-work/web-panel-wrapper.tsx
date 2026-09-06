@@ -1,6 +1,7 @@
 'use client';
 
 import type { PageId } from '@/components/home/interactive-demo/types';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { cn } from '@/lib/utils';
 import {
   SquaresFourIcon as Blocks,
@@ -15,7 +16,7 @@ import {
   FolderIcon as RiFolder3Fill,
   RobotIcon as RiRobot3Fill,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
 
 type MarketingPanelTab = PageId | 'review' | 'memory' | 'sandbox';
@@ -62,7 +63,7 @@ export function WebPanelWrapper({
   className?: string;
 }) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
-  const tab = DEMO_PANEL_TABS[activeTab];
+  const tab = useLocalizedUiCatalog(DEMO_PANEL_TABS)[activeTab];
 
   return (
     <div className={cn('flex h-full flex-1 flex-col', className)}>

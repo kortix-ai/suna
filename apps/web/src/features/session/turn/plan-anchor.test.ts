@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { chatPlanAnchorId, planAnchorMessageId, planBelongsToChat } from './plan-anchor';
 import type { PlanSurfaceState } from './plan-anchor';
+import { chatPlanAnchorId, planAnchorMessageId, planBelongsToChat } from './plan-anchor';
 
 type Msg = Parameters<typeof planAnchorMessageId>[0][number];
 
@@ -67,7 +67,12 @@ describe('planAnchorMessageId', () => {
   });
 
   test('todos written while the turn is still streaming anchor to that turn', () => {
-    const messages = [user('u1'), assistant('a1', ['bash']), user('u2'), assistant('a2', ['todowrite'])];
+    const messages = [
+      user('u1'),
+      assistant('a1', ['bash']),
+      user('u2'),
+      assistant('a2', ['todowrite']),
+    ];
 
     expect(planAnchorMessageId(messages)).toBe('u2');
   });

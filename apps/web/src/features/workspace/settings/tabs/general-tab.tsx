@@ -136,29 +136,22 @@ import { errorToast, successToast } from '@/components/ui/toast';
 import { TypeToConfirmDialog } from '@/components/ui/type-to-confirm-dialog';
 import { ErrorState } from '@/features/layout/section/error-state';
 import { buildProjectEditPatch } from '@/features/projects/modal/project-edit-patch';
-import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import {
   ProjectIconField,
   type ProjectIconValue,
 } from '@/features/projects/modal/project-icon-field';
+import { useAuth } from '@/features/providers/auth-provider';
+import { GitView } from '@/features/workspace/customize/sections/view/git-view';
 import {
   renameOnError,
   renameOnMutate,
   renameOnSettled,
 } from '@/hooks/projects/project-rename-cache';
 import { useDebounce } from '@/hooks/use-debounce';
-import { useAuth } from '@/features/providers/auth-provider';
 import { suppressAutoProjectAfterDelete } from '@/lib/onboarding/ensure-first-project';
 import { forgetLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
 import { useProjectCans } from '@/lib/use-project-can';
-
-/** Asked for in ONE batched probe. `project.delete` and `project.write` are
- *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
-const GENERAL_TAB_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_WRITE,
-  PROJECT_ACTIONS.PROJECT_DELETE,
-] as const;
 import {
   archiveProject,
   getProject,
@@ -169,7 +162,15 @@ import {
 } from '@kortix/sdk';
 import { contract, invalidateProjectIdentity, qk } from '@kortix/sdk/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { SettingsTabHeader } from '../settings-tab-header';
+
+/** Asked for in ONE batched probe. `project.delete` and `project.write` are
+ *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
+const GENERAL_TAB_ACTIONS = [
+  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_DELETE,
+] as const;
 
 /**
  * What the user actually loses, in the order they will care about it.
@@ -217,6 +218,7 @@ export const DELETE_WORKSPACE_REASSURANCE =
  * pane needs it.
  */
 export interface GeneralTabViewProps {
+  copy?: GeneralTabCopy;
   isLoading?: boolean;
   isError?: boolean;
   errorMessage?: string;
@@ -246,6 +248,36 @@ export interface GeneralTabViewProps {
   isArchivePending?: boolean;
 }
 
+export interface GeneralTabCopy {
+  loadFailed: string;
+  retry: string;
+  dangerZone: string;
+  deleteWorkspace: string;
+  deleteDescription: string;
+  deleteTitle: string;
+  deleteDialog: (name: string) => ReactNode;
+  consequencesTitle: string;
+  consequences: readonly string[];
+  reassurance: string;
+  keepWorkspace: string;
+}
+
+const DEFAULT_GENERAL_COPY: GeneralTabCopy = {
+  loadFailed: 'Failed to load project',
+  retry: 'Retry',
+  dangerZone: 'Danger zone',
+  deleteWorkspace: 'Delete workspace',
+  deleteDescription:
+    'Removes this workspace and everything inside it, for every member. This cannot be undone.',
+  deleteTitle: 'Delete workspace?',
+  deleteDialog: (name) =>
+    `This deletes ${name} for everyone with access to it. It cannot be undone.`,
+  consequencesTitle: 'You immediately lose:',
+  consequences: DELETE_WORKSPACE_CONSEQUENCES,
+  reassurance: DELETE_WORKSPACE_REASSURANCE,
+  keepWorkspace: 'Keep workspace',
+};
+
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `GeneralTab` so this renders under
  *  `renderToStaticMarkup` without a `QueryClientProvider` — see
@@ -253,6 +285,7 @@ export interface GeneralTabViewProps {
  *  prop is optional with a safe default so the bare `<GeneralTabView />`
  *  the test file renders shows the Delete-workspace section fully formed. */
 export function GeneralTabView({
+  copy = DEFAULT_GENERAL_COPY,
   isLoading = false,
   isError = false,
   errorMessage = '',
@@ -279,11 +312,11 @@ export function GeneralTabView({
       ) : isError ? (
         <ErrorState
           size="sm"
-          title="Failed to load project"
+          title={copy.loadFailed}
           description={errorMessage}
           action={
             <Button variant="outline" size="sm" onClick={onRetry}>
-              Retry
+              {copy.retry}
             </Button>
           }
         />
@@ -293,12 +326,9 @@ export function GeneralTabView({
           {gitRepoSlot}
           {canDelete ? (
             <section className="space-y-3">
-              <SettingsSubsectionHeader title="Danger zone" />
+              <SettingsSubsectionHeader title={copy.dangerZone} />
               <SettingsRowGroup>
-                <SettingsRow
-                  label="Delete workspace"
-                  description="Removes this workspace and everything inside it, for every member. This cannot be undone."
-                >
+                <SettingsRow label={copy.deleteWorkspace} description={copy.deleteDescription}>
                   {/* Red text, not a filled button: the weight belongs to the
                       confirmation, not to the affordance that opens it. */}
                   <Button
@@ -307,7 +337,7 @@ export function GeneralTabView({
                     className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={onOpenArchiveDialog}
                   >
-                    Delete workspace
+                    {copy.deleteWorkspace}
                   </Button>
                 </SettingsRow>
               </SettingsRowGroup>
@@ -321,23 +351,18 @@ export function GeneralTabView({
         onOpenChange={(open) => {
           if (!open) onCloseArchiveDialog();
         }}
-        title="Delete workspace?"
-        description={
-          <>
-            This deletes <span className="text-foreground font-medium">{workspaceName}</span> for
-            everyone with access to it. It cannot be undone.
-          </>
-        }
-        consequencesTitle="You immediately lose:"
-        consequences={DELETE_WORKSPACE_CONSEQUENCES}
-        reassurance={DELETE_WORKSPACE_REASSURANCE}
+        title={copy.deleteTitle}
+        description={copy.deleteDialog(workspaceName)}
+        consequencesTitle={copy.consequencesTitle}
+        consequences={copy.consequences}
+        reassurance={copy.reassurance}
         // The workspace's own name, so confirming proves the user knows WHICH
         // workspace this is — the mistake that actually costs data. While the
         // project query is still in flight this is `''`, and
         // `confirmationPhraseMatches` refuses to arm on a blank phrase.
         confirmPhrase={workspaceName}
-        confirmLabel="Delete workspace"
-        cancelLabel="Keep workspace"
+        confirmLabel={copy.deleteWorkspace}
+        cancelLabel={copy.keepWorkspace}
         onConfirm={onConfirmArchive}
         isPending={isArchivePending}
       />
@@ -356,8 +381,8 @@ function toIconValue(icon?: string | null, glyph?: GlyphSelection | null): Proje
   return null;
 }
 
-function SaveStatus() {
-  return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">Saving…</span>;
+function SaveStatus({ label }: { label: string }) {
+  return <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{label}</span>;
 }
 
 export interface RunProjectArchiveClient {
@@ -441,6 +466,8 @@ function GeneralWorkspaceCard({
   project: KortixProject;
   canManage: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
   const [name, setName] = useState(project.name);
   const { debouncedValue: debouncedName, isLoading: isDebouncing } = useDebounce(name, 500);
@@ -457,7 +484,7 @@ function GeneralWorkspaceCard({
     },
     onError: (error: Error, _nextName, context) => {
       renameOnError(queryClient, project.project_id, context);
-      errorToast(error.message || 'Failed to update project');
+      errorToast(error.message || tI18nComplete('textdd2d120a9ea9'));
     },
     onSettled: () => renameOnSettled(queryClient, project.project_id),
   });
@@ -478,7 +505,8 @@ function GeneralWorkspaceCard({
     onSuccess: (updated) => {
       queryClient.setQueryData(qk.project.summary(project.project_id), updated);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to update workspace icon'),
+    onError: (error: Error) =>
+      errorToast(error.message || tI18nComplete('texta563730f828d')),
     // The icon is read from THREE caches and this mutation used to write back
     // to one. `setQueryData` above repaints the sidebar switcher, which reads
     // `qk.project.summary`; the projects grid and ⌘K read a
@@ -521,7 +549,7 @@ function GeneralWorkspaceCard({
     // under it would repeat the same word. See `settings-tab-header.tsx`.
     // Both fields share ONE bordered group, Linear-style.
     <SettingsRowGroup>
-      <SettingsRow label="Icon" description="Shown next to the workspace name.">
+      <SettingsRow label={t('icon')} description={t('iconDescription')}>
         <ProjectIconField
           value={toIconValue(project.icon, project.icon_glyph)}
           onChange={(emoji) => applyIcon({ emoji })}
@@ -536,16 +564,13 @@ function GeneralWorkspaceCard({
           `items-center` `SettingsRow` applies when there is no description
           (specificity 0,2,0 vs 0,1,0), so a description-less row top-aligns
           its control against a single-line label. See this task's report. */}
-      <SettingsRow
-        label="Workspace name"
-        description="Shown in the workspace switcher and anywhere this workspace is listed."
-      >
-        {saving ? <SaveStatus /> : null}
+      <SettingsRow label={t('name')} description={t('nameDescription')}>
+        {saving ? <SaveStatus label={t('saving')} /> : null}
         <Input
           id="workspace-name"
           // The row label is a heading, not a `<label htmlFor>` — the control
           // carries its own accessible name.
-          aria-label="Workspace name"
+          aria-label={t('name')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           disabled={!canManage || isRenamePending}
@@ -565,6 +590,8 @@ function GeneralWorkspaceCard({
  *  while this tab is active (`SettingsTabPane` in `settings-panel.tsx`
  *  returns `null` otherwise), so nothing here fetches on panel open. */
 export function GeneralTab({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('settings.workspace');
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -609,7 +636,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
         () => forgetLastProjectId(user?.id, projectId),
       ),
     onSuccess: () => {
-      successToast('Workspace archived');
+      successToast(tI18nComplete('textdd9e881230eb'));
       // qk.projects.scope(): for a single-account user the archived
       // project's account IS the primary account qk.projects.list() (no
       // args) resolves to, so a precise invalidation would leave the
@@ -618,11 +645,30 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
       setArchiveOpen(false);
     },
-    onError: (error: Error) => errorToast(error.message || 'Failed to archive project'),
+    onError: (error: Error) =>
+      errorToast(error.message || tI18nComplete('textf4a10da7a820')),
   });
 
   return (
     <GeneralTabView
+      copy={{
+        loadFailed: t('loadFailed'),
+        retry: t('retry'),
+        dangerZone: t('dangerZone'),
+        deleteWorkspace: t('deleteWorkspace'),
+        deleteDescription: t('deleteDescription'),
+        deleteTitle: t('deleteTitle'),
+        deleteDialog: (name) => t('deleteDialog', { name }),
+        consequencesTitle: t('consequencesTitle'),
+        consequences: [
+          t('consequences.sessions'),
+          t('consequences.automation'),
+          t('consequences.integrations'),
+          t('consequences.access'),
+        ],
+        reassurance: t('reassurance'),
+        keepWorkspace: t('keepWorkspace'),
+      }}
       isLoading={projectQuery.isLoading}
       isError={projectQuery.isError}
       errorMessage={(projectQuery.error as Error)?.message ?? ''}

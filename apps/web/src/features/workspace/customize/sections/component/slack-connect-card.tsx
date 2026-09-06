@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The Slack connect hero — what `channels-view.tsx` shows when Slack is not
  * connected yet, in place of a table row whose every cell was empty.
@@ -55,6 +56,7 @@ export function SlackConnectCard({
   oauthInstallUrl: string | null;
   canWrite: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [wizardOpen, setWizardOpen] = useState(false);
   // Narrow once so the JSX below never needs a non-null assertion on the URL.
   const oneClickUrl = oauthInstallUrl ?? null;
@@ -69,7 +71,7 @@ export function SlackConnectCard({
             band behind it would just be a second background fighting the first.
             The panel's own `overflow-hidden rounded-md` clips the top corners —
             the same full-bleed treatment `post-card.tsx` gives it. */}
-        <div className="border-b overflow-hidden">
+        <div className="overflow-hidden border-b">
           <SlackConnectCover />
         </div>
 
@@ -80,14 +82,18 @@ export function SlackConnectCard({
             </span>
             <div className="min-w-0 space-y-1">
               <div className="flex items-center gap-1.5">
-                <h3 className="text-foreground text-sm font-medium">Slack</h3>
-                {oneClick ? null : <ChannelHintBadge>Your own app</ChannelHintBadge>}
+                <h3 className="text-foreground text-sm font-medium">
+                  {tI18nComplete.raw('textb27fb38ba323')}
+                </h3>
+                {oneClick ? null : (
+                  <ChannelHintBadge>{tI18nComplete.raw('texte28492370987')}</ChannelHintBadge>
+                )}
               </div>
               {/* text-pretty so a two-line lede never leaves one orphan word */}
               <p className="text-muted-foreground text-sm leading-relaxed text-pretty">
                 {oneClick
-                  ? 'Mention your agent in Slack and it does the work there — no dashboard, no context switch.'
-                  : 'This workspace connects through a Slack app you own. We walk you through creating it — about three minutes.'}
+                  ? tI18nComplete.raw('textadb4acada861')
+                  : tI18nComplete.raw('text4a79cdb7ab5e')}
               </p>
             </div>
           </div>
@@ -105,17 +111,14 @@ export function SlackConnectCard({
             <div className="flex flex-wrap items-center gap-2">
               {oneClickUrl ? (
                 <>
-                  <Button
-                    className="gap-1.5 transition-transform active:scale-[0.97]"
-                    asChild
-                  >
+                  <Button className="gap-1.5 transition-transform active:scale-[0.97]" asChild>
                     <Link href={oneClickUrl} target="_blank" rel="noopener noreferrer">
                       <Slack className="size-3.5 shrink-0" />
-                      Add to Slack
+                      {tI18nComplete.raw('text3357cd3d0cee')}
                     </Link>
                   </Button>
                   <Button variant="ghost" onClick={() => setWizardOpen(true)}>
-                    Use your own Slack app
+                    {tI18nComplete.raw('text260f0001800b')}
                   </Button>
                 </>
               ) : (
@@ -124,12 +127,12 @@ export function SlackConnectCard({
                   onClick={() => setWizardOpen(true)}
                 >
                   <Slack className="size-3.5 shrink-0" />
-                  Set up Slack
+                  {tI18nComplete.raw('text68382ef84e6c')}
                 </Button>
               )}
             </div>
           ) : (
-            <p className="text-muted-foreground text-xs">Ask a workspace admin to connect Slack.</p>
+            <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text581144514350')}</p>
           )}
         </div>
       </div>

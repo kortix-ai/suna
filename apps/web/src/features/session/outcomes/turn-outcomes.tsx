@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * A turn's outcomes, rendered in its footer.
  *
@@ -30,6 +31,7 @@ export function visibleOutcomes(outcomes: Outcome[]): { shown: Outcome[]; overfl
 }
 
 export function TurnOutcomes({ turnKey }: { turnKey: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const outcomes = useTurnOutcomes(turnKey);
   const onOpen = useOutcomeOpen();
   const { shown, overflow } = visibleOutcomes(outcomes);
@@ -44,7 +46,9 @@ export function TurnOutcomes({ turnKey }: { turnKey: string }) {
         <OutcomeCard key={outcome.id} outcome={outcome} index={index} onOpen={onOpen} />
       ))}
       {overflow > 0 ? (
-        <p className="text-muted-foreground px-1 text-xs">{overflow} more in this session</p>
+        <p className="text-muted-foreground px-1 text-xs">
+          {overflow} {tI18nComplete.raw('text17ce60292e3f')}
+        </p>
       ) : null}
     </ItemGroup>
   );

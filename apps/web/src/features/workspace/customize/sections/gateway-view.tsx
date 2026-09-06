@@ -1,5 +1,7 @@
 'use client';
 
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Models — the whole `/projects/[id]/models` page: the shared capability
  * shell, one tab strip, and whichever section that strip has selected.
@@ -92,13 +94,7 @@ export const MODELS_PAGE_TITLE = 'Models';
 export const MODELS_PAGE_DESCRIPTION = 'Which providers and models this project can use.';
 
 export type LlmTab =
-  | 'providers'
-  | 'models'
-  | 'custom'
-  | 'gateway'
-  | 'routing'
-  | 'overview'
-  | 'logs';
+  'providers' | 'models' | 'custom' | 'gateway' | 'routing' | 'overview' | 'logs';
 
 export interface LlmTabEntry {
   id: LlmTab;
@@ -227,10 +223,11 @@ export function LlmTabStrip({
   onValueChange: (next: string) => void;
   tabs?: readonly LlmTabEntry[];
 }) {
+  const localizedTabs = useLocalizedUiCatalog(tabs);
   return (
     <Tabs value={value} onValueChange={onValueChange}>
       <TabsList>
-        {tabs.map((t) => (
+        {localizedTabs.map((t) => (
           <TabsTrigger key={t.id} value={t.id}>
             {t.label}
           </TabsTrigger>
@@ -254,6 +251,7 @@ export function LlmTabStrip({
  * one mutating control in this bar is hidden rather than left to 403.
  */
 export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const models = useProjectModels(projectId);
   const modelDefaults = useModelDefaults(projectId);
   const routingMutationCount = useIsMutating({ mutationKey: gatewayRoutingPolicyKey(projectId) });
@@ -265,17 +263,19 @@ export function ProjectDefaultPicker({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <span className="text-muted-foreground hidden text-xs sm:inline">Project default</span>
+      <span className="text-muted-foreground hidden text-xs sm:inline">
+        {tI18nComplete.raw('texte8cb80e5c5cb')}
+      </span>
       <ModelSelector
         models={models}
         selectedModel={effectiveDefault}
-        unsetLabel="Project default"
+        unsetLabel={tI18nComplete.raw('texte8cb80e5c5cb')}
         disabled={modelDefaults.isLoading || modelDefaults.isUpdating || routingMutationCount > 0}
         onSelect={(m) => {
           if (!m) return;
           void modelDefaults
             .setProjectDefault(m)
-            .catch(() => errorToast('Could not update the project default'));
+            .catch(() => errorToast(tI18nComplete.raw('text5ed9bd98de1b')));
         }}
       />
     </div>

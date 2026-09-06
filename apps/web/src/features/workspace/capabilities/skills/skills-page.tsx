@@ -1,6 +1,7 @@
 'use client';
 
 import { NewEntityMenu } from '@/features/workspace/capabilities/shared/new-entity-menu';
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -60,6 +61,7 @@ const SCOPE_FILTERS: ReadonlyArray<{ value: ScopeFilter; label: string }> = [
  * its secondary, which is all a reader without write permission gets.
  */
 export function SkillsPage({ projectId }: { projectId: string }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   // `accountId` skips useProjectCan's own getProject and lets the IAM probe
   // run on the first render instead of waiting a round-trip for it.
   const accountId = useProjectAccountId(projectId);
@@ -130,8 +132,8 @@ export function SkillsPage({ projectId }: { projectId: string }) {
 
   return (
     <CapabilityPageShell
-      title="Skills"
-      description="Reusable instructions your agents load on demand."
+      title={tI18nComplete.raw('text66d0f523a379')}
+      description={tI18nComplete.raw('text000c02c11c7a')}
       action={createButton('New')}
       search={
         <InputGroupSearch>
@@ -139,7 +141,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             <MagnifyingGlassIcon />
           </InputGroupSearchIcon>
           <InputGroupSearchInput
-            placeholder="Search skills"
+            placeholder={tI18nComplete.raw('text76c02b7eddca')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             variant="popover"
@@ -170,14 +172,17 @@ export function SkillsPage({ projectId }: { projectId: string }) {
             query.trim() ? (
               <CatalogNoMatch query={query} />
             ) : (
-              <CatalogEmptyNote>No matches in {scopeLabel}.</CatalogEmptyNote>
+              <CatalogEmptyNote>
+                {tI18nComplete.raw('textdc5255461795')}
+                {scopeLabel}.
+              </CatalogEmptyNote>
             )
           ) : (
             <EmptyState
               icon={SparkleIcon}
               size="sm"
-              title="No skills yet"
-              description="Create a skill to give agents reusable capabilities."
+              title={tI18nComplete.raw('text32ae9b80f832')}
+              description={tI18nComplete.raw('text031b8fd1f46a')}
               // The copy invites an action, so the action is here — not only in
               // the header. Docs stays as the secondary, for the reader who has
               // no write permission and gets no primary at all.
@@ -189,7 +194,7 @@ export function SkillsPage({ projectId }: { projectId: string }) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    Docs
+                    {tI18nComplete.raw('text7af023c43013')}
                   </a>
                 </Button>
               }

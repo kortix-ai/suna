@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `FilePreview` — one file, fetched and shown.
  *
@@ -100,6 +101,7 @@ function PreviewShell({
   copy?: ViewerCopy;
   children: React.ReactNode;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
 
   return (
@@ -117,11 +119,11 @@ function PreviewShell({
               you are looking at — so it stays its own control rather than
               joining the split button's menu. */}
           {onPresent && (
-            <Hint label="Present" side="bottom">
+            <Hint label={tI18nComplete.raw('text43f9b89c0b9d')} side="bottom">
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label="Present"
+                aria-label={tI18nComplete.raw('text43f9b89c0b9d')}
                 onClick={onPresent}
                 className="size-7 active:scale-[0.96]"
               >
@@ -297,6 +299,7 @@ export function FilePreview({
    *  entirely (not disabled) for anything that isn't a presentation_gen deck. */
   onPresent?: () => void;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const rich = isRich(fileName);
 
   // Opening at fit-to-page is PDF-only. It is the one renderer here whose zoom
@@ -417,15 +420,15 @@ export function FilePreview({
           {sandboxWaking ? (
             <>
               <Loading className="size-5" />
-              <span>Waking up the workspace… this file will load automatically.</span>
+              <span>{tI18nComplete.raw('textf7db0cb35bc2')}</span>
             </>
           ) : (
             <>
               <FileWarning className="size-5" />
               <span>
                 {!sandboxAlive
-                  ? "This session's workspace has ended, so its files can't be opened anymore."
-                  : "This file couldn't be opened."}
+                  ? tI18nComplete.raw('text2a0be92cc91f')
+                  : tI18nComplete.raw('textd59d8e8ed646')}
               </span>
             </>
           )}
@@ -451,7 +454,7 @@ export function FilePreview({
           isImage && canCopyImages()
             ? {
                 run: () => copyImageToClipboard(data.mimeType!, data.content),
-                ariaLabel: 'Copy image',
+                ariaLabel: tI18nComplete.raw('text3cb27ae0fbca'),
               }
             : undefined
         }
@@ -477,7 +480,7 @@ export function FilePreview({
         ) : (
           <Centered>
             <FileWarning className="size-5" />
-            <span>This file can&apos;t be previewed here.</span>
+            <span>{tI18nComplete.raw('text3bfc0ea39768')}</span>
           </Centered>
         )}
       </PreviewShell>

@@ -68,7 +68,9 @@ describe('hero media', () => {
     );
 
     const orphanedDark = [...dark].filter((p) => !light.includes(p.replace('-dark-', '-')));
-    expect(orphanedDark, `dark encodes with no light twin:\n${orphanedDark.join('\n')}`).toEqual([]);
+    expect(orphanedDark, `dark encodes with no light twin:\n${orphanedDark.join('\n')}`).toEqual(
+      [],
+    );
   });
 
   /**

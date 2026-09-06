@@ -21,7 +21,5 @@ export function markPostAuthIntent(): void {
 
 export function hasPostAuthIntent(): boolean {
   if (typeof document === 'undefined' || typeof document.cookie !== 'string') return false;
-  return document.cookie
-    .split('; ')
-    .some((entry) => entry === `${POST_AUTH_INTENT_COOKIE}=1`);
+  return document.cookie.split('; ').some((entry) => entry === `${POST_AUTH_INTENT_COOKIE}=1`);
 }

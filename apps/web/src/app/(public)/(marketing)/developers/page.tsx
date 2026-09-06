@@ -6,10 +6,11 @@ import { HighlightedCode } from '@/components/markdown/code';
 import { Badge } from '@/components/ui/badge';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
-import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { Github } from '@/features/icon/icons/github';
 import { useCopy } from '@/hooks/use-copy';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useTranslations } from '@/i18n/use-translations';
 import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
 import { cn } from '@/lib/utils';
 import {
@@ -29,7 +30,6 @@ import {
   TerminalIcon,
   FlowArrowIcon as Workflow,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useCallback } from 'react';
 
@@ -39,16 +39,12 @@ const fav = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=12
 
 const C = {
   c: 'text-muted-foreground/70',
-  s: 'text-emerald-600 dark:text-emerald-400',
+  s: 'text-kortix-green',
   f: 'text-foreground',
 };
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-      {children}
-    </span>
-  );
+  return <span className="text-muted-foreground font-mono text-xs">{children}</span>;
 }
 
 function CodeWindowFrame({
@@ -107,13 +103,7 @@ function Working({ children }: { children: React.ReactNode }) {
   return (
     <Line className="items-center justify-start gap-2">
       <span className={C.s}>
-        <KortixAsterisk
-          parentClass={tI18nHardcoded.raw(
-            'autoAppPublicMarketingDevelopersPageJsxAttrParentClassAnimateSpin79162867',
-          )}
-          index={0}
-          variant="solid"
-        />
+        <KortixAsterisk parentClass={'animate-spin mt-0 size-3'} index={0} variant="solid" />
       </span>
       <span className={C.f}>{children}</span>
     </Line>
@@ -384,7 +374,7 @@ function FlowLine({ label }: { label?: string }) {
     <div className="flex flex-col items-center py-1">
       <div className="bg-border/70 h-3 w-px" aria-hidden />
       {label ? (
-        <span className="text-muted-foreground py-1 text-center text-[10px] leading-snug sm:text-[11px]">
+        <span className="text-muted-foreground py-1 text-center text-xs leading-snug sm:text-xs">
           {label}
         </span>
       ) : null}
@@ -415,8 +405,8 @@ function ConnectorsRequestPath() {
       <div className="text-foreground px-4 py-6 font-mono text-xs sm:text-sm">
         <div className="border-border/60 bg-background/60 flex items-center gap-2.5 rounded-sm border border-dashed px-3 py-2.5">
           <Boxes className="text-muted-foreground/70 size-4 shrink-0" />
-          <span className="font-medium">sandbox</span>
-          <span className="text-muted-foreground ml-auto text-[11px]">
+          <span className="font-medium">{tI18nHardcoded.raw('i18nComplete.textb7ad567477c8')}</span>
+          <span className="text-muted-foreground ml-auto text-xs">
             {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextAgentRuntime00a9a84b')}
           </span>
         </div>
@@ -428,7 +418,7 @@ function ConnectorsRequestPath() {
         />
 
         <div className="flex justify-center pb-1">
-          <span className="border-border bg-background/70 text-muted-foreground inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 font-mono text-[10px] sm:text-[11px]">
+          <span className="border-border bg-background/70 text-muted-foreground inline-flex items-center gap-1.5 rounded-sm border px-2.5 py-1 font-mono text-xs sm:text-xs">
             <KeyRound className="size-3 shrink-0" />
             KORTIX_TOKEN
           </span>
@@ -443,7 +433,7 @@ function ConnectorsRequestPath() {
               'autoAppPublicMarketingDevelopersPageJsxTextKortixConnector80880ab2',
             )}
           </span>
-          <span className="text-muted-foreground ml-auto text-[10px] sm:text-[11px]">
+          <span className="text-muted-foreground ml-auto text-xs sm:text-xs">
             {tI18nHardcoded.raw(
               'autoAppPublicMarketingDevelopersPageJsxTextConnectProxyGateway799c9a68',
             )}
@@ -466,11 +456,11 @@ function ConnectorsRequestPath() {
                 loading="lazy"
                 className="size-3.5 shrink-0"
               />
-              <span className="text-foreground text-[11px] font-medium">{name}</span>
+              <span className="text-foreground text-xs font-medium">{name}</span>
             </div>
           ))}
         </div>
-        <p className="text-muted-foreground/70 mt-2.5 text-center text-[10px] sm:text-[11px]">
+        <p className="text-muted-foreground/70 mt-2.5 text-center text-xs sm:text-xs">
           {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxText3000Moree9562262')}
         </p>
       </div>
@@ -482,7 +472,7 @@ function HeroWorkspace() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-      <div className="border-card bg-background overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
+      <div className="border-card bg-background overflow-hidden rounded-md border-4">
         <div className="border-border/60 bg-muted/30 text-muted-foreground flex items-center gap-2 border-b px-4 py-2.5 font-mono text-xs">
           <GitBranch className="size-3.5" />{' '}
           {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheRepoIsf35cb375')}
@@ -510,7 +500,7 @@ function HeroWorkspace() {
                   kind === 'accent'
                     ? 'text-foreground font-medium'
                     : kind === 'dir'
-                      ? 'text-foreground/80'
+                      ? 'text-muted-foreground'
                       : 'text-muted-foreground',
                 )}
               >
@@ -522,10 +512,10 @@ function HeroWorkspace() {
         </div>
       </div>
 
-      <div className="border-card bg-background overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
+      <div className="border-card bg-background overflow-hidden rounded-md border-4">
         <div className="border-border/60 bg-muted/30 flex items-center gap-2 border-b px-4 py-2.5">
           <span className="bg-foreground text-background rounded px-2.5 py-0.5 font-mono text-xs font-medium">
-            kortix.yaml
+            {tI18nHardcoded.raw('i18nComplete.text1965f383021e')}
           </span>
           <span className="text-muted-foreground font-mono text-xs">
             {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextDeclareItOnce7b7c95e7')}
@@ -541,8 +531,15 @@ function HeroWorkspace() {
 
 export default function DevelopersPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const localized = localizeUiCatalog(
+    { MENTAL_MODEL, CLI_GROUPS, RUNS_ANYWHERE },
+    tI18nComplete,
+    APP_REGISTRY_TRANSLATION_KEYS,
+  );
   const { copied, copy } = useCopy();
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const tDevelopers = useTranslations('developers');
   const tHome = useCallback(
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
     [tHardcodedUi],
@@ -571,9 +568,7 @@ export default function DevelopersPage() {
               </span>
             </h1>
             <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-              {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextAgentsSkillsTools813c489d',
-              )}
+              {tDevelopers('heroDescription')}
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
@@ -638,15 +633,15 @@ export default function DevelopersPage() {
           </div>
         </Reveal>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {MENTAL_MODEL.map(({ icon: Icon, title, desc }, i) => (
+          {localized.MENTAL_MODEL.map(({ icon: Icon, title, desc }, i) => (
             <Reveal key={title} delay={i * 0.08}>
-              <div className="border-border bg-card flex h-full w-full flex-col justify-between space-y-8 rounded-sm border p-4 transition">
+              <div className="border-border bg-card flex h-full w-full flex-col justify-between space-y-8 rounded-sm border p-4">
                 <span className="border-border bg-background text-foreground flex size-10 items-center justify-center rounded-lg border">
                   <Icon className="text-foreground size-5 shrink-0" />
                 </span>
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-foreground text-base transition">{title}</p>
-                  <p className="text-muted-foreground text-sm text-balance transition">{desc}</p>
+                  <p className="text-foreground text-base">{title}</p>
+                  <p className="text-muted-foreground text-sm text-balance">{desc}</p>
                 </div>
               </div>
             </Reveal>
@@ -662,7 +657,10 @@ export default function DevelopersPage() {
                 {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxTextTheLoopd95820b1')}
               </Eyebrow>
               <h2 className="text-muted-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                From <span className="text-foreground font-mono">curl</span>{' '}
+                {tI18nHardcoded.raw('i18nComplete.text218197693424')}{' '}
+                <span className="text-foreground font-mono">
+                  {tI18nHardcoded.raw('i18nComplete.text427e4b79b1f0')}
+                </span>{' '}
                 {tI18nHardcoded.raw(
                   'autoAppPublicMarketingDevelopersPageJsxTextToProduction51bf7e67',
                 )}
@@ -686,14 +684,14 @@ export default function DevelopersPage() {
               'autoAppPublicMarketingDevelopersPageJsxAttrBodyOneLinee5ce45d3',
             )}
           >
-            <Terminal title="init">
+            <Terminal title={tI18nHardcoded.raw('i18nComplete.textbb54068aea85')}>
               <Cmd>
                 {tI18nHardcoded.raw(
                   'autoAppPublicMarketingDevelopersPageJsxTextKortixInit263fedee',
                 )}
               </Cmd>
-              <Done>kortix.yaml</Done>
-              <Done>.kortix/opencode/</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.text1965f383021e')}</Done>
+              <Done>{tI18nHardcoded.raw('i18nComplete.text46c0b3f64f0d')}</Done>
             </Terminal>
           </Step>
 
@@ -702,9 +700,7 @@ export default function DevelopersPage() {
             title={tI18nHardcoded.raw(
               'autoAppPublicMarketingDevelopersPageJsxAttrTitleBuildIte194e7c4',
             )}
-            body={tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxAttrBodyAnAgentd3ac5ad4',
-            )}
+            body={tDevelopers('agentBody')}
             flip
           >
             <CodeFile
@@ -731,9 +727,7 @@ export default function DevelopersPage() {
             title={tI18nHardcoded.raw(
               'autoAppPublicMarketingDevelopersPageJsxAttrTitleShipItfb312d97',
             )}
-            body={tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxAttrBodyKortixShipef9c33ee',
-            )}
+            body={tDevelopers('shipBody')}
             flip
           >
             <Terminal
@@ -770,9 +764,7 @@ export default function DevelopersPage() {
             title={tI18nHardcoded.raw(
               'autoAppPublicMarketingDevelopersPageJsxAttrTitleItRuns79baead9',
             )}
-            body={tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxAttrBodyEverySession6d5c7d97',
-            )}
+            body={tDevelopers('fleetBody')}
           >
             <Terminal>
               <Line>
@@ -846,9 +838,7 @@ export default function DevelopersPage() {
             title={tI18nHardcoded.raw(
               'autoAppPublicMarketingDevelopersPageJsxAttrTitleBringYourc9b3722b',
             )}
-            body={tI18nHardcoded.raw(
-              'autoAppPublicMarketingDevelopersPageJsxAttrBodySessionsRund6d02c3d',
-            )}
+            body={tDevelopers('runtimeBody')}
             flip
           >
             <Terminal>
@@ -864,7 +854,9 @@ export default function DevelopersPage() {
                 {tI18nHardcoded.raw(
                   'autoAppPublicMarketingDevelopersPageJsxTextUsingYourOwn244e5bb8',
                 )}
-                <span className="text-muted-foreground/60">(byo)</span>
+                <span className="text-muted-foreground/60">
+                  {tI18nHardcoded.raw('i18nComplete.text0479e05f1b8d')}
+                </span>
               </Done>
               <Line> </Line>
               <Line>
@@ -907,14 +899,12 @@ export default function DevelopersPage() {
               )}
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-              {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextScaffoldShipRunb35564e3',
-              )}
+              {tDevelopers('lifecycleDescription')}
             </p>
           </div>
         </Reveal>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {CLI_GROUPS.map(({ label, icon: Icon, cmds }, i) => (
+          {localized.CLI_GROUPS.map(({ label, icon: Icon, cmds }, i) => (
             <Reveal key={label} delay={(i % 3) * 0.06}>
               <div className="group border-border bg-card hover:bg-background flex h-full flex-col rounded-sm border p-5 transition-colors">
                 <div className="flex items-center gap-3">
@@ -960,27 +950,22 @@ export default function DevelopersPage() {
       <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal>
-            <Eyebrow>Scale</Eyebrow>
+            <Eyebrow>{tI18nHardcoded.raw('i18nComplete.textf102986b39ef')}</Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
               {tI18nHardcoded.raw('autoAppPublicMarketingDevelopersPageJsxText1Session1543175ef')}
             </h2>
             <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
-              {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextEverySessionRuns6dd000d3',
-              )}
+              {tDevelopers('scaleDescription')}
             </p>
             <ul className="mt-6 max-w-md space-y-2.5">
               {[
-                'Anything worth keeping comes back as a change request — and merges into main',
-                'Main is always the source of truth: every agent action is auditable Git history',
-                'It’s all Git under the hood — branch, diff, review, merge',
-                'The same Kortix CLI runs inside every sandbox — so running locally and in the cloud is identical',
-                'Isolated compute per session; one runaway agent can’t touch another',
+                tI18nHardcoded.raw('i18nComplete.text529cc39f4f51'),
+                tI18nHardcoded.raw('i18nComplete.texted6b62273213'),
+                tI18nHardcoded.raw('i18nComplete.text3d99a138241e'),
+                tI18nHardcoded.raw('i18nComplete.text3eb4246eeb6a'),
+                tI18nHardcoded.raw('i18nComplete.texta7f9ed2fe099'),
               ].map((b, i) => (
-                <li
-                  key={b}
-                  className="text-muted-foreground flex gap-2.5 text-[15px] leading-relaxed"
-                >
+                <li key={b} className="text-muted-foreground flex gap-2.5 text-sm leading-relaxed">
                   <KortixAsterisk index={i} />
                   <span>{b}</span>
                 </li>
@@ -995,14 +980,14 @@ export default function DevelopersPage() {
             >
               <Line>
                 <span className={C.s}>*</span>
-                <span className={C.f}>{'  c7e2  CR #84 merged'}</span>
+                <span className={C.f}>{tI18nHardcoded.raw('i18nComplete.textaaae63b7a273')}</span>
                 <span className={C.c}>{'   (main)'}</span>
               </Line>
               <Line>
                 <span className={C.c}>{'|\\'}</span>
               </Line>
               <Line>
-                <span className={C.c}>{'| *  s_7f2a  '}</span>
+                <span className={C.c}>{tI18nHardcoded.raw('i18nComplete.textf5cbd7086bf2')}</span>
                 <span className={C.f}>
                   {tI18nHardcoded.raw(
                     'autoAppPublicMarketingDevelopersPageJsxTextTriage14Tickets9e98fe81',
@@ -1010,7 +995,7 @@ export default function DevelopersPage() {
                 </span>
               </Line>
               <Line>
-                <span className={C.c}>{'| *  s_3c1d  '}</span>
+                <span className={C.c}>{tI18nHardcoded.raw('i18nComplete.text5c65b1b1e2e6')}</span>
                 <span className={C.f}>
                   {tI18nHardcoded.raw(
                     'autoAppPublicMarketingDevelopersPageJsxTextBuildBoardDeck30c6ad92',
@@ -1018,7 +1003,7 @@ export default function DevelopersPage() {
                 </span>
               </Line>
               <Line>
-                <span className={C.c}>{'| *  s_9a04  '}</span>
+                <span className={C.c}>{tI18nHardcoded.raw('i18nComplete.text7ebef26162b5')}</span>
                 <span className={C.f}>
                   {tI18nHardcoded.raw(
                     'autoAppPublicMarketingDevelopersPageJsxTextDraftOutreach8bd3b2aa',
@@ -1030,7 +1015,7 @@ export default function DevelopersPage() {
               </Line>
               <Line>
                 <span className={C.s}>*</span>
-                <span className={C.f}>{'  a1f3  baseline'}</span>
+                <span className={C.f}>{tI18nHardcoded.raw('i18nComplete.textf998e7571a88')}</span>
                 <span className={C.c}>{'   (main)'}</span>
               </Line>
               <Line> </Line>
@@ -1050,28 +1035,23 @@ export default function DevelopersPage() {
       <section className="mx-auto flex max-w-7xl flex-col gap-10 px-6 py-24 sm:gap-12 sm:py-30 lg:px-0">
         <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
           <Reveal className="lg:order-2">
-            <Eyebrow>Connectors</Eyebrow>
+            <Eyebrow>{tI18nHardcoded.raw('i18nComplete.textc3d2e79ebdd0')}</Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
               {tI18nHardcoded.raw(
                 'autoAppPublicMarketingDevelopersPageJsxTextEveryToolBehindf2d74753',
               )}
             </h2>
             <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
-              {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextKortixConnectorsPut612736c1',
-              )}
+              {tDevelopers('connectorsDescription')}
             </p>
             <ul className="mt-6 max-w-md space-y-2.5">
               {[
-                '3,000+ one-click apps via Pipedream — OAuth handled for you',
-                'Or bring any MCP, OpenAPI, GraphQL or HTTP endpoint — same interface',
-                'Credentials live server-side and never reach the sandbox',
-                'Agents hold one scoped Kortix token; connect once, shared org-wide, self-healing',
+                tI18nHardcoded.raw('i18nComplete.text46c38eba6711'),
+                tI18nHardcoded.raw('i18nComplete.text6a034c1a3651'),
+                tI18nHardcoded.raw('i18nComplete.textd4115d8863a0'),
+                tI18nHardcoded.raw('i18nComplete.text0d7206389fb5'),
               ].map((b, i) => (
-                <li
-                  key={b}
-                  className="text-muted-foreground flex gap-2.5 text-[15px] leading-relaxed"
-                >
+                <li key={b} className="text-muted-foreground flex gap-2.5 text-sm leading-relaxed">
                   <KortixAsterisk index={i} />
                   <span>{b}</span>
                 </li>
@@ -1096,9 +1076,7 @@ export default function DevelopersPage() {
               )}
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-              {tI18nHardcoded.raw(
-                'autoAppPublicMarketingDevelopersPageJsxTextBecauseEverythingIsd6715079',
-              )}
+              {tDevelopers('codeDescription')}
             </p>
           </div>
         </Reveal>
@@ -1107,33 +1085,33 @@ export default function DevelopersPage() {
           {[
             {
               icon: FileCode2,
-              title: 'Everything is files',
-              body: 'Agents, skills, tools, connectors and schedules live in the repo. Edit in your IDE, in the web UI, or let an agent edit them.',
+              title: tI18nHardcoded.raw('i18nComplete.text81c55672efb4'),
+              body: tI18nHardcoded.raw('i18nComplete.texta90d90f6b829'),
             },
             {
               icon: Workflow,
-              title: 'Agents edit themselves',
-              body: 'Describe a change and an agent ships it — referencing what already exists, reusing patterns, opening a PR you review.',
+              title: tI18nHardcoded.raw('i18nComplete.text4b9fba028c95'),
+              body: tI18nHardcoded.raw('i18nComplete.text229b158743e5'),
             },
             {
               icon: GitPullRequest,
-              title: 'Skills, git-backed and invisible',
-              body: 'Non-devs publish skills as markdown; Kortix handles the branch, PR and merge behind the scenes. Versioned, reviewable, auditable.',
+              title: tI18nHardcoded.raw('i18nComplete.text581059f4eb56'),
+              body: tI18nHardcoded.raw('i18nComplete.text443590eec311'),
             },
             {
               icon: Plug,
-              title: 'Self-healing connections',
-              body: 'When a token expires or a service blips, Kortix refreshes it or asks you to reconnect in plain language — never a cryptic error.',
+              title: tI18nHardcoded.raw('i18nComplete.text2c884ecef610'),
+              body: tI18nHardcoded.raw('i18nComplete.textb6343d314d8e'),
             },
             {
               icon: Cpu,
-              title: 'Quality gates built in',
-              body: 'Type checks, lint, docs validation and dedup run before anything merges, so a fast-moving, agent-written codebase stays coherent.',
+              title: tI18nHardcoded.raw('i18nComplete.text71e68e9c4045'),
+              body: tI18nHardcoded.raw('i18nComplete.text24f5c57e884c'),
             },
             {
               icon: TerminalIcon,
-              title: 'Every feature is a conversation',
-              body: 'The UI is a reference, not a requirement. Anything you can do in a menu, you can do with a message.',
+              title: tI18nHardcoded.raw('i18nComplete.text49b0ceefa555'),
+              body: tI18nHardcoded.raw('i18nComplete.text70e874a5defd'),
             },
           ].map((f) => (
             <Reveal key={f.title}>
@@ -1150,7 +1128,6 @@ export default function DevelopersPage() {
           ))}
         </div>
       </section>
-
     </div>
   );
 }

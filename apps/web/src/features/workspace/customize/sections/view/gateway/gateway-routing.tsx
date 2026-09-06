@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Routing — where a request goes when the project default can't take it.
  *
@@ -87,20 +88,21 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { cn } from '@/lib/utils';
 import { ModelSelector } from '@/features/session/model-selector';
-import { useModelDefaults } from '@kortix/sdk/react';
-import { modelKeyToWire, wireToModelKey } from '@kortix/sdk/react';
+import { cn } from '@/lib/utils';
 import type {
   GatewayFallbackChain,
   GatewayProjectRoutingPolicy,
   GatewayRoutingRule,
 } from '@kortix/sdk';
 import {
+  modelKeyToWire,
   qk,
   useGatewayRoutingPolicy,
+  useModelDefaults,
   useProjectModelPickerCatalog,
   useProjectModels,
+  wireToModelKey,
 } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -317,12 +319,13 @@ function RoutingModelSelector({
 
 /** Warns inline when the routing-policy preview reports a model's provider isn't connected. */
 function AvailabilityBadge({ available }: { available: boolean | undefined }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (available !== false) return null;
   return (
-    <Hint label="This model's provider isn't connected for this project — requests routed here fail over immediately">
+    <Hint label={tI18nComplete.raw('text7031306d3dd8')}>
       <Badge variant="warning" size="xs" className="shrink-0 gap-1">
         <AlertTriangle className="size-3" />
-        Not connected
+        {tI18nComplete.raw('text0303e1824670')}
       </Badge>
     </Hint>
   );
@@ -337,21 +340,22 @@ function ConditionSelect({
   onChange: (value: GatewayFallbackChain['fallbackOn']) => void;
   disabled?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Select
       value={value}
       onValueChange={(next) => onChange(next as GatewayFallbackChain['fallbackOn'])}
       disabled={disabled}
     >
-      <SelectTrigger className="w-40" size="sm" aria-label="Fallback condition">
+      <SelectTrigger className="w-40" size="sm" aria-label={tI18nComplete.raw('text5970362b52d5')}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="transient" description="Rate limits, timeouts, and upstream failures">
-          Service errors
+        <SelectItem value="transient" description={tI18nComplete.raw('text4b8a51b32252')}>
+          {tI18nComplete.raw('text91721aa63069')}
         </SelectItem>
-        <SelectItem value="any-error" description="Any model or provider error">
-          Any error
+        <SelectItem value="any-error" description={tI18nComplete.raw('textc1e4a1169ac8')}>
+          {tI18nComplete.raw('text6e2097e246af')}
         </SelectItem>
       </SelectContent>
     </Select>
@@ -382,6 +386,7 @@ function ChainRows({
   disabled?: boolean;
   availability?: Record<string, boolean>;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const taken = [primary ?? '', ...chain.models];
   const takenSet = new Set(taken);
   const canAdd = models.some((model) => !takenSet.has(modelKeyToWire(model)));
@@ -414,36 +419,36 @@ function ChainRows({
           {/* Rendered even while `disabled` (a save in flight), not hidden —
               a control that disappears for the length of a mutation makes the
               row jump twice per save. */}
-          <Hint label="Move up">
+          <Hint label={tI18nComplete.raw('textc66feb5eb8f2')}>
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Move fallback up"
+              aria-label={tI18nComplete.raw('textdfea74d6d58d')}
               disabled={disabled || index === 0}
               onClick={() => onChange({ ...chain, models: moveFallback(chain.models, index, -1) })}
             >
               <ArrowUp className="size-3.5" />
             </Button>
           </Hint>
-          <Hint label="Move down">
+          <Hint label={tI18nComplete.raw('text40bb50da160c')}>
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Move fallback down"
+              aria-label={tI18nComplete.raw('text54e22a5335af')}
               disabled={disabled || index === chain.models.length - 1}
               onClick={() => onChange({ ...chain, models: moveFallback(chain.models, index, 1) })}
             >
               <ArrowDown className="size-3.5" />
             </Button>
           </Hint>
-          <Hint label="Remove">
+          <Hint label={tI18nComplete.raw('textc3812fc4acb8')}>
             <Button
               type="button"
               size="icon-sm"
               variant="ghost"
-              aria-label="Remove fallback"
+              aria-label={tI18nComplete.raw('textb4e437b00de3')}
               disabled={disabled}
               onClick={() =>
                 onChange({
@@ -465,7 +470,9 @@ function ChainRows({
             value={null}
             models={models}
             exclude={taken}
-            unsetLabel={canAdd ? 'Add a fallback' : 'No models left'}
+            unsetLabel={
+              canAdd ? tI18nComplete.raw('text5b660045c015') : tI18nComplete.raw('text82e4b64f1673')
+            }
             disabled={!canAdd || chain.models.length >= MAX_FALLBACKS}
             onChange={(next) => next && onChange({ ...chain, models: [...chain.models, next] })}
           />
@@ -473,13 +480,15 @@ function ChainRows({
       ) : null}
 
       {chain.models.length === 0 && disabled ? (
-        <p className="text-muted-foreground text-xs">No fallback models.</p>
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('text545403adb9e5')}</p>
       ) : null}
 
       {/* The condition belongs to THIS chain, so it sits inside it rather than
           in a panel header two levels up. */}
       <div className="mt-1.5 flex items-center gap-2">
-        <span className="text-muted-foreground shrink-0 text-xs">Retry on</span>
+        <span className="text-muted-foreground shrink-0 text-xs">
+          {tI18nComplete.raw('textbb68ff20e011')}
+        </span>
         <ConditionSelect
           value={chain.fallbackOn}
           onChange={(fallbackOn) => onChange({ ...chain, fallbackOn })}
@@ -504,13 +513,16 @@ function ChainRows({
  * section headings carry the same one.
  */
 function RoutingSection({ action, children }: { action?: ReactNode; children: ReactNode }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="w-full space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-0.5">
-          <h3 className="text-foreground text-sm font-medium">Routing</h3>
+          <h3 className="text-foreground text-sm font-medium">
+            {tI18nComplete.raw('textbcba696f3eb1')}
+          </h3>
           <p className="text-muted-foreground text-xs text-pretty">
-            Where a request goes when the project default can&apos;t take it.
+            {tI18nComplete.raw('textafb9890f7c72')}
           </p>
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
@@ -529,6 +541,7 @@ export function GatewayRouting({
   canWrite: boolean;
   projectDefaultPending: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const routing = useGatewayRoutingPolicy(projectId);
   const modelDefaults = useModelDefaults(projectId);
@@ -628,9 +641,9 @@ export function GatewayRouting({
     return (
       <RoutingSection>
         <div className="bg-popover rounded-md border px-4 py-3">
-          <p className="text-destructive text-sm">Could not load the routing policy.</p>
+          <p className="text-destructive text-sm">{tI18nComplete.raw('textb728bd912cde')}</p>
           <Button className="mt-3" variant="outline" size="sm" onClick={() => routing.refetch()}>
-            Retry
+            {tI18nComplete.raw('text942087cc2d41')}
           </Button>
         </div>
       </RoutingSection>
@@ -725,11 +738,11 @@ export function GatewayRouting({
             disabled={controlsDisabled}
             onClick={() => setResetOpen(true)}
           >
-            <RotateCcw className="size-3.5" /> Reset
+            <RotateCcw className="size-3.5" /> {tI18nComplete.raw('textdaee7606b339')}
           </Button>
         ) : (
           <Badge variant="muted" size="sm">
-            Read only
+            {tI18nComplete.raw('text8ac767353080')}
           </Badge>
         )
       }
@@ -741,24 +754,27 @@ export function GatewayRouting({
             full-strength foreground heading below, not the muted `Label`
             default the two Advanced sections keep. */}
         <section className="space-y-1">
-          <Label className="text-foreground">Fallback</Label>
+          <Label className="text-foreground">{tI18nComplete.raw('text325e84939c64')}</Label>
           <div className="flex flex-col">
             <RoutingRow
-              label="When the default fails"
-              hint="Inherit the platform route, run your own ordered chain, or return the error."
+              label={tI18nComplete.raw('text146b38e7fa80')}
+              hint={tI18nComplete.raw('textd48d1b0dbdd6')}
             >
               <Select
                 value={fallbackMode}
                 disabled={controlsDisabled}
                 onValueChange={(mode) => changeFallbackMode(mode as FallbackMode)}
               >
-                <SelectTrigger className="w-48 max-w-full" aria-label="Default fallback strategy">
+                <SelectTrigger
+                  className="w-48 max-w-full"
+                  aria-label={tI18nComplete.raw('textdf33a10e5579')}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="inherit">Inherit platform</SelectItem>
-                  <SelectItem value="custom">Custom chain</SelectItem>
-                  <SelectItem value="disabled">No fallback</SelectItem>
+                  <SelectItem value="inherit">{tI18nComplete.raw('text975aa2ab538e')}</SelectItem>
+                  <SelectItem value="custom">{tI18nComplete.raw('texta913ec01bd04')}</SelectItem>
+                  <SelectItem value="disabled">{tI18nComplete.raw('text3822b0412ed7')}</SelectItem>
                 </SelectContent>
               </Select>
             </RoutingRow>
@@ -767,7 +783,7 @@ export function GatewayRouting({
               <RoutingRow
                 align="start"
                 label={<span className="truncate font-mono text-xs">{primaryModel}</span>}
-                hint="Tried in order after the project default."
+                hint={tI18nComplete.raw('textc3ecd3cd791b')}
               >
                 <div className="space-y-1.5">
                   <AvailabilityBadge available={availability[primaryModel]} />
@@ -782,13 +798,13 @@ export function GatewayRouting({
                 </div>
               </RoutingRow>
             ) : fallbackMode === 'inherit' ? (
-              <RoutingRow label="Inherited route">
+              <RoutingRow label={tI18nComplete.raw('text74a1a0f65906')}>
                 <p className="text-muted-foreground truncate font-mono text-xs">{inheritedRoute}</p>
               </RoutingRow>
             ) : (
-              <RoutingRow label="On failure">
+              <RoutingRow label={tI18nComplete.raw('text0af465ef42c0')}>
                 <p className="text-muted-foreground text-xs text-pretty">
-                  The error is returned immediately — nothing else is tried.
+                  {tI18nComplete.raw('texta3df3f9e4422')}
                 </p>
               </RoutingRow>
             )}
@@ -804,7 +820,7 @@ export function GatewayRouting({
         <section className="space-y-1">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <Label className="text-foreground">Per-model overrides</Label>
+              <Label className="text-foreground">{tI18nComplete.raw('text5c63c15261bb')}</Label>
               {draft.rules.length > 0 ? (
                 <Badge variant="secondary" size="sm">
                   {draft.rules.length}
@@ -832,17 +848,17 @@ export function GatewayRouting({
                   })
                 }
               >
-                <Plus className="size-3.5 shrink-0" /> Add override
+                <Plus className="size-3.5 shrink-0" /> {tI18nComplete.raw('textfafc22c398f0')}
               </Button>
             ) : null}
           </div>
           <p className="text-muted-foreground text-xs text-pretty">
-            A chain that replaces the fallback above, but only when that exact model is requested.
+            {tI18nComplete.raw('text335e692111a5')}
           </p>
 
           {draft.rules.length === 0 ? (
             <p className="text-muted-foreground pt-3 text-xs">
-              None — every model uses the fallback above.
+              {tI18nComplete.raw('textd4c5e9c25176')}
             </p>
           ) : (
             <div className="flex flex-col">
@@ -862,12 +878,12 @@ export function GatewayRouting({
                         />
                       </div>
                       {writable ? (
-                        <Hint label="Remove override">
+                        <Hint label={tI18nComplete.raw('text6d43eea1425f')}>
                           <Button
                             type="button"
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Remove model override"
+                            aria-label={tI18nComplete.raw('texta0e2582b4c3a')}
                             disabled={controlsDisabled}
                             onClick={() =>
                               setDraft({
@@ -921,27 +937,32 @@ export function GatewayRouting({
               className="text-muted-foreground hover:text-foreground -mx-1 flex cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-xs font-medium transition-colors"
             >
               <CaretDownIcon
-                className={cn('size-3.5 shrink-0 transition-transform', advancedOpen && 'rotate-180')}
+                className={cn(
+                  'size-3.5 shrink-0 transition-transform',
+                  advancedOpen && 'rotate-180',
+                )}
               />
-              Advanced
+              {tI18nComplete.raw('text9f088dbebd6c')}
               <span className="text-muted-foreground/60 font-normal">
-                Vision model, generation defaults
+                {tI18nComplete.raw('text022bfb219bea')}
               </span>
             </button>
           </DisclosureTrigger>
           <DisclosureContent>
             <div className="space-y-8 pt-5">
               <section className="space-y-1">
-                <Label>Vision model</Label>
+                <Label>{tI18nComplete.raw('text0a15fd3848fa')}</Label>
                 <div className="flex flex-col">
                   <RoutingRow
-                    label="Image requests"
+                    label={tI18nComplete.raw('text3efdd4ec1a82')}
                     hint={
                       draft.visionModel
-                        ? 'Requests with an image go here instead of the chain above.'
+                        ? tI18nComplete.raw('textc916a6a191c1')
                         : routing.data.effective.visionModel
-                          ? `Inherits ${routing.data.effective.visionModel}.`
-                          : 'Requests with an image follow the chain above.'
+                          ? tI18nComplete('text8375520a8316', {
+                              value0: routing.data.effective.visionModel,
+                            })
+                          : tI18nComplete.raw('text59e7c0aa6df1')
                     }
                   >
                     <div className="flex min-w-0 items-center gap-2">
@@ -949,7 +970,7 @@ export function GatewayRouting({
                         value={draft.visionModel}
                         models={models}
                         disabled={controlsDisabled}
-                        unsetLabel="Inherit platform"
+                        unsetLabel={tI18nComplete.raw('text975aa2ab538e')}
                         onChange={(visionModel) => setDraft({ ...draft, visionModel })}
                       />
                       <AvailabilityBadge
@@ -961,11 +982,11 @@ export function GatewayRouting({
               </section>
 
               <section className="space-y-1">
-                <Label>Generation defaults</Label>
+                <Label>{tI18nComplete.raw('textea942b85faac')}</Label>
                 <p className="text-muted-foreground text-xs text-pretty">
-                  Applied to every request for <span className="font-mono">{primaryModel}</span>{' '}
-                  that doesn't already set the parameter — a session's own value always wins. Only
-                  the controls this model supports are shown.
+                  {tI18nComplete.raw('text45583b07c7c8')}{' '}
+                  <span className="font-mono">{primaryModel}</span>{' '}
+                  {tI18nComplete.raw('textb6b6f5c32995')}
                 </p>
                 <div className="pt-3">
                   <GenerationControlsPanel
@@ -993,7 +1014,10 @@ export function GatewayRouting({
       {writable ? (
         <div className="bg-background/95 sticky bottom-0 -mx-4 mt-8 flex items-center justify-between gap-4 border-t px-4 py-4 backdrop-blur">
           <div className="text-muted-foreground text-xs">
-            {validation ?? (dirty ? 'Unsaved changes' : 'Routing is up to date')}
+            {validation ??
+              (dirty
+                ? tI18nComplete.raw('texta710c2b90913')
+                : tI18nComplete.raw('text634cfb4b6bfd'))}
           </div>
           <Button
             type="button"
@@ -1010,18 +1034,20 @@ export function GatewayRouting({
                         queryKey: qk.project.modelPicker(projectId),
                       }),
                     ]);
-                    successToast('Routing policy saved');
+                    successToast(tI18nComplete.raw('text538f96979be7'));
                   },
                   onError: (error) =>
                     errorToast(
-                      error instanceof Error ? error.message : 'Could not save routing policy',
+                      error instanceof Error
+                        ? error.message
+                        : tI18nComplete.raw('text4501be681694'),
                     ),
                 },
               );
             }}
           >
             {routing.set.isPending ? <Loading className="size-4 shrink-0" /> : null}
-            Save
+            {tI18nComplete.raw('text1509f561f241')}
           </Button>
         </div>
       ) : null}
@@ -1029,9 +1055,9 @@ export function GatewayRouting({
       <ConfirmDialog
         open={resetOpen}
         onOpenChange={setResetOpen}
-        title="Reset project routing?"
-        description="This removes the project default, fallback chain, and per-model overrides. The project will inherit account and platform routing."
-        confirmLabel="Reset routing"
+        title={tI18nComplete.raw('text7918f9e61a56')}
+        description={tI18nComplete.raw('textaf87e03f3626')}
+        confirmLabel={tI18nComplete.raw('textf665e07f2a78')}
         confirmVariant="destructive"
         isPending={routing.reset.isPending}
         onConfirm={() =>
@@ -1039,10 +1065,12 @@ export function GatewayRouting({
             onSuccess: () => {
               setResetOpen(false);
               void queryClient.invalidateQueries({ queryKey: ['model-defaults', projectId] });
-              successToast('Project routing reset');
+              successToast(tI18nComplete.raw('textd70047735b1c'));
             },
             onError: (error) =>
-              errorToast(error instanceof Error ? error.message : 'Could not reset routing'),
+              errorToast(
+                error instanceof Error ? error.message : tI18nComplete.raw('text71ea14bcd4ab'),
+              ),
           })
         }
       />

@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Unified Account State Hook
  *
@@ -17,6 +18,7 @@ import { shouldQueryAccountState } from '@/hooks/billing/account-state-gating';
 import { useBillingAccountId, useBillingAccountResolved } from '@/stores/billing-account-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 import {
   cancelScheduledChange,
   cancelSubscription,
@@ -33,7 +35,6 @@ import {
   type AccountState,
 } from '@kortix/sdk';
 import { dollarsToCredits } from '@kortix/shared';
-import { SEAT_GRANT_USD } from '@/features/billing/compute-pricing';
 
 export type { AccountState };
 
@@ -293,6 +294,7 @@ export function useCreateCheckoutSession() {
 // the API creates the subscription directly and returns { status: 'subscription_created' };
 // otherwise it returns { status: 'checkout_created', checkout_url } and we redirect.
 export function useCreatePerSeatCheckout() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -314,8 +316,11 @@ export function useCreatePerSeatCheckout() {
         const { useUpgradeDialogStore } = await import('@/stores/upgrade-dialog-store');
         useUpgradeDialogStore.getState().closeUpgradeDialog();
         await invalidateAccountState(queryClient, true, true, accountId);
-        successToast('Subscription activated', {
-          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${SEAT_GRANT_USD * data.seat_count} of usage credit deposited.`,
+        successToast(tI18nComplete.raw('textd83849820d67'), {
+          description: tI18nComplete('text8559d8fd97d1', {
+            count: data.seat_count,
+            credit: SEAT_GRANT_USD * data.seat_count,
+          }),
         });
         return;
       }
@@ -325,13 +330,13 @@ export function useCreatePerSeatCheckout() {
       }
       // Shouldn't happen — API always returns one of the two shapes. Fail loud
       // instead of silently leaving the dialog spinning.
-      errorToast('Checkout did not start', {
-        description: 'No checkout URL was returned. Try again or contact support.',
+      errorToast(tI18nComplete.raw('text415dcc179975'), {
+        description: tI18nComplete.raw('text2a45a1c6797d'),
       });
     },
     onError: (err: any) => {
-      errorToast('Checkout failed to start', {
-        description: err?.message || 'Try again, or contact support if this keeps happening.',
+      errorToast(tI18nComplete.raw('textaf6d91f7d902'), {
+        description: err?.message || tI18nComplete.raw('textee34153806cb'),
       });
     },
   });
@@ -342,6 +347,7 @@ export function useCreatePerSeatCheckout() {
 // no way to switch), then refreshes account state so the new plan + wallet credit
 // show immediately.
 export function useClaimPerSeat() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
   return useMutation({
@@ -354,32 +360,33 @@ export function useClaimPerSeat() {
           parts.push(`$${data.first_seat_covered_usd.toFixed(2)} covered your first seat`);
         if (data.credited_usd > 0)
           parts.push(`$${data.credited_usd.toFixed(2)} added as non-expiring credit`);
-        successToast("You're on seat-based pricing", {
+        successToast(tI18nComplete.raw('texte0478c3e271b'), {
           description: parts.join(' · ') || undefined,
         });
       } else if (data.status === 'skipped:already_per_seat' || data.status === 'skipped:no_subs') {
         // no_subs flips the flag with no Stripe work — they're now on per-seat.
-        successToast("You're on seat-based pricing");
+        successToast(tI18nComplete.raw('texte0478c3e271b'));
       } else if (data.status === 'skipped:yearly_commitment') {
-        infoToast('Still on a yearly commitment', {
-          description: data.reason || 'You can switch once your committed term ends.',
+        infoToast(tI18nComplete.raw('text214466a0fee4'), {
+          description: data.reason || tI18nComplete.raw('text37abd3a24009'),
         });
       } else {
         // skipped:no_legacy_machine — nothing to move off of.
-        infoToast('Nothing to switch', {
-          description: 'No active machine subscription to move to seat-based pricing.',
+        infoToast(tI18nComplete.raw('textecdf558f080d'), {
+          description: tI18nComplete.raw('textbf5d8eb5292b'),
         });
       }
     },
     onError: (err: any) => {
-      errorToast('Could not switch plans', {
-        description: err?.message || 'Try again, or contact support if this keeps happening.',
+      errorToast(tI18nComplete.raw('text465814995485'), {
+        description: err?.message || tI18nComplete.raw('textee34153806cb'),
       });
     },
   });
 }
 
 export function useCreatePortalSession() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const accountId = useBillingAccountId();
   return useMutation({
     mutationFn: (params: CreatePortalSessionRequest) =>
@@ -389,16 +396,17 @@ export function useCreatePortalSession() {
       if (portalUrl) {
         window.location.href = portalUrl;
       } else {
-        errorToast('Failed to create portal session. Please try again.');
+        errorToast(tI18nComplete.raw('text6a4c0b695fe4'));
       }
     },
     onError: (error: any) => {
-      errorToast(error?.message || 'Failed to open subscription portal. Please try again.');
+      errorToast(error?.message || tI18nComplete.raw('text7a098b3b9a9d'));
     },
   });
 }
 
 export function useCancelSubscription() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -414,12 +422,13 @@ export function useCancelSubscription() {
       }
     },
     onError: (error: any) => {
-      errorToast(error.message || 'Failed to cancel subscription');
+      errorToast(error.message || tI18nComplete.raw('text2b41749fceaa'));
     },
   });
 }
 
 export function useReactivateSubscription() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -434,7 +443,7 @@ export function useReactivateSubscription() {
       }
     },
     onError: (error: any) => {
-      errorToast(error.message || 'Failed to reactivate subscription');
+      errorToast(error.message || tI18nComplete.raw('text5051e9e23edf'));
     },
   });
 }
@@ -461,6 +470,7 @@ export function usePurchaseCredits() {
 }
 
 export function useScheduleDowngrade() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -476,12 +486,13 @@ export function useScheduleDowngrade() {
       }
     },
     onError: (error: any) => {
-      errorToast(error.message || 'Failed to schedule downgrade');
+      errorToast(error.message || tI18nComplete.raw('text645418722dbb'));
     },
   });
 }
 
 export function useCancelScheduledChange() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -496,12 +507,13 @@ export function useCancelScheduledChange() {
       }
     },
     onError: (error: any) => {
-      errorToast(error.message || 'Failed to cancel scheduled change');
+      errorToast(error.message || tI18nComplete.raw('text9118f944fba6'));
     },
   });
 }
 
 export function useSyncSubscription() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const accountId = useBillingAccountId();
 
@@ -509,10 +521,10 @@ export function useSyncSubscription() {
     mutationFn: () => syncSubscription(accountId),
     onSuccess: () => {
       invalidateAccountState(queryClient, false, false, accountId);
-      successToast('Subscription synced successfully');
+      successToast(tI18nComplete.raw('text24db9f4eb779'));
     },
     onError: (error: any) => {
-      errorToast(error.message || 'Failed to sync subscription');
+      errorToast(error.message || tI18nComplete.raw('textf3d331b82d30'));
     },
   });
 }

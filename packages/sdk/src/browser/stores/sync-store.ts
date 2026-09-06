@@ -1266,6 +1266,7 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 
 	applyPartDelta: (sessionID, messageID, partID, field, delta, eventID) => {
 		trackId(deltaActiveParts, sessionID, partID);
+		let applied = false;
 		set((s) => {
 			const list = s.parts[messageID];
 			if (!list) return s;
@@ -1304,8 +1305,14 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 				| undefined;
 			(part as Record<string, unknown>)[field] = (existing ?? "") + delta;
 			next[result.index] = part as Part;
+			applied = true;
 			return { parts: { ...s.parts, [messageID]: next } };
 		});
+		// The delta changed the visible transcript. This is the runtime itself
+		// producing output, so it refreshes the activity evidence used by
+		// `projectWorking`. Stamp only after a real apply: reconnect replays with
+		// an already-consumed event id are history, not current activity.
+		if (applied) get().noteSessionActivity(sessionID);
 	},
 
 	setStatus: (sessionID, status, origin = "wire") =>
@@ -2433,15 +2440,6 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 			case "message.part.updated": {
 				const part = (event.properties as { part: Part }).part;
 				if (!part?.messageID) return;
-				// The runtime just produced output. This is the evidence
-				// `projectWorking` trusts above every observer — see
-				// `sessionActivityAt`.
-				{
-					const sid =
-						part.sessionID ?? (event.properties as { sessionID?: string })?.sessionID;
-					if (sid) get().noteSessionActivity(sid);
-				}
-
 				const eventSessionID =
 					(event.properties as { sessionID?: string })?.sessionID;
 				let resolvedSessionID: string | undefined =
@@ -2456,6 +2454,13 @@ export const useSyncStore = create<SyncState>()((set, get) => ({
 						}
 					}
 				}
+
+				// The runtime just produced output. This is the evidence
+				// `projectWorking` trusts above every observer — see
+				// `sessionActivityAt`. Stamp AFTER the message-id fallback: some
+				// producers omit sessionID from the part while still updating a
+				// known message, and that visible output is runtime activity too.
+				if (resolvedSessionID) get().noteSessionActivity(resolvedSessionID);
 
 				const existingMsgs = resolvedSessionID
 					? get().messages[resolvedSessionID]

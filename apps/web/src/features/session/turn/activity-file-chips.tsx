@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * A run of reads or writes rendered as FILES rather than as tool cards.
  *
@@ -126,6 +127,7 @@ function isInFlight(part: ToolPart): boolean {
  * disappear under the pointer.
  */
 function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const filename = getFilename(path);
   const type = getFileType(filename);
   // The glyph for THIS file, not for its category — a .ts, a .png and a .zip
@@ -136,7 +138,7 @@ function FileChipImpl({ path, onOpen }: { path: string; onOpen: (path: string) =
   // second line that costs 16px and says nothing. The extension itself is the
   // information; "File" survives only for a name that genuinely has none.
   const ext = filename.includes('.') ? filename.split('.').pop() : undefined;
-  const typeLabel = getTypeLabel(type, ext);
+  const typeLabel = getTypeLabel(type, ext, tI18nComplete);
 
   return (
     <li>
@@ -205,6 +207,7 @@ function ActivityFileChipStepImpl({
   /** This row is the WHOLE burst — see `ActivityBurst`. */
   bare?: boolean;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   // Called before every early return below — hook order is not negotiable.
   // This is the same door `read-tool.tsx` uses, and it reads the SHARED query
@@ -338,7 +341,7 @@ function ActivityFileChipStepImpl({
                   back to the family icon and drops the duplicate warning. */}
               <WarningIcon
                 weight="fill"
-                aria-label="This step failed"
+                aria-label={tI18nComplete.raw('textf0103f528539')}
                 className={cn(
                   'size-4 flex-none group-data-[state=open]/step:hidden',
                   STATUS_TEXT.destructive,

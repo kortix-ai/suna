@@ -14,13 +14,13 @@ import {
   useUnenrollFactor,
   useVerifyChallenge,
 } from '@/hooks/auth';
-import { SignOutIcon as LogOut } from '@phosphor-icons/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslations } from 'next-intl';
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { SignOutIcon as LogOut } from '@phosphor-icons/react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
+import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 
 export default function PhoneVerificationPage() {
   const appHome = useAppHome();

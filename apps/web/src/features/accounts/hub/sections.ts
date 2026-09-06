@@ -1,3 +1,7 @@
+import { ACCOUNT_HUB_TRANSLATION_KEYS } from '@/i18n/account-hub-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import type { UiTranslator } from '@/i18n/translator';
 /**
  * The account hub's section catalog — the ONE list of what `/accounts/[id]`
  * can show, and what each section is called.
@@ -144,6 +148,19 @@ export const PANE_META: Partial<Record<AccountSection, { title: string; descript
   },
 };
 
+const ACCOUNT_SECTION_TRANSLATION_KEYS = {
+  ...ACCOUNT_HUB_TRANSLATION_KEYS,
+  ...REMAINING_UI_TRANSLATION_KEYS,
+};
+
+export function localizedAccountNavGroups(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(NAV_GROUPS, tI18nComplete, ACCOUNT_SECTION_TRANSLATION_KEYS);
+}
+
+export function localizedAccountPaneMeta(tI18nComplete: UiTranslator) {
+  return localizeUiCatalog(PANE_META, tI18nComplete, ACCOUNT_SECTION_TRANSLATION_KEYS);
+}
+
 /**
  * How wide a section's column is. The default is the page container
  * (`max-w-2xl`); list-shaped panes — a members table, an audit log — need the
@@ -178,8 +195,9 @@ export function parseAccountSection(raw: string | null | undefined): AccountSect
     : null;
 }
 
-export function sectionLabel(section: AccountSection): string {
-  for (const group of NAV_GROUPS) {
+export function sectionLabel(section: AccountSection, tI18nComplete?: UiTranslator): string {
+  const groups = tI18nComplete ? localizedAccountNavGroups(tI18nComplete) : NAV_GROUPS;
+  for (const group of groups) {
     const item = group.items.find((entry) => entry.id === section);
     if (item) return item.label;
   }
@@ -214,14 +232,15 @@ export function accountHubCrumbs(
   pathname: string,
   accountId: string | undefined,
   activeSection: AccountSection,
-  accountName?: string | null,
+  accountName: string | null | undefined,
+  tI18nComplete: UiTranslator,
 ): HubCrumb[] {
-  const root: HubCrumb = { label: 'Settings', href: '/accounts' };
-  if (!accountId) return [root, { label: 'Accounts' }];
+  const root: HubCrumb = { label: tI18nComplete.raw('text74a883a037bc'), href: '/accounts' };
+  if (!accountId) return [root, { label: tI18nComplete.raw('text8a7c8b67fe8b') }];
   const hub = `/accounts/${accountId}`;
   const account: HubCrumb = accountName
     ? { label: accountName, href: hub, kind: 'account' }
-    : { label: 'Account', href: hub, pending: true, kind: 'account' };
+    : { label: tI18nComplete.raw('text7e1b0d5641f2'), href: hub, pending: true, kind: 'account' };
   const rest = pathname.startsWith(hub) ? pathname.slice(hub.length) : '';
   const [, sub] = rest.split('/');
   switch (sub) {
@@ -229,23 +248,28 @@ export function accountHubCrumbs(
       return [
         root,
         account,
-        { label: 'Identity', href: `${hub}?tab=identity` },
-        { label: 'SSO setup' },
+        { label: tI18nComplete.raw('text999f23fcd7be'), href: `${hub}?tab=identity` },
+        { label: tI18nComplete.raw('text196534a6c8ac') },
       ];
     case 'scim-setup':
       return [
         root,
         account,
-        { label: 'Identity', href: `${hub}?tab=identity` },
-        { label: 'Directory sync setup' },
+        { label: tI18nComplete.raw('text999f23fcd7be'), href: `${hub}?tab=identity` },
+        { label: tI18nComplete.raw('textea1cf924a71b') },
       ];
     case 'tokens':
-      return [root, account, { label: 'API keys', href: `${hub}?tab=tokens` }, { label: 'Key' }];
+      return [
+        root,
+        account,
+        { label: tI18nComplete.raw('text98aae8972102'), href: `${hub}?tab=tokens` },
+        { label: tI18nComplete.raw('text99a52df3ff3d') },
+      ];
     case 'groups':
-      return [root, account, { label: sectionLabel('groups') }];
+      return [root, account, { label: sectionLabel('groups', tI18nComplete) }];
     case 'members':
-      return [root, account, { label: sectionLabel('members') }];
+      return [root, account, { label: sectionLabel('members', tI18nComplete) }];
     default:
-      return [root, account, { label: sectionLabel(activeSection) }];
+      return [root, account, { label: sectionLabel(activeSection, tI18nComplete) }];
   }
 }

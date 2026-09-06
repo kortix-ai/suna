@@ -31,15 +31,15 @@
  * frames between the close and the new route painting are never white.
  */
 
-import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 
 import { useAuth } from '@/features/providers/auth-provider';
 import { SettingsPanel } from '@/features/workspace/settings/settings-panel';
 import type { SettingsTab } from '@/features/workspace/settings/settings-tabs';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
-import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { projectPathFromId } from '@/lib/onboarding/landing-destination';
+import { readLastProjectId } from '@/lib/onboarding/last-project-cookie';
 import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 
 /**

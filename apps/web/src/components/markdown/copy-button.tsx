@@ -4,6 +4,7 @@ import { Copy } from '@/features/icon/icons/copy';
 import { cn } from '@/lib/utils';
 import { CheckIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import { useCallback, useState } from 'react';
 import Hint from '../ui/hint';
 
@@ -18,6 +19,7 @@ export function CopyButton({
   size?: 'sm' | 'md' | 'lg';
   hintSide?: 'top' | 'bottom' | 'left' | 'right';
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const [copied, setCopied] = useState(false);
   const sizeClasses = {
     sm: 'size-6 rounded-sm',
@@ -35,11 +37,11 @@ export function CopyButton({
   }, [code]);
 
   return (
-    <Hint label="Copy" side={hintSide} align="center">
+    <Hint label={tI18nComplete.raw('texte21f935f11d7')} side={hintSide} align="center">
       <button
         type="button"
         onClick={handleCopy}
-        aria-label={copied ? 'Copied' : 'Copy code'}
+        aria-label={copied ? 'Copied' : tI18nComplete.raw('text49a0053f3b0d')}
         className={cn(
           'inline-flex items-center justify-center rounded-md',
           'text-foreground hover:text-foreground hover:bg-muted-foreground/10',

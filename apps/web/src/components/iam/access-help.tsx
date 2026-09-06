@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 // AccessHelp — the "how access works" reference, mounted as a real pane
 // (`/accounts/[id]?tab=help`) instead of the old `PermissionsHelpPopover`.
 //
@@ -18,10 +19,9 @@ import Link from 'next/link';
 
 import {
   ACCOUNT_ROLES_ASCENDING,
-  ACCOUNT_ROLE_DESCRIPTORS,
+  builtinRoleDescriptor,
   type OfferedProjectRole,
   PROJECT_ROLES_ASCENDING,
-  PROJECT_ROLE_DESCRIPTORS,
 } from '@/features/workspace/shared/access';
 import type { AccountRole } from '@kortix/sdk';
 
@@ -68,136 +68,131 @@ export interface AccessHelpProps {
 }
 
 export function AccessHelp({ accountId }: AccessHelpProps) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="space-y-8">
       <Section
-        title="The model"
-        description="People, groups and agents get roles on an account, a project, or a single resource. A role is a set of permissions."
+        title={tI18nComplete.raw('text1ba70b3e6cfc')}
+        description={tI18nComplete.raw('textefc24d019a32')}
       >
         <div className={`${PANEL} divide-border divide-y`}>
           <div className="space-y-0.5 px-4 py-3">
-            <p className="text-foreground text-sm font-medium">Principal</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('textafc19f1734c1')}
+            </p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              A person, a group, an agent, or an email you invited that has not joined yet.
+              {tI18nComplete.raw('textcefeb25cde11')}
             </p>
           </div>
           <div className="space-y-0.5 px-4 py-3">
-            <p className="text-foreground text-sm font-medium">Role</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('text14736a2eb9f4')}
+            </p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              A set of permissions. A permission is one action, like reading a secret or managing
-              members. Built-in roles cover the common sets; a custom role names its own.
+              {tI18nComplete.raw('text100a17657e7b')}
             </p>
           </div>
           <div className="space-y-0.5 px-4 py-3">
-            <p className="text-foreground text-sm font-medium">Scope</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('textb073f6c68ef8')}
+            </p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              Where the role applies: the whole account, one project, or a single resource inside a
-              project — one agent, for example.
+              {tI18nComplete.raw('text0b9bc3b34bd0')}
             </p>
           </div>
           <div className="space-y-0.5 px-4 py-3">
-            <p className="text-foreground text-sm font-medium">Assignment</p>
+            <p className="text-foreground text-sm font-medium">
+              {tI18nComplete.raw('text153cdaaec561')}
+            </p>
             <p className="text-muted-foreground text-xs leading-relaxed">
-              One principal, one role, one scope — one row. It can carry an expiry date. Change it
-              from any row&apos;s Edit access.
+              {tI18nComplete.raw('textae553394b31a')}
             </p>
           </div>
         </div>
       </Section>
 
       <Section
-        title="Account roles"
-        description="What a person can do with the account itself — its name, its billing, and its people."
+        title={tI18nComplete.raw('text49c8061192c7')}
+        description={tI18nComplete.raw('text8131497474c7')}
       >
         <RoleList
           rows={ACCOUNT_ROLES_DESCENDING.map((role) => ({
             key: role,
-            label: ACCOUNT_ROLE_DESCRIPTORS[role].label,
-            summary: ACCOUNT_ROLE_DESCRIPTORS[role].summary,
+            label: builtinRoleDescriptor('account', role, tI18nComplete)!.label,
+            summary: builtinRoleDescriptor('account', role, tI18nComplete)!.summary,
           }))}
         />
       </Section>
 
       <Section
-        title="Project roles"
-        description="What a person can do inside one project. Granted directly, or inherited from a group attached to that project."
+        title={tI18nComplete.raw('text31b7c5d19327')}
+        description={tI18nComplete.raw('text7cb19495b4ab')}
       >
         <RoleList
           rows={PROJECT_ROLES_DESCENDING.map((role) => ({
             key: role,
-            label: PROJECT_ROLE_DESCRIPTORS[role].label,
-            summary: PROJECT_ROLE_DESCRIPTORS[role].summary,
+            label: builtinRoleDescriptor('project', role, tI18nComplete)!.label,
+            summary: builtinRoleDescriptor('project', role, tI18nComplete)!.summary,
           }))}
         />
       </Section>
 
-      <Section title="Custom roles">
+      <Section title={tI18nComplete.raw('textc703c7f9cbe6')}>
         <div className={`${PANEL} space-y-2 px-4 py-3`}>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            For a permission set the built-in roles do not cover. You define a custom role once
-            on the account, then pick it in the same role select as the built-in ones — on a member,
-            on a group, account-wide or on one project.
+            {tI18nComplete.raw('text118749e29c68')}
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            A custom role is additive and it is ONE assignment: the principal keeps whatever their
-            built-in role gives them, and the custom role grants everything on top. There is no
-            deny — a role can only ever add. Choosing a built-in role again removes it.
+            {tI18nComplete.raw('text147d3ae89e52')}
           </p>
           <Link
             href={`/accounts/${accountId}?tab=roles`}
             className="text-foreground inline-block text-xs underline underline-offset-2"
           >
-            Manage roles →
+            {tI18nComplete.raw('textc2718d67695f')}
           </Link>
         </div>
       </Section>
 
-      <Section title="Groups">
+      <Section title={tI18nComplete.raw('text39bbb719fa2b')}>
         <div className={`${PANEL} space-y-2 px-4 py-3`}>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            A group bundles people so you grant access once instead of per person. Attach a group to
-            a project with a role, and every member of that group gets that role on that project.
+            {tI18nComplete.raw('texte82c81f0607b')}
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Group access adds to what a person already has — it never takes access away. Remove
-            someone&apos;s direct grant and they keep whatever their groups still give them.
+            {tI18nComplete.raw('text2ea23e8c03fa')}
           </p>
         </div>
       </Section>
 
-      <Section title="Agents">
+      <Section title={tI18nComplete.raw('text279b44d2ab4b')}>
         <div className={`${PANEL} space-y-2 px-4 py-3`}>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            An agent is both. It is a resource you assign to people — narrow someone to a subset in
-            Edit access under Agents — and it is a principal in its own right: every agent has a
-            service-account identity that can hold roles like a person does.
+            {tI18nComplete.raw('textc2dfb2c0eb28')}
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Whoever can reach an agent also gets the agent&apos;s declared secrets and connectors to
-            USE, not to edit.
+            {tI18nComplete.raw('text3c3b223b35e3')}
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            What a RUNNING agent itself is allowed to touch is a different question — that comes from
-            the project&apos;s <code className="text-foreground text-[11px]">kortix.yaml</code>, not
-            from anything on this page.
+            {tI18nComplete.raw('text668cedb7be4b')}
+            <code className="text-foreground text-xs">kortix.yaml</code>
+            {tI18nComplete.raw('text18c99d7a5ce2')}
           </p>
           <p className="text-foreground text-xs leading-relaxed">
-            One vocabulary, two bindings. People, groups and agents get roles on an account, a
-            project, or a single resource. Agents additionally carry Kortix CLI scopes in{' '}
-            <code className="text-foreground text-[11px]">kortix.yaml</code>; a session can only do
-            what both allow.
+            {tI18nComplete.raw('textec56dc3a282b')}{' '}
+            <code className="text-foreground text-xs">kortix.yaml</code>
+            {tI18nComplete.raw('textfe384b93382f')}
           </p>
         </div>
       </Section>
 
-      <Section title="Override rule">
+      <Section title={tI18nComplete.raw('text29f30b14dfba')}>
         <div className="border-kortix-yellow bg-kortix-yellow/5 space-y-1 rounded-md border p-4">
           <p className="text-kortix-yellow text-xs font-medium">
-            Owners and admins are Manager on every project.
+            {tI18nComplete.raw('text3e26769ed36a')}
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Their account role wins, so a per-project grant cannot lower it. To limit what someone
-            reaches project by project, make them a Member on the account first.
+            {tI18nComplete.raw('texta651830bc408')}
           </p>
         </div>
       </Section>

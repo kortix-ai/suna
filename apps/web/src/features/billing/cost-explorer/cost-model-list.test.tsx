@@ -16,11 +16,7 @@ describe('CostModelList', () => {
   });
 
   test('renders every row when five or fewer, with no expand control', () => {
-    const models = [
-      model('gpt-5', 10),
-      model('claude-opus', 8),
-      model('gemini-pro', 4),
-    ];
+    const models = [model('gpt-5', 10), model('claude-opus', 8), model('gemini-pro', 4)];
     const html = renderToStaticMarkup(<CostModelList models={models} />);
     expect(html).toContain('gpt-5');
     expect(html).toContain('claude-opus');
@@ -119,7 +115,9 @@ describe('CostModelList expand control', () => {
   /** The toggle button's own markup, so control assertions cannot pass by
    *  matching a model row instead. */
   function toggleButton(html: string): string {
-    const match = html.match(/<button[^>]*>(?:(?!<\/button>).)*Show[^<]*(?:(?!<\/button>).)*<\/button>/);
+    const match = html.match(
+      /<button[^>]*>(?:(?!<\/button>).)*Show[^<]*(?:(?!<\/button>).)*<\/button>/,
+    );
     expect(match, 'expected an expand toggle in the rendered output').not.toBeNull();
     return match![0];
   }

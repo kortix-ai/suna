@@ -5,6 +5,7 @@ import { useProjectContext } from '@/features/project-files/context';
 import { createProjectSession, markSessionFresh } from '@kortix/sdk';
 import { prefetchSessionStart, qk } from '@kortix/sdk/react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import { useRouter } from 'next/navigation';
 import { useCallback, useState } from 'react';
 import {
@@ -15,6 +16,7 @@ import {
 } from '../change-request-recovery';
 
 export function useChangeRequestRecovery() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const projectId = useProjectContext()?.projectId ?? '';
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -52,12 +54,12 @@ export function useChangeRequestRecovery() {
         onNavigate?.();
         router.push(href);
       } catch (error) {
-        errorToast(error instanceof Error ? error.message : 'Failed to start recovery session');
+        errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text1c8a00d1f262'));
       } finally {
         setStartingCrId(null);
       }
     },
-    [projectId, queryClient, router, startingCrId],
+    [projectId, queryClient, router, startingCrId, tI18nComplete],
   );
 
   return { startRecovery, startingCrId };

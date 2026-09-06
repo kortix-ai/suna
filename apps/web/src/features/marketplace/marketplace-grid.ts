@@ -8,8 +8,7 @@ import { TYPE_SECTIONS } from './marketplace-meta';
 export const MARKETPLACE_GRID_COLUMNS = 3;
 
 export type MarketplaceGridRow =
-  | { kind: 'header'; label: string; count: number }
-  | { kind: 'items'; items: MarketplaceItem[] };
+  { kind: 'header'; label: string; count: number } | { kind: 'items'; items: MarketplaceItem[] };
 
 function chunk<T>(list: T[], size: number): T[][] {
   const out: T[][] = [];

@@ -21,9 +21,7 @@ export default function GroupDetailRedirectPage() {
 
   useEffect(() => {
     if (!accountId || !groupId) return;
-    router.replace(
-      `/accounts/${accountId}?tab=groups&group=${encodeURIComponent(groupId)}`,
-    );
+    router.replace(`/accounts/${accountId}?tab=groups&group=${encodeURIComponent(groupId)}`);
   }, [accountId, groupId, router]);
 
   return null;

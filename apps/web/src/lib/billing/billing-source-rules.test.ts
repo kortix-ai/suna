@@ -151,10 +151,7 @@ describe('the wallet-floor bypass stays deleted', () => {
     // A rolling deploy is exactly when it would have mattered: an old API sends
     // no `billing_state`, the fallback runs, and a drained Team account renders
     // as runnable against a server that has already started 402ing it.
-    const source = readFileSync(
-      join(WEB_SRC, 'lib', 'billing', 'billing-gate-state.ts'),
-      'utf8',
-    );
+    const source = readFileSync(join(WEB_SRC, 'lib', 'billing', 'billing-gate-state.ts'), 'utf8');
     const fallback = source.slice(
       source.indexOf('Fallback derivation'),
       source.indexOf("return 'no_subscription';"),

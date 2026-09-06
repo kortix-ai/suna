@@ -5,15 +5,15 @@ import type { AttachedFile } from '@/features/session/session-chat-input';
 import {
   buildOptimisticPromptTextWithUploads,
   buildPromptPartsWithUploads,
+  DATA_URL_ATTACHMENTS_MAX_BYTES,
   MAX_UPLOAD_FILENAME_BYTES,
   optimisticUploadedFileRef,
   sanitizeUploadFilename,
+  stageFirstPromptAttachments,
   UploadBatchError,
   uploadedFileRefXml,
   UPLOADS_DIR,
   type UploadFileForPrompt,
-  stageFirstPromptAttachments,
-  DATA_URL_ATTACHMENTS_MAX_BYTES,
 } from './uploaded-file-refs';
 
 function localFile(name: string, type = 'text/plain'): Extract<AttachedFile, { kind: 'local' }> {
@@ -394,7 +394,13 @@ describe('stageFirstPromptAttachments', () => {
   test('a local file becomes a data-URL file part; a remote one rides as-is', async () => {
     const parts = await stageFirstPromptAttachments([
       local('shot.png', new Uint8Array([1, 2, 3])),
-      { kind: 'remote', url: 'https://files.test/a.pdf', filename: 'a.pdf', mime: 'application/pdf', isImage: false },
+      {
+        kind: 'remote',
+        url: 'https://files.test/a.pdf',
+        filename: 'a.pdf',
+        mime: 'application/pdf',
+        isImage: false,
+      },
     ]);
 
     expect(parts).toEqual([
@@ -424,7 +430,11 @@ describe('stageFirstPromptAttachments', () => {
   });
 
   test('refuses a batch over the cap with copy that names the way out', async () => {
-    const big = local('big.bin', new Uint8Array(DATA_URL_ATTACHMENTS_MAX_BYTES + 1), 'application/octet-stream');
+    const big = local(
+      'big.bin',
+      new Uint8Array(DATA_URL_ATTACHMENTS_MAX_BYTES + 1),
+      'application/octet-stream',
+    );
     await expect(stageFirstPromptAttachments([big])).rejects.toThrow(/after the session starts/i);
   });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readFileSync } from '@/i18n/test-source';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -382,7 +382,7 @@ describe('ProjectIconField popover geometry', () => {
   test('the popover dialog has an accessible name', () => {
     // Radix gives PopoverContent role="dialog". Unlabelled, a screen reader
     // announces "dialog" and nothing else.
-    expect(code).toMatch(/<PopoverContent[\s\S]*?aria-label="Choose project icon"/);
+    expect(code).toMatch(/<PopoverContent[\s\S]*?raw\('text39a1c11af6d3'\)/);
   });
 
   test('the popover cancels its own padding', () => {
@@ -598,9 +598,9 @@ describe('ProjectIconField trigger tint — emoji', () => {
     // Smiley on the design system's icon-button chrome, exactly as before.
     const classes = classesOf(null);
 
-    expect(classes.some((c) => c.startsWith('bg-emoji-fill-') || c.startsWith('bg-glyph-fill-'))).toBe(
-      false,
-    );
+    expect(
+      classes.some((c) => c.startsWith('bg-emoji-fill-') || c.startsWith('bg-glyph-fill-')),
+    ).toBe(false);
     expect(classes.some((c) => c.startsWith('inset-ring-'))).toBe(false);
     expect(classes).toContain('border');
     expect(classes).not.toContain('border-0');

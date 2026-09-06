@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * The one list of changed files in the product.
  *
@@ -22,6 +23,8 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import Hint from '@/components/ui/hint';
 import { DiffStat, STATUS_DOT } from '@/components/ui/status';
+import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
 import { cn } from '@/lib/utils';
 import { CaretRightIcon, ColumnsIcon, RowsIcon } from '@phosphor-icons/react';
 import { useCallback, useMemo, useState } from 'react';
@@ -60,6 +63,7 @@ export function ChangeSummary({
   entries: ChangeEntry[];
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const totals = useMemo(() => totalChanges(entries), [entries]);
   return (
     <span
@@ -72,7 +76,7 @@ export function ChangeSummary({
       {(totals.additions > 0 || totals.deletions > 0) && (
         <>
           <span className="text-muted-foreground/40" aria-hidden>
-            &bull;
+            {tI18nComplete.raw('text3b9453dad42b')}
           </span>
           <DiffStat additions={totals.additions} deletions={totals.deletions} />
         </>
@@ -99,18 +103,31 @@ export function DiffLayoutToggle({
   onChange: (layout: DiffLayout) => void;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <ButtonGroup className={cn('hidden sm:flex', className)}>
       {(['unified', 'split'] as const).map((value) => {
         const Icon = value === 'unified' ? RowsIcon : ColumnsIcon;
         const active = layout === value;
         return (
-          <Hint key={value} label={DIFF_LAYOUT_LABEL[value]} side="bottom">
+          <Hint
+            key={value}
+            label={translateUiCatalogText(
+              DIFF_LAYOUT_LABEL[value],
+              tI18nComplete,
+              REMAINING_UI_TRANSLATION_KEYS,
+            )}
+            side="bottom"
+          >
             <Button
               type="button"
               variant="outline"
               size="icon-sm"
-              aria-label={DIFF_LAYOUT_LABEL[value]}
+              aria-label={translateUiCatalogText(
+                DIFF_LAYOUT_LABEL[value],
+                tI18nComplete,
+                REMAINING_UI_TRANSLATION_KEYS,
+              )}
               aria-pressed={active}
               onClick={() => onChange(value)}
               className={cn(
@@ -144,7 +161,12 @@ function ChangeRow({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const kind = changeKind(entry.kind);
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const rawKind = changeKind(entry.kind);
+  const kind = {
+    ...rawKind,
+    label: translateUiCatalogText(rawKind.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
+  };
   const { name, dir } = splitPath(entry.path);
   const from = entry.fromPath && entry.fromPath !== entry.path ? splitPath(entry.fromPath) : null;
 
@@ -205,7 +227,7 @@ function ChangeRow({
             )}
             {from && (
               <span className="text-muted-foreground/50 hidden shrink-0 truncate text-xs md:inline">
-                from {from.name}
+                {tI18nComplete.raw('text75857a458999')} {from.name}
               </span>
             )}
             <DiffStat
@@ -228,7 +250,7 @@ function ChangeRow({
               </div>
             ) : (
               <p className="text-muted-foreground px-3 py-6 text-center text-xs">
-                This file has no preview.
+                {tI18nComplete.raw('text903237107ab6')}
               </p>
             )}
           </div>
@@ -295,6 +317,7 @@ export function ExpandAllButton({
   onToggle: () => void;
   className?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <Button
       type="button"
@@ -303,7 +326,7 @@ export function ExpandAllButton({
       onClick={onToggle}
       className={cn('text-muted-foreground hover:text-foreground active:scale-[0.96]', className)}
     >
-      {allExpanded ? 'Collapse all' : 'Expand all'}
+      {allExpanded ? tI18nComplete.raw('text25f7b3721119') : tI18nComplete.raw('texta3e586be3eff')}
     </Button>
   );
 }

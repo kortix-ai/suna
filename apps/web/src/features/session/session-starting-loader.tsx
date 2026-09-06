@@ -8,6 +8,8 @@ import { restartProjectSession, sessionStartKey, type SessionStartStage } from '
 import { qk } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
+import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
 import { useEffect, useState } from 'react';
 
 /**
@@ -103,12 +105,13 @@ export function RestartFallback({
   className?: string;
   buttonClassName?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   if (!show) return null;
 
   return (
     <div className={cn('mt-5 w-full', className)}>
       <p className="text-muted-foreground mb-2 text-xs text-pretty">
-        This is taking longer than usual.
+        {tI18nComplete.raw('textbeda94e911d3')}
       </p>
       <Button
         type="button"
@@ -123,7 +126,7 @@ export function RestartFallback({
         ) : (
           <RotateCcw className="size-3.5 shrink-0" />
         )}
-        {pending ? 'Restarting…' : 'Restart session'}
+        {pending ? tI18nComplete.raw('text75d0f1469d16') : tI18nComplete.raw('textcb886371afc6')}
       </Button>
     </div>
   );
@@ -154,7 +157,9 @@ function QuietProgressLoader({
   slow,
   stuck,
 }: QuietProgressLoaderProps) {
-  const step = STEPS[Math.min(active, STEPS.length - 1)];
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const steps = useLocalizedUiCatalog(STEPS);
+  const step = steps[Math.min(active, steps.length - 1)];
 
   return (
     <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
@@ -166,20 +171,20 @@ function QuietProgressLoader({
           />
           <div className="min-w-0 flex-1">
             <h2 className="text-foreground text-sm font-medium text-balance">
-              Starting your session
+              {tI18nComplete.raw('textac4e05b19878')}
             </h2>
             <p className="text-muted-foreground mt-1 text-xs text-pretty">{note ?? step.label}</p>
 
             <div
               role="progressbar"
-              aria-label="Session startup progress"
+              aria-label={tI18nComplete.raw('text4cbf9c0d5628')}
               aria-valuemin={1}
-              aria-valuemax={STEPS.length}
+              aria-valuemax={steps.length}
               aria-valuenow={active + 1}
-              aria-valuetext={`Step ${active + 1} of ${STEPS.length}: ${step.label}`}
+              aria-valuetext={`Step ${active + 1} of ${steps.length}: ${step.label}`}
               className="mt-3 grid grid-cols-4 gap-1.5"
             >
-              {STEPS.map((item, index) => (
+              {steps.map((item, index) => (
                 <span
                   key={item.label}
                   aria-hidden
@@ -193,7 +198,7 @@ function QuietProgressLoader({
 
             {slow ? (
               <p className="text-muted-foreground mt-3 text-xs text-pretty">
-                Cold starts can take a little longer.
+                {tI18nComplete.raw('textbb2ab0401c3c')}
               </p>
             ) : null}
 
@@ -221,6 +226,7 @@ export function SessionStartingLoader({
   variant?: BootStepVariant;
   note?: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [delayElapsed, setDelayElapsed] = useState(false);
   const show = delayMs <= 0 || delayElapsed;
@@ -246,7 +252,7 @@ export function SessionStartingLoader({
       });
     },
     onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Failed to restart session');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text1604d2906a45'));
     },
   });
 
@@ -281,12 +287,14 @@ export function SessionConnectingBanner({
   className?: string;
   note?: string | null;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const { active, now } = useBootProgress(stage);
   const [clockStart, setClockStart] = useState(now);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = !!projectId && !!sessionId;
-  const step = STEPS[Math.min(active, STEPS.length - 1)];
+  const steps = useLocalizedUiCatalog(STEPS);
+  const step = steps[Math.min(active, steps.length - 1)];
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId!, sessionId!),
@@ -298,7 +306,7 @@ export function SessionConnectingBanner({
       });
     },
     onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Failed to restart session');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text1604d2906a45'));
     },
   });
 
@@ -327,7 +335,7 @@ export function SessionConnectingBanner({
             disabled={restartMutation.isPending}
             onClick={() => restartMutation.mutate()}
           >
-            {restartMutation.isPending ? 'Restarting…' : 'Restart'}
+            {restartMutation.isPending ? tI18nComplete.raw('text75d0f1469d16') : 'Restart'}
           </Button>
         ) : null}
       </div>

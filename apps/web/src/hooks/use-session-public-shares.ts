@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * Read and revoke a session's public share links.
  *
@@ -77,6 +78,7 @@ export function useSessionPublicShares(projectId?: string, sessionId?: string) {
 }
 
 export function useRevokePublicShare(projectId?: string, sessionId?: string) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
@@ -90,10 +92,10 @@ export function useRevokePublicShare(projectId?: string, sessionId?: string) {
           queryKey: publicSharesQueryKey(projectId, sessionId),
         });
       }
-      successToast('Link revoked');
+      successToast(tI18nComplete.raw('textbeffd2472832'));
     },
     onError: (error) => {
-      errorToast(error instanceof Error ? error.message : 'Could not revoke this link');
+      errorToast(error instanceof Error ? error.message : tI18nComplete.raw('text46c307963f84'));
     },
   });
 

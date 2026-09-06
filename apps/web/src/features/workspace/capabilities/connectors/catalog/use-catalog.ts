@@ -13,6 +13,7 @@ import { useCallback, useMemo } from 'react';
 
 import { useDebounce } from '@/hooks/use-debounce';
 
+import { useTranslations } from '@/i18n/use-translations';
 import {
   catalogEntryFromDiscover,
   catalogEntryFromEasyConnect,
@@ -21,7 +22,7 @@ import {
   type CatalogEntry,
   type CatalogSource,
 } from './catalog-entry';
-import { CATEGORY_ROW_CAP, sectionTitle } from './connector-categories';
+import { CATEGORY_ROW_CAP, localizedSectionTitle } from './connector-categories';
 
 /** Apps per request. One page fills several rows of the widest grid, so a
  *  scroll-triggered fetch is felt as the grid growing rather than as a jump. */
@@ -234,6 +235,7 @@ export function useCatalog(
     focusCategory?: string | null;
   },
 ): CatalogState {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { debouncedValue: activeQuery } = useDebounce(query.trim(), 300);
   const source: CatalogSource = opts.discoverEnabled ? 'discover' : 'easy-connect';
   const category = opts.focusCategory ?? null;
@@ -304,7 +306,7 @@ export function useCatalog(
   const active = source === 'discover' ? discoverQuery : easyConnectQuery;
 
   const entries = useMemo(() => {
-    const native = computersCatalogEntry();
+    const native = computersCatalogEntry(tI18nComplete);
     // The native Computers card is ours, not the catalogue's, so it is matched
     // locally and hidden inside a category it does not claim.
     const includeComputers =
@@ -326,7 +328,14 @@ export function useCatalog(
         page.apps.map(catalogEntryFromEasyConnect),
       ),
     );
-  }, [activeQuery, category, source, discoverQuery.data, easyConnectQuery.data]);
+  }, [
+    tI18nComplete,
+    category,
+    activeQuery,
+    source,
+    easyConnectQuery.data?.pages,
+    discoverQuery.data?.pages,
+  ]);
 
   const {
     fetchNextPage,
@@ -360,7 +369,7 @@ export function useCatalog(
     if (source === 'discover') {
       return catalogSections(entries, { popularCap: SECTION_CARD_COUNT }).map((section) => ({
         key: section.category,
-        label: sectionTitle(section.category),
+        label: localizedSectionTitle(section.category, tI18nComplete),
         total: section.items.length,
         items: section.items.slice(0, SECTION_CARD_COUNT),
       }));
@@ -368,7 +377,7 @@ export function useCatalog(
     if (easyConnectProvider === 'pipedream') {
       return (sectionsQuery.data?.sections ?? []).map((section) => ({
         key: section.key,
-        label: section.label,
+        label: localizedSectionTitle(section.label, tI18nComplete),
         total: section.total,
         items: section.apps.map(catalogEntryFromEasyConnect),
       }));
@@ -383,11 +392,19 @@ export function useCatalog(
       rawCategoryKeys: easyConnectProvider === 'composio',
     }).map((section) => ({
       key: section.category,
-      label: sectionTitle(section.category),
+      label: localizedSectionTitle(section.category, tI18nComplete),
       total: section.items.length,
       items: section.items.slice(0, SECTION_CARD_COUNT),
     }));
-  }, [searching, category, source, entries, sectionsQuery.data, easyConnectProvider]);
+  }, [
+    searching,
+    category,
+    source,
+    entries,
+    sectionsQuery.data,
+    easyConnectProvider,
+    tI18nComplete,
+  ]);
 
   const easyConnectPage = easyConnectQuery.data?.pages[0];
   const categories = source === 'easy-connect' ? (easyConnectPage?.categories ?? []) : [];

@@ -2,8 +2,9 @@
 
 import { EASE_OUT, LEAD, panel, reveal, STEP } from '@/features/marketing/component/hero-motion';
 import { m, useReducedMotion } from 'motion/react';
+import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
-import { agent, skill } from './content';
+import { getLocalizedAgentsAndSkillsContent } from './content';
 
 /**
  * `/agents-and-skills` hero scene — two sheets.
@@ -26,28 +27,33 @@ import { agent, skill } from './content';
  * MOTION — one pass on mount, then rest.
  */
 
-const LINES = agent.md.lines;
-/** Frontmatter is delimited by the first two `---` lines. */
-const CLOSE = LINES.indexOf('---', 1);
-const FRONTMATTER = (CLOSE > 0 ? LINES.slice(1, CLOSE) : []).slice(0, 4);
-const BODY = (CLOSE > 0 ? LINES.slice(CLOSE + 1) : LINES).filter((line) => line !== '').slice(0, 3);
-
-/** The sheet behind: enough of the skill to read as a second document. */
-const BACK = skill.md.lines.filter((line) => line !== '' && line !== '---').slice(0, 7);
-
 function splitKey(line: string): { key: string; value: string } | null {
   const match = /^([a-z_][\w-]*):\s?(.*)$/.exec(line);
   return match ? { key: match[1]!, value: match[2]! } : null;
 }
 
 export function AgentsAndSkillsHeroVisual(): ReactNode {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const { agent, skill } = getLocalizedAgentsAndSkillsContent(tI18nComplete);
+  const lines = agent.md.lines;
+  /** Frontmatter is delimited by the first two `---` lines. */
+  const close = lines.indexOf('---', 1);
+  const frontmatter = (close > 0 ? lines.slice(1, close) : []).slice(0, 4);
+  const body = (close > 0 ? lines.slice(close + 1) : lines)
+    .filter((line) => line !== '')
+    .slice(0, 3);
+  /** The sheet behind: enough of the skill to read as a second document. */
+  const back = skill.md.lines.filter((line) => line !== '' && line !== '---').slice(0, 7);
   const reduceMotion = useReducedMotion() ?? false;
 
   return (
     <div
       className="flex w-full items-center justify-center"
       role="img"
-      aria-label={`Two files: ${skill.md.title} behind, and ${agent.md.title} in front.`}
+      aria-label={tI18nComplete('texta442c09ab113', {
+        skill: skill.md.title,
+        agent: agent.md.title,
+      })}
     >
       <div className="relative h-[23rem] w-full max-w-[38rem] sm:h-[26rem]">
         {/* ── the sheet behind, cut by the top edge ───────────────────── */}
@@ -63,7 +69,7 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
             {skill.md.title}
           </span>
           <div className="mt-3 flex flex-col gap-1.5">
-            {BACK.map((line, i) => (
+            {back.map((line, i) => (
               <span
                 key={`${line}-${i}`}
                 className="text-muted-foreground/30 truncate font-mono text-[10.5px]"
@@ -81,12 +87,12 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
           transition={{ duration: 0.3, delay: LEAD + 0.5, ease: EASE_OUT }}
           aria-hidden
         >
-          two files
+          {tI18nComplete.raw('text177c933ae9a5')}
         </m.span>
 
         {/* ── the sheet in front ──────────────────────────────────────── */}
         <m.div
-          className="border-border/70 bg-card absolute right-[8%] bottom-[4%] left-[2%] overflow-hidden rounded-lg border "
+          className="border-border/70 bg-card absolute right-[8%] bottom-[4%] left-[2%] overflow-hidden rounded-lg border"
           {...panel(reduceMotion)}
         >
           <div className="border-border/50 border-b px-5 py-3">
@@ -97,7 +103,7 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
 
           {/* the spec */}
           <div className="bg-background/40 border-border/40 border-b px-5 py-4">
-            {FRONTMATTER.map((line, i) => {
+            {frontmatter.map((line, i) => {
               const pair = splitKey(line);
               return (
                 <m.div
@@ -124,7 +130,7 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
 
           {/* the prompt */}
           <div className="flex flex-col gap-2 px-5 py-4">
-            {BODY.map((line, i) => (
+            {body.map((line, i) => (
               <m.p
                 key={`${line}-${i}`}
                 className={
@@ -132,7 +138,7 @@ export function AgentsAndSkillsHeroVisual(): ReactNode {
                     ? 'text-foreground text-[13px] leading-snug font-medium text-pretty'
                     : 'text-muted-foreground/60 text-[12.5px] leading-snug text-pretty'
                 }
-                {...reveal(LEAD + 0.1 + (FRONTMATTER.length + i) * STEP, reduceMotion)}
+                {...reveal(LEAD + 0.1 + (frontmatter.length + i) * STEP, reduceMotion)}
               >
                 {line.replace(/\*\*/g, '')}
               </m.p>

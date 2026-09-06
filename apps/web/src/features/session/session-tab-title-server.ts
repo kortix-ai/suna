@@ -2,9 +2,9 @@ import 'server-only';
 
 import { createScopedKortix } from '@kortix/sdk/server';
 
-import { sessionTabTitle, sessionTabTitleFromSession } from './session-tab-title';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
+import { sessionTabTitle, sessionTabTitleFromSession } from './session-tab-title';
 
 /**
  * Resolve the session tab title on the SERVER, for the route's

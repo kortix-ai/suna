@@ -10,7 +10,7 @@ import {
   ShieldIcon as Shield,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -103,7 +103,7 @@ export function TunnelSettingsDialog({
                   <Button
                     size="icon"
                     variant="ghost"
-                    aria-label="More actions"
+                    aria-label={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
                     className="shrink-0 transition-transform active:scale-[0.96]"
                   >
                     <MoreHorizontal className="size-4 shrink-0" />
@@ -112,7 +112,7 @@ export function TunnelSettingsDialog({
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuItem onClick={onDelete}>
                     <TrashIcon className="shrink-0" />
-                    Delete connection
+                    {tHardcodedUi.raw('i18nComplete.texte960651babb1')}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -129,7 +129,7 @@ export function TunnelSettingsDialog({
             <TabsList className="w-fit shrink-0">
               <TabsTrigger value="permissions">
                 <Shield className="size-3.5 shrink-0" />
-                Permissions
+                {tHardcodedUi.raw('i18nComplete.textabccc78cc93c')}
               </TabsTrigger>
               <TabsTrigger value="audit">
                 <ScrollText className="size-3.5 shrink-0" />
@@ -137,7 +137,7 @@ export function TunnelSettingsDialog({
               </TabsTrigger>
               <TabsTrigger value="connection">
                 <Info className="size-3.5 shrink-0" />
-                Connection
+                {tHardcodedUi.raw('i18nComplete.text639a40e82b9a')}
               </TabsTrigger>
             </TabsList>
 
@@ -165,14 +165,16 @@ export function TunnelSettingsDialog({
 
 function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { copied, copy } = useCopy({ successMessage: 'Tunnel ID copied' });
+  const { copied, copy } = useCopy({
+    successMessage: tHardcodedUi.raw('i18nComplete.textea465dab8c2a'),
+  });
   const machineInfo = connection.machineInfo as Record<string, string> | undefined;
   const isOnline = connection.isLive;
   const capabilities = connection.capabilities || [];
 
   const rows: { label: string; value: ReactNode }[] = [
     {
-      label: 'Tunnel ID',
+      label: tHardcodedUi.raw('i18nComplete.texta33056ec9f12'),
       value: (
         <div className="flex min-w-0 items-center justify-end gap-2">
           <span className="truncate font-mono text-xs">{connection.tunnelId}</span>
@@ -196,24 +198,33 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
       ),
     },
     {
-      label: 'Status',
+      label: tHardcodedUi.raw('i18nComplete.text920e413c7d41'),
       value: (
         <span className={cn('text-sm', isOnline ? 'text-kortix-green' : 'text-muted-foreground')}>
           {isOnline ? 'Online' : 'Offline'}
         </span>
       ),
     },
-    { label: 'Hostname', value: machineInfo?.hostname || 'Unknown' },
     {
-      label: 'Platform',
+      label: tHardcodedUi.raw('i18nComplete.text2db533557011'),
+      value: machineInfo?.hostname || 'Unknown',
+    },
+    {
+      label: tHardcodedUi.raw('i18nComplete.textc78ffe195710'),
       value: machineInfo?.platform
         ? `${machineInfo.platform} ${machineInfo.arch || ''}`.trim()
         : 'Unknown',
     },
-    { label: 'OS Version', value: machineInfo?.osVersion || 'Unknown' },
-    { label: 'Agent Version', value: machineInfo?.agentVersion || 'Unknown' },
     {
-      label: 'Capabilities',
+      label: tHardcodedUi.raw('i18nComplete.text055a3d19928f'),
+      value: machineInfo?.osVersion || 'Unknown',
+    },
+    {
+      label: tHardcodedUi.raw('i18nComplete.text5aa63868e87e'),
+      value: machineInfo?.agentVersion || 'Unknown',
+    },
+    {
+      label: tHardcodedUi.raw('i18nComplete.text9460f16ac9b5'),
       value:
         capabilities.length > 0 ? (
           <div className="flex flex-wrap justify-end gap-1.5">
@@ -224,15 +235,20 @@ function ConnectionInfoTab({ connection }: { connection: TunnelConnection }) {
             ))}
           </div>
         ) : (
-          <span className="text-muted-foreground text-sm">None</span>
+          <span className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw('i18nComplete.textdc937b598926')}
+          </span>
         ),
     },
-    { label: 'Created', value: DATE_TIME_FORMAT.format(new Date(connection.createdAt)) },
+    {
+      label: tHardcodedUi.raw('i18nComplete.textd70b9e24bca2'),
+      value: DATE_TIME_FORMAT.format(new Date(connection.createdAt)),
+    },
   ];
 
   if (connection.lastHeartbeatAt) {
     rows.push({
-      label: 'Last Heartbeat',
+      label: tHardcodedUi.raw('i18nComplete.textd591d3458ab8'),
       value: (
         <span className="text-sm tabular-nums">
           {DATE_TIME_FORMAT.format(new Date(connection.lastHeartbeatAt))}

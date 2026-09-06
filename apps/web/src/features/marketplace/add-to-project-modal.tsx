@@ -2,6 +2,7 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -43,8 +44,8 @@ import { useAccountsList } from '@/hooks/account/use-accounts-list';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
 import { isManagedGitUnavailableError } from '@/lib/onboarding/ensure-first-project';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useSettingsPanelStore } from '@/stores/settings-panel-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
@@ -74,6 +75,7 @@ export function AddToProjectModal({
   /** Pre-selects this project as the target (still switchable — not a lock). */
   fixedProjectId?: string;
 }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const router = useRouter();
   const queryClient = useQueryClient();
   const closeCustomize = useSettingsPanelStore((s) => s.close);
@@ -159,7 +161,11 @@ export function AddToProjectModal({
         queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
 
         const sessionId = isProject
-          ? await startTemplateSetupSession(project, { itemId: item.id, title: item.title })
+          ? await startTemplateSetupSession(
+              project,
+              { itemId: item.id, title: item.title },
+              tI18nComplete.raw('text1f4114a47e76'),
+            )
           : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
               .session_id;
         const sessionHref = prepareMarketplaceInstallSessionNavigation(
@@ -189,9 +195,8 @@ export function AddToProjectModal({
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =
           resolvedAccountId ?? useCurrentAccountStore.getState().selectedAccountId;
-        errorToast("Managed git isn't set up on this server", {
-          description:
-            'An admin needs to connect GitHub in Git settings before projects can be created.',
+        errorToast(tI18nComplete.raw('text8200ffd60b70'), {
+          description: tI18nComplete.raw('text0471e152d0c9'),
           ...(gitSettingsAccountId
             ? {
                 button: (
@@ -204,7 +209,7 @@ export function AddToProjectModal({
                       prefetch
                       onClick={() => onOpenChange(false)}
                     >
-                      Open Git settings
+                      {tI18nComplete.raw('textef2ec2a16945')}
                     </Link>
                   </Button>
                 ),
@@ -212,7 +217,7 @@ export function AddToProjectModal({
             : {}),
         });
       } else {
-        errorToast('Could not add to project', { description: (e as Error).message });
+        errorToast(tI18nComplete.raw('textf913d83d88a5'), { description: (e as Error).message });
       }
     } finally {
       setBusy(false);
@@ -232,22 +237,33 @@ export function AddToProjectModal({
     <Modal open={open} onOpenChange={guardedOpenChange}>
       <ModalContent className="lg:max-w-md" closeOnOutsideClick={!busy}>
         <ModalHeader>
-          <ModalTitle>Add {humanizedTitle} to a project</ModalTitle>
+          <ModalTitle>
+            {tI18nComplete.raw('text9fd728c66c9a')} {humanizedTitle}{' '}
+            {tI18nComplete.raw('textfc90b7eeb46d')}
+          </ModalTitle>
         </ModalHeader>
 
         <form onSubmit={handleSubmit}>
           <ModalBody>
             <FieldGroup className="gap-4">
               <Field className="gap-1.5">
-                <FieldLabel htmlFor="mp-target-project">Project</FieldLabel>
+                <FieldLabel htmlFor="mp-target-project">
+                  {tI18nComplete.raw('text985959785319')}
+                </FieldLabel>
                 <Select value={target} onValueChange={setTarget}>
                   <SelectTrigger id="mp-target-project">
                     <SelectValue
-                      placeholder={projectsQuery.isLoading ? 'Loading…' : 'Choose a project'}
+                      placeholder={
+                        projectsQuery.isLoading
+                          ? tI18nComplete.raw('textba3bbbe10d8b')
+                          : tI18nComplete.raw('text8ba607b13cd0')
+                      }
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NEW_PROJECT}>＋ New project</SelectItem>
+                    <SelectItem value={NEW_PROJECT}>
+                      {tI18nComplete.raw('text6a5058ba5252')}
+                    </SelectItem>
                     {projects.map((p) => (
                       <SelectItem key={p.project_id} value={p.project_id}>
                         {p.name}
@@ -266,7 +282,9 @@ export function AddToProjectModal({
                 />
               ) : target === NEW_PROJECT ? (
                 <Field className="gap-1.5">
-                  <FieldLabel htmlFor="mp-new-project-name">Name</FieldLabel>
+                  <FieldLabel htmlFor="mp-new-project-name">
+                    {tI18nComplete.raw('textdcd1d5223f73')}
+                  </FieldLabel>
                   <Input
                     id="mp-new-project-name"
                     value={newProjectName}
@@ -280,7 +298,7 @@ export function AddToProjectModal({
 
               {item.dependencies.length > 0 && (
                 <FieldDescription>
-                  Also installs:{' '}
+                  {tI18nComplete.raw('text5ec6ae29f4b6')}{' '}
                   <span className="text-foreground">{item.dependencies.join(', ')}</span>
                 </FieldDescription>
               )}
@@ -289,7 +307,7 @@ export function AddToProjectModal({
                 <Field variant="outline">
                   <FieldContent>
                     <div className="flex items-center gap-2">
-                      <FieldTitle>This item requires</FieldTitle>
+                      <FieldTitle>{tI18nComplete.raw('text577ad00bbf3e')}</FieldTitle>
                       <Badge variant="outline" size="sm">
                         {capCount}
                       </Badge>
@@ -304,7 +322,7 @@ export function AddToProjectModal({
                             {s}
                           </span>
                           <Badge variant="outline" size="sm">
-                            Secret
+                            {tI18nComplete.raw('text7e32a729b122')}
                           </Badge>
                         </li>
                       ))}
@@ -317,7 +335,7 @@ export function AddToProjectModal({
                             {c}
                           </span>
                           <Badge variant="outline" size="sm">
-                            Connector
+                            {tI18nComplete.raw('text8f0d706fff25')}
                           </Badge>
                         </li>
                       ))}
@@ -330,7 +348,7 @@ export function AddToProjectModal({
                             {t}
                           </span>
                           <Badge variant="outline" size="sm">
-                            Tool
+                            {tI18nComplete.raw('text2e53bdcd0740')}
                           </Badge>
                         </li>
                       ))}
@@ -338,7 +356,7 @@ export function AddToProjectModal({
                   </FieldContent>
                 </Field>
               ) : (
-                <FieldDescription>No special requirements — this item just works.</FieldDescription>
+                <FieldDescription>{tI18nComplete.raw('texte4a075134e2b')}</FieldDescription>
               )}
             </FieldGroup>
           </ModalBody>
@@ -351,11 +369,11 @@ export function AddToProjectModal({
               disabled={busy}
               onClick={() => onOpenChange(false)}
             >
-              Cancel
+              {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button type="submit" size="sm" disabled={confirmDisabled}>
               {busy ? <Loading className="size-3.5 shrink-0" /> : null}
-              {busy ? 'Adding…' : 'Add to project'}
+              {busy ? tI18nComplete.raw('textc6de6f45c827') : tI18nComplete.raw('textdf0fbf9c008f')}
             </Button>
           </ModalFooter>
         </form>

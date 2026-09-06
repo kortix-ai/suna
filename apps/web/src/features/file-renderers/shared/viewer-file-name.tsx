@@ -25,7 +25,7 @@ export function ViewerFileName({
   return (
     <span
       title={display}
-      className={cn('min-w-0 max-w-60 truncate text-sm font-medium', className)}
+      className={cn('max-w-60 min-w-0 truncate text-sm font-medium', className)}
     >
       {display}
     </span>

@@ -20,6 +20,8 @@
 import { Monitor as MonitorIcon } from '@/features/icon/icons/monitor';
 import { Moon } from '@/features/icon/icons/moon';
 import { Sun } from '@/features/icon/icons/sun';
+import type { UiTranslator } from '@/i18n/translator';
+import { MENU_TRANSLATION_KEYS } from '@/lib/menu-translation-keys.generated';
 import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
 import { WALLPAPERS } from '@/lib/wallpapers';
 import type { FeatureFlagKey } from '@kortix/sdk';
@@ -126,6 +128,19 @@ export const navSubGroupLabels: Record<NavSubGroup, string> = {
   services: 'Services',
   security: 'Security',
 };
+
+export function translateMenuText(value: string, tI18nComplete: UiTranslator): string {
+  const key = MENU_TRANSLATION_KEYS[value];
+  return key ? tI18nComplete.raw(key as Parameters<UiTranslator['raw']>[0]) : value;
+}
+
+export function translateMenuItem(item: MenuItemDef, tI18nComplete: UiTranslator): MenuItemDef {
+  return {
+    ...item,
+    label: translateMenuText(item.label, tI18nComplete),
+    keywords: item.keywords ? translateMenuText(item.keywords, tI18nComplete) : undefined,
+  };
+}
 
 export interface MenuItemDef {
   /** Unique identifier for this item (used as React key, cmdk value, etc.) */
@@ -1259,7 +1274,7 @@ export const menuRegistry: MenuItemDef[] = [
   // ──────────────────────────────────────────────────────────────────────────
   ...WALLPAPERS.map((wp): MenuItemDef => ({
     id: `wallpaper-${wp.id}`,
-    label: `Appearance · ${wp.name}`,
+    label: wp.name,
     icon: WallpaperIcon,
     group: 'wallpaper',
     showIn: ['commandPalette'],

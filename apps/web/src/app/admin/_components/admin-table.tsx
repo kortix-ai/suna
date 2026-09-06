@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -84,13 +85,14 @@ export function AdminSortHeader<TColumn extends string>({
   onSort: (column: TColumn) => void;
   align?: 'left' | 'right';
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const active = sortBy === column;
   return (
     <TableHead className={align === 'right' ? 'text-right' : undefined}>
       <button
         type="button"
         onClick={() => onSort(column)}
-        aria-label={`Sort by ${label}`}
+        aria-label={tI18nComplete('text9ad125fe331f', { value0: label })}
         className={cn(
           'inline-flex cursor-pointer items-center gap-1 text-sm outline-none',
           'focus-visible:ring-ring rounded-sm focus-visible:ring-2',
@@ -131,12 +133,15 @@ export function AdminPagination({
   noun: string;
   onPageChange: (page: number) => void;
 }) {
+  const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   if (pages <= 1) return null;
 
   return (
     <div className="text-muted-foreground flex items-center justify-between gap-3 text-xs">
       <span className="tabular-nums">
-        Page {page} of {pages} · {total.toLocaleString()} {noun}
+        {tI18nComplete.raw('text0a30a815d67d')}
+        {page} {tI18nComplete.raw('text28391d3bc64e')}
+        {pages} · {total.toLocaleString()} {noun}
       </span>
       <div className="flex gap-2">
         <Button
@@ -146,7 +151,7 @@ export function AdminPagination({
           disabled={page === 1}
         >
           <CaretLeftIcon className="size-4 shrink-0" />
-          Previous
+          {tI18nComplete.raw('texta57b08a480b8')}
         </Button>
         <Button
           variant="outline"
@@ -154,7 +159,7 @@ export function AdminPagination({
           onClick={() => onPageChange(Math.min(pages, page + 1))}
           disabled={page === pages}
         >
-          Next
+          {tI18nComplete.raw('text1ff57a29d7c9')}
           <CaretRightIcon className="size-4 shrink-0" />
         </Button>
       </div>

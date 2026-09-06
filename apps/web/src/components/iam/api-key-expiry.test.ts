@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { testUiTranslator } from '@/i18n/test-translator';
 import type { PatPolicy } from '@/lib/iam-client';
 import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from './api-key-expiry';
 
@@ -9,12 +10,22 @@ function policy(over: Partial<PatPolicy> = {}): PatPolicy {
 
 describe('expiryOptions', () => {
   test('with no rules set, every preset plus Never', () => {
-    expect(expiryOptions(policy()).map((o) => o.value)).toEqual([NEVER_EXPIRES, '30', '90', '365']);
+    expect(expiryOptions(policy(), testUiTranslator).map((o) => o.value)).toEqual([
+      NEVER_EXPIRES,
+      '30',
+      '90',
+      '365',
+    ]);
   });
 
   test('a missing policy behaves like no rules — the form still works while the query loads', () => {
-    expect(expiryOptions(null).map((o) => o.value)).toEqual([NEVER_EXPIRES, '30', '90', '365']);
-    expect(expiryOptions(undefined).map((o) => o.value)).toEqual([
+    expect(expiryOptions(null, testUiTranslator).map((o) => o.value)).toEqual([
+      NEVER_EXPIRES,
+      '30',
+      '90',
+      '365',
+    ]);
+    expect(expiryOptions(undefined, testUiTranslator).map((o) => o.value)).toEqual([
       NEVER_EXPIRES,
       '30',
       '90',
@@ -23,33 +34,42 @@ describe('expiryOptions', () => {
   });
 
   test('require_expiry removes Never', () => {
-    const values = expiryOptions(policy({ require_expiry: true })).map((o) => o.value);
+    const values = expiryOptions(policy({ require_expiry: true }), testUiTranslator).map(
+      (o) => o.value,
+    );
     expect(values).toEqual(['30', '90', '365']);
   });
 
   test('a lifetime cap drops the presets beyond it', () => {
-    const values = expiryOptions(policy({ max_lifetime_days: 90 })).map((o) => o.value);
+    const values = expiryOptions(policy({ max_lifetime_days: 90 }), testUiTranslator).map(
+      (o) => o.value,
+    );
     expect(values).toEqual([NEVER_EXPIRES, '30', '90']);
   });
 
   test('a cap shorter than every preset becomes the only dated offer', () => {
-    const values = expiryOptions(policy({ max_lifetime_days: 7 })).map((o) => o.value);
+    const values = expiryOptions(policy({ max_lifetime_days: 7 }), testUiTranslator).map(
+      (o) => o.value,
+    );
     expect(values).toEqual([NEVER_EXPIRES, '7']);
   });
 
   test('a cap plus require_expiry leaves only dates within the cap', () => {
-    const values = expiryOptions(policy({ max_lifetime_days: 7, require_expiry: true })).map(
-      (o) => o.value,
-    );
+    const values = expiryOptions(
+      policy({ max_lifetime_days: 7, require_expiry: true }),
+      testUiTranslator,
+    ).map((o) => o.value);
     expect(values).toEqual(['7']);
   });
 
   test('a cap alone never forces an expiry — the backend checks the two rules separately', () => {
-    expect(expiryOptions(policy({ max_lifetime_days: 30 }))[0]?.value).toBe(NEVER_EXPIRES);
+    expect(expiryOptions(policy({ max_lifetime_days: 30 }), testUiTranslator)[0]?.value).toBe(
+      NEVER_EXPIRES,
+    );
   });
 
   test('labels read as time, not as numbers', () => {
-    expect(expiryOptions(policy()).map((o) => o.label)).toEqual([
+    expect(expiryOptions(policy(), testUiTranslator).map((o) => o.label)).toEqual([
       'Never',
       '30 days',
       '90 days',
@@ -60,17 +80,26 @@ describe('expiryOptions', () => {
 
 describe('defaultExpiryOption', () => {
   test('defaults to Never when the workspace allows it', () => {
-    expect(defaultExpiryOption(policy())).toBe(NEVER_EXPIRES);
-    expect(defaultExpiryOption(policy({ max_lifetime_days: 30 }))).toBe(NEVER_EXPIRES);
+    expect(defaultExpiryOption(policy(), testUiTranslator)).toBe(NEVER_EXPIRES);
+    expect(defaultExpiryOption(policy({ max_lifetime_days: 30 }), testUiTranslator)).toBe(
+      NEVER_EXPIRES,
+    );
   });
 
   test('defaults to 90 days once an expiry is required', () => {
-    expect(defaultExpiryOption(policy({ require_expiry: true }))).toBe('90');
+    expect(defaultExpiryOption(policy({ require_expiry: true }), testUiTranslator)).toBe('90');
   });
 
   test('falls back to the longest allowed date when 90 days is over the cap', () => {
-    expect(defaultExpiryOption(policy({ require_expiry: true, max_lifetime_days: 30 }))).toBe('30');
-    expect(defaultExpiryOption(policy({ require_expiry: true, max_lifetime_days: 7 }))).toBe('7');
+    expect(
+      defaultExpiryOption(
+        policy({ require_expiry: true, max_lifetime_days: 30 }),
+        testUiTranslator,
+      ),
+    ).toBe('30');
+    expect(
+      defaultExpiryOption(policy({ require_expiry: true, max_lifetime_days: 7 }), testUiTranslator),
+    ).toBe('7');
   });
 });
 

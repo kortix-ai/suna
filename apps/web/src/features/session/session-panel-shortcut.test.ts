@@ -144,7 +144,10 @@ describe('mobile drawer hosts both surfaces', () => {
 
   test('dismissing it puts both down, so neither replays on the next open', () => {
     expect(layout).toContain('handleMobilePanelClose');
-    const fn = layout.slice(layout.indexOf('const handleMobilePanelClose'), layout.indexOf('const handleMobilePanelClose') + 220);
+    const fn = layout.slice(
+      layout.indexOf('const handleMobilePanelClose'),
+      layout.indexOf('const handleMobilePanelClose') + 220,
+    );
     expect(fn).toContain('handleSidePanelClose()');
     expect(fn).toContain('setIsActionPanelOpen(false)');
   });

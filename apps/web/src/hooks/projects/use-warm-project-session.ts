@@ -5,9 +5,9 @@ import { create as createStore } from 'zustand';
 
 import {
   claimWarmProjectSession,
-  type PendingSessionPrompt,
   ensureWarmProjectSession,
   getProjectSession,
+  type PendingSessionPrompt,
   type ProjectSession,
   type SessionConnectorBindingsInput,
 } from '@kortix/sdk';

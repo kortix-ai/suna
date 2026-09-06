@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from '@/i18n/use-translations';
 /**
  * `PlanPanelCard` — the plan, as the Easy panel's fourth card.
  *
@@ -34,14 +35,14 @@
 import { useRuntimeSessionTodo } from '@kortix/sdk/react';
 import { useMemo } from 'react';
 
+import { parseTodos, type TodoItem } from '@/features/session/tool/shared/todo-helpers';
 import {
   keyTodos,
-  PlanRing,
   planListTodos,
-  planSummary,
+  PlanRing,
   PlanSteps,
+  planSummary,
 } from '@/features/session/turn/plan-card';
-import { parseTodos, type TodoItem } from '@/features/session/tool/shared/todo-helpers';
 import { cn } from '@/lib/utils';
 import { PanelCard } from './panel-card';
 
@@ -58,11 +59,12 @@ import { PanelCard } from './panel-card';
  * "3 of 6" from reflowing into "10 of 12" as the agent advances.
  */
 function PlanProgress({ done, total, running }: { done: number; total: number; running: boolean }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <span className="flex items-center gap-1.5">
       <PlanRing done={done} total={total} running={running} className="size-4 shrink-0" />
       <span className="text-muted-foreground text-xs tabular-nums">
-        {done} of {total}
+        {done} {tI18nComplete.raw('text28391d3bc64e')} {total}
       </span>
     </span>
   );
@@ -91,6 +93,7 @@ export function planPanelRows(
 }
 
 export function PlanPanelCard({ sessionId }: { sessionId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data } = useRuntimeSessionTodo(sessionId);
 
   const todos = useMemo(() => parseTodos(data), [data]);
@@ -109,7 +112,7 @@ export function PlanPanelCard({ sessionId }: { sessionId: string }) {
 
   return (
     <PanelCard
-      title="Plan"
+      title={tI18nComplete.raw('textfa8ed0bdabdd')}
       // Never the promise state — the card does not exist without a plan.
       isEmpty={false}
       // No `count`. `indicator` stands in its slot with the fraction, which is

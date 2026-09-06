@@ -3,9 +3,6 @@ title: Self-hosting
 description: Run your own Kortix instance with Docker Compose, on a VPS or for evaluation.
 ---
 
-import { Steps, Step } from 'fumadocs-ui/components/steps';
-import { Callout } from 'fumadocs-ui/components/callout';
-
 Kortix runs as one Docker Compose stack: the frontend, the API, the LLM gateway, and the Supabase distribution. This page shows the three ways to install it, how updates work, and how to back up your data.
 
 Agent sessions run on a separate sandbox provider, not on this stack. The default is [Daytona](https://www.daytona.io/); Platinum and E2B are also supported.
@@ -25,17 +22,13 @@ This script runs on Linux only. On another OS, install the CLI directly and use 
 
 <Steps>
 
-<Step>
-### Install the CLI
-
+<Step title="Install the CLI">
 ```sh
 curl -fsSL https://kortix.com/install | bash
 ```
 </Step>
 
-<Step>
-### Point DNS, then initialize
-
+<Step title="Point DNS, then initialize">
 Create an A/AAAA record for your domain and for `api.<domain>`, both pointing
 at the box's IP. Open ports 80 and 443 — the bundled Caddy proxy uses them to
 issue a TLS certificate. Then run:
@@ -45,9 +38,7 @@ kortix self-host init --domain kortix.example.com
 ```
 </Step>
 
-<Step>
-### Start the stack
-
+<Step title="Start the stack">
 ```sh
 kortix self-host start
 ```
@@ -79,13 +70,13 @@ optionally a managed-git token. Sign up in the dashboard, then connect your
 own LLM key in the model picker. Self-hosted instances use your own key
 by default.
 
-<Callout type="info">
+:::info
 By default, only the platform admin can create new organization accounts. The
 platform admin is the super-admin flag on a membership, not a role.
 Any signed-in user can still join by invite or SSO. Opt out with
 `kortix self-host init --no-restrict-account-creation`, or re-enable the
 admin-only default with `--restrict-account-creation`.
-</Callout>
+:::
 
 Each API container has a 640 MiB memory limit by default.
 Keep this default on an 8 GiB host.
@@ -117,10 +108,10 @@ directories under `~/.config/kortix/self-host/<instance>/`: `volumes/db/data`
 `.env` file holds every secret and signing key it uses. Back up all three
 before you run a destructive command.
 
-<Callout type="warn">
+:::warning
 `kortix self-host uninstall` stops the stack, deletes its containers and
 volumes, and deletes the instance directory. This cannot be undone.
-</Callout>
+:::
 
 ## Learn more
 

@@ -63,8 +63,7 @@ export function useRollSound() {
     if (!contextRef.current) {
       const Ctor =
         window.AudioContext ??
-        (window as unknown as { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
       const context = new Ctor();
       const bus = context.createGain();
@@ -72,11 +71,7 @@ export function useRollSound() {
       bus.connect(context.destination);
 
       // One second of white noise, reused for every clack.
-      const buffer = context.createBuffer(
-        1,
-        context.sampleRate,
-        context.sampleRate,
-      );
+      const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
 

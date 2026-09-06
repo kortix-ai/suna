@@ -95,8 +95,9 @@ import {
   formatSandboxProvider,
   formatSandboxProviders,
 } from '@/features/workspace/project-sidebar/footer/sandbox-alert-state';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
 import { PROJECT_ACTIONS } from '@/lib/project-actions';
-import { relativeTime } from '@/lib/relative-time';
 import { useProjectCan } from '@/lib/use-project-can';
 import { cn } from '@/lib/utils';
 import {
@@ -122,6 +123,7 @@ import {
   XCircleIcon as XCircleSolid,
 } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import type { SandboxProviderMode } from '../../customize/sections/view/sandbox-provider-coverage';
 
 /** Build-status tile icons render solid/fill — a filled status glyph inside
@@ -215,6 +217,46 @@ const BUILD_STATUS_TILE: Record<
   },
 };
 
+export interface SnapshotsCopy {
+  locale: string;
+  categoryLabels: Record<SnapshotErrorCategory, string>;
+  categoryHelp: Record<SnapshotErrorCategory, string>;
+  sourceLabels: Record<NonNullable<ProjectSnapshotBuild['source']>, string>;
+  statusLabels: Record<ProjectSnapshotStatus, string>;
+  stale: Record<Exclude<FailedBuildRelevance, 'blocking'>, string>;
+  outcomes: { ready: string; building: string; blocked: string; failed: string };
+  facts: {
+    triggeredBy: string;
+    started: string;
+    took: string;
+    stillRunning: string;
+    runsOn: string;
+    imageId: string;
+    unknown: string;
+  };
+  duration: {
+    underMinute: string;
+    minutes: (count: number) => string;
+    hours: (count: number) => string;
+  };
+  environment: Record<'ready' | 'building' | 'not_built', { title: string; body: string }>;
+  banner: {
+    blockedTitle: string;
+    degradedTitle: string;
+    blockedBody: string;
+    degradedBody: (ready: string, failed: string) => string;
+  };
+  actions: { fix: string; rebuild: string };
+  faq: { title: string; items: readonly { question: string; answer: string }[] };
+  view: {
+    loadFailed: string;
+    retry: string;
+    logTitle: string;
+    logDescription: string;
+    empty: string;
+  };
+}
+
 function ProviderBadge({ provider }: { provider: string | null | undefined }) {
   if (!provider) return null;
   return (
@@ -224,37 +266,49 @@ function ProviderBadge({ provider }: { provider: string | null | undefined }) {
   );
 }
 
-function formatBuildDuration(startedAt: string, finishedAt: string | null): string | null {
+function formatBuildDuration(
+  startedAt: string,
+  finishedAt: string | null,
+  copy = DEFAULT_SNAPSHOTS_COPY.duration,
+): string | null {
   if (!finishedAt) return null;
   const start = new Date(startedAt).getTime();
   const end = new Date(finishedAt).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
   const minutes = Math.round((end - start) / 60_000);
-  if (minutes < 1) return 'under 1m';
-  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1) return copy.underMinute;
+  if (minutes < 60) return copy.minutes(minutes);
   const hours = Math.round(minutes / 60);
-  return `${hours}h`;
+  return copy.hours(hours);
 }
 
-function formatRelative(input: string | null | undefined): string {
-  return relativeTime(input) || '—';
+function formatRelative(input: string | null | undefined, locale = 'en'): string {
+  if (!input) return '—';
+  const then = new Date(input).getTime();
+  if (!Number.isFinite(then)) return '—';
+  const minutes = Math.trunc((Date.now() - then) / 60_000);
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
+  if (minutes < 60) return formatter.format(-Math.max(minutes, 0), 'minute');
+  const hours = Math.trunc(minutes / 60);
+  if (hours < 24) return formatter.format(-hours, 'hour');
+  const days = Math.trunc(hours / 24);
+  if (days < 30) return formatter.format(-days, 'day');
+  return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(then);
 }
 
 /** The exact moment, for the detail grid — "how long ago" is already on the
  *  collapsed row, and a reader comparing a build against something that
  *  happened in their day needs the clock time, not an age. */
-const startedAtFormat = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-});
-
-function formatStartedAt(input: string | null | undefined): string {
+function formatStartedAt(input: string | null | undefined, locale = 'en'): string {
   if (!input) return '—';
   const t = new Date(input).getTime();
   if (!Number.isFinite(t)) return '—';
-  return startedAtFormat.format(t);
+  return new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(t);
 }
 
 /**
@@ -287,23 +341,24 @@ export interface BuildOutcome {
 export function describeBuildOutcome(
   build: ProjectSnapshotBuild,
   relevance?: FailedBuildRelevance | null,
+  copy = DEFAULT_SNAPSHOTS_COPY,
 ): BuildOutcome {
   const title = build.slug;
   const stale = relevance && relevance !== 'blocking' ? relevance : null;
 
   if (build.status === 'ready') {
-    return { title, stale: null, summary: 'Ready for new sessions' };
+    return { title, stale: null, summary: copy.outcomes.ready };
   }
   if (build.status === 'building') {
-    return { title, stale: null, summary: 'Being prepared now' };
+    return { title, stale: null, summary: copy.outcomes.building };
   }
   if (stale) {
-    return { title, stale, summary: STALE_FAILURE_SUMMARY[stale] };
+    return { title, stale, summary: copy.stale[stale] };
   }
   return {
     title,
     stale: null,
-    summary: relevance === 'blocking' ? 'New sessions can’t start on this' : 'Didn’t finish',
+    summary: relevance === 'blocking' ? copy.outcomes.blocked : copy.outcomes.failed,
   };
 }
 
@@ -346,11 +401,13 @@ function BuildFact({
 export function BuildDetails({
   build,
   providerMode = 'automatic',
+  copy = DEFAULT_SNAPSHOTS_COPY,
 }: {
   build: ProjectSnapshotBuild;
   providerMode?: SandboxProviderMode;
+  copy?: SnapshotsCopy;
 }) {
-  const duration = formatBuildDuration(build.started_at, build.finished_at);
+  const duration = formatBuildDuration(build.started_at, build.finished_at, copy.duration);
   const category = build.error_category ?? 'unknown';
   // Only a project that has explicitly pinned a provider gets told which one a
   // build resolved to — on Automatic the answer is an implementation detail
@@ -365,23 +422,23 @@ export function BuildDetails({
       <dl className="grid grid-cols-2 gap-x-4 gap-y-4 tabular-nums sm:grid-cols-3">
         <BuildFact
           icon={LightningIcon}
-          label="Triggered by"
-          value={build.source ? BUILD_SOURCE_LABEL[build.source] : 'Unknown'}
+          label={copy.facts.triggeredBy}
+          value={build.source ? copy.sourceLabels[build.source] : copy.facts.unknown}
         />
         <BuildFact
           icon={CalendarBlankIcon}
-          label="Started"
-          value={formatStartedAt(build.started_at)}
+          label={copy.facts.started}
+          value={formatStartedAt(build.started_at, copy.locale)}
         />
         <BuildFact
           icon={TimerIcon}
-          label="Took"
-          value={duration ?? (build.status === 'building' ? 'Still running' : '—')}
+          label={copy.facts.took}
+          value={duration ?? (build.status === 'building' ? copy.facts.stillRunning : '—')}
         />
         {provider ? (
           <BuildFact
             icon={HardDrivesIcon}
-            label="Runs on"
+            label={copy.facts.runsOn}
             value={formatSandboxProvider(provider)}
           />
         ) : null}
@@ -390,7 +447,7 @@ export function BuildDetails({
       {/* The one string support will ask for, so it is copyable rather than
           something to transcribe out of a log by hand. */}
       <div className="bg-muted/40 flex items-center gap-2 rounded-sm py-1 pr-1 pl-2.5">
-        <span className="text-muted-foreground shrink-0 text-xs">Image ID</span>
+        <span className="text-muted-foreground shrink-0 text-xs">{copy.facts.imageId}</span>
         <code className="text-muted-foreground min-w-0 flex-1 truncate font-mono text-xs">
           {build.snapshot_name}
         </code>
@@ -399,8 +456,8 @@ export function BuildDetails({
 
       {build.status === 'failed' && build.error ? (
         <div className="space-y-2">
-          <p className="text-foreground text-sm font-medium">{CATEGORY_LABEL[category]}</p>
-          <p className="text-muted-foreground text-sm text-pretty">{CATEGORY_HELP[category]}</p>
+          <p className="text-foreground text-sm font-medium">{copy.categoryLabels[category]}</p>
+          <p className="text-muted-foreground text-sm text-pretty">{copy.categoryHelp[category]}</p>
           <pre className="bg-muted/50 text-muted-foreground max-h-40 overflow-auto rounded-sm p-2.5 text-xs wrap-break-word whitespace-pre-wrap">
             {build.error}
           </pre>
@@ -414,18 +471,23 @@ export function BuildRow({
   build,
   providerMode,
   relevance,
+  copy = DEFAULT_SNAPSHOTS_COPY,
 }: {
   build: ProjectSnapshotBuild;
   /** Only reveal the resolved provider when the project has explicitly pinned one. */
   providerMode: SandboxProviderMode;
   /** How this build relates to the image the project boots today. */
   relevance?: FailedBuildRelevance | null;
+  copy?: SnapshotsCopy;
 }) {
-  const status = BUILD_STATUS_TILE[build.status];
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const status = localizeUiCatalog(BUILD_STATUS_TILE, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS)[
+    build.status
+  ];
   const { Icon } = status;
-  const outcome = describeBuildOutcome(build, relevance);
+  const outcome = describeBuildOutcome(build, relevance, copy);
   const stale = outcome.stale;
-  const timestamp = formatRelative(build.finished_at ?? build.started_at);
+  const timestamp = formatRelative(build.finished_at ?? build.started_at, copy.locale);
 
   return (
     <li>
@@ -459,7 +521,7 @@ export function BuildRow({
                   {outcome.title}
                 </span>
                 <Badge variant={stale ? 'muted' : status.badgeVariant} size="xs">
-                  {status.label}
+                  {copy.statusLabels[build.status]}
                 </Badge>
                 {providerMode === 'pinned' ? <ProviderBadge provider={build.provider} /> : null}
               </div>
@@ -467,16 +529,18 @@ export function BuildRow({
                   nothing a reader recognises; the sentence does. */}
               <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
                 <span className="truncate">{outcome.summary}</span>
-                <span className="text-muted-foreground/40">&bull;</span>
+                <span className="text-muted-foreground/40">
+                  {tI18nComplete.raw('text3b9453dad42b')}
+                </span>
                 <span className="shrink-0 tabular-nums">{timestamp}</span>
               </div>
             </div>
-            <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/build:rotate-180" />
+            <ChevronDown className="text-muted-foreground duration-normal size-4 shrink-0 transition-transform ease-out group-data-[state=open]/build:rotate-180 motion-reduce:transition-none" />
           </div>
         </DisclosureTrigger>
         <DisclosureContent className="overflow-hidden" contentClassName="border-border border-t">
           <DisclosureBody className="px-4 py-4">
-            <BuildDetails build={build} providerMode={providerMode} />
+            <BuildDetails build={build} providerMode={providerMode} copy={copy} />
           </DisclosureBody>
         </DisclosureContent>
       </Disclosure>
@@ -503,8 +567,19 @@ function InlinePanelEmpty({ message }: { message: string }) {
  * the API is telling us it could not observe the providers and a confident
  * "everything's fine" would be a fabrication.
  */
-function EnvironmentSummary({ status }: { status: SandboxRuntimeStatus }) {
-  const summary = ENVIRONMENT_SUMMARY[status.state];
+function EnvironmentSummary({
+  status,
+  copy = DEFAULT_SNAPSHOTS_COPY,
+}: {
+  status: SandboxRuntimeStatus;
+  copy?: SnapshotsCopy;
+}) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const summary = localizeUiCatalog(
+    ENVIRONMENT_SUMMARY,
+    tI18nComplete,
+    APP_REGISTRY_TRANSLATION_KEYS,
+  )[status.state];
   if (!summary) return null;
   const { Icon } = summary;
 
@@ -519,8 +594,12 @@ function EnvironmentSummary({ status }: { status: SandboxRuntimeStatus }) {
         <Icon className={cn('size-5 shrink-0', summary.iconColor)} />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground text-sm font-medium text-balance">{summary.title}</p>
-        <p className="text-muted-foreground text-sm text-pretty">{summary.body}</p>
+        <p className="text-foreground text-sm font-medium text-balance">
+          {copy.environment[status.state as 'ready' | 'building' | 'not_built'].title}
+        </p>
+        <p className="text-muted-foreground text-sm text-pretty">
+          {copy.environment[status.state as 'ready' | 'building' | 'not_built'].body}
+        </p>
       </div>
     </div>
   );
@@ -587,6 +666,7 @@ function SandboxStatusBanner({
   isRetryPending,
   onFix,
   onRetry,
+  copy = DEFAULT_SNAPSHOTS_COPY,
 }: {
   status: SandboxRuntimeStatus;
   canManage: boolean;
@@ -594,11 +674,14 @@ function SandboxStatusBanner({
   isRetryPending: boolean;
   onFix: () => void;
   onRetry: () => void;
+  copy?: SnapshotsCopy;
 }) {
   const failure = status.current_failure;
   const blocked = status.state === 'blocked';
   const showFixAction = canManage && status.fix_with_agent_available;
-  const failedAt = failure ? formatRelative(failure.finished_at ?? failure.started_at) : null;
+  const failedAt = failure
+    ? formatRelative(failure.finished_at ?? failure.started_at, copy.locale)
+    : null;
 
   return (
     <div className="border-border bg-popover rounded-md border">
@@ -619,18 +702,21 @@ function SandboxStatusBanner({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 space-y-1">
               <p className="text-foreground text-sm font-medium text-balance">
-                {blocked ? 'Sessions can’t start' : 'Some sessions won’t start'}
+                {blocked ? copy.banner.blockedTitle : copy.banner.degradedTitle}
               </p>
               <p className="text-muted-foreground text-sm text-balance">
                 {blocked
-                  ? 'The machine this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.'
-                  : `The machine is ready on ${formatSandboxProviders(status.ready_providers)} but failing on ${formatSandboxProviders(status.failed_providers)}. Sessions routed there won’t start.`}
+                  ? copy.banner.blockedBody
+                  : copy.banner.degradedBody(
+                      formatSandboxProviders(status.ready_providers),
+                      formatSandboxProviders(status.failed_providers),
+                    )}
               </p>
               {/* The category names the failure; without this line it names it
                   to a reader who cannot act on the name. */}
               {failure?.error_category ? (
                 <p className="text-muted-foreground text-sm text-pretty">
-                  {CATEGORY_HELP[failure.error_category]}
+                  {copy.categoryHelp[failure.error_category]}
                 </p>
               ) : null}
               {failure ? (
@@ -645,7 +731,7 @@ function SandboxStatusBanner({
             <div className="flex shrink-0 flex-wrap items-center gap-2">
               {failure?.error_category ? (
                 <Badge size="sm" variant={blocked ? 'destructive' : 'warning'}>
-                  {CATEGORY_LABEL[failure.error_category] ?? failure.error_category}
+                  {copy.categoryLabels[failure.error_category] ?? failure.error_category}
                 </Badge>
               ) : null}
               {showFixAction ? (
@@ -660,7 +746,7 @@ function SandboxStatusBanner({
                   ) : (
                     <SparklesSolid className="size-3.5 shrink-0" />
                   )}
-                  Fix with agent
+                  {copy.actions.fix}
                 </Button>
               ) : null}
               {canManage ? (
@@ -676,7 +762,7 @@ function SandboxStatusBanner({
                   ) : (
                     <RefreshCw className="size-3.5 shrink-0" />
                   )}
-                  Rebuild
+                  {copy.actions.rebuild}
                 </Button>
               ) : null}
             </div>
@@ -718,12 +804,74 @@ const HOW_IT_WORKS: readonly { question: string; answer: string }[] = [
   },
 ];
 
-function HowItWorks() {
+export const DEFAULT_SNAPSHOTS_COPY: SnapshotsCopy = {
+  locale: 'en',
+  categoryLabels: CATEGORY_LABEL,
+  categoryHelp: CATEGORY_HELP,
+  sourceLabels: BUILD_SOURCE_LABEL,
+  statusLabels: { ready: 'ready', building: 'building', failed: 'failed' },
+  stale: STALE_FAILURE_SUMMARY,
+  outcomes: {
+    ready: 'Ready for new sessions',
+    building: 'Being prepared now',
+    blocked: 'New sessions can’t start on this',
+    failed: 'Didn’t finish',
+  },
+  facts: {
+    triggeredBy: 'Triggered by',
+    started: 'Started',
+    took: 'Took',
+    stillRunning: 'Still running',
+    runsOn: 'Runs on',
+    imageId: 'Image ID',
+    unknown: 'Unknown',
+  },
+  duration: {
+    underMinute: 'under 1m',
+    minutes: (count) => `${count}m`,
+    hours: (count) => `${count}h`,
+  },
+  environment: {
+    ready: {
+      title: 'This project’s environment is ready',
+      body: 'New sessions start on the prepared machine right away. There is nothing to do on this page.',
+    },
+    building: {
+      title: 'Preparing this project’s environment',
+      body: 'A new machine is being prepared. Sessions started now wait for it to finish — they don’t fail.',
+    },
+    not_built: {
+      title: 'Nothing prepared yet',
+      body: 'Kortix prepares a machine the first time you start a session here. Nothing needs to be set up in advance.',
+    },
+  },
+  banner: {
+    blockedTitle: 'Sessions can’t start',
+    degradedTitle: 'Some sessions won’t start',
+    blockedBody:
+      'The machine this project boots from failed to build, and no working copy is available. Every new session retries it and hits the same error.',
+    degradedBody: (ready, failed) =>
+      `The machine is ready on ${ready} but failing on ${failed}. Sessions routed there won’t start.`,
+  },
+  actions: { fix: 'Fix with agent', rebuild: 'Rebuild' },
+  faq: { title: 'How this works', items: HOW_IT_WORKS },
+  view: {
+    loadFailed: 'Failed to load sandbox snapshots:',
+    retry: 'Retry',
+    logTitle: 'Build log',
+    logDescription:
+      'One row for every time Kortix prepared a machine for this project. Open a row for the details.',
+    empty:
+      'No builds recorded yet. The platform default builds once globally; custom templates build on first use.',
+  },
+};
+
+function HowItWorks({ copy = DEFAULT_SNAPSHOTS_COPY }: { copy?: SnapshotsCopy }) {
   return (
     <section className="space-y-4">
-      <SettingsSubsectionHeader title="How this works" />
+      <SettingsSubsectionHeader title={copy.faq.title} />
       <ul className="space-y-2">
-        {HOW_IT_WORKS.map(({ question, answer }) => (
+        {copy.faq.items.map(({ question, answer }) => (
           <li key={question}>
             <Disclosure
               className="group/faq bg-popover overflow-hidden"
@@ -735,7 +883,7 @@ function HowItWorks() {
                   <span className="text-foreground min-w-0 flex-1 text-sm font-medium text-pretty">
                     {question}
                   </span>
-                  <ChevronDown className="text-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-out group-data-[state=open]/faq:rotate-180" />
+                  <ChevronDown className="text-muted-foreground duration-normal size-4 shrink-0 transition-transform ease-out group-data-[state=open]/faq:rotate-180 motion-reduce:transition-none" />
                 </div>
               </DisclosureTrigger>
               <DisclosureContent
@@ -772,6 +920,7 @@ export interface SnapshotsTabViewProps {
   onRetryBuild?: () => void;
   providerMode?: SandboxProviderMode;
   templateBuilds?: ProjectSnapshotBuild[];
+  copy?: SnapshotsCopy;
 }
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
@@ -792,6 +941,7 @@ export function SnapshotsTabView({
   onRetryBuild = () => {},
   providerMode = 'automatic',
   templateBuilds = [],
+  copy = DEFAULT_SNAPSHOTS_COPY,
 }: SnapshotsTabViewProps) {
   // Only these two states mean a user is actually affected right now.
   // Everything else — including a failed build whose image the provider has
@@ -819,11 +969,11 @@ export function SnapshotsTabView({
         ) : isError ? (
           <ErrorState
             size="sm"
-            title="Failed to load sandbox snapshots:"
+            title={copy.view.loadFailed}
             description={errorMessage}
             action={
               <Button variant="outline" size="sm" onClick={onRetry}>
-                Retry
+                {copy.view.retry}
               </Button>
             }
           />
@@ -837,19 +987,20 @@ export function SnapshotsTabView({
                 isRetryPending={isRetryPending}
                 onFix={onFix}
                 onRetry={onRetryBuild}
+                copy={copy}
               />
             ) : status ? (
-              <EnvironmentSummary status={status} />
+              <EnvironmentSummary status={status} copy={copy} />
             ) : null}
 
             <section className="space-y-4">
               <SettingsSubsectionHeader
-                title="Build log"
-                description="One row for every time Kortix prepared a machine for this project. Open a row for the details."
+                title={copy.view.logTitle}
+                description={copy.view.logDescription}
               />
               {templateBuilds.length === 0 ? (
                 <div className="border-border rounded-md border">
-                  <InlinePanelEmpty message="No builds recorded yet. The platform default builds once globally; custom templates build on first use." />
+                  <InlinePanelEmpty message={copy.view.empty} />
                 </div>
               ) : (
                 <ul className="space-y-2">
@@ -859,13 +1010,14 @@ export function SnapshotsTabView({
                       build={b}
                       providerMode={providerMode}
                       relevance={describeFailedBuild(b, status)}
+                      copy={copy}
                     />
                   ))}
                 </ul>
               )}
             </section>
 
-            <HowItWorks />
+            <HowItWorks copy={copy} />
           </>
         )}
       </div>
@@ -879,6 +1031,8 @@ export function SnapshotsTabView({
  *  `settings-panel.tsx` returns `null` otherwise), so nothing here fetches
  *  on panel open. */
 export function SnapshotsTab({ projectId }: { projectId: string }) {
+  const t = useTranslations('settings.snapshots');
+  const locale = useLocale();
   const projectQuery = useQuery({
     queryKey: qk.project.summary(projectId),
     queryFn: () => getProject(projectId),
@@ -906,6 +1060,96 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
     data?.provider_mode === 'pinned' ? 'pinned' : 'automatic';
   const templateBuilds = builds;
   const status = data?.status ?? null;
+  const categories = [
+    'quota',
+    'dockerfile',
+    'layer',
+    'git',
+    'tunnel',
+    'provider',
+    'timeout',
+    'runtime',
+    'unknown',
+  ] as const;
+  const sources = [
+    'session-start',
+    'project-create',
+    'cr-merge',
+    'manual',
+    'background',
+    'startup',
+  ] as const;
+  const categoryLabels = Object.fromEntries(
+    categories.map((key) => [key, t(`categories.${key}.label`)]),
+  ) as Record<SnapshotErrorCategory, string>;
+  const categoryHelp = Object.fromEntries(
+    categories.map((key) => [key, t(`categories.${key}.help`)]),
+  ) as Record<SnapshotErrorCategory, string>;
+  const sourceLabels = Object.fromEntries(
+    sources.map((key) => [key, t(`sources.${key}`)]),
+  ) as Record<NonNullable<ProjectSnapshotBuild['source']>, string>;
+  const copy: SnapshotsCopy = {
+    locale,
+    categoryLabels,
+    categoryHelp,
+    sourceLabels,
+    statusLabels: {
+      ready: t('statuses.ready'),
+      building: t('statuses.building'),
+      failed: t('statuses.failed'),
+    },
+    stale: {
+      superseded: t('stale.superseded'),
+      recovered: t('stale.recovered'),
+      retrying: t('stale.retrying'),
+    },
+    outcomes: {
+      ready: t('outcomes.ready'),
+      building: t('outcomes.building'),
+      blocked: t('outcomes.blocked'),
+      failed: t('outcomes.failed'),
+    },
+    facts: {
+      triggeredBy: t('facts.triggeredBy'),
+      started: t('facts.started'),
+      took: t('facts.took'),
+      stillRunning: t('facts.stillRunning'),
+      runsOn: t('facts.runsOn'),
+      imageId: t('facts.imageId'),
+      unknown: t('facts.unknown'),
+    },
+    duration: {
+      underMinute: t('duration.underMinute'),
+      minutes: (count) => t('duration.minutes', { count }),
+      hours: (count) => t('duration.hours', { count }),
+    },
+    environment: {
+      ready: { title: t('environment.ready.title'), body: t('environment.ready.body') },
+      building: { title: t('environment.building.title'), body: t('environment.building.body') },
+      not_built: { title: t('environment.notBuilt.title'), body: t('environment.notBuilt.body') },
+    },
+    banner: {
+      blockedTitle: t('banner.blockedTitle'),
+      degradedTitle: t('banner.degradedTitle'),
+      blockedBody: t('banner.blockedBody'),
+      degradedBody: (ready, failed) => t('banner.degradedBody', { ready, failed }),
+    },
+    actions: { fix: t('actions.fix'), rebuild: t('actions.rebuild') },
+    faq: {
+      title: t('faq.title'),
+      items: [1, 2, 3].map((item) => ({
+        question: t(`faq.items.${item}.question`),
+        answer: t(`faq.items.${item}.answer`),
+      })),
+    },
+    view: {
+      loadFailed: t('view.loadFailed'),
+      retry: t('view.retry'),
+      logTitle: t('view.logTitle'),
+      logDescription: t('view.logDescription'),
+      empty: t('view.empty'),
+    },
+  };
 
   return (
     <SnapshotsTabView
@@ -921,6 +1165,7 @@ export function SnapshotsTab({ projectId }: { projectId: string }) {
       onRetryBuild={() => retry.mutate(status?.current_failure?.template_slug)}
       providerMode={providerMode}
       templateBuilds={templateBuilds}
+      copy={copy}
     />
   );
 }

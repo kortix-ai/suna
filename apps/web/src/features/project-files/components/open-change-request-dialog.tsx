@@ -32,7 +32,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectBranch, ProjectSession } from '@kortix/sdk';
 import { StackIcon as Layers, WarningIcon } from '@phosphor-icons/react';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from '@/i18n/use-translations';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
 import { useOpenChangeRequest, useVersionDiff } from '../hooks/use-change-requests';
@@ -75,6 +75,7 @@ function BranchValue({ name }: { name: string }) {
 }
 
 function BranchRow({ branch }: { branch: ProjectBranch }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   return (
     <div className="flex items-center justify-start gap-2 py-0.5">
       <Layers className="text-muted-foreground size-4 shrink-0" />
@@ -89,7 +90,7 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
           </span>
           {branch.is_default && (
             <Badge variant="kortix" size="xs" className="shrink-0 text-[11px]">
-              default
+              {tI18nComplete.raw('text37a8eec1ce19')}
             </Badge>
           )}
         </div>
@@ -195,7 +196,7 @@ export function OpenChangeRequestDialog({
       },
       {
         onSuccess: (cr) => {
-          successToast(`Change #${cr.number} proposed for review`);
+          successToast(tHardcodedUi('i18nComplete.text3c93bd037d60', { value0: cr.number }));
           onOpenChange(false);
           onCreated?.(cr.cr_id);
         },
@@ -259,7 +260,7 @@ export function OpenChangeRequestDialog({
             </ModalBody>
             <ModalFooter className="sm:justify-end">
               <Button variant="outline-ghost" size="sm" onClick={() => onOpenChange(false)}>
-                Close
+                {tHardcodedUi.raw('i18nComplete.text7d9eb7acb13e')}
               </Button>
             </ModalFooter>
           </>
@@ -268,7 +269,7 @@ export function OpenChangeRequestDialog({
             <ModalBody className="space-y-4 pt-0">
               <div className="space-y-1.5">
                 <Label htmlFor="cr-title" className="text-foreground text-xs font-medium">
-                  Title
+                  {tHardcodedUi.raw('i18nComplete.text7e8cd2056da7')}
                 </Label>
                 <Input
                   id="cr-title"
@@ -276,8 +277,8 @@ export function OpenChangeRequestDialog({
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder={
                     sessionMode
-                      ? activeSession?.name || 'What did this session change?'
-                      : 'What does this change do?'
+                      ? activeSession?.name || tHardcodedUi.raw('i18nComplete.text86771dc859f8')
+                      : tHardcodedUi.raw('i18nComplete.text5796178ec4f5')
                   }
                   autoFocus
                   className="h-9"
@@ -290,16 +291,16 @@ export function OpenChangeRequestDialog({
               <div className="border-border divide-border bg-popover divide-y rounded-md border">
                 {sessionMode ? (
                   <>
-                    <FieldRow label="From">
+                    <FieldRow label={tHardcodedUi.raw('i18nComplete.text218197693424')}>
                       <BranchValue name={`${displayBranchName(headRef)} (session)`} />
                     </FieldRow>
-                    <FieldRow label="Into">
+                    <FieldRow label={tHardcodedUi.raw('i18nComplete.textae8252daa297')}>
                       <BranchValue name={baseRef} />
                     </FieldRow>
                   </>
                 ) : (
                   <>
-                    <FieldRow label="From">
+                    <FieldRow label={tHardcodedUi.raw('i18nComplete.text218197693424')}>
                       <Select
                         value={headRef || undefined}
                         onValueChange={setPickedHeadRef}
@@ -325,7 +326,7 @@ export function OpenChangeRequestDialog({
                         </SelectContent>
                       </Select>
                     </FieldRow>
-                    <FieldRow label="Into">
+                    <FieldRow label={tHardcodedUi.raw('i18nComplete.textae8252daa297')}>
                       <Select
                         value={baseRef}
                         onValueChange={setPickedBaseRef}
@@ -377,7 +378,10 @@ export function OpenChangeRequestDialog({
 
               <div className="space-y-1.5">
                 <Label htmlFor="cr-description" className="text-foreground text-xs font-medium">
-                  Description <span className="text-muted-foreground font-normal">(optional)</span>
+                  {tHardcodedUi.raw('i18nComplete.text526e0087cc3f')}{' '}
+                  <span className="text-muted-foreground font-normal">
+                    {tHardcodedUi.raw('i18nComplete.text0059798b7f70')}
+                  </span>
                 </Label>
                 <Textarea
                   id="cr-description"
@@ -400,7 +404,7 @@ export function OpenChangeRequestDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={openMutation.isPending}
               >
-                Cancel
+                {tHardcodedUi.raw('i18nComplete.text19766ed6ccb2')}
               </Button>
               <Button
                 size="sm"

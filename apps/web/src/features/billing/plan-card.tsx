@@ -29,6 +29,7 @@
 
 import { cn } from '@/lib/utils';
 import type { AccountState } from '@kortix/sdk';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { describePlanStatus, formatUsd } from './account-overview';
 
@@ -46,7 +47,26 @@ export interface SeatProperty {
  * reason `SeatManagementCard` multiplies it: there is no field for it. Both
  * derive it from the same two numbers, so they cannot disagree.
  */
-export function seatProperties(state: AccountState): SeatProperty[] | null {
+export interface SeatPropertyCopy {
+  seats: string;
+  perSeat: string;
+  monthlyTotal: string;
+  perMonth: (amount: string) => string;
+  locale: string;
+}
+
+const DEFAULT_SEAT_PROPERTY_COPY: SeatPropertyCopy = {
+  seats: 'Seats',
+  perSeat: 'Per seat',
+  monthlyTotal: 'Monthly total',
+  perMonth: (amount) => `${amount}/mo`,
+  locale: 'en-US',
+};
+
+export function seatProperties(
+  state: AccountState,
+  copy: SeatPropertyCopy = DEFAULT_SEAT_PROPERTY_COPY,
+): SeatProperty[] | null {
   const seats = state.seats;
   if (!seats || state.billing_model !== 'per_seat') return null;
 
@@ -54,15 +74,40 @@ export function seatProperties(state: AccountState): SeatProperty[] | null {
   const count = seats.count ?? 0;
 
   return [
-    { id: 'count', label: 'Seats', value: String(count) },
-    { id: 'price', label: 'Per seat', value: `${formatUsd(perSeat)}/mo` },
-    { id: 'total', label: 'Monthly total', value: `${formatUsd(perSeat * count)}/mo` },
+    { id: 'count', label: copy.seats, value: String(count) },
+    { id: 'price', label: copy.perSeat, value: copy.perMonth(formatUsd(perSeat, copy.locale)) },
+    {
+      id: 'total',
+      label: copy.monthlyTotal,
+      value: copy.perMonth(formatUsd(perSeat * count, copy.locale)),
+    },
   ];
 }
 
 export function PlanCard({ state }: { state: AccountState }) {
-  const { name, sublabel, detail, isActive, isWindingDown } = describePlanStatus(state);
-  const seats = seatProperties(state);
+  const t = useTranslations('billing.plan');
+  const locale = useLocale();
+  const planCopy = {
+    locale,
+    teamSeats: (count: number) => t('teamSeats', { count }),
+    cancels: (date: string) => t('cancels', { date }),
+    cancelsAtPeriodEnd: t('cancelsAtPeriodEnd'),
+    renews: (date: string) => t('renews', { date }),
+    active: t('active'),
+    noSubscription: t('noSubscription'),
+    status: (status: string) =>
+      t.has(`statuses.${status}`)
+        ? t(`statuses.${status}`)
+        : t('status', { status: status.replace(/_/g, ' ') }),
+  };
+  const { name, sublabel, detail, isActive, isWindingDown } = describePlanStatus(state, planCopy);
+  const seats = seatProperties(state, {
+    seats: t('seats'),
+    perSeat: t('perSeat'),
+    monthlyTotal: t('monthlyTotal'),
+    perMonth: (amount) => t('perMonth', { amount }),
+    locale,
+  });
 
   return (
     <div className="bg-popover rounded-md border">
@@ -73,7 +118,7 @@ export function PlanCard({ state }: { state: AccountState }) {
           and top-aligning them reads as a diagonal rather than a row. */}
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-4">
         <div className="min-w-0">
-          <p className="text-muted-foreground text-xs">Current plan</p>
+          <p className="text-muted-foreground text-xs">{t('currentPlan')}</p>
           <p className="text-foreground mt-1.5 truncate text-2xl leading-none font-semibold tracking-tight">
             {name}
           </p>

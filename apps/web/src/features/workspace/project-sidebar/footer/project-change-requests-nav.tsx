@@ -2,6 +2,7 @@
 
 import { useFeatureFlag } from '@kortix/sdk/react';
 import { CaretRightIcon, TrayIcon } from '@phosphor-icons/react';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -68,9 +69,12 @@ function useOpenCrController(): CrController {
  * label's `px-2.5` left edge, which a hand-rolled `px-3.5` did not.
  */
 function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: string) => void }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('sidebar');
+  const locale = useLocale();
   return (
     <>
-      <p className={MENU_LABEL}>Proposed changes</p>
+      <p className={MENU_LABEL}>{t('proposedChanges')}</p>
       <div className="max-h-[50vh] overflow-y-auto overscroll-contain">
         {crs.map((cr) => (
           <button
@@ -81,14 +85,14 @@ function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: str
           >
             <span className="min-w-0 flex-1">
               <span className="text-foreground block truncate text-sm font-medium">
-                {cr.title || 'Untitled change'}
+                {cr.title || t('untitledChange')}
               </span>
               <span className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
                 <span className="shrink-0 tabular-nums">#{cr.number}</span>
                 <span className="text-muted-foreground/40" aria-hidden="true">
-                  &bull;
+                  {tI18nComplete.raw('text3b9453dad42b')}
                 </span>
-                <span className="truncate">{relativeTime(cr.created_at)}</span>
+                <span className="truncate">{relativeTime(cr.created_at, locale)}</span>
               </span>
             </span>
             <CaretRightIcon className="text-muted-foreground/50 group-hover:text-muted-foreground shrink-0" />
@@ -100,6 +104,7 @@ function OpenCrChooser({ crs, onPick }: { crs: ChangeRequest[]; onPick: (id: str
 }
 
 function NavItemInner({ projectId }: { projectId: string }) {
+  const t = useTranslations('sidebar');
   const c = useOpenCrController();
   const isMobile = useIsMobile();
   // When the Review Center is enabled for this project, this pill becomes the
@@ -121,7 +126,7 @@ function NavItemInner({ projectId }: { projectId: string }) {
   // The old label switched between "Review change" and "Review changes" on the
   // count, so a nav row rewrote itself as work arrived; the badge already
   // carries the number.
-  const label = 'Review';
+  const label = t('review');
   // The pill is one sidebar row: a three-digit count would push the label into
   // an ellipsis, so it clamps instead. The exact number lives in the list.
   const countLabel = count > 99 ? '99+' : String(count);
@@ -139,11 +144,7 @@ function NavItemInner({ projectId }: { projectId: string }) {
             "finished" — on a row that exists precisely because something is
             NOT finished. A plain row with an amber count says "N waiting"
             without claiming a colour it has not earned. */}
-        <Badge
-          variant="transparent"
-          size="tabular"
-          className="bg-kortix-yellow/15 dark:bg-kortix-yellow/25 text-current"
-        >
+        <Badge variant="transparent" size="tabular" className="bg-kortix-yellow/15 text-current">
           {countLabel}
         </Badge>
         {/* Only when clicking opens a list — a caret on a row that goes straight
