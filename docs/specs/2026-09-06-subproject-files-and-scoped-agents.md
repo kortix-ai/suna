@@ -77,8 +77,9 @@ Locked decisions:
   no longer `kortix.yaml#subprojects.marketing`. `Agent.path` for an owned
   agent is `kortix-marketing.yaml#agents.writer`.
 - **`Subproject.agents`.** The API/SDK subproject carries
-  `agents: string[]` — the names it owns or references, in file order — so a
-  host can build the roster (globals + these) without a second request.
+  `agents: string[]` — the names it owns or references, in the order the
+  file's `agents:` map lists them — so a host can build the roster (globals +
+  these) without a second request.
 
 ## 3. Manifest (`packages/manifest-schema`)
 

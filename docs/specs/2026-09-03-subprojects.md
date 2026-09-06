@@ -1,5 +1,10 @@
 # Subprojects — spec (approved 2026-09-03)
 
+> **Superseded in part (2026-09-06).** Subprojects are now one file each,
+> `kortix-<slug>.yaml`, and may own agents; the inline `subprojects:` map in
+> §2–§3 no longer exists. See `2026-09-06-subproject-files-and-scoped-agents.md`.
+
+
 Branch `subprojects`, worktree `../suna-subprojects` (web `13400`, api `13408`,
 isolated Supabase `kortix-wt-subprojects`). Implementation is split into work
 packages (§13) executed by subagents in this worktree; the orchestrator thread
