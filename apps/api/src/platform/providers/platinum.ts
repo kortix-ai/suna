@@ -765,12 +765,46 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  /**
+   * WHICH PORT THE AGENT IS ON, which depends on what the box IS.
+   *
+   * A cell's worker listens on 8080; a microVM's agent listens on 8000. Every
+   * ingress here routed to 8000 unconditionally, so for a session running as a
+   * cell the readiness poll, the runtime-asset refresh and every proxied agent
+   * call were exposed on a port nothing serves. Measured on dev 2026-09-06,
+   * session afe59171: its cell answered /kortix/health with runtime "ready" on
+   * 8080 the whole time, while the session sat in `open-session:starting` for
+   * 167 s and logged `runtime-asset refresh not delivered / unreachable`.
+   *
+   * The runtime is immutable for the life of a box, so one lookup is cached.
+   * A failed lookup falls back to the microVM port — the answer that was
+   * always given before, so a Platinum outage cannot make this worse.
+   */
+  private readonly agentPortCache = new Map<string, number>();
+
+  private async agentPortFor(externalId: string): Promise<number> {
+    const cached = this.agentPortCache.get(externalId);
+    if (cached) return cached;
+    let port = AGENT_PORT;
+    try {
+      const row = await platinumJson<{ runtime?: string }>(`/v1/sandboxes/${externalId}`);
+      if (String(row?.runtime ?? '') === 'cell') port = CELL_PORT;
+    } catch {
+      /* fall back to the microVM agent port */
+    }
+    this.agentPortCache.set(externalId, port);
+    return port;
+  }
+
   async resolveIngress(
     externalId: string,
     request: SandboxIngressRequest,
   ): Promise<ResolvedSandboxIngress> {
     const route = this.routeIngress(request);
-    const effectivePort = route.effectivePort;
+    // routeIngress is synchronous and knows only the request, so it answers
+    // with the microVM agent port. Only here is the box's identity available.
+    const effectivePort =
+      route.effectivePort === AGENT_PORT ? await this.agentPortFor(externalId) : route.effectivePort;
     // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
     // No preview token: the sandbox is gated by the serviceKey bearer the proxy
     // already adds. Idempotent — re-exposing returns the same URL.
