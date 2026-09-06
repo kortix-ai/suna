@@ -30,6 +30,10 @@ let transientFailurePaths = new Set<string>();
 // the barrel's shape intact for whoever loads next. Add to them rather than
 // letting a sibling suite break.
 mock.module('../git', () => ({
+  // The subproject loader lists the manifest's directory; serve whatever the
+  // test seeded as files, so a `kortix-<slug>.yaml` in `mdFileContent` is found.
+  listRepoFiles: async () =>
+    Object.keys(mdFileContent).map((path) => ({ path, type: 'file' as const, size: null })),
   readManifestFromRepo: async (_project: unknown, _candidates: unknown, ref: string) => {
     refsRead.push(ref);
     return manifestFile;
@@ -698,7 +702,7 @@ describe('resolveSelectedAgentConfigForSession', () => {
 
 // ─── subproject `context[]` → top-level `instructions` (spec §7) ────────────
 
-const SUBPROJECT_FIXTURE = `
+const ROOT_FIXTURE = `
 kortix_version: 2
 default_agent: support
 
@@ -706,28 +710,26 @@ agents:
   support:
     workspace: runtime
 
-subprojects:
-  marketing:
-    name: Marketing
-    instructions: |
-      Always write in British English.
-    context:
-      - docs/brand.md
-      - .kortix/subprojects/marketing/
-      - docs/brand.md
-  bare:
-    name: Bare
+`;
+
+// `kortix-marketing.yaml` — a subproject is its own file beside the root.
+const MARKETING_FILE = `
+instructions: |
+  Always write in British English.
+context:
+  - docs/brand.md
+  - .kortix/subprojects/marketing/
+  - docs/brand.md
 `;
 
 describe('withSubprojectInstructions', () => {
   const compiled = { agent: { support: { prompt: 'Support body.' } } };
+  // The context list a `kortix-marketing.yaml` declares — the compiler now
+  // receives the parsed list, not the manifest, since subprojects are files.
+  const MARKETING_CONTEXT = ['docs/brand.md', '.kortix/subprojects/marketing/', 'docs/brand.md'];
 
   test('maps files through and a trailing-slash directory to a markdown glob', () => {
-    const out = withSubprojectInstructions(
-      compiled,
-      parseYaml(SUBPROJECT_FIXTURE),
-      'marketing',
-    );
+    const out = withSubprojectInstructions(compiled, MARKETING_CONTEXT);
     expect(out.instructions).toEqual([
       'docs/brand.md',
       '.kortix/subprojects/marketing/**/*.md',
@@ -735,33 +737,21 @@ describe('withSubprojectInstructions', () => {
   });
 
   test('never rewrites the agent prompt — instructions are additive', () => {
-    const out = withSubprojectInstructions(
-      compiled,
-      parseYaml(SUBPROJECT_FIXTURE),
-      'marketing',
-    );
+    const out = withSubprojectInstructions(compiled, MARKETING_CONTEXT);
     expect(out.agent.support.prompt).toBe('Support body.');
     expect(compiled).not.toHaveProperty('instructions');
   });
 
-  test('emits no key for no slug, an undeclared slug, or a subproject with no context', () => {
-    const manifest = parseYaml(SUBPROJECT_FIXTURE);
-    expect(withSubprojectInstructions(compiled, manifest, null)).not.toHaveProperty(
-      'instructions',
-    );
-    expect(withSubprojectInstructions(compiled, manifest, 'nope')).not.toHaveProperty(
-      'instructions',
-    );
-    expect(withSubprojectInstructions(compiled, manifest, 'bare')).not.toHaveProperty(
-      'instructions',
-    );
+  test('emits no key for no subproject, or a subproject with no context', () => {
+    expect(withSubprojectInstructions(compiled, null)).not.toHaveProperty('instructions');
+    expect(withSubprojectInstructions(compiled, undefined)).not.toHaveProperty('instructions');
+    expect(withSubprojectInstructions(compiled, [])).not.toHaveProperty('instructions');
   });
 
   test('appends to instructions the config already declares, without duplicating', () => {
     const out = withSubprojectInstructions(
       { ...compiled, instructions: ['docs/brand.md'] },
-      parseYaml(SUBPROJECT_FIXTURE),
-      'marketing',
+      MARKETING_CONTEXT,
     );
     expect(out.instructions).toEqual([
       'docs/brand.md',
@@ -772,8 +762,11 @@ describe('withSubprojectInstructions', () => {
 
 describe('subproject instructions through the I/O resolvers', () => {
   test('resolveCompiledAgentConfigForSession emits them when the session names a subproject', async () => {
-    manifestFile = { path: 'kortix.yaml', content: SUBPROJECT_FIXTURE };
-    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' };
+    manifestFile = { path: 'kortix.yaml', content: ROOT_FIXTURE };
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': 'Support body.',
+      'kortix-marketing.yaml': MARKETING_FILE,
+    };
 
     const withSub = JSON.parse(
       (await resolveCompiledAgentConfigForSession(PROJECT, 'main', {
@@ -796,8 +789,11 @@ describe('subproject instructions through the I/O resolvers', () => {
   });
 
   test('resolveSelectedAgentConfigForSession emits them for a restricted session too', async () => {
-    manifestFile = { path: 'kortix.yaml', content: SUBPROJECT_FIXTURE };
-    mdFileContent = { '.kortix/opencode/agents/support.md': 'Support body.' };
+    manifestFile = { path: 'kortix.yaml', content: ROOT_FIXTURE };
+    mdFileContent = {
+      '.kortix/opencode/agents/support.md': 'Support body.',
+      'kortix-marketing.yaml': MARKETING_FILE,
+    };
 
     const compiled = JSON.parse(
       await resolveSelectedAgentConfigForSession(PROJECT, 'support', 'main', {

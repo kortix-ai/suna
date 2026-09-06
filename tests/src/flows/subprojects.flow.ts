@@ -1,11 +1,13 @@
 /**
  * Subprojects — named containers inside a project. Maps to spec §12b
- * (SUBP-1..5). The manifest (`kortix.yaml` → `subprojects.<slug>`) is the
- * source of truth for identity/instructions/context/agent/sessions-mode; the
- * database holds only the session join (`project_sessions.subproject`) and
- * the IAM grants (generic `resource-grants`, `resource_type: 'subproject'`).
+ * (SUBP-1..6). Each subproject is its own file beside the root manifest,
+ * `kortix-<slug>.yaml` (spec 2026-09-06) — the source of truth for
+ * identity/instructions/context/agent/sessions-mode and for the agents it
+ * owns; the database holds only the session join
+ * (`project_sessions.subproject`) and the IAM grants (generic
+ * `resource-grants`, `resource_type: 'subproject'`).
  *
- * Every CRUD write commits the manifest, exactly like triggers next door
+ * Every CRUD write commits that file, exactly like triggers next door
  * (triggers.flow.ts) — projects here use `managedGit: true` so the commit is
  * real and readable back through `GET /projects/:id/commits`.
  *
@@ -19,6 +21,7 @@
 import { flow } from '../core/flow';
 import { createDatabaseSession } from '../fixtures/database-project';
 import { CliSandbox, throwIfCliInfraFailure, type CliResult } from '../fixtures/cli';
+import { commitFileToLocalRepository } from '../fixtures/local-git';
 
 // ─── SUBP-1 — CRUD + manifest commit ────────────────────────────────────────
 
@@ -56,14 +59,18 @@ flow(
         .has('$.agent', null)
         .has('$.session_count', 0)
         .has('$.trigger_count', 0)
-        .has('$.can_manage', true);
+        .has('$.can_manage', true)
+        .has('$.path', 'kortix-marketing.yaml');
       const body = r.json<any>();
       if (!Array.isArray(body.context) || body.context.length !== 0) {
         throw new Error(`expected context: [] on create, got ${JSON.stringify(body.context)}`);
       }
+      if (!Array.isArray(body.agents) || body.agents.length !== 0) {
+        throw new Error(`expected agents: [] on create, got ${JSON.stringify(body.agents)}`);
+      }
     });
 
-    await ctx.step('the create committed kortix.yaml (readable via GET /commits)', async () => {
+    await ctx.step('the create committed kortix-marketing.yaml (readable via GET /commits)', async () => {
       const r = await owner.get('/v1/projects/:projectId/commits', { params: { projectId: p.id } });
       r.status(200);
       const body = r.json<any>();
@@ -710,5 +717,174 @@ flow(
     } finally {
       sandbox.dispose();
     }
+  },
+);
+
+// ─── SUBP-6 — subproject-owned agents: usable where declared or referenced ──
+//
+// No API route writes an `agents:` block into a subproject file (that is an
+// authoring act in git), so the files are committed straight into the local
+// bare repository. An API write follows the seeding, because it invalidates
+// the project's git mirror — the mirror otherwise re-fetches on a
+// `KORTIX_GIT_REFRESH_INTERVAL_MS` (60s) cadence.
+flow(
+  'SUBP-6',
+  {
+    domain: 'subprojects',
+    routes: [
+      'POST /v1/projects/:projectId/subprojects',
+      'GET /v1/projects/:projectId/subprojects/:slug',
+      'GET /v1/projects/:projectId/detail',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/triggers',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ managedGit: true });
+    if (!p.repoUrl) throw new Error('SUBP-6 needs the local git repository of a managedGit project');
+    const repoUrl = p.repoUrl;
+    const owner = ctx.client.as(ctx.P.OWNER);
+
+    await ctx.step(
+      'kortix-marketing.yaml declares agent "writer"; kortix-sales.yaml references it with { from: marketing }',
+      async () => {
+        await commitFileToLocalRepository(
+          repoUrl,
+          'kortix-marketing.yaml',
+          'name: Marketing\nagent: writer\nagents:\n  writer:\n    connectors: []\n',
+          'feat: marketing owns writer',
+        );
+        await commitFileToLocalRepository(
+          repoUrl,
+          'kortix-sales.yaml',
+          'name: Sales\nagents:\n  writer:\n    from: marketing\n',
+          'feat: sales references writer',
+        );
+        // The API write that refreshes the mirror.
+        const r = await owner.post(
+          '/v1/projects/:projectId/subprojects',
+          { name: 'Ops' },
+          { params: { projectId: p.id } },
+        );
+        r.status(201);
+      },
+    );
+
+    await ctx.step(
+      'GET one lists the agents usable there; the project roster marks writer as owned by marketing',
+      async () => {
+        const read = async (slug: string) => {
+          const r = await owner.get('/v1/projects/:projectId/subprojects/:slug', {
+            params: { projectId: p.id, slug },
+          });
+          r.status(200);
+          return r.json<any>();
+        };
+        const marketing = await read('marketing');
+        if (marketing.path !== 'kortix-marketing.yaml' || marketing.agent !== 'writer') {
+          throw new Error(`unexpected marketing: ${JSON.stringify(marketing)}`);
+        }
+        const usable = {
+          marketing: marketing.agents,
+          sales: (await read('sales')).agents,
+          ops: (await read('ops')).agents,
+        };
+        const expected = { marketing: ['writer'], sales: ['writer'], ops: [] };
+        if (JSON.stringify(usable) !== JSON.stringify(expected)) {
+          throw new Error(`unexpected usable agents: ${JSON.stringify(usable)}`);
+        }
+        const detail = await owner.get('/v1/projects/:projectId/detail', {
+          params: { projectId: p.id },
+        });
+        detail.status(200);
+        const roster: Array<{ name: string; subproject?: string | null }> =
+          detail.json<any>().config?.agents ?? [];
+        const owners = Object.fromEntries(roster.map((a) => [a.name, a.subproject ?? null]));
+        if (owners.writer !== 'marketing' || owners.kortix !== null) {
+          throw new Error(
+            `expected writer owned by marketing and kortix global, got ${JSON.stringify(owners)}`,
+          );
+        }
+      },
+    );
+
+    await ctx.step(
+      'session create at the project level with "writer" → 400 AGENT_NOT_IN_SUBPROJECT, naming the usable agents',
+      async () => {
+        const r = await owner.post(
+          '/v1/projects/:projectId/sessions',
+          { agent_name: 'writer' },
+          { params: { projectId: p.id } },
+        );
+        r.status(400).body().has('$.code', 'AGENT_NOT_IN_SUBPROJECT');
+        const usable = r.json<any>().usable_agents;
+        if (JSON.stringify(usable) !== JSON.stringify(['kortix'])) {
+          throw new Error(`expected usable_agents ['kortix'], got ${JSON.stringify(usable)}`);
+        }
+      },
+    );
+
+    await ctx.step(
+      'with "writer" inside marketing (owner) and sales (reference) the scope gate passes; inside ops it refuses',
+      async () => {
+        for (const subproject of ['marketing', 'sales']) {
+          const r = await owner.post(
+            '/v1/projects/:projectId/sessions',
+            { agent_name: 'writer', subproject },
+            { params: { projectId: p.id } },
+          );
+          // The local profile cannot boot a session (no sandbox provider): the
+          // assertion is that the NEXT boundary is not this gate.
+          if (r.json<any>()?.code === 'AGENT_NOT_IN_SUBPROJECT') {
+            throw new Error(`writer must be usable inside ${subproject}: ${JSON.stringify(r.json())}`);
+          }
+        }
+        const refused = await owner.post(
+          '/v1/projects/:projectId/sessions',
+          { agent_name: 'writer', subproject: 'ops' },
+          { params: { projectId: p.id } },
+        );
+        refused.status(400).body().has('$.code', 'AGENT_NOT_IN_SUBPROJECT');
+      },
+    );
+
+    await ctx.step(
+      "a send into marketing with no agent fills in its own default writer and passes the gate",
+      async () => {
+        const r = await owner.post(
+          '/v1/projects/:projectId/sessions',
+          { subproject: 'marketing' },
+          { params: { projectId: p.id } },
+        );
+        if (r.json<any>()?.code === 'AGENT_NOT_IN_SUBPROJECT') {
+          throw new Error(`marketing's own default must be usable there: ${JSON.stringify(r.json())}`);
+        }
+      },
+    );
+
+    await ctx.step(
+      'a trigger naming "writer" without a subproject → 400 AGENT_NOT_IN_SUBPROJECT; with subproject marketing → 201',
+      async () => {
+        const bad = await owner.post(
+          '/v1/projects/:projectId/triggers',
+          { name: 'Weekly', type: 'cron', cron: '0 0 9 * * 1', prompt_template: 'x', agent: 'writer' },
+          { params: { projectId: p.id } },
+        );
+        bad.status(400).body().has('$.code', 'AGENT_NOT_IN_SUBPROJECT');
+        const ok = await owner.post(
+          '/v1/projects/:projectId/triggers',
+          {
+            name: 'Weekly',
+            type: 'cron',
+            cron: '0 0 9 * * 1',
+            prompt_template: 'x',
+            agent: 'writer',
+            subproject: 'marketing',
+          },
+          { params: { projectId: p.id } },
+        );
+        ok.status(201);
+      },
+    );
   },
 );

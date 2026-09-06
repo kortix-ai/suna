@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SubprojectSpec } from '../subprojects';
 import {
   projectSessionConnectorBindings,
   projectSessionGrants,
@@ -1031,6 +1032,7 @@ export async function createProjectSession(input: {
   // row pointing at a block that no longer exists. Authorization stays with the
   // caller — a trigger fire is manager tier by construction (spec §5.5).
   const subproject = normalizeString(body.subproject);
+  let subprojectSpec: SubprojectSpec | null = null;
   if (subproject) {
     const { loadProjectSubprojects } = await import('../subprojects');
     const declared = await loadProjectSubprojects(project);
@@ -1052,11 +1054,40 @@ export async function createProjectSession(input: {
     if (!normalizeString(body.agent_name ?? body.agentName) && spec.agent) {
       body.agent_name = spec.agent;
     }
+    subprojectSpec = spec;
   }
   const loadedAgents = await loadProjectAgents(project, {
     forceRefresh: true,
     rethrowReadErrors: true,
   });
+  // The usability rule (spec 2026-09-06 §2): an agent a subproject file owns
+  // runs only in that subproject and in the ones that reference it; a
+  // project-level session runs global agents only. Checked BEFORE the IAM
+  // gate so the refusal names the real problem ("not here", not "not
+  // granted"). A name declared nowhere stays AGENT_NOT_DECLARED's, as before.
+  {
+    const requested = normalizeString(body.agent_name ?? body.agentName);
+    if (
+      requested &&
+      !isMetaAgentName(requested) &&
+      loadedAgents.specs.some((spec) => spec.name === requested)
+    ) {
+      const { agentUsableIn, usableAgentNames } = await import('../subprojects');
+      if (!agentUsableIn(loadedAgents, subprojectSpec, requested)) {
+        const owner = loadedAgents.specs.find((spec) => spec.name === requested)?.subproject;
+        return {
+          error: {
+            status: 400,
+            body: {
+              error: `Agent "${requested}" is not usable ${subproject ? `in subproject "${subproject}"` : 'at the project level'} — it is declared by subproject "${owner}" (kortix-${owner}.yaml). Reference it there with \`agents.${requested}: { from: ${owner} }\`, or pick one of: ${usableAgentNames(loadedAgents, subprojectSpec).join(', ') || '(none)'}`,
+              code: 'AGENT_NOT_IN_SUBPROJECT',
+              usable_agents: usableAgentNames(loadedAgents, subprojectSpec),
+            },
+          },
+        };
+      }
+    }
+  }
   // The literal "default" is a non-binding legacy sentinel. It must not block
   // the configured project default. This rule applies to every caller,
   // including older triggers and channel adapters that still send the sentinel.

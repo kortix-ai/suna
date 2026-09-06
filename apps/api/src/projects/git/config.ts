@@ -9,7 +9,13 @@ import {
   parseManifestText,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
-import { extractSubprojects } from '../subprojects';
+import { mergeSubprojectAgents } from '../agents';
+import {
+  extractSubprojectsFromFiles,
+  manifestDir,
+  subprojectFileEntries,
+  type SubprojectFile,
+} from '../subprojects';
 import { resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
@@ -167,6 +173,7 @@ export function resolveConfigAgents(
         ...agent,
         source: 'opencode' as const,
         enabled: true,
+        subproject: null,
       })),
     };
   }
@@ -188,6 +195,7 @@ export function resolveConfigAgents(
           model: native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
+          subproject: spec.subproject,
           sandbox: spec.sandbox ?? null,
           // Surface the per-agent allowlists so the UI can show (read-only) what
           // secrets/connectors/CLI powers each declared agent is scoped to.
@@ -243,24 +251,27 @@ export async function loadProjectConfig(
           ],
         }
       : { specs: [], errors: [] };
-  // Subprojects are a v2-only manifest block. An unparseable manifest yields
-  // none, the same degradation the agent list already takes.
-  const subprojects = parsedManifest
-    ? extractSubprojects({
-        schemaVersion: manifestSchemaVersionFor(parsedManifest),
-        raw: parsedManifest,
-        format: manifestFormat,
-        path: manifestFilePath,
-      }).specs.map((spec) => ({
-        slug: spec.slug,
-        name: spec.name,
-        description: spec.description,
-        agent: spec.agent,
-        sessions: spec.sessions,
-        context: spec.context,
-        has_instructions: Boolean(spec.instructions),
-      }))
-    : [];
+  // Subprojects are one `kortix-<slug>.yaml` each, beside the root manifest,
+  // and v2-only. An unparseable or v1 manifest yields none, the same
+  // degradation the agent list already takes.
+  const subprojectFiles: SubprojectFile[] = [];
+  if (parsedManifest && manifestSchemaVersionFor(parsedManifest) >= 2) {
+    for (const entry of subprojectFileEntries(repoFiles, manifestDir(manifestFilePath))) {
+      const content = await optionalFile(project, entry.path);
+      if (content !== null) subprojectFiles.push({ ...entry, content });
+    }
+  }
+  const loadedSubprojects = extractSubprojectsFromFiles(subprojectFiles);
+  const subprojects = loadedSubprojects.specs.map((spec) => ({
+    slug: spec.slug,
+    name: spec.name,
+    description: spec.description,
+    agent: spec.agent,
+    sessions: spec.sessions,
+    context: spec.context,
+    has_instructions: Boolean(spec.instructions),
+    agents: spec.agents,
+  }));
   const opencodeDir = resolveOpencodeDir(manifest);
   // Where opencode.jsonc lives. Path comes from the manifest's
   // [opencode] config_dir, defaulting to `.kortix/opencode`.
@@ -291,7 +302,12 @@ export async function loadProjectConfig(
       };
     }),
   );
-  const { agent_discovery, agents } = resolveConfigAgents(nativeAgents, loadedAgents);
+  const { agent_discovery, agents } = resolveConfigAgents(
+    nativeAgents,
+    // Owned agents join the roster here, carrying their subproject — the
+    // composer reads THIS list, so ownership reaches it without a second call.
+    mergeSubprojectAgents(loadedAgents, loadedSubprojects.specs),
+  );
 
   const seenSkills = new Set<string>();
   const skillPaths = repoFiles

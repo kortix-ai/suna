@@ -1,30 +1,290 @@
 /**
- * The manifest half of subprojects: parse it, write it back, and prove a full
- * round-trip through the REAL YAML serializer — not a hand-built object graph.
- * A subproject that survives read → mutate → serialize → read is the whole
- * contract the CRUD routes depend on.
+ * Subprojects as files — `kortix-<slug>.yaml` beside the root manifest (spec
+ * 2026-09-06). Pure parsing, the usability rule, and the file round-trip; the
+ * git-backed loader is exercised by the SUBP flows against a real repo.
  */
 import { describe, expect, test } from 'bun:test';
+import {
+  agentBlocksUsableIn,
+  agentUsableIn,
+  extractSubprojectsFromFiles,
+  manifestDir,
+  parseSubprojectFile,
+  stripSubprojectFromTriggers,
+  subprojectFileEntries,
+  subprojectPathFor,
+  subprojectSpecToFileEntry,
+  usableAgentNames,
+  type SubprojectSpec,
+} from './subprojects';
+import { mergeSubprojectAgents, type AgentSpec, type LoadedAgents } from './agents';
+import { parseManifestText, serializeManifestObject } from '@kortix/manifest-schema';
+import type { ParsedManifest } from './triggers';
+import { draftToSpec, specToBody, parseTriggerDraft } from './lib/triggers';
 import {
   ClaimWarmProjectSessionInputSchema,
   SessionCreateInputSchema,
 } from '@kortix/api-contract';
-
-import {
-  extractSubprojects,
-  removeSubprojectFromManifest,
-  stripSubprojectFromTriggers,
-  subprojectSpecToEntry,
-  upsertSubprojectInManifest,
-  type SubprojectSpec,
-} from './subprojects';
 import {
   extractTriggers,
   parseManifestString,
   serializeManifest,
   triggerSpecToTomlEntry,
 } from './triggers';
-import { draftToSpec, specToBody, parseTriggerDraft } from './lib/triggers';
+
+const MARKETING = `
+name: Marketing
+description: Campaign work.
+instructions: |
+  Always write in British English.
+context:
+  - docs/brand.md
+  - .kortix/subprojects/marketing/
+agent: writer
+sessions: shared
+agents:
+  writer:
+    connectors: [slack]
+    secrets: [BRAND_API_KEY]
+  researcher:
+    from: research
+`;
+
+function globalAgent(name: string): AgentSpec {
+  return {
+    name,
+    path: `kortix.yaml#agents.${name}`,
+    subproject: null,
+    enabled: true,
+    connectors: [],
+    kortixCli: [],
+    env: [],
+    file: null,
+    model: null,
+    sandbox: null,
+    workspace: null,
+  };
+}
+
+function manifest(raw: Record<string, unknown>): ParsedManifest {
+  return { schemaVersion: 2, raw, format: 'yaml', path: 'kortix.yaml' };
+}
+
+describe('file discovery', () => {
+  test('manifestDir is the root manifest\'s directory, \'\' for the repo root', () => {
+    expect(manifestDir('kortix.yaml')).toBe('');
+    expect(manifestDir('./kortix.yaml')).toBe('');
+    expect(manifestDir('config/kortix.yaml')).toBe('config');
+    expect(manifestDir(null)).toBe('');
+  });
+
+  test('subprojectPathFor puts the file beside the root manifest', () => {
+    expect(subprojectPathFor('kortix.yaml', 'marketing')).toBe('kortix-marketing.yaml');
+    expect(subprojectPathFor('config/kortix.yaml', 'marketing')).toBe('config/kortix-marketing.yaml');
+  });
+
+  test('subprojectFileEntries keeps only kortix-<slug>.yaml in exactly that directory, sorted', () => {
+    const entries = subprojectFileEntries(
+      [
+        'kortix.yaml',
+        'kortix-research.yaml',
+        'kortix-marketing.yaml',
+        'kortix-marketing.yml',
+        'nested/kortix-nope.yaml',
+        'README.md',
+      ],
+      '',
+    );
+    expect(entries).toEqual([
+      { slug: 'marketing', path: 'kortix-marketing.yaml' },
+      { slug: 'research', path: 'kortix-research.yaml' },
+    ]);
+    expect(subprojectFileEntries(['config/kortix-ops.yaml', 'kortix-root.yaml'], 'config')).toEqual([
+      { slug: 'ops', path: 'config/kortix-ops.yaml' },
+    ]);
+  });
+});
+
+describe('parseSubprojectFile', () => {
+  test('reads every field, owned agents carry the owner, references are listed', () => {
+    const result = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    if (!result.ok) throw new Error(result.error.error);
+    const spec = result.spec;
+    expect(spec.slug).toBe('marketing');
+    expect(spec.path).toBe('kortix-marketing.yaml');
+    expect(spec.name).toBe('Marketing');
+    expect(spec.description).toBe('Campaign work.');
+    expect(spec.instructions).toContain('British English');
+    expect(spec.context).toEqual(['docs/brand.md', '.kortix/subprojects/marketing/']);
+    expect(spec.agent).toBe('writer');
+    expect(spec.sessions).toBe('shared');
+    expect(spec.agents).toEqual(['writer', 'researcher']);
+    expect(spec.ownedAgents.map((a) => a.name)).toEqual(['writer']);
+    expect(spec.ownedAgents[0]?.subproject).toBe('marketing');
+    expect(spec.ownedAgents[0]?.path).toBe('kortix-marketing.yaml#agents.writer');
+    expect(spec.ownedAgents[0]?.connectors).toEqual(['slack']);
+    expect(spec.references).toEqual([{ name: 'researcher', from: 'research' }]);
+    expect(spec.agentsRaw).toEqual({
+      writer: { connectors: ['slack'], secrets: ['BRAND_API_KEY'] },
+      researcher: { from: 'research' },
+    });
+  });
+
+  test('an empty file is a subproject with defaults', () => {
+    const result = parseSubprojectFile('yo', 'kortix-yo.yaml', '');
+    if (!result.ok) throw new Error(result.error.error);
+    expect(result.spec).toMatchObject({
+      name: 'yo',
+      description: null,
+      instructions: null,
+      context: [],
+      agent: null,
+      sessions: 'private',
+      agents: [],
+      ownedAgents: [],
+      references: [],
+      agentsRaw: null,
+    });
+  });
+
+  test('invalid YAML, a bad mode, a bad path, an unknown key and a bad slug each report with the file path, not throw', () => {
+    const cases: Array<[string, string, string]> = [
+      ['marketing', 'name: [unclosed', 'not valid YAML'],
+      ['marketing', 'sessions: public', 'sessions'],
+      ['marketing', 'context: ["../secrets"]', 'context'],
+      ['marketing', 'instruction: oops', 'instruction'],
+      ['Bad Slug', 'name: x', 'slug'],
+      ['marketing', 'kortix_version: 2', 'kortix_version'],
+    ];
+    for (const [slug, text, needle] of cases) {
+      const result = parseSubprojectFile(slug, 'kortix-marketing.yaml', text);
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.error.path).toBe('kortix-marketing.yaml');
+      expect(result.error.error.toLowerCase()).toContain(needle.toLowerCase());
+    }
+  });
+});
+
+describe('extractSubprojectsFromFiles', () => {
+  test('specs and errors come back sorted by slug, and one bad file never hides the others', () => {
+    const loaded = extractSubprojectsFromFiles([
+      { slug: 'research', path: 'kortix-research.yaml', content: 'name: Research' },
+      { slug: 'broken', path: 'kortix-broken.yaml', content: 'sessions: nope' },
+      { slug: 'marketing', path: 'kortix-marketing.yaml', content: MARKETING },
+    ]);
+    expect(loaded.specs.map((s) => s.slug)).toEqual(['marketing', 'research']);
+    expect(loaded.errors.map((e) => e.slug)).toEqual(['broken']);
+    expect(loaded.errors[0]?.path).toBe('kortix-broken.yaml');
+  });
+});
+
+describe('the usability rule', () => {
+  const marketing = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+  const research = parseSubprojectFile(
+    'research',
+    'kortix-research.yaml',
+    'agents:\n  researcher:\n    connectors: []\n',
+  );
+  if (!marketing.ok || !research.ok) throw new Error('fixtures must parse');
+  const specs = [marketing.spec, research.spec];
+  const root: LoadedAgents = { specs: [globalAgent('kortix')], errors: [], defaultAgent: 'kortix' };
+  const loaded = mergeSubprojectAgents(root, specs);
+
+  test('mergeSubprojectAgents folds owned agents into the roster with their owner', () => {
+    expect(loaded.specs.map((a) => `${a.name}@${a.subproject ?? 'root'}`)).toEqual([
+      'kortix@root',
+      'researcher@research',
+      'writer@marketing',
+    ]);
+    expect(loaded.errors).toEqual([]);
+    expect(loaded.defaultAgent).toBe('kortix');
+  });
+
+  test('a name declared twice is an error naming both places; the first declaration stays', () => {
+    const clash = mergeSubprojectAgents(
+      { specs: [globalAgent('writer')], errors: [], defaultAgent: null },
+      [marketing.spec],
+    );
+    expect(clash.specs.map((a) => a.path)).toEqual(['kortix.yaml#agents.writer']);
+    expect(clash.errors).toHaveLength(1);
+    expect(clash.errors[0]?.error).toContain('kortix.yaml#agents.writer');
+    expect(clash.errors[0]?.path).toBe('kortix-marketing.yaml#agents.writer');
+  });
+
+  test('globals everywhere; owned and referenced only in their subproject', () => {
+    expect(usableAgentNames(loaded, null)).toEqual(['kortix']);
+    expect(usableAgentNames(loaded, marketing.spec)).toEqual(['kortix', 'writer', 'researcher']);
+    expect(usableAgentNames(loaded, research.spec)).toEqual(['kortix', 'researcher']);
+    expect(agentUsableIn(loaded, null, 'writer')).toBe(false);
+    expect(agentUsableIn(loaded, marketing.spec, 'writer')).toBe(true);
+    expect(agentUsableIn(loaded, research.spec, 'writer')).toBe(false);
+    expect(agentUsableIn(loaded, marketing.spec, 'researcher')).toBe(true);
+  });
+
+  test('agentBlocksUsableIn hands the compiler owned blocks plus the referenced owner\'s block', () => {
+    expect(agentBlocksUsableIn(specs, null)).toEqual({});
+    expect(agentBlocksUsableIn(specs, 'marketing')).toEqual({
+      writer: { connectors: ['slack'], secrets: ['BRAND_API_KEY'] },
+      researcher: { connectors: [] },
+    });
+    expect(agentBlocksUsableIn(specs, 'research')).toEqual({ researcher: { connectors: [] } });
+    expect(agentBlocksUsableIn(specs, 'nope')).toEqual({});
+  });
+});
+
+describe('file round-trip', () => {
+  test('subprojectSpecToFileEntry emits only what deviates, and the agents map verbatim', () => {
+    const parsed = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    if (!parsed.ok) throw new Error(parsed.error.error);
+    const entry = subprojectSpecToFileEntry(parsed.spec);
+    expect(Object.keys(entry)).toEqual([
+      'name',
+      'description',
+      'instructions',
+      'context',
+      'agent',
+      'sessions',
+      'agents',
+    ]);
+    const minimal: SubprojectSpec = {
+      ...parsed.spec,
+      name: 'marketing',
+      description: null,
+      instructions: null,
+      context: [],
+      agent: null,
+      sessions: 'private',
+      agentsRaw: null,
+    };
+    expect(subprojectSpecToFileEntry(minimal)).toEqual({});
+  });
+
+  test('serialize → parse keeps every field', () => {
+    const parsed = parseSubprojectFile('marketing', 'kortix-marketing.yaml', MARKETING);
+    if (!parsed.ok) throw new Error(parsed.error.error);
+    const text = serializeManifestObject(subprojectSpecToFileEntry(parsed.spec), 'yaml');
+    const again = parseSubprojectFile('marketing', 'kortix-marketing.yaml', text);
+    if (!again.ok) throw new Error(again.error.error);
+    expect(again.spec).toEqual(parsed.spec);
+    expect(parseManifestText(text, 'yaml').agents).toEqual(parsed.spec.agentsRaw);
+  });
+
+  test('strip clears `subproject:` only from the triggers naming it', () => {
+    const m = manifest({
+      kortix_version: 2,
+      triggers: [
+        { slug: 'a', subproject: 'marketing' },
+        { slug: 'b', subproject: 'research' },
+        { slug: 'c' },
+      ],
+    });
+    const next = stripSubprojectFromTriggers(m, 'marketing');
+    expect(next.raw.triggers).toEqual([{ slug: 'a' }, { slug: 'b', subproject: 'research' }, { slug: 'c' }]);
+    // Untouched input.
+    expect((m.raw.triggers as Array<Record<string, unknown>>)[0]?.subproject).toBe('marketing');
+  });
+});
 
 const YAML = `kortix_version: 2
 default_agent: kortix
@@ -64,161 +324,6 @@ triggers:
 `;
 
 const parse = (raw: string) => parseManifestString(raw, 'yaml', 'kortix.yaml');
-
-describe('extractSubprojects', () => {
-  test('reads every declared field and defaults the rest', () => {
-    const { specs, errors } = extractSubprojects(parse(YAML));
-    expect(errors).toEqual([]);
-    expect(specs.map((s) => s.slug)).toEqual(['marketing', 'research']);
-
-    const marketing = specs[0]!;
-    expect(marketing).toMatchObject({
-      slug: 'marketing',
-      path: 'kortix.yaml#subprojects.marketing',
-      name: 'Marketing',
-      description: 'Campaign work.',
-      instructions: 'Always write in British English.\n',
-      context: ['docs/brand.md', '.kortix/subprojects/marketing/'],
-      agent: 'writer',
-      sessions: 'shared',
-    });
-
-    // An empty block is legal: name defaults to the slug, sessions to private.
-    expect(specs[1]).toMatchObject({
-      slug: 'research',
-      name: 'research',
-      description: null,
-      instructions: null,
-      context: [],
-      agent: null,
-      sessions: 'private',
-    });
-  });
-
-  test('a v1 manifest ignores the block instead of erroring', () => {
-    const v1 = parseManifestString(
-      'kortix_version = 1\n[project]\nname = "probe"\n',
-      'toml',
-      'kortix.toml',
-    );
-    v1.raw.subprojects = { marketing: {} };
-    expect(extractSubprojects(v1)).toEqual({ specs: [], errors: [] });
-  });
-
-  test('a bad slug, a non-table block, a bad mode and a bad path each report, not throw', () => {
-    const manifest = parse(YAML);
-    manifest.raw.subprojects = {
-      'Not A Slug': {},
-      scalar: 'nope',
-      mode: { sessions: 'public' },
-      escape: { context: ['../secrets.env'] },
-      absolute: { context: ['/etc/passwd'] },
-    };
-    const { specs, errors } = extractSubprojects(manifest);
-    expect(specs).toEqual([]);
-    expect(errors.map((e) => e.slug).sort()).toEqual([
-      'Not A Slug',
-      'absolute',
-      'escape',
-      'mode',
-      'scalar',
-    ]);
-    expect(errors.find((e) => e.slug === 'mode')!.error).toContain('sessions must be one of');
-    expect(errors.find((e) => e.slug === 'escape')!.path).toBe('kortix.yaml#subprojects.escape');
-  });
-
-  test('`subprojects` that is not a map is one top-level error', () => {
-    const manifest = parse(YAML);
-    manifest.raw.subprojects = ['marketing'];
-    const { specs, errors } = extractSubprojects(manifest);
-    expect(specs).toEqual([]);
-    expect(errors).toEqual([
-      {
-        slug: '(top-level)',
-        path: 'kortix.yaml',
-        error: '`subprojects` must be a map of subproject slug → block.',
-      },
-    ]);
-  });
-});
-
-describe('subprojectSpecToEntry', () => {
-  test('emits only what deviates from the defaults', () => {
-    const bare: SubprojectSpec = {
-      slug: 'research',
-      path: 'kortix.yaml#subprojects.research',
-      name: 'research',
-      description: null,
-      instructions: null,
-      context: [],
-      agent: null,
-      sessions: 'private',
-    };
-    expect(subprojectSpecToEntry(bare)).toEqual({});
-  });
-});
-
-describe('upsert / remove / strip — round-trip through real YAML', () => {
-  test('upsert then re-read keeps every field', () => {
-    const spec: SubprojectSpec = {
-      slug: 'sales',
-      path: 'kortix.yaml#subprojects.sales',
-      name: 'Sales',
-      description: 'Pipeline.',
-      instructions: 'Be concise.\n',
-      context: ['docs/pricing.md'],
-      agent: 'kortix',
-      sessions: 'shared',
-    };
-    const next = upsertSubprojectInManifest(parse(YAML), spec);
-    const reread = extractSubprojects(parse(serializeManifest(next)));
-    expect(reread.errors).toEqual([]);
-    expect(reread.specs.find((s) => s.slug === 'sales')).toEqual(spec);
-    // The existing ones are untouched.
-    expect(reread.specs.map((s) => s.slug)).toEqual(['marketing', 'research', 'sales']);
-  });
-
-  test('upsert replaces an existing slug rather than duplicating it', () => {
-    const first = extractSubprojects(parse(YAML)).specs[0]!;
-    const next = upsertSubprojectInManifest(parse(YAML), { ...first, name: 'Growth' });
-    const reread = extractSubprojects(parse(serializeManifest(next)));
-    expect(reread.specs.map((s) => s.slug)).toEqual(['marketing', 'research']);
-    expect(reread.specs[0]!.name).toBe('Growth');
-  });
-
-  test('remove drops one, and drops the whole block with the last one', () => {
-    const one = removeSubprojectFromManifest(parse(YAML), 'marketing');
-    expect(extractSubprojects(parse(serializeManifest(one))).specs.map((s) => s.slug)).toEqual([
-      'research',
-    ]);
-
-    const none = removeSubprojectFromManifest(one, 'research');
-    expect(none.raw.subprojects).toBeUndefined();
-    expect(serializeManifest(none)).not.toContain('subprojects');
-    expect(extractSubprojects(parse(serializeManifest(none))).specs).toEqual([]);
-  });
-
-  test('remove of an unknown slug is a no-op', () => {
-    const next = removeSubprojectFromManifest(parse(YAML), 'nope');
-    expect(extractSubprojects(next).specs.map((s) => s.slug)).toEqual(['marketing', 'research']);
-  });
-
-  test('strip clears `subproject:` only from the triggers naming it', () => {
-    const stripped = stripSubprojectFromTriggers(
-      removeSubprojectFromManifest(parse(YAML), 'marketing'),
-      'marketing',
-    );
-    const reread = parse(serializeManifest(stripped));
-    expect(reread.raw.subprojects).toEqual({ research: {} });
-    const triggers = extractTriggers(reread);
-    expect(triggers.errors).toEqual([]);
-    expect(triggers.specs.map((s) => [s.slug, s.subproject])).toEqual([
-      ['unrelated', null],
-      ['weekly', null],
-    ]);
-    expect(serializeManifest(stripped)).not.toContain('subproject: marketing');
-  });
-});
 
 describe('trigger `subproject` round-trip', () => {
   test('parse → entry → parse keeps the slug, and omits the key when unset', () => {

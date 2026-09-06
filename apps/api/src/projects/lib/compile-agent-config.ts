@@ -51,9 +51,13 @@ import {
 } from '@kortix/manifest-schema';
 import { parseAgentMarkdown } from './agent-markdown';
 import {
-  subprojectBlockFromManifest,
   subprojectContextInstructions,
 } from './subproject-envelope';
+import {
+  agentBlocksUsableIn,
+  loadProjectSubprojectsAtRef,
+  type SubprojectSpec,
+} from '../subprojects';
 import {
   isRepoFileNotFoundError,
   readManifestFromRepo,
@@ -312,14 +316,12 @@ export function compileSelectedAgentConfig(
  */
 export function withSubprojectInstructions(
   compiled: OpencodeConfig,
-  manifest: Record<string, unknown>,
-  slug: string | null | undefined,
+  context: readonly string[] | null | undefined,
 ): OpencodeConfig {
-  const block = subprojectBlockFromManifest(manifest, slug);
-  if (!block?.context?.length) return compiled;
+  if (!context?.length) return compiled;
   const existing = Array.isArray(compiled.instructions) ? compiled.instructions : [];
   const instructions = [...existing];
-  for (const entry of subprojectContextInstructions(block.context)) {
+  for (const entry of subprojectContextInstructions(context)) {
     if (!instructions.includes(entry)) instructions.push(entry);
   }
   return instructions.length > 0 ? { ...compiled, instructions } : compiled;
@@ -533,9 +535,15 @@ export async function resolveCompiledAgentConfigForSession(
     if (!found) return null;
 
     const format = manifestFormatForPath(found.path);
-    const raw = parseManifestText(found.content, format);
-    if (manifestSchemaVersion(raw) !== 2) return null;
+    const rootRaw = parseManifestText(found.content, format);
+    if (manifestSchemaVersion(rootRaw) !== 2) return null;
 
+    // The agents a session inside a subproject may run: the root's, plus the
+    // ones its file owns or references (spec 2026-09-06 §2). A project-level
+    // session compiles the root's only. Read at the session's ref, like the
+    // manifest itself.
+    const subproject = await subprojectAtRef(project, found.path, ref, opts?.subproject);
+    const raw = withUsableAgents(rootRaw, subproject.blocks);
     const v2 = raw as unknown as ManifestV2;
     const agents =
       v2.agents && typeof v2.agents === 'object' && !Array.isArray(v2.agents) ? v2.agents : {};
@@ -568,7 +576,7 @@ export async function resolveCompiledAgentConfigForSession(
 
     const compiled = compileAgentConfig(raw, 'opencode', agentMdFiles);
     return compiled
-      ? JSON.stringify(withSubprojectInstructions(compiled, raw, opts?.subproject))
+      ? JSON.stringify(withSubprojectInstructions(compiled, subproject.spec?.context))
       : null;
   } catch (err) {
     console.warn(
@@ -599,14 +607,16 @@ export async function resolveSelectedAgentConfigForSession(
   }
 
   const format = manifestFormatForPath(found.path);
-  const raw = parseManifestText(found.content, format);
-  if (manifestSchemaVersion(raw) !== 2) {
+  const rootRaw = parseManifestText(found.content, format);
+  if (manifestSchemaVersion(rootRaw) !== 2) {
     throw new CompileAgentConfigError(
       `Project ${project.projectId} must use kortix_version 2 for selected-agent compilation.`,
       agentName,
     );
   }
 
+  const subproject = await subprojectAtRef(project, found.path, ref, opts?.subproject);
+  const raw = withUsableAgents(rootRaw, subproject.blocks);
   const path = agentMarkdownPath(raw, agentName);
   const agentMdFiles: Record<string, string> = {};
   try {
@@ -618,8 +628,39 @@ export async function resolveSelectedAgentConfigForSession(
   return JSON.stringify(
     withSubprojectInstructions(
       compileSelectedAgentConfig(raw, agentName, 'opencode', agentMdFiles),
-      raw,
-      opts?.subproject,
+      subproject.spec?.context,
     ),
   );
+}
+
+/** The session's subproject (if any) at `ref`: its spec, and the raw agent
+ *  blocks usable there beyond the root's. A slug not declared at this ref
+ *  contributes nothing, so an out-of-date session row never breaks a compile. */
+async function subprojectAtRef(
+  project: GitBackedProject,
+  manifestPath: string,
+  ref: string,
+  slug: string | null | undefined,
+): Promise<{ spec: SubprojectSpec | null; blocks: Record<string, unknown> }> {
+  if (!slug) return { spec: null, blocks: {} };
+  const declared = await loadProjectSubprojectsAtRef(project, { manifestPath, ref });
+  return {
+    spec: declared.specs.find((s) => s.slug === slug) ?? null,
+    blocks: agentBlocksUsableIn(declared.specs, slug),
+  };
+}
+
+/** The root manifest with the subproject's usable agent blocks folded into
+ *  `agents:` — what the compiler sees. The root's own blocks win a name clash
+ *  (the set validator reports it; the compile must still not crash). Pure. */
+export function withUsableAgents(
+  root: Record<string, unknown>,
+  blocks: Record<string, unknown>,
+): Record<string, unknown> {
+  if (Object.keys(blocks).length === 0) return root;
+  const rootAgents =
+    root.agents && typeof root.agents === 'object' && !Array.isArray(root.agents)
+      ? (root.agents as Record<string, unknown>)
+      : {};
+  return { ...root, agents: { ...blocks, ...rootAgents } };
 }

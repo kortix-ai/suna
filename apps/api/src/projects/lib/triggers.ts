@@ -12,6 +12,7 @@ import { auth, errors } from '../../openapi';
 import { db } from '../../shared/db';
 import { isLeader } from '../../shared/leader-election';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
+import { commitMultipleFilesToBranch } from '../git/branches';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import {
   createSession,
@@ -1853,6 +1854,60 @@ export function removeTriggerFromManifest(manifest: ParsedManifest, slug: string
     : [];
   const next = current.filter((entry) => !(typeof entry?.slug === 'string' && entry.slug === slug));
   return { ...manifest, raw: { ...manifest.raw, triggers: next } };
+}
+
+/**
+ * Commit a set of writes and deletions as ONE commit on the default branch —
+ * the multi-file sibling of `commitRepoFile`. Always the git-backed path
+ * (`commitMultipleFilesToBranch`), never the GitHub Contents API, which
+ * cannot write and delete atomically. A subproject delete is the first user:
+ * the file goes in one commit.
+ */
+export async function commitRepoChanges(
+  project: ManifestProject,
+  opts: {
+    files?: Array<{ path: string; content: string }>;
+    deletes?: string[];
+    message: string;
+  },
+): Promise<{ ok: true } | { error: string; status: number }> {
+  let gitProject: ProjectRow & {
+    gitAuthToken: string | null;
+    gitAuthHeaders?: Record<string, string>;
+  };
+  if (hasResolvedGitAuth(project)) {
+    gitProject = { ...project, gitAuthToken: project.gitAuthToken ?? null };
+  } else {
+    try {
+      gitProject = await withProjectGitAuth(project);
+    } catch (err) {
+      return {
+        error: `Git auth unavailable: ${(err as Error).message || String(err)}`,
+        status: 502,
+      };
+    }
+  }
+  const localRepository = process.env.KORTIX_LOCAL_DEV === '1' && isAbsolute(gitProject.repoUrl);
+  if (!gitProject.gitAuthToken && !localRepository) {
+    return { error: 'No git credentials available to write to the project repo', status: 502 };
+  }
+  try {
+    await commitMultipleFilesToBranch(gitProject, {
+      files: opts.files,
+      deletes: opts.deletes,
+      message: opts.message,
+      branch: project.defaultBranch,
+      authorName: 'Kortix',
+      authorEmail: 'noreply@kortix.ai',
+    });
+  } catch (err) {
+    return {
+      error: `Failed to commit: ${(err as Error).message || String(err)}`,
+      status: 502,
+    };
+  }
+  invalidateProjectMirror(project.projectId);
+  return { ok: true };
 }
 
 /**

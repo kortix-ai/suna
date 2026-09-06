@@ -1291,8 +1291,11 @@ export const SubprojectSchema = z.object({
   /** Default agent for sessions started here — a default, not a binding. */
   agent: z.string().nullable(),
   sessions: SubprojectSessionsModeSchema,
-  /** `<manifest-file>#subprojects.<slug>` breadcrumb. */
+  /** The file it lives in, repo-relative: `kortix-<slug>.yaml`. */
   path: z.string(),
+  /** Agents usable here beyond the globals — the ones this subproject owns
+   *  (declares in its file) or references, in file order. */
+  agents: z.array(z.string()),
   /** Non-deleted sessions in this subproject that the CALLER can see. */
   session_count: z.number(),
   /** Triggers whose `subproject` names this one. */

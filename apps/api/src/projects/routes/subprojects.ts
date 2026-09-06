@@ -30,14 +30,20 @@ import { callerKortixSessionId } from '../lib/caller-session';
 import { normalizeString, readBody, type ProjectRow } from '../lib/serializers';
 import { loadProjectSessionInventory } from '../lib/session-list';
 import { accessibleSubprojectSlugs, subprojectViewerAccess } from '../lib/subproject-access';
-import { commitRepoFile, slugify } from '../lib/triggers';
+import { serializeManifestObject } from '@kortix/manifest-schema';
+import { commitRepoChanges, commitRepoFile, slugify } from '../lib/triggers';
 import { loadProjectAgents } from '../agents';
+import type { GitBackedProject } from '../git';
+// From the module, not the `../git` barrel: tests that mock the barrel with a
+// fixed export list must keep loading this route.
+import { readRepoFileRevision } from '../git/files';
 import {
-  extractSubprojects,
   isRepoRelativeContextPath,
-  removeSubprojectFromManifest,
+  loadProjectSubprojects,
   stripSubprojectFromTriggers,
-  upsertSubprojectInManifest,
+  subprojectPathFor,
+  subprojectSpecToFileEntry,
+  usableAgentNames,
   type SubprojectSessionsMode,
   type SubprojectSpec,
 } from '../subprojects';
@@ -70,6 +76,7 @@ function serializeSubproject(spec: SubprojectSpec, ctx: SubprojectContext) {
     agent: spec.agent,
     sessions: spec.sessions,
     path: spec.path,
+    agents: spec.agents,
     session_count: ctx.sessionCounts.get(spec.slug) ?? 0,
     trigger_count: ctx.triggerCounts.get(spec.slug) ?? 0,
     can_manage: ctx.canManage,
@@ -93,7 +100,6 @@ async function loadSubprojectView(
   ctx: SubprojectContext;
 }> {
   const gitProject = await withProjectGitAuth(loaded.row);
-  const { loadProjectSubprojects } = await import('../subprojects');
   const { loadProjectTriggers } = await import('../triggers');
   const [declared, triggers, canManage] = await Promise.all([
     loadProjectSubprojects(gitProject),
@@ -165,16 +171,20 @@ function mergeSubprojectBody(
     ? { ...existing, context: [...existing.context] }
     : {
         slug,
-        path: `${manifestPath}#subprojects.${slug}`,
+        path: subprojectPathFor(manifestPath, slug),
         name: slug,
         description: null,
         instructions: null,
         context: [],
         agent: null,
         sessions: 'private',
+        agents: [],
+        ownedAgents: [],
+        references: [],
+        agentsRaw: null,
       };
   spec.slug = slug;
-  spec.path = `${manifestPath}#subprojects.${slug}`;
+  spec.path = subprojectPathFor(manifestPath, slug);
 
   if (has('name')) {
     const name = normalizeString(body.name);
@@ -193,7 +203,7 @@ function mergeSubprojectBody(
     const agent = normalizeString(body.agent);
     if (agent && !declaredAgents.includes(agent)) {
       return {
-        error: `agent "${agent}" does not match any declared agent in this project`,
+        error: `agent "${agent}" is not usable in this subproject — declare it in the root manifest, in kortix-${slug}.yaml, or reference it there with { from: <slug> }`,
       };
     }
     spec.agent = agent;
@@ -223,10 +233,38 @@ function mergeSubprojectBody(
   return spec;
 }
 
-/** The agent names a project declares — the `agent:` field must name one. */
-async function declaredAgentNames(project: ProjectRow): Promise<string[]> {
-  const loaded = await loadProjectAgents(await withProjectGitAuth(project));
-  return loaded.specs.map((spec) => spec.name);
+/** The agent names a subproject may set as its `agent:` — the globals plus
+ *  the ones it owns or references (spec 2026-09-06 §2). On create, globals. */
+async function usableAgentsFor(
+  gitProject: GitBackedProject,
+  existing: SubprojectSpec | null,
+): Promise<string[]> {
+  return usableAgentNames(await loadProjectAgents(gitProject), existing);
+}
+
+/** Where the root manifest lives — the directory subproject files go in. A
+ *  project with no manifest yet uses its configured path, like every other
+ *  synthesized-manifest reader. */
+async function rootManifestPath(gitProject: GitBackedProject): Promise<string> {
+  const { readManifest } = await import('../triggers');
+  const manifest = await readManifest(gitProject);
+  return manifest?.path ?? gitProject.manifestPath ?? 'kortix.yaml';
+}
+
+function serializeSubprojectFile(spec: SubprojectSpec): string {
+  return serializeManifestObject(subprojectSpecToFileEntry(spec), 'yaml');
+}
+
+/** Rewrite one subproject's file with compare-and-swap on its blob: a lost
+ *  race is a 409, never a silent overwrite of someone else's edit. */
+async function writeSubprojectFile(
+  row: ProjectRow,
+  gitProject: GitBackedProject,
+  spec: SubprojectSpec,
+  message: string,
+): Promise<{ ok: true } | { error: string; status: number }> {
+  const revision = await readRepoFileRevision(gitProject, spec.path);
+  return commitRepoFile(row, spec.path, serializeSubprojectFile(spec), message, revision);
 }
 
 // ─── GET /v1/projects/:projectId/subprojects ────────────────────────────────
@@ -305,35 +343,38 @@ projectsApp.openapi(
       );
     }
 
-    const agents = await declaredAgentNames(loaded.row);
-    let created: SubprojectSpec | undefined;
-    const result = await mutateManifestWithRetry(
-      loaded.row,
-      `subproject ${slug} was being created`,
-      (manifest: ParsedManifest) => {
-        if (extractSubprojects(manifest).specs.some((s) => s.slug === slug)) {
-          return {
-            ok: false as const,
-            error: `A subproject with slug "${slug}" already exists. Pick a different name.`,
-            status: 409,
-            code: 'SUBPROJECT_SLUG_TAKEN',
-          };
-        }
-        const merged = mergeSubprojectBody({ ...body, name }, null, slug, manifest.path, agents);
-        if ('error' in merged) return { ok: false as const, error: merged.error, status: 400 };
-        const next = upsertSubprojectInManifest(manifest, merged);
-        manifest.raw = next.raw;
-        created = merged;
-        return { ok: true as const, commitMessage: `feat(subprojects): add ${slug}` };
-      },
-    );
-    if (!result.ok) {
+    const gitProject = await withProjectGitAuth(loaded.row);
+    const [declared, rootPath] = await Promise.all([
+      loadProjectSubprojects(gitProject),
+      rootManifestPath(gitProject),
+    ]);
+    const filePath = subprojectPathFor(rootPath, slug);
+    // A file that exists but failed to parse is still that slug's file.
+    if (
+      declared.specs.some((s) => s.slug === slug) ||
+      (await readRepoFileRevision(gitProject, filePath)) !== null
+    ) {
       return c.json(
-        { error: result.error, ...(result.code ? { code: result.code } : {}) },
-        result.status as 400 | 409 | 502,
+        {
+          error: `A subproject with slug "${slug}" already exists. Pick a different name.`,
+          code: 'SUBPROJECT_SLUG_TAKEN',
+        },
+        409,
       );
     }
-    if (!created) throw new Error('subproject create completed without a spec');
+    const usable = await usableAgentsFor(gitProject, null);
+    const merged = mergeSubprojectBody({ ...body, name }, null, slug, rootPath, usable);
+    if ('error' in merged) return c.json({ error: merged.error }, 400);
+    const committed = await commitRepoFile(
+      loaded.row,
+      filePath,
+      serializeSubprojectFile(merged),
+      `feat(subprojects): add ${slug}`,
+    );
+    if ('error' in committed) {
+      return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
+    }
+    const created: SubprojectSpec = merged;
     // A brand-new subproject has no sessions and no triggers yet, and the
     // author just cleared `project.customize.write`.
     return c.json(
@@ -416,27 +457,27 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
 
-    const agents = await declaredAgentNames(loaded.row);
-    const result = await mutateManifestWithRetry(
-      loaded.row,
-      `subproject ${slug} was being updated`,
-      (manifest: ParsedManifest) => {
-        const current = extractSubprojects(manifest).specs.find((s) => s.slug === slug);
-        if (!current) return { ok: false as const, error: 'Not found', status: 404 };
-        // An empty patch is a no-op: answer 200 without touching git.
-        if (Object.keys(body).length === 0) return { ok: true as const, commitMessage: null };
-        const merged = mergeSubprojectBody(body, current, slug, manifest.path, agents);
-        if ('error' in merged) return { ok: false as const, error: merged.error, status: 400 };
-        const next = upsertSubprojectInManifest(manifest, merged);
-        manifest.raw = next.raw;
-        return { ok: true as const, commitMessage: `chore(subprojects): update ${slug}` };
-      },
-    );
-    if (!result.ok) {
-      return c.json(
-        { error: result.error, ...(result.code ? { code: result.code } : {}) },
-        result.status as 400 | 404 | 409 | 502,
+    const gitProject = await withProjectGitAuth(loaded.row);
+    const [declared, rootPath] = await Promise.all([
+      loadProjectSubprojects(gitProject),
+      rootManifestPath(gitProject),
+    ]);
+    const current = declared.specs.find((s) => s.slug === slug);
+    if (!current) return c.json({ error: 'Not found' }, 404);
+    // An empty body is a no-op: no commit, the current shape comes back.
+    if (Object.keys(body).length > 0) {
+      const usable = await usableAgentsFor(gitProject, current);
+      const merged = mergeSubprojectBody(body, current, slug, rootPath, usable);
+      if ('error' in merged) return c.json({ error: merged.error }, 400);
+      const written = await writeSubprojectFile(
+        loaded.row,
+        gitProject,
+        merged,
+        `chore(subprojects): update ${slug}`,
       );
+      if ('error' in written) {
+        return c.json({ error: written.error }, written.status as 400 | 409 | 502);
+      }
     }
     return c.json(await readOne(c, loaded, projectId, slug));
   },
@@ -470,29 +511,39 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
 
-    const result = await mutateManifestWithRetry(
+    const gitProject = await withProjectGitAuth(loaded.row);
+    const declared = await loadProjectSubprojects(gitProject);
+    const current = declared.specs.find((s) => s.slug === slug);
+    if (!current) return c.json({ error: 'Not found' }, 404);
+    // Two always-valid commits (spec 2026-09-06 §4): first detach every
+    // trigger naming this subproject — a trigger pointing at a missing one
+    // fails the set validator — then remove the file.
+    const detached = await mutateManifestWithRetry(
       loaded.row,
       `subproject ${slug} was being deleted`,
       (manifest: ParsedManifest) => {
-        if (!extractSubprojects(manifest).specs.some((s) => s.slug === slug)) {
-          return { ok: false as const, error: 'Not found', status: 404 };
+        const before = JSON.stringify(manifest.raw.triggers ?? null);
+        const next = stripSubprojectFromTriggers(manifest, slug);
+        if (JSON.stringify(next.raw.triggers ?? null) === before) {
+          return { ok: true as const, commitMessage: null };
         }
-        // ONE commit: dropping the block while a trigger still names it would
-        // leave the manifest failing `validateTriggerSubprojectRefsV2`.
-        const next = stripSubprojectFromTriggers(
-          removeSubprojectFromManifest(manifest, slug),
-          slug,
-        );
         manifest.raw = next.raw;
-        return { ok: true as const, commitMessage: `chore(subprojects): delete ${slug}` };
+        return {
+          ok: true as const,
+          commitMessage: `chore(subprojects): detach ${slug} from its triggers`,
+        };
       },
     );
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    if (!detached.ok) {
+      return c.json({ error: detached.error }, detached.status as 400 | 409 | 502);
     }
-    // Session rows keep `project_sessions.subproject` — a manager still sees
-    // them, a member without a grant loses them. Grant rows are left orphaned
-    // and are flagged as such by GET /resource-grants.
+    const removed = await commitRepoChanges(loaded.row, {
+      deletes: [current.path],
+      message: `chore(subprojects): delete ${slug}`,
+    });
+    if ('error' in removed) {
+      return c.json({ error: removed.error }, removed.status as 400 | 409 | 502);
+    }
     return c.json({ ok: true });
   },
 );
@@ -550,7 +601,6 @@ projectsApp.openapi(
 
     // Refuse before writing a file for a subproject that does not exist.
     const gitProject = await withProjectGitAuth(loaded.row);
-    const { loadProjectSubprojects } = await import('../subprojects');
     const declared = await loadProjectSubprojects(gitProject);
     if (!declared.specs.some((s) => s.slug === slug)) {
       return c.json({ error: 'Not found' }, 404);
@@ -566,27 +616,20 @@ projectsApp.openapi(
       return c.json({ error: committed.error }, committed.status as 400 | 409 | 502);
     }
 
-    const result = await mutateManifestWithRetry(
-      loaded.row,
-      `subproject ${slug} context was being added`,
-      (manifest: ParsedManifest) => {
-        const current = extractSubprojects(manifest).specs.find((s) => s.slug === slug);
-        if (!current) return { ok: false as const, error: 'Not found', status: 404 };
-        if (current.context.includes(repoPath)) {
-          // The file was re-uploaded; it is committed, and the entry is already
-          // listed. Nothing to change in the manifest.
-          return { ok: true as const, commitMessage: null };
-        }
-        const next = upsertSubprojectInManifest(manifest, {
-          ...current,
-          context: [...current.context, repoPath],
-        });
-        manifest.raw = next.raw;
-        return { ok: true as const, commitMessage: `feat(subprojects): context for ${slug}` };
-      },
-    );
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    // The upload invalidated the mirror: re-read the file's current shape
+    // before appending, so a concurrent edit is neither lost nor clobbered.
+    const current = (await loadProjectSubprojects(gitProject)).specs.find((s) => s.slug === slug);
+    if (!current) return c.json({ error: 'Not found' }, 404);
+    if (!current.context.includes(repoPath)) {
+      const written = await writeSubprojectFile(
+        loaded.row,
+        gitProject,
+        { ...current, context: [...current.context, repoPath] },
+        `feat(subprojects): context for ${slug}`,
+      );
+      if ('error' in written) {
+        return c.json({ error: written.error }, written.status as 400 | 409 | 502);
+      }
     }
     return c.json(await readOne(c, loaded, projectId, slug));
   },
@@ -625,27 +668,20 @@ projectsApp.openapi(
       PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
     );
 
-    const result = await mutateManifestWithRetry(
+    const gitProject = await withProjectGitAuth(loaded.row);
+    const current = (await loadProjectSubprojects(gitProject)).specs.find((s) => s.slug === slug);
+    if (!current) return c.json({ error: 'Not found' }, 404);
+    if (!current.context.includes(path)) {
+      return c.json({ error: `"${path}" is not a context entry` }, 404);
+    }
+    const written = await writeSubprojectFile(
       loaded.row,
-      `subproject ${slug} context was being removed`,
-      (manifest: ParsedManifest) => {
-        const current = extractSubprojects(manifest).specs.find((s) => s.slug === slug);
-        if (!current) return { ok: false as const, error: 'Not found', status: 404 };
-        if (!current.context.includes(path)) {
-          return { ok: false as const, error: `"${path}" is not a context entry`, status: 404 };
-        }
-        const next = upsertSubprojectInManifest(manifest, {
-          ...current,
-          context: current.context.filter((entry) => entry !== path),
-        });
-        manifest.raw = next.raw;
-        // The repo FILE is deliberately left in place — a context entry is a
-        // reference, and other subprojects or agents may read the same path.
-        return { ok: true as const, commitMessage: `chore(subprojects): context for ${slug}` };
-      },
+      gitProject,
+      { ...current, context: current.context.filter((entry) => entry !== path) },
+      `chore(subprojects): context for ${slug}`,
     );
-    if (!result.ok) {
-      return c.json({ error: result.error }, result.status as 400 | 404 | 409 | 502);
+    if ('error' in written) {
+      return c.json({ error: written.error }, written.status as 400 | 409 | 502);
     }
     return c.json(await readOne(c, loaded, projectId, slug));
   },

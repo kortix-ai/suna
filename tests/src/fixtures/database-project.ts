@@ -106,7 +106,7 @@ export async function createDatabaseProject(
   } finally {
     await client.end();
   }
-  return { id: projectId, name: input.name };
+  return { id: projectId, name: input.name, repoUrl: input.repoUrl ?? null };
 }
 
 export async function setDatabaseEnterpriseDemo(

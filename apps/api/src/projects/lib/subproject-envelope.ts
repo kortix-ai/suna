@@ -15,11 +15,20 @@ import {
   manifestCandidatePaths,
   manifestFormatForPath,
   parseManifestText,
-  type ManifestV2,
-  type SubprojectBlockV2,
   type SubprojectSessionsModeV2,
 } from '@kortix/manifest-schema';
 import { readManifestFromRepo, type GitBackedProject } from '../git';
+import { loadProjectSubprojectsAtRef } from '../subprojects';
+
+/** What the envelope is built from — a parsed `SubprojectSpec` fits, and so
+ *  does a raw file object. Every field optional; the slug is passed apart. */
+export interface SubprojectEnvelopeSource {
+  name?: string | null;
+  description?: string | null;
+  instructions?: string | null;
+  context?: readonly unknown[] | null;
+  sessions?: string | null;
+}
 
 /** The subproject slug a session runs inside. Empty/absent for a plain session. */
 export const SUBPROJECT_ENV_NAME = 'KORTIX_SUBPROJECT';
@@ -66,10 +75,10 @@ function trimmedOrNull(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
-/** Build the envelope for one declared block. Pure. */
+/** Build the envelope for one declared subproject. Pure. */
 export function buildSubprojectEnvelope(
   slug: string,
-  block: SubprojectBlockV2,
+  block: SubprojectEnvelopeSource,
 ): SubprojectEnvelope {
   return {
     version: 1,
@@ -147,17 +156,6 @@ export function subprojectContextInstructions(context: readonly string[]): strin
   return out;
 }
 
-/** Pick one declared block out of an already-parsed manifest. Pure. */
-export function subprojectBlockFromManifest(
-  manifest: Record<string, unknown>,
-  slug: string | null | undefined,
-): SubprojectBlockV2 | null {
-  if (!slug) return null;
-  const map = (manifest as unknown as ManifestV2).subprojects;
-  if (!map || typeof map !== 'object' || Array.isArray(map)) return null;
-  const block = (map as Record<string, SubprojectBlockV2>)[slug];
-  return block && typeof block === 'object' && !Array.isArray(block) ? block : null;
-}
 
 /**
  * Read the project's manifest at the session's ref and build the envelope.
@@ -180,7 +178,11 @@ export async function loadSubprojectEnvelopeForSession(
     const found = await readManifestFromRepo(project, candidates, ref);
     if (!found) return null;
     const raw = parseManifestText(found.content, manifestFormatForPath(found.path));
-    const block = subprojectBlockFromManifest(raw, slug);
+    if (Number(raw.kortix_version) !== 2) return null;
+    // The subproject is its own file beside the root manifest, read at the
+    // session's ref like the manifest itself.
+    const declared = await loadProjectSubprojectsAtRef(project, { manifestPath: found.path, ref });
+    const block = declared.specs.find((spec) => spec.slug === slug) ?? null;
     if (!block) {
       console.warn(
         `[subproject] project ${project.projectId}: session subproject "${slug}" is not declared at ${ref}; booting without it`,

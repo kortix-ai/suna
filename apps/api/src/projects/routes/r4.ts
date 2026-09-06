@@ -163,7 +163,8 @@ import {
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
-import { extractSubprojects } from '../subprojects';
+import { agentUsableIn, loadProjectSubprojects, type SubprojectSpec } from '../subprojects';
+import { extractAgents, mergeSubprojectAgents, type LoadedAgents } from '../agents';
 import { turnStreamKindField, turnStreamKindNeedsConnectorWrite } from './r4-turn-stream-kind';
 import {
   abandonSandboxTurn,
@@ -209,16 +210,54 @@ const TRIGGER_MANIFEST_KEYS = [
  * null when there is nothing to complain about.
  */
 function undeclaredSubproject(
-  manifest: ParsedManifest,
+  declaredSubprojects: ReadonlyMap<string, SubprojectSpec>,
   slug: string | null,
 ): { ok: false; error: string; status: number; code: string } | null {
   if (!slug) return null;
-  if (extractSubprojects(manifest).specs.some((s) => s.slug === slug)) return null;
+  if (declaredSubprojects.has(slug)) return null;
   return {
     ok: false,
     error: `Subproject "${slug}" is not declared in this project's manifest`,
     status: 400,
     code: 'SUBPROJECT_NOT_DECLARED',
+  };
+}
+
+/** The subproject files and the full agent roster (root + owned) as of the
+ *  manifest revision in hand — the two things a trigger write validates
+ *  against. Reads the files, never the manifest again. */
+async function manifestRoster(
+  gitProject: Awaited<ReturnType<typeof withProjectGitAuth>>,
+  manifest: ParsedManifest,
+): Promise<{ declaredSubprojects: ReadonlyMap<string, SubprojectSpec>; loadedAgents: LoadedAgents }> {
+  const subprojects = await loadProjectSubprojects(gitProject, { manifest });
+  return {
+    declaredSubprojects: new Map(subprojects.specs.map((s) => [s.slug, s])),
+    loadedAgents: mergeSubprojectAgents(extractAgents(manifest), subprojects.specs),
+  };
+}
+
+/**
+ * The usability rule for scheduled work (spec 2026-09-06 §2): a trigger may
+ * name an agent only where that agent is declared or referenced — global
+ * when the trigger has no subproject. A name declared nowhere stays the
+ * manifest validator's problem, exactly as before.
+ */
+function agentNotUsable(
+  loadedAgents: LoadedAgents,
+  declaredSubprojects: ReadonlyMap<string, SubprojectSpec>,
+  draft: { agent: string; subproject: string | null },
+): { ok: false; error: string; status: number; code: string } | null {
+  const agent = draft.agent;
+  if (!agent || !loadedAgents.specs.some((s) => s.name === agent)) return null;
+  const spec = draft.subproject ? (declaredSubprojects.get(draft.subproject) ?? null) : null;
+  if (agentUsableIn(loadedAgents, spec, agent)) return null;
+  const owner = loadedAgents.specs.find((s) => s.name === agent)?.subproject;
+  return {
+    ok: false,
+    error: `Agent "${agent}" is not usable ${draft.subproject ? `in subproject "${draft.subproject}"` : 'at the project level'} — it is declared by subproject "${owner}" (kortix-${owner}.yaml)`,
+    status: 400,
+    code: 'AGENT_NOT_IN_SUBPROJECT',
   };
 }
 
@@ -1277,11 +1316,16 @@ projectsApp.openapi(
       }
     }
 
+    const gitProject = await withProjectGitAuth(loaded.row);
     let committedManifest: ParsedManifest | undefined;
     const result = await mutateManifestWithRetry(
       loaded.row,
       `trigger ${draft.slug} was being created`,
-      (manifest) => {
+      async (manifest) => {
+        // Subprojects are their own files (`kortix-<slug>.yaml`); the declared
+        // set and the roster the usability rule needs come from the manifest
+        // revision being edited — no second read, no drift.
+        const { declaredSubprojects, loadedAgents } = await manifestRoster(gitProject, manifest);
         if (extractTriggers(manifest).specs.some((s) => s.slug === draft.slug)) {
           return {
             ok: false,
@@ -1289,8 +1333,10 @@ projectsApp.openapi(
             status: 409,
           };
         }
-        const undeclared = undeclaredSubproject(manifest, draft.subproject);
+        const undeclared = undeclaredSubproject(declaredSubprojects, draft.subproject);
         if (undeclared) return undeclared;
+        const notUsable = agentNotUsable(loadedAgents, declaredSubprojects, draft);
+        if (notUsable) return notUsable;
         const next = upsertTriggerInManifest(manifest, draftToSpec(draft, manifest.path));
         manifest.raw = next.raw;
         committedManifest = manifest;
@@ -1425,12 +1471,14 @@ projectsApp.openapi(
       );
       if (accessValidationError) return c.json({ error: accessValidationError }, 400);
     }
+    const gitProject = await withProjectGitAuth(loaded.row);
     let committedManifest: ParsedManifest | undefined;
     let effectivePinnedSessionId: string | null = null;
     const result = await mutateManifestWithRetry(
       loaded.row,
       `trigger ${slug} was being updated`,
       async (manifest) => {
+        const { declaredSubprojects, loadedAgents } = await manifestRoster(gitProject, manifest);
         const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
         if (!current) return { ok: false, error: 'Not found', status: 404 };
         if (!touchesManifest) {
@@ -1461,8 +1509,10 @@ projectsApp.openapi(
         }
         effectivePinnedSessionId = draft.pinnedSessionId;
 
-        const undeclared = undeclaredSubproject(manifest, draft.subproject);
+        const undeclared = undeclaredSubproject(declaredSubprojects, draft.subproject);
         if (undeclared) return undeclared;
+        const notUsable = agentNotUsable(loadedAgents, declaredSubprojects, draft);
+        if (notUsable) return notUsable;
 
         // A `pinned` trigger may only target a session that belongs to THIS project.
         if (draft.sessionMode === 'pinned' && draft.pinnedSessionId) {
