@@ -273,18 +273,16 @@ function manifestFromWrangler(cfg) {
 /**
  * ROLL THE CELLS ONTO A JUST-ACTIVATED VERSION.
  *
- * celld loads a deployment at NODE process start, and activating a version does
- * not roll a node that is already up. So after a deploy, a cell created on a
- * running node still serves the version that node loaded — not the one that was
- * just activated. Measured on dev 2026-09-06: three cells created 8, 16 and 25
- * minutes after activating `5ae58c50` all served the previous bundle, while a
- * cell created once every cell on that node had been deleted served the new one
- * immediately. A stop/start of one cell also picked it up.
+ * celld loads a deployment at process start, so activating a version does not
+ * change what an already-running cell serves. Measured on dev 2026-09-06/07
+ * with a marked bundle: `7852fd19` reached a running cell only after the roll,
+ * and a cell created after the roll served it too.
  *
  * That is the trap this closes. Without it a deploy looks successful — the
- * version uploads, activates, and `deploy/current.json` names it — while every
- * new session keeps running the old code, which is indistinguishable from the
- * change not working.
+ * version uploads, activates, and `deploy/current.json` names it — while the
+ * cells that are up keep running the old code, which is indistinguishable from
+ * the change not working. Verify by asking a cell for a field only the new
+ * bundle answers; the deploy's own success does not tell you.
  *
  * Sequential, not parallel: rolling every cell at once takes the whole worker
  * down, and a cell is somebody's live session.
