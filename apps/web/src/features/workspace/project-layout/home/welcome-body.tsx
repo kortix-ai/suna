@@ -148,7 +148,7 @@ export function ProjectHomeWelcomeBody({
           // `m-auto`): the panel's sections open and close, and a vertically
           // centred column would re-centre on every toggle — the composer
           // sliding up and down under the cursor (user, 2026-09-06).
-          aside ? 'mx-auto max-w-5xl pt-10 lg:pt-16' : 'm-auto max-w-3xl',
+          aside ? 'mx-auto max-w-5xl pt-16 lg:pt-28' : 'm-auto max-w-3xl',
         )}
       >
         <div
