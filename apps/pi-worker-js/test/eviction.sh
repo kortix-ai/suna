@@ -296,12 +296,13 @@ if CELLD_MAX_RESIDENT_CELLS=1 node celldctl.mjs up >/dev/null 2>&1; then
   B3=$(scopes)
   for _ in $(seq 1 5); do curl -s -o /dev/null -m 10 "http://127.0.0.1:${PORT}/history?c=${MS}" >/dev/null 2>&1; done
   MH=$(new_scope "$B3")
-  BEFORE=$(curl -s -m 10 "http://127.0.0.1:${PORT}/meter?c=${MS}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["meters"].get("requests",0))' 2>/dev/null || echo 0)
+  mread() { curl -s -m 10 "http://127.0.0.1:${PORT}/meter?c=${MS}" | python3 -c 'import json,sys;d=json.load(sys.stdin);m=d["meters"];print(m.get("requests",0), m.get("builds",0), d.get("instance",""))' 2>/dev/null || echo "0 0 "; }
+  read -r BEFORE BUILDS_BEFORE INST_BEFORE <<<"$(mread)"
   for i in $(seq 1 10); do prompt "m-$RANDOM-$i" "x"; done          # evict it
   # The read comes FIRST. celld logs nothing at eviction time — the fresh=false
   # line only appears when the cell is next touched, so checking the log before
   # touching it reports fresh=true and looks like no eviction happened.
-  AFTER=$(curl -s -m 10 "http://127.0.0.1:${PORT}/meter?c=${MS}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["meters"].get("requests",0))' 2>/dev/null || echo 0)
+  read -r AFTER BUILDS_AFTER INST_AFTER <<<"$(mread)"
   EV=$(docker logs "$CELL" 2>&1 | grep "$MH" | grep -oE 'fresh=(true|false)' | tr '\n' ' ')
   case "$EV" in
     *"fresh=false"*) pass "the metered cell really was evicted (${EV})" ;;
@@ -313,9 +314,36 @@ if CELLD_MAX_RESIDENT_CELLS=1 node celldctl.mjs up >/dev/null 2>&1; then
   [ "${AFTER:-0}" -ge "${BEFORE:-0}" ] \
     && pass "THE COUNT SURVIVED THE ROUND TRIP THROUGH OBJECT STORAGE (${BEFORE} -> ${AFTER})" \
     || fail "the meter LOST counts across a real eviction: ${BEFORE} -> ${AFTER}"
+
+  # THE CELL'S OWN ACCOUNT OF THE EVICTION, checked against the node's.
+  #
+  # Every claim above rests on a `fresh=false` line in a container log. That
+  # evidence does not exist on the platform: a cell there runs inside a microVM
+  # whose celld log is not reachable over the API, which is why "scale-to-zero
+  # for cells" has stayed unproven anywhere but this laptop. So the cell now
+  # counts its OWN rebuilds — `builds` is bumped in init(), which is guarded by
+  # this.ready and therefore runs exactly once per isolate, and is stored in the
+  # same SQLite that goes to the bucket.
+  #
+  # The two counters have to disagree in the right way, and that is what makes
+  # this falsifiable rather than decorative. `builds` lives in storage and must
+  # ADVANCE when the isolate is rebuilt; `instance` lives in memory and must
+  # CHANGE for the same reason; `requests` lives in storage and must NOT restart.
+  # Put `builds` in memory instead and it reads 1 after the rebuild. Put
+  # `instance` in storage and it comes back identical. Either mutation fails
+  # here, while the log grep above goes on passing.
+  [ "${BUILDS_AFTER:-0}" -gt "${BUILDS_BEFORE:-0}" ] \
+    && pass "the cell COUNTED ITS OWN REBUILD: builds ${BUILDS_BEFORE} -> ${BUILDS_AFTER}, agreeing with the node's ${EV}" \
+    || fail "the node logged an eviction but the cell did not count a rebuild: builds ${BUILDS_BEFORE:-?} -> ${BUILDS_AFTER:-?} (${EV})"
+  [ -n "${INST_BEFORE:-}" ] && [ -n "${INST_AFTER:-}" ] && [ "$INST_BEFORE" != "$INST_AFTER" ] \
+    && pass "and it is a DIFFERENT isolate serving the same cell (${INST_BEFORE} -> ${INST_AFTER})" \
+    || fail "the isolate identity did not move across a rebuild: ${INST_BEFORE:-empty} -> ${INST_AFTER:-empty}"
+  [ "${BUILDS_BEFORE:-0}" -ge 1 ] \
+    && pass "a cell that has never been evicted still reports builds=${BUILDS_BEFORE} — the counter starts at its first isolate, not at zero" \
+    || fail "builds was ${BUILDS_BEFORE:-?} before any eviction"
 else
   echo "  SKIP: could not start a capped node"
-  SKIPPED=$((SKIPPED+4))
+  SKIPPED=$((SKIPPED+7))
 fi
 
 echo "== 5. the transcript survived regardless =="
@@ -385,7 +413,7 @@ else
   SKIPPED=$((SKIPPED+2))
 fi
 
-EXPECTED_PASSES=16
+EXPECTED_PASSES=19
 echo
 if [ "$FAIL" -eq 0 ] && [ $((PASS+SKIPPED)) -ne "$EXPECTED_PASSES" ]; then
   printf '  \033[31mINCOMPLETE\033[0m %s claims ran and %s were skipped, expected %s in total\n' \

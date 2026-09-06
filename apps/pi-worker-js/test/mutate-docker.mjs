@@ -157,6 +157,32 @@ const CHECKS = [
     suite: "eviction.sh", file: "src/worker.js",
     from: "    this.sql.exec(`CREATE TABLE IF NOT EXISTS meter (",
     to: '    this.sql.exec("DROP TABLE IF EXISTS meter"); this.sql.exec(`CREATE TABLE IF NOT EXISTS meter (' },
+  // THE CELL'S OWN REBUILD COUNTER, both halves pinned separately.
+  //
+  // `builds` exists so an eviction can be proved WITHOUT the node's log, which
+  // is the only form of the proof available on the platform. So the two ways it
+  // could be quietly wrong are pinned one at a time.
+  //
+  // Durability first: this mutant counts correctly and clears the row on every
+  // build, so both readings are 1 and the increment never appears. It is the
+  // exact shape of the bug where the counter is kept in the instance instead of
+  // in SQLite — which the comment above the table warns about, and which nothing
+  // checked until now.
+  { claim: "the cell's build counter is durable, not per-instance",
+    expect: new RegExp("did not count a rebuild"),
+    suite: "eviction.sh", file: "src/worker.js",
+    from: '    this.meter("builds");',
+    to: '    this.sql.exec("DELETE FROM meter WHERE k = \'builds\'"); this.meter("builds");' },
+
+  // And the memory half: `instance` must be per-isolate, so a constant one is
+  // the mutation. Measured: it fails ONLY at the identity claim — the build
+  // counter still increments — which is what keeps the two claims separable.
+  { claim: "the isolate identity is per-isolate, not a constant",
+    expect: new RegExp("isolate identity did not move"),
+    suite: "eviction.sh", file: "src/worker.js",
+    from: '    this.instance = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;',
+    to: '    this.instance = "one-isolate-forever";' },
+
   // SCALE TO ZERO, PINNED BY REMOVING THE CAUSE FROM ITS OWN SECTION.
   //
   // A state mutation, not a code one: the anchor reaches into 4f's `up` and not

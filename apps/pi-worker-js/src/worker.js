@@ -132,6 +132,13 @@ export class AgentCell {
     this.sql = state.storage.sql;
     this.sockets = new Set();
     this.ready = false;
+    // THIS ISOLATE, as distinct from this cell. Held in memory only, so it
+    // changes exactly when the isolate is rebuilt and never otherwise. It is
+    // the only evidence of an eviction a CALLER can obtain: celld 0.3.0 logs
+    // no eviction line, and on the platform the node's logs are not reachable
+    // from outside the microVM at all.
+    this.instance = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    this.bornAt = Date.now();
     // A SESSION IS SEQUENTIAL, AND THE INPUT GATE DOES NOT MAKE IT SO.
     //
     // The Durable Object input gate is released across an await on anything that
@@ -257,6 +264,13 @@ export class AgentCell {
       started_at INTEGER,
       ended_at   INTEGER
     )`);
+    // ONE PER ISOLATE. init() is guarded by this.ready, so this counts
+    // constructions of the object, not requests — the epoch the local node
+    // prints to its log, made durable so it can be read over HTTP from a
+    // cell running on the platform. A fresh cell reads builds=1; a cell that
+    // has been evicted and rebuilt once reads 2, and its `requests` meter
+    // carries on from where it was rather than restarting.
+    this.meter("builds");
     this.ready = true;
   }
 
@@ -980,6 +994,12 @@ export class AgentCell {
       return Response.json({
         sessionId,
         meters: Object.fromEntries(rows.map((r) => [r.k, r.n])),
+        // `instance` is memory, `meters.builds` is storage. Read together they
+        // say whether a gap between two readings contained an eviction: a new
+        // instance with a higher builds count is a rebuilt cell, the same
+        // instance is a cell that stayed resident.
+        instance: this.instance,
+        instanceAgeMs: Date.now() - this.bornAt,
         at: Date.now(),
       });
     }

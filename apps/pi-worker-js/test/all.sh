@@ -171,6 +171,7 @@ run_suite platinum   ./test/platinum.sh
 # suites do not want. It skips cleanly when that is not the case rather than
 # restarting the node underneath them.
 run_suite eviction   ./test/eviction.sh
+run_suite dev-evict  ./test/dev-evict.sh
 # The cell against a REAL Platinum dev sandbox as its workspace. Opt-in by the
 # presence of a dev token (PT_SANDBOX_KEY or ~/.config/platinum/credentials);
 # without one it SKIPs and says so. Last, because it owns the node's lifecycle.
