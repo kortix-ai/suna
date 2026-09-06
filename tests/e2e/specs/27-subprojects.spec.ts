@@ -138,7 +138,7 @@ test.describe('27 — Subprojects', () => {
       const instructionsRow = page.getByRole('button', { name: 'Instructions', exact: true });
       await expect(instructionsRow).toBeVisible();
       await expect(page.getByRole('button', { name: 'Context', exact: true })).toBeVisible();
-      await expect(page.getByRole('button', { name: 'Scheduled', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Triggers', exact: true })).toBeVisible();
       await expect(page.getByText('Files the agent reads first.', { exact: true })).toBeVisible();
 
       // The sidebar picked up the new row without a reload.

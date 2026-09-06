@@ -2,7 +2,7 @@
 
 /**
  * What a subproject owns, beside the composer: Instructions, Context,
- * Scheduled, and (for a manager) Access — one flat panel of stacked sections
+ * Triggers, and (for a manager) Access — one flat panel of stacked sections
  * on the right of the page (user, 2026-09-06: "like Claude's project page,
  * not a drawer"). Every section starts closed, showing one line — what is in
  * it, or the invitation when empty — and a caret; the title opens it. The
@@ -76,14 +76,14 @@ export function SubprojectAside({
         <ContextBody projectId={projectId} subproject={subproject} canManage={canManage} />
       </AsideSection>
       <AsideSection
-        title="Scheduled"
+        title="Triggers"
         empty={triggers.length === 0}
         summary={
           triggersQuery.isLoading
             ? '…'
             : triggers.length === 0
               ? 'Work that runs on its own.'
-              : `${triggers.length} ${triggers.length === 1 ? 'schedule' : 'schedules'} run on their own.`
+              : `${triggers.length} ${triggers.length === 1 ? 'trigger runs' : 'triggers run'} on their own.`
         }
         canOpen={canManage || triggers.length > 0}
       >
