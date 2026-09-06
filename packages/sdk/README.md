@@ -233,10 +233,14 @@ invocation.
 ### Subprojects
 
 A **subproject** is a named container inside a project. It groups sessions,
-gives the agent standing instructions and reference files, owns scheduled work,
-and is granted to members or groups exactly like an agent. The repo manifest
-(`kortix.yaml` → `subprojects.<slug>`) is the source of truth, so every write
-below commits to the repo.
+gives the agent standing instructions and reference files, owns the scheduled
+work that names it, may declare agents of its own, and is granted to members or
+groups exactly like an agent. Each one is a file in the repo beside the root
+manifest, `kortix-<slug>.yaml`, and that file is the source of truth, so every
+write below commits to it. A `Subproject` carries `path` (the file) and
+`agents` (the agents usable inside it beyond the globals: the ones its file
+owns or references); `agentsUsableIn(roster, subproject)` narrows any roster
+whose entries carry `subproject` to what a session there may run.
 
 ```ts
 const project = kortix.project(projectId);

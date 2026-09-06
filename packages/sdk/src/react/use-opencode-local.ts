@@ -13,6 +13,7 @@
 
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
 import { featureFlags } from '../core/http/feature-flags';
+import { agentsUsableIn } from '../core/rest/projects-client/subprojects';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
@@ -30,6 +31,14 @@ export type { ModelKey };
 
 export interface UseOpenCodeLocalOptions {
   agents?: Agent[];
+  /**
+   * Where the session starts, for the usability rule (spec 2026-09-06 §2):
+   * `{ agents }` narrows the roster to the globals plus what that subproject
+   * owns or references; `null` is the whole project (globals only);
+   * `undefined` means "not stated" and leaves the roster as served. Pass it
+   * wherever the subproject is known.
+   */
+  subproject?: { agents: readonly string[] } | null;
   providers?: ProviderListResponse;
   config?: Config;
   /** Session ID — used to persist agent selection per-session in localStorage */
@@ -270,6 +279,7 @@ export function resolveCurrentAgentName(input: {
 
 export function useOpenCodeLocal({
   agents: rawAgents,
+  subproject,
   providers,
   config,
   sessionId,
@@ -330,10 +340,13 @@ export function useOpenCodeLocal({
   const visibleAgents = useMemo<Agent[]>(() => {
     // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
     const projectOnlyAgents = new Set(['project-manager']);
-    return (Array.isArray(rawAgents) ? rawAgents : []).filter(
+    const served = Array.isArray(rawAgents) ? rawAgents : [];
+    // An agent a subproject file owns is offered only where it is usable.
+    const usable = subproject === undefined ? served : agentsUsableIn(served, subproject);
+    return usable.filter(
       (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
     );
-  }, [rawAgents]);
+  }, [rawAgents, subproject]);
 
   // Resolve the current agent name (see `resolveCurrentAgentName`): per-session
   // slot -> server-bound project agent -> project default -> global last-used.

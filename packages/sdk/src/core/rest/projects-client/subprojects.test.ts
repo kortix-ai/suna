@@ -30,7 +30,8 @@ beforeEach(() => {
         context: [],
         agent: null,
         sessions: 'private',
-        path: 'kortix.yaml#subprojects.marketing',
+        path: 'kortix-marketing.yaml',
+        agents: ['writer'],
         session_count: 0,
         trigger_count: 0,
         can_manage: true,
@@ -118,4 +119,14 @@ test('removeProjectSubprojectContext deletes with a URL-encoded ?path=', async (
 test('a slug with a slash-unsafe character is URL-encoded in the path', async () => {
   await getProjectSubproject('P1', 'a b');
   expect(last().url).toBe('http://test.local/projects/P1/subprojects/a%20b');
+});
+
+test('a subproject carries the agents usable in it beyond the globals', async () => {
+  const subproject = await getProjectSubproject('p1', 'marketing');
+  // The wire field is `agents: string[]` — owned or referenced names, in file
+  // order. An older server omits it; the type still names it so hosts can
+  // build the roster as globals + these without a second request.
+  const agents: string[] = subproject.agents ?? [];
+  expect(Array.isArray(agents)).toBe(true);
+  expect(subproject.path).toBe('kortix-marketing.yaml');
 });

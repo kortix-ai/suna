@@ -28,8 +28,11 @@ export interface Subproject {
   /** Default agent for sessions started here — a default, not a binding. */
   agent: string | null;
   sessions: SubprojectSessionsMode;
-  /** Where the block lives, e.g. `kortix.yaml#subprojects.marketing`. */
+  /** The file it lives in, repo-relative: `kortix-marketing.yaml`. */
   path: string;
+  /** Agents usable here beyond the globals — the ones this subproject's file
+   *  owns (declares) or references, in file order. Absent on older servers. */
+  agents?: string[];
   /** Non-deleted sessions in this subproject that the caller can see. */
   session_count: number;
   /** Triggers whose `subproject` back-reference names this slug. */
@@ -127,4 +130,27 @@ export async function removeProjectSubprojectContext(
   return unwrap(
     await backendApi.delete<Subproject>(`${one(projectId, slug)}/context?${query}`),
   );
+}
+
+/**
+ * A roster entry as far as the usability rule cares: its name, and the
+ * subproject that declares it. `null` or absent means global — declared in
+ * the root `kortix.yaml`.
+ */
+export interface RosterAgent {
+  name: string;
+  subproject?: string | null;
+}
+
+/**
+ * The agents usable in a session (spec 2026-09-06 §2): the globals, plus the
+ * ones the session's subproject owns or references. A `null` or `undefined`
+ * subproject is the whole project — globals only. Pure, order-preserving.
+ */
+export function agentsUsableIn<T extends RosterAgent>(
+  agents: readonly T[],
+  subproject: { agents: readonly string[] } | null | undefined,
+): T[] {
+  const extra = new Set(subproject?.agents ?? []);
+  return agents.filter((agent) => !agent.subproject || extra.has(agent.name));
 }

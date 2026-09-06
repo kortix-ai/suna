@@ -332,7 +332,7 @@ stay encrypted and resolve per request.
 
 #### `p.subprojects` — named containers inside a project
 
-A subproject groups sessions, gives the agent standing instructions and reference files, owns scheduled work, and is granted to members or groups like an agent. The repo manifest (`kortix.yaml` → `subprojects.<slug>`) is the source of truth, so every write below commits to the repo.
+A subproject groups sessions, gives the agent standing instructions and reference files, owns scheduled work, may declare agents of its own, and is granted to members or groups like an agent. Each one is a file in the repo beside the root manifest, `kortix-<slug>.yaml`, and that file is the source of truth, so every write below commits to it. A `Subproject` carries `path` (the file) and `agents` — the agents usable inside it beyond the globals: the ones its file owns or references. `agentsUsableIn(roster, subproject)` filters any roster whose entries carry `subproject` (the project detail's `config.agents` do) down to what a session there may run; the React hooks accept the same `subproject` option.
 
 | method | what |
 | --- | --- |
@@ -340,7 +340,7 @@ A subproject groups sessions, gives the agent standing instructions and referenc
 | `get(slug)` | one subproject (`404` when undeclared or inaccessible) |
 | `create(input)` | declare one — commits `kortix.yaml` |
 | `update(slug, input)` | partial merge (`null` clears a field; the slug is immutable) |
-| `remove(slug)` | delete the block and strip `subproject:` from its triggers |
+| `remove(slug)` | delete the file, after stripping `subproject:` from its triggers |
 | `addContext(slug, { path, content })` | commit a text file and append it to `context` |
 | `removeContext(slug, path)` | drop the `context` entry (the repo file stays) |
 
